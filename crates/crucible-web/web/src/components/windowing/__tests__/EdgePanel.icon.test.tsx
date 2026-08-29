@@ -4,7 +4,7 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { EdgePanel } from '../EdgePanel';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds, createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 
 // The old test scraped EdgePanel.tsx and windowStoreInternals.ts for source
@@ -29,8 +29,13 @@ beforeEach(() => {
   );
 });
 
+// EVERY leaf of the panel's layout, not just the first: a rail is a column
+// now — the file tree above, the terminal under it — and reading only the
+// primary group would silently stop covering the second pane.
 const edgeTabs = (position: EdgePanelPosition) =>
-  windowStore.tabGroups[primaryEdgeGroupId(windowStore, position)!].tabs;
+  collectLeafGroupIds(windowStore.edgePanels[position].layout).flatMap(
+    (id) => windowStore.tabGroups[id]?.tabs ?? [],
+  );
 
 describe('EdgePanel — tab icons', () => {
   it('renders each ribbon tab with its icon as an <svg>', () => {
@@ -67,7 +72,7 @@ describe('EdgePanel — tab icons', () => {
   });
 
   it('the default edge roster gives every tab a component icon', () => {
-    const positions: EdgePanelPosition[] = ['left', 'right', 'bottom'];
+    const positions: EdgePanelPosition[] = ['left', 'right'];
     const tabs = positions.flatMap((p) => edgeTabs(p));
     // Identity on the left, working context on the right.
     expect(tabs.map((t) => t.title)).toEqual([
@@ -75,8 +80,9 @@ describe('EdgePanel — tab icons', () => {
       'Files',
       'Backlinks',
       'Activity',
+      // The terminal is a pane UNDER the tree now, in the same rail — not a
+      // full-width dock. `Chat` went with that dock.
       'Terminal',
-      'Chat',
     ]);
     for (const tab of tabs) {
       expect(typeof tab.icon, `${tab.title} should carry a component icon`).toBe('function');

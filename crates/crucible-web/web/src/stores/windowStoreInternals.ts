@@ -11,7 +11,6 @@ import {
   ClipboardList,
   FolderTree,
   Link2,
-  MessageCircle,
   Terminal,
 } from '@/lib/icons';
 import type { PaneDropPosition, WindowState } from './windowStoreTypes';
@@ -122,6 +121,32 @@ export function insertPaneRelative(
   return replacePaneWithSplit(layout, paneId, newSplit);
 }
 
+/**
+ * Mirror a layout tree left-to-right.
+ *
+ * HORIZONTAL splits swap their halves and invert the ratio; VERTICAL splits
+ * only recurse. That asymmetry is the whole point: a flip reverses the COLUMN
+ * order, and anything stacked inside a column keeps its stacking. The terminal
+ * under the file tree stays under the file tree when the tree moves sides —
+ * mirroring vertical splits too would put it above.
+ *
+ * Pure, and its own inverse: mirroring twice restores the original tree,
+ * including every ratio.
+ */
+export function mirrorLayout(node: LayoutNode): LayoutNode {
+  if (node.type === 'pane') return node;
+  if (node.direction !== 'horizontal') {
+    return { ...node, first: mirrorLayout(node.first), second: mirrorLayout(node.second) };
+  }
+  return {
+    ...node,
+    first: mirrorLayout(node.second),
+    second: mirrorLayout(node.first),
+    // The ratio measures the FIRST half, and the halves just traded places.
+    splitRatio: 1 - node.splitRatio,
+  };
+}
+
 /** In-order tab-group ids at the leaves of a layout tree. */
 export function collectLeafGroupIds(layout: LayoutNode): string[] {
   if (layout.type === 'pane') {
@@ -136,11 +161,22 @@ export function countPanes(layout: LayoutNode): number {
   return countPanes(layout.first) + countPanes(layout.second);
 }
 
+/** In-order leaf panes of a layout tree. */
+export function collectPanes(layout: LayoutNode): PaneNode[] {
+  if (layout.type === 'pane') return [layout];
+  return [...collectPanes(layout.first), ...collectPanes(layout.second)];
+}
+
+/** Leaf panes a rail still shows at full height. */
+export function expandedPanes(layout: LayoutNode): PaneNode[] {
+  return collectPanes(layout).filter((p) => !p.collapsed);
+}
+
 export function findEdgePanelForGroup(
   state: WindowState,
   groupId: string
 ): EdgePanelPosition | null {
-  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
     if (collectLeafGroupIds(state.edgePanels[pos].layout).includes(groupId)) {
       return pos;
     }
@@ -152,7 +188,7 @@ export function findEdgePanelForPane(
   state: WindowState,
   paneId: string
 ): EdgePanelPosition | null {
-  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
     if (findPaneInLayout(state.edgePanels[pos].layout, paneId)) return pos;
   }
   return null;
@@ -165,7 +201,7 @@ export function findPaneAnywhere(
 ): PaneNode | null {
   const inMain = findPaneInLayout(state.layout, paneId);
   if (inMain) return inMain;
-  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
     const pane = findPaneInLayout(state.edgePanels[pos].layout, paneId);
     if (pane) return pane;
   }
@@ -195,7 +231,7 @@ export function updateRootWhere(
     s.layout = transform(s.layout);
     return true;
   }
-  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
     if (contains(s.edgePanels[pos].layout)) {
       s.edgePanels[pos].layout = transform(s.edgePanels[pos].layout);
       return true;
@@ -252,18 +288,13 @@ const createRightPanelTabs = (): Tab[] => [
   },
 ];
 
-const createBottomPanelTabs = (): Tab[] => [
+/** The shell under the file tree. */
+const createTerminalTabs = (): Tab[] => [
   {
     id: 'terminal-tab-1',
     title: 'Terminal',
     contentType: 'terminal',
     icon: Terminal,
-  },
-  {
-    id: 'chat-tab',
-    title: 'Chat',
-    contentType: 'chat',
-    icon: MessageCircle,
   },
 ];
 
@@ -272,13 +303,13 @@ export function createInitialState(): WindowState {
   const tabGroupId1 = generateId();
   const leftGroupId = generateId();
   const rightGroupId = generateId();
-  const bottomGroupId = generateId();
+  const rightTermGroupId = generateId();
   // Open each edge panel on its FIRST tab, derived rather than hard-coded: a
   // literal id that a tab-roster change orphans leaves the panel showing "No
   // tab selected" (it has happened for both the left and right panels).
   const leftTabs = createLeftPanelTabs();
   const rightTabs = createRightPanelTabs();
-  const bottomTabs = createBottomPanelTabs();
+  const rightTermTabs = createTerminalTabs();
   return {
     layout: {
       id: mainPaneId,
@@ -301,10 +332,10 @@ export function createInitialState(): WindowState {
         tabs: rightTabs,
         activeTabId: rightTabs[0]?.id ?? null,
       },
-      [bottomGroupId]: {
-        id: bottomGroupId,
-        tabs: bottomTabs,
-        activeTabId: bottomTabs[0]?.id ?? null,
+      [rightTermGroupId]: {
+        id: rightTermGroupId,
+        tabs: rightTermTabs,
+        activeTabId: rightTermTabs[0]?.id ?? null,
       },
     },
     edgePanels: {
@@ -312,20 +343,42 @@ export function createInitialState(): WindowState {
         id: 'left-panel',
         layout: { id: 'left-pane', type: 'pane' as const, tabGroupId: leftGroupId },
         isCollapsed: false,
+        // A nav rail: the session list and its project groups. The
+        // conversation itself opens as a pane beside the editor, so this
+        // stays a list's width.
         width: 280,
       },
       right: {
         id: 'right-panel',
-        layout: { id: 'right-pane', type: 'pane' as const, tabGroupId: rightGroupId },
+        // A COLUMN, not a single pane: the file tree above, a terminal under
+        // it. The terminal used to be a full-width dock across the bottom of
+        // the window, which cost the editor its height to show a shell that
+        // belongs beside the files it runs against. Stacked inside one rail it
+        // also survives a flip intact — `mirrorLayout` reverses columns and
+        // leaves what is stacked inside them alone.
+        layout: {
+          id: 'right-split',
+          type: 'split' as const,
+          direction: 'vertical' as const,
+          splitRatio: 0.65,
+          first: { id: 'right-pane', type: 'pane' as const, tabGroupId: rightGroupId },
+          // The shell ships COLLAPSED: a fresh rail shows the tree at full
+          // height with a terminal BAR under it, which is the honest default —
+          // a shell nobody started yet does not deserve a third of the rail.
+          // One click on its ribbon marker (or its bar) opens it, and the
+          // 0.65 ratio above is what it opens back to.
+          // A persisted layout reaches the same shape through migrateV7toV8.
+          second: {
+            id: 'right-term-pane',
+            type: 'pane' as const,
+            tabGroupId: rightTermGroupId,
+            collapsed: true,
+          },
+        },
         isCollapsed: true,
-        // Sessions dock here — needs chat-worthy width, not a sidebar sliver.
-        width: 520,
-      },
-      bottom: {
-        id: 'bottom-panel',
-        layout: { id: 'bottom-pane', type: 'pane' as const, tabGroupId: bottomGroupId },
-        isCollapsed: true,
-        height: 200,
+        // The tree side: files, backlinks, activity, and the shell. A
+        // sidebar's width, plus room for a command line.
+        width: 340,
       },
     },
     floatingWindows: [],

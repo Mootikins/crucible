@@ -32,12 +32,43 @@ export async function appReady(page: Page): Promise<void> {
 export async function openSessionsList(page: Page): Promise<void> {
   const tab = page.getByTestId('edge-tab-left-sessions-tab');
   await expect(tab).toBeVisible({ timeout: READY_TIMEOUT });
-  if (!(await page.getByTestId('new-session-button').isVisible())) {
+  // Probe the tree itself, not a button inside it: New Session moved onto the
+  // project rows, so no single control marks the rail as open any more.
+  //
+  // ATTACHED on BOTH sides, not visible. With no projects and no sessions the
+  // tree renders no rows, so it has no box and Playwright calls it hidden — a
+  // visibility predicate would then click the tab on an ALREADY-OPEN rail and
+  // close the thing this helper was asked to open.
+  const tree = page.getByTestId('session-list');
+  if (!(await tree.isVisible()) && !(await tree.count())) {
     await tab.click();
   }
-  await expect(page.getByTestId('new-session-button')).toBeVisible({
-    timeout: READY_TIMEOUT,
-  });
+  await expect(tree).toBeAttached({ timeout: READY_TIMEOUT });
+}
+
+/**
+ * Start a session from the sessions rail.
+ *
+ * New Session lives on the PROJECT row — a session belongs to exactly one
+ * project, so the row that names the project is what starts work in it. Pass
+ * `projectPath` to pick one; the default takes the first group.
+ *
+ * The PATH, not the name: the tree folds worktrees into one group by basename,
+ * so two checkouts of one repo share a display name and only the path is
+ * unique.
+ *
+ * Hovers before clicking: the button is `opacity-0` at rest, and Playwright
+ * counts a transparent element as visible, so a bare click would pass while
+ * the affordance was unreachable by a human.
+ */
+export async function startNewSession(page: Page, projectPath?: string): Promise<void> {
+  await openSessionsList(page);
+  const button = projectPath
+    ? page.getByTestId(`session-group-new-${projectPath}`)
+    : page.locator('[data-testid^="session-group-new-"]').first();
+  await expect(button).toBeAttached({ timeout: READY_TIMEOUT });
+  await button.hover();
+  await button.click();
 }
 
 /** Click a session row in the sessions rail. */

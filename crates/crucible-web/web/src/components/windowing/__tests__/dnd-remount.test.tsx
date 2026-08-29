@@ -4,6 +4,7 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from '../TabBar';
 import { EdgePanel } from '../EdgePanel';
+import type { EdgePanelPosition } from '@/types/windowTypes';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { createInitialState, findFirstPane, generateId, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { DragSource } from '@/types/windowTypes';
@@ -104,7 +105,7 @@ const dragData = (id: string) => {
   return data?.type === 'tab' ? data : undefined;
 };
 
-const swapEdgeGroupId = (position: 'left' | 'bottom'): string => {
+const swapEdgeGroupId = (position: EdgePanelPosition): string => {
   const oldGid = primaryEdgeGroupId(windowStore, position)!;
   const newGid = generateId();
   setStore(produce((s) => {
@@ -123,22 +124,22 @@ it('collapsed strip icons re-register their draggable with the live group id aft
   // to true is a no-op that Solid's store setter never notifies on. Force the
   // opposite first so the collapse is a real transition even if the default
   // flips later.
-  setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = false; }));
-  setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = true; }));
-  const gid = primaryEdgeGroupId(windowStore, 'bottom')!;
+  setStore(produce((s) => { s.edgePanels.left.isCollapsed = false; }));
+  setStore(produce((s) => { s.edgePanels.left.isCollapsed = true; }));
+  const gid = primaryEdgeGroupId(windowStore, 'left')!;
   windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
 
   render(() => (
     <DragDropProvider>
       <Probe />
-      <EdgePanel position="bottom" />
+      <EdgePanel position="left" />
     </DragDropProvider>
   ));
 
-  const id = 'edgetab-collapsed:bottom:strip-tab';
+  const id = 'edgetab-collapsed:left:strip-tab';
   expect(dragData(id)?.sourceGroupId).toBe(gid);
 
-  const newGid = swapEdgeGroupId('bottom');
+  const newGid = swapEdgeGroupId('left');
   expect(dragData(id)?.sourceGroupId).toBe(newGid);
 });
 

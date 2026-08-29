@@ -14,8 +14,11 @@ import { markLayoutRestore } from '@/lib/layout-restore';
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
   collectLeafGroupIds,
+  expandedPanes,
   findFirstPane,
   findPaneAnywhere,
+  findPaneInLayout,
+  mirrorLayout,
   regionOfPane,
   updateRootWhere,
   updateSplitRatio,
@@ -30,6 +33,12 @@ export interface LayoutActions {
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
   setEdgePanelSize(position: EdgePanelPosition, size: number): void;
+  setRailPaneCollapsed(
+    position: EdgePanelPosition,
+    paneId: string,
+    collapsed: boolean
+  ): void;
+  toggleRailPaneCollapsed(position: EdgePanelPosition, paneId: string): void;
   getTabGroup(groupId: string): TabGroup | undefined;
   getPaneTabGroupId(paneId: string): string | null;
   findPaneById(paneId: string): ReturnType<typeof findPaneAnywhere>;
@@ -70,13 +79,18 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
   };
 
   /**
-   * Mirror the two side panels: what was on the left is now on the right.
+   * Mirror the WHOLE workspace left-to-right — a true flip, not a rail swap.
    *
-   * The CONTENTS move, the positions do not. Panels are keyed by position
-   * here, and the panel toggles are positional too (`toggleEdgePanel('left')`
-   * means "the left side", not "the session list"), so after a swap every
-   * toggle, ribbon and drop target still says what it does — nothing has to
-   * be remapped.
+   * Every column reverses: the two rails trade sides, and the centre tiling
+   * reverses with them, so a conversation left of its editor ends up right of
+   * it. Anything STACKED inside a column keeps its stacking — a terminal below
+   * the file tree is still below it after the flip. `mirrorLayout` encodes
+   * that rule (horizontal splits swap, vertical splits do not).
+   *
+   * It used to move the rails only, which left the centre unmirrored: after a
+   * flip the tree sat left, the session list right, and the conversation was
+   * still to the left of the editor it belongs to. Half a mirror reads as a
+   * bug, because the eye checks the whole row.
    *
    * `layout` and `width` travel with the contents: a file tree dragged out to
    * 320px stays 320px on its new side rather than being re-cramped every
@@ -98,14 +112,16 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
         // panel, and findEdgePanelForGroup answers in positions.
         const leftLayout = left.layout;
         const leftWidth = left.width;
-        left.layout = right.layout;
+        left.layout = mirrorLayout(right.layout);
         left.width = right.width;
-        right.layout = leftLayout;
+        right.layout = mirrorLayout(leftLayout);
         right.width = leftWidth;
+        // The centre reverses too, or the flip is only half done.
+        s.layout = mirrorLayout(s.layout);
         // The focus ring is drawn where this says, and the panes it named
         // just moved. Every other mover recomputes it from the tree
         // (findEdgePanelForPane / ForGroup); here the answer is known, so
-        // flip it. A focus on the center or the bottom is untouched.
+        // flip it. A focus on the centre is untouched.
         if (s.focusedRegion === 'left') s.focusedRegion = 'right';
         else if (s.focusedRegion === 'right') s.focusedRegion = 'left';
       })
@@ -144,13 +160,53 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
       : Math.max(100, Math.min(500, size));
     setStore(
       produce((s) => {
-        if (isVertical) {
-          s.edgePanels[position].width = clamped;
-        } else {
-          s.edgePanels[position].height = clamped;
-        }
+        // Both docks are side rails now, so width is the only axis. The
+        // `height` branch belonged to the bottom dock.
+        s.edgePanels[position].width = clamped;
       })
     );
+  };
+
+  /**
+   * Collapse ONE pane of a rail to its tab strip, leaving the rail open.
+   *
+   * Scoped to a rail on purpose: the centre tiling has no ribbon to expand a
+   * pane from again, so a collapsed centre pane would be a state with no way
+   * out. Passing the position is what enforces that.
+   */
+  const setRailPaneCollapsed = (
+    position: EdgePanelPosition,
+    paneId: string,
+    collapsed: boolean
+  ) => {
+    const rail = store.edgePanels[position];
+    if (!findPaneInLayout(rail.layout, paneId)) return;
+    // The LAST expanded pane may not collapse. A rail of nothing but bars
+    // reads as a broken rail, and hiding everything is what the rail's own
+    // collapse already does.
+    if (
+      collapsed &&
+      expandedPanes(rail.layout).every((p) => p.id === paneId)
+    ) {
+      return;
+    }
+    setStore(
+      produce((s) => {
+        // Mutated in place rather than rebuilt: only this leaf's flag changes,
+        // so the panes around it keep their nodes and never re-render.
+        const pane = findPaneInLayout(s.edgePanels[position].layout, paneId);
+        if (pane) pane.collapsed = collapsed;
+      })
+    );
+  };
+
+  const toggleRailPaneCollapsed = (
+    position: EdgePanelPosition,
+    paneId: string
+  ) => {
+    const pane = findPaneInLayout(store.edgePanels[position].layout, paneId);
+    if (!pane) return;
+    setRailPaneCollapsed(position, paneId, !pane.collapsed);
   };
 
   const getTabGroup = (groupId: string) => {
@@ -227,6 +283,8 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     setEdgePanelCollapsed,
     setEdgePanelActiveTab,
     setEdgePanelSize,
+    setRailPaneCollapsed,
+    toggleRailPaneCollapsed,
     getTabGroup,
     getPaneTabGroupId,
     findPaneById,

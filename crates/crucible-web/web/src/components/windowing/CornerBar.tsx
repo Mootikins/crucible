@@ -1,18 +1,23 @@
 import { Component, Show } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { shellActions } from '@/stores/shellStore';
-import { attentionStore } from '@/stores/attentionStore';
 
 /**
  * Floating chip cluster at the bottom-right of the center workspace — what
  * replaced the status bar. Everything here is about the ACTIVE BUFFER and is
- * transient: the save affordance (dirty buffer) and the attention chip (things
- * waiting on you). With nothing to say the cluster renders nothing at all,
- * which the notification bell used to prevent — it was global state parked in a
- * per-document corner, so it kept an empty chip row over every clean file. The
- * bell now sits at the bottom of the right ribbon, beside the panels it belongs
- * with, where collapsing the panel cannot take it away.
+ * transient: currently the save affordance for a dirty buffer. With nothing to
+ * say the cluster renders nothing at all, which the notification bell used to
+ * prevent — it was global state parked in a per-document corner, so it kept an
+ * empty chip row over every clean file. The bell now sits at the bottom of the
+ * right ribbon, beside the panels it belongs with, where collapsing the panel
+ * cannot take it away.
+ *
+ * The attention count left for the same reason, one step later. It read the
+ * same `attentionStore.attentionCount()` the titlebar badge reads, so two
+ * corners showed one number in two colours with two destinations — and the
+ * design has one rule for that colour: brass means bound to the active
+ * session. One count, one control. The Inbox is reachable from the switcher
+ * flyout and from the right ribbon.
  */
 export const CornerBar: Component = () => {
   // Configurable save affordance (Settings → Editor): the active buffer's
@@ -41,17 +46,6 @@ export const CornerBar: Component = () => {
             <span>Save</span>
           </button>
         )}
-      </Show>
-      <Show when={attentionStore.attentionCount() > 0}>
-        <button
-          type="button"
-          data-testid="status-inbox"
-          title="Open Inbox"
-          class="flex items-center gap-1 h-6 px-2 rounded-md border border-attention/40 bg-surface-elevated/90 backdrop-blur font-mono text-[11px] text-attention hover:bg-attention/15 transition-colors"
-          onClick={() => shellActions.goInbox()}
-        >
-          ▤ {attentionStore.attentionCount()}
-        </button>
       </Show>
     </div>
   );

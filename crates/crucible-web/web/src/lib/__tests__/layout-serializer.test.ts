@@ -70,12 +70,6 @@ function createTestState(): WindowState {
         isCollapsed: true,
         width: 250,
       },
-      bottom: {
-        id: 'bottom-panel',
-        layout: paneLayout('bottom-pane', bottomGroupId),
-        isCollapsed: false,
-        height: 200,
-      },
     },
     floatingWindows: [],
     activePaneId: 'pane-1',
@@ -90,11 +84,10 @@ describe('layout-serializer', () => {
     const serialized = serializeLayout(state);
     const deserialized = deserializeLayout(serialized);
 
-    expect(serialized.version).toBe(6);
+    expect(serialized.version).toBe(8);
 
     expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
     expect(panelGroupId(deserialized.edgePanels.right)!).toBeDefined();
-    expect(panelGroupId(deserialized.edgePanels.bottom)!).toBeDefined();
 
     const leftGroup = deserialized.tabGroups[panelGroupId(deserialized.edgePanels.left)!];
     expect(leftGroup).toBeDefined();
@@ -128,14 +121,6 @@ describe('layout-serializer', () => {
           activeTabId: null,
           isCollapsed: true,
           width: 250,
-        },
-        bottom: {
-          id: 'bottom-panel',
-          position: 'bottom',
-          tabs: [],
-          activeTabId: null,
-          isCollapsed: false,
-          height: 200,
         },
       },
       layout: { id: 'pane1', type: 'pane', tabGroupId: 'group1' },
@@ -183,13 +168,6 @@ describe('layout-serializer', () => {
           activeTabId: null,
           isCollapsed: true,
         },
-        bottom: {
-          id: 'bottom-panel',
-          position: 'bottom',
-          tabs: [],
-          activeTabId: null,
-          isCollapsed: false,
-        },
       },
       layout: { id: 'pane1', type: 'pane', tabGroupId: 'group1' },
       tabGroups: {
@@ -223,13 +201,6 @@ describe('layout-serializer', () => {
           activeTabId: null,
           isCollapsed: true,
         },
-        bottom: {
-          id: 'bottom-panel',
-          position: 'bottom',
-          tabs: [],
-          activeTabId: null,
-          isCollapsed: false,
-        },
       },
       layout: { id: 'pane1', type: 'pane', tabGroupId: 'group1' },
       tabGroups: {
@@ -242,7 +213,6 @@ describe('layout-serializer', () => {
 
     expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
     expect(panelGroupId(deserialized.edgePanels.right)!).toBeDefined();
-    expect(panelGroupId(deserialized.edgePanels.bottom)!).toBeDefined();
 
     const leftGroup = deserialized.tabGroups[panelGroupId(deserialized.edgePanels.left)!];
     expect(leftGroup.tabs.length).toBe(0);
@@ -260,7 +230,7 @@ describe('layout-serializer', () => {
     const deserialized1 = deserializeLayout(serialized1);
     const serialized2 = serializeLayout(deserialized1);
 
-    expect(serialized2.version).toBe(6);
+    expect(serialized2.version).toBe(8);
     expect(panelGroupId(serialized2.edgePanels.left)).toBe(panelGroupId(serialized1.edgePanels.left));
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();
@@ -306,12 +276,6 @@ describe('layout-serializer', () => {
           layout: paneLayout('right-pane', 'edge-right-group'),
           isCollapsed: true,
           width: 250,
-        },
-        bottom: {
-          id: 'bottom-panel',
-          layout: paneLayout('bottom-pane', 'edge-bottom-group'),
-          isCollapsed: false,
-          height: 200,
         },
       },
       floatingWindows: [],
@@ -391,7 +355,6 @@ describe('layout v2→v3 migration prunes removed content types', () => {
     edgePanels: {
       left: { id: 'left-panel', tabGroupId: 'left', isCollapsed: false, width: 250 },
       right: { id: 'right-panel', tabGroupId: 'right', isCollapsed: true, width: 250 },
-      bottom: { id: 'bottom-panel', tabGroupId: 'center', isCollapsed: true, height: 200 },
     },
     floatingWindows: [],
   });
@@ -477,7 +440,6 @@ describe('legacy generic chat tabs are pruned on every restore', () => {
     edgePanels: {
       left: { id: 'left-panel', tabGroupId: 'center', isCollapsed: false, width: 250 },
       right: { id: 'right-panel', tabGroupId: 'center', isCollapsed: true, width: 250 },
-      bottom: { id: 'bottom-panel', tabGroupId: 'center', isCollapsed: true, height: 200 },
     },
     floatingWindows: [],
   });
@@ -537,7 +499,6 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
     edgePanels: {
       left: { id: 'left-panel', tabGroupId: 'g-left', isCollapsed: false, width: 250 },
       right: { id: 'right-panel', tabGroupId: 'g-right', isCollapsed: true, width: 250 },
-      bottom: { id: 'bottom-panel', tabGroupId: 'g-bottom', isCollapsed: true, height: 200 },
     },
     floatingWindows: [],
   });
@@ -660,7 +621,7 @@ describe('v5 edge panels with split layout trees', () => {
       edgePanels: {},
       floatingWindows: [],
     } as never);
-    for (const pos of ['left', 'right', 'bottom'] as const) {
+    for (const pos of ['left', 'right'] as const) {
       expect(restored.edgePanels[pos]).toBeDefined();
       expect(restored.edgePanels[pos].isCollapsed).toBe(true);
       expect(restored.edgePanels[pos].layout).toMatchObject({ type: 'pane', tabGroupId: null });
@@ -718,11 +679,6 @@ describe('v5→v6 splits the Navigator into Sessions / Search / Files', () => {
         right: {
           id: 'right-panel',
           layout: paneLayout('right-pane', 'edge-right-group'),
-          isCollapsed: false,
-        },
-        bottom: {
-          id: 'bottom-panel',
-          layout: paneLayout('bottom-pane', 'edge-bottom-group'),
           isCollapsed: false,
         },
       },
@@ -852,5 +808,104 @@ describe('v5→v6 splits the Navigator into Sessions / Search / Files', () => {
       }),
     );
     expect(types(afterClose.tabGroups['edge-right-group'])).not.toContain('files');
+  });
+});
+
+describe('v6 -> v7: the terminal moves under the file tree', () => {
+  const v6 = (over: Record<string, unknown> = {}): any => ({
+    version: 6,
+    layout: { id: 'p', type: 'pane' as const, tabGroupId: 'g-editor' },
+    tabGroups: {
+      'g-editor': { id: 'g-editor', tabs: [], activeTabId: null },
+      'g-right': {
+        id: 'g-right',
+        tabs: [{ id: 'files-tab', title: 'Files', contentType: 'files' as const }],
+        activeTabId: 'files-tab',
+      },
+      'g-bottom': {
+        id: 'g-bottom',
+        tabs: [
+          { id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal' as const },
+          // Not a `chat` tab: a chat with no sessionId is a legacy placeholder
+          // and the always-on prune drops it, which would mask the assertion.
+          { id: 'search-tab', title: 'Search', contentType: 'search' as const },
+        ],
+        activeTabId: 'terminal-tab-1',
+      },
+    },
+    edgePanels: {
+      left: { id: 'l', layout: { id: 'lp', type: 'pane' as const, tabGroupId: 'g-left' }, isCollapsed: false },
+      right: { id: 'r', layout: { id: 'rp', type: 'pane' as const, tabGroupId: 'g-right' }, isCollapsed: true, width: 300 },
+      // A v6 layout HAS three docks — that is the shape the migration exists
+      // to read. My fixture sweep removed it and the migration then had
+      // nothing to find, which is a test that stopped testing.
+      bottom: { id: 'b', layout: { id: 'bp', type: 'pane' as const, tabGroupId: 'g-bottom' }, isCollapsed: true },
+    },
+    floatingWindows: [],
+    ...over,
+  });
+
+  /** Leaf group ids of a layout tree, top to bottom. */
+  const leaves = (n: any): string[] =>
+    n.type === 'pane' ? [n.tabGroupId] : [...leaves(n.first), ...leaves(n.second)];
+
+  it('stacks the terminal under the tree, not across the window', () => {
+    const out: any = deserializeLayout(v6() as never);
+    const right = out.edgePanels.right.layout;
+    // Vertical, tree first: a terminal belongs beside the files it runs
+    // against, and showing one should not cost the editor its height.
+    expect(right.type).toBe('split');
+    expect(right.direction).toBe('vertical');
+    const [top, bottom] = leaves(right);
+    expect(out.tabGroups[top].tabs.map((t: any) => t.contentType)).toEqual(['files']);
+    expect(out.tabGroups[bottom].tabs.map((t: any) => t.contentType)).toEqual(['terminal']);
+  });
+
+  it('rehomes whatever else was in the dock to the centre', () => {
+    const out: any = deserializeLayout(v6() as never);
+    // The dock itself is gone, so its survivors cannot stay there. They are
+    // the user's tabs; the centre is the one region that always exists.
+    expect(out.edgePanels.bottom).toBeUndefined();
+    const centre = leaves(out.layout).flatMap((g: string) =>
+      (out.tabGroups[g]?.tabs ?? []).map((t: any) => t.id),
+    );
+    expect(centre).toContain('search-tab');
+  });
+
+  it('does not resurrect a terminal the user closed', () => {
+    const stored = v6();
+    (stored.tabGroups as any)['g-bottom'] = { id: 'g-bottom', tabs: [], activeTabId: null };
+    const out: any = deserializeLayout(stored as never);
+    // Migrations run once per layout, so inventing a tab here would put one
+    // back for good.
+    expect(out.edgePanels.right.layout.type).toBe('pane');
+  });
+
+  it('leaves a terminal the user had already moved alone', () => {
+    const stored = v6();
+    (stored.tabGroups as any)['g-bottom'] = { id: 'g-bottom', tabs: [], activeTabId: null };
+    (stored.tabGroups as any)['g-editor'] = {
+      id: 'g-editor',
+      tabs: [{ id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal' }],
+      activeTabId: 'terminal-tab-1',
+    };
+    const out: any = deserializeLayout(stored as never);
+    // Only a terminal still docked at the BOTTOM moves; one dragged into a
+    // pane is already where its owner wanted it.
+    expect(leaves(out.layout).flatMap((g: string) => out.tabGroups[g].tabs.map((t: any) => t.id)))
+      .toContain('terminal-tab-1');
+    expect(out.edgePanels.right.layout.type).toBe('pane');
+  });
+
+  it('widens the rail enough for a command line', () => {
+    const out: any = deserializeLayout(v6() as never);
+    expect(out.edgePanels.right.width).toBeGreaterThanOrEqual(340);
+  });
+
+  it('keeps a rail the user had already widened', () => {
+    const stored: any = v6();
+    stored.edgePanels.right.width = 520;
+    const out: any = deserializeLayout(stored as never);
+    expect(out.edgePanels.right.width).toBe(520);
   });
 });

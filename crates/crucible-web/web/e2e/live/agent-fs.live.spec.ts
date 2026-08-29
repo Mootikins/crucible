@@ -4,7 +4,7 @@ import path from 'node:path';
 import { readHeroState } from './hero-state';
 import { AGENT_FS_WRITE } from './hero-script';
 import { findTuiTestBinary, runTuiLeg } from './tui-leg-runner';
-import { appReady, openSessionsList } from '../helpers/nav';
+import { appReady, startNewSession } from '../helpers/nav';
 
 /**
  * The flagship full-flow journey: new session → agent responds → agent
@@ -76,18 +76,17 @@ test('agent writes a file: TUI leg then web leg, both via a real permission appr
 
   // ── PART B — web console: New Session, tool call, real permission prompt ──
   await page.goto(state.baseURL!);
-  // App ready, then Navigator into Sessions scope — `new-session-button` only
-  // exists there. Both via e2e/helpers/nav.ts, the same path the mock tier
-  // takes (e2e/new-session-chat-tab.spec.ts); asserting the testid inline is
-  // what let this spec rot past the Navigator refactor.
+  // App ready, then the sessions rail: New Session lives on a project row
+  // there. Both via e2e/helpers/nav.ts, the same path the mock tier takes
+  // (e2e/new-session-chat-tab.spec.ts); asserting the testid inline is what
+  // let this spec rot past the Navigator refactor.
   await appReady(page);
-  await openSessionsList(page);
 
   // New Session opens a DRAFT surface with the center composer — nothing hits
   // the daemon until the first message, which creates the session and swaps the
   // draft tab for a real chat tab (`chat-input`). This spec used to reach
   // straight for `chat-input`, which only exists after that swap.
-  await page.getByTestId('new-session-button').click();
+  await startNewSession(page);
   await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 });
 
   // Bind the draft to the registered project. The composer defaults to

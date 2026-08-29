@@ -22,9 +22,16 @@ import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { smallestIntersecting } from '@/lib/collision-detector';
 import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 
-// There is no header bar: the edge ribbons carry the shell chrome (panel
-// toggles, palette, new session, settings) and the status bar carries the
-// context + attention indicators. The center belongs entirely to content.
+// The chrome splits three ways, and none of them is a title bar. The edge
+// ribbons carry panel chrome (toggles, palette, new session, settings); the
+// session pane carries its own switcher and waiting badge, beside the session
+// it names; the corner cluster carries per-buffer state. Everything else
+// belongs to content.
+//
+// There WAS a full-width title bar here. It held three 24px controls and then
+// ~1400px of nothing, with an 11px project label at the far right — the
+// faintest text in the shell, and the only thing the whole right half existed
+// to show.
 
 function DragOverlayContent() {
   const dndContext = useDragDropContext();
@@ -67,7 +74,7 @@ function InnerManager() {
       const droppingOnSameEdgePanel =
         target?.type === 'edgePanel' &&
         collectLeafGroupIds(
-          windowStore.edgePanels[target.panelId as 'left' | 'right' | 'bottom'].layout
+          windowStore.edgePanels[target.panelId as 'left' | 'right'].layout
         ).includes(source.sourceGroupId);
       if (!target || droppingOnSameGroup || droppingOnSameEdgePanel) {
         windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
@@ -114,7 +121,7 @@ function InnerManager() {
           target.insertIndex
         );
       } else if (target.type === 'edgePanel') {
-        const targetPosition = target.panelId as 'left' | 'right' | 'bottom';
+        const targetPosition = target.panelId as 'left' | 'right';
         const panel = windowStore.edgePanels[targetPosition];
         const edgeGroupId = panel
           ? primaryEdgeGroupId(windowStore, targetPosition)
@@ -176,8 +183,6 @@ function InnerManager() {
       window.dispatchEvent(new CustomEvent('crucible:new-session'));
     } else if (action === 'toggleRightPanel') {
       windowActions.toggleEdgePanel('right');
-    } else if (action === 'toggleBottomPanel') {
-      windowActions.toggleEdgePanel('bottom');
     } else if (action === 'clearChat') {
       window.dispatchEvent(new CustomEvent('crucible:clear-chat'));
     } else if (action === 'toggleThinking') {
@@ -212,7 +217,6 @@ function InnerManager() {
             <CenterTiling />
             <CornerBar />
           </div>
-          <EdgePanel position="bottom" />
         </div>
         <EdgePanel position="right" />
       </div>

@@ -1,6 +1,6 @@
 import type { Component } from 'solid-js';
 
-export type Zone = 'left' | 'center' | 'right' | 'bottom';
+export type Zone = 'left' | 'center' | 'right';
 
 export interface PanelDefinition {
   id: string;

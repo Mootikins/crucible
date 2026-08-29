@@ -46,11 +46,27 @@ test.describe('Session list', () => {
     await expect(page.getByTestId('session-item-archived-001')).toHaveCount(0);
   });
 
-  test('shows an empty-state line when there are no sessions', async ({ page }) => {
+  test('says a registered project is empty on the project row itself', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [] });
     await page.goto('/');
     await openSessionsList(page);
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
+
+    // The rail is two tiers now, and an empty project states its emptiness as
+    // a COUNT on its own row — beside the New Session button that fixes it.
+    // The old "No sessions" body cost two rows per empty project, which with
+    // twenty registered projects was thirty rows of nothing.
+    const group = page.getByTestId('session-group-/home/user/project');
+    await expect(group).toBeVisible();
+    await expect(group).toContainText('0');
+    await expect(page.getByTestId('session-group-new-/home/user/project')).toBeAttached();
+  });
+
+  test('falls back to a panel-wide empty state with no projects either', async ({ page }) => {
+    await setupBasicMocks(page, { sessions: [], projects: [] });
+    await page.goto('/');
+    await openSessionsList(page);
+    // No project rows to carry the message, so the panel says it.
     await expect(page.getByText('No sessions yet')).toBeVisible();
   });
 });

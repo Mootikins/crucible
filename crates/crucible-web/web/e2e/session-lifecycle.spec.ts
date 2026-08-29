@@ -118,7 +118,7 @@ test.describe('Session Lifecycle', () => {
 
   // ── Delete Session: native confirm() dialog + DELETE request ───────
   // E2E: verifies the browser-native window.confirm() dialog is accepted by the page's dialog handler and the DELETE method actually fires — the confirm() round-trip only exists at the browser boundary.
-  test('deletes a session via hover action button with confirmation', async ({ page }) => {
+  test('deletes a session from the context menu with confirmation', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
 
     // Mock the DELETE endpoint
@@ -147,16 +147,16 @@ test.describe('Session Lifecycle', () => {
       (req) => req.url().includes('test-session-001') && req.method() === 'DELETE',
     );
 
-    // Hover over the session row to reveal action buttons
-    const sessionRow = page.getByTestId('session-item-test-session-001');
-    await sessionRow.hover();
+    // Delete lives in the row's CONTEXT MENU, not in the hover strip: a red
+    // destructive button 4px from Archive, on every row, is not how any file
+    // explorer ships a destructive tree operation.
+    await page.getByTestId('session-item-test-session-001').click({ button: 'right' });
+    const deleteItem = page.getByTestId('session-group-menu-delete-session');
+    await expect(deleteItem).toBeVisible({ timeout: 5000 });
 
-    // Wait for the delete button to become visible (opacity transition)
-    const deleteButton = sessionRow.getByTitle('Delete session');
-    await expect(deleteButton).toBeVisible({ timeout: 5000 });
-
-    // Click delete
-    await deleteButton.click();
+    // zag highlights on pointerdown and selects the highlighted item on click.
+    await deleteItem.hover();
+    await deleteItem.click();
 
     // Assert: DELETE API was called
     const deleteRequest = await deletePromise;

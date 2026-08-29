@@ -4,6 +4,7 @@ import type {
   EdgePanel,
   EdgePanelPosition,
   FloatingWindow,
+  PaneNode,
   Tab,
   TabContentType,
 } from '@/types/windowTypes';
@@ -107,7 +108,7 @@ export function serializeLayout(state: {
   }
 
   return {
-    version: 6,
+    version: 8,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
@@ -270,11 +271,174 @@ function migrateV5toV6(v5: SerializedLayout): SerializedLayout {
   return { ...v5, version: 6, tabGroups };
 }
 
+// The terminal was a full-width dock across the bottom of the window, so
+// showing a shell cost the EDITOR its height — for a tool that belongs beside
+// the files it runs against. It moves into the file-tree rail as a pane under
+// the tree, which is also what makes it survive a flip intact: `mirrorLayout`
+// reverses columns and leaves what is stacked inside them alone.
+//
+// Moved IN PLACE and only when the user still has one: a terminal they closed
+// is not resurrected, and one they had already dragged somewhere else is left
+// where they put it. The version bump is what makes that safe — this runs
+// exactly once per stored layout.
+const V7_TERMINAL_PANE_ID = 'right-term-pane';
+const V7_TERMINAL_GROUP_ID = 'right-term-group';
+
+function migrateV6toV7(v6: SerializedLayout): SerializedLayout {
+  // A v6 layout still carries THREE docks; `EdgePanelPosition` now names two,
+  // so the stored shape is read loosely here. That is the point of a
+  // migration: it is the one place the old shape is still real.
+  const stored = v6.edgePanels as unknown as Record<string, SerializedEdgePanel | undefined>;
+  const bottom = stored?.bottom;
+  const right = stored?.right;
+  if (!bottom || !right?.layout) return dropBottomDock({ ...v6, version: 7 });
+
+  const bottomGroupIds = new Set(edgePanelGroupIds(bottom));
+  // Only a terminal still docked at the BOTTOM moves. One the user dragged to
+  // a pane or a rail is already where they wanted it.
+  const source = [...bottomGroupIds]
+    .map((id) => v6.tabGroups[id])
+    .find((g) => g?.tabs.some((t) => t.contentType === 'terminal'));
+  if (!source) return { ...v6, version: 7 };
+
+  const terminals = source.tabs.filter((t) => t.contentType === 'terminal');
+  const tabGroups: Record<string, SerializedTabGroup> = { ...v6.tabGroups };
+  const kept = source.tabs.filter((t) => t.contentType !== 'terminal');
+  tabGroups[source.id] = {
+    id: source.id,
+    tabs: kept,
+    activeTabId: kept.some((t) => t.id === source.activeTabId)
+      ? source.activeTabId
+      : (kept[0]?.id ?? null),
+  };
+  tabGroups[V7_TERMINAL_GROUP_ID] = {
+    id: V7_TERMINAL_GROUP_ID,
+    tabs: terminals,
+    activeTabId: terminals[0]?.id ?? null,
+  };
+
+  const edgePanels = {
+    ...v6.edgePanels,
+    right: {
+      ...right,
+      layout: {
+        id: 'right-split',
+        type: 'split' as const,
+        direction: 'vertical' as const,
+        splitRatio: 0.65,
+        first: right.layout,
+        second: {
+          id: V7_TERMINAL_PANE_ID,
+          type: 'pane' as const,
+          tabGroupId: V7_TERMINAL_GROUP_ID,
+        },
+      },
+      // A tree's width plus room for a command line.
+      width: Math.max(right.width ?? 0, 340),
+    },
+  };
+
+  return dropBottomDock({ ...v6, version: 7, tabGroups, edgePanels } as SerializedLayout);
+}
+
+// A rail pane collapses to its tab strip on its own, which gives the terminal
+// an honest default: a BAR under the file tree instead of a third of the rail
+// held open for a shell nobody started. v7 stored the terminal pane expanded,
+// so the flag is set once here — the same shape `createInitialState` seeds.
+//
+// Every terminal-only pane in a rail, not the id `migrateV6toV7` minted: a
+// user who dragged the shell into the other rail still gets the new default.
+// A rail's LAST expanded pane is left alone — that invariant is what keeps a
+// rail from becoming a stack of bars with nothing open.
+function migrateV7toV8(v7: SerializedLayout): SerializedLayout {
+  const isTerminalOnly = (groupId: string | null): boolean => {
+    const group = groupId ? v7.tabGroups[groupId] : undefined;
+    return !!group && group.tabs.length > 0
+      && group.tabs.every((t) => t.contentType === 'terminal');
+  };
+
+  const edgePanels = {} as Record<EdgePanelPosition, SerializedEdgePanel>;
+  for (const [pos, panel] of Object.entries(v7.edgePanels)) {
+    const panes = panelPanes(panel.layout);
+    const collapsing = new Set(
+      panes.filter((p) => isTerminalOnly(p.tabGroupId)).map((p) => p.id)
+    );
+    if (panes.every((p) => collapsing.has(p.id))) collapsing.clear();
+    edgePanels[pos as EdgePanelPosition] = collapsing.size
+      ? { ...panel, layout: markCollapsed(panel.layout, collapsing) }
+      : panel;
+  }
+  return { ...v7, version: 8, edgePanels };
+}
+
+/** Leaf panes of a serialized panel tree, in order. */
+function panelPanes(node: LayoutNode | undefined): PaneNode[] {
+  if (!node) return [];
+  if (node.type === 'pane') return [node];
+  return [...panelPanes(node.first), ...panelPanes(node.second)];
+}
+
+function markCollapsed(node: LayoutNode, ids: Set<string>): LayoutNode {
+  if (node.type === 'pane') {
+    return ids.has(node.id) ? { ...node, collapsed: true } : node;
+  }
+  return {
+    ...node,
+    first: markCollapsed(node.first, ids),
+    second: markCollapsed(node.second, ids),
+  };
+}
+
+/**
+ * Delete the bottom dock, rehoming anything still in it.
+ *
+ * The dock is gone as a concept — `EdgePanelPosition` names two sides — so a
+ * stored layout that still has one would otherwise keep a panel nothing can
+ * reach, render or close. Surviving tabs go to the CENTRE rather than being
+ * dropped: they are the user's, and the centre is the one region that always
+ * exists.
+ */
+function dropBottomDock(layout: SerializedLayout): SerializedLayout {
+  const stored = layout.edgePanels as unknown as Record<string, SerializedEdgePanel | undefined>;
+  const bottom = stored?.bottom;
+  if (!bottom) return layout;
+
+  const { bottom: _dropped, ...sides } = stored;
+  const orphans = edgePanelGroupIds(bottom).flatMap((id) => layout.tabGroups[id]?.tabs ?? []);
+
+  const tabGroups = { ...layout.tabGroups };
+  for (const id of edgePanelGroupIds(bottom)) delete tabGroups[id];
+
+  if (orphans.length) {
+    const centreId = centreGroupIds(layout.layout).find((id) => tabGroups[id]);
+    const centre = centreId ? tabGroups[centreId] : undefined;
+    if (centre) {
+      tabGroups[centre.id] = {
+        ...centre,
+        tabs: [...centre.tabs, ...orphans],
+        activeTabId: centre.activeTabId ?? orphans[0]?.id ?? null,
+      };
+    }
+  }
+
+  return {
+    ...layout,
+    tabGroups,
+    edgePanels: sides as unknown as SerializedLayout['edgePanels'],
+  };
+}
+
+/** Leaf group ids of the centre layout tree. */
+function centreGroupIds(node: LayoutNode): string[] {
+  if (node.type === 'pane') return node.tabGroupId ? [node.tabGroupId] : [];
+  return [...centreGroupIds(node.first), ...centreGroupIds(node.second)];
+}
+
 function migrateV1toV2(v1: any): SerializedLayout {
   const newTabGroups = { ...v1.tabGroups };
 
   // Migrate each edge panel
-  for (const pos of ['left', 'right', 'bottom'] as const) {
+  for (const pos of ['left', 'right'] as const) {
     const panel = v1.edgePanels[pos];
     // Absent positions synthesize defaults at the end of deserializeLayout.
     if (!panel) continue;
@@ -320,7 +484,9 @@ export function deserializeLayout(json: SerializedLayout): {
   // Auto-migrate forward: v1 → v2 (edge-panel tab groups) → v3 (prune tabs
   // whose content type is no longer registered) → v4 (chat-worthy right
   // panel width) → v5 (edge panels carry layout trees) → v6 (the Navigator
-  // splits into Sessions / Search / Files).
+  // splits into Sessions / Search / Files) → v7 (the bottom dock goes; the
+  // terminal moves into the file rail) → v8 (rail panes collapse on their
+  // own; the terminal ships collapsed).
   let layout = json;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
@@ -338,7 +504,13 @@ export function deserializeLayout(json: SerializedLayout): {
     layout = migrateV5toV6(layout);
   }
 
-  if (layout.version !== 6) {
+  if (layout.version === 6) {
+    layout = migrateV6toV7(layout);
+  }
+  if (layout.version === 7) {
+    layout = migrateV7toV8(layout);
+  }
+  if (layout.version !== 8) {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 
@@ -456,14 +628,14 @@ export function deserializeLayout(json: SerializedLayout): {
   // panel/ribbon/composer read crashes ("can't access property 'layout'"),
   // bricking the whole shell. Absent positions get a collapsed empty panel.
   const edgePanels = {} as Record<EdgePanelPosition, EdgePanel>;
-  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
     const panel = layout.edgePanels?.[pos];
     if (!panel) {
       edgePanels[pos] = {
         id: `${pos}-panel`,
         layout: { id: `${pos}-pane`, type: 'pane', tabGroupId: null },
         isCollapsed: true,
-        ...(pos === 'bottom' ? { height: 200 } : { width: 280 }),
+        width: 280,
       };
       continue;
     }

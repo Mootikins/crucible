@@ -2,6 +2,7 @@ import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js
 import { Pane } from './Pane';
 import { windowActions } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
+import { isCollapsedLeaf, paneFlex } from '@/lib/pane-collapse';
 
 const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }> = (props) => {
   const split = () => props.node;
@@ -17,6 +18,13 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
   });
 
   const effectiveRatio = () => (isDragging() ? localRatio() : split().splitRatio);
+
+  const firstCollapsed = () => isCollapsedLeaf(split().first);
+  const secondCollapsed = () => isCollapsedLeaf(split().second);
+  // `splitRatio` is NOT touched while a side is collapsed: it is what the pane
+  // opens back to. The splitter is therefore inert instead — a drag that moved
+  // an invisible ratio would silently rewrite the restore size.
+  const locked = () => firstCollapsed() || secondCollapsed();
 
   onCleanup(() => {
     if (cleanupRef) {
@@ -81,27 +89,39 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
     >
       <div
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
-        style={{ flex: `${effectiveRatio()} 1 0` }}
+        style={{ flex: paneFlex(split().first, effectiveRatio()) }}
       >
         <SplitPane node={split().first} />
       </div>
       {/* 1px visible line; the after: pseudo extends the pointer target ±4px
-          so the thin separator is still comfortable to grab. */}
+          so the thin separator is still comfortable to grab. Locked against a
+          collapsed side it stays as the separator and drops both the grab
+          target and the resize cursor. */}
       <div
         data-testid="resize-splitter"
         data-split-id={split().id}
+        data-locked={locked() ? 'true' : undefined}
         classList={{
-          'relative flex-shrink-0 z-10 pointer-events-auto transition-colors after:content-[\'\'] after:absolute': true,
-          'w-px cursor-col-resize after:inset-y-0 after:-inset-x-1': split().direction === 'horizontal',
-          'h-px cursor-row-resize after:inset-x-0 after:-inset-y-1': split().direction !== 'horizontal',
+          'relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
+          'after:content-[\'\'] after:absolute': !locked(),
+          'w-px': split().direction === 'horizontal',
+          'h-px': split().direction !== 'horizontal',
+          'cursor-col-resize after:inset-y-0 after:-inset-x-1':
+            split().direction === 'horizontal' && !locked(),
+          'cursor-row-resize after:inset-x-0 after:-inset-y-1':
+            split().direction !== 'horizontal' && !locked(),
           'bg-primary': isDragging(),
-          'bg-control hover:bg-hover-wash': !isDragging(),
+          'bg-control': locked() && !isDragging(),
+          'bg-control hover:bg-hover-wash': !locked() && !isDragging(),
         }}
-        on:pointerdown={handlePointerDown}
+        on:pointerdown={(e) => {
+          if (locked()) return;
+          handlePointerDown(e);
+        }}
       />
       <div
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
-        style={{ flex: `${1 - effectiveRatio()} 1 0` }}
+        style={{ flex: paneFlex(split().second, 1 - effectiveRatio()) }}
       >
         <SplitPane node={split().second} />
       </div>

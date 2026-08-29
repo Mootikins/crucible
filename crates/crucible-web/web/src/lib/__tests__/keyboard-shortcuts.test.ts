@@ -62,11 +62,14 @@ describe('keyboard-shortcuts', () => {
       expect(matchShortcut(event)).toBe('newSession');
     });
 
-    it('matches Ctrl+Shift+E / Ctrl+Shift+B panel toggles with uppercase keys', () => {
+    it('matches the Ctrl+Shift+E panel toggle with an uppercase key', () => {
       const make = (key: string) =>
         ({ key, ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }) as KeyboardEvent;
       expect(matchShortcut(make('E'))).toBe('toggleRightPanel');
-      expect(matchShortcut(make('B'))).toBe('toggleBottomPanel');
+      // Ctrl+Shift+B was the bottom dock's toggle. The dock is gone, and so
+      // is the binding — a shortcut for a region that cannot exist is a key
+      // the next feature cannot have.
+      expect(matchShortcut(make('B'))).toBeNull();
     });
 
     it('keeps named keys exact (shift+tab is cycleMode, not a char match)', () => {

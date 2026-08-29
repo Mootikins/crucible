@@ -4,45 +4,59 @@ import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 
 /**
- * E2E: New Session Button Position
+ * E2E: where New Session lives in the sessions rail.
  *
- * Verifies that the "New Session" button appears ABOVE session items in the list,
- * not below them.
+ * It used to be one button over a flat list, and this spec asserted it sat
+ * above the rows. The rail is now two tiers — project over session — and New
+ * Session belongs to the PROJECT row, because a session belongs to exactly
+ * one project and a panel-wide button could not say which one it meant.
+ *
+ * The claim survives in the form that still means something: the affordance
+ * for a project sits on that project's own header, above the sessions it
+ * would join.
  */
-
-test.describe('New Session Button Position', () => {
-  test('New Session button appears BEFORE session items in the list', async ({ page }) => {
-    // Set up mocks with multiple sessions to ensure button is visually above them
-    await setupBasicMocks(page, {
-      sessions: [MOCK_SESSION, MOCK_SESSION_2],
-    });
+test.describe('New Session lives on the project row', () => {
+  test('the project header carries New Session, above its sessions', async ({ page }) => {
+    await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
 
     await page.goto('/');
     await openSessionsList(page);
 
-    // Wait for the session list to be visible
     const sessionList = page.getByTestId('session-list');
     await expect(sessionList).toBeVisible({ timeout: 10000 });
 
-    // Get the New Session button
-    const newSessionBtn = page.getByTestId('new-session-button');
-    await expect(newSessionBtn).toBeVisible({ timeout: 5000 });
+    // MOCK_SESSION's workspace is MOCK_PROJECT's path, so both rows group here.
+    const groupRow = page.getByTestId('session-group-/home/user/project');
+    await expect(groupRow).toBeVisible({ timeout: 5000 });
 
-    // Get the first session item
+    const newSessionBtn = page.getByTestId('session-group-new-/home/user/project');
+    await expect(newSessionBtn).toBeAttached({ timeout: 5000 });
+    // Transparent until hover — Playwright counts that as visible, so hover
+    // before measuring or the box would be of a control no human can reach.
+    await groupRow.hover();
+
     const firstSessionItem = page.getByTestId('session-item-test-session-001');
     await expect(firstSessionItem).toBeVisible({ timeout: 5000 });
 
-    // Get bounding boxes
     const buttonBox = await newSessionBtn.boundingBox();
     const firstItemBox = await firstSessionItem.boundingBox();
-
-    // Assert: button's Y position must be LESS than first session item's Y position
-    // (button appears above = smaller Y coordinate)
     expect(buttonBox).toBeTruthy();
     expect(firstItemBox).toBeTruthy();
 
     if (buttonBox && firstItemBox) {
       expect(buttonBox.y).toBeLessThan(firstItemBox.y);
     }
+  });
+
+  test('the panel carries no project-less New Session button', async ({ page }) => {
+    await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
+
+    await page.goto('/');
+    await openSessionsList(page);
+
+    // The one that could not name its project is gone; the ribbon still has a
+    // project-agnostic entry point for when you have no project in mind.
+    await expect(page.getByTestId('new-session-button')).toHaveCount(0);
+    await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible();
   });
 });

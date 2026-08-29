@@ -38,7 +38,7 @@ export function registerPanels(): void {
   registry.register('chat-draft', 'New Session', CenterComposer, 'center');
   registry.register('inbox', 'Inbox', InboxPanel, 'center');
   registry.register('activity', 'Activity', ActivityPanel, 'right');
-  registry.register('terminal', 'Terminal', TerminalPanel, 'bottom');
+  registry.register('terminal', 'Terminal', TerminalPanel, 'right');
   registry.register('file', 'File', FileViewerPanel, 'center');
   registry.register('skills', 'Skills', SkillsPanel, 'left');
   registry.register('plugins', 'Plugins', PluginPanel, 'left');

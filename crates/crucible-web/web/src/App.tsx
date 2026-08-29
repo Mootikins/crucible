@@ -213,15 +213,6 @@ const App: Component = () => {
       keywords: ['swap', 'mirror', 'flip', 'sides', 'panel'],
       action: () => windowActions.swapSidePanels(),
     },
-    {
-      id: 'nav-toggle-bottom',
-      label: 'Toggle Bottom Panel',
-      description: 'Collapse or expand the bottom edge panel.',
-      shortcut: 'Ctrl+Shift+B',
-      category: 'Navigation',
-      keywords: ['toggle', 'bottom', 'terminal', 'panel'],
-      action: () => windowActions.toggleEdgePanel('bottom'),
-    },
   ];
 
   onMount(() => {
@@ -278,7 +269,11 @@ const App: Component = () => {
     window.addEventListener('crucible:export-session', onExportSession);
     // Every new-session entry point (ribbon, Home, palette, empty states)
     // opens the draft surface; the session is created lazily on first send.
-    const onNewSession = () => openDraftSession();
+    // `detail.workspace` names the project the session acts in — the sessions
+    // tree's per-project New Session row sends it. Absent means "unset", which
+    // the composer leaves for the user to pick.
+    const onNewSession = (e: Event) =>
+      openDraftSession({ workspace: (e as CustomEvent).detail?.workspace });
     window.addEventListener('crucible:new-session', onNewSession);
     const onOpenSession = (e: Event) => {
       const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;

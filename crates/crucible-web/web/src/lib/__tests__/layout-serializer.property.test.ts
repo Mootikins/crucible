@@ -73,8 +73,8 @@ const arbWindowState = fc
     fc.uuid(),
     fc.uuid(),
   )
-  .chain(([centerGroupIds, leftGroupId, rightGroupId, bottomGroupId]) => {
-    const allGroupIds = [...centerGroupIds, leftGroupId, rightGroupId, bottomGroupId];
+  .chain(([centerGroupIds, leftGroupId, rightGroupId]) => {
+    const allGroupIds = [...centerGroupIds, leftGroupId, rightGroupId];
     const centerGroupId = centerGroupIds[0] || leftGroupId;
 
     return fc
@@ -88,7 +88,6 @@ const arbWindowState = fc
         edgePanels: fc.constant({
           left: fc.sample(arbEdgePanel(leftGroupId), 1)[0],
           right: fc.sample(arbEdgePanel(rightGroupId), 1)[0],
-          bottom: fc.sample(arbEdgePanel(bottomGroupId), 1)[0],
         }),
         floatingWindows: fc.array(
           fc.record({
@@ -106,7 +105,7 @@ const arbWindowState = fc
           { maxLength: 3 },
         ),
         activePaneId: fc.option(fc.uuid(), { freq: 2 }),
-        focusedRegion: fc.constantFrom('center', 'left', 'right', 'bottom'),
+        focusedRegion: fc.constantFrom('center', 'left', 'right'),
         nextZIndex: fc.integer({ min: 1, max: 1000 }),
       })
       .map((state) => state as WindowState);
@@ -161,8 +160,8 @@ describe('layout-serializer property tests', () => {
           fc.uuid(),
           fc.uuid(),
         ),
-        ([centerGroupIds, leftGroupId, rightGroupId, bottomGroupId]) => {
-          const allGroupIds = [...centerGroupIds, leftGroupId, rightGroupId, bottomGroupId];
+        ([centerGroupIds, leftGroupId, rightGroupId]) => {
+          const allGroupIds = [...centerGroupIds, leftGroupId, rightGroupId];
           const centerGroupId = centerGroupIds[0] || leftGroupId;
 
           const state: WindowState = {
@@ -173,7 +172,6 @@ describe('layout-serializer property tests', () => {
             edgePanels: {
               left: fc.sample(arbEdgePanel(leftGroupId), 1)[0],
               right: fc.sample(arbEdgePanel(rightGroupId), 1)[0],
-              bottom: fc.sample(arbEdgePanel(bottomGroupId), 1)[0],
             },
             floatingWindows: [],
             activePaneId: null,

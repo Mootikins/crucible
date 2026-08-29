@@ -43,6 +43,21 @@ export interface PaneNode {
   id: string;
   type: 'pane';
   tabGroupId: string | null;
+  /**
+   * Collapsed to its tab strip, independently of the rail's own collapse.
+   *
+   * The flag lives on the NODE, not in a set of pane ids on the EdgePanel,
+   * because the node is the one thing every layout transform already carries.
+   * `mirrorLayout` returns leaves untouched, so a flip keeps it for free;
+   * `insertPaneRelative`, `collapseEmptyNodes` and `updateRootWhere` rebuild
+   * trees around leaves; and `serializeLayout` deep-clones the tree, so it
+   * persists with no new field. A side set would need its own mirror rule, its
+   * own serialized slot, and a sweep for ids no pane owns any more.
+   *
+   * Optional, not required: a v7 layout deserializes unchanged, and an absent
+   * flag means expanded.
+   */
+  collapsed?: boolean;
 }
 
 interface SplitNode {
@@ -57,7 +72,17 @@ interface SplitNode {
 export type LayoutNode = PaneNode | SplitNode;
 
 // Edge panel types
-export type EdgePanelPosition = 'left' | 'right' | 'bottom';
+/**
+ * The two docks. There was a third, `bottom`, a full-width dock that held the
+ * terminal — so showing a shell cost the EDITOR its height, for a tool that
+ * belongs beside the files it runs against. The terminal moved into the file
+ * rail as a pane under the tree; nothing else ever lived down there.
+ *
+ * Two values, not three-with-one-unused: a dock nothing can reach is a drop
+ * target, a ribbon, a toggle, a shortcut and a serialized slot that all still
+ * have to be maintained.
+ */
+export type EdgePanelPosition = 'left' | 'right';
 
 export type FocusedRegion = EdgePanelPosition | 'center';
 

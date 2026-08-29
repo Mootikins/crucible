@@ -14,7 +14,7 @@ function resetToState(overrides: Partial<{
   }>;
   layout: LayoutNode;
   activePaneId: string | null;
-  focusedRegion: 'left' | 'right' | 'bottom' | 'center';
+  focusedRegion: 'left' | 'right' | 'center';
 }>) {
   setStore(
     produce((s) => {
@@ -37,7 +37,7 @@ const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollap
   id: `${position}-panel`,
   tabGroupId,
   isCollapsed,
-  ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
+  width: 250,
 });
 
 const makeTabGroup = (id: string, tabs: Tab[], activeTabId: string | null = tabs[0]?.id ?? null): TabGroup => ({
@@ -65,12 +65,10 @@ describe('reorder tabs in edge tab groups via moveTab', () => {
         'right-group': makeTabGroup('right-group', [
           { id: 'right-1', title: 'Outline', contentType: 'tool' },
         ], 'right-1'),
-        'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -130,12 +128,10 @@ describe('reorder tabs in edge tab groups via moveTab', () => {
         'two-tab-group': makeTabGroup('two-tab-group', [makeTab('A'), makeTab('B')], 'A'),
         'left-group': makeTabGroup('left-group', []),
         'right-group': makeTabGroup('right-group', []),
-        'bottom-group': makeTabGroup('bottom-group', []),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -157,12 +153,10 @@ describe('reorder tabs in edge tab groups via moveTab', () => {
         'noop-group': makeTabGroup('noop-group', [makeTab('A'), makeTab('B'), makeTab('C')], 'A'),
         'left-group': makeTabGroup('left-group', []),
         'right-group': makeTabGroup('right-group', []),
-        'bottom-group': makeTabGroup('bottom-group', []),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -185,12 +179,10 @@ describe('reorder tabs in edge tab groups via moveTab', () => {
         'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
         'left-group': makeTabGroup('left-group', [makeTab('L1'), makeTab('L2'), makeTab('L3')], 'L1'),
         'right-group': makeTabGroup('right-group', []),
-        'bottom-group': makeTabGroup('bottom-group', []),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',

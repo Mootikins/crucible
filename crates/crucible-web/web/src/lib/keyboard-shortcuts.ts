@@ -30,7 +30,6 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { key: 'n', modifiers: ['ctrl', 'shift'], action: 'newSession', description: 'New chat session' },
   // Panel toggles
   { key: 'e', modifiers: ['ctrl', 'shift'], action: 'toggleRightPanel', description: 'Toggle right panel' },
-  { key: 'b', modifiers: ['ctrl', 'shift'], action: 'toggleBottomPanel', description: 'Toggle bottom panel' },
   // Chat actions
   { key: 'k', modifiers: ['ctrl'], action: 'clearChat', description: 'Clear chat' },
   // Thinking display toggle — Ctrl+T / Cmd+T

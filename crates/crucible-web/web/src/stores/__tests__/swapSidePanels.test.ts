@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState } from '@/stores/windowStoreInternals';
-import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import {
+  collectLeafGroupIds,
+  createInitialState,
+  findFirstPane,
+  mirrorLayout,
+  primaryEdgeGroupId,
+} from '@/stores/windowStoreInternals';
+import type { LayoutNode } from '@/types/windowTypes';
 
 const leftGroup = () => primaryEdgeGroupId(windowStore, 'left');
 const rightGroup = () => primaryEdgeGroupId(windowStore, 'right');
@@ -88,5 +94,136 @@ describe('swapSidePanels', () => {
     windowActions.swapSidePanels();
     expect(leftGroup()).toBeNull();
     expect(rightGroup()).toBe(before);
+  });
+});
+
+/** Tab-group ids left to right across the centre. */
+const centreOrder = () => collectLeafGroupIds(windowStore.layout);
+/** Group ids top to bottom inside one rail. */
+const railOrder = (side: 'left' | 'right') =>
+  collectLeafGroupIds(windowStore.edgePanels[side].layout);
+
+describe('swapSidePanels — a 100% flip, not a rail swap', () => {
+  beforeEach(() => {
+    setStore(createInitialState());
+  });
+
+  it('reverses the CENTRE columns too', () => {
+    // A conversation left of its editor must end up right of it. Mirroring
+    // only the rails left the middle of the row untouched, and half a mirror
+    // reads as a bug because the eye checks the whole row.
+    const pane = findFirstPane(windowStore.layout)!;
+    windowActions.openTabInNewPane(pane.id, 'left', {
+      id: 'tab-chat-1',
+      title: 'chat',
+      contentType: 'chat',
+    });
+    const before = centreOrder();
+    expect(before).toHaveLength(2);
+
+    windowActions.swapSidePanels();
+    expect(centreOrder()).toEqual([...before].reverse());
+  });
+
+  it('keeps what is STACKED inside a rail stacked the same way', () => {
+    // The file tree with a terminal under it: the column moves sides, the
+    // terminal stays under the tree. Mirroring vertical splits too would put
+    // it above.
+    const before = railOrder('right');
+    expect(before).toHaveLength(2);
+
+    windowActions.swapSidePanels();
+    expect(railOrder('left')).toEqual(before);
+  });
+
+  it('is its own inverse across every region', () => {
+    const pane = findFirstPane(windowStore.layout)!;
+    windowActions.openTabInNewPane(pane.id, 'left', {
+      id: 'tab-chat-1',
+      title: 'chat',
+      contentType: 'chat',
+    });
+    const before = {
+      centre: centreOrder(),
+      left: railOrder('left'),
+      right: railOrder('right'),
+    };
+
+    setStore('edgePanels', 'left', 'isCollapsed', false);
+    setStore('edgePanels', 'right', 'isCollapsed', false);
+    windowActions.swapSidePanels();
+    windowActions.swapSidePanels();
+
+    expect(centreOrder()).toEqual(before.centre);
+    expect(railOrder('left')).toEqual(before.left);
+    expect(railOrder('right')).toEqual(before.right);
+  });
+});
+
+describe('mirrorLayout', () => {
+  const pane = (id: string): LayoutNode => ({ id, type: 'pane', tabGroupId: `g-${id}` });
+  /** Leaf ids left to right — the shape, without the arithmetic. */
+  const leafIds = (n: LayoutNode): string[] =>
+    n.type === 'pane' ? [n.id] : [...leafIds(n.first), ...leafIds(n.second)];
+
+  it('swaps a horizontal split and inverts its ratio', () => {
+    const node: LayoutNode = {
+      id: 's', type: 'split', direction: 'horizontal', splitRatio: 0.25,
+      first: pane('a'), second: pane('b'),
+    };
+    const out = mirrorLayout(node) as Extract<LayoutNode, { type: 'split' }>;
+    expect(out.first.id).toBe('b');
+    expect(out.second.id).toBe('a');
+    // The ratio measures the FIRST half, and the halves traded places.
+    expect(out.splitRatio).toBe(0.75);
+  });
+
+  it('leaves a vertical split standing', () => {
+    const node: LayoutNode = {
+      id: 's', type: 'split', direction: 'vertical', splitRatio: 0.65,
+      first: pane('tree'), second: pane('terminal'),
+    };
+    const out = mirrorLayout(node) as Extract<LayoutNode, { type: 'split' }>;
+    expect(out.first.id).toBe('tree');
+    expect(out.second.id).toBe('terminal');
+    expect(out.splitRatio).toBe(0.65);
+  });
+
+  it('reverses columns while preserving the stacks inside them', () => {
+    const node: LayoutNode = {
+      id: 'root', type: 'split', direction: 'horizontal', splitRatio: 0.5,
+      first: pane('editor'),
+      second: {
+        id: 'col', type: 'split', direction: 'vertical', splitRatio: 0.65,
+        first: pane('tree'), second: pane('terminal'),
+      },
+    };
+    const out = mirrorLayout(node) as Extract<LayoutNode, { type: 'split' }>;
+    expect(out.first.id).toBe('col');
+    expect(out.second.id).toBe('editor');
+    const col = out.first as Extract<LayoutNode, { type: 'split' }>;
+    expect([col.first.id, col.second.id]).toEqual(['tree', 'terminal']);
+  });
+
+  it('is pure and its own inverse', () => {
+    const node: LayoutNode = {
+      id: 'root', type: 'split', direction: 'horizontal', splitRatio: 0.3,
+      first: pane('a'),
+      second: {
+        id: 'inner', type: 'split', direction: 'horizontal', splitRatio: 0.4,
+        first: pane('b'), second: pane('c'),
+      },
+    };
+    const snapshot = JSON.stringify(node);
+    const back = mirrorLayout(mirrorLayout(node)) as Extract<LayoutNode, { type: 'split' }>;
+
+    // Structure, and ratios to within float error: `1 - (1 - 0.3)` is
+    // 0.30000000000000004, so a JSON compare would fail on arithmetic rather
+    // than on the property under test.
+    expect(leafIds(back)).toEqual(leafIds(node));
+    expect(back.splitRatio).toBeCloseTo(0.3, 10);
+    expect((back.second as Extract<LayoutNode, { type: 'split' }>).splitRatio).toBeCloseTo(0.4, 10);
+    // Pure: the input is untouched.
+    expect(JSON.stringify(node)).toBe(snapshot);
   });
 });

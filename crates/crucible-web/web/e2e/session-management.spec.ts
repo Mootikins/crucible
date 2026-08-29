@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
-import { openSessionsList } from './helpers/nav';
+import { openSessionsList, startNewSession } from './helpers/nav';
 
 /**
  * E2E: Session Management
@@ -33,16 +33,12 @@ test.describe('Session Management', () => {
     await page.goto('/');
     await openSessionsList(page);
 
-    // Wait for the new session button to be visible
-    const newSessionBtn = page.getByTestId('new-session-button');
-    await expect(newSessionBtn).toBeVisible({ timeout: 10000 });
-
     // Lazy creation: the click opens a draft surface, no daemon call yet.
     let createdEarly = false;
     page.on('request', (req) => {
       if (req.url().endsWith('/api/session') && req.method() === 'POST') createdEarly = true;
     });
-    await newSessionBtn.click();
+    await startNewSession(page);
     await expect(page.getByTestId('composer-input')).toBeVisible();
     expect(createdEarly).toBe(false);
 

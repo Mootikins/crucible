@@ -20,7 +20,7 @@ function resetToState(overrides: Partial<{
   }>;
   layout: LayoutNode;
   activePaneId: string | null;
-  focusedRegion: 'left' | 'right' | 'bottom' | 'center';
+  focusedRegion: 'left' | 'right' | 'center';
 }>) {
   setStore(
     produce((s) => {
@@ -43,7 +43,7 @@ const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollap
   id: `${position}-panel`,
   layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
   isCollapsed,
-  ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
+  width: 250,
 });
 
 const makeTabGroup = (id: string, tabs: Tab[], activeTabId: string | null = tabs[0]?.id ?? null): TabGroup => ({
@@ -105,11 +105,6 @@ describe('initial state structure', () => {
     expect(windowStore.tabGroups[rightGroupId]).toBeDefined();
   });
 
-  it('edgePanels.bottom.tabGroupId references a group in tabGroups', () => {
-    const bottomGroupId = edgeGroup('bottom');
-    expect(windowStore.tabGroups[bottomGroupId]).toBeDefined();
-  });
-
   it('edge panels have no position or tabs fields', () => {
     const left = windowStore.edgePanels.left;
     expect(left).not.toHaveProperty('position');
@@ -137,16 +132,10 @@ describe('findEdgePanelForGroup', () => {
     expect(findEdgePanelForGroup(rightGroupId)).toBe('right');
   });
 
-  it('returns bottom for the bottom panel group', () => {
-    const bottomGroupId = edgeGroup('bottom');
-    expect(findEdgePanelForGroup(bottomGroupId)).toBe('bottom');
-  });
-
   it('returns null for a center group', () => {
     const edgeGroupIds = new Set([
       edgeGroup('left'),
       edgeGroup('right'),
-      edgeGroup('bottom'),
     ]);
     const centerGroupId = Object.keys(windowStore.tabGroups).find(id => !edgeGroupIds.has(id));
     expect(centerGroupId).toBeDefined();
@@ -170,14 +159,10 @@ describe('moveTab: edge → center', () => {
         'right-group': makeTabGroup('right-group', [
           { id: 'right-1', title: 'Outline', contentType: 'tool' },
         ], 'right-1'),
-        'bottom-group': makeTabGroup('bottom-group', [
-          { id: 'bottom-1', title: 'Terminal', contentType: 'terminal' },
-        ], 'bottom-1'),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -227,12 +212,10 @@ describe('moveTab: center → edge', () => {
           { id: 'left-1', title: 'Explorer', contentType: 'tool' },
         ], 'left-1'),
         'right-group': makeTabGroup('right-group', [], null),
-        'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group', true),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: splitLayout('pane-1', 'group-1', 'pane-2', 'group-2'),
       activePaneId: 'pane-1',
@@ -286,12 +269,10 @@ describe('moveTab: edge → edge', () => {
         'right-group': makeTabGroup('right-group', [
           { id: 'right-1', title: 'Outline', contentType: 'tool' },
         ], 'right-1'),
-        'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group', true),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -300,11 +281,11 @@ describe('moveTab: edge → edge', () => {
   });
 
   it('moves tab between edge groups', () => {
-    windowActions.moveTab('left-group', 'bottom-group', 'left-1');
+    windowActions.moveTab('left-group', 'right-group', 'left-1');
 
     expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(1);
-    expect(windowStore.tabGroups['bottom-group']!.tabs).toHaveLength(1);
-    expect(windowStore.tabGroups['bottom-group']!.tabs[0]!.id).toBe('left-1');
+    expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(2);
+    expect(windowStore.tabGroups['right-group']!.tabs.some((t) => t.id === 'left-1')).toBe(true);
   });
 
   it('sets focusedRegion to target edge position', () => {
@@ -320,9 +301,9 @@ describe('moveTab: edge → edge', () => {
   });
 
   it('expands collapsed target edge panel', () => {
-    expect(windowStore.edgePanels.bottom.isCollapsed).toBe(true);
-    windowActions.moveTab('left-group', 'bottom-group', 'left-1');
-    expect(windowStore.edgePanels.bottom.isCollapsed).toBe(false);
+    setStore('edgePanels', 'right', 'isCollapsed', true);
+    windowActions.moveTab('left-group', 'right-group', 'left-1');
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
   });
 });
 
@@ -337,12 +318,10 @@ describe('moveTab: same-group reorder', () => {
           { id: 'l3', title: 'L3', contentType: 'tool' },
         ], 'l1'),
         'right-group': makeTabGroup('right-group', [], null),
-        'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -379,12 +358,10 @@ describe('removeTab: edge-aware', () => {
           { id: 'right-1', title: 'Outline', contentType: 'tool' },
           { id: 'right-2', title: 'Debug', contentType: 'tool' },
         ], 'right-1'),
-        'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: splitLayout('pane-1', 'group-1', 'pane-2', 'group-2'),
       activePaneId: 'pane-1',
@@ -457,24 +434,26 @@ describe('edge panel split trees (v5 model)', () => {
       },
       edgePanels: {
         left: makeEdgePanel('left', 'g-center-unused-left'),
-        right: makeEdgePanel('right', 'g-center-unused-right'),
-        bottom: {
-          id: 'bottom-panel',
+        right: {
+          id: 'right-panel',
+          // A SPLIT rail — the shape the file tree with a terminal under it
+          // has. Vertical, because a rail stacks; this used to model the
+          // bottom dock's horizontal row, which no longer exists.
           layout: {
-            id: 'bottom-split',
+            id: 'right-split',
             type: 'split' as const,
-            direction: 'horizontal' as const,
+            direction: 'vertical' as const,
             splitRatio: 0.5,
             first: { id: 'pane-b1', type: 'pane' as const, tabGroupId: 'g-b1' },
             second: { id: 'pane-b2', type: 'pane' as const, tabGroupId: 'g-b2' },
           },
           isCollapsed: false,
-          height: 200,
+          width: 300,
         },
       },
       layout: simpleLayout('pane-center', 'g-center'),
       activePaneId: 'pane-b2',
-      focusedRegion: 'bottom',
+      focusedRegion: 'right',
     });
   };
 
@@ -487,7 +466,6 @@ describe('edge panel split trees (v5 model)', () => {
       edgePanels: {
         left: makeEdgePanel('left', 'g-left'),
         right: makeEdgePanel('right', 'g-r'),
-        bottom: makeEdgePanel('bottom', 'g-b'),
       },
       layout: simpleLayout('pane-center', 'g-center'),
       activePaneId: 'pane-center',
@@ -504,8 +482,8 @@ describe('edge panel split trees (v5 model)', () => {
 
   it('commitSplitRatio finds a split living inside an edge panel', () => {
     seedSplitBottom();
-    windowActions.commitSplitRatio('bottom-split', 0.3);
-    const layout = windowStore.edgePanels.bottom.layout;
+    windowActions.commitSplitRatio('right-split', 0.3);
+    const layout = windowStore.edgePanels.right.layout;
     expect(layout.type).toBe('split');
     if (layout.type === 'split') expect(layout.splitRatio).toBe(0.3);
   });
@@ -515,11 +493,11 @@ describe('edge panel split trees (v5 model)', () => {
     windowActions.removeTab('g-b2', 'chat-1');
 
     // The emptied pane collapsed out of the tree; its group is gone.
-    const layout = windowStore.edgePanels.bottom.layout;
+    const layout = windowStore.edgePanels.right.layout;
     expect(layout).toMatchObject({ type: 'pane', tabGroupId: 'g-b1' });
     expect(windowStore.tabGroups['g-b2']).toBeUndefined();
     // Panel stays expanded (it still has content), unlike the sole-pane case.
-    expect(windowStore.edgePanels.bottom.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
     // activePaneId pointed at the collapsed pane — must be re-pointed, or
     // every keyboard shortcut dead-ends on a pane that exists in no tree.
     expect(windowStore.activePaneId).toBe('pane-b1');
@@ -534,7 +512,6 @@ describe('edge panel split trees (v5 model)', () => {
       edgePanels: {
         left: makeEdgePanel('left', 'g-solo'),
         right: makeEdgePanel('right', 'g-r'),
-        bottom: makeEdgePanel('bottom', 'g-b'),
       },
       layout: simpleLayout('pane-center', 'g-center'),
       activePaneId: 'pane-center',

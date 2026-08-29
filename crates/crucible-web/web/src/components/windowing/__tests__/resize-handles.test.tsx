@@ -139,7 +139,7 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
   });
 
   it('every edge position renders its own ribbon toggle', () => {
-    for (const position of ['left', 'right', 'bottom'] as const) {
+    for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
         <DragDropProvider>
           <EdgePanel position={position} />
@@ -158,7 +158,7 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     // document, and disappeared with the rest of the transient chip cluster.
     // `mt-auto` is the same bottom-anchor the left ribbon's settings gear uses.
     const seen: Record<string, HTMLElement | null> = {};
-    for (const position of ['left', 'right', 'bottom'] as const) {
+    for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
         <DragDropProvider>
           <EdgePanel position={position} />
@@ -174,7 +174,7 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
 
     expect(seen.right, 'right ribbon hosts the bell').toBeTruthy();
     expect(seen.left, 'left ribbon must not').toBeNull();
-    expect(seen.bottom, 'bottom ribbon must not').toBeNull();
+
   });
 
   it('the expanded tab bar has no duplicate in-bar collapse control', () => {
