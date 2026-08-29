@@ -11,7 +11,6 @@ import {
 import { EditorState, StateEffect, Extension, Annotation, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { LanguageDescription } from '@codemirror/language';
-import { oneDark } from '@codemirror/theme-one-dark';
 import { extractFrontmatterBlock } from '@/lib/frontmatter';
 import { findLinkingBlock } from '@/lib/backlink-context';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -24,7 +23,8 @@ import { wikilinkNavigation } from './wikilink-extension';
 import { wikilinkCompletion } from './wikilink-completion';
 import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
 import { isMarkdownPath } from '@/lib/markdown-path';
-import { crucibleEditorChrome } from './editor-theme';
+import { editorThemeExtension } from './editor-theme';
+import { theme } from '@/lib/theme';
 import { livePreview } from './live-preview';
 import { getOriginalDoc, unifiedMergeView } from '@codemirror/merge';
 
@@ -220,10 +220,9 @@ export const CodeMirrorEditor: Component<{
         },
       ]),
       keymap.of([...defaultKeymap, ...historyKeymap]),
-      // Chrome BEFORE oneDark: earlier extensions take precedence in CM6,
-      // so the shell background/gutter overrides win over oneDark's.
-      crucibleEditorChrome,
-      oneDark,
+      // Chrome BEFORE the syntax theme: earlier extensions take precedence in
+      // CM6, so the shell background/gutter overrides win over the theme's.
+      editorThemeExtension(theme()),
       EditorView.updateListener.of((update) => {
         if (
           update.docChanged &&
@@ -375,6 +374,9 @@ export const CodeMirrorEditor: Component<{
     props.renderMath;
     props.renderDiagrams;
     props.diffOriginal;
+    // A syntax theme is a compiled StyleModule, not CSS custom properties, so
+    // it cannot follow the light/dark attribute — rebuild on a theme switch.
+    theme();
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),

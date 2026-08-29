@@ -1,7 +1,7 @@
 import { Component, Show } from 'solid-js';
 import type { CancelledResponse, InteractionOf } from '@/lib/types';
 import { btnPrimary } from '@/lib/button-style';
-import { renderMarkdown, PROSE_CLASS } from '@/lib/markdown';
+import { renderMarkdown, proseClass } from '@/lib/markdown';
 
 interface Props {
   request: InteractionOf<'show'>;
@@ -33,7 +33,7 @@ export const ShowInteraction: Component<Props> = (props) => {
           }
         >
           {/* eslint-disable-next-line solid/no-innerhtml */}
-          <div class={PROSE_CLASS} innerHTML={renderMarkdown(props.request.content)} />
+          <div class={proseClass()} innerHTML={renderMarkdown(props.request.content)} />
         </Show>
       </div>
 

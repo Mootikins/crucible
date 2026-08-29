@@ -40,7 +40,7 @@ vi.mock('@/lib/markdown', () => ({
   renderMarkdown: (s: string) => `<p data-md-sync>${s}</p>`,
   renderMarkdownChatAsync: (s: string) =>
     Promise.resolve(`<p data-md-async>${s}</p>`),
-  PROSE_CLASS: 'prose',
+  proseClass: () => 'prose',
 }));
 
 // Note navigation only fires on link clicks (not covered here); stub it so we

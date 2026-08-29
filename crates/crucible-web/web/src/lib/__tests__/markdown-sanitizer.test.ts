@@ -98,6 +98,20 @@ describe('inline CSS in rendered content', () => {
     expect(styleValues(html)).toEqual([]);
   });
 
+  it('keeps shiki dual-theme custom properties and nothing else custom', () => {
+    // `--shiki-light` carries the light color of a token so a cached HTML
+    // string can switch theme in CSS. It is allowed BY EXACT NAME: the widest
+    // thing it buys a hostile document is the color of its own code text.
+    const html = sanitizeDocHtml(
+      '<span style="color:#e06c75;--shiki-light:#a626a4">a</span>' +
+        '<span style="--shiki-light-font-style:italic">b</span>' +
+        // A near-miss on the allowed name must not pass.
+        '<span style="--shiki-lightx:#000">c</span>' +
+        '<span style="--color-primary:#00ff00">d</span>',
+    );
+    expect(styleValues(html)).toEqual(['color:#e06c75;--shiki-light:#a626a4', '--shiki-light-font-style:italic']);
+  });
+
   it('keeps the safe declarations of a mixed attribute and drops the rest', () => {
     const html = sanitizeDocHtml('<span style="color:#ff0000;position:fixed;top:0">x</span>');
     expect(styleValues(html)).toEqual(['color:#ff0000;top:0']);

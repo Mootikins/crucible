@@ -5,7 +5,7 @@
  * app-wide hover cards and click-to-open for free.
  */
 import { Component, createEffect, createResource } from 'solid-js';
-import { renderMarkdownDocAsync, PROSE_CLASS } from '@/lib/markdown';
+import { renderMarkdownDocAsync, proseClass } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { wikilinkTargetMatches } from '@/lib/backlink-context';
@@ -83,7 +83,7 @@ export const MarkdownPreview: Component<{
       onClick={handleClick}
     >
       <div
-        class={`${PROSE_CLASS} mx-auto`}
+        class={`${proseClass()} mx-auto`}
         // Readable line length setting; falls back to the classic prose column.
         style={{ 'max-width': props.maxWidth ? `${props.maxWidth}px` : '768px' }}
         // eslint-disable-next-line solid/no-innerhtml

@@ -16,6 +16,7 @@ import { terminalAllowed, terminalDenied } from '@/lib/terminal-availability';
 import { nextReconnectDelay } from '@/lib/terminal-backoff';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
+import { theme } from '@/lib/theme';
 
 /**
  * Real terminal: xterm.js over the daemon's PTY WebSocket
@@ -24,11 +25,24 @@ import { useSettingsSafe } from '@/contexts/SettingsContext';
  * `{t:'r',cols,rows}` resize.
  */
 
+/** `#rrggbb` (or `#rgb`) to an `rgba()` string, for the one xterm color that
+ *  needs an alpha. Returns the ember default if the token is not a hex. */
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return `rgba(224, 101, 58, ${alpha})`;
+  const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // Ember-shell ANSI theme. xterm renders into a canvas/DOM layer that can't
 // consume CSS custom properties, so every entry is READ from the design
-// tokens at mount (single source of truth: the --color-term-* ramp in
-// index.css), with the token's literal as fallback. The ANSI ramp is
-// deliberately its own token family — not the UI semantic tokens.
+// tokens (single source of truth: the --color-term-* ramp in index.css), with
+// the token's literal as fallback. The ANSI ramp is deliberately its own token
+// family — not the UI semantic tokens.
+//
+// Called again on a theme switch, because those tokens change value under it
+// and a canvas cannot follow them.
 function buildEmberTheme() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
@@ -40,7 +54,7 @@ function buildEmberTheme() {
     foreground: v('--color-shell-ink', '#e7e4df'),
     cursor: v('--color-primary', '#e0653a'),
     cursorAccent: bg,
-    selectionBackground: 'rgba(224, 101, 58, 0.35)',
+    selectionBackground: withAlpha(v('--color-primary', '#e0653a'), 0.35),
     black: v('--color-term-black', '#2b2933'),
     red: v('--color-term-red', '#e8746e'),
     green: v('--color-term-green', '#9dcf85'),
@@ -123,6 +137,17 @@ export const TerminalPanel: Component = () => {
     } catch {
       // Fitting a zero-sized (hidden) panel throws; harmless.
     }
+  });
+
+  // Live-apply a theme switch. The scrollback is already painted with the old
+  // palette; xterm repaints every row from its own cell buffer when `theme` is
+  // assigned, so history recolors too.
+  createEffect(() => {
+    // A tracked read only: applyTheme sets the root attribute BEFORE it sets
+    // this signal, so buildEmberTheme already reads the new token values.
+    theme();
+    if (!term) return;
+    term.options.theme = buildEmberTheme();
   });
 
   /**

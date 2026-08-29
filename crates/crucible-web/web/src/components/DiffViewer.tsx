@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, createMemo } from 'solid-js';
-import { highlighter, SHIKI_THEME, SHIKI_LANGS } from '@/lib/shiki';
+import { highlighter, SHIKI_THEMES, SHIKI_LANGS } from '@/lib/shiki';
+import { theme } from '@/lib/theme';
 import { languageFromFileName } from '@/lib/language-detection';
 import { analyzeDiff, type DiffAnalysis, type DiffLine } from '@/lib/diff-stats';
 import type { BundledLanguage, ThemedToken } from 'shiki';
@@ -166,7 +167,12 @@ export const DiffViewer: Component<Props> = (props) => {
     try {
       // codeToTokens returns one row per source line; we pass a single line in.
       // `lang` was just verified against SHIKI_LANGS, so the cast is safe.
-      const result = h.codeToTokens(line, { lang: lang as BundledLanguage, theme: SHIKI_THEME });
+      // The theme is a reactive read too: the diff paints one color per token
+      // into a span, so a theme switch has to re-tokenize the whole view.
+      const result = h.codeToTokens(line, {
+        lang: lang as BundledLanguage,
+        theme: SHIKI_THEMES[theme()],
+      });
       return result.tokens[0] ?? [];
     } catch {
       return null;

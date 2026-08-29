@@ -175,6 +175,48 @@
   --color-attention: #866400;
   --color-ok: #3a763f;
   --color-precog: #6d51a8;
+
+  /* ── Terminal ANSI palette, light ──────────────────────────────────────
+   * The BRIGHT half is DARKER than the normal half here, which inverts the
+   * usual convention and is what every light terminal theme does: "bright"
+   * means more emphasis, and on a light ground emphasis is weight, not
+   * luminance. A literal lift would put bright yellow at #ecc76e on #f5f4f8,
+   * which is 1.4:1 — invisible. Same six hues as the dark ramp, darkened until
+   * each clears 4.5:1 on the panel (4.8 to 8.3).
+   *
+   * Two slots are not text and do not follow that floor, in either theme:
+   * `black` is the slot a program picks to draw ON the foreground, and
+   * `bright-black` is the comment/dim slot, 3.8:1 here against 3.5:1 in the
+   * dark ramp — deliberately faint, and the same faintness in both. */
+  --color-term-black: #3a3843;
+  --color-term-red: #c02626;
+  --color-term-green: #3a763f;
+  --color-term-yellow: #866400;
+  --color-term-blue: #2a5db0;
+  --color-term-magenta: #7c3fa8;
+  --color-term-cyan: #12717a;
+  --color-term-white: #6d6b75;
+  --color-term-bright-black: #7d7a85;
+  --color-term-bright-red: #9d1f1f;
+  --color-term-bright-green: #2b5c2f;
+  --color-term-bright-yellow: #6a4f00;
+  --color-term-bright-blue: #1f4a91;
+  --color-term-bright-magenta: #63308a;
+  --color-term-bright-cyan: #0d585f;
+  --color-term-bright-white: #17161c;
+}
+
+/* ── shiki, light ───────────────────────────────────────────────────────
+ * Markdown renders to an HTML STRING that is cached and inserted once, so a
+ * theme toggle cannot re-run it. shiki's dual output solves that in CSS: the
+ * light color of every token rides along as `--shiki-light` beside the dark
+ * one it paints inline, and these two rules promote it. `normal` is the
+ * font-style fallback because shiki emits the variable only for a token whose
+ * style differs between the themes. */
+:root[data-theme='light'] .shiki,
+:root[data-theme='light'] .shiki span {
+  color: var(--shiki-light) !important;
+  font-style: var(--shiki-light-font-style, normal) !important;
 }
 
 @layer base {

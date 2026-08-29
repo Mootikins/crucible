@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { initializeHighlighter, highlighter, SHIKI_THEME } from '../shiki';
+import { initializeHighlighter, highlighter, SHIKI_THEMES } from '../shiki';
 
 describe('lib/shiki — singleton', () => {
-  it('exposes a constant theme name', () => {
-    // Must match the CodeMirror one-dark family (editor + live preview) so
-    // code blocks read the same in every surface.
-    expect(SHIKI_THEME).toBe('one-dark-pro');
+  it('exposes one theme name per shell theme', () => {
+    // Must match the CodeMirror themes (editor + live preview) so code blocks
+    // read the same in every surface, in both themes.
+    expect(SHIKI_THEMES).toEqual({ dark: 'one-dark-pro', light: 'one-light' });
   });
 
   it('returns null from highlighter() before initialization', () => {
@@ -29,5 +29,13 @@ describe('lib/shiki — singleton', () => {
     await initializeHighlighter();
     const second = highlighter();
     expect(first).toBe(second);
+  });
+
+  it('loads BOTH themes into the highlighter', async () => {
+    // Markdown renders to a cached HTML string and cannot re-highlight on a
+    // theme toggle, so it asks for both palettes in one pass. A highlighter
+    // that loaded only the dark theme throws on that call.
+    const h = await initializeHighlighter();
+    expect(h.getLoadedThemes().sort()).toEqual(['one-dark-pro', 'one-light']);
   });
 });

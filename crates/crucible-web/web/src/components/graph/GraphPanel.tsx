@@ -46,6 +46,7 @@ import {
 } from '@/lib/graph/types';
 import { GraphControls } from './GraphControls';
 import { isMarkdownPath } from '@/lib/markdown-path';
+import { theme } from '@/lib/theme';
 
 // v2: the force wiring changed to degree-aware clustering, so v1's persisted
 // force values would fight the new defaults — a fresh key retires them.
@@ -78,6 +79,27 @@ interface GraphColors {
 
 const cssVar = (name: string, fallback: string): string =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+
+/** The dark literals, as the fallback when a token is not resolvable yet. */
+const GRAPH_COLOR_FALLBACK: GraphColors = {
+  note: '#98939e',
+  phantom: '#6b6673',
+  tag: '#a78bda',
+  accent: '#e0653a',
+  link: '#322f38',
+  label: '#c9c5bf',
+};
+
+/** Read the palette out of the tokens. A canvas paints literal colors, so the
+ *  graph cannot follow a custom property — it re-reads on a theme switch. */
+const readGraphColors = (): GraphColors => ({
+  note: cssVar('--color-muted', GRAPH_COLOR_FALLBACK.note),
+  phantom: cssVar('--color-muted-dark', GRAPH_COLOR_FALLBACK.phantom),
+  tag: cssVar('--color-precog', GRAPH_COLOR_FALLBACK.tag),
+  accent: cssVar('--color-primary', GRAPH_COLOR_FALLBACK.accent),
+  link: cssVar('--color-hairline-strong', GRAPH_COLOR_FALLBACK.link),
+  label: cssVar('--color-shell-body', GRAPH_COLOR_FALLBACK.label),
+});
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -136,14 +158,7 @@ export const GraphPanel: Component = () => {
   let dirty = true;
   let raf = 0;
   let didAutoFit = false;
-  let colors: GraphColors = {
-    note: '#98939e',
-    phantom: '#6b6673',
-    tag: '#a78bda',
-    accent: '#e0653a',
-    link: '#322f38',
-    label: '#c9c5bf',
-  };
+  let colors: GraphColors = GRAPH_COLOR_FALLBACK;
 
   const markDirty = () => {
     dirty = true;
@@ -573,14 +588,15 @@ export const GraphPanel: Component = () => {
   onMount(() => {
     if (!canvasEl || !wrapEl) return;
     ctx = canvasEl.getContext('2d');
-    colors = {
-      note: cssVar('--color-muted', colors.note),
-      phantom: cssVar('--color-muted-dark', colors.phantom),
-      tag: cssVar('--color-precog', colors.tag),
-      accent: cssVar('--color-primary', colors.accent),
-      link: cssVar('--color-hairline-strong', colors.link),
-      label: cssVar('--color-shell-body', colors.label),
-    };
+    // Read once here so the first frame paints in the right palette — a Solid
+    // effect is deferred, and the draw loop starts inside this mount.
+    colors = readGraphColors();
+    // Then repaint whenever the theme flips.
+    createEffect(() => {
+      theme();
+      colors = readGraphColors();
+      markDirty();
+    });
     canvasEl.style.cursor = 'grab';
 
     const ro = new ResizeObserver(() => {

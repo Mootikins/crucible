@@ -35,6 +35,11 @@ export default defineConfig(({ mode }) => ({
         // fixing it.
         target: `http://localhost:${process.env.CRUCIBLE_API_PORT ?? 3000}`,
         changeOrigin: true,
+        // The terminal is a WebSocket (`/api/terminal/ws`). Without this the
+        // dev server answers the upgrade itself and the socket closes before
+        // it opens, so the terminal pane mounts and stays blank — the one part
+        // of the app that `just web` broke and `cru web` did not.
+        ws: true,
       },
     },
   },

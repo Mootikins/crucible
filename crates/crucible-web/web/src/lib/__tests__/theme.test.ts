@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DEFAULT_THEME, applyTheme, readTheme } from '@/lib/theme';
+import { createComputed, createRoot } from 'solid-js';
+import { DEFAULT_THEME, applyTheme, readTheme, theme } from '@/lib/theme';
 
 describe('theme', () => {
   beforeEach(() => {
@@ -33,6 +34,37 @@ describe('theme', () => {
       applyTheme(theme);
       expect(readTheme()).toBe(theme);
     }
+  });
+
+  it('publishes the change as a signal', () => {
+    // Three surfaces cannot follow a CSS custom property: CodeMirror compiles
+    // its syntax colors into a StyleModule, xterm takes a color object, and the
+    // graph paints to a canvas. They track THIS, so an attribute written
+    // without it repaints nothing.
+    applyTheme('light');
+    expect(theme()).toBe('light');
+    applyTheme('dark');
+    expect(theme()).toBe('dark');
+  });
+
+  it('sets the root attribute BEFORE the signal', () => {
+    // The order is load-bearing: every subscriber re-reads the tokens out of
+    // the DOM, so a signal that fired first would hand them the OLD palette.
+    let seen: string | null | undefined;
+    createRoot((dispose) => {
+      // createComputed, not createEffect: a pure computation re-runs
+      // SYNCHRONOUSLY inside the write, so it observes the DOM exactly as
+      // applyTheme left it. An effect is queued and would see the settled
+      // state either way.
+      createComputed(() => {
+        theme();
+        seen = document.documentElement.getAttribute('data-theme');
+      });
+      seen = undefined;
+      applyTheme('light');
+      dispose();
+    });
+    expect(seen).toBe('light');
   });
 
   it('falls back to dark for a value it does not know', () => {

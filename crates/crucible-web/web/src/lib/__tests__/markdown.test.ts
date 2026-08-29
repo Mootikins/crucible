@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  proseClass,
   renderMarkdown,
   renderMarkdownDocAsync,
   renderPlainWithWikilinks,
 } from '../markdown';
+import { applyTheme } from '../theme';
 
 describe('renderPlainWithWikilinks (user bubbles)', () => {
   it('turns a user-authored [[link]] into a .wikilink anchor', () => {
@@ -100,9 +102,31 @@ describe('renderMarkdownDocAsync (reading view)', () => {
     expect(html).toContain('<pre');
   });
 
+  it('highlights a code block for BOTH themes in one pass', async () => {
+    // The reading view caches this HTML string, so it cannot re-highlight when
+    // the theme flips — every token has to carry its light color along as
+    // `--shiki-light`, and that declaration has to survive the sanitizer.
+    const html = await renderMarkdownDocAsync('```ts\nconst x = 1;\n```');
+    expect(html).toContain('--shiki-light:');
+  });
+
   it('renders markdown image syntax as an <img>', async () => {
     const html = await renderMarkdownDocAsync('![badge](https://example.com/b.svg)');
     expect(html).toContain('<img');
     expect(html).toContain('src="https://example.com/b.svg"');
+  });
+});
+
+describe('proseClass', () => {
+  it('inverts the typography greys for dark ONLY', () => {
+    // `prose-invert` is the one part of the prose class that is not a shell
+    // token: the typography plugin swaps in its own light greys, so leaving it
+    // on in the light theme paints #d1d5db body text and WHITE inline code
+    // onto a white ground.
+    applyTheme('dark');
+    expect(proseClass()).toContain('prose-invert');
+    applyTheme('light');
+    expect(proseClass()).not.toContain('prose-invert');
+    applyTheme('dark');
   });
 });

@@ -18,7 +18,7 @@ import { ToolCard } from './ToolCard';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType, TokenUsage } from '@/lib/types';
-import { renderMarkdown, renderMarkdownChatAsync, PROSE_CLASS } from '@/lib/markdown';
+import { renderMarkdown, renderMarkdownChatAsync, proseClass } from '@/lib/markdown';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { formatAbsoluteTime } from '@/lib/format-time';
@@ -105,7 +105,7 @@ const TextSegment: Component<{
           </Show>
         }
       >
-        <div class={PROSE_CLASS} onClick={props.onMarkdownClick} innerHTML={renderedContent()} />
+        <div class={proseClass()} onClick={props.onMarkdownClick} innerHTML={renderedContent()} />
       </Show>
       <Show when={props.showCaret && content() !== ''}>
         <span class="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />

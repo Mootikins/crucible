@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import { initializeHighlighter, SHIKI_THEME } from './shiki';
+import { initializeHighlighter, SHIKI_THEMES } from './shiki';
+import { theme } from './theme';
 import { calloutPlugin } from './callouts';
 import { mathPlugin } from './math';
 import { fitMermaidViewBox, renderMermaid } from './mermaid';
@@ -112,6 +113,14 @@ function decodeHtml(value: string): string {
  * column separator on the column boundary by half a rule thickness.
  */
 const SAFE_STYLE_PROPERTIES = new Set([
+  // shiki's dual-theme output. A CUSTOM property is allowed here, by exact
+  // name and by exact name only: `--shiki-light` is read by one rule in
+  // index.css, which assigns it to `color` inside `.shiki`. So the widest
+  // thing a hostile document buys with it is the color of its own code text —
+  // strictly less than the plain `color` two lines below already grants. No
+  // other custom property matches, so a document cannot redefine a shell token.
+  '--shiki-light',
+  '--shiki-light-font-style',
   'background-color',
   'border-bottom-width',
   'border-right-style',
@@ -414,7 +423,17 @@ async function highlightCodeBlocks(
     const source = decodeHtml(encodedCode);
     let block: string;
     try {
-      block = highlighter.codeToHtml(source, { lang: language, theme: SHIKI_THEME });
+      // BOTH themes in one pass. Markdown renders to an HTML STRING that is
+      // cached and inserted once, so it cannot re-run on a theme toggle;
+      // shiki's dual output carries the light color of every token as a
+      // `--shiki-light` custom property beside the dark one, and index.css
+      // swaps them. `defaultColor: 'dark'` keeps the shell's own theme as the
+      // plain `color`, so a surface that never opts in is unaffected.
+      block = highlighter.codeToHtml(source, {
+        lang: language,
+        themes: SHIKI_THEMES,
+        defaultColor: 'dark',
+      });
     } catch {
       block = fullMatch;
     }
@@ -597,13 +616,18 @@ export async function renderMarkdownChatAsync(content: string): Promise<string> 
  * note rendering. `prose-hr:my-3` and the heading margins keep the vertical
  * rhythm tight (stock prose-sm leaves large dead bands around `---` and
  * headings).
+ *
+ * Theme-INDEPENDENT: every color here is a shell token, which follows the root
+ * attribute on its own. The one part that cannot is `prose-invert`, which the
+ * typography plugin implements by swapping its own greys — see
+ * {@link proseClass}.
  */
 export const PROSE_CLASS = [
   // IDE-native reading scale: 13px body at 1.6 leading, em-based headings so
   // the whole scale tracks the root size. Tight vertical rhythm — no dead
   // bands around headings/rules/lists — reads dense but calm on the near-black
   // panel, matching a code editor's own text density.
-  'prose prose-invert max-w-none text-[13px] leading-[1.6]',
+  'prose max-w-none text-[13px] leading-[1.6]',
   'prose-headings:text-shell-ink prose-headings:font-semibold prose-headings:mt-3.5 prose-headings:mb-1.5',
   'prose-h1:text-[1.45em] prose-h2:text-[1.25em] prose-h3:text-[1.1em] prose-h4:text-[1em]',
   'prose-p:my-2 prose-p:leading-[1.6]',
@@ -616,4 +640,19 @@ export const PROSE_CLASS = [
   'prose-blockquote:border-l-2 prose-blockquote:border-hairline prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-muted',
   'prose-strong:text-shell-ink',
 ].join(' ');
+
+/**
+ * {@link PROSE_CLASS}, plus `prose-invert` in the dark theme.
+ *
+ * The typography plugin does not read our tokens: `prose-invert` swaps
+ * `--tw-prose-body` and friends to ITS OWN light greys, so the class left on
+ * unconditionally painted #d1d5db body text and white inline code onto a white
+ * ground — the one part of a chat turn the light theme could not reach.
+ *
+ * A function, not a constant, because it has to re-run on a theme switch; the
+ * call sites read it in a `class={}` binding, which Solid keeps reactive.
+ */
+export function proseClass(): string {
+  return theme() === 'light' ? PROSE_CLASS : `${PROSE_CLASS} prose-invert`;
+}
 

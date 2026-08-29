@@ -8,12 +8,26 @@
  * a `dark:` variant on every class in the app, would need touching every file
  * and would still miss the inline `var(--color-…)` uses.
  */
+import { createSignal } from 'solid-js';
+
 export type Theme = 'dark' | 'light';
 
 const KEY = 'crucible:theme';
 
 /** The shell's own identity. Light is opt-in. */
 export const DEFAULT_THEME: Theme = 'dark';
+
+/**
+ * The live theme, as a signal.
+ *
+ * `document.documentElement` is not reactive, and four things cannot follow a
+ * CSS custom property at all: CodeMirror compiles its syntax colors into a
+ * StyleModule, xterm takes a color object, the graph paints literal colors to
+ * a canvas, and the typography plugin's `prose-invert` is a CLASS, not a
+ * variable. They read THIS instead, and reconfigure when it changes.
+ */
+const [theme, setThemeSignal] = createSignal<Theme>(DEFAULT_THEME);
+export { theme };
 
 export function readTheme(): Theme {
   try {
@@ -34,6 +48,7 @@ export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   if (theme === 'light') root.setAttribute('data-theme', 'light');
   else root.removeAttribute('data-theme');
+  setThemeSignal(theme);
   try {
     localStorage.setItem(KEY, theme);
   } catch {
