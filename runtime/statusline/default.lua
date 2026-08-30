@@ -22,6 +22,9 @@ return {
       " ",
       sl.model{ max = 25 },
       sl.align,
+      -- Tools that outran the split threshold have no transcript node to
+      -- show progress in. This renders nothing while none are running.
+      sl.tasks,
       -- A notification takes the right-hand slot while it is showing, and
       -- context usage takes it back afterwards.
       sl.any(sl.notification, sl.context),

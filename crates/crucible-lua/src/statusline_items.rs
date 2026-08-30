@@ -410,6 +410,7 @@ pub fn builtin_default() -> Layout {
                     fallback: None,
                 },
                 StatusItem::Align,
+                StatusItem::Tasks,
                 StatusItem::Any(vec![StatusItem::Notification, StatusItem::Context]),
             ]),
         ],

@@ -184,7 +184,10 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
         // unconditionally without a permanent "0 running".
         StatusItem::Tasks => text_frag(match ctx.data.background_tasks {
             0 => String::new(),
-            n => format!("\u{2699} {n}"),
+            // The trailing space rides with the content. A separate literal
+            // in the bar would steal a column while nothing is running, which
+            // truncates the model name on a narrow terminal.
+            n => format!("\u{2699} {n} "),
         }),
 
         StatusItem::Status => text_frag(ctx.data.status.clone()),

@@ -106,6 +106,7 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
         ),
         ("context", StatusItem::Context),
         ("cache", StatusItem::Cache),
+        ("tasks", StatusItem::Tasks),
         ("status", StatusItem::Status),
         ("notification", StatusItem::Notification),
         ("align", StatusItem::Align),
