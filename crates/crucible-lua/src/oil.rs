@@ -205,6 +205,15 @@ impl LuauValue for LuaNode {
 /// Wider than `OilNode`, which is what every function answers with.
 const NODE_ARG: &str = "(OilNode | string)?";
 
+/// The same set in a RETURN position, spelled with an explicit `nil`.
+///
+/// `-> (OilNode | string)?` is ambiguous: the trailing `?` binds to the
+/// function type rather than to the return, so the callback itself becomes
+/// optional. A union carrying `nil` says the same thing with no ambiguity —
+/// and a callback that answers with a bare string or with nothing is
+/// accepted by `LuaNode::from_lua`, so the declaration has to allow both.
+const NODE_RESULT: &str = "(OilNode | string | nil)";
+
 /// Register the oil module.
 ///
 /// Every function declares its Luau type beside its closure, and `Ns` holds
@@ -330,7 +339,9 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     // its 1-based index, in that order, and must answer with a node.
     oil.func(
         "each",
-        "(items: { any }, render: (item: any, index: number) -> OilNode) -> OilNode",
+        &format!(
+            "(items: {{ any }}, render: (item: any, index: number) -> {NODE_RESULT}) -> OilNode"
+        ),
         |_, (items, render): (Table, Function)| {
             let mut children = Vec::new();
             for pair in items.pairs::<i64, Value>() {
@@ -353,7 +364,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     // analyzer, not assumed.
     oil.func(
         "match_state",
-        "(state: any, handlers: { [any]: OilNode | string | (() -> OilNode) }) -> OilNode",
+        &format!("(state: any, handlers: {{ [any]: OilNode | string | (() -> {NODE_RESULT}) }}) -> OilNode"),
         |ctx, (state, handlers): (Value, Table)| {
             let handler: Value = handlers.get(state.clone()).unwrap_or(Value::Nil);
             match handler {
@@ -514,8 +525,10 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     // argument that is not a table is treated as a child, not as props.
     oil.func(
         "component",
-        "(base: (...any) -> OilNode, defaults: { [string]: any }) \
-         -> ((...any) -> OilNode)",
+        &format!(
+            "(base: (...any) -> {NODE_RESULT}, defaults: {{ [string]: any }}) \
+             -> ((...any) -> OilNode)"
+        ),
         |lua, (base, defaults): (Function, Table)| {
             let wrapper = lua.create_function(move |lua, args: MultiValue| {
                 let args_vec: Vec<Value> = args.into_iter().collect();

@@ -57,7 +57,7 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
     // body raised — so a caller reads the first value to know which.
     timer.async_func(
         "timeout",
-        "(seconds: number, body: () -> any) -> (boolean, any)",
+        "(seconds: number, body: () -> ...any) -> (boolean, any)",
         |lua, (secs, func): (f64, Function)| async move {
             if !secs.is_finite() || secs < 0.0 {
                 return Err(mlua::Error::runtime(

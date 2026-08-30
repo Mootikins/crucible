@@ -64,11 +64,14 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
         "(session_id: string, request_id: string, response: any) -> (boolean?, string?)",
     ),
     // The first return is the ITERATOR, not an event: call it for each event,
-    // and it answers nil once the stream ends. Its own second return is
-    // always nil, so it is not declared.
+    // and it answers nil once the stream ends. It answers TWO values — the
+    // second is always nil today — and the declaration has to say so: Luau
+    // counts returned values, not useful ones, so `() -> any?` rejects
+    // `local event, err = next_event()`, which is the shape every other
+    // `cru.session` function trains an author to write.
     (
         "subscribe",
-        "(session_id: string) -> ((() -> any?)?, string?)",
+        "(session_id: string) -> ((() -> (any?, string?))?, string?)",
     ),
     ("unsubscribe", "(session_id: string) -> (boolean?, string?)"),
     // `timeout` is in SECONDS. A bare number is that same timeout — the
@@ -79,7 +82,7 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
         "send_and_collect",
         "(session_id: string, content: string, options: ({ timeout: number?, \
          max_tool_result_len: number?, interactive: boolean? } | number)?) \
-         -> ((() -> any?)?, string?)",
+         -> ((() -> (any?, string?))?, string?)",
     ),
     (
         "messages",
@@ -110,6 +113,11 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
     ),
     // `type` picks which of the other two fields is read: `pattern` for
     // `regex`, `name` for `lua`, neither for `none` and `json`.
+    // Raises, deliberately, when the SPEC is malformed — an unknown `type`,
+    // a `regex` with no `pattern` — and the daemon never sees the call
+    // (`sessions_set_output_validation_rejects_unknown_type` pins it). The
+    // `(value, err)` pair below is for what the daemon answers. No type
+    // states "raises", so it is stated here.
     (
         "set_output_validation",
         "(session_id: string, spec: { type: string, pattern: string?, name: string? } | string) \

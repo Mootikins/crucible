@@ -231,7 +231,9 @@ fn declare_lua_prelude(lua: &Lua) -> std::result::Result<(), crate::error::LuaEr
     // when every attempt failed.
     root.declare_only(
         "retry",
-        "(fn: () -> any, opts: { max_retries: number?, base_delay: number?, \
+        // `fn` answers with anything or nothing: `...any`, not `any`, or a
+        // body that ends without a return is "not all codepaths return".
+        "(fn: () -> ...any, opts: { max_retries: number?, base_delay: number?, \
          max_delay: number?, jitter: boolean?, retryable: ((err: any) -> boolean)? }?) -> any",
     )?;
     root.declare_only(
@@ -241,7 +243,12 @@ fn declare_lua_prelude(lua: &Lua) -> std::result::Result<(), crate::error::LuaEr
     // Variadic in both: `tbl_get` walks a key path, `tbl_deep_extend` merges
     // every table after the behavior.
     root.declare_only("tbl_get", "(t: any, ...any) -> any")?;
-    root.declare_only("tbl_deep_extend", "(behavior: string, ...table) -> table")?;
+    // `{ [any]: any }`, not `table`: `table` renders `{ [string]: any }` and
+    // rejects an array, while `qol.rs` walks `pairs` and merges any key type.
+    root.declare_only(
+        "tbl_deep_extend",
+        "(behavior: string, ...{ [any]: any }) -> { [any]: any }",
+    )?;
 
     Ok(())
 }
