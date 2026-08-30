@@ -284,8 +284,11 @@ fn test_scaffold_template_validity() {
     assert_eq!(yaml["name"], plugin_name);
     assert_eq!(yaml["main"], "init.lua");
 
+    // LuaLS has no Luau dialect. 5.1 is the closest it models — Luau derives
+    // from it — so a scaffolded plugin is not told about 5.4-only syntax
+    // (integer division, `goto`, `<close>`) that the runtime would refuse.
     let json: Value = serde_json::from_str(TEMPLATE_LUARC_JSON).unwrap();
-    assert_eq!(json["runtime"]["version"], "Lua 5.4");
+    assert_eq!(json["runtime"]["version"], "Lua 5.1");
 
     let temp = TempDir::new().unwrap();
     write_scaffold_plugin(temp.path(), plugin_name);

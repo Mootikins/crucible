@@ -52,6 +52,7 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     println!("Next steps:");
     println!("  cd {}", args.name);
     println!("  cru plugin stubs   # if you have not generated them yet");
+    println!("  cru plugin check .");
     println!("  cru plugin test .");
 
     Ok(())
