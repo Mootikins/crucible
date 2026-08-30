@@ -322,7 +322,19 @@ mod shipped_plugin_tests {
     fn every_shipped_plugin_typechecks() {
         let stubs = tempfile::TempDir::new().expect("tempdir");
         let definitions = stubs.path().join("cru.d.luau");
-        crucible_lua::stubs::StubGenerator::generate(stubs.path()).expect("generate declarations");
+        // The DAEMON's VM, not `StubGenerator::generate`, which builds the
+        // `crucible-lua` subset: it has no `cru.shell`, `cru.storage`,
+        // `cru.ws`, `cru.isolation` or `cru.plugin.set_status`, and invents a
+        // `cru.mcp` the plugin VM does not have. Checked against the subset,
+        // this gate reported "Key 'shell' not found" against `oci`, `discord`
+        // and `worktree` the moment a checker existed — so it passed only
+        // while no machine could run it.
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("loader");
+        loader
+            .generate_stubs(stubs.path())
+            .expect("generate declarations");
 
         let mut failures: Vec<String> = Vec::new();
         for entry in std::fs::read_dir(shipped_plugins_dir()).expect("shipped plugins") {

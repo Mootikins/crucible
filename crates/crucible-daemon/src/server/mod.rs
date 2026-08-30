@@ -25,7 +25,6 @@ use anyhow::Result;
 use chrono::Utc;
 use crucible_core::config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::session::RecordingMode;
-use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
     register_cru_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
     Session as LuaSession,

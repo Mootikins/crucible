@@ -341,33 +341,66 @@ pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
     )
 }
 
-pub(crate) async fn handle_lua_generate_stubs(req: Request) -> Response {
+/// Write (or verify) the type stubs for THIS daemon's plugin VM.
+///
+/// The loader, not `StubGenerator::generate`. That builds the `crucible-lua`
+/// subset — no `cru.shell`, `cru.storage`, `cru.ws`, `cru.isolation` or
+/// `cru.plugin.*`, plus a `cru.mcp` the plugin VM does not have — and this is
+/// the DEFAULT path: `cru plugin stubs` without `--offline` comes here and
+/// writes into the directory `cru plugin new` bakes into a scaffolded
+/// `.luarc.json` and `cru plugin check` reads. A plugin calling `cru.shell`
+/// was therefore a type error against its own generated declarations, and
+/// autocomplete advertised a namespace that is nil at runtime.
+pub(crate) async fn handle_lua_generate_stubs(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
     let params = match typed_params::<crate::rpc_client::LuaGenerateStubsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let output_dir = params.output_dir.clone();
 
+    let guard = plugin_loader.lock().await;
+    let Some(loader) = guard.as_ref() else {
+        return internal_error(
+            req.id,
+            anyhow::anyhow!(
+                "the plugin runtime is not initialized; run `cru plugin stubs --offline` \
+                 to generate from the working tree instead"
+            ),
+        );
+    };
+
     if params.verify {
-        match StubGenerator::verify(Path::new(&output_dir)) {
-            Ok(true) => Response::success(
-                req.id,
-                serde_json::json!({ "status": "ok", "path": output_dir }),
-            ),
-            Ok(false) => Response::success(
-                req.id,
-                serde_json::json!({ "status": "outdated", "path": output_dir }),
-            ),
-            Err(e) => internal_error(req.id, e),
+        // Compare against a fresh render of the same VM, so `--verify` and
+        // the write path can never disagree about what "current" means.
+        let tmp = match tempfile::TempDir::new() {
+            Ok(tmp) => tmp,
+            Err(e) => return internal_error(req.id, anyhow::Error::from(e)),
+        };
+        if let Err(e) = loader.generate_stubs(tmp.path()) {
+            return internal_error(req.id, e);
         }
-    } else {
-        match StubGenerator::generate(Path::new(&output_dir)) {
-            Ok(()) => Response::success(
-                req.id,
-                serde_json::json!({ "status": "ok", "path": output_dir }),
-            ),
-            Err(e) => internal_error(req.id, e),
-        }
+        let current = std::fs::read_to_string(tmp.path().join("cru.lua")).ok();
+        let committed = std::fs::read_to_string(Path::new(&output_dir).join("cru.lua")).ok();
+        let status = if current.is_some() && current == committed {
+            "ok"
+        } else {
+            "outdated"
+        };
+        return Response::success(
+            req.id,
+            serde_json::json!({ "status": status, "path": output_dir }),
+        );
+    }
+
+    match loader.generate_stubs(Path::new(&output_dir)) {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({ "status": "ok", "path": output_dir }),
+        ),
+        Err(e) => internal_error(req.id, e),
     }
 }
 

@@ -887,7 +887,7 @@ impl RpcDispatcher {
             ),
             RpcMethod::LuaGenerateStubs => forward!(
                 id,
-                crate::server::lua::handle_lua_generate_stubs(req.clone())
+                crate::server::lua::handle_lua_generate_stubs(req.clone(), &self.ctx.plugin_loader)
             ),
             RpcMethod::LuaRunPluginTests => forward!(
                 id,
