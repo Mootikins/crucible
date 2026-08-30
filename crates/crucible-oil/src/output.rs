@@ -7,14 +7,28 @@ use std::io::{self, Stdout, Write};
 pub(crate) const BEGIN_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026h";
 pub(crate) const END_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026l";
 
-/// Snapshot of the last viewport written, used for incremental diffing
-/// on the next frame. `lines` and `visual_rows` always describe the same
-/// frame — collapsing them into one option makes inconsistent state
-/// unrepresentable.
+/// Snapshot of the last frame written, used for incremental diffing on the
+/// next frame. `lines`, `line_visual_rows` and `total_visual_rows` always
+/// describe the same frame — collapsing them into one option makes
+/// inconsistent state unrepresentable.
+///
+/// `lines` holds the whole transcript, not the visible tail. The terminal owns
+/// every row that scrolled above the screen, so a row above the visible window
+/// can no longer be addressed. `repaint_start` enforces that bound.
 #[derive(Default)]
 struct PreviousFrame {
     lines: Vec<String>,
-    visual_rows: usize,
+    line_visual_rows: Vec<usize>,
+    total_visual_rows: usize,
+}
+
+impl PreviousFrame {
+    /// Visual rows occupied by `lines[index..]`.
+    fn rows_from(&self, index: usize) -> usize {
+        self.line_visual_rows[index.min(self.line_visual_rows.len())..]
+            .iter()
+            .sum()
+    }
 }
 
 pub struct OutputBuffer<W: Write = Stdout> {
@@ -23,10 +37,14 @@ pub struct OutputBuffer<W: Write = Stdout> {
     terminal_width: usize,
     terminal_height: usize,
     force_next_redraw: bool,
-}
-
-fn lines_visually_equal(a: &str, b: &str) -> bool {
-    a == b
+    /// Most transcript rows kept for a reprint after a resize.
+    ///
+    /// A resize purges the scrollback and prints the transcript again, so this
+    /// bounds that reprint. Rows beyond the cap are dropped from the model:
+    /// they already went to the terminal, they sit above the repaintable
+    /// window, and reprinting more rows than the terminal retains is wasted
+    /// work. Values follow the documented scrollback depth of each terminal.
+    max_transcript_rows: usize,
 }
 
 impl Default for OutputBuffer<Stdout> {
@@ -52,7 +70,13 @@ impl<W: Write> OutputBuffer<W> {
             terminal_width: width,
             terminal_height: height,
             force_next_redraw: false,
+            max_transcript_rows: detect_max_transcript_rows(),
         }
+    }
+
+    /// Override the reprint cap. Tests use this to reach the bound cheaply.
+    pub fn set_max_transcript_rows(&mut self, rows: usize) {
+        self.max_transcript_rows = rows;
     }
 
     /// Get a mutable reference to the underlying writer.
@@ -65,46 +89,155 @@ impl<W: Write> OutputBuffer<W> {
         self.terminal_height = height;
     }
 
+    /// Render the whole transcript, repainting only what the terminal can
+    /// still address.
+    ///
+    /// `content` is the full transcript, not a visible tail. Rows that
+    /// scrolled above the screen belong to the terminal and cannot be
+    /// rewritten, so a change above the visible window is skipped instead of
+    /// painted at the wrong place.
     pub fn render_with_overlays(
         &mut self,
         content: &str,
         overlays: &[RenderedOverlay],
     ) -> io::Result<bool> {
-        let all_lines: Vec<String> = collapse_blank_lines(content);
+        let mut all_lines: Vec<String> = collapse_blank_lines(content);
+        // Overlays anchor to the screen, not to the transcript, so composite
+        // them onto the tail the terminal actually shows.
+        self.composite_visible_overlays(&mut all_lines, overlays);
 
-        // Debug: check if viewport starts with a blank line
-        if let Some(first) = all_lines.first() {
-            let stripped = crate::ansi::strip_ansi(first);
-            if stripped.trim().is_empty() && all_lines.len() > 1 {
-                tracing::debug!(
-                    total_lines = all_lines.len(),
-                    "[viewport] WARNING: viewport starts with blank line"
-                );
-            }
-        }
-
-        let line_visual_rows: Vec<usize> = all_lines
+        let mut line_visual_rows: Vec<usize> = all_lines
             .iter()
             .map(|line| visual_rows(line, self.terminal_width))
             .collect();
+        let mut total_visual_rows: usize = line_visual_rows.iter().sum();
 
-        let total_visual_rows: usize = line_visual_rows.iter().sum();
-        // Use the full terminal height. Reserving a row here (height - 1)
-        // would leave screen row 0 outside the in-place repaint region
-        // (MoveUp(prev - 1) from the bottom reaches row 0, not above it), so
-        // a stale scrollback line would sit frozen at the top of the screen
-        // for as long as no graduation scrolls the terminal — an entire
-        // streaming turn once a ToolGroup blocks graduation.
-        let available_rows = self.terminal_height;
+        // Never drop a row the screen still shows.
+        let cap = self.max_transcript_rows.max(self.terminal_height);
+        let mut dropped = 0usize;
+        while total_visual_rows > cap && dropped + 1 < line_visual_rows.len() {
+            total_visual_rows -= line_visual_rows[dropped];
+            dropped += 1;
+        }
+        if dropped > 0 {
+            all_lines.drain(..dropped);
+            line_visual_rows.drain(..dropped);
+        }
 
-        let (mut viewport_lines, _base_visual_rows) = self.clamp_to_viewport_with_scroll(
-            &all_lines,
-            &line_visual_rows,
+        let next = PreviousFrame {
+            lines: all_lines,
+            line_visual_rows,
             total_visual_rows,
-            available_rows,
-            0,
-        );
+        };
 
+        let force = std::mem::replace(&mut self.force_next_redraw, false);
+        let Some(prev) = self.previous.take().filter(|_| !force) else {
+            self.paint_from(&next, 0)?;
+            self.previous = Some(next);
+            return Ok(true);
+        };
+
+        if prev.lines == next.lines {
+            self.previous = Some(prev);
+            return Ok(false);
+        }
+
+        let common = prev.lines.len().min(next.lines.len());
+        let mut first_diff = (0..common)
+            .find(|&i| prev.lines[i] != next.lines[i])
+            .unwrap_or(common);
+
+        // Bound the repaint to rows still on screen. A larger move would reach
+        // the top of the screen and paint over the wrong rows.
+        let floor = Self::first_addressable_line(&prev, self.terminal_height);
+        if first_diff < floor {
+            tracing::debug!(
+                first_diff,
+                floor,
+                "change sits above the visible window; the terminal keeps those rows"
+            );
+            first_diff = floor;
+        }
+
+        let previous_rows = prev.rows_from(first_diff);
+        let rows_up = previous_rows.saturating_sub(1);
+        if rows_up > 0 {
+            execute!(
+                self.stdout,
+                cursor::MoveUp(rows_up as u16),
+                cursor::MoveToColumn(0)
+            )?;
+        } else {
+            execute!(self.stdout, cursor::MoveToColumn(0))?;
+        }
+
+        let shrank = next.rows_from(first_diff) < previous_rows;
+        self.paint_from(&next, first_diff)?;
+        if shrank {
+            execute!(
+                self.stdout,
+                terminal::Clear(terminal::ClearType::FromCursorDown)
+            )?;
+            self.stdout.flush()?;
+        }
+
+        self.previous = Some(next);
+        Ok(true)
+    }
+
+    /// Write `frame.lines[start..]`, clearing each row before it is written.
+    ///
+    /// The caller puts the cursor on the first row of `start`. On return the
+    /// cursor sits on the last row of the last line.
+    fn paint_from(&mut self, frame: &PreviousFrame, start: usize) -> io::Result<()> {
+        let last = frame.lines.len().saturating_sub(1);
+        for (i, line) in frame.lines.iter().enumerate().skip(start) {
+            let rows = frame.line_visual_rows[i].max(1);
+            execute!(self.stdout, cursor::MoveToColumn(0))?;
+            // A wrapped line owns several rows, and Clear(CurrentLine) reaches
+            // only the cursor's own row.
+            for row in 0..rows {
+                execute!(
+                    self.stdout,
+                    terminal::Clear(terminal::ClearType::CurrentLine)
+                )?;
+                if row < rows - 1 {
+                    execute!(self.stdout, cursor::MoveDown(1))?;
+                }
+            }
+            if rows > 1 {
+                execute!(
+                    self.stdout,
+                    cursor::MoveUp((rows - 1) as u16),
+                    cursor::MoveToColumn(0)
+                )?;
+            }
+            write!(self.stdout, "{}", line)?;
+            if i < last {
+                write!(self.stdout, "\r\n")?;
+            }
+        }
+        self.stdout.flush()
+    }
+
+    /// Index of the first line whose rows are still on screen.
+    fn first_addressable_line(frame: &PreviousFrame, terminal_height: usize) -> usize {
+        let mut rows = 0usize;
+        for (index, line_rows) in frame.line_visual_rows.iter().enumerate().rev() {
+            rows += line_rows;
+            if rows >= terminal_height {
+                return index;
+            }
+        }
+        0
+    }
+
+    /// Composite overlays onto the tail the terminal shows, so scrolled rows
+    /// stay untouched.
+    fn composite_visible_overlays(&self, lines: &mut Vec<String>, overlays: &[RenderedOverlay]) {
+        if overlays.is_empty() {
+            return;
+        }
         let overlay_refs: Vec<Overlay> = overlays
             .iter()
             .map(|o| Overlay {
@@ -112,132 +245,13 @@ impl<W: Write> OutputBuffer<W> {
                 anchor: o.anchor,
             })
             .collect();
-        viewport_lines = composite_overlays(&viewport_lines, &overlay_refs, self.terminal_width);
-
-        let viewport_visual_rows: usize = viewport_lines
-            .iter()
-            .map(|line| visual_rows(line, self.terminal_width))
-            .sum();
-
-        let prev = self.previous.as_ref();
-        let prev_lines: &[String] = prev.map(|p| p.lines.as_slice()).unwrap_or(&[]);
-        let prev_visual_rows = prev.map(|p| p.visual_rows).unwrap_or(0);
-
-        let all_equal = !self.force_next_redraw
-            && viewport_lines.len() == prev_lines.len()
-            && viewport_lines
-                .iter()
-                .zip(prev_lines.iter())
-                .all(|(a, b)| lines_visually_equal(a, b));
-
-        if all_equal {
-            return Ok(false);
-        }
-
-        tracing::debug!(
-            prev_rows = prev_visual_rows,
-            next_rows = viewport_visual_rows,
-            line_count = viewport_lines.len(),
-            width = self.terminal_width,
-            height = self.terminal_height,
-            force = self.force_next_redraw,
-            "render"
-        );
-
-        self.force_next_redraw = false;
-
-        // Move cursor to top of viewport.
-        // Caller ensures cursor is at viewport bottom before calling.
-        if prev_visual_rows > 0 {
-            let move_up_amount = (prev_visual_rows as u16).saturating_sub(1);
-            tracing::debug!(
-                previous_visual_rows = prev_visual_rows,
-                move_up_amount,
-                "render: moving cursor up before diff"
-            );
-            if move_up_amount > 0 {
-                execute!(
-                    self.stdout,
-                    cursor::MoveUp(move_up_amount),
-                    cursor::MoveToColumn(0),
-                )?;
-            } else {
-                execute!(self.stdout, cursor::MoveToColumn(0))?;
-            }
-        }
-
-        // Line-level diff: only rewrite lines that changed.
-        // Reduces per-frame data ~10-30x for SSH/slow connections.
-        let prev_len = prev_lines.len();
-        let new_len = viewport_lines.len();
-        let common = prev_len.min(new_len);
-
-        // Find first line that differs
-        let first_diff = (0..common)
-            .find(|&i| !lines_visually_equal(&viewport_lines[i], &prev_lines[i]))
-            .unwrap_or(common);
-
-        if first_diff < common || new_len != prev_len {
-            // Skip unchanged lines at the top
-            if first_diff > 0 {
-                // Move cursor down past unchanged lines
-                let skip_rows: usize = viewport_lines[..first_diff]
-                    .iter()
-                    .map(|l| visual_rows(l, self.terminal_width))
-                    .sum();
-                if skip_rows > 0 {
-                    execute!(self.stdout, cursor::MoveDown(skip_rows as u16))?;
-                }
-            }
-
-            // Rewrite from first_diff to end.
-            // Lines that wrap to multiple visual rows need all their rows
-            // cleared — Clear(CurrentLine) only clears the cursor's row.
-            for (i, line) in viewport_lines.iter().enumerate().skip(first_diff) {
-                let vrows = visual_rows(line, self.terminal_width);
-                execute!(self.stdout, cursor::MoveToColumn(0))?;
-                for row in 0..vrows {
-                    execute!(
-                        self.stdout,
-                        terminal::Clear(terminal::ClearType::CurrentLine)
-                    )?;
-                    if row < vrows - 1 {
-                        execute!(self.stdout, cursor::MoveDown(1))?;
-                    }
-                }
-                // Move back to the first row of this line to write content
-                if vrows > 1 {
-                    execute!(self.stdout, cursor::MoveUp((vrows - 1) as u16))?;
-                    execute!(self.stdout, cursor::MoveToColumn(0))?;
-                }
-                write!(self.stdout, "{}", line)?;
-                if i < new_len - 1 {
-                    write!(self.stdout, "\r\n")?;
-                }
-            }
-
-            // Clear remaining lines if viewport shrunk
-            if new_len < prev_len {
-                write!(self.stdout, "\r\n")?;
-                execute!(
-                    self.stdout,
-                    terminal::Clear(terminal::ClearType::FromCursorDown)
-                )?;
-                // Move cursor back to viewport bottom (last content line).
-                // The \r\n + ClearFromCursorDown left cursor one row past the
-                // viewport, which causes subsequent clear() calls to miss the
-                // topmost viewport row (off-by-one).
-                execute!(self.stdout, cursor::MoveUp(1))?;
-            }
-        }
-
-        self.stdout.flush()?;
-        self.previous = Some(PreviousFrame {
-            lines: viewport_lines,
-            visual_rows: viewport_visual_rows,
-        });
-
-        Ok(true)
+        let split = lines.len().saturating_sub(self.terminal_height);
+        let tail = lines.split_off(split);
+        lines.extend(composite_overlays(
+            &tail,
+            &overlay_refs,
+            self.terminal_width,
+        ));
     }
 
     /// Clear the viewport from terminal.
@@ -246,7 +260,12 @@ impl<W: Write> OutputBuffer<W> {
     /// before calling this. This simplifies the math: we only need
     /// `previous_visual_rows` to compute how far up to move.
     pub fn clear(&mut self) -> io::Result<()> {
-        let prev_visual_rows = self.previous.as_ref().map(|p| p.visual_rows).unwrap_or(0);
+        // Never move above the screen top: rows beyond it belong to the terminal.
+        let prev_visual_rows = self
+            .previous
+            .as_ref()
+            .map(|p| p.total_visual_rows.min(self.terminal_height))
+            .unwrap_or(0);
         tracing::debug!(
             previous_visual_rows = prev_visual_rows,
             terminal_height = self.terminal_height,
@@ -273,8 +292,27 @@ impl<W: Write> OutputBuffer<W> {
         Ok(())
     }
 
+    /// Clear the screen and purge the scrollback, then force a full repaint.
+    ///
+    /// This is the resize path. The terminal owns every row it already
+    /// printed and no escape sequence can rewrap them, so a reflow has to
+    /// destroy the buffer and print the transcript again at the new width.
+    /// Shell output from before the TUI started is destroyed with it.
+    pub fn purge_and_reset(&mut self) -> io::Result<()> {
+        // Reset the scroll region and style, home the cursor, clear the
+        // screen, then purge the scrollback (ED 3).
+        write!(self.stdout, "\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H")?;
+        self.stdout.flush()?;
+        self.previous = None;
+        self.force_next_redraw = true;
+        Ok(())
+    }
+
     pub fn height(&self) -> usize {
-        self.previous.as_ref().map(|p| p.visual_rows).unwrap_or(0)
+        self.previous
+            .as_ref()
+            .map(|p| p.total_visual_rows)
+            .unwrap_or(0)
     }
 
     pub fn force_redraw(&mut self) {
@@ -300,65 +338,38 @@ impl<W: Write> OutputBuffer<W> {
 
         Ok(())
     }
+}
 
-    fn clamp_to_viewport_with_scroll(
-        &self,
-        all_lines: &[String],
-        line_visual_rows: &[usize],
-        total_visual_rows: usize,
-        available_rows: usize,
-        scroll_offset: usize,
-    ) -> (Vec<String>, usize) {
-        let max_scroll = total_visual_rows.saturating_sub(available_rows);
-        let scroll_offset = scroll_offset.min(max_scroll);
+/// Reprint cap for the terminal this process is attached to.
+///
+/// Each value mirrors that terminal's documented scrollback default, so a
+/// reprint never emits more rows than the terminal would keep. The values come
+/// from Codex's `resize_reflow_cap.rs`, which solves the same problem.
+fn detect_max_transcript_rows() -> usize {
+    const VSCODE: usize = 1_000;
+    const WEZTERM: usize = 3_500;
+    const WINDOWS_TERMINAL: usize = 9_001;
+    const ALACRITTY: usize = 10_000;
+    const FALLBACK: usize = 1_000;
 
-        if total_visual_rows <= available_rows && scroll_offset == 0 {
-            return (all_lines.to_vec(), total_visual_rows);
-        }
-
-        // First, find the end index by skipping `scroll_offset` visual rows from bottom
-        let mut end_idx = all_lines.len();
-        let mut skip_rows = scroll_offset;
-        if scroll_offset > 0 {
-            for (i, &row_count) in line_visual_rows.iter().enumerate().rev() {
-                if skip_rows >= row_count {
-                    skip_rows -= row_count;
-                    end_idx = i;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        // Then, find the start index by fitting `available_rows` from end_idx backwards
-        let mut rows_remaining = available_rows;
-        let mut start_idx = end_idx;
-
-        for i in (0..end_idx).rev() {
-            let row_count = line_visual_rows[i];
-            if rows_remaining >= row_count {
-                rows_remaining -= row_count;
-                start_idx = i;
-            } else {
-                break;
-            }
-        }
-
-        let viewport: Vec<String> = all_lines[start_idx..end_idx].to_vec();
-        let viewport_rows: usize = line_visual_rows[start_idx..end_idx].iter().sum();
-
-        tracing::debug!(
-            total_rows = total_visual_rows,
-            available = available_rows,
-            scroll_offset,
-            skipped_lines = start_idx,
-            end_idx,
-            viewport_rows,
-            "viewport clamped"
-        );
-
-        (viewport, viewport_rows)
+    let term_program = std::env::var("TERM_PROGRAM").unwrap_or_default();
+    if term_program.eq_ignore_ascii_case("vscode") {
+        return VSCODE;
     }
+    if term_program.eq_ignore_ascii_case("wezterm") || std::env::var_os("WEZTERM_PANE").is_some() {
+        return WEZTERM;
+    }
+    if std::env::var_os("WT_SESSION").is_some() {
+        return WINDOWS_TERMINAL;
+    }
+    if std::env::var_os("ALACRITTY_WINDOW_ID").is_some()
+        || std::env::var("TERM")
+            .unwrap_or_default()
+            .contains("alacritty")
+    {
+        return ALACRITTY;
+    }
+    FALLBACK
 }
 
 fn collapse_blank_lines(content: &str) -> Vec<String> {
@@ -389,47 +400,49 @@ mod tests {
     }
 
     #[test]
-    fn test_viewport_clamp_content_fits() {
-        let buffer = OutputBuffer::new(80, 24);
-        let lines: Vec<String> = vec!["line1".into(), "line2".into(), "line3".into()];
-        let visual_rows = vec![1, 1, 1];
+    fn transcript_is_capped_to_the_reprint_bound() {
+        // A resize reprints the retained rows, so the model must not grow past
+        // what the terminal would keep.
+        let mut buffer = OutputBuffer::with_writer(Vec::new(), 80, 10);
+        buffer.set_max_transcript_rows(20);
 
-        let (viewport, rows) = buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 3, 22, 0);
+        let content = (0..100)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        buffer.render_with_overlays(&content, &[]).unwrap();
 
-        assert_eq!(viewport.len(), 3);
-        assert_eq!(rows, 3);
+        let retained = buffer.previous.as_ref().expect("a frame was recorded");
+        assert!(
+            retained.total_visual_rows <= 20,
+            "retained {} rows, cap is 20",
+            retained.total_visual_rows
+        );
+        assert_eq!(
+            retained.lines.last().map(String::as_str),
+            Some("line99"),
+            "the cap must drop the oldest rows, not the newest"
+        );
     }
 
     #[test]
-    fn test_viewport_clamp_content_exceeds() {
-        let buffer = OutputBuffer::new(80, 10);
-        let lines: Vec<String> = (0..20).map(|i| format!("line{}", i)).collect();
-        let visual_rows = vec![1; 20];
+    fn the_cap_never_drops_a_row_the_screen_shows() {
+        // A cap below the screen height would blank rows the user can see.
+        let mut buffer = OutputBuffer::with_writer(Vec::new(), 80, 24);
+        buffer.set_max_transcript_rows(2);
 
-        let (viewport, rows) = buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 20, 8, 0);
+        let content = (0..50)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        buffer.render_with_overlays(&content, &[]).unwrap();
 
-        assert_eq!(viewport.len(), 8);
-        assert_eq!(rows, 8);
-        assert_eq!(viewport[0], "line12");
-        assert_eq!(viewport[7], "line19");
-    }
-
-    #[test]
-    fn test_viewport_clamp_with_wrapped_lines() {
-        let buffer = OutputBuffer::new(40, 10);
-        let lines: Vec<String> = vec![
-            "short".into(),
-            "this is a very long line that wraps".into(),
-            "another short".into(),
-        ];
-        let visual_rows = vec![1, 2, 1];
-
-        let (viewport, rows) = buffer.clamp_to_viewport_with_scroll(&lines, &visual_rows, 4, 3, 0);
-
-        assert_eq!(viewport.len(), 2);
-        assert_eq!(rows, 3);
-        assert_eq!(viewport[0], "this is a very long line that wraps");
-        assert_eq!(viewport[1], "another short");
+        let retained = buffer.previous.as_ref().expect("a frame was recorded");
+        assert!(
+            retained.total_visual_rows >= 24,
+            "kept {} rows, screen holds 24",
+            retained.total_visual_rows
+        );
     }
 
     #[test]

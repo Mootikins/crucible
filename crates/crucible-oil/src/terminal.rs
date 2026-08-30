@@ -86,19 +86,28 @@ impl Terminal<Stdout> {
 
     pub fn handle_resize(&mut self) -> io::Result<()> {
         let (width, height) = terminal::size()?;
+        let width_changed = width != self.width;
+        let height_changed = height != self.height;
         self.width = width;
         self.height = height;
         self.output.set_size(width as usize, height as usize);
         self.planner.set_size(width, height);
-        // Scrub the old viewport before the next render. clear() uses the
-        // still-current prev_visual_rows to emit MoveUp + ClearFromCursorDown,
-        // which removes content that would otherwise become orphaned under
-        // the new wrap. Cursor position after SIGWINCH is emulator-dependent
-        // so this is best-effort; if the terminal already reflowed, residual
-        // rows may persist until the next full-screen render. force_redraw
-        // then ensures even a same-shape viewport gets repainted (otherwise
-        // the all-equal early-return in render_with_overlays would skip it).
-        self.output.clear()?;
+
+        // A width change alters every wrap, so the transcript must be printed
+        // again at the new width. No escape sequence can rewrap a row the
+        // terminal already owns, so the only way to reflow is to purge the
+        // scrollback and print the transcript again.
+        //
+        // A height-only change needs the same rebuild to keep the visible tail
+        // aligned, except on a shell whose software keyboard resizes the
+        // terminal. There a rebuild would replay the whole transcript on every
+        // keyboard toggle.
+        let purge = width_changed || (height_changed && !mobile_keyboard_shell());
+        if purge {
+            self.output.purge_and_reset()?;
+        } else {
+            self.output.clear()?;
+        }
         self.output.force_redraw();
         Ok(())
     }
@@ -309,9 +318,62 @@ impl<W: Write> crate::runtime::FrameRenderer for Terminal<W> {
     }
 }
 
+/// Whether this shell resizes the terminal when a software keyboard appears.
+///
+/// A rebuild on every keyboard toggle is unusable, so these shells keep the
+/// differential repaint for a height-only change.
+///
+/// Termux announces itself with `TERMUX_VERSION`. iSH sets no marker variable
+/// at all — it only hardcodes `TERM=xterm-256color` — so it is identified by
+/// its kernel string instead: the release is hardcoded to `4.20.69-ish` and
+/// `/proc/version` repeats it next to the literal build tag `SUPER AWESOME`.
+/// iSH does resize and does raise `SIGWINCH` when the iOS keyboard appears.
+fn mobile_keyboard_shell() -> bool {
+    static DETECTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *DETECTED.get_or_init(|| {
+        // An explicit override wins in both directions.
+        match std::env::var("CRUCIBLE_TUI_MOBILE").as_deref() {
+            Ok("1") | Ok("true") | Ok("yes") => return true,
+            Ok("0") | Ok("false") | Ok("no") => return false,
+            _ => {}
+        }
+        if std::env::var_os("TERMUX_VERSION").is_some() {
+            return true;
+        }
+        std::fs::read_to_string("/proc/version")
+            .map(|version| is_ish_kernel(&version))
+            .unwrap_or(false)
+    })
+}
+
+/// Whether a `/proc/version` string came from iSH.
+///
+/// Both markers are hardcoded in the iSH kernel, so an exact match is safe.
+fn is_ish_kernel(proc_version: &str) -> bool {
+    proc_version.contains("-ish ") || proc_version.contains("SUPER AWESOME")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ish_kernel_string_is_recognised() {
+        // The literal string iSH reports; both markers are hardcoded upstream.
+        assert!(is_ish_kernel(
+            "Linux version 4.20.69-ish SUPER AWESOME Feb 14 2026 12:00:00"
+        ));
+    }
+
+    #[test]
+    fn ordinary_kernel_string_is_not_ish() {
+        assert!(!is_ish_kernel(
+            "Linux version 7.1.4-102.fc43.x86_64 (mockbuild@) (gcc 15.0.1)"
+        ));
+        assert!(!is_ish_kernel(
+            "Linux version 6.6.0-generic #1 SMP PREEMPT_DYNAMIC"
+        ));
+    }
     use crossterm::cursor::SetCursorStyle;
 
     #[test]

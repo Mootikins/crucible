@@ -116,8 +116,15 @@ impl FramePlanner {
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
 
-        let viewport =
-            render_tree_with_engine(&mut self.layout_engine, &main_tree, self.width, self.height);
+        // Render the whole transcript, not a screen-sized slice. The terminal
+        // owns the scroll, so the renderer emits every row and lets rows above
+        // the screen scroll away on their own.
+        let viewport = render_tree_with_engine(
+            &mut self.layout_engine,
+            &main_tree,
+            self.width,
+            NATURAL_HEIGHT,
+        );
 
         let rendered_overlays = self.render_overlays(&overlay_nodes);
 
