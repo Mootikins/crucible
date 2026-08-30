@@ -414,7 +414,7 @@ impl<'a> Parser<'a> {
                 // `name: type`, or a bare type when this turns out to be a
                 // grouping rather than a parameter list.
                 let checkpoint = self.rest;
-                let name = self.parse_name().ok();
+                let name = self.parse_param_name().ok();
                 let named = name.is_some() && {
                     let optional = self.eat("?");
                     if self.eat(":") {
@@ -575,6 +575,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// A PARAMETER name: an identifier, and never a dotted one.
+    ///
+    /// `parse_name` allows dots, because a type name may be dotted. Reusing
+    /// it here read `...children: any` as a parameter literally named
+    /// `...children`, which rendered back verbatim — and a named variadic is
+    /// a Luau syntax error that takes the whole generated file down. Luau has
+    /// no syntax for naming a variadic; only its element type survives.
+    fn parse_param_name(&mut self) -> Result<String, TypeError> {
+        self.skip_space();
+        let end = self
+            .rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(self.rest.len());
+        if end == 0 {
+            return Err(self.fail("expected a parameter name"));
+        }
+        let (name, remainder) = self.rest.split_at(end);
+        self.rest = remainder;
+        Ok(name.to_string())
+    }
+
     fn parse_name(&mut self) -> Result<String, TypeError> {
         self.skip_space();
         let end = self
@@ -635,6 +656,21 @@ mod tests {
     #[test]
     fn an_unknown_name_is_a_named_type_not_a_refusal() {
         assert_eq!(parse("KilnEntry"), LuaType::Named("KilnEntry".to_string()));
+    }
+
+    /// A variadic cannot be NAMED. Luau has no syntax for it, so a
+    /// declaration that tries takes the whole generated file down — the
+    /// analyzer answers `Expected ')' … got ':'` and every `cru.*` call in
+    /// every plugin becomes an unknown global at once.
+    ///
+    /// The parser used to accept it, because a parameter name was read with
+    /// the TYPE-name rule, which allows dots: `...children` read as one
+    /// parameter named `...children` and rendered back verbatim.
+    #[test]
+    fn a_named_variadic_is_refused() {
+        let err = LuaType::parse("(props: any?, ...children: any) -> any")
+            .expect_err("a named variadic must be refused");
+        assert_eq!(err.declaration, "(props: any?, ...children: any) -> any");
     }
 
     /// A parsed variadic parameter renders as `...T`, never `arg1: ...T`.

@@ -473,10 +473,29 @@ return {
 }
 ```
 
-`cru plugin check <dir>` runs `luau-analyze` over the plugin with the generated
-`cru.*` declarations on its path, so a tool that returns the wrong shape is a
-build failure rather than a runtime surprise. `cru plugin stubs` writes those
-declarations.
+`cru plugin check <dir>` typechecks the plugin against the generated `cru.*`
+declarations, so a call with the wrong argument type or a tool returning the
+wrong shape is a build failure rather than a runtime surprise. `cru plugin
+stubs` writes those declarations; add `--offline` to build them from your
+working tree rather than from a running daemon.
+
+The checker is `luau-lsp`, which is what `just plugin-check` installs and what
+CI runs. Without one installed, `cru plugin check` still proves that every
+file parses and every declared tool parameter type is readable, and reports
+the typecheck as SKIPPED rather than as a pass.
+
+### What the types do not catch
+
+A misspelled key in an **all-optional** options table. Luau reads
+`cru.oil.text("x", { bld = true })` against `{ bold: boolean? }` as a table
+that omits every field, which is legal, so nothing reports it. A typo in a
+**required** field is caught, because the field then reads as missing. Nearly
+every `cru.*` options table is all-optional, so treat an option name as
+something to check by reading, the way you would without types.
+
+Two other things no type states: a unit (`cru.timer.sleep` takes SECONDS —
+the parameter name is the only thing that says so), and whether a function
+raises rather than returning nil.
 
 ## Providing Commands
 

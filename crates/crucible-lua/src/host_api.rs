@@ -450,6 +450,14 @@ pub fn render_declarations_with(
         "-- {signed} of {} functions carry a declared signature.\n",
         paths.len()
     ));
+    out.push_str(
+        "-- What these do NOT catch: a misspelled key in an all-optional\n\
+         -- options table. Luau reads `{ bld = true }` against\n\
+         -- `{ bold: boolean? }` as a table that simply omits every field,\n\
+         -- which is legal. A typo in a REQUIRED field is caught, because the\n\
+         -- field then reads as missing. Nearly every `cru.*` options table is\n\
+         -- all-optional, so this is a ceiling, not an omission.\n",
+    );
     if unsigned > 0 {
         out.push_str(&format!(
             "-- The other {unsigned} are `(...any) -> any`: no argument checked, no\n\
