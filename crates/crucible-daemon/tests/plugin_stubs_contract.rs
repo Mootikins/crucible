@@ -380,3 +380,55 @@ async fn the_luau_declarations_cover_the_vm_namespaces() {
         );
     }
 }
+
+/// Every function the plugin VM exposes is either signed or listed as
+/// unsigned — so a NEW function cannot ship undescribed.
+///
+/// The declarations are read as authoritative by anyone running
+/// `cru plugin check`, and a function that is not in them is
+/// `(...any) -> any`: no argument checked, no result checked. That is a fine
+/// state for a function nobody has got to yet, and a bad state to reach by
+/// accident. This test makes reaching it a deliberate line in
+/// `host_api::UNSIGNED`, written in the same diff as the function.
+///
+/// It fails in both directions. An unlisted, unsigned function fails it, and
+/// so does a listed path the VM no longer has — otherwise the list would rot
+/// behind a rename and quietly stop covering anything.
+#[tokio::test]
+async fn every_function_is_signed_or_listed() {
+    let loader =
+        crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+            .expect("loader");
+    let registered: std::collections::BTreeSet<String> =
+        crucible_lua::stubs::function_paths(&loader.executor().lua().clone())
+            .expect("walk the plugin VM")
+            .into_iter()
+            .collect();
+    let signed: std::collections::BTreeSet<&str> = crucible_lua::host_api::declared_signatures()
+        .keys()
+        .copied()
+        .collect();
+    let listed: std::collections::BTreeSet<&str> =
+        crucible_lua::host_api::UNSIGNED.iter().copied().collect();
+
+    let undescribed: Vec<&String> = registered
+        .iter()
+        .filter(|path| !signed.contains(path.as_str()) && !listed.contains(path.as_str()))
+        .collect();
+    assert!(
+        undescribed.is_empty(),
+        "these functions are neither signed nor listed as unsigned. Write a \
+         signature in `host_api::DECLARED`, or add the path to \
+         `host_api::UNSIGNED`:\n{undescribed:#?}"
+    );
+
+    let stale: Vec<&&str> = listed
+        .iter()
+        .filter(|path| !registered.contains(**path))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "`host_api::UNSIGNED` names functions the plugin VM does not have. \
+         Remove them:\n{stale:#?}"
+    );
+}
