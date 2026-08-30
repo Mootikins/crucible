@@ -11,7 +11,7 @@ use super::vt100_runtime::Vt100TestRuntime;
 // ─── Cancelled tool rendering ──────────────────────────────────────────────
 
 #[test]
-fn cancelled_stream_graduates_all_containers() {
+fn cancelled_stream_keeps_all_containers() {
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -47,15 +47,16 @@ fn cancelled_stream_graduates_all_containers() {
         stripped
     );
 
-    // No containers should remain in viewport
+    // The transcript keeps every node. A resize reprints from these nodes,
+    // so a cancelled turn must stay in the list rather than be handed off.
     assert!(
-        app.container_list.is_empty(),
-        "All containers should graduate after cancellation"
+        !app.container_list.is_empty(),
+        "cancelled containers must stay in the transcript"
     );
 }
 
 #[test]
-fn cancelled_during_thinking_graduates_cleanly() {
+fn cancelled_during_thinking_keeps_the_node() {
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -67,11 +68,11 @@ fn cancelled_during_thinking_graduates_cleanly() {
     let full = vt.full_history();
     let _stripped = strip_ansi(&full);
 
-    // Should not panic, and thinking should appear in some form
+    // Should not panic, and the cancelled turn stays in the transcript.
     assert!(!app.is_streaming());
     assert!(
-        app.container_list.is_empty(),
-        "Cancelled thinking container should graduate"
+        !app.container_list.is_empty(),
+        "cancelled thinking must stay in the transcript"
     );
 }
 
@@ -341,15 +342,22 @@ fn empty_text_delta_does_not_create_visible_artifact() {
     let mut vt = Vt100TestRuntime::new(80, 24);
     vt.render_frame(&mut app);
 
-    // Should graduate cleanly with no visual content (or minimal)
+    // The composer and status line always paint, so "no visible artifact"
+    // means the transcript region above the composer stays blank.
+    let stripped = strip_ansi(&vt.screen_contents());
+    let transcript: String = stripped
+        .lines()
+        .take_while(|line| !line.contains('\u{2584}'))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        app.container_list.is_empty(),
-        "Empty response should still graduate"
+        transcript.trim().is_empty(),
+        "an empty delta must not paint transcript content.\n{transcript}"
     );
 }
 
 #[test]
-fn thinking_only_no_text_graduates_cleanly() {
+fn thinking_only_no_text_renders_cleanly() {
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -362,8 +370,8 @@ fn thinking_only_no_text_graduates_cleanly() {
     let stripped = strip_ansi(&full);
 
     assert!(
-        app.container_list.is_empty(),
-        "Thinking-only response should graduate"
+        !app.container_list.is_empty(),
+        "a thinking-only response must stay in the transcript"
     );
     // Should show collapsed thinking in scrollback
     assert!(

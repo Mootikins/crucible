@@ -1,7 +1,7 @@
 //! Thinking block component.
 //!
 //! Owns state for a single thinking block and renders it based on
-//! whether it's live (streaming) or graduated (scrollback).
+//! whether the owning response is still streaming or finished.
 
 use std::borrow::Cow;
 
@@ -18,26 +18,16 @@ use crucible_oil::style::Style;
 #[derive(Debug, Clone)]
 pub struct ThinkingComponent {
     pub(crate) content: String,
-    graduated: bool,
 }
 
 impl ThinkingComponent {
     pub fn new(content: String) -> Self {
-        Self {
-            content,
-            graduated: false,
-        }
+        Self { content }
     }
 
     /// Append streaming thinking content.
     pub fn append(&mut self, delta: &str) {
         self.content.push_str(delta);
-    }
-
-    /// Transition to graduated state. Render will always produce
-    /// collapsed output after this call.
-    pub fn graduate(&mut self) {
-        self.graduated = true;
     }
 
     /// Word count across all content.
@@ -47,17 +37,16 @@ impl ThinkingComponent {
 
     /// Render this thinking block.
     ///
-    /// - Graduated + show_thinking: keep the expanded content (mirrors what
-    ///   the user saw while it streamed)
-    /// - Graduated + !show_thinking: collapsed "Thought (N words)" summary
-    /// - Live + show_thinking: full expanded content
-    /// - Live + !show_thinking: collapsed summary with spinner
+    /// `is_complete` is the owning response's state, and it is the only thing
+    /// that decides the collapsed or expanded form:
+    ///
+    /// - show_thinking: full expanded content, headed "Thinking…" or "Thought"
+    /// - !show_thinking: collapsed "Thought (N words)" summary
     pub fn render(&self, state: &RenderState, is_complete: bool) -> Node {
-        match (self.graduated, state.show_thinking) {
-            (true, true) => self.render_expanded(state, true),
-            (true, false) => self.render_collapsed_complete(),
-            (false, true) => self.render_expanded(state, is_complete),
-            (false, false) => self.render_collapsed_live(state, is_complete),
+        if state.show_thinking {
+            self.render_expanded(state, is_complete)
+        } else {
+            self.render_collapsed(state, is_complete)
         }
     }
 
@@ -136,11 +125,11 @@ impl ThinkingComponent {
         col([header, content_node])
     }
 
-    /// Collapsed summary while live (show_thinking=false, not graduated).
+    /// Collapsed summary (show_thinking=false).
     ///
-    /// No spinners — spinners are viewport chrome only (prevents scrollback
-    /// leaks). The turn spinner covers all spinner display.
-    fn render_collapsed_live(&self, _state: &RenderState, is_complete: bool) -> Node {
+    /// No spinners — spinners are viewport chrome only. The turn spinner
+    /// covers all spinner display.
+    fn render_collapsed(&self, _state: &RenderState, is_complete: bool) -> Node {
         let (_, muted) = Self::thinking_styles();
         let words = self.word_count();
 
@@ -148,7 +137,6 @@ impl ThinkingComponent {
             // Just started thinking, no words yet — show label only
             styled(" Thinking\u{2026}", muted)
         } else if is_complete {
-            // Response finished but component wasn't graduated yet (viewport render).
             self.render_collapsed_complete()
         } else {
             // Still thinking, accumulating words
@@ -172,59 +160,11 @@ mod tests {
     }
 
     #[test]
-    fn new_component_is_not_graduated() {
-        let tc = ThinkingComponent::new("hello".into());
-        assert!(!tc.graduated);
-        assert_eq!(tc.word_count(), 1);
-    }
-
-    #[test]
     fn append_accumulates_content() {
         let mut tc = ThinkingComponent::new("hello".into());
         tc.append(" world");
         assert_eq!(tc.content, "hello world");
         assert_eq!(tc.word_count(), 2);
-    }
-
-    #[test]
-    fn graduate_transitions_state() {
-        let mut tc = ThinkingComponent::new("thinking about things".into());
-        assert!(!tc.graduated);
-        tc.graduate();
-        assert!(tc.graduated);
-    }
-
-    #[test]
-    fn graduated_renders_collapsed_when_show_thinking_off() {
-        let mut tc = ThinkingComponent::new("thinking about many things here".into());
-        tc.graduate();
-
-        let state = default_state();
-        let node = tc.render(&state, false);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Thought"));
-        assert!(plain.contains("words)"));
-        assert!(!plain.contains("Thinking"));
-    }
-
-    #[test]
-    fn graduated_keeps_expanded_content_when_show_thinking_on() {
-        // Regression: with thinking display on, the user already saw the
-        // expanded reasoning while it streamed. Graduating into scrollback
-        // must not hide it — they should still see the same content rather
-        // than a "Thought (N words)" stub.
-        let mut tc = ThinkingComponent::new("detailed graduated reasoning content".into());
-        tc.graduate();
-
-        let mut state = default_state();
-        state.show_thinking = true;
-        let node = tc.render(&state, false);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(
-            plain.contains("detailed graduated reasoning content"),
-            "graduated thinking with show_thinking=on must keep content: {:?}",
-            plain
-        );
     }
 
     #[test]

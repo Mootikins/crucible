@@ -6,9 +6,9 @@
 //!
 //! Spacing: uniform `gap(1)` between all nodes.
 
-use crucible_oil::node::{col, styled, Node};
-use crucible_oil::planning::Graduation;
-use crucible_oil::style::{Gap, Padding, Style};
+use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::style::{Gap, Style};
+use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
@@ -22,6 +22,13 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /// A chat node — the graduation unit and rendering primitive.
+/// Which half of a split tool a `BackgroundTool` node records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackgroundPhase {
+    Started,
+    Finished,
+}
+
 #[derive(Debug, Clone)]
 pub enum ChatNode {
     UserMessage {
@@ -34,6 +41,18 @@ pub enum ChatNode {
     },
     ToolGroup {
         tools: Vec<CachedToolCall>,
+    },
+    /// One phase of a tool that outran the split threshold.
+    ///
+    /// A slow tool is removed from its group and recorded as two immutable
+    /// nodes, `Started` and later `Finished`. Its live state lives off the
+    /// transcript in `ContainerList::background`, so no transcript node
+    /// mutates once it is written. That matters because a node can scroll out
+    /// of the repaintable window at any time, and a mutable node that scrolls
+    /// away freezes mid-update.
+    BackgroundTool {
+        tool: CachedToolCall,
+        phase: BackgroundPhase,
     },
     SubagentTask {
         agent: CachedSubagent,
@@ -49,9 +68,10 @@ pub enum ChatNode {
 impl ChatNode {
     pub fn is_complete(&self) -> bool {
         match self {
-            Self::UserMessage { .. } | Self::SystemMessage { .. } | Self::ShellExecution { .. } => {
-                true
-            }
+            Self::UserMessage { .. }
+            | Self::SystemMessage { .. }
+            | Self::ShellExecution { .. }
+            | Self::BackgroundTool { .. } => true,
             Self::AssistantResponse { complete, .. } => *complete,
             Self::ToolGroup { tools } => tools.iter().all(|t| t.complete),
             Self::SubagentTask { agent } => agent.is_terminal(),
@@ -82,7 +102,44 @@ impl ChatNode {
             }
             Self::SubagentTask { agent } => render_subagent(agent, ctx.spinner_frame, ctx.width()),
             Self::ShellExecution { shell } => render_shell_execution(shell),
+            Self::BackgroundTool { tool, phase } => Self::render_background_tool(tool, *phase, ctx),
             Self::SystemMessage { text } => Self::render_system_message(text),
+        }
+    }
+
+    /// One phase of a split tool.
+    ///
+    /// Neither phase animates. A spinner here would be frozen the moment the
+    /// node scrolled out of the repaintable window, which is the whole reason
+    /// a slow tool leaves the group.
+    fn render_background_tool(
+        tool: &CachedToolCall,
+        phase: BackgroundPhase,
+        ctx: &ViewContext<'_>,
+    ) -> Node {
+        let theme = ctx.theme;
+        let dim = Style::new().fg(theme.resolve_color(theme.colors.text_dim));
+        let muted = Style::new().fg(theme.resolve_color(theme.colors.text_muted));
+
+        match phase {
+            BackgroundPhase::Started => row([
+                styled(" \u{25B8} ", dim),
+                styled(tool.name.to_string(), dim),
+                styled(" started in the background", muted),
+            ]),
+            BackgroundPhase::Finished => {
+                let elapsed = tool.started_at.elapsed();
+                let summary = if let Some(error) = tool.error.as_ref() {
+                    format!(" failed after {:.1}s: {error}", elapsed.as_secs_f32())
+                } else {
+                    format!(" finished after {:.1}s", elapsed.as_secs_f32())
+                };
+                row([
+                    styled(" \u{25AA} ", dim),
+                    styled(tool.name.to_string(), dim),
+                    styled(summary, muted),
+                ])
+            }
         }
     }
 
@@ -207,14 +264,21 @@ impl ChatNode {
 
 // ─── ContainerList ──────────────────────────────────────────────────────────
 
-/// Ordered list of chat nodes with graduation support.
+/// Ordered list of chat nodes.
 ///
-/// `drain_completed()` removes completed nodes from the front and
-/// returns a `Graduation` node tree for scrollback output.
+/// The list keeps every node for the life of the session. The renderer emits
+/// the whole transcript each frame and the terminal owns the scroll, so a node
+/// is never handed off and never dropped. A resize reprints the transcript
+/// from these nodes at the new width.
 pub struct ContainerList {
     nodes: Vec<ChatNode>,
     turn_active: bool,
-    has_graduated: bool,
+    /// Tools that outran the split threshold, keyed by `CachedToolCall::id`.
+    ///
+    /// Their output keeps arriving after the split, so the mutable copy lives
+    /// here rather than in a transcript node. The status line reports how many
+    /// are in flight; the transcript shows only the immutable start and finish.
+    background: Vec<CachedToolCall>,
 }
 
 impl ContainerList {
@@ -222,7 +286,7 @@ impl ContainerList {
         Self {
             nodes: Vec::new(),
             turn_active: false,
-            has_graduated: false,
+            background: Vec::new(),
         }
     }
 
@@ -236,7 +300,7 @@ impl ContainerList {
 
     pub fn clear(&mut self) {
         self.nodes.clear();
-        self.has_graduated = false;
+        self.background.clear();
         self.turn_active = false;
     }
 
@@ -244,18 +308,8 @@ impl ContainerList {
         &self.nodes
     }
 
-    /// Whether the viewport needs a leading blank line for cross-batch spacing
-    /// (graduated content above isn't tight with the first viewport node).
-    pub fn needs_cross_batch_gap(&self) -> bool {
-        self.has_graduated && !self.nodes.is_empty()
-    }
-
     pub fn is_streaming(&self) -> bool {
         self.turn_active
-    }
-
-    pub fn has_graduated(&self) -> bool {
-        self.has_graduated
     }
 
     // ─── Mutations ──────────────────────────────────────────────────────
@@ -324,6 +378,107 @@ impl ContainerList {
             tracing::debug!("creating new ToolGroup");
             self.nodes.push(ChatNode::ToolGroup { tools: vec![tool] });
         }
+    }
+
+    /// Move any tool that has run past `threshold` out of the transcript.
+    ///
+    /// The transcript keeps two immutable nodes for a slow tool instead of one
+    /// node that mutates for as long as the tool runs. A fast tool is never
+    /// split, so the common case stays a single node.
+    ///
+    /// Returns whether anything moved, so the caller can request a frame.
+    pub fn split_slow_tools(&mut self, threshold: Duration) -> bool {
+        let mut started: Vec<CachedToolCall> = Vec::new();
+        for node in self.nodes.iter_mut() {
+            let ChatNode::ToolGroup { tools } = node else {
+                continue;
+            };
+            let mut index = 0;
+            while index < tools.len() {
+                let slow = !tools[index].complete && tools[index].started_at.elapsed() >= threshold;
+                if slow {
+                    started.push(tools.remove(index));
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        if started.is_empty() {
+            return false;
+        }
+        // An emptied group would render as a blank band.
+        self.nodes
+            .retain(|node| !matches!(node, ChatNode::ToolGroup { tools } if tools.is_empty()));
+        for tool in started {
+            self.nodes.push(ChatNode::BackgroundTool {
+                tool: tool.clone(),
+                phase: BackgroundPhase::Started,
+            });
+            self.background.push(tool);
+        }
+        true
+    }
+
+    /// Apply an update to a split tool, if this call belongs to one.
+    ///
+    /// Returns whether the update was handled here. A split tool is no longer
+    /// in any group, so the normal `update_tool` path would miss it.
+    pub fn update_background_tool(
+        &mut self,
+        name: &str,
+        call_id: Option<&str>,
+        f: impl FnOnce(&mut CachedToolCall),
+    ) -> bool {
+        let found = match call_id {
+            Some(cid) => self
+                .background
+                .iter_mut()
+                .rev()
+                .find(|t| t.call_id.as_deref() == Some(cid)),
+            None => self
+                .background
+                .iter_mut()
+                .rev()
+                .find(|t| t.name.as_ref() == name),
+        };
+        let Some(tool) = found else {
+            return false;
+        };
+        f(tool);
+        true
+    }
+
+    /// Write the finish node for a split tool and drop its live copy.
+    ///
+    /// Returns whether this call belonged to a split tool.
+    pub fn finish_background_tool(&mut self, name: &str, call_id: Option<&str>) -> bool {
+        let position = match call_id {
+            Some(cid) => self
+                .background
+                .iter()
+                .rposition(|t| t.call_id.as_deref() == Some(cid)),
+            None => self
+                .background
+                .iter()
+                .rposition(|t| t.name.as_ref() == name),
+        };
+        let Some(position) = position else {
+            return false;
+        };
+        let mut tool = self.background.remove(position);
+        tool.complete = true;
+        self.nodes.push(ChatNode::BackgroundTool {
+            tool,
+            phase: BackgroundPhase::Finished,
+        });
+        true
+    }
+
+    /// How many split tools are still running.
+    ///
+    /// The status line reports this; the transcript deliberately does not.
+    pub fn background_task_count(&self) -> usize {
+        self.background.len()
     }
 
     /// Update a tool within the most recent ToolGroup by name and optional call_id.
@@ -426,79 +581,6 @@ impl ContainerList {
     pub fn mark_turn_active(&mut self) {
         self.turn_active = true;
     }
-
-    // ─── Graduation ─────────────────────────────────────────────────────
-
-    /// Whether the node at `index` is ready for graduation.
-    ///
-    /// A node graduates when:
-    /// - The turn is over (`!turn_active`), OR
-    /// - A successor node exists (the node is no longer the tail), OR
-    /// - The node is a self-graduating type (UserMessage, SystemMessage, etc.)
-    /// - The node is a complete AssistantResponse
-    ///
-    /// ToolGroups and SubagentTasks never graduate during streaming — they
-    /// stay in viewport until superseded or turn ends.
-    fn is_graduatable(&self, index: usize) -> bool {
-        if !self.turn_active {
-            return true;
-        }
-        // During streaming, ToolGroups never graduate — more tools may
-        // arrive and they must stay in one group to avoid cross-batch gaps.
-        if matches!(&self.nodes[index], ChatNode::ToolGroup { .. }) {
-            return false;
-        }
-        if index + 1 < self.nodes.len() {
-            return true;
-        }
-        // Last node, turn active: only graduate types that explicitly complete
-        match &self.nodes[index] {
-            ChatNode::UserMessage { .. }
-            | ChatNode::SystemMessage { .. }
-            | ChatNode::ShellExecution { .. } => true,
-            ChatNode::AssistantResponse { complete, .. } => *complete,
-            ChatNode::SubagentTask { .. } | ChatNode::ToolGroup { .. } => false,
-        }
-    }
-
-    /// Drain completed nodes from the front and return a graduation
-    /// node tree for scrollback output.
-    ///
-    /// Graduated thinking blocks are collapsed (via `ThinkingComponent::graduate()`).
-    pub fn drain_completed(&mut self, ctx: &ViewContext<'_>) -> Option<Graduation> {
-        let mut rendered: Vec<Node> = Vec::new();
-        let mut prev: Option<ChatNode> = None;
-
-        while !self.nodes.is_empty() && self.is_graduatable(0) {
-            let mut node = self.nodes.remove(0);
-            tracing::debug!("graduating node");
-
-            // Graduate thinking components so they render collapsed
-            if let ChatNode::AssistantResponse { thinking, .. } = &mut node {
-                for tc in thinking.iter_mut() {
-                    tc.graduate();
-                }
-            }
-
-            rendered.push(node.render(prev.as_ref(), ctx));
-            prev = Some(node);
-        }
-
-        if rendered.is_empty() {
-            return None;
-        }
-
-        let top_margin = if self.has_graduated { 1 } else { 0 };
-        self.has_graduated = true;
-
-        let inner = col(rendered).gap(Gap::row(1)).with_margin(Padding {
-            top: top_margin,
-            ..Padding::all(0)
-        });
-        let node = col([inner]);
-
-        Some(Graduation { node })
-    }
 }
 
 impl Default for ContainerList {
@@ -514,19 +596,6 @@ mod tests {
     use super::*;
     use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
-
-    fn drain(list: &mut ContainerList) -> Option<Graduation> {
-        let focus = FocusContext::default();
-        let ctx = ViewContext::new(&focus);
-        list.drain_completed(&ctx)
-    }
-
-    fn drain_with_thinking(list: &mut ContainerList) -> Option<Graduation> {
-        let focus = FocusContext::default();
-        let mut ctx = ViewContext::new(&focus);
-        ctx.show_thinking = true;
-        list.drain_completed(&ctx)
-    }
 
     fn render_node(node: &ChatNode, show_thinking: bool) -> String {
         let focus = FocusContext::default();
@@ -595,246 +664,6 @@ mod tests {
             "collapsed live thinking must indicate progress: {:?}",
             plain
         );
-    }
-
-    #[test]
-    fn empty_list_drains_nothing() {
-        let mut list = ContainerList::new();
-        assert!(drain(&mut list).is_none());
-    }
-
-    #[test]
-    fn user_message_graduates_immediately() {
-        let mut list = ContainerList::new();
-        list.add_user_message("hello".into());
-        assert_eq!(list.len(), 1);
-
-        let grad = drain(&mut list);
-        assert!(grad.is_some());
-        assert!(list.is_empty());
-
-        let plain = render_to_plain_text(&grad.unwrap().node, 80);
-        assert!(plain.contains("hello"));
-    }
-
-    #[test]
-    fn system_message_graduates_immediately() {
-        let mut list = ContainerList::new();
-        list.add_system_message("Session started".into());
-
-        let grad = drain(&mut list);
-        assert!(grad.is_some());
-
-        let plain = render_to_plain_text(&grad.unwrap().node, 80);
-        assert!(plain.contains("Session started"));
-    }
-
-    #[test]
-    fn streaming_assistant_does_not_graduate_while_turn_active() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_text("hello world");
-
-        // Still streaming, nothing follows — should not graduate
-        assert!(drain(&mut list).is_none());
-        assert_eq!(list.len(), 1);
-    }
-
-    #[test]
-    fn assistant_graduates_after_complete() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_text("done");
-        list.complete_response();
-
-        let grad = drain(&mut list);
-        assert!(grad.is_some());
-        assert!(list.is_empty());
-    }
-
-    #[test]
-    fn assistant_graduates_when_followed_by_tool() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_text("let me check");
-
-        // Tool call follows — assistant should graduate
-        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
-
-        let grad = drain(&mut list);
-        assert!(grad.is_some());
-        // Tool group remains (streaming)
-        assert_eq!(list.len(), 1);
-    }
-
-    #[test]
-    fn tool_group_graduates_when_turn_ends() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
-
-        // Turn active, tool not followed — should not graduate
-        assert!(drain(&mut list).is_none());
-
-        // End the turn
-        list.complete_response();
-
-        let grad = drain(&mut list);
-        assert!(grad.is_some());
-        assert!(list.is_empty());
-    }
-
-    #[test]
-    fn tool_group_stays_in_viewport_mid_turn() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
-
-        // Mark tool complete via update
-        list.update_tool("read_file", None, |t| {
-            t.mark_complete();
-        });
-
-        // Still mid-turn, tool group should NOT graduate
-        assert!(drain(&mut list).is_none());
-    }
-
-    #[test]
-    fn spacing_between_different_kinds() {
-        let mut list = ContainerList::new();
-        list.add_user_message("hi".into());
-        list.add_system_message("info".into());
-
-        let grad = drain(&mut list).unwrap();
-        let plain = render_to_plain_text(&grad.node, 80);
-        // Both should be present with spacing
-        assert!(plain.contains("hi"));
-        assert!(plain.contains("info"));
-    }
-
-    #[test]
-    fn all_containers_graduate_with_gap() {
-        let mut list = ContainerList::new();
-
-        let mut tool1 = CachedToolCall::new("t1", "read_file", "{}");
-        tool1.mark_complete();
-        list.add_tool_call(tool1);
-
-        // Force a new tool group by adding non-tool first
-        list.add_system_message("between".into());
-
-        let mut tool2 = CachedToolCall::new("t2", "write_file", "{}");
-        tool2.mark_complete();
-        list.add_tool_call(tool2);
-
-        let grad = drain(&mut list).unwrap();
-        // All three should graduate
-        assert!(list.is_empty());
-        assert!(grad.node != Node::Empty);
-    }
-
-    #[test]
-    fn update_tool_after_graduation_does_not_invoke_closure() {
-        // After a tool graduates, late updates (e.g. delayed ACP tool_call
-        // result events) must not silently mutate a now-scrollback tool.
-        // The closure should not run; a warn is logged at the call site.
-        let mut list = ContainerList::new();
-        let mut tool = CachedToolCall::new("t1", "read_file", "{}");
-        tool.mark_complete();
-        list.add_tool_call(tool);
-        list.complete_response();
-        let grad = drain(&mut list);
-        assert!(grad.is_some(), "tool should graduate");
-        assert!(list.is_empty());
-
-        let called = std::cell::Cell::new(false);
-        list.update_tool("read_file", None, |_| called.set(true));
-        assert!(!called.get(), "closure must not run for graduated tool");
-
-        let called_by_id = std::cell::Cell::new(false);
-        list.update_tool_by_call_id("any-id", |_| called_by_id.set(true));
-        assert!(
-            !called_by_id.get(),
-            "closure must not run for unknown call_id"
-        );
-    }
-
-    #[test]
-    fn update_tool_does_not_auto_complete_group() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
-
-        list.update_tool("read_file", None, |t| {
-            t.mark_complete();
-        });
-
-        // Tool complete but turn active — should NOT graduate
-        assert!(drain(&mut list).is_none());
-
-        // End the turn
-        list.complete_response();
-
-        // Now it should graduate
-        assert!(drain(&mut list).is_some());
-    }
-
-    #[test]
-    fn cross_batch_spacing_uses_has_graduated() {
-        use crucible_oil::render::{render_tree, NATURAL_HEIGHT};
-
-        let mut list = ContainerList::new();
-        list.add_user_message("first".into());
-        let grad1 = drain(&mut list).unwrap();
-        // First graduation: no top padding (nothing before it)
-        let rendered1 = render_tree(&grad1.node, 80, NATURAL_HEIGHT).content;
-        assert!(
-            !rendered1.starts_with("\r\n"),
-            "first grad should have no leading blank"
-        );
-
-        // Second graduation: should have top padding
-        list.add_system_message("second".into());
-        let grad2 = drain(&mut list).unwrap();
-        let rendered2 = render_tree(&grad2.node, 80, NATURAL_HEIGHT).content;
-        // The node tree should include top margin, producing a leading blank line
-        assert!(
-            rendered2.starts_with("\r\n") || rendered2.starts_with("\n"),
-            "cross-batch spacing should produce leading blank: {:?}",
-            &rendered2[..rendered2.len().min(40)]
-        );
-    }
-
-    #[test]
-    fn cancel_streaming_allows_graduation() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_text("partial");
-        list.cancel_streaming();
-
-        let grad = drain(&mut list);
-        assert!(grad.is_some());
-    }
-
-    #[test]
-    fn thinking_graduated_renders_collapsed() {
-        let mut list = ContainerList::new();
-        list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_thinking("deep analysis of the problem");
-        list.append_text("conclusion");
-        list.complete_response();
-
-        let grad = drain_with_thinking(&mut list).unwrap();
-        let plain = render_to_plain_text(&grad.node, 80);
-        // After graduation, thinking should be collapsed
-        assert!(plain.contains("Thought"));
-        assert!(plain.contains("words)"));
-        assert!(plain.contains("conclusion"));
     }
 
     #[test]
@@ -907,30 +736,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_thinking_then_tool_call_does_not_render_blank_assistant_band() {
-        // Defensive: if append_thinking is called with an empty delta and a
-        // tool call follows immediately, we must not graduate a visually-
-        // empty AssistantResponse band into scrollback. Sanity check on
-        // the Node::Empty short-circuit in render_assistant_response.
-        let mut list = ContainerList::new();
-        list.add_user_message("q".into());
-        list.mark_turn_active();
-        list.append_thinking("");
-        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.complete_response();
-
-        let grad = drain(&mut list).expect("graduation expected");
-        let plain = render_to_plain_text(&grad.node, 80);
-        // The graduated output should reach the tool group with no extra
-        // assistant indicator/bullet/separator that would belong to a real AR.
-        assert!(
-            !plain.lines().any(|l| l.trim() == "▌"),
-            "no assistant bullet expected for an empty thinking-only AR: {:?}",
-            plain
-        );
-    }
-
-    #[test]
     fn is_streaming_reflects_turn_active() {
         let mut list = ContainerList::new();
         assert!(!list.is_streaming());
@@ -940,17 +745,157 @@ mod tests {
         assert!(!list.is_streaming());
     }
 
+    // ─── Transcript retention ───────────────────────────────────────────
+    //
+    // The renderer emits the whole transcript each frame and the terminal owns
+    // the scroll. Nothing is handed off, so nothing may be dropped: a resize
+    // reprints from these nodes, and a node that left the list could not come
+    // back.
+
+    #[test]
+    fn transcript_keeps_every_node_across_a_full_turn() {
+        let mut list = ContainerList::new();
+        list.add_user_message("do the thing".into());
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
+        list.update_tool("read_file", None, |t| t.mark_complete());
+        list.start_assistant_response();
+        list.append_text("done");
+        list.complete_response();
+
+        assert_eq!(
+            list.len(),
+            3,
+            "user message, tool group and response must all remain"
+        );
+        assert!(matches!(list.nodes()[0], ChatNode::UserMessage { .. }));
+        assert!(matches!(list.nodes()[1], ChatNode::ToolGroup { .. }));
+        assert!(matches!(
+            list.nodes()[2],
+            ChatNode::AssistantResponse { .. }
+        ));
+    }
+
+    #[test]
+    fn transcript_keeps_nodes_across_several_turns() {
+        let mut list = ContainerList::new();
+        for turn in 0..3 {
+            list.add_user_message(format!("question {turn}"));
+            list.mark_turn_active();
+            list.start_assistant_response();
+            list.append_text("answer");
+            list.complete_response();
+        }
+
+        assert_eq!(list.len(), 6, "three turns leave three pairs of nodes");
+        let rendered = render_list(&list, /*show_thinking*/ false);
+        for turn in 0..3 {
+            assert!(
+                rendered.contains(&format!("question {turn}")),
+                "turn {turn} must still render: {rendered:?}"
+            );
+        }
+    }
+
+    // ─── Slow-tool split ────────────────────────────────────────────────
+
+    #[test]
+    fn a_fast_tool_is_never_split() {
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
+        list.update_tool("read_file", None, |t| t.mark_complete());
+
+        assert!(!list.split_slow_tools(Duration::from_millis(500)));
+        assert_eq!(list.len(), 1, "the tool stays one grouped node");
+        assert_eq!(list.background_task_count(), 0);
+    }
+
+    #[test]
+    fn a_slow_tool_leaves_the_group_as_a_started_node() {
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+
+        // Zero threshold: the tool is already past it.
+        assert!(list.split_slow_tools(Duration::ZERO));
+        assert_eq!(list.len(), 1, "the emptied group must not linger");
+        assert!(matches!(
+            list.nodes()[0],
+            ChatNode::BackgroundTool {
+                phase: BackgroundPhase::Started,
+                ..
+            }
+        ));
+        assert_eq!(list.background_task_count(), 1);
+    }
+
+    #[test]
+    fn finishing_a_split_tool_appends_a_second_node() {
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        list.split_slow_tools(Duration::ZERO);
+
+        assert!(list.finish_background_tool("bash", None));
+        assert_eq!(list.len(), 2, "start and finish are separate nodes");
+        assert!(matches!(
+            list.nodes()[1],
+            ChatNode::BackgroundTool {
+                phase: BackgroundPhase::Finished,
+                ..
+            }
+        ));
+        assert_eq!(
+            list.background_task_count(),
+            0,
+            "a finished tool leaves the live set"
+        );
+    }
+
+    #[test]
+    fn a_split_tool_keeps_taking_output_off_the_transcript() {
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        list.split_slow_tools(Duration::ZERO);
+
+        // Output arriving after the split must not reach a transcript node.
+        assert!(list.update_background_tool("bash", None, |t| t.append_output("line\n")));
+        assert_eq!(list.len(), 1, "no node was added by output alone");
+        assert!(matches!(
+            list.nodes()[0],
+            ChatNode::BackgroundTool {
+                phase: BackgroundPhase::Started,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn background_nodes_are_complete_so_they_never_mutate() {
+        // Every transcript node must be immutable, because a node can scroll
+        // out of the repaintable window at any time.
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        list.split_slow_tools(Duration::ZERO);
+        list.finish_background_tool("bash", None);
+
+        for node in list.nodes() {
+            assert!(node.is_complete(), "background nodes must be immutable");
+        }
+    }
+
     #[test]
     fn clear_resets_everything() {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_user_message("hi".into());
-        drain(&mut list);
 
         list.clear();
         assert!(list.is_empty());
         assert!(!list.is_streaming());
-        assert!(!list.has_graduated());
     }
 
     #[test]

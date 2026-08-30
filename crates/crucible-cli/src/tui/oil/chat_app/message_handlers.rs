@@ -96,20 +96,43 @@ impl OilChatApp {
                 delta,
                 call_id,
             } => {
-                self.container_list
-                    .update_tool(&name, call_id.as_deref(), |t| t.append_output(&delta));
+                // A split tool is no longer in any group; its live copy lives
+                // off the transcript.
+                if !self
+                    .container_list
+                    .update_background_tool(&name, call_id.as_deref(), |t| t.append_output(&delta))
+                {
+                    self.container_list
+                        .update_tool(&name, call_id.as_deref(), |t| t.append_output(&delta));
+                }
             }
             ChatAppMsg::ToolResultComplete { name, call_id } => {
-                self.container_list
-                    .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
+                // Finishing a split tool writes its second immutable node.
+                if !self
+                    .container_list
+                    .finish_background_tool(&name, call_id.as_deref())
+                {
+                    self.container_list
+                        .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
+                }
             }
             ChatAppMsg::ToolResultError {
                 name,
                 error,
                 call_id,
             } => {
-                self.container_list
-                    .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
+                if self
+                    .container_list
+                    .update_background_tool(&name, call_id.as_deref(), |t| {
+                        t.set_error(error.clone())
+                    })
+                {
+                    self.container_list
+                        .finish_background_tool(&name, call_id.as_deref());
+                } else {
+                    self.container_list
+                        .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
+                }
             }
             ChatAppMsg::StreamComplete => {
                 self.container_list.complete_response();

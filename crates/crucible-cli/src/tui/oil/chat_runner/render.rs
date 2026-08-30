@@ -28,10 +28,15 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
     let terminal_size = renderer.size();
     let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
 
-    // Drain completed containers → stdout (terminal scrollback)
-    let graduation = app.drain_graduated(&ctx);
+    // A tool that has outrun the split threshold leaves the transcript before
+    // the frame is built, so no node in the tree can still mutate.
+    app.split_slow_tools();
+
+    // No graduation: the renderer emits the whole transcript and the terminal
+    // owns the scroll. A row that scrolls off the top stays in the terminal's
+    // scrollback, and a resize reprints the transcript from these same nodes.
     let tree = app.view(&ctx);
-    renderer.render_frame(&tree, graduation.as_ref());
+    renderer.render_frame(&tree, None);
 }
 
 impl OilChatRunner {

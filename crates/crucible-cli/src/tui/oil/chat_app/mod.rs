@@ -9,7 +9,7 @@ use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
 use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
 use crucible_oil::node::*;
-use crucible_oil::style::{Gap, Padding};
+use crucible_oil::style::Gap;
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -132,6 +132,16 @@ pub struct OilChatApp {
 
 // ─── View, update, message ───────────────────────────────────────────────────
 
+/// How long a tool may run before it leaves the transcript as two immutable
+/// nodes.
+///
+/// A tool that finishes inside this window stays one node, so ordinary fast
+/// calls are unaffected. Timing is the whole rule: nothing declares itself
+/// asynchronous, and a Lua tool that blocks for any reason is covered without
+/// a schema change.
+pub(crate) const BACKGROUND_TOOL_SPLIT_THRESHOLD: std::time::Duration =
+    std::time::Duration::from_millis(500);
+
 impl OilChatApp {
     /// Build the frame for the current state.
     pub fn view(&self, ctx: &ViewContext<'_>) -> Node {
@@ -162,7 +172,8 @@ impl OilChatApp {
         col(top_bars
             .into_iter()
             .chain([
-                // Scrollable content area (margin-top for cross-batch spacing)
+                // Transcript area. Every node renders every frame; the terminal
+                // scrolls rows off the top and keeps them in its scrollback.
                 flex(
                     1,
                     slot(
@@ -174,15 +185,7 @@ impl OilChatApp {
                                 node.render(prev, ctx)
                             })
                         })
-                        .gap(Gap::row(1))
-                        .with_margin(Padding {
-                            top: if self.container_list.needs_cross_batch_gap() {
-                                1
-                            } else {
-                                0
-                            },
-                            ..Padding::all(0)
-                        })],
+                        .gap(Gap::row(1))],
                     ),
                 ),
                 // Pinned footer
@@ -389,6 +392,7 @@ impl OilChatApp {
             .context(self.context_used, self.context_total)
             .cache_hit_rate(self.cache_hit_rate)
             .streaming(self.container_list.is_streaming())
+            .background_tasks(self.container_list.background_task_count())
             .status(&self.status);
         if let Some((text, kind)) = self.notification_area.active_toast() {
             status = status.toast(text, kind);
@@ -579,18 +583,13 @@ impl OilChatApp {
         self.notification_area.show();
     }
 
-    /// Drain completed containers and return graduation content for stdout.
-    pub(crate) fn drain_graduated(
-        &mut self,
-        ctx: &ViewContext<'_>,
-    ) -> Option<crucible_oil::Graduation> {
-        let ctx = &ViewContext {
-            spinner_frame: self.spinner_frame(),
-            show_thinking: self.show_thinking,
-            show_diffs: self.show_diffs,
-            ..*ctx
-        };
-        self.container_list.drain_completed(ctx)
+    /// Move any tool past the split threshold out of the transcript.
+    ///
+    /// Called once per frame. A tool that finishes quickly is never split, so
+    /// the common case keeps a single node.
+    pub(crate) fn split_slow_tools(&mut self) -> bool {
+        self.container_list
+            .split_slow_tools(BACKGROUND_TOOL_SPLIT_THRESHOLD)
     }
 
     fn push_shell_history(&mut self, cmd: String) {
