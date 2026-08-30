@@ -165,14 +165,20 @@ impl UserData for LuaFile {
             Ok(MultiValue::from_iter(results))
         });
 
-        methods.add_method("lines", |lua, _this, format: Value| {
-            let format = ReadFormat::parse(&format)?;
-            let iterator = lua.create_function_mut(move |lua, this: mlua::AnyUserData| {
-                let file = this.borrow::<LuaFile>()?;
-                file.with_open(|open| format.read(lua, open))
-            })?;
-            Ok((iterator, ()))
-        });
+        // `for line in handle:lines()` — the generic `for` calls the
+        // iterator with the STATE, so the file has to be the state. Returning
+        // `()` there left the iterator reading its argument as nil.
+        methods.add_function(
+            "lines",
+            |lua, (this, format): (mlua::AnyUserData, Value)| {
+                let format = ReadFormat::parse(&format)?;
+                let iterator = lua.create_function_mut(move |lua, this: mlua::AnyUserData| {
+                    let file = this.borrow::<LuaFile>()?;
+                    file.with_open(|open| format.read(lua, open))
+                })?;
+                Ok((iterator, this))
+            },
+        );
 
         // `write` answers with the file itself, as Lua's does: shipped
         // plugins read it as `local wrote, err = handle:write(...)` and treat
@@ -565,6 +571,32 @@ mod tests {
             .eval::<Value>()
             .expect_err("a closed file must refuse");
         assert!(err.to_string().contains("closed file"), "got: {err}");
+    }
+
+    /// Both iteration forms. The generic `for` hands the iterator the state,
+    /// so the file must BE the state.
+    #[test]
+    fn lines_iterates_a_file_both_ways() {
+        let lua = vm();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("three.txt");
+        std::fs::write(&path, "a\nb\nc\n").unwrap();
+        let path = path.to_string_lossy().to_string();
+
+        let joined: String = lua
+            .load(format!(
+                r#"
+                local out = {{}}
+                for line in io.lines({path:?}) do out[#out + 1] = line end
+                local handle = assert(io.open({path:?}, "r"))
+                for line in handle:lines() do out[#out + 1] = line end
+                handle:close()
+                return table.concat(out, "")
+                "#
+            ))
+            .eval()
+            .expect("both forms iterate");
+        assert_eq!(joined, "abcabc");
     }
 
     /// The three `os` calls every shipped test suite opens with.
