@@ -202,10 +202,7 @@ const DECLARED: &[Declared] = &[
     Declared {
         path: "cru.timer.spawn",
         signature: || Signature {
-            params: vec![param(
-                "task",
-                LuaType::Function(Box::default()),
-            )],
+            params: vec![param("task", LuaType::Function(Box::default()))],
             returns: Vec::new(),
         },
     },

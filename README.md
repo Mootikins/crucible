@@ -218,6 +218,7 @@ See the [plugin guide](./docs/Help/Extending/Creating%20Plugins.md) for the full
 | `cru agents list` | | List registered agent cards |
 | `cru skills list` | | List discovered agent skills |
 | `cru plugin list` | | List installed Luau plugins |
+| `cru plugin check` | `<dir>` | Check a plugin parses, its declarations are readable, and (with `luau-analyze`) its types |
 | `cru tasks list` | | Manage tasks from TASKS.md |
 | `cru daemon start` | | Start background daemon |
 | `cru daemon status` | | Check daemon status |

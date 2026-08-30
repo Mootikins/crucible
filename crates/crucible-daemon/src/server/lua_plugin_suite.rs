@@ -590,6 +590,48 @@ mod plugin_test_diagnostics_tests {
         resp.result.expect("result present")
     }
 
+    /// The runner grants exactly what the runtime grants, and nothing more.
+    ///
+    /// A plugin's own module is `require("<module>")`, resolved under the
+    /// plugin's `lua/` directory. `require("lua.<module>")` is NOT a thing the
+    /// daemon can resolve — and the harness used to grant `<plugin_dir>/?.lua`
+    /// on top of the runtime's roots, under which that spelling worked here
+    /// and failed in the daemon. A suite could be green against a plugin that
+    /// could not load.
+    #[test]
+    fn the_runner_refuses_a_require_the_runtime_cannot_resolve() {
+        let tmp = TempDir::new().unwrap();
+        let plugin = tmp.path().join("parity-probe");
+        fs::create_dir_all(plugin.join("lua")).unwrap();
+        fs::write(plugin.join("lua/container.lua"), "return { ok = true }").unwrap();
+        fs::write(
+            plugin.join("init.lua"),
+            "return { name = \"parity-probe\", version = \"0.1.0\" }",
+        )
+        .unwrap();
+        fs::create_dir_all(plugin.join("tests")).unwrap();
+        fs::write(
+            plugin.join("tests/private_test.lua"),
+            r#"
+describe("module resolution", function()
+    it("resolves the plugin's own module the way the daemon does", function()
+        expect.truthy(require("container").ok)
+    end)
+
+    it("does not resolve it through a lua. prefix", function()
+        expect.truthy(not pcall(require, "lua.container"))
+    end)
+end)
+"#,
+        )
+        .unwrap();
+
+        let result = run(&plugin);
+        assert_eq!(result["failed"].as_u64(), Some(0), "{result:#}");
+        assert_eq!(result["passed"].as_u64(), Some(2), "{result:#}");
+        assert_eq!(result["load_failures"].as_u64(), Some(0), "{result:#}");
+    }
+
     #[test]
     fn a_failing_test_returns_its_name_error_and_line() {
         let tmp = TempDir::new().unwrap();

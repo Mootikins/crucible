@@ -998,3 +998,104 @@ async fn configuring_auto_title_does_not_republish_the_channel() {
         "one load, one publication, attributed to the plugin itself"
     );
 }
+
+/// The resolver coverage the spike review demanded, at the level that
+/// matters: through the REAL loader, not the resolver's own unit tests.
+///
+/// Two plugins, each with a private `lua/config.lua` of its own. Under one
+/// global module cache the second plugin to load silently got the first
+/// plugin's module — the bug that made the old `clear_plugin_lua_cache`
+/// necessary and that its removal reopened.
+#[tokio::test]
+async fn two_plugins_keep_their_own_config_module_through_the_loader() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
+    for (plugin, value) in [("alpha", "alpha-value"), ("beta", "beta-value")] {
+        write_plugin(
+            &root,
+            plugin,
+            &format!(
+                r#"
+local config = require("config")
+_G.__{plugin}_seen = config.value
+return {{ name = "{plugin}" }}
+"#
+            ),
+        );
+        write_plugin_module(
+            &root,
+            plugin,
+            "config",
+            &format!("return {{ value = \"{value}\" }}"),
+        );
+    }
+
+    let loader = load_from(&root, std::collections::HashMap::new()).await;
+    assert_eq!(
+        loader.eval("return __alpha_seen").await.unwrap(),
+        "alpha-value"
+    );
+    assert_eq!(
+        loader.eval("return __beta_seen").await.unwrap(),
+        "beta-value",
+        "the second plugin must not get the first plugin's private module"
+    );
+}
+
+/// A plugin the user `require`s at boot, whose entry module requires a
+/// private `lua/` module of its own. Both halves must work: the boot require
+/// (which runs under the boot hook) and the private resolution inside it.
+#[tokio::test]
+async fn a_boot_require_reaches_a_plugins_own_lua_module() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "layered",
+        r#"
+local helper = require("helper")
+return { name = "layered", setup = function() _G.__layered = helper.value end }
+"#,
+    );
+    write_plugin_module(
+        &root,
+        "layered",
+        "helper",
+        r#"return { value = "from the plugin's lua dir" }"#,
+    );
+
+    let (_config, loader) = boot_and_activate(tmp.path(), &root, "", r#"require("layered")"#).await;
+    assert_eq!(
+        loader.eval("return __layered").await.unwrap(),
+        "from the plugin's lua dir"
+    );
+}
+
+/// A reload re-reads the plugin's private module. The cache is keyed by file,
+/// so a changed `lua/config.lua` reaches the next load.
+#[tokio::test]
+async fn a_reload_re_reads_a_private_module() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
+    write_plugin(
+        &root,
+        "versioned",
+        r#"
+local config = require("config")
+_G.__versioned = config.value
+return { name = "versioned" }
+"#,
+    );
+    write_plugin_module(&root, "versioned", "config", r#"return { value = "v1" }"#);
+
+    let mut loader = load_from(&root, std::collections::HashMap::new()).await;
+    assert_eq!(loader.eval("return __versioned").await.unwrap(), "v1");
+
+    write_plugin_module(&root, "versioned", "config", r#"return { value = "v2" }"#);
+    loader.reload_plugin("versioned").await.unwrap();
+    assert_eq!(
+        loader.eval("return __versioned").await.unwrap(),
+        "v2",
+        "a reload must re-read the plugin's private module"
+    );
+}

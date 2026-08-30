@@ -1235,8 +1235,9 @@ impl DaemonPluginLoader {
     }
 
     /// Reload a plugin: unload registrations, re-execute `init.lua`, and
-    /// re-extract service functions. `execute_plugin` clears the plugin's
-    /// `package.loaded` entries so its `lua/` modules are re-required.
+    /// re-extract service functions. `execute_plugin` forgets the modules
+    /// cached from under the plugin's directory, so its `lua/` modules are
+    /// read again.
     pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
         if self.plugin_manager.get(name).is_none() {
             anyhow::bail!("plugin '{}' not found", name);
