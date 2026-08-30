@@ -140,13 +140,15 @@ const DECLARED: &[Declared] = &[
         bound_at_load: false,
     },
     Declared {
+        // Answers with nothing: `fs.rs` returns `()` and raises on failure.
         path: "cru.fs.mkdir",
-        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        ty: || function(vec![param("path", string())], Vec::new()),
         bound_at_load: false,
     },
     Declared {
+        // Answers with nothing: `fs.rs` returns `()` and raises on failure.
         path: "cru.fs.remove_all",
-        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        ty: || function(vec![param("path", string())], Vec::new()),
         bound_at_load: false,
     },
     Declared {
@@ -155,8 +157,22 @@ const DECLARED: &[Declared] = &[
         bound_at_load: false,
     },
     Declared {
+        // The options table is real: `cru.json.encode(value, { pretty = true })`
+        // (`executor.rs`). Declaring one parameter made the documented pretty
+        // form an arity error.
         path: "cru.json.encode",
-        ty: || function(vec![param("value", any())], vec![string()]),
+        ty: || {
+            function(
+                vec![
+                    param("value", any()),
+                    optional(
+                        "opts",
+                        LuaType::parse("{ pretty: boolean? }").expect("well formed"),
+                    ),
+                ],
+                vec![string()],
+            )
+        },
         bound_at_load: false,
     },
     Declared {
@@ -196,8 +212,11 @@ const DECLARED: &[Declared] = &[
         bound_at_load: false,
     },
     Declared {
+        // Never nil: `paths.rs` raises when no workspace is configured, so a
+        // declared `string?` would make every caller nil-check what cannot be
+        // nil.
         path: "cru.paths.workspace",
-        ty: || function(Vec::new(), vec![LuaType::Optional(Box::new(string()))]),
+        ty: || function(Vec::new(), vec![string()]),
         bound_at_load: false,
     },
     Declared {
@@ -252,7 +271,10 @@ const DECLARED: &[Declared] = &[
             function(
                 vec![
                     param("command", string()),
-                    optional("args", LuaType::Array(Box::new(string()))),
+                    // REQUIRED: the closure takes `Vec<String>`, and mlua
+                    // refuses to build one from nil — `cru.shell.exec("git")`
+                    // raises "error converting Lua nil to Vec<String>".
+                    param("args", LuaType::Array(Box::new(string()))),
                     optional(
                         "options",
                         LuaType::parse(
@@ -282,8 +304,12 @@ const DECLARED: &[Declared] = &[
         bound_at_load: false,
     },
     Declared {
+        // SECONDS, not milliseconds: `timer.rs` takes an `f64` into
+        // `Duration::from_secs_f64`. The parameter name is the whole
+        // declaration here — both spellings typecheck, so a wrong name sends
+        // an author who wanted one second to sleep for a thousand.
         path: "cru.timer.sleep",
-        ty: || function(vec![param("milliseconds", LuaType::Number)], Vec::new()),
+        ty: || function(vec![param("seconds", LuaType::Number)], Vec::new()),
         bound_at_load: false,
     },
     Declared {
@@ -594,7 +620,7 @@ mod tests {
             &[],
         );
         assert!(
-            rendered.contains("exec: (command: string, args: { string }?"),
+            rendered.contains("exec: (command: string, args: { string },"),
             "the signature must reach the declaration: {rendered}"
         );
         assert!(
