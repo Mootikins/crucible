@@ -38,6 +38,10 @@ impl PluginManager {
     /// Forget everything a plugin's directory contributed, so a reload
     /// re-reads it: the entry module by name, and every module cached from a
     /// file under the plugin's directory.
+    ///
+    /// Gated with `reload_plugin`, its only caller — the daemon reloads
+    /// through `DaemonPluginLoader`, which forgets the private half itself.
+    #[cfg(any(test, feature = "test-utils"))]
     pub(super) fn clear_plugin_modules(&self, plugin_name: &str) -> LifecycleResult<()> {
         self.modules
             .invalidate_name(&self.lua, plugin_name)

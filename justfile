@@ -525,6 +525,59 @@ web-test tier="e2e" *args:
 ci: (lint "all") (test "ci") (test "features") (test "doc") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
     @echo "CI checks passed!"
 
+# The Luau typechecker, pinned. `cru plugin check` reports SKIPPED without
+# one, so a gate that does not install it proves nothing.
+#
+# `luau-lsp`, not upstream `luau-analyze`: only luau-lsp's CLI can load a
+# definitions file, and the definitions are the point — they are what makes a
+# `cru.*` call checkable rather than an unknown global.
+LUAU_LSP_VERSION := "1.69.0"
+
+# Install the pinned luau-lsp into target/tools, if it is not already there.
+luau-lsp:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dest="target/tools/luau-lsp"
+    if [ -x "$dest" ] && "$dest" --version 2>/dev/null | grep -q "{{LUAU_LSP_VERSION}}"; then
+        echo "luau-lsp {{LUAU_LSP_VERSION}} already installed"
+        exit 0
+    fi
+    case "$(uname -s)-$(uname -m)" in
+        Linux-x86_64)  asset=luau-lsp-linux-x86_64.zip ;;
+        Linux-aarch64) asset=luau-lsp-linux-arm64.zip ;;
+        Darwin-*)      asset=luau-lsp-macos.zip ;;
+        *) echo "no pinned luau-lsp for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+    esac
+    mkdir -p target/tools
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    curl -sSfL -o "$tmp/lsp.zip" \
+        "https://github.com/JohnnyMorganz/luau-lsp/releases/download/{{LUAU_LSP_VERSION}}/$asset"
+    unzip -q -o "$tmp/lsp.zip" -d "$tmp"
+    mv "$tmp/luau-lsp" "$dest"
+    chmod +x "$dest"
+    "$dest" --version
+
+# Typecheck every shipped plugin against the generated `cru.*` declarations.
+#
+# Generates the declarations from the real plugin VM first: checking against a
+# stale file would pass while the host has moved.
+plugin-check: luau-lsp
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stubs=$(mktemp -d)
+    trap 'rm -rf "$stubs"' EXIT
+    cargo run -q -p crucible-cli -- plugin stubs --offline --output "$stubs"
+    export CRUCIBLE_LUAU_ANALYZE="$PWD/target/tools/luau-lsp"
+    failed=0
+    for plugin in runtime/plugins/*/; do
+        if ! cargo run -q -p crucible-cli -- plugin check "$plugin" \
+            --definitions "$stubs/cru.d.luau"; then
+            failed=1
+        fi
+    done
+    exit $failed
+
 # === Daemon & tooling ===
 
 # Build and restart daemon (kills stale daemon so next cru auto-spawns fresh)

@@ -144,6 +144,11 @@ pub struct StubsArgs {
     /// Output directory for generated stubs (defaults to ./stubs)
     #[arg(long, short = 'o')]
     pub output: Option<std::path::PathBuf>,
+    /// Build the plugin VM in this process instead of asking a daemon.
+    /// For CI, and for anyone who wants declarations without a running
+    /// daemon.
+    #[arg(long)]
+    pub offline: bool,
     /// Verify stubs match committed version (for CI)
     #[arg(long)]
     pub verify: bool,

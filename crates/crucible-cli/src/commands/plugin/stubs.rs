@@ -15,6 +15,20 @@ pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
         )
     })?;
 
+    // The same plugin VM the daemon builds, built here. `cru plugin stubs`
+    // otherwise needs a running daemon, which a CI job has no reason to
+    // start — and the declarations must come from the FULL VM, because the
+    // subset `crucible-lua` can register on its own is missing `cru.on` and
+    // everything else the daemon adds.
+    if args.offline {
+        let loader = crucible_daemon::daemon_plugins::DaemonPluginLoader::new(
+            std::collections::HashMap::new(),
+        )?;
+        loader.generate_stubs(&output_dir)?;
+        println!("✓ Stubs generated at: {}", output_dir.display());
+        return Ok(());
+    }
+
     // Connect to daemon
     let client = crate::common::daemon_client().await?;
 

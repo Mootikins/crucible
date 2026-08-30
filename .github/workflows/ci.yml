@@ -47,6 +47,23 @@ jobs:
       - uses: ./.github/actions/rust-prereqs
       - run: just lint docs
 
+  # Typecheck every shipped plugin against the `cru.*` declarations the host
+  # generates.
+  #
+  # This job is why the declarations mean anything. `cru plugin check` reports
+  # its typecheck as SKIPPED when no checker is installed, so without a pinned
+  # `luau-lsp` here the typed-plugin story would be true only on the machine
+  # of whoever last installed one. The declarations file is generated from the
+  # real plugin VM in the same run — checking against a committed copy would
+  # pass while the host had moved.
+  plugin-types:
+    name: Plugin Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-prereqs
+      - run: just plugin-check
+
   # The install path a new user actually takes: clone, cargo build, no bun and so
   # no web/dist. The absence of a bun step is the thing under test.
   build-from-clean-clone:
