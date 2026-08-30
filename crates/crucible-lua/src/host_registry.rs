@@ -51,6 +51,41 @@ pub trait LuauArgs {
     fn arg_types() -> Vec<LuaType>;
 }
 
+/// What a registered function answers with.
+///
+/// A separate trait from [`LuauValue`] because Lua returns a LIST, and the
+/// `(result, err)` pair is the shape half of `cru.context.*` uses. Collapsing
+/// a pair to `any` would leave the return half of those functions unchecked —
+/// the position where a mistake is easiest, since nothing at the call site
+/// says which of the two you got.
+pub trait LuauReturns {
+    fn return_types() -> Vec<LuaType>;
+}
+
+/// One return value. `()` means none, as it does in mlua.
+impl<T: LuauValue> LuauReturns for T {
+    fn return_types() -> Vec<LuaType> {
+        match T::ty() {
+            LuaType::Nil => Vec::new(),
+            ty => vec![ty],
+        }
+    }
+}
+
+macro_rules! luau_returns_tuple {
+    ($($name:ident),+) => {
+        impl<$($name: LuauValue),+> LuauReturns for ($($name,)+) {
+            fn return_types() -> Vec<LuaType> {
+                vec![$($name::ty()),+]
+            }
+        }
+    };
+}
+
+luau_returns_tuple!(A, B);
+luau_returns_tuple!(A, B, C);
+luau_returns_tuple!(A, B, C, D);
+
 macro_rules! luau_value {
     ($rust:ty, $ty:expr) => {
         impl LuauValue for $rust {
@@ -229,7 +264,7 @@ impl<'lua> Ns<'lua> {
     where
         F: Fn(&Lua, A) -> mlua::Result<R> + MaybeSend + 'static,
         A: FromLuaMulti + LuauArgs,
-        R: IntoLuaMulti + LuauValue,
+        R: IntoLuaMulti + LuauReturns,
     {
         let signature = self.check::<A, R>(name, decl)?;
         self.table.set(name, self.lua.create_function(f)?)?;
@@ -248,7 +283,7 @@ impl<'lua> Ns<'lua> {
     where
         F: Fn(Lua, A) -> FR + MaybeSend + 'static,
         A: FromLuaMulti + LuauArgs + 'static,
-        R: IntoLuaMulti + LuauValue,
+        R: IntoLuaMulti + LuauReturns,
         FR: Future<Output = mlua::Result<R>> + MaybeSend + 'static,
     {
         let signature = self.check::<A, R>(name, decl)?;
@@ -281,7 +316,7 @@ impl<'lua> Ns<'lua> {
     }
 
     /// Parse the declaration and hold it to the Rust types.
-    fn check<A: LuauArgs, R: LuauValue>(
+    fn check<A: LuauArgs, R: LuauReturns>(
         &self,
         name: &str,
         decl: &str,
@@ -321,19 +356,27 @@ impl<'lua> Ns<'lua> {
             }
         }
 
-        let expected_return = R::ty();
-        let declared_return = match signature.returns.len() {
-            0 => LuaType::Nil,
-            1 => signature.returns[0].clone(),
-            _ => LuaType::Any,
-        };
-        if !refines(&declared_return, &expected_return) {
+        // Returns are a LIST: `(result, err)` is two values, and both are
+        // checked. A declaration that names one where the function answers
+        // with two is the mistake this catches.
+        let expected_returns = R::return_types();
+        if signature.returns.len() != expected_returns.len() {
             return Err(LuaError::Runtime(format!(
-                "{}.{name}: the declaration returns `{}`, the function returns `{}`",
+                "{}.{name}: the declaration returns {} value(s), the function returns {}: `{decl}`",
                 self.path,
-                declared_return.to_luau(),
-                expected_return.to_luau()
+                signature.returns.len(),
+                expected_returns.len()
             )));
+        }
+        for (declared, expected) in signature.returns.iter().zip(&expected_returns) {
+            if !refines(declared, expected) {
+                return Err(LuaError::Runtime(format!(
+                    "{}.{name}: the declaration returns `{}`, the function returns `{}`",
+                    self.path,
+                    declared.to_luau(),
+                    expected.to_luau()
+                )));
+            }
         }
 
         Ok(ty)
@@ -482,6 +525,29 @@ mod tests {
             .func("clock", "number", |_, ()| Ok(1.0f64))
             .expect_err("a non-function declaration must be refused");
         assert!(err.to_string().contains("function type"), "{err}");
+    }
+
+    /// A `(result, err)` pair keeps both halves checked, and a declaration
+    /// that forgets the second value is refused.
+    #[test]
+    fn a_pair_return_is_checked_on_both_halves() {
+        let lua = vm();
+        let mut ns = Ns::new(&lua, "cru.probe").expect("ns");
+        ns.func(
+            "usage",
+            "(session_id: string) -> ({ tokens: number }?, string?)",
+            |_, _session_id: String| Ok((Value::Nil, Value::Nil)),
+        )
+        .expect("a pair may be declared as a pair");
+
+        let err = ns
+            .func(
+                "compact",
+                "(session_id: string) -> { tokens: number }?",
+                |_, _session_id: String| Ok((Value::Nil, Value::Nil)),
+            )
+            .expect_err("a declaration that drops the error half must be refused");
+        assert!(err.to_string().contains("value(s)"), "{err}");
     }
 
     /// The limit, stated as a test: a parameter NAME is not in the Rust type,

@@ -35,6 +35,21 @@ impl From<mlua::Error> for LuaError {
     }
 }
 
+/// The other direction, so a host closure may use `?` on a `LuaError`.
+///
+/// A registered function answers with `mlua::Result`, while most of this
+/// crate's helpers answer with `LuaError`. Without this, every call site
+/// spells the conversion by hand — `.map_err(mlua::Error::external)` appears
+/// dozens of times — and a `?` that reads correctly does not compile.
+///
+/// `external` rather than a string: it preserves the error as a source, so
+/// `format_lua_error` and a caller's `downcast_ref` still see the original.
+impl From<LuaError> for mlua::Error {
+    fn from(e: LuaError) -> Self {
+        mlua::Error::external(e)
+    }
+}
+
 impl From<serde_json::Error> for LuaError {
     fn from(e: serde_json::Error) -> Self {
         LuaError::Serialization(e.to_string())
