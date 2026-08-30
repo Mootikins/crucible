@@ -296,9 +296,27 @@ local TOOL_HANDLERS = {
 -- `container` key that does not exist, resolve_config returned nil, and the
 -- session silently started with no container at all.
 --
+--- What `[plugins.oci]` may set.
+---
+--- Declared, not inferred: `local config = {}` types as a table with no keys
+--- under `--!strict`, so every read below is an error the checker reports
+--- against correct code. The keys mirror the section documented in
+--- [[Help/Extending/Container Isolation]].
+export type Config = {
+  image: string?,
+  runtime: string?,
+  workspace_folder: string?,
+  build_timeout: number?,
+  start_timeout: number?,
+  exempt: { string }?,
+  profiles: { [string]: any }?,
+  devcontainer: any?,
+  devcontainer_host_access: boolean?,
+}
+
 -- Empty, not nil: setup() is not called when there is no [plugins.oci] section
 -- at all, and resolution reads sub-keys unconditionally.
-local config = {}
+local config: Config = {}
 
 --- Normalise one environment definition — the bare `[plugins.oci]` section, a
 --- named profile, or an inline session override — into what the start hook uses.
@@ -755,11 +773,15 @@ local plugin = {
           }
         end
 
+        -- Bound once: the loop guarded its ITERATION with `or {}` and then
+        -- indexed `config.profiles` directly, which is only safe because an
+        -- absent table leaves `names` empty. One local says so.
+        local profiles = config.profiles or {}
         local names = {}
-        for name in pairs(config.profiles or {}) do names[#names + 1] = name end
+        for name in pairs(profiles) do names[#names + 1] = name end
         table.sort(names)
         for _, name in ipairs(names) do
-          local profile = config.profiles[name]
+          local profile = profiles[name]
           targets[#targets + 1] = {
             value = name,
             label = name,

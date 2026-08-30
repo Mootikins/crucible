@@ -29,7 +29,7 @@ local function subcommand(args)
 end
 
 cru = cru or {}
-cru.log = function() end
+;(cru :: any).log = function() end
 cru.fs = cru.fs or {}
 cru.fs.exists = function(path) return existing_paths[path] == true end
 cru.shell = cru.shell or {}

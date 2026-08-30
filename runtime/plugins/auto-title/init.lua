@@ -41,10 +41,19 @@ local CHANNEL = "session_title"
 --- The command the publication names, and the one the spec declares.
 local COMMAND = "auto-title.generate"
 
+--- What `[plugins.auto-title]` may set. Declared, rather than inferred from
+--- an empty table: under `--!strict` an empty initializer types `config` as a
+--- table with no keys, and every read of one is an error.
+export type Config = {
+  prompt: string?,
+  clip: number?,
+  timeout: number?,
+}
+
 -- Populated by setup() from `[plugins.auto-title]`, then merged again by any
 -- later `setup{}` call from the user's init.lua — Lua beats TOML, and merging
 -- rather than replacing means overriding one key keeps the others.
-local config = {}
+local config: Config = {}
 
 --- Ask the session's own model for a title for one exchange.
 ---

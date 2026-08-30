@@ -280,15 +280,63 @@ fn cru_kiln_path_resolves_a_registered_name_through_the_registry() {
 }
 
 /// Every signature the host declares must name a function the plugin VM
-/// really has.
+/// really has — matched by PATH, not by a substring of the rendered file.
 ///
 /// A declaration is read as authoritative: an author who sees
-/// `cru.shell.exec(command: string, ...)` in `cru.d.luau` writes the call and
-/// expects it to exist. A signature for a path nobody registered is worse
-/// than no signature at all, so the table is checked against the running VM
-/// rather than against itself.
+/// `cru.shell.exec(command: string, ...)` writes the call and expects it to
+/// exist. This test's first form asked whether the rendered text contained
+/// `"{leaf}: ("`, which for `cru.on` is `on: (` — a needle that matches
+/// `option: (` and `set_output_validation: (`. It passed while `cru.on` was
+/// absent from the file entirely.
 #[tokio::test]
 async fn every_declared_signature_exists_on_the_vm() {
+    let loader =
+        crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+            .expect("loader");
+    let registered: std::collections::BTreeSet<String> =
+        crucible_lua::stubs::function_paths(&loader.executor().lua().clone())
+            .expect("walk the plugin VM")
+            .into_iter()
+            .collect();
+
+    let members: std::collections::BTreeSet<String> =
+        crucible_lua::stubs::value_members(&loader.executor().lua().clone())
+            .expect("walk the plugin VM")
+            .into_iter()
+            .map(|member| member.path)
+            .collect();
+
+    // A declared FUNCTION must be a registered function. A declared FIELD —
+    // `cru.kiln.active` is a string, absent when no kiln is active — is
+    // satisfied by the member existing, or by its namespace existing.
+    // A function bound to the loading plugin cannot be seen from an idle VM;
+    // the declaration says so, and only those are exempt.
+    let bound_at_load = crucible_lua::host_api::bound_at_load();
+
+    let missing: Vec<&str> = crucible_lua::host_api::declared_signatures()
+        .iter()
+        .filter(|(path, _)| !bound_at_load.contains_key(**path))
+        .filter(|(path, ty)| {
+            if crucible_lua::host_api::is_callable_declaration(ty) {
+                return !registered.contains(**path);
+            }
+            let namespace = path.rsplit_once('.').map(|(head, _)| head).unwrap_or(path);
+            !members.contains(**path)
+                && !registered.iter().any(|known| known.starts_with(namespace))
+        })
+        .map(|(path, _)| *path)
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "declared signatures name functions the plugin VM does not have: {missing:?}\n\
+         registered paths: {registered:#?}"
+    );
+}
+
+/// The declared signature reaches the generated file, at its own path.
+#[tokio::test]
+async fn a_declared_signature_reaches_the_generated_declarations() {
     let loader =
         crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
             .expect("loader");
@@ -296,18 +344,20 @@ async fn every_declared_signature_exists_on_the_vm() {
     loader.generate_stubs(dir.path()).expect("generate stubs");
     let declarations = std::fs::read_to_string(dir.path().join("cru.d.luau")).expect("cru.d.luau");
 
-    let missing: Vec<&str> = crucible_lua::host_api::declared_signatures()
-        .keys()
-        .copied()
-        .filter(|path| {
-            let leaf = path.rsplit('.').next().unwrap_or(path);
-            !declarations.contains(&format!("{leaf}: ("))
-        })
-        .collect();
-
+    // `cru.on` is the one that was silently absent: a top-level function, so
+    // the module walk skipped it, and the substring gate did not notice.
     assert!(
-        missing.is_empty(),
-        "declared signatures name functions the plugin VM does not have: {missing:?}"
+        declarations.contains("    on: ((event: string"),
+        "cru.on must be declared at the top level: {declarations}"
+    );
+    assert!(
+        declarations.contains("exec: (command: string"),
+        "a nested signature must reach the file: {declarations}"
+    );
+    // No unsigned function may render Luau's variadic with a name.
+    assert!(
+        !declarations.contains("...: any"),
+        "`(...: any)` is a parse error; the variadic carries no name: {declarations}"
     );
 }
 

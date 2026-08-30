@@ -118,14 +118,14 @@ describe("todo-list", function()
             })
             local warnings = {}
             local had_log = cru.log
-            cru.log = function(level, msg)
+            ;(cru :: any).log = function(level, msg)
                 if level == "warn" then warnings[#warnings + 1] = msg end
             end
             local ok, err = pcall(function()
                 plugin.tools.tasks_list.fn({})
                 plugin.tools.tasks_list.fn({})
             end)
-            cru.log = had_log
+            ;(cru :: any).log = had_log
             if not ok then error(err) end
             expect.equal(#warnings, 1)
             expect.truthy(warnings[1]:find("/kilns/notes/TASKS.md", 1, true))

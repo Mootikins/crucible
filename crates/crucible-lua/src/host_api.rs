@@ -23,13 +23,25 @@
 //! rather than a function, and a function declaration would misstate its
 //! shape.
 
-use crate::signature::{LuaType, Param, Signature};
+use crate::signature::{LuaType, Param, Signature, VARIADIC};
 use std::collections::BTreeMap;
 
 /// One entry of the host's declared surface.
+///
+/// A TYPE, not a signature: `cru.on` has two accepted call shapes and `cru.log`
+/// is a table you may also call, and Luau spells both as an intersection.
 struct Declared {
     path: &'static str,
-    signature: fn() -> Signature,
+    ty: fn() -> LuaType,
+    /// Bound to the loading plugin at load time, so a walk of an idle VM
+    /// cannot see it. The declaration still belongs in the file — the API
+    /// exists — and the VM-existence gate skips exactly these.
+    bound_at_load: bool,
+}
+
+/// The common case: one call shape.
+fn function(params: Vec<Param>, returns: Vec<LuaType>) -> LuaType {
+    LuaType::Function(Box::new(Signature { params, returns }))
 }
 
 fn param(name: &str, ty: LuaType) -> Param {
@@ -58,6 +70,52 @@ fn any() -> LuaType {
     LuaType::Any
 }
 
+/// What a `cru.on` handler is called with: the context table, then the
+/// event payload (`handlers/registry.rs`).
+fn handler_type() -> LuaType {
+    // `...any`, not `any`: most handlers return nothing and the interception
+    // ones answer with a table. A declared `any` return — even `any?` — makes
+    // every ordinary handler a type error ("not all codepaths return"), which
+    // `luau-lsp analyze` reports against correct plugin code.
+    LuaType::Function(Box::new(Signature {
+        params: vec![param("ctx", any()), param("payload", any())],
+        returns: vec![LuaType::Variadic(Box::new(any()))],
+    }))
+}
+
+/// `cru.on`'s two accepted shapes, as one intersection.
+fn on_declaration() -> LuaType {
+    LuaType::Intersection(vec![
+        function(
+            vec![param("event", string()), param("handler", handler_type())],
+            Vec::new(),
+        ),
+        function(
+            vec![
+                param("event", string()),
+                param(
+                    "opts",
+                    LuaType::parse("{ pattern: string?, priority: number?, timeout_ms: number? }")
+                        .expect("well formed"),
+                ),
+                param("handler", handler_type()),
+            ],
+            Vec::new(),
+        ),
+    ])
+}
+
+/// `cru.log` is a table you may also call: `cru.log("info", msg)` alongside
+/// `cru.log.levels`, `cru.log.notify` and the rest. Luau spells that as an
+/// intersection of the call type and the table type; the table half comes
+/// from the VM walk, so only the call half is declared here.
+fn log_declaration() -> LuaType {
+    function(
+        vec![param("level", string()), param("message", string())],
+        Vec::new(),
+    )
+}
+
 /// `cru.shell.exec` and `cru.shell.spawn` both answer with this.
 fn shell_result() -> LuaType {
     LuaType::parse("{ success: boolean, exit_code: number, stdout: string, stderr: string }")
@@ -68,156 +126,188 @@ fn shell_result() -> LuaType {
 const DECLARED: &[Declared] = &[
     Declared {
         path: "cru.fs.exists",
-        signature: || Signature {
-            params: vec![param("path", string())],
-            returns: vec![LuaType::Boolean],
-        },
+        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.fs.is_dir",
-        signature: || Signature {
-            params: vec![param("path", string())],
-            returns: vec![LuaType::Boolean],
-        },
+        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.fs.is_file",
-        signature: || Signature {
-            params: vec![param("path", string())],
-            returns: vec![LuaType::Boolean],
-        },
+        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.fs.mkdir",
-        signature: || Signature {
-            params: vec![param("path", string())],
-            returns: vec![LuaType::Boolean],
-        },
+        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.fs.remove_all",
-        signature: || Signature {
-            params: vec![param("path", string())],
-            returns: vec![LuaType::Boolean],
-        },
+        ty: || function(vec![param("path", string())], vec![LuaType::Boolean]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.json.decode",
-        signature: || Signature {
-            params: vec![param("text", string())],
-            returns: vec![any()],
-        },
+        ty: || function(vec![param("text", string())], vec![any()]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.json.encode",
-        signature: || Signature {
-            params: vec![param("value", any())],
-            returns: vec![string()],
-        },
+        ty: || function(vec![param("value", any())], vec![string()]),
+        bound_at_load: false,
     },
     Declared {
+        // A property, not a call: plugins read `cru.kiln.active` and hand it
+        // to `cru.kiln.path(name)` (`runtime/plugins/daily-notes/init.lua`).
         path: "cru.kiln.active",
-        signature: || Signature {
-            params: Vec::new(),
-            returns: vec![LuaType::Optional(Box::new(string()))],
-        },
+        ty: || LuaType::Optional(Box::new(string())),
+        bound_at_load: false,
     },
     Declared {
+        // `(name, relative?)`, and the name is REQUIRED: `vault/mod.rs`
+        // raises without one and joins the relative path when given.
+        // Declaring it `(name: string?)` rejected `cru.kiln.path(kiln, ".crucible/proposals")`,
+        // which is what `reflection` really calls.
         path: "cru.kiln.path",
-        signature: || Signature {
-            params: vec![optional("name", string())],
-            returns: vec![LuaType::Optional(Box::new(string()))],
+        ty: || {
+            function(
+                vec![param("name", string()), optional("relative", string())],
+                vec![string()],
+            )
         },
+        bound_at_load: false,
     },
     Declared {
+        path: "cru.log",
+        ty: log_declaration,
+        bound_at_load: false,
+    },
+    Declared {
+        // Two accepted shapes, and the options table is the SECOND argument
+        // when there is one: `cru.on(event, handler)` or
+        // `cru.on(event, opts, handler)` (`handlers/cru_on.rs`). The handler
+        // is called with `(ctx, payload)` (`handlers/registry.rs`), so a
+        // one-parameter handler type would reject correct plugin code.
         path: "cru.on",
-        signature: || Signature {
-            params: vec![
-                param("event", string()),
-                param(
-                    "handler",
-                    LuaType::Function(Box::new(Signature {
-                        params: vec![param("payload", any())],
-                        returns: vec![any()],
-                    })),
-                ),
-                optional(
-                    "opts",
-                    LuaType::parse("table<string, any>").expect("well formed"),
-                ),
-            ],
-            returns: Vec::new(),
-        },
+        ty: on_declaration,
+        bound_at_load: false,
     },
     Declared {
         path: "cru.paths.workspace",
-        signature: || Signature {
-            params: Vec::new(),
-            returns: vec![LuaType::Optional(Box::new(string()))],
-        },
+        ty: || function(Vec::new(), vec![LuaType::Optional(Box::new(string()))]),
+        bound_at_load: false,
     },
     Declared {
-        path: "cru.plugin.set_status",
-        signature: || Signature {
-            params: vec![param("status", string())],
-            returns: Vec::new(),
+        // Bound to the loading plugin at load, so a walk of an idle VM never
+        // sees it. The host declares it because it is the API regardless.
+        path: "cru.plugin.publish",
+        ty: || {
+            function(
+                vec![param("key", string()), param("value", any())],
+                Vec::new(),
+            )
         },
+        bound_at_load: true,
+    },
+    Declared {
+        path: "cru.plugin.options",
+        ty: || {
+            function(
+                vec![param(
+                    "tree",
+                    LuaType::parse("{ args: table<string, any> }").expect("well formed"),
+                )],
+                Vec::new(),
+            )
+        },
+        bound_at_load: true,
+    },
+    Declared {
+        // One options TABLE, not a string: `session`, `key` and `text` are
+        // required, `plugin`, `level` and `progress` are not
+        // (`plugin_status.rs`). Declaring `(status: string)` rejected every
+        // real call — `oci` makes six of them.
+        path: "cru.plugin.set_status",
+        ty: || {
+            function(
+                vec![param(
+                    "status",
+                    LuaType::parse(
+                        "{ session: string, key: string, text: string, plugin: string?, \
+                         level: string?, progress: any? }",
+                    )
+                    .expect("well formed"),
+                )],
+                Vec::new(),
+            )
+        },
+        bound_at_load: false,
     },
     Declared {
         path: "cru.shell.exec",
-        signature: || Signature {
-            params: vec![
-                param("command", string()),
-                optional("args", LuaType::Array(Box::new(string()))),
-                optional(
-                    "options",
-                    LuaType::parse("{ cwd: string?, env: table<string, string>?, stdin: string? }")
+        ty: || {
+            function(
+                vec![
+                    param("command", string()),
+                    optional("args", LuaType::Array(Box::new(string()))),
+                    optional(
+                        "options",
+                        LuaType::parse(
+                            "{ cwd: string?, env: table<string, string>?, stdin: string? }",
+                        )
                         .expect("well formed"),
-                ),
-            ],
-            returns: vec![shell_result()],
+                    ),
+                ],
+                vec![shell_result()],
+            )
         },
+        bound_at_load: false,
     },
     Declared {
         path: "cru.shell.which",
-        signature: || Signature {
-            params: vec![param("command", string())],
-            returns: vec![LuaType::Optional(Box::new(string()))],
+        ty: || {
+            function(
+                vec![param("command", string())],
+                vec![LuaType::Optional(Box::new(string()))],
+            )
         },
+        bound_at_load: false,
     },
     Declared {
         path: "cru.timer.clock",
-        signature: || Signature {
-            params: Vec::new(),
-            returns: vec![LuaType::Number],
-        },
+        ty: || function(Vec::new(), vec![LuaType::Number]),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.timer.sleep",
-        signature: || Signature {
-            params: vec![param("milliseconds", LuaType::Number)],
-            returns: Vec::new(),
-        },
+        ty: || function(vec![param("milliseconds", LuaType::Number)], Vec::new()),
+        bound_at_load: false,
     },
     Declared {
         path: "cru.timer.spawn",
-        signature: || Signature {
-            params: vec![param("task", LuaType::Function(Box::default()))],
-            returns: Vec::new(),
+        ty: || {
+            function(
+                vec![param("task", LuaType::Function(Box::default()))],
+                Vec::new(),
+            )
         },
+        bound_at_load: false,
     },
 ];
 
-/// Every declared path, with its signature.
-pub fn declared_signatures() -> BTreeMap<&'static str, Signature> {
+/// Every declared path, with its type.
+pub fn declared_signatures() -> BTreeMap<&'static str, LuaType> {
     DECLARED
         .iter()
-        .map(|entry| (entry.path, (entry.signature)()))
+        .map(|entry| (entry.path, (entry.ty)()))
         .collect()
 }
 
 /// The Luau declaration for one function path, signed or not.
-pub fn declaration_for(path: &str) -> Signature {
+pub fn declaration_for(path: &str) -> LuaType {
     declared_signatures()
         .get(path)
         .cloned()
@@ -226,16 +316,27 @@ pub fn declaration_for(path: &str) -> Signature {
 
 /// What an unsigned function is declared as: it takes anything and answers
 /// anything, which is exactly as much as the host currently knows.
-pub fn unsigned() -> Signature {
-    Signature {
-        params: vec![Param {
-            name: "...".to_string(),
+pub fn unsigned() -> LuaType {
+    function(
+        vec![Param {
+            name: VARIADIC.to_string(),
             ty: LuaType::Any,
             description: None,
             optional: false,
         }],
-        returns: vec![LuaType::Any],
-    }
+        vec![LuaType::Any],
+    )
+}
+
+/// Paths whose function is bound to the loading plugin, so a walk of an idle
+/// VM cannot see them. A gate that checks declarations against the VM skips
+/// these — and nothing else.
+pub fn bound_at_load() -> BTreeMap<&'static str, ()> {
+    DECLARED
+        .iter()
+        .filter(|entry| entry.bound_at_load)
+        .map(|entry| (entry.path, ()))
+        .collect()
 }
 
 /// Whether a path carries a real signature.
@@ -243,18 +344,117 @@ pub fn is_signed(path: &str) -> bool {
     declared_signatures().contains_key(path)
 }
 
+/// The rest of the environment a plugin runs in, declared for the checker.
+///
+/// `declare cru: { … }` alone is not the plugin environment. A plugin reads
+/// files with `io.open`, its entry module ends with `package.loaded[NAME]`,
+/// its suite calls `describe`/`it`/`expect`, and every one of those is a host
+/// global that Luau itself does not have. Declaring only `cru` made
+/// `luau-lsp analyze` report "Unknown global 'io'" against correct code —
+/// noise that trains an author to ignore the checker.
+///
+/// `os` is re-declared WHOLE, base functions included: a definitions file
+/// replaces the type it names, so listing only the host's additions would
+/// take `os.time` away.
+///
+/// The test-harness globals are here too. They exist only while a suite runs,
+/// so a non-test file could call them without complaint — the alternative, a
+/// second definitions file selected per file, buys strictness a plugin author
+/// does not need and a false failure they would have to work around.
+const HOST_ENVIRONMENT: &str = r#"
+declare io: {
+    open: (path: string, mode: string?) -> (LuaFile?, string?),
+    lines: (path: string, format: (string | number)?) -> ((LuaFile) -> string?, LuaFile),
+    close: (file: LuaFile) -> boolean,
+    type: (value: any) -> string?,
+}
+
+declare os: {
+    time: (when: any?) -> number,
+    date: (format: string?, when: number?) -> any,
+    clock: () -> number,
+    difftime: (later: number, earlier: number) -> number,
+    getenv: (name: string) -> string?,
+    tmpname: () -> string,
+    remove: (path: string) -> (boolean?, string?),
+    rename: (from: string, to: string) -> (boolean?, string?),
+}
+
+declare package: {
+    loaded: { [string]: any },
+    preload: { [string]: any },
+    searchpath: (name: string, path: string?) -> (string?, string?),
+}
+
+declare function require(name: string): any
+
+declare function describe(name: string, body: () -> ()): ()
+declare function it(name: string, body: () -> ()): ()
+declare function pending(name: string, body: (() -> ())?): ()
+declare function before_each(body: () -> ()): ()
+declare function after_each(body: () -> ()): ()
+declare function run_tests(): { passed: number, failed: number }
+
+declare expect: {
+    equal: (expected: any, actual: any, message: string?) -> (),
+    equals: (expected: any, actual: any, message: string?) -> (),
+    deep_equal: (expected: any, actual: any, message: string?) -> (),
+    truthy: (value: any, message: string?) -> (),
+    falsy: (value: any, message: string?) -> (),
+    is_nil: (value: any, message: string?) -> (),
+    is_not_nil: (value: any, message: string?) -> (),
+    is_string: (value: any, message: string?) -> (),
+    is_number: (value: any, message: string?) -> (),
+    is_table: (value: any, message: string?) -> (),
+    is_function: (value: any, message: string?) -> (),
+    has_error: (body: () -> (), message: string?) -> (),
+}
+
+declare test_mocks: {
+    setup: (fixture: { [string]: any }?) -> (),
+    reset: () -> (),
+    get_calls: (namespace: string, name: string) -> { any },
+}
+"#;
+
+/// An open file, as `io.open` answers with. Named so the declarations can
+/// refer to it; the host implements it in `luau_compat.rs`.
+const FILE_TYPE: &str = r#"
+export type LuaFile = {
+    read: (self: LuaFile, format: (string | number)?) -> string?,
+    lines: (self: LuaFile, format: (string | number)?) -> (LuaFile) -> string?,
+    write: (self: LuaFile, ...any) -> LuaFile,
+    seek: (self: LuaFile, whence: string?, offset: number?) -> number?,
+    flush: (self: LuaFile) -> LuaFile,
+    close: (self: LuaFile) -> boolean,
+}
+"#;
+
 /// Render a Luau declaration file for the function paths given.
 ///
 /// The shape is a nested `declare` of the `cru` table, so `luau-analyze` reads
 /// `cru.shell.exec("git", { "status" })` as a call with a known result type.
-pub fn render_declarations(paths: &[String]) -> String {
+pub fn render_declarations(paths: &[String], values: &[crate::stubs::ValueMember]) -> String {
     let mut tree = Node::default();
     for path in paths {
-        let segments: Vec<&str> = path.split('.').collect();
-        if segments.first() != Some(&"cru") {
-            continue;
-        }
-        tree.insert(&segments[1..], path);
+        tree.insert_path(path, Member::Function);
+    }
+    // Non-function members, so an exact table type does not reject a correct
+    // read of `cru.kiln.active`.
+    for value in values {
+        tree.insert_path(&value.path, Member::Field(format!("{}?", value.luau_type)));
+    }
+    // Declared members the walk cannot see: a field absent from the VM the
+    // stubs were rendered from (no kiln is active), and a function bound to
+    // the loading plugin at load time (`cru.plugin.publish`). Both are the
+    // API; the walk simply cannot observe them from an idle VM.
+    for (path, ty) in declared_signatures() {
+        let member = if is_function_type(&ty) {
+            Member::Function
+        } else {
+            Member::Field(ty.to_luau())
+        };
+        tree.insert_path(path, member);
     }
 
     let signed = paths.iter().filter(|path| is_signed(path)).count();
@@ -267,37 +467,107 @@ pub fn render_declarations(paths: &[String]) -> String {
         signed,
         paths.len()
     ));
+    out.push_str(FILE_TYPE.trim_start());
+    out.push_str(HOST_ENVIRONMENT);
+    out.push('\n');
     out.push_str("declare cru: ");
     tree.render(&mut out, 0);
     out.push('\n');
     out
 }
 
+/// What lives at a path.
+enum Member {
+    /// A function, whose type comes from `DECLARED` or is `(...any) -> any`.
+    Function,
+    /// A value, with its rendered Luau type.
+    Field(String),
+}
+
+/// Whether a declared type is something you call. Public so a gate can hold
+/// functions and fields to different standards of existence.
+pub fn is_callable_declaration(ty: &LuaType) -> bool {
+    is_function_type(ty)
+}
+
+/// Whether a declared type is something you call.
+fn is_function_type(ty: &LuaType) -> bool {
+    match ty {
+        LuaType::Function(_) => true,
+        LuaType::Intersection(parts) => parts.iter().any(is_function_type),
+        _ => false,
+    }
+}
+
 /// One level of the `cru` table while it is being rendered.
 #[derive(Default)]
 struct Node {
     children: BTreeMap<String, Node>,
-    /// Set on a leaf: the full path, which is what carries the signature.
+    /// The full path this node sits at, once one is known.
     path: Option<String>,
+    /// Whether a function lives at this path. A node can be BOTH a function
+    /// and a table — `cru.log` is a table you may also call.
+    callable: bool,
+    /// The rendered type, for a non-function member.
+    field: Option<String>,
 }
 
 impl Node {
-    fn insert(&mut self, segments: &[&str], path: &str) {
+    fn insert_path(&mut self, path: &str, member: Member) {
+        let segments: Vec<&str> = path.split('.').collect();
+        if segments.first() != Some(&"cru") {
+            return;
+        }
+        self.insert(&segments[1..], path, "", member);
+    }
+
+    fn insert(&mut self, segments: &[&str], path: &str, prefix: &str, member: Member) {
+        if self.path.is_none() && !prefix.is_empty() {
+            self.path = Some(prefix.to_string());
+        }
         match segments {
-            [] => self.path = Some(path.to_string()),
-            [head, tail @ ..] => self
-                .children
-                .entry((*head).to_string())
-                .or_default()
-                .insert(tail, path),
+            [] => {
+                self.path = Some(path.to_string());
+                match member {
+                    Member::Function => self.callable = true,
+                    Member::Field(ty) => self.field = Some(ty),
+                }
+            }
+            [head, tail @ ..] => {
+                let child_prefix = if prefix.is_empty() {
+                    format!("cru.{head}")
+                } else {
+                    format!("{prefix}.{head}")
+                };
+                self.children
+                    .entry((*head).to_string())
+                    .or_default()
+                    .insert(tail, path, &child_prefix, member)
+            }
         }
     }
 
     fn render(&self, out: &mut String, depth: usize) {
-        if let Some(path) = &self.path {
-            out.push_str(&declaration_for(path).to_luau());
+        let call = self.path.as_deref().filter(|_| self.callable);
+
+        if self.children.is_empty() {
+            match (call, &self.field) {
+                (Some(path), _) => out.push_str(&declaration_for(path).to_luau()),
+                (None, Some(field)) => out.push_str(field),
+                // A namespace the VM has with nothing in it.
+                (None, None) => out.push_str("{}"),
+            }
             return;
         }
+
+        // A table you may also call — `cru.log` — is an intersection of the
+        // call type and the table type. Luau has no other way to say it, and
+        // omitting the call half makes `cru.log("info", msg)` a type error
+        // against a table.
+        if let Some(path) = call {
+            out.push_str(&format!("({}) & ", declaration_for(path).to_luau()));
+        }
+
         let indent = "    ".repeat(depth + 1);
         let closing = "    ".repeat(depth);
         out.push_str("{\n");
@@ -319,8 +589,10 @@ mod tests {
 
     #[test]
     fn a_signed_function_declares_its_real_types() {
-        let rendered =
-            render_declarations(&["cru.shell.exec".to_string(), "cru.shell.which".to_string()]);
+        let rendered = render_declarations(
+            &["cru.shell.exec".to_string(), "cru.shell.which".to_string()],
+            &[],
+        );
         assert!(
             rendered.contains("exec: (command: string, args: { string }?"),
             "the signature must reach the declaration: {rendered}"
@@ -333,9 +605,9 @@ mod tests {
 
     #[test]
     fn an_unsigned_function_is_declared_as_taking_anything() {
-        let rendered = render_declarations(&["cru.nothing.here".to_string()]);
+        let rendered = render_declarations(&["cru.nothing.here".to_string()], &[]);
         assert!(
-            rendered.contains("here: (...: any) -> any"),
+            rendered.contains("here: (...any) -> any"),
             "an unsigned function must be visible as unsigned: {rendered}"
         );
     }
@@ -344,8 +616,10 @@ mod tests {
     /// the surface is actually described.
     #[test]
     fn the_header_counts_the_signed_functions() {
-        let rendered =
-            render_declarations(&["cru.shell.exec".to_string(), "cru.nothing.here".to_string()]);
+        let rendered = render_declarations(
+            &["cru.shell.exec".to_string(), "cru.nothing.here".to_string()],
+            &[],
+        );
         assert!(
             rendered.contains("1 of 2 functions carry a declared signature"),
             "the header must count: {rendered}"
@@ -354,8 +628,10 @@ mod tests {
 
     #[test]
     fn the_declaration_nests_the_namespaces() {
-        let rendered =
-            render_declarations(&["cru.fs.exists".to_string(), "cru.json.encode".to_string()]);
+        let rendered = render_declarations(
+            &["cru.fs.exists".to_string(), "cru.json.encode".to_string()],
+            &[],
+        );
         assert!(rendered.starts_with("--!strict\n"));
         assert!(rendered.contains("declare cru: {"));
         assert!(rendered.contains("fs: {"));
@@ -363,16 +639,52 @@ mod tests {
         assert!(rendered.contains("exists: (path: string) -> boolean"));
     }
 
-    /// Every declared signature is well formed. A `LuaType::parse` in the
-    /// table that raises would take the generator down with it.
+    /// Every declared type is well formed. A `LuaType::parse` in the table
+    /// that raises would take the generator down with it, and a function type
+    /// that does not render as a call would be a parse error in the file.
     #[test]
-    fn every_declared_signature_renders() {
-        for (path, signature) in declared_signatures() {
-            let rendered = signature.to_luau();
-            assert!(
-                rendered.starts_with('('),
-                "{path} rendered oddly: {rendered}"
-            );
+    fn every_declared_type_renders() {
+        for (path, ty) in declared_signatures() {
+            let rendered = ty.to_luau();
+            assert!(!rendered.is_empty(), "{path} rendered nothing");
+            if is_function_type(&ty) {
+                assert!(
+                    rendered.starts_with('(') && rendered.contains("->"),
+                    "{path} is declared callable but rendered {rendered}"
+                );
+            }
         }
+    }
+
+    /// A member that is not a function is declared as itself.
+    /// `cru.kiln.active` is a string a plugin READS; declaring it callable
+    /// made every correct use of it a type error.
+    #[test]
+    fn a_field_is_declared_as_a_value() {
+        assert_eq!(
+            declaration_for("cru.kiln.active").to_luau(),
+            "string?",
+            "a property must not be declared as a call"
+        );
+        let rendered = render_declarations(
+            &[],
+            &[crate::stubs::ValueMember {
+                path: "cru.session.id".to_string(),
+                luau_type: "string".to_string(),
+            }],
+        );
+        assert!(rendered.contains("id: string?"), "{rendered}");
+    }
+
+    /// A callable table renders both halves, so `cru.log("info", msg)` and
+    /// `cru.log.levels` both typecheck.
+    #[test]
+    fn a_callable_table_renders_as_an_intersection() {
+        let rendered =
+            render_declarations(&["cru.log".to_string(), "cru.log.notify".to_string()], &[]);
+        assert!(
+            rendered.contains("log: ((level: string, message: string) -> ()) & {"),
+            "{rendered}"
+        );
     }
 }

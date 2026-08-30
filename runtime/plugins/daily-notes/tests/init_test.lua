@@ -111,14 +111,14 @@ describe("daily-notes", function()
             })
             local warnings = {}
             local had_log = cru.log
-            cru.log = function(level, msg)
+            ;(cru :: any).log = function(level, msg)
                 if level == "warn" then warnings[#warnings + 1] = msg end
             end
             local ok, err = pcall(function()
                 plugin.tools.daily_list.fn({ days = 1 })
                 plugin.tools.daily_list.fn({ days = 1 })
             end)
-            cru.log = had_log
+            ;(cru :: any).log = had_log
             if not ok then error(err) end
             expect.equal(#warnings, 1)
             expect.truthy(warnings[1]:find("/kilns/notes/Journal", 1, true))

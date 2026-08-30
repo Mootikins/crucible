@@ -26,6 +26,21 @@ struct FunctionStub {
     ui_only: bool,
 }
 
+/// A non-function member of a `cru` table — `cru.kiln.active` is a string,
+/// `cru.log.levels` a table of them.
+///
+/// These belong in the Luau declarations for the same reason the functions
+/// do: `declare cru: { … }` is an EXACT table type, so a member the
+/// declarations omit is a type error at every correct use of it.
+#[derive(Debug, Clone)]
+pub struct ValueMember {
+    pub path: String,
+    /// The Luau type of what was observed, always optional: a value present
+    /// in the VM the stubs were rendered from may be absent in another (no
+    /// kiln is active, no session is open).
+    pub luau_type: String,
+}
+
 #[derive(Debug, Serialize)]
 struct DocEntry {
     documentation: String,
@@ -44,14 +59,14 @@ impl StubGenerator {
     pub fn generate_from(lua: &Lua, output_dir: &Path) -> Result<(), LuaError> {
         fs::create_dir_all(output_dir)?;
 
-        let (emmylua, docs, paths) = render_stubs(lua)?;
+        let (emmylua, docs, paths, values) = render_stubs(lua)?;
 
         fs::write(output_dir.join("cru.lua"), emmylua)?;
         // The Luau declarations, from the host's own signature table. LuaLS
         // reads `cru.lua`; `luau-analyze` reads this.
         fs::write(
             output_dir.join("cru.d.luau"),
-            crate::host_api::render_declarations(&paths),
+            crate::host_api::render_declarations(&paths, &values),
         )?;
         let docs_json = serde_json::to_string_pretty(&docs)
             .map_err(|e| LuaError::Serialization(e.to_string()))?;
@@ -113,7 +128,27 @@ impl StubGenerator {
 }
 
 /// The EmmyLua stubs, their docs, and every function path found on the VM.
-type RenderedStubs = (String, BTreeMap<String, DocEntry>, Vec<String>);
+type RenderedStubs = (
+    String,
+    BTreeMap<String, DocEntry>,
+    Vec<String>,
+    Vec<ValueMember>,
+);
+
+/// Every `cru.*` function path the VM has, in the order the declarations use.
+///
+/// Public so a gate can compare the host's declared signatures against what
+/// is really registered, by PATH. A substring check cannot do that job: the
+/// needle `on: (` matches `option: (` and `set_output_validation: (`, so a
+/// declaration for a function nobody registered passes unnoticed.
+pub fn function_paths(lua: &Lua) -> Result<Vec<String>, LuaError> {
+    Ok(render_stubs(lua)?.2)
+}
+
+/// Every non-function `cru.*` member the VM has, with its observed type.
+pub fn value_members(lua: &Lua) -> Result<Vec<ValueMember>, LuaError> {
+    Ok(render_stubs(lua)?.3)
+}
 
 fn render_stubs(lua: &Lua) -> Result<RenderedStubs, LuaError> {
     let cru: Table = lua.globals().get("cru")?;
@@ -124,24 +159,50 @@ fn render_stubs(lua: &Lua) -> Result<RenderedStubs, LuaError> {
     // Whatever is on `cru`, rather than a hardcoded list. The list was the
     // problem: it named six modules the VM does not have and missed twelve it
     // does, and every module registered after it was written was invisible.
+    //
+    // Top-level FUNCTIONS count too. `cru.on`, `cru.on_session_start` and
+    // their siblings live directly on `cru`, and a walk that kept only tables
+    // left them out of both the stubs and the Luau declarations — under which
+    // a plugin calling `cru.on(...)` is calling something the declarations say
+    // does not exist.
     let mut modules: Vec<(String, Table)> = Vec::new();
+    let mut top_level: Vec<String> = Vec::new();
     for pair in cru.pairs::<String, Value>() {
         let (name, value) = pair?;
-        if let Value::Table(table) = value {
-            modules.push((name, table));
+        match value {
+            Value::Table(table) => modules.push((name, table)),
+            Value::Function(_) => top_level.push(name),
+            _ => {}
         }
     }
     modules.sort_by(|a, b| a.0.cmp(&b.0));
+    top_level.sort();
 
     let mut functions = Vec::new();
+    let mut values: Vec<ValueMember> = Vec::new();
+    for name in top_level {
+        functions.push(FunctionStub {
+            path: format!("cru.{name}"),
+            ui_only: false,
+        });
+    }
     for (name, table) in modules {
         let ui_only = UI_ONLY_MODULES.contains(&name.as_str());
+        // A callable table is both: `cru.log("info", msg)` works and so does
+        // `cru.log.notify(...)`. Record the call before descending.
+        if is_callable(&table) {
+            functions.push(FunctionStub {
+                path: format!("cru.{name}"),
+                ui_only,
+            });
+        }
         collect_function_stubs(
             &table,
             &format!("cru.{name}"),
             ui_only,
             &mut functions,
             &mut class_paths,
+            &mut values,
         )?;
     }
 
@@ -187,7 +248,15 @@ fn render_stubs(lua: &Lua) -> Result<RenderedStubs, LuaError> {
     }
 
     let paths = functions.iter().map(|f| f.path.clone()).collect();
-    Ok((out, docs, paths))
+    values.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok((out, docs, paths, values))
+}
+
+/// Whether a table carries a `__call` metamethod — `cru.log` does.
+fn is_callable(table: &Table) -> bool {
+    table
+        .metatable()
+        .is_some_and(|meta| matches!(meta.get::<Value>("__call"), Ok(Value::Function(_))))
 }
 
 fn collect_function_stubs(
@@ -196,6 +265,7 @@ fn collect_function_stubs(
     ui_only: bool,
     functions: &mut Vec<FunctionStub>,
     class_paths: &mut BTreeSet<String>,
+    values: &mut Vec<ValueMember>,
 ) -> Result<(), LuaError> {
     let mut keys = Vec::new();
     for pair in table.pairs::<Value, Value>() {
@@ -232,9 +302,29 @@ fn collect_function_stubs(
             }
             Value::Table(sub_table) => {
                 class_paths.insert(base_path.to_string());
-                collect_function_stubs(&sub_table, &path, ui_only, functions, class_paths)?;
+                if is_callable(&sub_table) {
+                    functions.push(FunctionStub {
+                        path: path.clone(),
+                        ui_only,
+                    });
+                }
+                collect_function_stubs(&sub_table, &path, ui_only, functions, class_paths, values)?;
             }
-            _ => {}
+            // A scalar member. Recorded so the declarations describe it —
+            // `cru.kiln.active` is a string, and an exact table type that
+            // omits it rejects every correct read of it.
+            other => {
+                let luau_type = match other {
+                    Value::String(_) => "string",
+                    Value::Integer(_) | Value::Number(_) => "number",
+                    Value::Boolean(_) => "boolean",
+                    _ => "any",
+                };
+                values.push(ValueMember {
+                    path,
+                    luau_type: luau_type.to_string(),
+                });
+            }
         }
     }
 

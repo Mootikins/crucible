@@ -54,6 +54,9 @@ local M = {}
 local PROVIDERS = {
     searxng = {
         module = "providers.searxng",
+        -- Returns a reason, or nil when the provider is usable. The `nil` is
+        -- explicit: a function that returns a value on one path and falls off
+        -- the end on another reads as an oversight, and Luau says so.
         needs = function(cfg)
             if not cfg.searxng_url then
                 return "no `searxng_url` is configured. Point it at an instance you "
@@ -61,6 +64,7 @@ local PROVIDERS = {
                     .. "because all nine tested public instances rate-limit or "
                     .. "challenge automated queries."
             end
+            return nil
         end,
         opts = function(cfg, limit)
             return { url = cfg.searxng_url, timeout = cfg.timeout, max_results = limit }

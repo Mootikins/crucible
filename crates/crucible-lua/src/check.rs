@@ -9,13 +9,14 @@
 //!    parses into [`crate::signature::LuaType`], so the JSON Schema an agent
 //!    receives and the Luau declarations an author checks against say the same
 //!    thing. This is the same validation the loader applies, run early.
-//! 3. **It typechecks** — when `luau-analyze` is on PATH. The generated
-//!    `cru.d.luau` declarations go in as definitions, so a call into `cru.*`
-//!    is checked against the host's own signature table.
+//! 3. **It typechecks** — when a checker is installed. `luau-lsp analyze
+//!    --definitions=<cru.d.luau>` is the one that can load the generated
+//!    declarations, so it is preferred; upstream `luau-analyze` has no way to
+//!    load a definitions file and only checks the plugin's own code.
 //!
-//! Step 3 is reported as SKIPPED, never as passed, when the binary is absent.
-//! A gate that quietly succeeds because its checker is missing is worse than
-//! no gate: it reports the absence of evidence as evidence.
+//! Step 3 is reported as SKIPPED, never as passed, when no checker is
+//! installed. A gate that quietly succeeds because its checker is missing is
+//! worse than no gate: it reports the absence of evidence as evidence.
 
 use crate::lifecycle::load_plugin_spec;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,9 @@ pub enum Finding {
     Syntax { file: PathBuf, message: String },
     /// A declaration the host cannot read.
     Declaration { message: String },
+    /// The plugin's `init.lua` does not load — it raises, or its spec cannot
+    /// be read.
+    Load { message: String },
     /// `luau-analyze` reported a diagnostic.
     Type { message: String },
 }
@@ -38,9 +42,9 @@ impl std::fmt::Display for Finding {
             Finding::Syntax { file, message } => {
                 write!(f, "{}: {message}", file.display())
             }
-            Finding::Declaration { message } | Finding::Type { message } => {
-                write!(f, "{message}")
-            }
+            Finding::Declaration { message }
+            | Finding::Load { message }
+            | Finding::Type { message } => write!(f, "{message}"),
         }
     }
 }
@@ -48,9 +52,9 @@ impl std::fmt::Display for Finding {
 /// Whether the typechecker ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypecheckStatus {
-    /// `luau-analyze` ran and its diagnostics are in the findings.
+    /// A checker ran and its diagnostics are in the findings.
     Ran,
-    /// `luau-analyze` is not on PATH. Nothing about types was proved.
+    /// No checker is installed. Nothing about types was proved.
     Skipped,
 }
 
@@ -77,6 +81,31 @@ impl CheckReport {
 /// `definitions` is the generated `cru.d.luau`, when the caller has one;
 /// without it the typecheck still runs, but a `cru.*` call is unconstrained.
 pub fn check_plugin(plugin_dir: &Path, definitions: Option<&Path>) -> std::io::Result<CheckReport> {
+    check_plugin_with(plugin_dir, definitions, false)
+}
+
+/// [`check_plugin`], with the choice of typechecking the suite too.
+///
+/// A suite monkey-patches the host on purpose — `cru.log` becomes a plain
+/// function to capture warnings, `cru.plugin` becomes an empty table — and
+/// every one of those is a type error against declarations that describe the
+/// real host. So the typechecker sees the plugin's SHIPPED code by default,
+/// and the suite only when asked. Both halves still have to compile: a test
+/// file that does not parse is a test file that never ran, and that check is
+/// unconditional.
+pub fn check_plugin_with(
+    plugin_dir: &Path,
+    definitions: Option<&Path>,
+    include_tests: bool,
+) -> std::io::Result<CheckReport> {
+    // Absolute from here down: `analyze` runs the checker with the plugin
+    // directory as its working directory, so a relative definitions path or a
+    // relative plugin path would resolve against the wrong root.
+    let plugin_dir =
+        &std::fs::canonicalize(plugin_dir).unwrap_or_else(|_| plugin_dir.to_path_buf());
+    let definitions =
+        definitions.map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
+    let definitions = definitions.as_deref();
     let files = lua_files(plugin_dir)?;
     let mut findings = Vec::new();
 
@@ -98,19 +127,43 @@ pub fn check_plugin(plugin_dir: &Path, definitions: Option<&Path>) -> std::io::R
 
     // 2. The spec's declarations are readable. A plugin with no `init.lua` —
     // a bare module directory — declares nothing, and that is not a failure.
+    // Every spec failure is reported, not only the unreadable declarations.
+    // The loader FAILS OPEN on the rest — a plugin whose spec cannot be read
+    // still loads and merely exports nothing — but a check that stayed silent
+    // about it would print a tick for a plugin the daemon cannot use.
     let init = plugin_dir.join("init.lua");
     if init.is_file() {
         if let Err(e) = load_plugin_spec(&init) {
-            if matches!(e, crate::LifecycleError::InvalidDeclaration(_)) {
-                findings.push(Finding::Declaration {
-                    message: e.to_string(),
-                });
-            }
+            let message = e.to_string();
+            findings.push(match e {
+                crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
+                _ => Finding::Load { message },
+            });
+        }
+    }
+
+    // A checker an operator NAMED and that is not there is a failure, not a
+    // skip: they asked for the check, so silence would answer a question they
+    // did not ask.
+    if let Some(configured) = std::env::var_os("CRUCIBLE_LUAU_ANALYZE") {
+        let path = PathBuf::from(&configured);
+        if !path.is_file() {
+            findings.push(Finding::Type {
+                message: format!(
+                    "CRUCIBLE_LUAU_ANALYZE names {}, which is not a file",
+                    path.display()
+                ),
+            });
         }
     }
 
     // 3. The types, when there is a checker.
-    let typecheck = match analyze(plugin_dir, &files, definitions) {
+    let typechecked: Vec<PathBuf> = files
+        .iter()
+        .filter(|file| include_tests || !is_test_file(file))
+        .cloned()
+        .collect();
+    let typecheck = match analyze(plugin_dir, &typechecked, definitions) {
         Some(diagnostics) => {
             findings.extend(diagnostics);
             TypecheckStatus::Ran
@@ -126,7 +179,19 @@ pub fn check_plugin(plugin_dir: &Path, definitions: Option<&Path>) -> std::io::R
     })
 }
 
-/// Run `luau-analyze`, or answer `None` when it is not installed.
+/// Which checker is in use. They are not interchangeable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Analyzer {
+    /// `luau-lsp analyze --definitions=…`. The only one that can load a
+    /// definitions file, so the only one that checks a call into `cru.*`.
+    LuauLsp,
+    /// Upstream `luau-analyze`. Typechecks the plugin's own code; its CLI has
+    /// no way to load definitions, so every `cru` reference is an unknown
+    /// global to it and those diagnostics are dropped.
+    LuauAnalyze,
+}
+
+/// Run the checker, or answer `None` when none is installed.
 fn analyze(
     plugin_dir: &Path,
     files: &[PathBuf],
@@ -135,12 +200,15 @@ fn analyze(
     if files.is_empty() {
         return None;
     }
-    let binary = analyzer_binary()?;
+    let (binary, kind) = analyzer_binary()?;
 
     let mut command = Command::new(binary);
     command.current_dir(plugin_dir);
-    if let Some(definitions) = definitions {
-        command.arg(format!("--defs={}", definitions.display()));
+    if kind == Analyzer::LuauLsp {
+        command.arg("analyze");
+        if let Some(definitions) = definitions {
+            command.arg(format!("--definitions={}", definitions.display()));
+        }
     }
     for file in files {
         command.arg(file);
@@ -155,7 +223,14 @@ fn analyze(
     Some(
         text.lines()
             .chain(errors.lines())
+            .map(str::trim_end)
             .filter(|line| !line.trim().is_empty())
+            // `luau-lsp` narrates what it loaded on stdout; only diagnostics
+            // are findings.
+            .filter(|line| !line.starts_with("[INFO]"))
+            // Without definitions every `cru` is an unknown global. Reporting
+            // that against correct code trains an author to ignore the tool.
+            .filter(|line| kind == Analyzer::LuauLsp || !line.contains("Unknown global 'cru'"))
             .map(|line| Finding::Type {
                 message: line.to_string(),
             })
@@ -163,19 +238,54 @@ fn analyze(
     )
 }
 
-/// `luau-analyze` on PATH, or the override an operator set.
+/// The checker to run: `luau-lsp` first, because it is the one that can load
+/// the generated `cru.d.luau`.
 ///
-/// `CRUCIBLE_LUAU_ANALYZE` exists for the case the binary is installed under
+/// `CRUCIBLE_LUAU_ANALYZE` overrides the lookup, for a binary installed under
 /// another name or outside PATH; CI sets it rather than relying on a lookup.
-fn analyzer_binary() -> Option<PathBuf> {
+/// A path whose file name mentions `lsp` is driven as `luau-lsp analyze`.
+fn analyzer_binary() -> Option<(PathBuf, Analyzer)> {
     if let Ok(explicit) = std::env::var("CRUCIBLE_LUAU_ANALYZE") {
         let path = PathBuf::from(explicit);
-        return path.is_file().then_some(path);
+        if !path.is_file() {
+            return None;
+        }
+        let kind = if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.contains("lsp"))
+        {
+            Analyzer::LuauLsp
+        } else {
+            Analyzer::LuauAnalyze
+        };
+        return Some((path, kind));
     }
+
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join("luau-analyze"))
-        .find(|candidate| candidate.is_file())
+    let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    for (name, kind) in [
+        ("luau-lsp", Analyzer::LuauLsp),
+        ("luau-analyze", Analyzer::LuauAnalyze),
+    ] {
+        if let Some(found) = dirs
+            .iter()
+            .map(|dir| dir.join(name))
+            .find(|candidate| candidate.is_file())
+        {
+            return Some((found, kind));
+        }
+    }
+    None
+}
+
+/// Whether a file belongs to the plugin's suite rather than its shipped code.
+fn is_test_file(path: &Path) -> bool {
+    path.components().any(|part| part.as_os_str() == "tests")
+        || path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| stem.ends_with("_test"))
 }
 
 /// Every `.lua` file under the plugin, tests included: a suite that does not

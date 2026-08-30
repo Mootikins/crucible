@@ -19,14 +19,14 @@ local clear_status_calls = {}
 local publications = {}      -- key -> published value
 local declared_options       -- the settings tree the plugin declared
 
-cru.on = function(event, opts, fn)
+;(cru :: any).on = function(event, opts, fn)
   expect.equals("pre_tool_call", event)
   hooks[opts.pattern] = { fn = fn, opts = opts }
 end
-cru.on_session_start = function(fn, opts)
+;(cru :: any).on_session_start = function(fn, opts)
   lifecycle.start = { fn = fn, opts = opts or {} }
 end
-cru.on_session_end = function(fn)
+;(cru :: any).on_session_end = function(fn)
   lifecycle.end_fn = fn
 end
 -- The runner VM has no cru.isolation or cru.plugin (the daemon registers
@@ -92,7 +92,7 @@ end
 local function install_shell()
   cru.shell = { exec = stub_exec, spawn = stub_spawn, which = stub_which }
   cru.json = { encode = function(t) return t end }
-  cru.log = function() end
+  ;(cru :: any).log = function() end
 end
 
 cru = cru or {}

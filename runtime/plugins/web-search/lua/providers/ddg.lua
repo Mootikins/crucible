@@ -68,7 +68,12 @@ end
 
 local function percent_decode(s)
     return (s:gsub("%%(%x%x)", function(hex)
-        return string.char(tonumber(hex, 16))
+        -- `tonumber` answers `number?`, and `string.char(nil)` raises. The
+        -- `%x%x` capture makes that unreachable today; keeping the original
+        -- text if it ever is reached shows the escape rather than killing the
+        -- parse of a whole result page.
+        local code = tonumber(hex, 16)
+        return code and string.char(code) or ("%" .. hex)
     end))
 end
 

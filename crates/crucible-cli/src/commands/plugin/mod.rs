@@ -153,6 +153,12 @@ pub struct StubsArgs {
 pub struct CheckArgs {
     /// Path to the plugin directory
     pub path: std::path::PathBuf,
+    /// Typecheck the plugin's test suite too. Off by default: a suite
+    /// monkey-patches the host on purpose, and every stub is a type error
+    /// against declarations that describe the real host. Tests are always
+    /// parse-checked.
+    #[arg(long)]
+    pub include_tests: bool,
     /// Luau declaration file to check against (defaults to the generated
     /// `cru.d.luau` in the stub directory)
     #[arg(long)]

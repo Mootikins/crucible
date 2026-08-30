@@ -15,7 +15,7 @@ crucible = crucible or {}
 cru.plugin.publish = function(key, value) publications[key] = value end
 
 cru = cru or {}
-cru.log = function() end
+;(cru :: any).log = function() end
 cru.session = cru.session or {}
 cru.session.complete = function(session_id, opts)
   table.insert(completions, { session_id = session_id, opts = opts })

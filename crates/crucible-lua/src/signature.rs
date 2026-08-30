@@ -57,6 +57,15 @@ pub enum LuaType {
     Optional(Box<LuaType>),
     /// A function.
     Function(Box<Signature>),
+    /// Any number of values of one type: Luau's `...T`, in a parameter list
+    /// or a return position. A callback declared `-> ...any` accepts both a
+    /// handler that returns nothing and one that answers with a table, which
+    /// a plain `any` return does not ("not all codepaths return").
+    Variadic(Box<LuaType>),
+    /// A function with more than one accepted shape, or a callable table.
+    /// Luau spells both as an intersection: `((A) -> B) & ((C) -> D)`, and
+    /// `((A) -> B) & { field: T }` for a table you may also call.
+    Intersection(Vec<LuaType>),
     /// A type declared elsewhere, by name.
     Named(String),
 }
@@ -78,6 +87,9 @@ pub struct Param {
     /// Declared optional. Rendered as `T?` and left out of `required`.
     pub optional: bool,
 }
+
+/// The parameter name that means "the rest", rendered as Luau's `...`.
+pub const VARIADIC: &str = "...";
 
 /// A function's parameters and what it answers with.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -149,6 +161,12 @@ impl LuaType {
                 .join(" | "),
             LuaType::Optional(inner) => format!("{}?", inner.to_luau()),
             LuaType::Function(signature) => signature.to_luau(),
+            LuaType::Variadic(inner) => format!("...{}", inner.to_luau()),
+            LuaType::Intersection(parts) => parts
+                .iter()
+                .map(|part| format!("({})", part.to_luau()))
+                .collect::<Vec<_>>()
+                .join(" & "),
             LuaType::Named(name) => name.clone(),
         }
     }
@@ -190,7 +208,9 @@ impl LuaType {
             LuaType::Optional(inner) => inner.to_json_schema(),
             // A function cannot cross the tool boundary. Saying so beats
             // advertising a shape the agent could try to send.
-            LuaType::Function(_) => json!({}),
+            LuaType::Function(_) | LuaType::Intersection(_) => json!({}),
+            // A variadic cannot cross the tool boundary either.
+            LuaType::Variadic(_) => json!({}),
             LuaType::Named(name) => json!({ "$comment": format!("plugin type {name}") }),
         }
     }
@@ -208,7 +228,15 @@ impl Signature {
                 } else {
                     param.ty.to_luau()
                 };
-                format!("{}: {}", param.name, ty)
+                // A variadic carries no name in a type position: Luau writes
+                // `(...any) -> any`, and `(...: any)` is a parse error — one
+                // that would take the whole declarations file down with it,
+                // since every unsigned function renders this way.
+                if param.name == VARIADIC {
+                    format!("...{ty}")
+                } else {
+                    format!("{}: {}", param.name, ty)
+                }
             })
             .collect();
         let returns = match self.returns.len() {
@@ -505,6 +533,55 @@ mod tests {
             "what to search for"
         );
         assert_eq!(schema["required"], json!(["query"]));
+    }
+
+    /// A variadic is `...any`, never `...: any`. The named form is a parse
+    /// error, and every unsigned host function renders through this path — so
+    /// getting it wrong makes the whole declarations file unreadable.
+    #[test]
+    fn a_variadic_parameter_renders_without_a_name() {
+        let signature = Signature {
+            params: vec![Param {
+                name: VARIADIC.to_string(),
+                ty: LuaType::Any,
+                description: None,
+                optional: false,
+            }],
+            returns: vec![LuaType::Any],
+        };
+        assert_eq!(signature.to_luau(), "(...any) -> any");
+    }
+
+    /// Two accepted call shapes, or a table that is also callable: Luau
+    /// spells both as an intersection.
+    #[test]
+    fn an_intersection_renders_every_part() {
+        let first = Signature {
+            params: vec![Param {
+                name: "event".to_string(),
+                ty: LuaType::String,
+                description: None,
+                optional: false,
+            }],
+            returns: Vec::new(),
+        };
+        let second = Signature {
+            params: vec![Param {
+                name: "count".to_string(),
+                ty: LuaType::Number,
+                description: None,
+                optional: false,
+            }],
+            returns: Vec::new(),
+        };
+        let ty = LuaType::Intersection(vec![
+            LuaType::Function(Box::new(first)),
+            LuaType::Function(Box::new(second)),
+        ]);
+        assert_eq!(
+            ty.to_luau(),
+            "((event: string) -> ()) & ((count: number) -> ())"
+        );
     }
 
     /// A function with nothing to say renders `()`, not `nil`: a caller that

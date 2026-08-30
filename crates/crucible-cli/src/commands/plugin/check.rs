@@ -1,7 +1,7 @@
 //! `cru plugin check` — parse, declaration and type checks over one plugin.
 
 use anyhow::{Context, Result};
-use crucible_lua::{check_plugin, TypecheckStatus};
+use crucible_lua::{check::check_plugin_with, TypecheckStatus};
 
 use super::CheckArgs;
 use crate::config::CliConfig;
@@ -17,15 +17,18 @@ pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
     // catches everything inside the plugin itself.
     let definitions = args.definitions.or_else(default_definitions);
 
-    let report = check_plugin(&plugin_dir, definitions.as_deref())
+    let report = check_plugin_with(&plugin_dir, definitions.as_deref(), args.include_tests)
         .with_context(|| format!("checking {}", plugin_dir.display()))?;
 
-    println!("{} file(s) checked", report.files_checked);
+    println!("{} file(s) parsed", report.files_checked);
     match report.typecheck {
-        TypecheckStatus::Ran => println!("luau-analyze: ran"),
+        TypecheckStatus::Ran if args.include_tests => println!("typecheck: ran (suite included)"),
+        TypecheckStatus::Ran => {
+            println!("typecheck: ran (shipped code; --include-tests for the suite)")
+        }
         TypecheckStatus::Skipped => println!(
-            "luau-analyze: SKIPPED — not on PATH. Install it, or set \
-             CRUCIBLE_LUAU_ANALYZE, to check types."
+            "typecheck: SKIPPED — install `luau-lsp` (or set CRUCIBLE_LUAU_ANALYZE) \
+             to check types."
         ),
     }
 

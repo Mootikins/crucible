@@ -23,7 +23,13 @@ local git = require("git")
 -- Populated by setup() from `[plugins.worktree]`. Empty rather than nil:
 -- setup() is not called when there is no config section at all, and resolution
 -- reads sub-keys unconditionally.
-local config = {}
+--- What `[plugins.worktree]` may set. Declared rather than inferred: an
+--- empty initializer types the table as having no keys under `--!strict`.
+export type Config = {
+  template: string?,
+}
+
+local config: Config = {}
 
 --- Run `git <args>` and return trimmed stdout, or nil + stderr.
 ---
