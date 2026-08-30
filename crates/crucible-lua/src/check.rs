@@ -157,10 +157,19 @@ pub fn check_plugin_with(
         }
     }
 
+    // A directory with no Lua in it is not a plugin, and answering "checked"
+    // for it is the same false green as a skipped typecheck reported as a
+    // pass.
+    if files.is_empty() {
+        findings.push(Finding::Load {
+            message: format!("no .lua files under {}", plugin_dir.display()),
+        });
+    }
+
     // 3. The types, when there is a checker.
     let typechecked: Vec<PathBuf> = files
         .iter()
-        .filter(|file| include_tests || !is_test_file(file))
+        .filter(|file| include_tests || !is_test_file(plugin_dir, file))
         .cloned()
         .collect();
     let typecheck = match analyze(plugin_dir, &typechecked, definitions) {
@@ -192,6 +201,17 @@ enum Analyzer {
 }
 
 /// Run the checker, or answer `None` when none is installed.
+///
+/// The output is read whatever the exit status says, because the status alone
+/// answers neither question:
+///
+/// - `luau-lsp` exits 0 for a LINT — an unused local, a duplicate table key —
+///   and 1 only for a type error. Trusting the status threw every lint away,
+///   including `TableLiteral: Table field 'a' is a duplicate`, which is a real
+///   bug the checker had already found.
+/// - A non-zero exit whose every line falls to a filter used to leave no
+///   findings at all, so a checker that failed for a reason of its own was
+///   reported as a pass.
 fn analyze(
     plugin_dir: &Path,
     files: &[PathBuf],
@@ -202,7 +222,7 @@ fn analyze(
     }
     let (binary, kind) = analyzer_binary()?;
 
-    let mut command = Command::new(binary);
+    let mut command = Command::new(&binary);
     command.current_dir(plugin_dir);
     if kind == Analyzer::LuauLsp {
         command.arg("analyze");
@@ -214,28 +234,45 @@ fn analyze(
         command.arg(file);
     }
 
-    let output = command.output().ok()?;
-    if output.status.success() {
-        return Some(Vec::new());
-    }
+    // A checker that cannot be RUN is a failure, not a skip: something named
+    // it, and silence would answer a question nobody asked.
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(e) => {
+            return Some(vec![Finding::Type {
+                message: format!("could not run {}: {e}", binary.display()),
+            }])
+        }
+    };
+
     let text = String::from_utf8_lossy(&output.stdout);
     let errors = String::from_utf8_lossy(&output.stderr);
-    Some(
-        text.lines()
-            .chain(errors.lines())
-            .map(str::trim_end)
-            .filter(|line| !line.trim().is_empty())
-            // `luau-lsp` narrates what it loaded on stdout; only diagnostics
-            // are findings.
-            .filter(|line| !line.starts_with("[INFO]"))
-            // Without definitions every `cru` is an unknown global. Reporting
-            // that against correct code trains an author to ignore the tool.
-            .filter(|line| kind == Analyzer::LuauLsp || !line.contains("Unknown global 'cru'"))
-            .map(|line| Finding::Type {
-                message: line.to_string(),
-            })
-            .collect(),
-    )
+    let findings: Vec<Finding> = text
+        .lines()
+        .chain(errors.lines())
+        .map(str::trim_end)
+        .filter(|line| !line.trim().is_empty())
+        // `luau-lsp` narrates what it loaded on stdout; only diagnostics are
+        // findings.
+        .filter(|line| !line.starts_with("[INFO]"))
+        // Without definitions every `cru` is an unknown global. Reporting
+        // that against correct code trains an author to ignore the tool.
+        .filter(|line| kind == Analyzer::LuauLsp || !line.contains("Unknown global 'cru'"))
+        .map(|line| Finding::Type {
+            message: line.to_string(),
+        })
+        .collect();
+
+    if findings.is_empty() && !output.status.success() {
+        return Some(vec![Finding::Type {
+            message: format!(
+                "{} exited with {} and said nothing this check could read",
+                binary.display(),
+                output.status
+            ),
+        }]);
+    }
+    Some(findings)
 }
 
 /// The checker to run: `luau-lsp` first, because it is the one that can load
@@ -280,9 +317,17 @@ fn analyzer_binary() -> Option<(PathBuf, Analyzer)> {
 }
 
 /// Whether a file belongs to the plugin's suite rather than its shipped code.
-fn is_test_file(path: &Path) -> bool {
-    path.components().any(|part| part.as_os_str() == "tests")
-        || path
+///
+/// Judged on the path RELATIVE to the plugin. `plugin_dir` is absolute, so
+/// walking the whole path asked about every ancestor too: a plugin developed
+/// under any directory named `tests` had its entire typecheck skipped, and
+/// the report blamed a missing checker.
+fn is_test_file(plugin_dir: &Path, path: &Path) -> bool {
+    let relative = path.strip_prefix(plugin_dir).unwrap_or(path);
+    relative
+        .components()
+        .any(|part| part.as_os_str() == "tests")
+        || relative
             .file_stem()
             .and_then(|stem| stem.to_str())
             .is_some_and(|stem| stem.ends_with("_test"))
@@ -320,6 +365,15 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// `CRUCIBLE_LUAU_ANALYZE` is process-global, so a test that sets it
+    /// changes what every OTHER test in this module sees. Every test that
+    /// runs a check takes this first.
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn plugin(files: &[(&str, &str)]) -> TempDir {
         let tmp = TempDir::new().unwrap();
         for (name, source) in files {
@@ -332,6 +386,7 @@ mod tests {
 
     #[test]
     fn a_well_formed_plugin_passes() {
+        let _env = env_lock();
         let tmp = plugin(&[(
             "init.lua",
             "--!strict\nreturn { name = 'ok', version = '0.1.0' }\n",
@@ -343,6 +398,7 @@ mod tests {
 
     #[test]
     fn a_syntax_error_is_reported_with_its_file() {
+        let _env = env_lock();
         let tmp = plugin(&[("init.lua", "return {\n")]);
         let report = check_plugin(tmp.path(), None).expect("check runs");
         assert!(!report.passed());
@@ -355,6 +411,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_declaration_is_reported() {
+        let _env = env_lock();
         let tmp = plugin(&[(
             "init.lua",
             r#"
@@ -385,6 +442,7 @@ mod tests {
     /// part of what must compile.
     #[test]
     fn every_lua_file_under_the_plugin_is_checked() {
+        let _env = env_lock();
         let tmp = plugin(&[
             ("init.lua", "return { name = 'nested' }\n"),
             ("lua/helper.lua", "return {}\n"),
@@ -394,10 +452,75 @@ mod tests {
         assert_eq!(report.files_checked, 3);
     }
 
+    /// A checker that fails for a reason of its own must not read as a pass.
+    ///
+    /// Every line it printed fell to a filter, so there were no findings, so
+    /// `passed()` was true and the CLI printed a tick with exit 0.
+    #[cfg(unix)]
+    #[test]
+    fn a_checker_that_exits_non_zero_saying_nothing_is_a_finding() {
+        let _env = env_lock();
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = plugin(&[("init.lua", "return { name = 'x' }\n")]);
+        let fake = tmp.path().join("fake-lsp");
+        std::fs::write(&fake, "#!/bin/sh\necho \"[INFO] loading\"\nexit 1\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        std::env::set_var("CRUCIBLE_LUAU_ANALYZE", &fake);
+        let report = check_plugin(tmp.path(), None).expect("check runs");
+        std::env::remove_var("CRUCIBLE_LUAU_ANALYZE");
+
+        assert!(
+            !report.passed(),
+            "a failing checker must not pass: {report:?}"
+        );
+        assert_eq!(report.typecheck, TypecheckStatus::Ran);
+    }
+
+    /// A directory with no Lua in it is not a plugin. It used to report
+    /// SKIPPED — blaming a missing checker that was installed — and pass.
+    #[test]
+    fn a_directory_with_no_lua_is_a_finding() {
+        let _env = env_lock();
+        let tmp = TempDir::new().unwrap();
+        let report = check_plugin(tmp.path(), None).expect("check runs");
+        assert!(!report.passed(), "{report:?}");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| matches!(f, Finding::Load { message } if message.contains("no .lua"))),
+            "{:?}",
+            report.findings
+        );
+    }
+
+    /// The suite predicate reads the path RELATIVE to the plugin. Judged on
+    /// the absolute path, a plugin developed under any directory named
+    /// `tests` had its whole typecheck skipped.
+    #[test]
+    fn a_tests_ancestor_does_not_make_every_file_a_test() {
+        let outer = TempDir::new().unwrap();
+        let plugin_dir = outer.path().join("tests").join("myplugin");
+        std::fs::create_dir_all(plugin_dir.join("tests")).unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), "return {}\n").unwrap();
+        std::fs::write(plugin_dir.join("tests/init_test.lua"), "return {}\n").unwrap();
+
+        assert!(
+            !is_test_file(&plugin_dir, &plugin_dir.join("init.lua")),
+            "the plugin's own file is not a test because an ancestor is named tests"
+        );
+        assert!(
+            is_test_file(&plugin_dir, &plugin_dir.join("tests/init_test.lua")),
+            "the plugin's own tests/ directory still counts"
+        );
+    }
+
     /// Without the checker installed, the report says SKIPPED. It must never
     /// report a typecheck that did not happen as a pass.
     #[test]
     fn a_missing_analyzer_is_reported_as_skipped() {
+        let _env = env_lock();
         if analyzer_binary().is_some() {
             return;
         }
