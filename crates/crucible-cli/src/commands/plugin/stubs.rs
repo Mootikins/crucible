@@ -49,6 +49,17 @@ pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
         }
     } else {
         println!("✓ Stubs generated at: {}", output_dir.display());
+        // Which VM answered matters, and the difference is invisible in the
+        // output. The RPC path asks whatever daemon is already running, which
+        // may be an older build than the working tree — a declaration added
+        // five minutes ago is then absent from the file, and the obvious
+        // conclusion is that the declaration is wrong.
+        println!();
+        println!(
+            "These describe the RUNNING daemon. After changing host code, \
+             restart it or use `cru plugin stubs --offline`, which builds the \
+             plugin VM from this working tree."
+        );
         // `cru plugin new` writes this path into the scaffolded `.luarc.json`,
         // so only a hand-written or relocated one needs the instruction.
         println!();

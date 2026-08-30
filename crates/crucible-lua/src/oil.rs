@@ -347,12 +347,13 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     // missing key with no `_` gives an empty node rather than raising, so a
     // state nobody drew yet renders as nothing.
     //
-    // The handler table is declared `{ [any]: any }` because Luau reads a
-    // union of a function and a node in an index signature as a parse
-    // ambiguity; the shape above is the real one.
+    // The handler VALUE is one of three things, and the union states it
+    // rather than a comment: `luau-lsp analyze` accepts a union of a node, a
+    // string and a thunk inside an index signature — checked against the real
+    // analyzer, not assumed.
     oil.func(
         "match_state",
-        "(state: any, handlers: { [any]: any }) -> OilNode",
+        "(state: any, handlers: { [any]: OilNode | string | (() -> OilNode) }) -> OilNode",
         |ctx, (state, handlers): (Value, Table)| {
             let handler: Value = handlers.get(state.clone()).unwrap_or(Value::Nil);
             match handler {
