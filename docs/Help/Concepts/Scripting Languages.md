@@ -1,6 +1,6 @@
 ---
 title: Scripting Languages
-description: Lua scripting for Crucible plugins
+description: Luau scripting for Crucible plugins
 status: implemented
 tags:
   - concept
@@ -11,57 +11,27 @@ tags:
 
 # Scripting Languages
 
-Crucible uses Lua for plugins, tools, and hooks. Fennel (a Lisp that compiles to Lua) is also supported.
+Crucible uses Luau for plugins, tools, and hooks.
 
 ## Overview
 
-| Language | Best For | Key Feature |
-|----------|----------|-------------|
-| **Lua** | General use, LLM-generated code | Familiar syntax, simple |
-| **Fennel** | Power users wanting macros | Lisp syntax, compiles to Lua |
-
-Both languages can:
+Luau plugins can:
 - Define tools in a plugin's spec table, served to agents and `cru mcp` alike
 - Register event hooks
 - Access the Crucible API (search, notes, graph)
 - Execute shell commands (with policy controls)
 
-## Lua
+## Luau
 
-Lua is a simple, embeddable scripting language with massive adoption. Crucible embeds **PUC Lua 5.4** via the `mlua` crate.
+Luau is a Lua-derived scripting language. Crucible embeds it via the `mlua` crate.
 
 **Strengths:**
 - Familiar syntax (if you know JavaScript/Python)
 - LLM-friendly (models generate excellent Lua)
 - Simple and easy to debug
+- Optional strict mode and type annotations
 
 See [[Help/Lua/Language Basics]] for syntax and examples.
-
-## Fennel
-
-Fennel is a Lisp that compiles to Lua. It provides:
-- S-expression syntax
-- Compile-time macros
-- Full Lua interoperability
-- Pattern matching
-
-Fennel files (`.fnl`) are compiled to Lua at load time, so they have the same runtime characteristics.
-
-## Choosing a Language
-
-### Use Lua when...
-
-- You want simple, readable code
-- LLMs will generate your plugins
-- You're prototyping quickly
-- You prefer familiar syntax
-
-### Use Fennel when...
-
-- You love Lisp
-- You want compile-time macros
-- You're building DSLs
-- You prefer s-expressions
 
 ## Plugin Discovery
 
@@ -76,9 +46,7 @@ Plugins are user-scoped: no kiln, project or workspace directory is searched on
 its own. See [[Help/Extending/Creating Plugins]] for why, and for how
 `runtimepath` opts a tree in.
 
-File extensions determine the runtime:
-- `.lua` — Lua
-- `.fnl` — Fennel (compiles to Lua)
+Plugin sources use the `.lua` extension.
 
 ## Configuration
 
@@ -88,7 +56,7 @@ See [[Help/Lua/Configuration]] for details.
 
 ## Oil UI DSL
 
-Both Lua and Fennel can build TUI components using the **Oil** (Obvious Interface Language) API. Oil provides a functional, React-like model where components are functions that return node trees.
+Luau can build TUI components using the **Oil** (Obvious Interface Language) API. Oil provides a functional, React-like model where components are functions that return node trees.
 
 ```lua
 -- Lua
@@ -96,14 +64,6 @@ local view = cru.oil.col({ gap = 1 },
     cru.oil.text("Hello", { bold = true }),
     cru.oil.when(loading, cru.oil.spinner())
 )
-```
-
-```fennel
-;; Fennel
-(local oil (require :oil))
-(oil.col {:gap 1}
-  (oil.text "Hello" {:bold true})
-  (oil.when loading (oil.spinner)))
 ```
 
 See [[Help/Plugins/Oil Lua API]] for the full Oil component reference;

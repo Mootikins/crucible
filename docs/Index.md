@@ -33,9 +33,9 @@ Notes, wikilinks, tags, and sessions-as-notes are how knowledge gets into the sy
 
 ### You extend it
 
-Neovim-like architecture: Lua/Fennel plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
+Neovim-like architecture: Luau plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
 
-- **[[Help/Concepts/Scripting Languages]]** — Lua with Fennel support
+- **[[Help/Concepts/Scripting Languages]]** — Luau scripting
 - **[[Help/Extending/Creating Plugins]]** — Create plugins in any language
 - **[[Help/Extending/MCP Gateway]]** — Connect external tools
 

@@ -19,7 +19,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **storage** | Persistence: SQLite (metadata, FTS, links, embeddings) | `crucible-daemon/src/storage/sqlite` |
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/src/agent`, `crucible-daemon/src/llm`, `crucible-daemon/src/provider`, `crucible-daemon/src/tools`, `crucible-daemon/src/acp` |
 | **workflows** | Definitions (markup), engine, gates, RPC | `crucible-core/src/workflow`, `crucible-daemon/src/rpc/workflow_handlers.rs` |
-| **plugins** | Extension points, hooks, scripts (Lua, Fennel) | `crucible-lua`, `crucible-daemon/src/daemon_plugins` |
+| **plugins** | Extension points, hooks, scripts (Luau) | `crucible-lua`, `crucible-daemon/src/daemon_plugins` |
 | **apis** | HTTP REST, SSE, WebSocket | `crucible-web/src` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-core/src/config` |
 | **daemon** | Multi-session server, RPC, agent management | `crucible-daemon` |
@@ -267,4 +267,3 @@ Systems are conceptual groupings. Crates are implementation units.
 The system boundary is about **what** (requirements), crates are about **how** (implementation).
 
 ## Related
-
