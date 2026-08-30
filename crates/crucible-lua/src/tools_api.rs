@@ -150,23 +150,99 @@ enum CallStyle {
     Sync,
 }
 
-/// Every function in `cru.tools`, in registration order, with its call style.
+/// Every function in `cru.tools`, in registration order, with its call style
+/// and its Luau type.
 ///
 /// The stub path and the daemon-backed path both read this list, so a new
 /// tools function cannot land in one path only: the stub loop registers every
 /// name here, and [`register_tools_module_with_api`] refuses a table whose key
 /// set differs from it.
-const TOOL_FNS: &[(&str, CallStyle)] = &[
-    ("call", CallStyle::Async),
-    ("list", CallStyle::Async),
-    ("batch", CallStyle::Async),
-    ("set_active", CallStyle::Sync),
-    ("get_active", CallStyle::Sync),
+///
+/// The TYPE lives here rather than beside one closure because every name has
+/// TWO closures — a stub and a daemon-backed body — and one declaration for
+/// both is the point. [`crate::host_registry::Ns`] holds each string to the
+/// Rust types on both paths.
+///
+/// Every function answers with the `(value, err)` pair the Lua error
+/// convention uses, so the first return is nil on failure and the second is
+/// `string?` throughout.
+const TOOL_FNS: &[(&str, CallStyle, &str)] = &[
+    // `args` is a table or nil; a number or a string is refused with an error
+    // pair rather than raised. `opts.session` states which session the call is
+    // for — see the closure below for why an absent one is "not stated"
+    // rather than "not sandboxed". The result is the tool's own JSON, so it
+    // has no shape the host can name.
+    (
+        "call",
+        CallStyle::Async,
+        "(name: string, args: { [string]: any }?, options: { session: string? }?) \
+         -> (any, string?)",
+    ),
+    // Each entry is a tool definition — `name`, `description`, `parameters` —
+    // built from the daemon's JSON, so the fields are not narrowed here.
+    ("list", CallStyle::Async, "() -> ({ any }?, string?)"),
+    // One result entry per call, in the order of `calls`. Exactly one of
+    // `result` and `err` is set on each entry, and the OUTER error is for a
+    // malformed batch, not for a tool that failed.
+    (
+        "batch",
+        CallStyle::Async,
+        "(calls: { { tool: string, args: { [string]: any }? } }, \
+         options: { session: string? }?) \
+         -> ({ { result: any?, err: string? } }?, string?)",
+    ),
+    // `nil` clears the set and `{}` is the real empty set, so the parameter is
+    // optional rather than a plain array. The patterns are globs.
+    (
+        "set_active",
+        CallStyle::Sync,
+        "(session_id: string, patterns: { string }?) -> (boolean?, string?)",
+    ),
+    // THREE outcomes, not two: `(nil, nil)` means the session has no explicit
+    // set, which is a successful answer and the common one.
+    (
+        "get_active",
+        CallStyle::Sync,
+        "(session_id: string) -> ({ string }?, string?)",
+    ),
 ];
 
 /// The names in [`TOOL_FNS`], for the key gate and the tests.
 pub(crate) fn tool_fn_names() -> Vec<&'static str> {
-    TOOL_FNS.iter().map(|(name, _)| *name).collect()
+    TOOL_FNS.iter().map(|(name, _, _)| *name).collect()
+}
+
+/// The declared type of one `cru.tools` function.
+///
+/// A miss is a mistake in this file — a closure registered under a name
+/// [`TOOL_FNS`] does not list — and the key-set gate would refuse the table
+/// for it anyway, one step later.
+fn decl(name: &str) -> Result<&'static str, LuaError> {
+    TOOL_FNS
+        .iter()
+        .find(|(fn_name, _, _)| *fn_name == name)
+        .map(|(_, _, decl)| *decl)
+        .ok_or_else(|| LuaError::Runtime(format!("cru.tools.{name} is not listed in TOOL_FNS")))
+}
+
+/// Refuse a stub whose call style disagrees with [`TOOL_FNS`].
+///
+/// The style is part of the contract — a plugin awaits `call` with or without
+/// a daemon — and the stub path can no longer read it from a loop, because a
+/// typed stub needs its argument types written out. So each stub states its
+/// style and this holds the statement to the list.
+fn expect_style(name: &str, style: CallStyle) -> Result<(), LuaError> {
+    let listed = TOOL_FNS
+        .iter()
+        .find(|(fn_name, _, _)| *fn_name == name)
+        .map(|(_, style, _)| *style)
+        .ok_or_else(|| LuaError::Runtime(format!("cru.tools.{name} is not listed in TOOL_FNS")))?;
+    if listed != style {
+        return Err(LuaError::Runtime(format!(
+            "cru.tools.{name} is registered {style:?}, TOOL_FNS says {listed:?}"
+        )));
+    }
+    Ok(())
 }
 
 /// Register the tools module with stub functions.
@@ -176,29 +252,43 @@ pub(crate) fn tool_fn_names() -> Vec<&'static str> {
 /// to replace stubs with real daemon-backed implementations.
 pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
     let tools = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.tools", tools.clone());
 
-    // A stub ignores its arguments, so one shape serves every name. The call
-    // style still matches the real function, so a plugin sees the same
-    // contract with or without a daemon.
-    for (name, style) in TOOL_FNS {
-        match style {
-            CallStyle::Async => {
-                let f = lua.create_async_function(|lua, _args: mlua::MultiValue| async move {
-                    let err = lua.create_string("no daemon connected")?;
-                    Ok((Value::Nil, Value::String(err)))
-                })?;
-                tools.set(*name, f)?;
-            }
-            CallStyle::Sync => {
-                let f = lua.create_function(|lua: &Lua, _args: mlua::MultiValue| {
-                    let err = lua.create_string("no daemon connected")?;
-                    Ok((Value::Nil, Value::String(err)))
-                })?;
-                tools.set(*name, f)?;
-            }
-        }
+    // A stub ignores its arguments, but it TAKES the same ones as the
+    // daemon-backed body, so `Ns` checks this path's declaration too — arity,
+    // primitives and optionality on both halves of the pair. A stub that took
+    // `MultiValue` would describe no single function and could only be
+    // declared, never checked, and this is the path the plugin VM actually
+    // loads. The call style still matches the real function, so a plugin sees
+    // the same contract with or without a daemon.
+    macro_rules! stub_async {
+        ($name:expr, $args:ty) => {
+            expect_style($name, CallStyle::Async)?;
+            ns.async_func($name, decl($name)?, |lua, _args: $args| async move {
+                let err = lua.create_string("no daemon connected")?;
+                Ok((Value::Nil, Value::String(err)))
+            })?;
+        };
+    }
+    macro_rules! stub_sync {
+        ($name:expr, $args:ty) => {
+            expect_style($name, CallStyle::Sync)?;
+            ns.func($name, decl($name)?, |lua: &Lua, _args: $args| {
+                let err = lua.create_string("no daemon connected")?;
+                Ok((Value::Nil, Value::String(err)))
+            })?;
+        };
     }
 
+    stub_async!("call", (String, Value, Value));
+    stub_async!("list", ());
+    stub_async!("batch", (Value, Value));
+    stub_sync!("set_active", (String, Value));
+    stub_sync!("get_active", String);
+
+    // Two-way: a name added to TOOL_FNS and forgotten above fails here, and
+    // so does a stub with no entry there.
+    gate_module_keys("tools", &tools, &tool_fn_names())?;
     register_module(lua, "tools", tools)?;
 
     Ok(())
@@ -216,6 +306,7 @@ pub fn register_tools_module_with_api(
     // TOOL_FNS, so a name with no daemon-backed body cannot hide behind a
     // stub.
     let tools = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.tools", tools.clone());
 
     // call(tool_name, args_table[, opts]) -> (result, nil) or (nil, err)
     //
@@ -223,8 +314,11 @@ pub fn register_tools_module_with_api(
     // from inside a hook has it as `ctx.session_id`; passing it is what lets
     // the daemon side decide whether that session is sandboxed.
     let a = Arc::clone(&api);
-    let call_fn =
-        lua.create_async_function(move |lua, (name, args, opts): (String, Value, Value)| {
+    expect_style("call", CallStyle::Async)?;
+    ns.async_func(
+        "call",
+        decl("call")?,
+        move |lua, (name, args, opts): (String, Value, Value)| {
             let a = Arc::clone(&a);
             async move {
                 let session = match &opts {
@@ -252,12 +346,13 @@ pub fn register_tools_module_with_api(
                     }
                 }
             }
-        })?;
-    tools.set("call", call_fn)?;
+        },
+    )?;
 
     // list() -> (tools_array, nil) or (nil, err)
     let a = Arc::clone(&api);
-    let list_fn = lua.create_async_function(move |lua, (): ()| {
+    expect_style("list", CallStyle::Async)?;
+    ns.async_func("list", decl("list")?, move |lua, (): ()| {
         let a = Arc::clone(&a);
         async move {
             match a.list_tools().await {
@@ -276,7 +371,6 @@ pub fn register_tools_module_with_api(
             }
         }
     })?;
-    tools.set("list", list_fn)?;
 
     // batch(calls_array[, opts]) -> (results_array, nil) or (nil, err)
     //
@@ -285,157 +379,166 @@ pub fn register_tools_module_with_api(
     //
     // Calls are executed concurrently via futures::join_all.
     let a = Arc::clone(&api);
-    let batch_fn = lua.create_async_function(move |lua, (calls, opts): (Value, Value)| {
-        let a = Arc::clone(&a);
-        async move {
-            // Same `opts.session` as `call`. Without it every batch was
-            // "session not stated", which an isolating implementation must
-            // refuse — leaving a sandboxed plugin an error telling it to pass
-            // a session through a parameter that did not exist.
-            let session = match &opts {
-                Value::Table(t) => t.get::<Option<String>>("session").ok().flatten(),
-                _ => None,
-            };
-            let calls_table = match calls {
-                Value::Table(t) => t,
-                _ => {
-                    let err =
-                        lua.create_string("batch() expects an array of {tool, args} tables")?;
-                    return Ok((Value::Nil, Value::String(err)));
-                }
-            };
-
-            // Parse all call specs from the Lua table
-            let mut call_specs: Vec<(String, serde_json::Value)> = Vec::new();
-            for pair in calls_table.sequence_values::<Table>() {
-                let entry = match pair {
-                    Ok(t) => t,
-                    Err(e) => {
-                        let err = lua.create_string(format!("invalid batch entry: {e}"))?;
-                        return Ok((Value::Nil, Value::String(err)));
-                    }
+    expect_style("batch", CallStyle::Async)?;
+    ns.async_func(
+        "batch",
+        decl("batch")?,
+        move |lua, (calls, opts): (Value, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                // Same `opts.session` as `call`. Without it every batch was
+                // "session not stated", which an isolating implementation must
+                // refuse — leaving a sandboxed plugin an error telling it to pass
+                // a session through a parameter that did not exist.
+                let session = match &opts {
+                    Value::Table(t) => t.get::<Option<String>>("session").ok().flatten(),
+                    _ => None,
                 };
-                let tool_name: String = match entry.get("tool") {
-                    Ok(n) => n,
-                    Err(_) => {
-                        let err = lua.create_string("each batch entry requires a 'tool' field")?;
-                        return Ok((Value::Nil, Value::String(err)));
-                    }
-                };
-                let args_val: Value = entry.get("args").unwrap_or(Value::Nil);
-                let json_args: serde_json::Value = match args_val {
-                    Value::Table(_) => {
-                        serde_json::to_value(&args_val).map_err(mlua::Error::external)?
-                    }
-                    Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
+                let calls_table = match calls {
+                    Value::Table(t) => t,
                     _ => {
-                        let err = lua.create_string(format!(
-                            "args for tool '{}' must be a table",
-                            tool_name
-                        ))?;
+                        let err =
+                            lua.create_string("batch() expects an array of {tool, args} tables")?;
                         return Ok((Value::Nil, Value::String(err)));
                     }
                 };
-                call_specs.push((tool_name, json_args));
-            }
 
-            if call_specs.is_empty() {
-                let result = lua.create_table()?;
-                return Ok((Value::Table(result), Value::Nil));
-            }
-
-            // Execute all calls concurrently
-            let futures: Vec<_> = call_specs
-                .into_iter()
-                .map(|(name, args)| {
-                    let a = Arc::clone(&a);
-                    let session = session.clone();
-                    async move {
-                        let result = a.call_tool(name.clone(), args, session).await;
-                        (name, result)
-                    }
-                })
-                .collect();
-
-            let results = futures_util::future::join_all(futures).await;
-
-            // Build results table
-            let result_table = lua.create_table()?;
-            for (i, (_name, result)) in results.into_iter().enumerate() {
-                let entry = lua.create_table()?;
-                match result {
-                    Ok(val) => {
-                        let lua_val = lua.to_value(&val)?;
-                        entry.set("result", lua_val)?;
-                    }
-                    Err(e) => {
-                        let err_str = lua.create_string(&e)?;
-                        entry.set("err", Value::String(err_str))?;
-                    }
+                // Parse all call specs from the Lua table
+                let mut call_specs: Vec<(String, serde_json::Value)> = Vec::new();
+                for pair in calls_table.sequence_values::<Table>() {
+                    let entry = match pair {
+                        Ok(t) => t,
+                        Err(e) => {
+                            let err = lua.create_string(format!("invalid batch entry: {e}"))?;
+                            return Ok((Value::Nil, Value::String(err)));
+                        }
+                    };
+                    let tool_name: String = match entry.get("tool") {
+                        Ok(n) => n,
+                        Err(_) => {
+                            let err =
+                                lua.create_string("each batch entry requires a 'tool' field")?;
+                            return Ok((Value::Nil, Value::String(err)));
+                        }
+                    };
+                    let args_val: Value = entry.get("args").unwrap_or(Value::Nil);
+                    let json_args: serde_json::Value = match args_val {
+                        Value::Table(_) => {
+                            serde_json::to_value(&args_val).map_err(mlua::Error::external)?
+                        }
+                        Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
+                        _ => {
+                            let err = lua.create_string(format!(
+                                "args for tool '{}' must be a table",
+                                tool_name
+                            ))?;
+                            return Ok((Value::Nil, Value::String(err)));
+                        }
+                    };
+                    call_specs.push((tool_name, json_args));
                 }
-                result_table.set(i + 1, entry)?;
-            }
 
-            Ok((Value::Table(result_table), Value::Nil))
-        }
-    })?;
-    tools.set("batch", batch_fn)?;
+                if call_specs.is_empty() {
+                    let result = lua.create_table()?;
+                    return Ok((Value::Table(result), Value::Nil));
+                }
+
+                // Execute all calls concurrently
+                let futures: Vec<_> = call_specs
+                    .into_iter()
+                    .map(|(name, args)| {
+                        let a = Arc::clone(&a);
+                        let session = session.clone();
+                        async move {
+                            let result = a.call_tool(name.clone(), args, session).await;
+                            (name, result)
+                        }
+                    })
+                    .collect();
+
+                let results = futures_util::future::join_all(futures).await;
+
+                // Build results table
+                let result_table = lua.create_table()?;
+                for (i, (_name, result)) in results.into_iter().enumerate() {
+                    let entry = lua.create_table()?;
+                    match result {
+                        Ok(val) => {
+                            let lua_val = lua.to_value(&val)?;
+                            entry.set("result", lua_val)?;
+                        }
+                        Err(e) => {
+                            let err_str = lua.create_string(&e)?;
+                            entry.set("err", Value::String(err_str))?;
+                        }
+                    }
+                    result_table.set(i + 1, entry)?;
+                }
+
+                Ok((Value::Table(result_table), Value::Nil))
+            }
+        },
+    )?;
 
     // set_active(session_id, names_or_nil) -> (true, nil) or (nil, err)
     //
     // `names` is an array of glob patterns. `nil` clears the set; `{}` is a
     // real answer meaning "no tools", so the two are NOT the same call.
     let a = Arc::clone(&api);
-    let set_active_fn = lua.create_function(move |lua, (session, names): (String, Value)| {
-        let patterns = match &names {
-            Value::Nil => None,
-            Value::Table(t) => {
-                let mut out = Vec::new();
-                for value in t.clone().sequence_values::<String>() {
-                    match value {
-                        Ok(name) => out.push(name),
-                        Err(e) => {
-                            let err = lua.create_string(format!(
-                                "set_active() names must be an array of strings: {e}"
-                            ))?;
-                            return Ok((Value::Nil, Value::String(err)));
+    expect_style("set_active", CallStyle::Sync)?;
+    ns.func(
+        "set_active",
+        decl("set_active")?,
+        move |lua: &Lua, (session, names): (String, Value)| {
+            let patterns = match &names {
+                Value::Nil => None,
+                Value::Table(t) => {
+                    let mut out = Vec::new();
+                    for value in t.clone().sequence_values::<String>() {
+                        match value {
+                            Ok(name) => out.push(name),
+                            Err(e) => {
+                                let err = lua.create_string(format!(
+                                    "set_active() names must be an array of strings: {e}"
+                                ))?;
+                                return Ok((Value::Nil, Value::String(err)));
+                            }
                         }
                     }
-                }
-                // Every entry has to be part of the array walk above. A
-                // map-shaped table (`{ read_file = true }`) or a sparse one
-                // (`{ [1] = "a", [3] = "b" }`) has entries the walk never
-                // reaches, and the leftover was silently the empty set — so
-                // asking for two tools by the wrong shape handed the session
-                // NO tools. `{}` is still the deliberate empty set: it has
-                // nothing outside the array either.
-                let entries = t.clone().pairs::<Value, Value>().count();
-                if entries != out.len() {
-                    let err = lua.create_string(format!(
-                        "set_active() names must be an array of tool patterns; {} of \
+                    // Every entry has to be part of the array walk above. A
+                    // map-shaped table (`{ read_file = true }`) or a sparse one
+                    // (`{ [1] = "a", [3] = "b" }`) has entries the walk never
+                    // reaches, and the leftover was silently the empty set — so
+                    // asking for two tools by the wrong shape handed the session
+                    // NO tools. `{}` is still the deliberate empty set: it has
+                    // nothing outside the array either.
+                    let entries = t.clone().pairs::<Value, Value>().count();
+                    if entries != out.len() {
+                        let err = lua.create_string(format!(
+                            "set_active() names must be an array of tool patterns; {} of \
                          the {entries} entries are not array elements (a map like \
                          {{ read_file = true }}, or a gap in the indices)",
-                        entries - out.len()
-                    ))?;
+                            entries - out.len()
+                        ))?;
+                        return Ok((Value::Nil, Value::String(err)));
+                    }
+                    Some(out)
+                }
+                _ => {
+                    let err = lua
+                        .create_string("set_active() expects an array of tool patterns, or nil")?;
                     return Ok((Value::Nil, Value::String(err)));
                 }
-                Some(out)
+            };
+            match a.set_active_tools(session, patterns) {
+                Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
             }
-            _ => {
-                let err =
-                    lua.create_string("set_active() expects an array of tool patterns, or nil")?;
-                return Ok((Value::Nil, Value::String(err)));
-            }
-        };
-        match a.set_active_tools(session, patterns) {
-            Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
-            Err(e) => {
-                let err = lua.create_string(&e)?;
-                Ok((Value::Nil, Value::String(err)))
-            }
-        }
-    })?;
-    tools.set("set_active", set_active_fn)?;
+        },
+    )?;
 
     // get_active(session_id) -> (names, nil) | (nil, nil) | (nil, err)
     //
@@ -443,24 +546,25 @@ pub fn register_tools_module_with_api(
     // set, which is a successful answer and the common one. Check the second
     // return before concluding anything from a nil first return.
     let a = Arc::clone(&api);
-    let get_active_fn =
-        lua.create_function(
-            move |lua, session: String| match a.get_active_tools(session) {
-                Ok(None) => Ok((Value::Nil, Value::Nil)),
-                Ok(Some(patterns)) => {
-                    let table = lua.create_table()?;
-                    for (i, name) in patterns.iter().enumerate() {
-                        table.set(i + 1, name.as_str())?;
-                    }
-                    Ok((Value::Table(table), Value::Nil))
+    expect_style("get_active", CallStyle::Sync)?;
+    ns.func(
+        "get_active",
+        decl("get_active")?,
+        move |lua: &Lua, session: String| match a.get_active_tools(session) {
+            Ok(None) => Ok((Value::Nil, Value::Nil)),
+            Ok(Some(patterns)) => {
+                let table = lua.create_table()?;
+                for (i, name) in patterns.iter().enumerate() {
+                    table.set(i + 1, name.as_str())?;
                 }
-                Err(e) => {
-                    let err = lua.create_string(&e)?;
-                    Ok((Value::Nil, Value::String(err)))
-                }
-            },
-        )?;
-    tools.set("get_active", get_active_fn)?;
+                Ok((Value::Table(table), Value::Nil))
+            }
+            Err(e) => {
+                let err = lua.create_string(&e)?;
+                Ok((Value::Nil, Value::String(err)))
+            }
+        },
+    )?;
 
     gate_module_keys("tools", &tools, &tool_fn_names())?;
     register_module(lua, "tools", tools)?;

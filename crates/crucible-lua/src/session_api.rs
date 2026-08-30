@@ -591,25 +591,33 @@ pub fn register_session_module(lua: &Lua) -> Result<CurrentSession, LuaError> {
     // their functions into the same table, so whichever runs first, both
     // surfaces end up on `cru.session`.
     let session_mod = crate::lua_util::get_or_create_module(lua, "session")?;
-    let mgr = manager.clone();
-    session_mod.set(
-        "current",
-        lua.create_function(move |_, ()| {
-            mgr.get_current()
-                .ok_or_else(|| mlua::Error::runtime("No active session"))
-        })?,
-    )?;
+    let mut session = crate::host_registry::Ns::over(lua, "cru.session", session_mod);
 
-    // Deprecated spelling kept for one release. Zero production callers when
-    // it was deprecated; it stays only so a user's local plugin keeps working.
+    // It takes NO arguments, and it RAISES when no session is bound — it does
+    // not answer nil, and it does not answer the `(value, err)` pair the rest
+    // of `cru.session` uses. The handle is userdata, which a declaration has
+    // no name for, so the return says `any`; `cru.session.get(id)` says the
+    // same for the same reason.
     let mgr = manager.clone();
-    cru.set(
-        "get_session",
-        lua.create_function(move |_, ()| {
-            mgr.get_current()
-                .ok_or_else(|| mlua::Error::runtime("No active session"))
-        })?,
-    )?;
+    session.func("current", "() -> any", move |lua, ()| {
+        let session = mgr
+            .get_current()
+            .ok_or_else(|| mlua::Error::runtime("No active session"))?;
+        Ok(Value::UserData(lua.create_userdata(session)?))
+    })?;
+
+    // Deprecated spelling of `current`, kept for one release. Zero production
+    // callers when it was deprecated; it stays only so a user's local plugin
+    // keeps working. Same declaration, because it is the same closure under
+    // an older name.
+    let mgr = manager.clone();
+    let mut root = crate::host_registry::Ns::over(lua, "cru", cru);
+    root.func("get_session", "() -> any", move |lua, ()| {
+        let session = mgr
+            .get_current()
+            .ok_or_else(|| mlua::Error::runtime("No active session"))?;
+        Ok(Value::UserData(lua.create_userdata(session)?))
+    })?;
 
     crate::lua_util::install_sessions_alias(lua)?;
 

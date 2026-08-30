@@ -18,6 +18,20 @@
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
 
+/// What a session lifecycle hook is called with: the session HANDLE, and
+/// nothing else.
+///
+/// One argument, from the two fire sites — `LuaExecutor::call_lifecycle_hook`
+/// (`func.call_async::<()>(session.clone())`) and the per-session VM's
+/// `fire_session_start_hooks` (`func.call::<()>(lua_session.clone())`). A
+/// two-parameter handler type would reject every correct hook a plugin has.
+///
+/// The handle is userdata, which a declaration has no name for, so it is
+/// `any`. The return is `...any` rather than `()` because both fire sites
+/// DISCARD the result: a hook that ends in `return something` is correct, and
+/// a declared `-> ()` would make it a type error.
+const SESSION_HOOK: &str = "(session: any) -> ...any";
+
 /// Register the lifecycle hooks on the given `cru` table
 ///
 /// This function is called during executor initialization to set up hook registration.
@@ -41,8 +55,11 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     // unsandboxed. But making every hook fatal means one typo in any plugin
     // bricks session creation daemon-wide, so the default has to be the safe
     // one for ordinary plugins.
-    let on_session_start =
-        lua.create_function(|lua, (func, opts): (Function, Option<Table>)| {
+    let mut ns = crate::host_registry::Ns::over(lua, "cru", crucible.clone());
+    ns.func(
+        "on_session_start",
+        &format!("(handler: {SESSION_HOOK}, options: {{ required: boolean? }}?) -> ()"),
+        |lua, (func, opts): (Function, Option<Table>)| {
             let required = opts
                 .and_then(|o| o.get::<Option<bool>>("required").ok().flatten())
                 .unwrap_or(false);
@@ -77,38 +94,43 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
             globals.set("__crucible_hooks__", hooks_table)?;
 
             Ok(())
-        })?;
+        },
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
 
-    crucible.set("on_session_start", on_session_start)?;
+    // No options table: an end hook has nothing to escalate — the session is
+    // already over, so a failure is logged and that is all.
+    ns.func(
+        "on_session_end",
+        &format!("(handler: {SESSION_HOOK}) -> ()"),
+        |lua, func: Function| {
+            let owner = plugin_owner(lua);
+            let key = lua.create_registry_value(func)?;
 
-    let on_session_end = lua.create_function(|lua, func: Function| {
-        let owner = plugin_owner(lua);
-        let key = lua.create_registry_value(func)?;
+            let globals = lua.globals();
+            let hooks_table: Table = globals
+                .get("__crucible_hooks__")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
 
-        let globals = lua.globals();
-        let hooks_table: Table = globals
-            .get("__crucible_hooks__")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
+            let session_end_hooks: Table = hooks_table
+                .get("on_session_end")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
+            let owners: Table = hooks_table
+                .get("on_session_end_owners")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
 
-        let session_end_hooks: Table = hooks_table
-            .get("on_session_end")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
-        let owners: Table = hooks_table
-            .get("on_session_end_owners")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
+            let len = session_end_hooks.raw_len();
+            session_end_hooks.raw_set(len + 1, key)?;
+            owners.raw_set(len + 1, owner)?;
 
-        let len = session_end_hooks.raw_len();
-        session_end_hooks.raw_set(len + 1, key)?;
-        owners.raw_set(len + 1, owner)?;
+            hooks_table.set("on_session_end", session_end_hooks)?;
+            hooks_table.set("on_session_end_owners", owners)?;
+            globals.set("__crucible_hooks__", hooks_table)?;
 
-        hooks_table.set("on_session_end", session_end_hooks)?;
-        hooks_table.set("on_session_end_owners", owners)?;
-        globals.set("__crucible_hooks__", hooks_table)?;
-
-        Ok(())
-    })?;
-
-    crucible.set("on_session_end", on_session_end)?;
+            Ok(())
+        },
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
 
     // Tool execution hooks use the RuntimeHandler system via cru.on("tool:before_execute", fn).
     // See handlers.rs for execute_tool_before_execute_hooks().

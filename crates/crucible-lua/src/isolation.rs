@@ -206,67 +206,86 @@ impl IsolationRegistry {
 /// end, { required = true })
 /// ```
 pub fn register_isolation_module(lua: &Lua, registry: IsolationRegistry) -> LuaResult<()> {
-    let require_isolation = lua.create_function(move |_, opts: Table| {
-        let session: String = opts.get("session").map_err(|_| {
-            mlua::Error::runtime("cru.isolation.require: `session` is required (use session.id)")
-        })?;
-        let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
-        let exempt: HashSet<String> = opts
-            .get::<Option<Vec<String>>>("exempt")
-            .ok()
-            .flatten()
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
+    let isolation = crate::lua_util::get_or_create_module(lua, "isolation")?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.isolation", isolation);
 
-        // `exec_env_flag` wins when both are given: naming a flag is the more
-        // specific statement, and silently preferring `inline` would drop it.
-        let env = match opts.get::<Option<String>>("exec_env_flag").ok().flatten() {
-            Some(flag) => SandboxEnv::Flag(flag),
-            None if opts
-                .get::<Option<bool>>("exec_env_inline")
+    // One options TABLE. `session` is the only required field — the closure
+    // raises a named error without it — and every other field has a default.
+    // `exec_env_flag` and `exec_env_inline` are two spellings of ONE decision
+    // (how the sandbox command carries environment variables), and the flag
+    // wins when both are given.
+    //
+    // It answers with NOTHING. A claim is recorded, not confirmed: there is no
+    // second claim to refuse and no boolean to read.
+    ns.func(
+        "require",
+        "(claim: { session: string, plugin: string?, exempt: { string }?, \
+         exec_prefix: { string }?, exec_suffix: { string }?, \
+         exec_env_flag: string?, exec_env_inline: boolean? }) -> ()",
+        move |_, opts: Table| {
+            let session: String = opts.get("session").map_err(|_| {
+                mlua::Error::runtime(
+                    "cru.isolation.require: `session` is required (use session.id)",
+                )
+            })?;
+            let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
+            let exempt: HashSet<String> = opts
+                .get::<Option<Vec<String>>>("exempt")
                 .ok()
                 .flatten()
-                .unwrap_or(false) =>
-            {
-                SandboxEnv::Inline
-            }
-            None => SandboxEnv::Unsupported,
-        };
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
 
-        let exec = SandboxExec {
-            prefix: opts
-                .get::<Option<Vec<String>>>("exec_prefix")
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-            env,
-            suffix: opts
-                .get::<Option<Vec<String>>>("exec_suffix")
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-        };
+            // `exec_env_flag` wins when both are given: naming a flag is the more
+            // specific statement, and silently preferring `inline` would drop it.
+            let env = match opts.get::<Option<String>>("exec_env_flag").ok().flatten() {
+                Some(flag) => SandboxEnv::Flag(flag),
+                None if opts
+                    .get::<Option<bool>>("exec_env_inline")
+                    .ok()
+                    .flatten()
+                    .unwrap_or(false) =>
+                {
+                    SandboxEnv::Inline
+                }
+                None => SandboxEnv::Unsupported,
+            };
 
-        tracing::info!(
-            session_id = %session,
-            plugin = %plugin,
-            exempt = exempt.len(),
-            can_exec = !exec.is_empty(),
-            can_pass_env = exec.env != SandboxEnv::Unsupported,
-            "plugin claimed session isolation; unhandled host tools will be refused"
-        );
-        registry.claim(
-            &session,
-            IsolationClaim {
-                plugin,
-                exempt,
-                exec,
-            },
-        );
-        Ok(())
-    })?;
-    crate::lua_util::get_or_create_module(lua, "isolation")?.set("require", require_isolation)?;
+            let exec = SandboxExec {
+                prefix: opts
+                    .get::<Option<Vec<String>>>("exec_prefix")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+                env,
+                suffix: opts
+                    .get::<Option<Vec<String>>>("exec_suffix")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            };
+
+            tracing::info!(
+                session_id = %session,
+                plugin = %plugin,
+                exempt = exempt.len(),
+                can_exec = !exec.is_empty(),
+                can_pass_env = exec.env != SandboxEnv::Unsupported,
+                "plugin claimed session isolation; unhandled host tools will be refused"
+            );
+            registry.claim(
+                &session,
+                IsolationClaim {
+                    plugin,
+                    exempt,
+                    exec,
+                },
+            );
+            Ok(())
+        },
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
 }
 

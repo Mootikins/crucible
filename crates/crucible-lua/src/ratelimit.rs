@@ -113,38 +113,58 @@ impl UserData for LuaRateLimiter {
     }
 }
 
+/// What `cru.ratelimit.new` answers with, as Luau can say it.
+///
+/// The limiter is userdata, which Luau has no way to name, so the methods are
+/// declared as a table. Each carries an explicit `self` because a caller
+/// writes `limiter:acquire()`.
+const LIMITER: &str = "{ \
+    acquire: (self: any) -> (), \
+    try_acquire: (self: any) -> boolean, \
+    remaining: (self: any) -> number \
+}";
+
 /// Register the ratelimit module under `cru.ratelimit`.
 pub fn register_ratelimit_module(lua: &Lua) -> Result<()> {
-    let ratelimit = lua.create_table()?;
+    let mut ratelimit =
+        crate::host_registry::Ns::new(lua, "cru.ratelimit").map_err(mlua::Error::external)?;
 
-    // ratelimit.new({ capacity = N, interval = secs }) -> LuaRateLimiter
-    ratelimit.set(
-        "new",
-        lua.create_function(|lua, opts: Table| {
-            let capacity: f64 = opts.get::<f64>("capacity").unwrap_or(5.0);
-            let interval: f64 = opts.get::<f64>("interval").unwrap_or(1.0);
+    // Both options have defaults, so `cru.ratelimit.new({})` is a burst of 5
+    // at one token per second. A non-positive or non-finite value RAISES
+    // rather than silently becoming a limiter that never lets anything
+    // through.
+    ratelimit
+        .func(
+            "new",
+            &format!("(opts: {{ capacity: number?, interval: number? }}) -> {LIMITER}"),
+            |lua, opts: Table| {
+                let capacity: f64 = opts.get::<f64>("capacity").unwrap_or(5.0);
+                let interval: f64 = opts.get::<f64>("interval").unwrap_or(1.0);
 
-            if !capacity.is_finite() || capacity <= 0.0 {
-                return Err(mlua::Error::runtime(
-                    "capacity must be a finite positive number",
-                ));
-            }
-            if !interval.is_finite() || interval <= 0.0 {
-                return Err(mlua::Error::runtime(
-                    "interval must be a finite positive number",
-                ));
-            }
+                if !capacity.is_finite() || capacity <= 0.0 {
+                    return Err(mlua::Error::runtime(
+                        "capacity must be a finite positive number",
+                    ));
+                }
+                if !interval.is_finite() || interval <= 0.0 {
+                    return Err(mlua::Error::runtime(
+                        "interval must be a finite positive number",
+                    ));
+                }
 
-            let bucket = TokenBucket::new(capacity, Duration::from_secs_f64(interval));
-            let limiter = LuaRateLimiter {
-                bucket: Arc::new(Mutex::new(bucket)),
-            };
+                let bucket = TokenBucket::new(capacity, Duration::from_secs_f64(interval));
+                let limiter = LuaRateLimiter {
+                    bucket: Arc::new(Mutex::new(bucket)),
+                };
 
-            lua.create_userdata(limiter)
-        })?,
-    )?;
+                // `Value`, not `AnyUserData`: the host cannot name a userdata
+                // type in Luau, and the declaration above narrows it.
+                Ok(mlua::Value::UserData(lua.create_userdata(limiter)?))
+            },
+        )
+        .map_err(mlua::Error::external)?;
 
-    crate::lua_util::register_module(lua, "ratelimit", ratelimit)?;
+    ratelimit.publish().map_err(mlua::Error::external)?;
     Ok(())
 }
 

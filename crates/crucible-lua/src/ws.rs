@@ -13,7 +13,7 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use futures_util::{SinkExt, StreamExt};
-use mlua::{Lua, Result, Table, UserData, UserDataMethods};
+use mlua::{Lua, Result, Table, UserData, UserDataMethods, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{
@@ -186,10 +186,19 @@ impl UserData for WsConnection {
 /// Provides `ws.connect(url, opts?)` which returns a `WsConnection` userdata.
 pub fn register_ws_module(lua: &Lua) -> Result<()> {
     let ws_table = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.ws", ws_table.clone());
 
-    ws_table.set(
+    // The connection is USERDATA — `ws:send`, `ws:receive`, `ws:close` — and
+    // the declarations have no name for one, so the return says `any`. It
+    // RAISES on a failed or timed-out connect rather than answering `(nil,
+    // err)`, so there is no error half to declare.
+    //
+    // `timeout` is in SECONDS (`Duration::from_secs`), and it bounds the
+    // CONNECT only; `ws:receive` waits without one. It defaults to 30.
+    ns.async_func(
         "connect",
-        lua.create_async_function(|lua, args: (String, Option<Table>)| async move {
+        "(url: string, options: { timeout: number? }?) -> any",
+        |lua, args: (String, Option<Table>)| async move {
             let (url, opts) = args;
 
             let timeout_secs: u64 = opts
@@ -213,9 +222,10 @@ pub fn register_ws_module(lua: &Lua) -> Result<()> {
                 closed: Arc::new(Mutex::new(false)),
             };
 
-            lua.create_userdata(conn)
-        })?,
-    )?;
+            Ok(Value::UserData(lua.create_userdata(conn)?))
+        },
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
 
     crate::lua_util::register_module(lua, "ws", ws_table)?;
     Ok(())

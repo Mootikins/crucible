@@ -441,8 +441,22 @@ impl<'a> Parser<'a> {
                     if params.is_empty() {
                         grouped = Some(ty.clone());
                     }
+                    // `...T` carries no name in a type position, and
+                    // `Signature::to_luau` renders the name VARIADIC as the
+                    // bare `...T` Luau wants. Give a parsed variadic any
+                    // other name and it renders `arg1: ...any`, which is a
+                    // parse error that takes the whole declarations file
+                    // down. `host_api::unsigned()` never hit this because it
+                    // builds the parameter by hand rather than parsing one.
+                    // `to_luau` writes the `...` itself for a parameter named
+                    // VARIADIC, so the parameter holds the ELEMENT type. Left
+                    // wrapped, `...any` renders `......any`.
+                    let (name, ty) = match ty {
+                        LuaType::Variadic(inner) => (VARIADIC.to_string(), *inner),
+                        ty => (format!("arg{}", params.len() + 1), ty),
+                    };
                     params.push(Param {
-                        name: format!("arg{}", params.len() + 1),
+                        name,
                         ty,
                         description: None,
                         optional: false,
@@ -621,6 +635,21 @@ mod tests {
     #[test]
     fn an_unknown_name_is_a_named_type_not_a_refusal() {
         assert_eq!(parse("KilnEntry"), LuaType::Named("KilnEntry".to_string()));
+    }
+
+    /// A parsed variadic parameter renders as `...T`, never `arg1: ...T`.
+    ///
+    /// `(arg1: ...any)` is a Luau parse error, and one bad parameter takes
+    /// the whole generated declarations file down. `cru.oil.col` is the first
+    /// function to declare a variadic by parsing one, rather than by building
+    /// the parameter in Rust the way `host_api::unsigned()` does.
+    #[test]
+    fn a_parsed_variadic_keeps_no_parameter_name() {
+        assert_eq!(parse("(...any) -> any").to_luau(), "(...any) -> any");
+        assert_eq!(
+            parse("(condition: boolean, ...any) -> Node").to_luau(),
+            "(condition: boolean, ...any) -> Node"
+        );
     }
 
     /// A declaration the model cannot read is an error the author sees, not a

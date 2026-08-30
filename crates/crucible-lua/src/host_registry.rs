@@ -156,6 +156,32 @@ impl<T: LuauValue> LuauValue for HashMap<String, T> {
     }
 }
 
+/// The marker `MultiValue` yields: no arity, nothing to compare.
+///
+/// A real variadic parameter is written `...T` in a declaration and is a
+/// different thing, so this is a name no declaration can produce.
+fn unchecked_args() -> LuaType {
+    LuaType::Named("...unchecked".to_string())
+}
+
+/// Any arguments at all, and no arity to check.
+///
+/// A closure taking `MultiValue` reads its own arguments positionally —
+/// `cru.oil.col(props?, ...children)` is the shape — so its Rust type states
+/// nothing a declaration could contradict. The declaration is taken as
+/// written and only its FORM is checked.
+///
+/// Taken as written, rather than forced to `(...any) -> T`: the parameter
+/// names are what a plugin author reads, and `col(props: OilProps?,
+/// ...children: OilNode)` tells them something that `(...any)` does not. What
+/// it costs is stated here rather than implied — nothing about those
+/// arguments is verified.
+impl LuauArgs for mlua::MultiValue {
+    fn arg_types() -> Vec<LuaType> {
+        vec![unchecked_args()]
+    }
+}
+
 /// One argument, mirroring mlua's own blanket `FromLuaMulti` impl. mlua
 /// implements `FromLua` for no tuple, so this cannot overlap the tuple impls
 /// below — the same coherence mlua relies on.
@@ -327,6 +353,12 @@ impl<'lua> Ns<'lua> {
         };
 
         let expected_args = A::arg_types();
+        // A `MultiValue` closure has no arity and no argument types, so there
+        // is nothing to compare against. The declaration still had to parse
+        // as a function type, which is what the caller gets checked on.
+        if expected_args == [unchecked_args()] {
+            return Ok(ty);
+        }
         if signature.params.len() != expected_args.len() {
             return Err(LuaError::Runtime(format!(
                 "{}.{name}: the declaration takes {} argument(s), the function takes {}: `{decl}`",
@@ -550,6 +582,28 @@ mod tests {
             )
             .expect_err("a declaration that drops the error half must be refused");
         assert!(err.to_string().contains("value(s)"), "{err}");
+    }
+
+    /// A `MultiValue` closure carries no arity, so its declaration is taken
+    /// as written — which is the point: `col(props: any?, ...children: any)`
+    /// tells a plugin author more than `(...any) -> any` does, and the Rust
+    /// type contradicts neither.
+    #[test]
+    fn a_multivalue_closure_may_declare_named_parameters() {
+        let lua = vm();
+        let mut ns = Ns::new(&lua, "cru.probe").expect("ns");
+        ns.func(
+            "col",
+            "(props: any?, ...any) -> any",
+            |_, _args: mlua::MultiValue| Ok(Value::Nil),
+        )
+        .expect("a MultiValue closure takes its declaration as written");
+
+        // The FORM is still checked.
+        let err = ns
+            .func("row", "number", |_, _args: mlua::MultiValue| Ok(Value::Nil))
+            .expect_err("a non-function declaration is still refused");
+        assert!(err.to_string().contains("function type"), "{err}");
     }
 
     /// The limit, stated as a test: a parameter NAME is not in the Rust type,

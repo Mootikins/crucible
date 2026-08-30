@@ -378,6 +378,7 @@ fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
 /// warning naming the key and the call site.
 pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaError> {
     let config_table = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.config", config_table.clone());
 
     // cru.config.set(table) — deep-merge into the store.
     //
@@ -385,17 +386,27 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
     // copy of the same top-level-insert loop, which made it a second door into
     // one store — and after the location keys started being withheld, only one
     // of the two doors dropped them.
-    let set_fn = lua.create_function(|lua, table: Table| {
-        let json_val: serde_json::Value = lua
-            .from_value(Value::Table(table))
-            .map_err(mlua::Error::external)?;
-        merge_from_lua(lua, json_val);
-        Ok(())
-    })?;
-    config_table.set("set", set_fn)?;
+    //
+    // The table is not narrowed: it carries whatever keys a config has, plus
+    // the `__replace` marker at any depth, so naming fields here would reject
+    // correct config. It answers with NOTHING — a withheld location key is
+    // reported by a warning, not by a return value.
+    ns.func(
+        "set",
+        "(config: { [string]: any }) -> ()",
+        |lua, table: Table| {
+            let json_val: serde_json::Value = lua
+                .from_value(Value::Table(table))
+                .map_err(mlua::Error::external)?;
+            merge_from_lua(lua, json_val);
+            Ok(())
+        },
+    )?;
 
-    // cru.config.get(key) — read a single top-level value
-    let get_fn = lua.create_function(|lua, key: String| {
+    // cru.config.get(key) — read a single TOP-LEVEL value. The key is one
+    // name, not a dotted path, and an unset key reads `nil` rather than
+    // raising.
+    ns.func("get", "(key: string) -> any", |lua, key: String| {
         let state = get_config()
             .read()
             .map_err(|e| mlua::Error::external(format!("config lock: {e}")))?;
@@ -411,7 +422,6 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
             None => Ok(Value::Nil),
         }
     })?;
-    config_table.set("get", get_fn)?;
 
     cru_table.set("config", config_table)?;
     Ok(())

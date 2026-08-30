@@ -522,7 +522,13 @@ impl DaemonPluginLoader {
         config_table.set("_data", data)?;
 
         // cru.plugin.config.get("namespace.key") -> value
-        let get_fn = lua.create_function(|lua, key: String| {
+        //
+        // Declared through `Ns::over` on the table built above, so the string
+        // is checked against this closure's own Rust types like every other
+        // `cru.*` function. It answers `nil` for a key that is not there and
+        // for a segment that is not a table, so the return is `any?`.
+        let mut ns = crucible_lua::Ns::over(lua, "cru.plugin.config", config_table.clone());
+        ns.func("get", "(key: string) -> any?", |lua, key: String| {
             let globals = lua.globals();
             let cru: mlua::Table = globals.get("cru")?;
             let plugin: mlua::Table = cru.get("plugin")?;
@@ -544,8 +550,8 @@ impl DaemonPluginLoader {
                 current = table.get(segment.to_string())?;
             }
             Ok(current)
-        })?;
-        config_table.set("get", get_fn)?;
+        })
+        .map_err(|e| mlua::Error::runtime(format!("cru.plugin.config.get: {e}")))?;
 
         let plugin = crucible_lua::lua_util::get_or_create_module(lua, "plugin")?;
         plugin.set("config", config_table)?;

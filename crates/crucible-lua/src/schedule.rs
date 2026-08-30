@@ -23,6 +23,45 @@
 
 use mlua::{Lua, Result as LuaResult, Value};
 
+/// The Luau type of `cru.schedule` itself — the callable table.
+///
+/// One string for both the `send` path and the stub, because the two must
+/// present the same contract; only the outcome of a call differs.
+///
+/// The interval is in SECONDS on every arm: `Duration::from_secs_f64` reads
+/// it, and the bare-number form is the same number.
+///
+/// The handler is called with NO arguments and its result is discarded
+/// (`func.call_async::<()>(())`), so it is declared `() -> ...any` — a plain
+/// `-> ()` would make a handler that happens to return something a type
+/// error against correct plugin code.
+const SCHEDULE_DECL: &str = "(spec: { every: number?, interval: number? } | number, \
+                             handler: () -> ...any) -> number";
+
+/// The one member `cru.schedule` carries, named once so the `send` path and
+/// the stub cannot spell it differently.
+const CANCEL: &str = "cancel";
+
+/// The Luau type of `cru.schedule.cancel`.
+///
+/// `false` is a real answer — the handle is unknown or already cancelled —
+/// not a failure.
+const CANCEL_DECL: &str = "(handle: number) -> boolean";
+
+/// Declare `cru.schedule`, the callable table.
+///
+/// `declare_only` because no Rust closure can carry this one: the call is a
+/// `__call` metamethod, and `__call` passes the table itself as the first
+/// argument, so the closure takes `Variadic<Value>` and its Rust type
+/// describes neither accepted shape. The table half of the type — `cancel` —
+/// comes from the VM walk, as `cru.log`'s does.
+fn declare_schedule_call(lua: &Lua) -> LuaResult<()> {
+    let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
+    let mut root = crate::host_registry::Ns::over(lua, "cru", cru);
+    root.declare_only("schedule", SCHEDULE_DECL)
+        .map_err(|e| mlua::Error::external(e.to_string()))
+}
+
 #[cfg(feature = "send")]
 mod inner {
     use std::collections::HashMap;
@@ -60,9 +99,15 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
 
     let registry = ScheduleRegistry::default();
 
+    // The table exists before its members do, so `cancel` can be registered
+    // through `Ns` — declared and CHECKED against its closure — while the
+    // `__call` half, which no closure can carry, is only declared.
+    let schedule_table = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.schedule", schedule_table.clone());
+
     // cru.schedule.cancel(handle) -> bool
     let reg_cancel = registry.clone();
-    let cancel_fn = lua.create_function(move |_lua, handle: i64| {
+    ns.func(CANCEL, CANCEL_DECL, move |_lua, handle: i64| {
         let mut cancellers = reg_cancel
             .cancellers
             .lock()
@@ -73,7 +118,8 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
         } else {
             Ok(false)
         }
-    })?;
+    })
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
 
     // cru.schedule(spec, handler) -> handle_id
     let reg_schedule = registry.clone();
@@ -177,16 +223,14 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
         Ok(Value::Integer(handle as i64))
     })?;
 
-    // Build a callable table: cru.schedule(...) invokes __call,
+    // Make the table callable: cru.schedule(...) invokes __call,
     // cru.schedule.cancel(...) is a regular method.
-    let schedule_table = lua.create_table()?;
-    schedule_table.set("cancel", cancel_fn)?;
-
     let meta = lua.create_table()?;
     meta.set("__call", schedule_fn)?;
     schedule_table.set_metatable(Some(meta))?;
 
     crate::lua_util::register_module(lua, "schedule", schedule_table)?;
+    declare_schedule_call(lua)?;
 
     Ok(())
 }
@@ -196,9 +240,13 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
 #[cfg(not(feature = "send"))]
 pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
     let schedule_table = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.schedule", schedule_table.clone());
 
-    let cancel_fn = lua.create_function(|_lua, _handle: i64| Ok(false))?;
-    schedule_table.set("cancel", cancel_fn)?;
+    // The same declaration as the `send` path, checked against this closure
+    // too: without a scheduler there is never a handle to cancel, so `false`
+    // is the only answer, and it is the same answer an unknown handle gets.
+    ns.func(CANCEL, CANCEL_DECL, |_lua, _handle: i64| Ok(false))
+        .map_err(|e| mlua::Error::external(e.to_string()))?;
 
     let err_fn = lua.create_function(|_lua, _args: mlua::Variadic<Value>| -> LuaResult<Value> {
         Err(mlua::Error::external(
@@ -211,6 +259,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
     schedule_table.set_metatable(Some(meta))?;
 
     crate::lua_util::register_module(lua, "schedule", schedule_table)?;
+    declare_schedule_call(lua)?;
 
     Ok(())
 }

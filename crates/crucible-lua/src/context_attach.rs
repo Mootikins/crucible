@@ -194,7 +194,19 @@ pub fn register_context_attach(
         }
     };
 
-    let attach_fn = lua.create_function(
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.context", context);
+
+    // NOT the `(value, err)` pair the rest of `cru.*` uses. The first return
+    // is always a boolean, and `false` is normal operation — a duplicate key,
+    // an exhausted budget, or empty content — so the second return is the
+    // REASON it was dropped, not an error to propagate.
+    //
+    // `key` is the deduplication key. An empty string is treated as absent,
+    // so `{ key = "" }` attaches every time rather than once.
+    ns.func(
+        "attach",
+        "(session_id: string, content: string, options: { key: string? }?) \
+         -> (boolean, string?)",
         move |_, (session_id, content, opts): (String, String, Option<Table>)| {
             let key = opts
                 .as_ref()
@@ -207,7 +219,6 @@ pub fn register_context_attach(
             }
         },
     )?;
-    context.set("attach", attach_fn)?;
 
     Ok(())
 }

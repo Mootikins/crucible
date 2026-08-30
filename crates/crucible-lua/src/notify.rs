@@ -80,98 +80,113 @@ fn register_log_levels(lua: &Lua, cru: &Table) -> LuaResult<()> {
     Ok(())
 }
 
+/// The options table both notify functions read: a progress pair, or
+/// nothing. Every other key is ignored, so the declaration names only this
+/// one.
+const NOTIFY_OPTS: &str = "{ progress: { current: number, total: number }? }";
+
+/// The arguments both notify functions take.
+///
+/// `Value`, not `String`/`i32`, because the closures decide what to do with a
+/// wrong type themselves: a non-string message RAISES with a named message,
+/// and a non-number level falls back to INFO rather than raising. Typed
+/// arguments would hand both decisions to mlua's own coercion. The
+/// declaration narrows all three, which is what an author reads.
+type NotifyArgs = (Value, Option<Value>, Option<Table>);
+
+/// Read `(level, opts)` the way both closures always have: a number of either
+/// Lua kind, INFO otherwise; a table, or no options.
+fn level_and_opts(level: &Option<Value>, opts: &Option<Table>) -> (i32, Option<Table>) {
+    let level = match level {
+        Some(Value::Integer(n)) => *n as i32,
+        Some(Value::Number(n)) => *n as i32,
+        _ => 2,
+    };
+    (level, opts.clone())
+}
+
 fn register_notify_function(lua: &Lua, log: &Table) -> LuaResult<()> {
-    let notify_fn = lua.create_function(|lua, args: mlua::Variadic<Value>| {
-        let msg = match args.first() {
-            Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => {
-                return Err(mlua::Error::external(
-                    "notify: first argument must be a string",
-                ))
-            }
-        };
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.log", log.clone());
+    ns.func(
+        "notify",
+        &format!("(message: string, level: number?, opts: {NOTIFY_OPTS}?) -> ()"),
+        |lua, (message, level, opts): NotifyArgs| {
+            let msg = match message {
+                Value::String(s) => s.to_str()?.to_string(),
+                _ => {
+                    return Err(mlua::Error::external(
+                        "notify: first argument must be a string",
+                    ))
+                }
+            };
 
-        let level = match args.get(1) {
-            Some(Value::Integer(n)) => *n as i32,
-            Some(Value::Number(n)) => *n as i32,
-            _ => 2,
-        };
+            let (level, opts) = level_and_opts(&level, &opts);
+            let notification = build_notification(&msg, level, opts.as_ref())?;
+            queue_notification(lua, notification)?;
 
-        let opts: Option<&Table> = match args.get(2) {
-            Some(Value::Table(t)) => Some(t),
-            _ => None,
-        };
-
-        let notification = build_notification(&msg, level, opts)?;
-        queue_notification(lua, notification)?;
-
-        Ok(())
-    })?;
-
-    log.set("notify", notify_fn)?;
+            Ok(())
+        },
+    )
+    .map_err(mlua::Error::external)?;
     Ok(())
 }
 
 fn register_notify_once_function(lua: &Lua, log: &Table) -> LuaResult<()> {
-    let notify_once_fn = lua.create_function(|lua, args: mlua::Variadic<Value>| {
-        let msg = match args.first() {
-            Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => {
-                return Err(mlua::Error::external(
-                    "notify_once: first argument must be a string",
-                ))
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.log", log.clone());
+    // Answers whether this call notified: `false` means the message was
+    // already shown, which is the only way a caller can tell.
+    ns.func(
+        "notify_once",
+        &format!("(message: string, level: number?, opts: {NOTIFY_OPTS}?) -> boolean"),
+        |lua, (message, level, opts): NotifyArgs| {
+            let msg = match message {
+                Value::String(s) => s.to_str()?.to_string(),
+                _ => {
+                    return Err(mlua::Error::external(
+                        "notify_once: first argument must be a string",
+                    ))
+                }
+            };
+
+            let globals = lua.globals();
+            let notified: Table = globals
+                .get(NOTIFIED_ONCE_KEY)
+                .unwrap_or_else(|_| lua.create_table().unwrap());
+
+            let already_notified: bool = notified.get(msg.as_str()).unwrap_or(false);
+            if already_notified {
+                return Ok(false);
             }
-        };
 
-        let globals = lua.globals();
-        let notified: Table = globals
-            .get(NOTIFIED_ONCE_KEY)
-            .unwrap_or_else(|_| lua.create_table().unwrap());
+            notified.set(msg.as_str(), true)?;
+            globals.set(NOTIFIED_ONCE_KEY, notified)?;
 
-        let already_notified: bool = notified.get(msg.as_str()).unwrap_or(false);
-        if already_notified {
-            return Ok(false);
-        }
+            let (level, opts) = level_and_opts(&level, &opts);
+            let notification = build_notification(&msg, level, opts.as_ref())?;
+            queue_notification(lua, notification)?;
 
-        notified.set(msg.as_str(), true)?;
-        globals.set(NOTIFIED_ONCE_KEY, notified)?;
-
-        let level = match args.get(1) {
-            Some(Value::Integer(n)) => *n as i32,
-            Some(Value::Number(n)) => *n as i32,
-            _ => 2,
-        };
-
-        let opts: Option<&Table> = match args.get(2) {
-            Some(Value::Table(t)) => Some(t),
-            _ => None,
-        };
-
-        let notification = build_notification(&msg, level, opts)?;
-        queue_notification(lua, notification)?;
-
-        Ok(true)
-    })?;
-
-    log.set("notify_once", notify_once_fn)?;
+            Ok(true)
+        },
+    )
+    .map_err(mlua::Error::external)?;
     Ok(())
 }
 
 fn register_messages_module(lua: &Lua, log: &Table) -> LuaResult<()> {
     let messages = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.log.messages", messages.clone());
 
-    let toggle_fn = lua.create_function(|lua, ()| set_messages_action(lua, "toggle"))?;
-    messages.set("toggle", toggle_fn)?;
+    // Each one parks an action for the TUI to pick up; none answers with
+    // anything, and none can fail.
+    for action in ["toggle", "show", "hide", "clear"] {
+        ns.func(action, "() -> ()", move |lua, ()| {
+            set_messages_action(lua, action)
+        })
+        .map_err(mlua::Error::external)?;
+    }
 
-    let show_fn = lua.create_function(|lua, ()| set_messages_action(lua, "show"))?;
-    messages.set("show", show_fn)?;
-
-    let hide_fn = lua.create_function(|lua, ()| set_messages_action(lua, "hide"))?;
-    messages.set("hide", hide_fn)?;
-
-    let clear_fn = lua.create_function(|lua, ()| set_messages_action(lua, "clear"))?;
-    messages.set("clear", clear_fn)?;
-
+    // Not `ns.publish()`: this table hangs off `cru.log`, and `publish` would
+    // put it at `cru.messages`.
     log.set("messages", messages)?;
     Ok(())
 }

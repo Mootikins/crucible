@@ -7,63 +7,77 @@ pub struct AuthHook {
 }
 
 pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
-    let on_provider_auth = lua.create_function(|lua, func: Function| {
-        let key = lua.create_registry_value(func)?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru", crucible.clone());
 
-        let globals = lua.globals();
+    // The handler takes ONE argument, the context table `fire_provider_auth_hooks`
+    // builds: `provider` and `model`, both strings, and nothing else.
+    //
+    // Its RETURN is read, unlike a session hook's. A table of header
+    // name/value pairs is used, and so is `{ headers = { … } }` — the same
+    // table either way, unwrapped one level when it has a `headers` key. Any
+    // other value, `nil` included, means "this hook has no headers", and the
+    // next hook is tried. So the return is `...any`: a hook that answers
+    // nothing is correct, and the first hook that produces headers wins.
+    ns.func(
+        "on_provider_auth",
+        "(handler: (context: { provider: string, model: string }) -> ...any) -> ()",
+        |lua, func: Function| {
+            let key = lua.create_registry_value(func)?;
 
-        let hooks_table: Table = globals
-            .get("__crucible_hooks__")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
+            let globals = lua.globals();
 
-        let provider_auth_hooks: Table = hooks_table
-            .get("on_provider_auth")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
+            let hooks_table: Table = globals
+                .get("__crucible_hooks__")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
 
-        // Parallel to the hook list by index, same contract as the session
-        // hooks in `hooks.rs`: `false` marks an unowned registration (user
-        // init.lua), which no plugin's clear ever removes.
-        let owners: Table = hooks_table
-            .get("on_provider_auth_owners")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
-        // The VM's plugin context, not a Lua global: a plugin must not be
-        // able to register an auth hook under another plugin's name.
-        let owner = crate::plugin_context::current_plugin_name(lua);
+            let provider_auth_hooks: Table = hooks_table
+                .get("on_provider_auth")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
 
-        let auth_hook_functions: Table = globals
-            .get("__crucible_auth_hooks__")
-            .unwrap_or_else(|_| lua.create_table().unwrap());
+            // Parallel to the hook list by index, same contract as the session
+            // hooks in `hooks.rs`: `false` marks an unowned registration (user
+            // init.lua), which no plugin's clear ever removes.
+            let owners: Table = hooks_table
+                .get("on_provider_auth_owners")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
+            // The VM's plugin context, not a Lua global: a plugin must not be
+            // able to register an auth hook under another plugin's name.
+            let owner = crate::plugin_context::current_plugin_name(lua);
 
-        // Monotonic, never derived from the list length: clearing shrinks
-        // the list, and a length-derived name would then collide with one a
-        // surviving hook still holds in `__crucible_auth_hooks__` — dispatch
-        // is by name, so the collision rebinds the survivor to the new
-        // function (the same defect `cru_on.rs` documents at length).
-        let seq: u64 = globals
-            .get::<Option<u64>>("__crucible_auth_hook_seq__")
-            .ok()
-            .flatten()
-            .unwrap_or(0);
-        globals.set("__crucible_auth_hook_seq__", seq + 1)?;
-        let hook_name = format!("provider_auth_hook_{seq}");
+            let auth_hook_functions: Table = globals
+                .get("__crucible_auth_hooks__")
+                .unwrap_or_else(|_| lua.create_table().unwrap());
 
-        let len = provider_auth_hooks.raw_len();
-        provider_auth_hooks.raw_set(len + 1, hook_name.as_str())?;
-        match owner {
-            Some(ref o) => owners.raw_set(len + 1, o.as_str())?,
-            None => owners.raw_set(len + 1, false)?,
-        }
-        auth_hook_functions.set(hook_name.as_str(), key)?;
+            // Monotonic, never derived from the list length: clearing shrinks
+            // the list, and a length-derived name would then collide with one a
+            // surviving hook still holds in `__crucible_auth_hooks__` — dispatch
+            // is by name, so the collision rebinds the survivor to the new
+            // function (the same defect `cru_on.rs` documents at length).
+            let seq: u64 = globals
+                .get::<Option<u64>>("__crucible_auth_hook_seq__")
+                .ok()
+                .flatten()
+                .unwrap_or(0);
+            globals.set("__crucible_auth_hook_seq__", seq + 1)?;
+            let hook_name = format!("provider_auth_hook_{seq}");
 
-        hooks_table.set("on_provider_auth", provider_auth_hooks)?;
-        hooks_table.set("on_provider_auth_owners", owners)?;
-        globals.set("__crucible_hooks__", hooks_table)?;
-        globals.set("__crucible_auth_hooks__", auth_hook_functions)?;
+            let len = provider_auth_hooks.raw_len();
+            provider_auth_hooks.raw_set(len + 1, hook_name.as_str())?;
+            match owner {
+                Some(ref o) => owners.raw_set(len + 1, o.as_str())?,
+                None => owners.raw_set(len + 1, false)?,
+            }
+            auth_hook_functions.set(hook_name.as_str(), key)?;
 
-        Ok(())
-    })?;
+            hooks_table.set("on_provider_auth", provider_auth_hooks)?;
+            hooks_table.set("on_provider_auth_owners", owners)?;
+            globals.set("__crucible_hooks__", hooks_table)?;
+            globals.set("__crucible_auth_hooks__", auth_hook_functions)?;
 
-    crucible.set("on_provider_auth", on_provider_auth)?;
+            Ok(())
+        },
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
 }
 

@@ -3,7 +3,8 @@
 //! Provides `cru.oil.*` functions for constructing UI nodes from Lua scripts.
 
 use crate::error::LuaError;
-use crate::lua_util::register_module;
+use crate::host_registry::{LuauValue, Ns};
+use crate::signature::LuaType;
 use crucible_oil::template::html_to_node;
 use crucible_oil::{
     badge, bullet_list, divider, fragment, if_else, key_value, numbered_list, popup, popup_item,
@@ -188,152 +189,231 @@ impl FromLua for LuaNode {
     }
 }
 
+/// A node is mlua userdata, and Luau has no name for one, so `Any` is as much
+/// as the host can say in Rust. Every declaration below narrows it: to
+/// `OilNode` where a function ANSWERS with a node, and to the wider
+/// [`NODE_ARG`] where one is accepted, because `LuaNode::from_lua` also takes
+/// a bare string and nil.
+impl LuauValue for LuaNode {
+    fn ty() -> LuaType {
+        LuaType::Any
+    }
+}
+
+/// What a node-shaped ARGUMENT really accepts, read off `LuaNode::from_lua`:
+/// a node, a string it wraps in `cru.oil.text`, or nil for `Node::Empty`.
+/// Wider than `OilNode`, which is what every function answers with.
+const NODE_ARG: &str = "(OilNode | string)?";
+
+/// Register the oil module.
+///
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`]. `OilNode`, `OilStyle` and `OilProps` are declared
+/// in `host_api::OIL_TYPES`, because Luau cannot name an mlua userdata and a
+/// shape named once beats the same record written out twenty times.
 pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
-    let oil = lua.create_table()?;
+    let mut oil = Ns::new(lua, "cru.oil")?;
 
-    // cru.oil.text(content, opts?)
-    let text_fn = lua.create_function(|_lua, args: MultiValue| {
-        let mut args_iter = args.into_iter();
+    // A number is accepted and stringified, so `cru.oil.text(count)` works
+    // without a `tostring`. Anything else raises; nil and no argument alike
+    // give an empty string.
+    oil.func(
+        "text",
+        "(content: (string | number)?, style: OilStyle?) -> OilNode",
+        |_lua, (content, style): (Value, Value)| {
+            let content = match content {
+                Value::String(s) => s.to_str()?.to_string(),
+                Value::Integer(n) => n.to_string(),
+                Value::Number(n) => n.to_string(),
+                Value::Nil => String::new(),
+                other => {
+                    return Err(mlua::Error::FromLuaConversionError {
+                        from: other.type_name(),
+                        to: "string".to_string(),
+                        message: Some("text content must be a string".to_string()),
+                    });
+                }
+            };
 
-        let content = match args_iter.next() {
-            Some(Value::String(s)) => s.to_str()?.to_string(),
-            Some(Value::Integer(n)) => n.to_string(),
-            Some(Value::Number(n)) => n.to_string(),
-            Some(Value::Nil) | None => String::new(),
-            Some(other) => {
-                return Err(mlua::Error::FromLuaConversionError {
-                    from: other.type_name(),
-                    to: "string".to_string(),
-                    message: Some("text content must be a string".to_string()),
-                });
+            // A second argument that is not a table is IGNORED rather than
+            // refused, which is why this reads a `Value` and not an
+            // `Option<Table>`.
+            let style = match style {
+                Value::Table(t) => parse::style_from_table(&t)?,
+                _ => Style::default(),
+            };
+
+            if style == Style::default() {
+                Ok(LuaNode(text(content)))
+            } else {
+                Ok(LuaNode(styled(content, style)))
             }
-        };
+        },
+    )?;
 
-        let style = match args_iter.next() {
-            Some(Value::Table(t)) => parse::style_from_table(&t)?,
-            _ => Style::default(),
-        };
+    // A props table FIRST when there is one, then children. A `MultiValue`
+    // closure reads its own positions, so NOTHING below is checked against
+    // Rust — `parse_container_args` is the only thing that holds a caller to
+    // it, and it raises with the offending position number. The declaration
+    // is still the shape a plugin author reads, so it names what it can.
+    //
+    // Luau has no syntax for NAMING a variadic — `...children: OilNode` is a
+    // parse error — so only the element type survives. The elements are the
+    // children.
+    //
+    // The first position is props OR the first child, which is why it is a
+    // union and not `props: OilProps?`. `cru.oil.row(a, b, c)` — no props at
+    // all — is the common call, and declaring the first parameter as props
+    // made `luau-lsp analyze` reject it. Luau spells "either shape" as an
+    // overload, which `Ns::func` cannot carry, so the union says it instead.
+    //
+    // A table there is read as props only when it carries one of
+    // `is_props_table`'s keys, which are
+    // `gap padding border justify align fg bg bold margin`. `dim`, `italic`
+    // and `underline` are read as style once a table qualifies, but a table
+    // carrying ONLY those is taken for a child and REFUSED — which is why the
+    // union's table arm is `OilProps` and not `table`.
+    let container =
+        format!("(props_or_first_child: (OilProps | OilNode | string)?, ...{NODE_ARG}) -> OilNode");
+    let container = container.as_str();
 
-        if style == Style::default() {
-            Ok(LuaNode(text(content)))
-        } else {
-            Ok(LuaNode(styled(content, style)))
-        }
-    })?;
-    oil.set("text", text_fn)?;
-
-    // cru.oil.col(opts_or_children...)
-    let col_fn = lua.create_function(|lua, args: MultiValue| {
+    oil.func("col", container, |lua, args: MultiValue| {
         let (opts, children) = parse_container_args(lua, args)?;
-        let node = create_box_node(Direction::Column, opts, children);
-        Ok(LuaNode(node))
+        Ok(LuaNode(create_box_node(Direction::Column, opts, children)))
     })?;
-    oil.set("col", col_fn)?;
 
-    // cru.oil.row(opts_or_children...)
-    let row_fn = lua.create_function(|lua, args: MultiValue| {
+    oil.func("row", container, |lua, args: MultiValue| {
         let (opts, children) = parse_container_args(lua, args)?;
-        let node = create_box_node(Direction::Row, opts, children);
-        Ok(LuaNode(node))
+        Ok(LuaNode(create_box_node(Direction::Row, opts, children)))
     })?;
-    oil.set("row", row_fn)?;
 
-    // cru.oil.spacer()
-    let spacer_fn = lua.create_function(|_, ()| Ok(LuaNode(spacer())))?;
-    oil.set("spacer", spacer_fn)?;
+    oil.func("spacer", "() -> OilNode", |_, ()| Ok(LuaNode(spacer())))?;
 
-    // cru.oil.spinner(label?)
-    let spinner_fn =
-        lua.create_function(|_, label: Option<String>| Ok(LuaNode(spinner(label, 0))))?;
-    oil.set("spinner", spinner_fn)?;
+    oil.func(
+        "spinner",
+        "(label: string?) -> OilNode",
+        |_, label: Option<String>| Ok(LuaNode(spinner(label, 0))),
+    )?;
 
-    // cru.oil.fragment(children...)
-    let fragment_fn = lua.create_function(|_, children: MultiValue| {
-        Ok(LuaNode(fragment(parse::collect_child_nodes(
-            children.into_iter(),
-        ))))
-    })?;
-    oil.set("fragment", fragment_fn)?;
+    // The declaration is STRICTER than the closure, deliberately. A child
+    // that is neither a node nor a string is DROPPED here rather than
+    // refused — unlike `col` and `row`, which name the offending position —
+    // so `luau-lsp` reporting it is the only warning an author gets before
+    // the element silently fails to render.
+    oil.func(
+        "fragment",
+        &format!("(...{NODE_ARG}) -> OilNode"),
+        |_, children: MultiValue| {
+            Ok(LuaNode(fragment(parse::collect_child_nodes(
+                children.into_iter(),
+            ))))
+        },
+    )?;
 
-    // cru.oil.when(condition, node)
-    let when_fn = lua.create_function(|_, (condition, node): (bool, LuaNode)| {
-        Ok(LuaNode(when(condition, node.0)))
-    })?;
-    oil.set("when", when_fn)?;
+    oil.func(
+        "when",
+        &format!("(condition: boolean, node: {NODE_ARG}) -> OilNode"),
+        |_, (condition, node): (bool, LuaNode)| Ok(LuaNode(when(condition, node.0))),
+    )?;
 
-    // cru.oil.either(condition, true_node, false_node)
-    let either_fn = lua.create_function(|_, (cond, t, f): (bool, LuaNode, LuaNode)| {
-        Ok(LuaNode(if_else(cond, t.0, f.0)))
-    })?;
-    oil.set("either", either_fn)?;
+    oil.func(
+        "either",
+        &format!("(condition: boolean, if_true: {NODE_ARG}, if_false: {NODE_ARG}) -> OilNode"),
+        |_, (condition, if_true, if_false): (bool, LuaNode, LuaNode)| {
+            Ok(LuaNode(if_else(condition, if_true.0, if_false.0)))
+        },
+    )?;
 
-    // cru.oil.each(items, fn)
-    let each_fn = lua.create_function(|_, (items, func): (Table, Function)| {
-        let mut children = Vec::new();
-        for pair in items.pairs::<i64, Value>() {
-            let (idx, item) = pair?;
-            let result: LuaNode = func.call((item, idx))?;
-            children.push(result.0);
-        }
-        Ok(LuaNode(fragment(children)))
-    })?;
-    oil.set("each", each_fn)?;
+    // The array half of `items` only: the closure iterates `pairs::<i64, _>`,
+    // so a string key is never visited. `render` is called with the item and
+    // its 1-based index, in that order, and must answer with a node.
+    oil.func(
+        "each",
+        "(items: { any }, render: (item: any, index: number) -> OilNode) -> OilNode",
+        |_, (items, render): (Table, Function)| {
+            let mut children = Vec::new();
+            for pair in items.pairs::<i64, Value>() {
+                let (idx, item) = pair?;
+                let result: LuaNode = render.call((item, idx))?;
+                children.push(result.0);
+            }
+            Ok(LuaNode(fragment(children)))
+        },
+    )?;
 
-    // cru.oil.match_state(state, handlers) — table-driven state dispatch
-    // handlers: { state_key = LuaNode|Function|string, _ = default }
-    // Missing key + no _ handler → Node::Empty (safe default)
-    let match_state_fn = lua.create_function(|ctx, (state, handlers): (Value, Table)| {
-        // Try to get handler for the state key
-        let handler: Value = handlers.get(state.clone()).unwrap_or(Value::Nil);
-        match handler {
-            Value::Nil => {
-                // No handler for this key — try _ default
-                let default: Value = handlers.get("_").unwrap_or(Value::Nil);
-                match default {
-                    Value::Function(f) => f.call::<LuaNode>(()),
-                    Value::Nil => Ok(LuaNode(Node::Empty)),
-                    v => LuaNode::from_lua(v, ctx),
+    // Table-driven state dispatch. A handler is a node, a string, or a
+    // function of no arguments answering with one; `_` is the default. A
+    // missing key with no `_` gives an empty node rather than raising, so a
+    // state nobody drew yet renders as nothing.
+    //
+    // The handler table is declared `{ [any]: any }` because Luau reads a
+    // union of a function and a node in an index signature as a parse
+    // ambiguity; the shape above is the real one.
+    oil.func(
+        "match_state",
+        "(state: any, handlers: { [any]: any }) -> OilNode",
+        |ctx, (state, handlers): (Value, Table)| {
+            let handler: Value = handlers.get(state.clone()).unwrap_or(Value::Nil);
+            match handler {
+                Value::Nil => {
+                    let default: Value = handlers.get("_").unwrap_or(Value::Nil);
+                    match default {
+                        Value::Function(f) => f.call::<LuaNode>(()),
+                        Value::Nil => Ok(LuaNode(Node::Empty)),
+                        v => LuaNode::from_lua(v, ctx),
+                    }
+                }
+                Value::Function(f) => f.call::<LuaNode>(()),
+                v => LuaNode::from_lua(v, ctx),
+            }
+        },
+    )?;
+
+    // `focused` defaults to TRUE, which `text_input` sets and this only
+    // overrides. An options table that omits it gives a focused input.
+    oil.func(
+        "input",
+        "(options: { value: string?, cursor: number?, placeholder: string?, \
+         focused: boolean? }?) -> OilNode",
+        |_, options: Option<Table>| {
+            let mut value = String::new();
+            let mut cursor = 0;
+            let mut placeholder = None;
+            let mut focused = true;
+
+            if let Some(t) = options {
+                if let Ok(v) = t.get::<String>("value") {
+                    value = v;
+                }
+                if let Ok(c) = t.get::<usize>("cursor") {
+                    cursor = c;
+                }
+                if let Ok(p) = t.get::<String>("placeholder") {
+                    placeholder = Some(p);
+                }
+                if let Ok(f) = t.get::<bool>("focused") {
+                    focused = f;
                 }
             }
-            Value::Function(f) => f.call::<LuaNode>(()),
-            v => LuaNode::from_lua(v, ctx),
-        }
-    })?;
-    oil.set("match_state", match_state_fn)?;
 
-    // cru.oil.input(opts)
-    let input_fn = lua.create_function(|_, opts: Option<Table>| {
-        let mut value = String::new();
-        let mut cursor = 0;
-        let mut placeholder = None;
-        let mut focused = true;
+            let mut input = text_input(&value, cursor);
+            if let Node::Input(ref mut i) = input {
+                i.placeholder = placeholder;
+                i.focused = focused;
+            }
+            Ok(LuaNode(input))
+        },
+    )?;
 
-        if let Some(t) = opts {
-            if let Ok(v) = t.get::<String>("value") {
-                value = v;
-            }
-            if let Ok(c) = t.get::<usize>("cursor") {
-                cursor = c;
-            }
-            if let Ok(p) = t.get::<String>("placeholder") {
-                placeholder = Some(p);
-            }
-            if let Ok(f) = t.get::<bool>("focused") {
-                focused = f;
-            }
-        }
-
-        let mut input = text_input(&value, cursor);
-        if let Node::Input(ref mut i) = input {
-            i.placeholder = placeholder;
-            i.focused = focused;
-        }
-        Ok(LuaNode(input))
-    })?;
-    oil.set("input", input_fn)?;
-
-    // cru.oil.popup(items, selected?, max_visible?)
-    let popup_fn = lua.create_function(
+    // An item is a plain string, or a table. `label` is read with
+    // `unwrap_or_default`, so a table without one becomes an empty label
+    // rather than an error — hence `label: string?`. An item of any other
+    // type is dropped.
+    oil.func(
+        "popup",
+        "(items: { string | { label: string?, desc: string?, kind: string? } }, \
+         selected: number?, max_visible: number?) -> OilNode",
         |_, (items, selected, max_visible): (Table, Option<usize>, Option<usize>)| {
             let mut popup_items = Vec::new();
             for pair in items.pairs::<i64, Value>() {
@@ -363,96 +443,123 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
             )))
         },
     )?;
-    oil.set("popup", popup_fn)?;
 
-    // cru.oil.divider(char?, width?)
-    let divider_fn = lua.create_function(|_, (ch, width): (Option<String>, Option<u16>)| {
-        let char = ch.and_then(|s| s.chars().next()).unwrap_or('─');
-        Ok(LuaNode(divider(char, width.unwrap_or(80))))
-    })?;
-    oil.set("divider", divider_fn)?;
+    // Only the FIRST character of `character` is used; the default is `─`,
+    // and the default width is 80 columns.
+    oil.func(
+        "divider",
+        "(character: string?, width: number?) -> OilNode",
+        |_, (character, width): (Option<String>, Option<u16>)| {
+            let ch = character.and_then(|s| s.chars().next()).unwrap_or('─');
+            Ok(LuaNode(divider(ch, width.unwrap_or(80))))
+        },
+    )?;
 
-    // cru.oil.progress(value, width?)
-    let progress_fn = lua.create_function(|_, (value, width): (f64, Option<u16>)| {
-        Ok(LuaNode(progress_bar(value as f32, width.unwrap_or(20))))
-    })?;
-    oil.set("progress", progress_fn)?;
+    // A FRACTION, not a percentage: `progress_bar` clamps it to 0.0..=1.0,
+    // so `cru.oil.progress(50)` draws a full bar rather than half of one.
+    oil.func(
+        "progress",
+        "(fraction: number, width: number?) -> OilNode",
+        |_, (fraction, width): (f64, Option<u16>)| {
+            Ok(LuaNode(progress_bar(fraction as f32, width.unwrap_or(20))))
+        },
+    )?;
 
-    // cru.oil.badge(label, opts?)
-    let badge_fn = lua.create_function(|_, (label, opts): (String, Option<Table>)| {
-        let style = opts
-            .map(|t| parse::style_from_table(&t))
-            .transpose()?
-            .unwrap_or_default();
-        Ok(LuaNode(badge(label, style)))
-    })?;
-    oil.set("badge", badge_fn)?;
+    oil.func(
+        "badge",
+        "(label: string, style: OilStyle?) -> OilNode",
+        |_, (label, style): (String, Option<Table>)| {
+            let style = style
+                .map(|t| parse::style_from_table(&t))
+                .transpose()?
+                .unwrap_or_default();
+            Ok(LuaNode(badge(label, style)))
+        },
+    )?;
 
-    // cru.oil.bullet_list(items)
-    let bullet_list_fn = lua
-        .create_function(|_, items: Table| Ok(LuaNode(bullet_list(parse::string_list(&items)))))?;
-    oil.set("bullet_list", bullet_list_fn)?;
+    // The array half only, and a non-string entry is skipped rather than
+    // stringified (`parse::string_list`).
+    oil.func(
+        "bullet_list",
+        "(items: { string }) -> OilNode",
+        |_, items: Table| Ok(LuaNode(bullet_list(parse::string_list(&items)))),
+    )?;
 
-    // cru.oil.numbered_list(items)
-    let numbered_list_fn = lua.create_function(|_, items: Table| {
-        Ok(LuaNode(numbered_list(parse::string_list(&items))))
-    })?;
-    oil.set("numbered_list", numbered_list_fn)?;
+    oil.func(
+        "numbered_list",
+        "(items: { string }) -> OilNode",
+        |_, items: Table| Ok(LuaNode(numbered_list(parse::string_list(&items)))),
+    )?;
 
-    // cru.oil.kv(key, value)
-    let kv_fn = lua
-        .create_function(|_, (key, value): (String, String)| Ok(LuaNode(key_value(key, value))))?;
-    oil.set("kv", kv_fn)?;
+    oil.func(
+        "kv",
+        "(key: string, value: string) -> OilNode",
+        |_, (key, value): (String, String)| Ok(LuaNode(key_value(key, value))),
+    )?;
 
-    // cru.oil.markup(markup_string) - Parse XML-like markup into nodes
-    let markup_fn = lua.create_function(|_, markup: String| {
-        let node = html_to_node(&markup).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-        Ok(LuaNode(node))
-    })?;
-    oil.set("markup", markup_fn)?;
+    // Raises on malformed markup rather than answering with an empty node.
+    oil.func(
+        "markup",
+        "(markup: string) -> OilNode",
+        |_, markup: String| {
+            let node =
+                html_to_node(&markup).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            Ok(LuaNode(node))
+        },
+    )?;
 
-    // cru.oil.component(base_fn, default_props) -> callable that merges props
-    let component_fn = lua.create_function(|lua, (base_fn, defaults): (Function, Table)| {
-        let wrapper = lua.create_function(move |lua, args: MultiValue| {
-            let args_vec: Vec<Value> = args.into_iter().collect();
-            let mut merged_args = Vec::new();
+    // Answers with a function that merges `defaults` UNDER the caller's own
+    // first-argument props table, then forwards the rest to `base`. A first
+    // argument that is not a table is treated as a child, not as props.
+    oil.func(
+        "component",
+        "(base: (...any) -> OilNode, defaults: { [string]: any }) \
+         -> ((...any) -> OilNode)",
+        |lua, (base, defaults): (Function, Table)| {
+            let wrapper = lua.create_function(move |lua, args: MultiValue| {
+                let args_vec: Vec<Value> = args.into_iter().collect();
+                let mut merged_args = Vec::new();
 
-            let (user_props, rest) = if let Some(Value::Table(t)) = args_vec.first() {
-                let merged = lua.create_table()?;
-                for pair in defaults.pairs::<Value, Value>() {
-                    let (k, v) = pair?;
-                    merged.set(k, v)?;
+                let (user_props, rest) = if let Some(Value::Table(t)) = args_vec.first() {
+                    let merged = lua.create_table()?;
+                    for pair in defaults.pairs::<Value, Value>() {
+                        let (k, v) = pair?;
+                        merged.set(k, v)?;
+                    }
+                    for pair in t.pairs::<Value, Value>() {
+                        let (k, v) = pair?;
+                        merged.set(k, v)?;
+                    }
+                    (Some(merged), &args_vec[1..])
+                } else {
+                    (Some(defaults.clone()), args_vec.as_slice())
+                };
+
+                if let Some(props) = user_props {
+                    merged_args.push(Value::Table(props));
                 }
-                for pair in t.pairs::<Value, Value>() {
-                    let (k, v) = pair?;
-                    merged.set(k, v)?;
-                }
-                (Some(merged), &args_vec[1..])
-            } else {
-                (Some(defaults.clone()), args_vec.as_slice())
-            };
+                merged_args.extend(rest.iter().cloned());
 
-            if let Some(props) = user_props {
-                merged_args.push(Value::Table(props));
-            }
-            merged_args.extend(rest.iter().cloned());
+                base.call::<LuaNode>(MultiValue::from_iter(merged_args))
+            })?;
+            Ok(wrapper)
+        },
+    )?;
 
-            base_fn.call::<LuaNode>(MultiValue::from_iter(merged_args))
-        })?;
-        Ok(wrapper)
-    })?;
-    oil.set("component", component_fn)?;
+    // scrollback was removed — kept as a fragment for backward compatibility.
+    // `key` is the old scroll key and is DISCARDED; everything after it is a
+    // child.
+    oil.func(
+        "scrollback",
+        &format!("(key: any, ...{NODE_ARG}) -> OilNode"),
+        |_, args: MultiValue| {
+            let mut args_iter = args.into_iter();
+            let _key = args_iter.next();
+            Ok(LuaNode(fragment(parse::collect_child_nodes(args_iter))))
+        },
+    )?;
 
-    // scrollback was removed — kept as fragment for backward compatibility
-    let scrollback_fn = lua.create_function(|_, args: MultiValue| {
-        let mut args_iter = args.into_iter();
-        // Skip the key argument
-        let _key = args_iter.next();
-        Ok(LuaNode(fragment(parse::collect_child_nodes(args_iter))))
-    })?;
-    oil.set("scrollback", scrollback_fn)?;
-
-    register_module(lua, "oil", oil)?;
+    oil.publish()?;
 
     Ok(())
 }
@@ -556,6 +663,42 @@ mod tests {
     use super::*;
     use crate::test_support::TestLuaBuilder;
     use crucible_oil::{Color, Size};
+
+    /// Every declaration this module registers is Luau the parser accepts.
+    ///
+    /// These become one `declare cru: { … }` file that `luau-lsp analyze`
+    /// loads for every plugin. A malformed type there is not one bad
+    /// completion: the file fails to load, and every plugin loses every
+    /// declaration at once. Nothing else in the tree runs a Luau parser over
+    /// them — the stub tests only assert the generator produced text — so
+    /// this does.
+    ///
+    /// `cru.oil.popup`'s `{ string | { … } }` and `cru.oil.component`'s
+    /// function-returning-function are the two that were written on a guess
+    /// about Luau's grammar. The `OilNode` aliases go in first, so the test
+    /// covers those too and a declaration cannot name a type nobody exports.
+    #[test]
+    fn every_declaration_is_luau_the_parser_accepts() {
+        let lua = TestLuaBuilder::new().with_oil().build();
+        let signatures = crate::host_registry::HostSignatures::of(&lua);
+        let paths: Vec<String> = signatures
+            .paths()
+            .into_iter()
+            .filter(|path| path.starts_with("cru.oil."))
+            .collect();
+        assert_eq!(paths.len(), 21, "every cru.oil function must be declared");
+
+        // `export` is for a definitions file; a plain chunk takes the aliases
+        // bare, and the parser is the same either way.
+        let aliases = crate::host_api::OIL_TYPES.replace("export type", "type");
+        for path in paths {
+            let declared = signatures.get(&path).expect("just listed").to_luau();
+            let source = format!("{aliases}\ntype Probe = {declared}\nreturn 1");
+            if let Err(e) = lua.load(&source).exec() {
+                panic!("{path} is declared `{declared}`, which Luau refuses: {e}");
+            }
+        }
+    }
 
     #[test]
     fn test_register_oil_module() {

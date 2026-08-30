@@ -219,20 +219,7 @@ impl LuaExecutor {
 
         let cru_ns: mlua::Table = globals.get("cru")?;
 
-        // cru.log(level, message) — the base function.
-        // `register_notify_module` wraps it into the callable log table that
-        // carries `levels`, `notify`, `notify_once` and `messages`.
-        let log_fn = lua.create_function(|_, (level, msg): (String, String)| {
-            match level.as_str() {
-                "debug" => tracing::debug!("{}", msg),
-                "info" => tracing::info!("{}", msg),
-                "warn" => tracing::warn!("{}", msg),
-                "error" => tracing::error!("{}", msg),
-                _ => tracing::info!("{}", msg),
-            }
-            Ok(())
-        })?;
-        cru_ns.set("log", log_fn)?;
+        register_log_function(lua, &cru_ns)?;
 
         // `cru.json.encode(value, { pretty = true })` — the pretty form
         // replaces `oq.json_pretty`, so the option lives beside `encode`
@@ -265,11 +252,14 @@ impl LuaExecutor {
         // so an unmarked empty list reaches a consumer as `{}` while a
         // populated one is `[…]`. Tools returning result lists need the type to
         // be stable across "found nothing".
-        json_table.set(
+        //
+        // It answers with the SAME table, marked — not a copy — so the return
+        // is chained (`return cru.json.array({})`) rather than discarded.
+        let mut json = crate::host_registry::Ns::over(lua, "cru.json", json_table.clone());
+        json.func(
             "array",
-            lua.create_function(|lua, table: mlua::Table| {
-                crate::json_query::mark_json_array(lua, table)
-            })?,
+            "(list: { any }) -> { any }",
+            |lua, table: mlua::Table| crate::json_query::mark_json_array(lua, table),
         )?;
         cru_ns.set("json", json_table)?;
 
@@ -394,6 +384,34 @@ impl LuaExecutor {
         self.modules.invalidate_private_under(&self.lua, dir)?;
         Ok(())
     }
+}
+
+/// `cru.log(level, message)` — the base function, declared on `cru` itself
+/// rather than in a namespace of its own.
+///
+/// [`crate::notify::register_notify_module`] then wraps it into the callable
+/// log table that carries `levels`, `notify`, `notify_once` and `messages`.
+/// The metatable's `__call` forwards to this closure, so this declaration is
+/// the CALL half of the intersection the generator renders for `cru.log`.
+///
+/// A level the match does not know logs at INFO rather than raising: a plugin
+/// that misspells a level must still get its message out.
+pub(crate) fn register_log_function(lua: &Lua, cru: &mlua::Table) -> Result<(), LuaError> {
+    let mut root = crate::host_registry::Ns::over(lua, "cru", cru.clone());
+    root.func(
+        "log",
+        "(level: string, message: string) -> ()",
+        |_, (level, msg): (String, String)| {
+            match level.as_str() {
+                "debug" => tracing::debug!("{}", msg),
+                "info" => tracing::info!("{}", msg),
+                "warn" => tracing::warn!("{}", msg),
+                "error" => tracing::error!("{}", msg),
+                _ => tracing::info!("{}", msg),
+            }
+            Ok(())
+        },
+    )
 }
 
 #[cfg(test)]

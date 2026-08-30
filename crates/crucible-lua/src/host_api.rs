@@ -18,18 +18,18 @@
 //!   generated file says how many of its functions are unsigned, so the gap
 //!   is visible rather than implied.
 //!
-//! `cru.log` carries no signature on purpose: it is a callable TABLE (it also
-//! holds `levels`, `notify` and the rest), so the walker sees a namespace
-//! rather than a function, and a function declaration would misstate its
-//! shape.
+//! `cru.log` is a callable TABLE: the walker sees a namespace that also
+//! answers to a call, so its declaration is an intersection of the two. The
+//! CALL half is registered beside the closure in `executor.rs`; the table
+//! half comes from the walk. Neither is stated here.
 
 use crate::signature::{LuaType, Param, Signature, VARIADIC};
 use std::collections::BTreeMap;
 
 /// One entry of the host's declared surface.
 ///
-/// A TYPE, not a signature: `cru.on` has two accepted call shapes and `cru.log`
-/// is a table you may also call, and Luau spells both as an intersection.
+/// A TYPE, not a signature: `cru.on` has two accepted call shapes, and Luau
+/// spells that as an intersection.
 struct Declared {
     path: &'static str,
     ty: fn() -> LuaType,
@@ -105,17 +105,6 @@ fn on_declaration() -> LuaType {
     ])
 }
 
-/// `cru.log` is a table you may also call: `cru.log("info", msg)` alongside
-/// `cru.log.levels`, `cru.log.notify` and the rest. Luau spells that as an
-/// intersection of the call type and the table type; the table half comes
-/// from the VM walk, so only the call half is declared here.
-fn log_declaration() -> LuaType {
-    function(
-        vec![param("level", string()), param("message", string())],
-        Vec::new(),
-    )
-}
-
 /// The declared surface. Ordered by path so the generated file is stable.
 const DECLARED: &[Declared] = &[
     Declared {
@@ -161,11 +150,6 @@ const DECLARED: &[Declared] = &[
                 vec![string()],
             )
         },
-        bound_at_load: false,
-    },
-    Declared {
-        path: "cru.log",
-        ty: log_declaration,
         bound_at_load: false,
     },
     Declared {
@@ -216,85 +200,13 @@ const DECLARED: &[Declared] = &[
 ///
 /// It is also the work queue: every line is one `cru.*` function a plugin
 /// author currently sees as `(...any) -> any`.
-pub const UNSIGNED: &[&str] = &[
-    "cru.check.boolean",
-    "cru.check.func",
-    "cru.check.number",
-    "cru.check.one_of",
-    "cru.check.string",
-    "cru.check.table",
-    "cru.config.get",
-    "cru.config.set",
-    "cru.emitter.global",
-    "cru.emitter.new",
-    "cru.errors._capture",
-    "cru.errors.recent",
-    "cru.get_session",
-    "cru.health.error",
-    "cru.health.get_results",
-    "cru.health.info",
-    "cru.health.ok",
-    "cru.health.start",
-    "cru.health.warn",
-    "cru.inspect",
-    "cru.isolation.require",
-    "cru.json.array",
-    "cru.log.messages.clear",
-    "cru.log.messages.hide",
-    "cru.log.messages.show",
-    "cru.log.messages.toggle",
-    "cru.log.notify",
-    "cru.log.notify_once",
-    "cru.oil.badge",
-    "cru.oil.bullet_list",
-    "cru.oil.col",
-    "cru.oil.component",
-    "cru.oil.divider",
-    "cru.oil.each",
-    "cru.oil.either",
-    "cru.oil.fragment",
-    "cru.oil.input",
-    "cru.oil.kv",
-    "cru.oil.markup",
-    "cru.oil.match_state",
-    "cru.oil.numbered_list",
-    "cru.oil.popup",
-    "cru.oil.progress",
-    "cru.oil.row",
-    "cru.oil.scrollback",
-    "cru.oil.spacer",
-    "cru.oil.spinner",
-    "cru.oil.text",
-    "cru.oil.when",
-    "cru.on_provider_auth",
-    "cru.on_session_end",
-    "cru.on_session_start",
-    "cru.plugin.config.get",
-    "cru.ratelimit.new",
-    "cru.retry",
-    "cru.schedule",
-    "cru.schedule.cancel",
-    "cru.service.define",
-    "cru.service.list",
-    "cru.service.status",
-    "cru.service.stop",
-    "cru.session.current",
-    "cru.tbl_deep_extend",
-    "cru.tbl_get",
-    "cru.tools.batch",
-    "cru.tools.call",
-    "cru.tools.get_active",
-    "cru.tools.list",
-    "cru.tools.set_active",
-    "cru.ui.ask",
-    "cru.ui.ask_batch",
-    "cru.ui.edit",
-    "cru.ui.panel",
-    "cru.ui.permission",
-    "cru.ui.popup",
-    "cru.ui.show",
-    "cru.ws.connect",
-];
+/// Empty, and the gate keeps it that way.
+///
+/// Every `cru.*` function the plugin VM exposes now carries a declared type.
+/// A new one fails `every_function_is_signed_or_listed` until its author
+/// writes a signature beside its registration — or adds a line here, which is
+/// then visible as the exception it is.
+pub const UNSIGNED: &[&str] = &[];
 
 /// Every declared path, with its type.
 pub fn declared_signatures() -> BTreeMap<&'static str, LuaType> {
@@ -428,6 +340,54 @@ export type LuaFile = {
 }
 "#;
 
+/// A UI node, as `cru.oil.*` answers with. Named so the declarations can
+/// refer to it; the host implements it in `oil.rs` as `LuaNode` userdata.
+///
+/// Luau has no name for an mlua userdata, so without this every `cru.oil`
+/// function would return `any` — and `text: (...any) -> any` is the unsigned
+/// default written out longhand. The methods are `LuaNode`'s `UserData`
+/// methods, read off that impl.
+///
+/// `OilStyle` is the table `parse::style_from_table` reads, and it is the
+/// second argument of `cru.oil.text` and `cru.oil.badge`. `OilProps` is that
+/// table plus the layout keys `create_box_node` reads, and it is the optional
+/// first argument of `cru.oil.col` and `cru.oil.row`.
+pub(crate) const OIL_TYPES: &str = r#"
+export type OilStyle = {
+    fg: string?,
+    bg: string?,
+    bold: boolean?,
+    dim: boolean?,
+    italic: boolean?,
+    underline: boolean?,
+}
+
+export type OilProps = {
+    gap: number?,
+    padding: number?,
+    margin: number?,
+    border: (string | boolean)?,
+    justify: string?,
+    align: string?,
+    fg: string?,
+    bg: string?,
+    bold: boolean?,
+    dim: boolean?,
+    italic: boolean?,
+    underline: boolean?,
+}
+
+export type OilNode = {
+    with_style: (self: OilNode, style: OilStyle) -> OilNode,
+    with_padding: (self: OilNode, padding: number) -> OilNode,
+    with_border: (self: OilNode, border: string?) -> OilNode,
+    with_margin: (self: OilNode, margin: number) -> OilNode,
+    gap: (self: OilNode, gap: number) -> OilNode,
+    justify: (self: OilNode, justify: string) -> OilNode,
+    align: (self: OilNode, align: string) -> OilNode,
+}
+"#;
+
 /// Render a Luau declaration file for the function paths given.
 ///
 /// The shape is a nested `declare` of the `cru` table, so `luau-analyze` reads
@@ -485,13 +445,20 @@ pub fn render_declarations_with(
     let mut out = String::new();
     out.push_str("--!strict\n");
     out.push_str("-- Generated by `cru plugin stubs`. Do not edit.\n");
+    let unsigned = paths.len().saturating_sub(signed);
     out.push_str(&format!(
-        "-- {} of {} functions carry a declared signature; the rest are\n\
-         -- `(...any) -> any` until one is written in `crucible-lua/src/host_api.rs`.\n\n",
-        signed,
+        "-- {signed} of {} functions carry a declared signature.\n",
         paths.len()
     ));
+    if unsigned > 0 {
+        out.push_str(&format!(
+            "-- The other {unsigned} are `(...any) -> any`: no argument checked, no\n\
+             -- result checked. Declare one beside its registration with `Ns::func`.\n"
+        ));
+    }
+    out.push('\n');
     out.push_str(FILE_TYPE.trim_start());
+    out.push_str(OIL_TYPES);
     out.push_str(HOST_ENVIRONMENT);
     out.push('\n');
     out.push_str("declare cru: ");
@@ -629,6 +596,8 @@ mod tests {
     /// because that is now where a migrated function's type comes from.
     fn registered_vm() -> crate::host_registry::HostSignatures {
         let lua = mlua::Lua::new();
+        let cru = crate::lua_util::get_or_create_namespace(&lua, "cru").expect("cru");
+        crate::executor::register_log_function(&lua, &cru).expect("cru.log");
         crate::fs::register_fs_module(&lua).expect("cru.fs");
         crate::shell::register_shell_module(&lua, crate::shell::PluginShellPolicy::default())
             .expect("cru.shell");
@@ -728,11 +697,15 @@ mod tests {
     }
 
     /// A callable table renders both halves, so `cru.log("info", msg)` and
-    /// `cru.log.levels` both typecheck.
+    /// `cru.log.levels` both typecheck. The call half is registered beside
+    /// its closure, so it is read from the VM rather than from `DECLARED`.
     #[test]
     fn a_callable_table_renders_as_an_intersection() {
-        let rendered =
-            render_declarations(&["cru.log".to_string(), "cru.log.notify".to_string()], &[]);
+        let rendered = render_declarations_with(
+            &["cru.log".to_string(), "cru.log.notify".to_string()],
+            &[],
+            &registered_vm(),
+        );
         assert!(
             rendered.contains("log: ((level: string, message: string) -> ()) & {"),
             "{rendered}"
