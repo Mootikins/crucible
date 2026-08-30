@@ -279,87 +279,105 @@ pub fn encode_to_format(value: &JsonValue, format: Format) -> Result<String, Str
 }
 
 /// Register the oq module with a Lua state
+///
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`].
+///
+/// Three declarations say `any` where the older comments said `table`, and
+/// `any` is the one that is true: `parse`, `parse_as` and `query` all end in
+/// `json_to_lua`, which answers with whatever the document holds. A scalar
+/// document (`oq.parse("42")`) answers a number, and a `query` that selects a
+/// name answers a string.
+///
+/// A bad format name and a syntax error both RAISE. None of these functions
+/// answers `nil` on failure, so no return type is optional.
 pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
-    let oq = lua.create_table()?;
+    let mut oq_ns = crate::host_registry::Ns::new(lua, "cru.oq")?;
 
-    // oq.parse(str) -> table (auto-detects JSON, YAML, TOML, or TOON)
-    let parse_fn = lua.create_function(|lua, s: String| {
-        let value = parse_auto(&s).map_err(mlua::Error::external)?;
+    // Auto-detects JSON, YAML, TOML, or TOON.
+    oq_ns.func("parse", "(text: string) -> any", |lua, text: String| {
+        let value = parse_auto(&text).map_err(mlua::Error::external)?;
         json_to_lua(lua, value)
     })?;
-    oq.set("parse", parse_fn)?;
 
-    // oq.parse_as(str, format) -> table (explicit format)
-    let parse_as_fn = lua.create_function(|lua, (s, format_name): (String, String)| {
-        let format = Format::from_name(&format_name)
-            .ok_or_else(|| mlua::Error::external(format!("Unknown format: {}", format_name)))?;
-        let value = parse_with_format(&s, format).map_err(mlua::Error::external)?;
-        json_to_lua(lua, value)
-    })?;
-    oq.set("parse_as", parse_as_fn)?;
+    // The format name is one of `json`, `yaml`/`yml`, `toml`, `toon`
+    // (`Format::from_name`); any other name raises.
+    oq_ns.func(
+        "parse_as",
+        "(text: string, format: string) -> any",
+        |lua, (text, format_name): (String, String)| {
+            let format = Format::from_name(&format_name)
+                .ok_or_else(|| mlua::Error::external(format!("Unknown format: {}", format_name)))?;
+            let value = parse_with_format(&text, format).map_err(mlua::Error::external)?;
+            json_to_lua(lua, value)
+        },
+    )?;
 
-    // oq.toon(table) -> string (TOON format)
-    let toon_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+    oq_ns.func("toon", "(value: any) -> string", |lua, value: Value| {
+        let json = lua_to_json(lua, value)?;
         oq::json_to_toon(json).map_err(mlua::Error::external)
     })?;
-    oq.set("toon", toon_fn)?;
 
-    // oq.yaml(table) -> string (YAML format)
-    let yaml_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+    oq_ns.func("yaml", "(value: any) -> string", |lua, value: Value| {
+        let json = lua_to_json(lua, value)?;
         serde_yaml::to_string(&json).map_err(mlua::Error::external)
     })?;
-    oq.set("yaml", yaml_fn)?;
 
-    // oq.toml(table) -> string (TOML format)
-    let toml_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+    oq_ns.func("toml", "(value: any) -> string", |lua, value: Value| {
+        let json = lua_to_json(lua, value)?;
         let toml_value = json_to_toml(&json).map_err(mlua::Error::external)?;
         toml::to_string(&toml_value).map_err(mlua::Error::external)
     })?;
-    oq.set("toml", toml_fn)?;
 
-    // oq.convert(table, format) -> string (convert to any format)
-    let convert_fn = lua.create_function(|lua, (value, format_name): (Value, String)| {
-        let format = Format::from_name(&format_name)
-            .ok_or_else(|| mlua::Error::external(format!("Unknown format: {}", format_name)))?;
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
-        encode_to_format(&json, format).map_err(mlua::Error::external)
-    })?;
-    oq.set("convert", convert_fn)?;
+    oq_ns.func(
+        "convert",
+        "(value: any, format: string) -> string",
+        |lua, (value, format_name): (Value, String)| {
+            let format = Format::from_name(&format_name)
+                .ok_or_else(|| mlua::Error::external(format!("Unknown format: {}", format_name)))?;
+            let json = lua_to_json(lua, value)?;
+            encode_to_format(&json, format).map_err(mlua::Error::external)
+        },
+    )?;
 
-    // oq.detect(str) -> string (detect format of string)
-    let detect_fn = lua.create_function(|_, s: String| {
-        let format = detect_format(&s);
+    // Answers one of `json`, `yaml`, `toml`, `toon` — never nil, because
+    // `detect_format` falls back to JSON.
+    oq_ns.func("detect", "(text: string) -> string", |_, text: String| {
+        let format = detect_format(&text);
         Ok(format.name().to_string())
     })?;
-    oq.set("detect", detect_fn)?;
 
-    // oq.query(table, filter) -> table/value (jq-style query)
-    let query_fn = lua.create_function(|lua, (value, filter_str): (Value, String)| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+    // jq-style query.
+    oq_ns.func(
+        "query",
+        "(value: any, filter: string) -> any",
+        |lua, (value, filter_str): (Value, String)| {
+            let json = lua_to_json(lua, value)?;
 
-        let filter =
-            compile_filter(&filter_str).map_err(|e| mlua::Error::external(e.to_string()))?;
+            let filter =
+                compile_filter(&filter_str).map_err(|e| mlua::Error::external(e.to_string()))?;
 
-        let results =
-            run_filter(&filter, json).map_err(|e| mlua::Error::external(e.to_string()))?;
+            let results =
+                run_filter(&filter, json).map_err(|e| mlua::Error::external(e.to_string()))?;
 
-        // Return single value or array of results
-        if results.len() == 1 {
-            json_to_lua(lua, results.into_iter().next().unwrap())
-        } else {
-            let arr = JsonValue::Array(results);
-            json_to_lua(lua, arr)
-        }
-    })?;
-    oq.set("query", query_fn)?;
+            // Return single value or array of results
+            if results.len() == 1 {
+                json_to_lua(lua, results.into_iter().next().unwrap())
+            } else {
+                let arr = JsonValue::Array(results);
+                json_to_lua(lua, arr)
+            }
+        },
+    )?;
 
-    // oq.format(table, options?) -> string (smart TOON formatting)
-    let format_fn =
-        lua.create_function(|lua, (value, options): (Value, Option<mlua::Table>)| {
-            let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+    // Smart TOON formatting. `tool` is the only key the body reads, so the
+    // options table is declared with that one field.
+    oq_ns.func(
+        "format",
+        "(value: any, options: { tool: string? }?) -> string",
+        |lua, (value, options): (Value, Option<mlua::Table>)| {
+            let json = lua_to_json(lua, value)?;
 
             let result = if let Some(opts) = options {
                 // Check for tool type hint
@@ -374,16 +392,18 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
             };
 
             Ok(result)
-        })?;
-    oq.set("format", format_fn)?;
+        },
+    )?;
 
-    // oq.null constant
+    // `oq.null` is a userdata constant, not a function, so it goes on the
+    // table directly. The VM walk sees it and the stub generator renders it
+    // as a field; `Ns` describes only what you call.
     let null = lua.create_ser_userdata(OqNull)?;
-    oq.set("null", null)?;
+    oq_ns.table().set("null", null)?;
 
     // Register oq module globally
-    lua.globals().set("oq", oq.clone())?;
-    crate::lua_util::register_module(lua, "oq", oq)?;
+    let oq = oq_ns.publish()?;
+    lua.globals().set("oq", oq)?;
 
     Ok(())
 }

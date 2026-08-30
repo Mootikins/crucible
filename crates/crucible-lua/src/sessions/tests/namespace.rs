@@ -55,11 +55,11 @@ fn sorted_keys(sessions: &Table) -> Vec<String> {
 }
 
 /// The stub table and the daemon-backed table expose the same function names,
-/// and both match `SESSION_FN_NAMES`. A name that lands in one path only fails
+/// and both match `SESSION_FNS`. A name that lands in one path only fails
 /// here, not in a plugin at run time.
 #[test]
 fn stub_and_daemon_tables_expose_the_same_functions() {
-    use crate::sessions::register::SESSION_FN_NAMES;
+    use crate::sessions::register::SESSION_FNS;
     use crate::sessions::{register_sessions_module_with_api, DaemonSessionApi};
     use std::sync::Arc;
 
@@ -85,7 +85,10 @@ fn stub_and_daemon_tables_expose_the_same_functions() {
             .unwrap(),
     );
 
-    let mut listed: Vec<String> = SESSION_FN_NAMES.iter().map(|s| s.to_string()).collect();
+    let mut listed: Vec<String> = SESSION_FNS
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .collect();
     listed.sort();
 
     assert_eq!(stub_keys, listed);

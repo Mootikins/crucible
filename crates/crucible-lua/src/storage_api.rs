@@ -29,47 +29,68 @@
 //! app data the loader and the handler dispatcher bracket, out of Lua's reach.
 
 use crate::error::LuaError;
-use crate::lua_util::register_module;
+use crate::host_registry::Ns;
 use crucible_core::storage::PropertyStore;
 use mlua::{Lua, Table, Value};
 use std::sync::Arc;
+
+/// The declared type of each `cru.storage` function.
+///
+/// One set of declarations covers BOTH registrations, because both answer at
+/// the same path and a plugin author cannot tell which one is mounted. Each
+/// type therefore states the union of the two behaviours, and the union is
+/// honest rather than convenient:
+///
+/// - `set` answers `true` when a store wrote the property, and `nil` when no
+///   store is attached. The stub's `nil` is a real answer — "nothing was
+///   written" — not a placeholder, so the type says `boolean?`.
+/// - `get` answers the value or `nil`; the stub always takes the `nil` branch.
+/// - `list` and `find` answer a table either way; the stub's is empty.
+/// - `delete` answers a boolean either way; the stub always answers `false`.
+///
+/// The stub generator runs against a VM with no kiln open, so these are the
+/// types plugin authors read. Declaring the store-backed behaviour alone
+/// would promise a `boolean` that the idle VM never returns.
+const SET: &str = "(entity_id: string, key: string, value: string) -> boolean?";
+const GET: &str = "(entity_id: string, key: string) -> string?";
+const LIST: &str = "(entity_id: string) -> { [string]: string }";
+const FIND: &str = "(key: string, value: string) -> { string }";
+const DELETE: &str = "(entity_id: string, key: string) -> boolean";
 
 /// Register the storage module with stub functions that return nil/empty.
 ///
 /// Called during executor setup. Stubs are replaced by
 /// `register_storage_module_with_store` when a kiln opens and storage is available.
 pub fn register_storage_module(lua: &Lua) -> Result<(), LuaError> {
-    let storage = lua.create_table()?;
+    let mut storage = Ns::new(lua, "cru.storage")?;
 
-    let set_stub = lua.create_async_function(
+    storage.async_func(
+        "set",
+        SET,
         |_, (_entity_id, _key, _value): (String, String, String)| async move { Ok(Value::Nil) },
     )?;
-    storage.set("set", set_stub)?;
 
-    let get_stub =
-        lua.create_async_function(|_, (_entity_id, _key): (String, String)| async move {
-            Ok(Value::Nil)
-        })?;
-    storage.set("get", get_stub)?;
+    storage.async_func(
+        "get",
+        GET,
+        |_, (_entity_id, _key): (String, String)| async move { Ok(Value::Nil) },
+    )?;
 
-    let list_stub = lua.create_async_function(|lua, _entity_id: String| async move {
+    storage.async_func("list", LIST, |lua, _entity_id: String| async move {
         Ok(Value::Table(lua.create_table()?))
     })?;
-    storage.set("list", list_stub)?;
 
-    let find_stub =
-        lua.create_async_function(|lua, (_key, _value): (String, String)| async move {
-            Ok(Value::Table(lua.create_table()?))
-        })?;
-    storage.set("find", find_stub)?;
+    storage.async_func("find", FIND, |lua, (_key, _value): (String, String)| async move {
+        Ok(Value::Table(lua.create_table()?))
+    })?;
 
-    let delete_stub =
-        lua.create_async_function(|_, (_entity_id, _key): (String, String)| async move {
-            Ok(Value::Boolean(false))
-        })?;
-    storage.set("delete", delete_stub)?;
+    storage.async_func(
+        "delete",
+        DELETE,
+        |_, (_entity_id, _key): (String, String)| async move { Ok(Value::Boolean(false)) },
+    )?;
 
-    register_module(lua, "storage", storage)?;
+    storage.publish()?;
     Ok(())
 }
 
@@ -102,10 +123,15 @@ pub fn register_storage_module_with_store(
     let globals = lua.globals();
     let cru: Table = globals.get("cru")?;
     let storage: Table = cru.get("storage")?;
+    // The table is already mounted on `cru`, so this replaces its five stubs
+    // in place. Nothing publishes: a fresh table would leave a plugin that
+    // captured `cru.storage` holding the stubs for ever.
+    let mut storage = Ns::over(lua, "cru.storage", storage);
 
-    // set(entity_id, key, value)
     let s = Arc::clone(&store);
-    let set_fn = lua.create_async_function(
+    storage.async_func(
+        "set",
+        SET,
         move |lua, (entity_id, key, value): (String, String, String)| {
             let s = Arc::clone(&s);
             async move {
@@ -115,25 +141,25 @@ pub fn register_storage_module_with_store(
             }
         },
     )?;
-    storage.set("set", set_fn)?;
 
-    // get(entity_id, key)
     let s = Arc::clone(&store);
-    let get_fn = lua.create_async_function(move |lua, (entity_id, key): (String, String)| {
-        let s = Arc::clone(&s);
-        async move {
-            let ns = get_plugin_namespace(&lua)?;
-            match storage_err(s.property_get(&entity_id, &ns, &key).await)? {
-                Some(val) => Ok(Value::String(lua.create_string(&val)?)),
-                None => Ok(Value::Nil),
+    storage.async_func(
+        "get",
+        GET,
+        move |lua, (entity_id, key): (String, String)| {
+            let s = Arc::clone(&s);
+            async move {
+                let ns = get_plugin_namespace(&lua)?;
+                match storage_err(s.property_get(&entity_id, &ns, &key).await)? {
+                    Some(val) => Ok(Value::String(lua.create_string(&val)?)),
+                    None => Ok(Value::Nil),
+                }
             }
-        }
-    })?;
-    storage.set("get", get_fn)?;
+        },
+    )?;
 
-    // list(entity_id)
     let s = Arc::clone(&store);
-    let list_fn = lua.create_async_function(move |lua, entity_id: String| {
+    storage.async_func("list", LIST, move |lua, entity_id: String| {
         let s = Arc::clone(&s);
         async move {
             let ns = get_plugin_namespace(&lua)?;
@@ -145,35 +171,34 @@ pub fn register_storage_module_with_store(
             Ok(Value::Table(table))
         }
     })?;
-    storage.set("list", list_fn)?;
 
-    // find(key, value)
     let s = Arc::clone(&store);
-    let find_fn = lua.create_async_function(move |lua, (key, value): (String, String)| {
+    storage.async_func("find", FIND, move |lua, (key, value): (String, String)| {
         let s = Arc::clone(&s);
         async move {
             let ns = get_plugin_namespace(&lua)?;
             let ids = storage_err(s.property_find(&ns, &key, &value).await)?;
             let table = lua.create_table()?;
             for (i, id) in ids.iter().enumerate() {
-                table.set(i + 1, id.as_str())?;
+                table.set(i + 1, id.as_str())?; // Lua arrays are 1-indexed
             }
             Ok(Value::Table(table))
         }
     })?;
-    storage.set("find", find_fn)?;
 
-    // delete(entity_id, key)
     let s = Arc::clone(&store);
-    let delete_fn = lua.create_async_function(move |lua, (entity_id, key): (String, String)| {
-        let s = Arc::clone(&s);
-        async move {
-            let ns = get_plugin_namespace(&lua)?;
-            let deleted = storage_err(s.property_delete(&entity_id, &ns, &key).await)?;
-            Ok(Value::Boolean(deleted))
-        }
-    })?;
-    storage.set("delete", delete_fn)?;
+    storage.async_func(
+        "delete",
+        DELETE,
+        move |lua, (entity_id, key): (String, String)| {
+            let s = Arc::clone(&s);
+            async move {
+                let ns = get_plugin_namespace(&lua)?;
+                let deleted = storage_err(s.property_delete(&entity_id, &ns, &key).await)?;
+                Ok(Value::Boolean(deleted))
+            }
+        },
+    )?;
 
     Ok(())
 }

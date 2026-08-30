@@ -23,11 +23,41 @@
 //! ```
 
 use crate::error::LuaError;
-use crate::lua_util::{get_or_create_namespace, register_module};
+use crate::host_registry::Ns;
+use crate::lua_util::get_or_create_namespace;
 use crate::sessions::DaemonSessionApi;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+/// The declared type of each `cru.context` function.
+///
+/// One set of declarations covers the stub registration and the daemon-backed
+/// one, because both answer at the same path and a plugin author cannot tell
+/// which is mounted. The four daemon-backed functions answer the SAME pair
+/// either way — `(result, nil)` on success, `(nil, message)` on failure — and
+/// the stub simply always takes the failure branch with "no daemon
+/// connected". So the pair, not the success value alone, is the type, and
+/// BOTH halves are optional: exactly one of the two is nil on any call.
+///
+/// None of these raises. A caller reads the second value, never `pcall`.
+const ESTIMATE_TOKENS: &str = "(text: string) -> number";
+/// The shape `DaemonSessionApi::context_usage` documents and returns.
+const USAGE: &str = "(session_id: string) -> \
+     ({ messages: number, prompt_tokens: number, budget: number, percent: number }?, string?)";
+/// `true` on success, not a value: compaction runs on the next agent turn.
+const COMPACT: &str = "(session_id: string) -> (boolean?, string?)";
+/// `opts` reaches Rust as a plain `Value`, so omitting it is legal and its
+/// `nil` takes the "no filter" branch. The body reads `role` and `limit` and
+/// nothing else. The messages themselves are opaque JSON on the way through,
+/// so `{ any }` is as far as this code can narrow them.
+const MESSAGES: &str = "(session_id: string, opts: { role: string?, limit: number? }?) -> \
+     ({ any }?, string?)";
+/// `range` is NOT narrowed to a record, for one reason: the `indices` shape
+/// has an `end` field, and `end` is a Luau keyword that a record type cannot
+/// name. The three shapes the daemon accepts are in the comment on the
+/// closure. This code serialises the table whole and validates nothing.
+const REMOVE: &str = "(session_id: string, range: table) -> (number?, string?)";
 
 /// Register `cru.context` with stub functions.
 ///
@@ -37,50 +67,48 @@ use std::sync::{Arc, Mutex};
 /// that want a non-fatal placeholder before [`register_context_module`]
 /// gets called with a real API.
 pub fn register_context_module_stub(lua: &Lua) -> Result<(), LuaError> {
-    let context = lua.create_table()?;
+    // Over the mounted table, never a fresh one. See the note on
+    // [`ensure_cru_context_table`].
+    let mut context = Ns::over(lua, "cru.context", ensure_cru_context_table(lua)?);
 
-    context.set(
-        "estimate_tokens",
-        lua.create_function(|_, text: String| {
-            Ok(crucible_core::traits::context_ops::estimate_tokens(&text))
-        })?,
-    )?;
+    context.func("estimate_tokens", ESTIMATE_TOKENS, |_, text: String| {
+        Ok(crucible_core::traits::context_ops::estimate_tokens(&text))
+    })?;
 
     macro_rules! stub_async {
-        ($name:expr, $args:ty) => {
-            let f = lua.create_async_function(|lua, _args: $args| async move {
+        ($name:expr, $decl:expr, $args:ty) => {
+            context.async_func($name, $decl, |lua, _args: $args| async move {
                 let err = lua.create_string("no daemon connected")?;
                 Ok((Value::Nil, Value::String(err)))
             })?;
-            context.set($name, f)?;
         };
     }
 
-    stub_async!("usage", String);
-    stub_async!("compact", String);
-    stub_async!("messages", (String, Value));
-    stub_async!("remove", (String, Value));
+    stub_async!("usage", USAGE, String);
+    stub_async!("compact", COMPACT, String);
+    stub_async!("messages", MESSAGES, (String, Value));
+    stub_async!("remove", REMOVE, (String, Value));
 
-    register_module(lua, "context", context)?;
     Ok(())
 }
 
 /// Register `cru.context` with daemon-backed implementations.
 pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Result<(), LuaError> {
-    let context = lua.create_table()?;
+    // Over the mounted table, never a fresh one. `DaemonPluginLoader` calls
+    // `register_context_validators` when it builds the VM and this function
+    // later, from `upgrade_with_sessions`. A fresh table here dropped
+    // `cru.context.register_validator` at that moment, so every validator a
+    // plugin registered at init became unreachable the instant the daemon
+    // API arrived. See the note on [`ensure_cru_context_table`].
+    let mut ns = Ns::over(lua, "cru.context", ensure_cru_context_table(lua)?);
 
-    // estimate_tokens(text) -> integer
     // Pure function — uses crucible_core's chars/4 heuristic.
-    context.set(
-        "estimate_tokens",
-        lua.create_function(|_, text: String| {
-            Ok(crucible_core::traits::context_ops::estimate_tokens(&text))
-        })?,
-    )?;
+    ns.func("estimate_tokens", ESTIMATE_TOKENS, |_, text: String| {
+        Ok(crucible_core::traits::context_ops::estimate_tokens(&text))
+    })?;
 
-    // usage(session_id) -> ({ messages, prompt_tokens, budget, percent }, nil) or (nil, err)
     let a = Arc::clone(&api);
-    let usage_fn = lua.create_async_function(move |lua, session_id: String| {
+    ns.async_func("usage", USAGE, move |lua, session_id: String| {
         let a = Arc::clone(&a);
         async move {
             match a.context_usage(session_id).await {
@@ -95,11 +123,9 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
             }
         }
     })?;
-    context.set("usage", usage_fn)?;
 
-    // compact(session_id) -> (true, nil) or (nil, err)
     let a = Arc::clone(&api);
-    let compact_fn = lua.create_async_function(move |lua, session_id: String| {
+    ns.async_func("compact", COMPACT, move |lua, session_id: String| {
         let a = Arc::clone(&a);
         async move {
             match a.compact(session_id).await {
@@ -111,14 +137,13 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
             }
         }
     })?;
-    context.set("compact", compact_fn)?;
 
-    // messages(session_id, opts?) -> (messages_table, nil) or (nil, err)
-    // opts: { role = "user"|"assistant"|"system", limit = N }
     // Thin alias over load_messages; identical semantics to cru.session.messages.
     let a = Arc::clone(&api);
-    let messages_fn =
-        lua.create_async_function(move |lua, (session_id, opts): (String, Value)| {
+    ns.async_func(
+        "messages",
+        MESSAGES,
+        move |lua, (session_id, opts): (String, Value)| {
             let a = Arc::clone(&a);
             async move {
                 let (role_filter, limit) = match opts {
@@ -142,15 +167,16 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
                     }
                 }
             }
-        })?;
-    context.set("messages", messages_fn)?;
+        },
+    )?;
 
-    // remove(session_id, range) -> (count, nil) or (nil, err)
     // range: { type = "all" } | { type = "last"|"first", n = N } |
     //        { type = "indices", start = S, end = E }
     let a = Arc::clone(&api);
-    let remove_fn =
-        lua.create_async_function(move |lua, (session_id, range): (String, Value)| {
+    ns.async_func(
+        "remove",
+        REMOVE,
+        move |lua, (session_id, range): (String, Value)| {
             let a = Arc::clone(&a);
             async move {
                 let json: serde_json::Value =
@@ -163,10 +189,8 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
                     }
                 }
             }
-        })?;
-    context.set("remove", remove_fn)?;
-
-    register_module(lua, "context", context)?;
+        },
+    )?;
 
     Ok(())
 }
@@ -263,15 +287,27 @@ pub fn register_context_validators(
     lua: &Lua,
     registry: Arc<LuaValidatorRegistry>,
 ) -> Result<(), LuaError> {
-    let context = ensure_cru_context_table(lua)?;
+    // Over the table that is already mounted, not a fresh one: this may run
+    // after `register_context_module`, and a new table would drop the four
+    // daemon-backed functions.
+    let mut context = Ns::over(lua, "cru.context", ensure_cru_context_table(lua)?);
 
     let reg = Arc::clone(&registry);
-    let f = lua.create_function(move |lua, (name, func): (String, Function)| {
-        let key = lua.create_registry_value(func)?;
-        reg.insert(name, key);
-        Ok(())
-    })?;
-    context.set("register_validator", f)?;
+    // Two accepted validator shapes, as one intersection — Luau's overload
+    // syntax. `LuaValidatorRegistry::run` reads the first return as the
+    // verdict and the second, when there is one, as the reason, so BOTH
+    // `-> boolean` and `-> (boolean, string?)` are correct code. Declaring
+    // only the two-value form would make a one-value validator a Luau error.
+    context.func(
+        "register_validator",
+        "(name: string, validator: ((text: string) -> boolean) \
+         & ((text: string) -> (boolean, string?))) -> ()",
+        move |lua, (name, func): (String, Function)| {
+            let key = lua.create_registry_value(func)?;
+            reg.insert(name, key);
+            Ok(())
+        },
+    )?;
     Ok(())
 }
 
@@ -298,6 +334,47 @@ mod tests {
     use crate::sessions::ResponsePart;
     use std::future::Future;
     use std::pin::Pin;
+
+    /// The daemon registers validators when it builds the VM and mounts the
+    /// context API later (`daemon_plugins/mod.rs:244` then `:639`). Both must
+    /// survive, in either order.
+    ///
+    /// They did not. `register_context_module` built a FRESH table and
+    /// mounted it over `cru.context`, so `cru.context.register_validator`
+    /// became nil the instant the daemon API arrived — taking with it every
+    /// validator a plugin had registered at init, which is the order the
+    /// loader deliberately uses.
+    #[test]
+    fn the_daemon_api_does_not_evict_the_validator_surface() {
+        let lua = Lua::new();
+        let registry = Arc::new(LuaValidatorRegistry::new());
+        register_context_validators(&lua, Arc::clone(&registry)).expect("validators");
+
+        lua.load(r#"cru.context.register_validator("probe", function(text) return true end)"#)
+            .exec()
+            .expect("a plugin registers a validator at init");
+
+        register_context_module(&lua, Arc::new(StubApi)).expect("the daemon API arrives");
+
+        let still_there: bool = lua
+            .load("return type(cru.context.register_validator) == 'function'")
+            .eval()
+            .expect("the surface answers");
+        assert!(
+            still_there,
+            "mounting the daemon API must not evict the validator surface"
+        );
+        assert!(
+            registry.has("probe"),
+            "a validator registered before the upgrade must survive it"
+        );
+
+        let has_api: bool = lua
+            .load("return type(cru.context.usage) == 'function'")
+            .eval()
+            .expect("the surface answers");
+        assert!(has_api, "and the daemon API must be there too");
+    }
 
     /// Minimal stub. All methods unused by these tests `unimplemented!()`;
     /// the four exercised methods (`load_messages`, plus the three Wave 1

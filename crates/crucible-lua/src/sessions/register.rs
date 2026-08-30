@@ -5,48 +5,169 @@ use crate::session_api::{CurrentSession, Session};
 use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
 
-/// Every function in `cru.session`, in registration order.
+/// Every function in `cru.session`, with its Luau type, in registration
+/// order.
 ///
 /// The stub path and the daemon-backed path both read this list, so a new
 /// session function cannot land in one path only: the stub loop registers
 /// every name here, and [`register_sessions_module_with_api`] refuses a table
 /// whose key set differs from it.
 ///
+/// The TYPE lives here rather than beside one closure because every name has
+/// TWO closures — a stub and a daemon-backed body — and one declaration for
+/// both is the point. [`crate::host_registry::Ns`] holds each string to the
+/// daemon-backed closure's Rust types; the stub's own type
+/// (`MultiValue -> (Value, Value)`) describes no single function, so the stub
+/// path declares without checking. See [`register_sessions_module`].
+///
+/// Every function answers with the `(value, err)` pair the Lua error
+/// convention uses, so the first return is nil on failure and the second is
+/// `string?` throughout. A session HANDLE is a userdata
+/// ([`crate::session_api::Session`]), which the declarations have no name
+/// for, so the functions that answer with one say `any`.
+///
 /// `current` is deliberately absent: it is registered by
 /// [`crate::session_api::register_session_module`], which owns the
 /// `CurrentSession` instance the daemon binds to. The sessions registrations
 /// merge their functions into the same table rather than replacing it, so
 /// registration order cannot drop it.
-pub(crate) const SESSION_FN_NAMES: &[&str] = &[
-    "create",
-    "get",
-    "list",
-    "configure_agent",
-    "send_message",
-    "cancel",
-    "pause",
-    "resume",
-    "end_session",
-    "interaction_respond",
-    "subscribe",
-    "unsubscribe",
-    "send_and_collect",
-    "inject",
-    "collect_subagents",
-    "messages",
-    "fork",
-    "cache_stats",
-    "complete",
-    "set_output_validation",
-    "undo",
-    "can_undo",
-    "undo_depth",
-    "undo_history",
-    "review_list_hunks",
-    "review_set_state",
-    "review_comment",
-    "review_resolve_comment",
+pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
+    // The options table crosses to the daemon as ONE object (`create_params`),
+    // so its fields are not narrowed: a plugin reaches every create-time field
+    // the daemon's request type has, and narrowing here would reject them.
+    // `delegate` is the one key this crate reads itself. The string arm is the
+    // legacy positional form, `create("chat")`.
+    (
+        "create",
+        "(options: { [string]: any } | string) -> (any, string?)",
+    ),
+    // `(nil, nil)` when no session has that id: absent is not an error.
+    ("get", "(session_id: string) -> (any, string?)"),
+    ("list", "() -> ({ any }?, string?)"),
+    (
+        "configure_agent",
+        "(session_id: string, config: { [string]: any }) -> (boolean?, string?)",
+    ),
+    // The string is the new response's id, not the reply text.
+    (
+        "send_message",
+        "(session_id: string, content: string) -> (string?, string?)",
+    ),
+    // The boolean says whether anything WAS cancelled, so `false` is a real
+    // answer and not a failure.
+    ("cancel", "(session_id: string) -> (boolean?, string?)"),
+    ("pause", "(session_id: string) -> (boolean?, string?)"),
+    ("resume", "(session_id: string) -> (boolean?, string?)"),
+    ("end_session", "(session_id: string) -> (boolean?, string?)"),
+    (
+        "interaction_respond",
+        "(session_id: string, request_id: string, response: any) -> (boolean?, string?)",
+    ),
+    // The first return is the ITERATOR, not an event: call it for each event,
+    // and it answers nil once the stream ends. Its own second return is
+    // always nil, so it is not declared.
+    (
+        "subscribe",
+        "(session_id: string) -> ((() -> any?)?, string?)",
+    ),
+    ("unsubscribe", "(session_id: string) -> (boolean?, string?)"),
+    // `timeout` is in SECONDS. A bare number is that same timeout — the
+    // number arm of the options argument. The first return is an iterator
+    // over the response parts, written the way `subscribe`'s is and for the
+    // same reason.
+    (
+        "send_and_collect",
+        "(session_id: string, content: string, options: ({ timeout: number?, \
+         max_tool_result_len: number?, interactive: boolean? } | number)?) \
+         -> ((() -> any?)?, string?)",
+    ),
+    (
+        "messages",
+        "(session_id: string, options: { role: string?, limit: number? }?) \
+         -> ({ any }?, string?)",
+    ),
+    (
+        "inject",
+        "(session_id: string, role: string, content: string) -> (boolean?, string?)",
+    ),
+    // Job ids, not session ids, and the timeout is in SECONDS.
+    (
+        "collect_subagents",
+        "(job_ids: { string }, timeout_seconds: number?) -> ({ any }?, string?)",
+    ),
+    // A fork is a new session, so it answers with a handle like `create`. A
+    // bare number is `up_to`.
+    (
+        "fork",
+        "(session_id: string, options: ({ up_to: number? } | number)?) -> (any, string?)",
+    ),
+    ("cache_stats", "(session_id: string) -> (any, string?)"),
+    // Like `create`, the options table crosses whole; the string arm is the
+    // prompt on its own.
+    (
+        "complete",
+        "(session_id: string, options: { [string]: any } | string) -> (string?, string?)",
+    ),
+    // `type` picks which of the other two fields is read: `pattern` for
+    // `regex`, `name` for `lua`, neither for `none` and `json`.
+    (
+        "set_output_validation",
+        "(session_id: string, spec: { type: string, pattern: string?, name: string? } | string) \
+         -> (boolean?, string?)",
+    ),
+    // The number is the count of turns UNDONE. `count` defaults to 1 and
+    // clamps up to 1; a bare number is that same count.
+    (
+        "undo",
+        "(session_id: string, count: ({ count: number? } | number)?) -> (number?, string?)",
+    ),
+    ("can_undo", "(session_id: string) -> (boolean?, string?)"),
+    ("undo_depth", "(session_id: string) -> (number?, string?)"),
+    // Oldest to newest.
+    (
+        "undo_history",
+        "(session_id: string) -> ({ any }?, string?)",
+    ),
+    (
+        "review_list_hunks",
+        "(session_id: string) -> ({ any }?, string?)",
+    ),
+    (
+        "review_set_state",
+        "(session_id: string, hunk_id: string, state: string) -> (boolean?, string?)",
+    ),
+    // The spec deserializes into the daemon's `ReviewCommentRequest`, minus
+    // the `session_id` the bridge stamps, so these are its fields exactly.
+    (
+        "review_comment",
+        "(session_id: string, spec: { path: string, body: string, line_start: number, \
+         line_end: number?, root: string?, author: string? }) -> (any, string?)",
+    ),
+    (
+        "review_resolve_comment",
+        "(session_id: string, comment_id: string) -> (boolean?, string?)",
+    ),
 ];
+
+/// The names in [`SESSION_FNS`], in registration order.
+fn session_fn_names() -> Vec<&'static str> {
+    SESSION_FNS.iter().map(|(name, _)| *name).collect()
+}
+
+/// The declared type of one `cru.session` function.
+///
+/// A miss is a mistake in this file — a closure registered under a name
+/// [`SESSION_FNS`] does not list — and the key-set gate would refuse the
+/// table for it anyway, one step later.
+fn decl(name: &str) -> Result<&'static str, LuaError> {
+    SESSION_FNS
+        .iter()
+        .find(|(fn_name, _)| *fn_name == name)
+        .map(|(_, decl)| *decl)
+        .ok_or_else(|| {
+            LuaError::Runtime(format!("cru.session.{name} is not listed in SESSION_FNS"))
+        })
+}
 
 // ── Shared operation bodies ─────────────────────────────────────────────
 //
@@ -700,17 +821,55 @@ pub(crate) async fn review_resolve_comment_op(
 /// to replace stubs with real daemon-backed implementations.
 pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     let sessions = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.session", sessions.clone());
 
-    // A stub ignores its arguments, so one shape serves every name.
-    for name in SESSION_FN_NAMES {
-        let f = lua.create_async_function(|lua, _args: mlua::MultiValue| async move {
-            let err = lua.create_string("no daemon connected")?;
-            Ok((Value::Nil, Value::String(err)))
-        })?;
-        sessions.set(*name, f)?;
+    // A stub ignores its arguments, but it TAKES the same ones as the
+    // daemon-backed body, so `Ns` checks this path's declaration too — arity,
+    // primitives and optionality on both halves of the pair. A stub that took
+    // `MultiValue` would describe no single function and could only be
+    // declared, never checked, and this is the path the plugin VM actually
+    // loads.
+    macro_rules! stub_async {
+        ($name:expr, $args:ty) => {
+            ns.async_func($name, decl($name)?, |lua, _args: $args| async move {
+                let err = lua.create_string("no daemon connected")?;
+                Ok((Value::Nil, Value::String(err)))
+            })?;
+        };
     }
 
-    gate_module_keys("session", &sessions, SESSION_FN_NAMES)?;
+    stub_async!("create", Value);
+    stub_async!("get", String);
+    stub_async!("list", ());
+    stub_async!("configure_agent", (String, Value));
+    stub_async!("send_message", (String, String));
+    stub_async!("cancel", String);
+    stub_async!("pause", String);
+    stub_async!("resume", String);
+    stub_async!("end_session", String);
+    stub_async!("interaction_respond", (String, String, Value));
+    stub_async!("subscribe", String);
+    stub_async!("unsubscribe", String);
+    stub_async!("send_and_collect", (String, String, Value));
+    stub_async!("messages", (String, Value));
+    stub_async!("inject", (String, String, String));
+    stub_async!("collect_subagents", (Vec<String>, Value));
+    stub_async!("fork", (String, Value));
+    stub_async!("cache_stats", String);
+    stub_async!("complete", (String, Value));
+    stub_async!("set_output_validation", (String, Value));
+    stub_async!("undo", (String, Value));
+    stub_async!("can_undo", String);
+    stub_async!("undo_depth", String);
+    stub_async!("undo_history", String);
+    stub_async!("review_list_hunks", String);
+    stub_async!("review_set_state", (String, String, String));
+    stub_async!("review_comment", (String, Value));
+    stub_async!("review_resolve_comment", (String, String));
+
+    // Two-way: a name added to SESSION_FNS and forgotten above fails here,
+    // and so does a stub with no entry there.
+    gate_module_keys("session", &sessions, &session_fn_names())?;
     merge_session_fns(lua, &sessions)?;
     install_sessions_alias(lua)?;
 
@@ -790,7 +949,7 @@ fn create_params(args: &Value) -> Result<serde_json::Value, String> {
 /// registration order.
 fn merge_session_fns(lua: &Lua, table: &mlua::Table) -> Result<(), LuaError> {
     let target = get_or_create_module(lua, "session")?;
-    for name in SESSION_FN_NAMES {
+    for (name, _) in SESSION_FNS {
         target.set(*name, table.get::<mlua::Function>(*name)?)?;
     }
     Ok(())
@@ -829,252 +988,268 @@ fn register_sessions_inner(
     current: Option<CurrentSession>,
 ) -> Result<(), LuaError> {
     // Build a fresh table. The gate at the end compares its keys against
-    // SESSION_FN_NAMES, so a name with no daemon-backed body cannot hide
+    // SESSION_FNS, so a name with no daemon-backed body cannot hide
     // behind a stub.
     let sessions = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.session", sessions.clone());
 
     // create({ type = "chat", kilns = {"..."}, workspace = "...",
     //          agent_card = "..." })
     // Also supports legacy positional: create("chat")
     let a = Arc::clone(&api);
-    let create_fn = lua.create_async_function(move |lua, args: Value| {
+    ns.async_func("create", decl("create")?, move |lua, args: Value| {
         let a = Arc::clone(&a);
         let current = current.clone();
         async move { create_op(&lua, &a, args, current.as_ref()).await }
     })?;
-    sessions.set("create", create_fn)?;
 
-    // get(session_id)
     let a = Arc::clone(&api);
-    let get_fn = lua.create_async_function(move |lua, session_id: String| {
+    ns.async_func("get", decl("get")?, move |lua, session_id: String| {
         let a = Arc::clone(&a);
         async move { get_session_op(&lua, &a, &session_id).await }
     })?;
-    sessions.set("get", get_fn)?;
 
-    // list()
     let a = Arc::clone(&api);
-    let list_fn = lua.create_async_function(move |lua, (): ()| {
+    ns.async_func("list", decl("list")?, move |lua, (): ()| {
         let a = Arc::clone(&a);
         async move { list_op(&lua, &a).await }
     })?;
-    sessions.set("list", list_fn)?;
 
-    // configure_agent(session_id, agent_config_table)
     let a = Arc::clone(&api);
-    let configure_fn =
-        lua.create_async_function(move |lua, (session_id, config): (String, Value)| {
+    ns.async_func(
+        "configure_agent",
+        decl("configure_agent")?,
+        move |lua, (session_id, config): (String, Value)| {
             let a = Arc::clone(&a);
             async move { configure_agent_op(&lua, &a, &session_id, config).await }
-        })?;
-    sessions.set("configure_agent", configure_fn)?;
+        },
+    )?;
 
-    // send_message(session_id, content)
     let a = Arc::clone(&api);
-    let send_fn =
-        lua.create_async_function(move |lua, (session_id, content): (String, String)| {
+    ns.async_func(
+        "send_message",
+        decl("send_message")?,
+        move |lua, (session_id, content): (String, String)| {
             let a = Arc::clone(&a);
             async move { send_message_op(&lua, &a, &session_id, content).await }
-        })?;
-    sessions.set("send_message", send_fn)?;
+        },
+    )?;
 
-    // cancel(session_id)
     let a = Arc::clone(&api);
-    let cancel_fn = lua.create_async_function(move |lua, session_id: String| {
+    ns.async_func("cancel", decl("cancel")?, move |lua, session_id: String| {
         let a = Arc::clone(&a);
         async move { cancel_op(&lua, &a, &session_id).await }
     })?;
-    sessions.set("cancel", cancel_fn)?;
 
-    // pause(session_id)
     let a = Arc::clone(&api);
-    let pause_fn = lua.create_async_function(move |lua, session_id: String| {
+    ns.async_func("pause", decl("pause")?, move |lua, session_id: String| {
         let a = Arc::clone(&a);
         async move { pause_op(&lua, &a, &session_id).await }
     })?;
-    sessions.set("pause", pause_fn)?;
 
-    // resume(session_id)
     let a = Arc::clone(&api);
-    let resume_fn = lua.create_async_function(move |lua, session_id: String| {
+    ns.async_func("resume", decl("resume")?, move |lua, session_id: String| {
         let a = Arc::clone(&a);
         async move { resume_op(&lua, &a, &session_id).await }
     })?;
-    sessions.set("resume", resume_fn)?;
 
-    // end_session(session_id)
     let a = Arc::clone(&api);
-    let end_fn = lua.create_async_function(move |lua, session_id: String| {
-        let a = Arc::clone(&a);
-        async move { end_session_op(&lua, &a, &session_id).await }
-    })?;
-    sessions.set("end_session", end_fn)?;
+    ns.async_func(
+        "end_session",
+        decl("end_session")?,
+        move |lua, session_id: String| {
+            let a = Arc::clone(&a);
+            async move { end_session_op(&lua, &a, &session_id).await }
+        },
+    )?;
 
-    // interaction_respond(session_id, request_id, response_table)
     let a = Arc::clone(&api);
-    let respond_fn = lua.create_async_function(
+    ns.async_func(
+        "interaction_respond",
+        decl("interaction_respond")?,
         move |lua, (session_id, request_id, response): (String, String, Value)| {
             let a = Arc::clone(&a);
             async move { interaction_respond_op(&lua, &a, &session_id, request_id, response).await }
         },
     )?;
-    sessions.set("interaction_respond", respond_fn)?;
 
-    // subscribe(session_id)
     let a = Arc::clone(&api);
-    let subscribe_fn = lua.create_async_function(move |lua, session_id: String| {
-        let a = Arc::clone(&a);
-        async move { subscribe_op(&lua, &a, &session_id).await }
-    })?;
-    sessions.set("subscribe", subscribe_fn)?;
+    ns.async_func(
+        "subscribe",
+        decl("subscribe")?,
+        move |lua, session_id: String| {
+            let a = Arc::clone(&a);
+            async move { subscribe_op(&lua, &a, &session_id).await }
+        },
+    )?;
 
-    // unsubscribe(session_id)
     let a = Arc::clone(&api);
-    let unsubscribe_fn = lua.create_async_function(move |lua, session_id: String| {
-        let a = Arc::clone(&a);
-        async move { unsubscribe_op(&lua, &a, &session_id).await }
-    })?;
-    sessions.set("unsubscribe", unsubscribe_fn)?;
+    ns.async_func(
+        "unsubscribe",
+        decl("unsubscribe")?,
+        move |lua, session_id: String| {
+            let a = Arc::clone(&a);
+            async move { unsubscribe_op(&lua, &a, &session_id).await }
+        },
+    )?;
 
-    // send_and_collect(session_id, content, opts?)
     let a = Arc::clone(&api);
-    let collect_fn = lua.create_async_function(
+    ns.async_func(
+        "send_and_collect",
+        decl("send_and_collect")?,
         move |lua, (session_id, content, opts): (String, String, Value)| {
             let a = Arc::clone(&a);
             async move { send_and_collect_op(&lua, &a, &session_id, content, opts).await }
         },
     )?;
-    sessions.set("send_and_collect", collect_fn)?;
 
-    // messages(session_id, opts?)
     let a = Arc::clone(&api);
-    let messages_fn =
-        lua.create_async_function(move |lua, (session_id, opts): (String, Value)| {
+    ns.async_func(
+        "messages",
+        decl("messages")?,
+        move |lua, (session_id, opts): (String, Value)| {
             let a = Arc::clone(&a);
             async move { messages_op(&lua, &a, &session_id, opts).await }
-        })?;
-    sessions.set("messages", messages_fn)?;
+        },
+    )?;
 
-    // inject(session_id, role, content)
     let a = Arc::clone(&api);
-    let inject_fn = lua.create_async_function(
+    ns.async_func(
+        "inject",
+        decl("inject")?,
         move |lua, (session_id, role, content): (String, String, String)| {
             let a = Arc::clone(&a);
             async move { inject_op(&lua, &a, &session_id, role, content).await }
         },
     )?;
-    sessions.set("inject", inject_fn)?;
 
-    // collect_subagents(job_ids, timeout_secs?)
     let a = Arc::clone(&api);
-    let collect_fn =
-        lua.create_async_function(move |lua, (job_ids, timeout): (Vec<String>, Value)| {
+    ns.async_func(
+        "collect_subagents",
+        decl("collect_subagents")?,
+        move |lua, (job_ids, timeout): (Vec<String>, Value)| {
             let a = Arc::clone(&a);
             async move { collect_subagents_op(&lua, &a, job_ids, timeout).await }
-        })?;
-    sessions.set("collect_subagents", collect_fn)?;
+        },
+    )?;
 
-    // fork(session_id, opts?)
     let a = Arc::clone(&api);
-    let fork_fn = lua.create_async_function(move |lua, (session_id, opts): (String, Value)| {
-        let a = Arc::clone(&a);
-        async move { fork_op(&lua, &a, &session_id, opts).await }
-    })?;
-    sessions.set("fork", fork_fn)?;
+    ns.async_func(
+        "fork",
+        decl("fork")?,
+        move |lua, (session_id, opts): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move { fork_op(&lua, &a, &session_id, opts).await }
+        },
+    )?;
 
-    // cache_stats(session_id)
     let a = Arc::clone(&api);
-    let cache_stats_fn = lua.create_async_function(move |lua, session_id: String| {
-        let a = Arc::clone(&a);
-        async move { cache_stats_op(&lua, &a, &session_id).await }
-    })?;
-    sessions.set("cache_stats", cache_stats_fn)?;
+    ns.async_func(
+        "cache_stats",
+        decl("cache_stats")?,
+        move |lua, session_id: String| {
+            let a = Arc::clone(&a);
+            async move { cache_stats_op(&lua, &a, &session_id).await }
+        },
+    )?;
 
-    // complete(session_id, opts)
     let a = Arc::clone(&api);
-    let complete_fn = lua.create_async_function(move |lua, (sid, opts): (String, Value)| {
-        let a = Arc::clone(&a);
-        async move { complete_op(&lua, &a, &sid, opts).await }
-    })?;
-    sessions.set("complete", complete_fn)?;
+    ns.async_func(
+        "complete",
+        decl("complete")?,
+        move |lua, (sid, opts): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move { complete_op(&lua, &a, &sid, opts).await }
+        },
+    )?;
 
-    // set_output_validation(session_id, spec)
     let a = Arc::clone(&api);
-    let set_validation_fn =
-        lua.create_async_function(move |lua, (sid, spec): (String, Value)| {
+    ns.async_func(
+        "set_output_validation",
+        decl("set_output_validation")?,
+        move |lua, (sid, spec): (String, Value)| {
             let a = Arc::clone(&a);
             async move { set_output_validation_op(&lua, &a, &sid, spec).await }
-        })?;
-    sessions.set("set_output_validation", set_validation_fn)?;
+        },
+    )?;
 
-    // undo(session_id, count?)
     let a = Arc::clone(&api);
-    let undo_fn = lua.create_async_function(move |lua, (sid, opts): (String, Value)| {
-        let a = Arc::clone(&a);
-        async move { undo_op(&lua, &a, &sid, opts).await }
-    })?;
-    sessions.set("undo", undo_fn)?;
+    ns.async_func(
+        "undo",
+        decl("undo")?,
+        move |lua, (sid, opts): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move { undo_op(&lua, &a, &sid, opts).await }
+        },
+    )?;
 
-    // can_undo(session_id)
     let a = Arc::clone(&api);
-    let can_undo_fn = lua.create_async_function(move |lua, sid: String| {
+    ns.async_func("can_undo", decl("can_undo")?, move |lua, sid: String| {
         let a = Arc::clone(&a);
         async move { can_undo_op(&lua, &a, &sid).await }
     })?;
-    sessions.set("can_undo", can_undo_fn)?;
 
-    // undo_depth(session_id)
     let a = Arc::clone(&api);
-    let undo_depth_fn = lua.create_async_function(move |lua, sid: String| {
-        let a = Arc::clone(&a);
-        async move { undo_depth_op(&lua, &a, &sid).await }
-    })?;
-    sessions.set("undo_depth", undo_depth_fn)?;
+    ns.async_func(
+        "undo_depth",
+        decl("undo_depth")?,
+        move |lua, sid: String| {
+            let a = Arc::clone(&a);
+            async move { undo_depth_op(&lua, &a, &sid).await }
+        },
+    )?;
 
-    // undo_history(session_id)
     let a = Arc::clone(&api);
-    let undo_history_fn = lua.create_async_function(move |lua, sid: String| {
-        let a = Arc::clone(&a);
-        async move { undo_history_op(&lua, &a, &sid).await }
-    })?;
-    sessions.set("undo_history", undo_history_fn)?;
+    ns.async_func(
+        "undo_history",
+        decl("undo_history")?,
+        move |lua, sid: String| {
+            let a = Arc::clone(&a);
+            async move { undo_history_op(&lua, &a, &sid).await }
+        },
+    )?;
 
-    // review_list_hunks(session_id)
     let a = Arc::clone(&api);
-    let review_list_fn = lua.create_async_function(move |lua, sid: String| {
-        let a = Arc::clone(&a);
-        async move { review_list_hunks_op(&lua, &a, &sid).await }
-    })?;
-    sessions.set("review_list_hunks", review_list_fn)?;
+    ns.async_func(
+        "review_list_hunks",
+        decl("review_list_hunks")?,
+        move |lua, sid: String| {
+            let a = Arc::clone(&a);
+            async move { review_list_hunks_op(&lua, &a, &sid).await }
+        },
+    )?;
 
-    // review_set_state(session_id, hunk_id, state)
     let a = Arc::clone(&api);
-    let review_state_fn =
-        lua.create_async_function(move |lua, (sid, hunk, state): (String, String, String)| {
+    ns.async_func(
+        "review_set_state",
+        decl("review_set_state")?,
+        move |lua, (sid, hunk, state): (String, String, String)| {
             let a = Arc::clone(&a);
             async move { review_set_state_op(&lua, &a, &sid, hunk, state).await }
-        })?;
-    sessions.set("review_set_state", review_state_fn)?;
+        },
+    )?;
 
-    // review_comment(session_id, spec)
     let a = Arc::clone(&api);
-    let review_comment_fn =
-        lua.create_async_function(move |lua, (sid, spec): (String, Value)| {
+    ns.async_func(
+        "review_comment",
+        decl("review_comment")?,
+        move |lua, (sid, spec): (String, Value)| {
             let a = Arc::clone(&a);
             async move { review_comment_op(&lua, &a, &sid, spec).await }
-        })?;
-    sessions.set("review_comment", review_comment_fn)?;
+        },
+    )?;
 
-    // review_resolve_comment(session_id, comment_id)
     let a = Arc::clone(&api);
-    let review_resolve_fn =
-        lua.create_async_function(move |lua, (sid, comment_id): (String, String)| {
+    ns.async_func(
+        "review_resolve_comment",
+        decl("review_resolve_comment")?,
+        move |lua, (sid, comment_id): (String, String)| {
             let a = Arc::clone(&a);
             async move { review_resolve_comment_op(&lua, &a, &sid, comment_id).await }
-        })?;
-    sessions.set("review_resolve_comment", review_resolve_fn)?;
+        },
+    )?;
 
-    gate_module_keys("session", &sessions, SESSION_FN_NAMES)?;
+    gate_module_keys("session", &sessions, &session_fn_names())?;
 
     merge_session_fns(lua, &sessions)?;
     install_sessions_alias(lua)?;

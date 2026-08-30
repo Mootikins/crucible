@@ -51,7 +51,6 @@
 //! kiln A never sees a path from kiln B.
 
 use crate::error::LuaError;
-use crate::lua_util::register_module;
 use crucible_core::storage::{NoteStore, Scope, StorageError, StorageResult};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -70,6 +69,54 @@ pub type KilnPathResolver = Arc<dyn Fn(&str) -> Result<PathBuf, String> + Send +
 
 /// The message a VM with no resolver answers `cru.kiln.path` with.
 const NO_RESOLVER: &str = "cru.kiln.path is not available in this runtime";
+
+/// The Luau type of every `cru.kiln.*` function, in one place.
+///
+/// Each name is registered TWICE — once as a stub by
+/// [`register_vault_module`], once store-backed by
+/// [`register_vault_module_with_store_scoped`] — and both registrations read
+/// these, so the two bodies of one name cannot describe different functions.
+/// [`crate::host_registry::Ns`] holds each one to its closure's Rust types.
+mod decl {
+    /// The note record [`super::note_record_to_lua`] builds, field for field.
+    /// Nothing else reaches Lua from a `NoteRecord`.
+    pub const NOTE: &str = "{ path: string, title: string, content_hash: string, \
+                             tags: { string }, links_to: { string }, \
+                             properties: { [string]: any }, updated_at: string, \
+                             has_embedding: boolean }";
+
+    pub fn list() -> String {
+        format!("(limit: number?) -> {{ {NOTE} }}")
+    }
+
+    /// `nil` when the kiln holds no note at `path`, and when no store is
+    /// bound at all.
+    pub fn get() -> String {
+        format!("(path: string) -> {NOTE}?")
+    }
+
+    /// The element type is `any`, not a result record: the closure builds an
+    /// EMPTY table and never fills it, in both registrations. See the comment
+    /// in `register_vault_module_with_store_scoped`.
+    pub const SEARCH: &str =
+        "(query: string, options: { limit: number?, threshold: number? }?) -> { any }";
+
+    /// The three graph functions all answer with note paths.
+    pub const OUTLINKS: &str = "(path: string) -> { string }";
+    pub const BACKLINKS: &str = "(path: string) -> { string }";
+
+    /// `depth` counts hops and defaults to 1 — direct links only.
+    pub const NEIGHBORS: &str = "(path: string, depth: number?) -> { string }";
+
+    /// The name is REQUIRED and the relative part is not: `kiln_path` raises
+    /// without a name and joins the relative part when it gets one. Declaring
+    /// it `(name: string?)` rejected `cru.kiln.path(kiln, ".crucible/proposals")`,
+    /// which is what the `reflection` plugin really calls.
+    ///
+    /// It RAISES rather than answering nil — both when no resolver is bound
+    /// and when a name does not resolve — so the return carries no `?`.
+    pub const PATH: &str = "(name: string, relative: string?) -> string";
+}
 
 /// Join `relative` onto `root`, refusing anything that is not a plain
 /// relative component.
@@ -117,13 +164,15 @@ fn kiln_path(
 pub fn register_kiln_path_resolver(lua: &Lua, resolver: KilnPathResolver) -> Result<(), LuaError> {
     let cru: Table = lua.globals().get("cru")?;
     let vault: Table = cru.get("kiln")?;
-    let path_fn =
-        lua.create_function(move |_lua, (name, relative): (String, Option<String>)| {
-            kiln_path(&resolver, &name, relative.as_deref())
-                .map(|p| p.to_string_lossy().into_owned())
-                .map_err(mlua::Error::external)
-        })?;
-    vault.set("path", path_fn)?;
+    let mut kiln = crate::host_registry::Ns::over(lua, "cru.kiln", vault);
+    kiln.func(
+        "path",
+        decl::PATH,
+        move |_lua, (name, relative): (String, Option<String>)| {
+            let path = kiln_path(&resolver, &name, relative.as_deref())?;
+            Ok(path.to_string_lossy().into_owned())
+        },
+    )?;
     Ok(())
 }
 
@@ -132,58 +181,73 @@ pub fn register_kiln_path_resolver(lua: &Lua, resolver: KilnPathResolver) -> Res
 /// This creates the `cru.kiln` namespace with stub functions.
 /// Use `register_vault_module_with_store` to add database-backed functionality.
 pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
-    let vault = lua.create_table()?;
+    let mut kiln = crate::host_registry::Ns::new(lua, "cru.kiln")?;
 
-    let list_stub = lua.create_async_function(|lua, _limit: Option<usize>| async move {
-        let table = lua.create_table()?;
-        Ok(Value::Table(table))
-    })?;
-    vault.set("list", list_stub)?;
-
-    let get_stub = lua.create_async_function(|_, _path: String| async move { Ok(Value::Nil) })?;
-    vault.set("get", get_stub)?;
-
-    let search_stub =
-        lua.create_async_function(|lua, (_query, _opts): (String, Option<Table>)| async move {
+    kiln.async_func(
+        "list",
+        &decl::list(),
+        |lua, _limit: Option<usize>| async move {
             let table = lua.create_table()?;
             Ok(Value::Table(table))
-        })?;
-    vault.set("search", search_stub)?;
+        },
+    )?;
+
+    kiln.async_func("get", &decl::get(), |_, _path: String| async move {
+        Ok(Value::Nil)
+    })?;
+
+    kiln.async_func(
+        "search",
+        decl::SEARCH,
+        |lua, (_query, _opts): (String, Option<Table>)| async move {
+            let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
 
     // The graph stubs are async like their store-backed replacements, not
     // because they await anything but so a script written against the stub
     // keeps working after `register_vault_module_with_store_scoped` swaps
     // them: a sync-to-async swap would turn every call site into a
     // "yield from outside a coroutine" error the moment a kiln opened.
-    let outlinks_stub = lua.create_async_function(|lua, _path: String| async move {
-        let table = lua.create_table()?;
-        Ok(Value::Table(table))
-    })?;
-    vault.set("outlinks", outlinks_stub)?;
-
-    let backlinks_stub = lua.create_async_function(|lua, _path: String| async move {
-        let table = lua.create_table()?;
-        Ok(Value::Table(table))
-    })?;
-    vault.set("backlinks", backlinks_stub)?;
-
-    let neighbors_stub =
-        lua.create_async_function(|lua, (_path, _depth): (String, Option<usize>)| async move {
+    kiln.async_func(
+        "outlinks",
+        decl::OUTLINKS,
+        |lua, _path: String| async move {
             let table = lua.create_table()?;
             Ok(Value::Table(table))
-        })?;
-    vault.set("neighbors", neighbors_stub)?;
+        },
+    )?;
+
+    kiln.async_func(
+        "backlinks",
+        decl::BACKLINKS,
+        |lua, _path: String| async move {
+            let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
+
+    kiln.async_func(
+        "neighbors",
+        decl::NEIGHBORS,
+        |lua, (_path, _depth): (String, Option<usize>)| async move {
+            let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
 
     // `cru.kiln.path` exists on every VM so a plugin sees one answer, not a
     // nil call, when the host cannot resolve names.
-    let path_stub = lua.create_function(|_lua, (_name, _relative): (String, Option<String>)| {
-        Err::<String, _>(mlua::Error::external(LuaError::Runtime(
-            NO_RESOLVER.to_string(),
-        )))
-    })?;
-    vault.set("path", path_stub)?;
+    kiln.func(
+        "path",
+        decl::PATH,
+        |_lua, (_name, _relative): (String, Option<String>)| {
+            Err::<String, _>(LuaError::Runtime(NO_RESOLVER.to_string()).into())
+        },
+    )?;
 
-    register_module(lua, "kiln", vault)?;
+    kiln.publish()?;
 
     Ok(())
 }
@@ -219,10 +283,11 @@ pub fn register_vault_module_with_store_scoped(
     let globals = lua.globals();
     let cru: Table = globals.get("cru")?;
     let vault: Table = cru.get("kiln")?;
+    let mut kiln = crate::host_registry::Ns::over(lua, "cru.kiln", vault);
 
     let s = Arc::clone(&store);
     let auth = authority.clone();
-    let list_fn = lua.create_async_function(move |lua, limit: Option<usize>| {
+    kiln.async_func("list", &decl::list(), move |lua, limit: Option<usize>| {
         let s = Arc::clone(&s);
         let auth = auth.clone();
         async move {
@@ -246,11 +311,10 @@ pub fn register_vault_module_with_store_scoped(
             }
         }
     })?;
-    vault.set("list", list_fn)?;
 
     let s = Arc::clone(&store);
     let auth = authority.clone();
-    let get_fn = lua.create_async_function(move |lua, path: String| {
+    kiln.async_func("get", &decl::get(), move |lua, path: String| {
         let s = Arc::clone(&s);
         let auth = auth.clone();
         async move {
@@ -261,16 +325,16 @@ pub fn register_vault_module_with_store_scoped(
             }
         }
     })?;
-    vault.set("get", get_fn)?;
 
     // `search` is intentionally not implemented here — the bare stub from
     // `register_vault_module` (which returns an empty table) is the
     // production-shipping behaviour. Implementing semantic search would
-    // require an embedding provider, which lives daemon-side.
+    // require an embedding provider, which lives daemon-side. `decl::SEARCH`
+    // says `{ any }` for that reason: no result record is ever built.
 
     let s = Arc::clone(&store);
     let auth = authority.clone();
-    let outlinks_fn = lua.create_async_function(move |lua, path: String| {
+    kiln.async_func("outlinks", decl::OUTLINKS, move |lua, path: String| {
         let s = Arc::clone(&s);
         let auth = auth.clone();
         async move {
@@ -280,11 +344,10 @@ pub fn register_vault_module_with_store_scoped(
             string_vec_to_lua_table(&lua, &paths)
         }
     })?;
-    vault.set("outlinks", outlinks_fn)?;
 
     let s = Arc::clone(&store);
     let auth = authority.clone();
-    let backlinks_fn = lua.create_async_function(move |lua, path: String| {
+    kiln.async_func("backlinks", decl::BACKLINKS, move |lua, path: String| {
         let s = Arc::clone(&s);
         let auth = auth.clone();
         async move {
@@ -294,10 +357,11 @@ pub fn register_vault_module_with_store_scoped(
             string_vec_to_lua_table(&lua, &paths)
         }
     })?;
-    vault.set("backlinks", backlinks_fn)?;
 
-    let neighbors_fn =
-        lua.create_async_function(move |lua, (path, depth): (String, Option<usize>)| {
+    kiln.async_func(
+        "neighbors",
+        decl::NEIGHBORS,
+        move |lua, (path, depth): (String, Option<usize>)| {
             let s = Arc::clone(&store);
             let auth = authority.clone();
             async move {
@@ -306,8 +370,8 @@ pub fn register_vault_module_with_store_scoped(
                     .map_err(kiln_error)?;
                 string_vec_to_lua_table(&lua, &paths)
             }
-        })?;
-    vault.set("neighbors", neighbors_fn)?;
+        },
+    )?;
 
     Ok(())
 }

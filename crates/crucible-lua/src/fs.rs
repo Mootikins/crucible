@@ -94,26 +94,36 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
             .map_err(mlua::Error::external)
     })?;
 
-    fs.func("exists", "(path: string) -> boolean", |_lua, path: String| {
-        Ok(checked(&path)?.exists())
-    })?;
+    fs.func(
+        "exists",
+        "(path: string) -> boolean",
+        |_lua, path: String| Ok(checked(&path)?.exists()),
+    )?;
 
-    fs.func("is_file", "(path: string) -> boolean", |_lua, path: String| {
-        Ok(checked(&path)?.is_file())
-    })?;
+    fs.func(
+        "is_file",
+        "(path: string) -> boolean",
+        |_lua, path: String| Ok(checked(&path)?.is_file()),
+    )?;
 
-    fs.func("is_dir", "(path: string) -> boolean", |_lua, path: String| {
-        Ok(checked(&path)?.is_dir())
-    })?;
+    fs.func(
+        "is_dir",
+        "(path: string) -> boolean",
+        |_lua, path: String| Ok(checked(&path)?.is_dir()),
+    )?;
 
     // Recursive delete, under a name that says so. For one file, stdlib
     // `os.remove` is the tool.
-    fs.func("remove_all", "(path: string) -> ()", |_lua, path: String| {
-        let target = checked(&path)?;
-        fs::remove_dir_all(target)
-            .lua_runtime()
-            .map_err(mlua::Error::external)
-    })?;
+    fs.func(
+        "remove_all",
+        "(path: string) -> ()",
+        |_lua, path: String| {
+            let target = checked(&path)?;
+            fs::remove_dir_all(target)
+                .lua_runtime()
+                .map_err(mlua::Error::external)
+        },
+    )?;
 
     // The data-loss guard. Always raises: the caller expected either a
     // recursive delete or a single-file delete, and silently guessing (or
@@ -126,22 +136,26 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
         )))
     })?;
 
-    fs.func("list", "(path: string) -> { string }", |lua, path: String| {
-        let target = checked(&path)?;
-        let entries = fs::read_dir(target)
-            .lua_runtime()
-            .map_err(mlua::Error::external)?;
-        let table = lua.create_table()?;
-        let mut i = 0;
-        for entry in entries {
-            let entry = entry.lua_runtime().map_err(mlua::Error::external)?;
-            if let Some(name) = entry.file_name().to_str() {
-                i += 1;
-                table.set(i, name.to_string())?; // Lua arrays are 1-indexed
+    fs.func(
+        "list",
+        "(path: string) -> { string }",
+        |lua, path: String| {
+            let target = checked(&path)?;
+            let entries = fs::read_dir(target)
+                .lua_runtime()
+                .map_err(mlua::Error::external)?;
+            let table = lua.create_table()?;
+            let mut i = 0;
+            for entry in entries {
+                let entry = entry.lua_runtime().map_err(mlua::Error::external)?;
+                if let Some(name) = entry.file_name().to_str() {
+                    i += 1;
+                    table.set(i, name.to_string())?; // Lua arrays are 1-indexed
+                }
             }
-        }
-        Ok(table)
-    })?;
+            Ok(table)
+        },
+    )?;
 
     // Creates dest's parent, as it always has.
     fs.func(

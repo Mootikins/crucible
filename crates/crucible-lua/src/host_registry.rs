@@ -111,15 +111,18 @@ luau_value!(f32, LuaType::Number);
 luau_value!(f64, LuaType::Number);
 luau_value!(String, LuaType::String);
 luau_value!(mlua::LuaString, LuaType::String);
-luau_value!(mlua::Function, LuaType::Function(Box::new(Signature {
-    params: vec![Param {
-        name: crate::signature::VARIADIC.to_string(),
-        ty: LuaType::Any,
-        description: None,
-        optional: false,
-    }],
-    returns: vec![LuaType::Variadic(Box::new(LuaType::Any))],
-})));
+luau_value!(
+    mlua::Function,
+    LuaType::Function(Box::new(Signature {
+        params: vec![Param {
+            name: crate::signature::VARIADIC.to_string(),
+            ty: LuaType::Any,
+            description: None,
+            optional: false,
+        }],
+        returns: vec![LuaType::Variadic(Box::new(LuaType::Any))],
+    }))
+);
 
 /// A table with no declared shape. A declaration may narrow it.
 impl LuauValue for Table {
@@ -274,12 +277,7 @@ impl<'lua> Ns<'lua> {
     }
 
     /// Register an async function and declare its type.
-    pub fn async_func<F, A, R, FR>(
-        &mut self,
-        name: &str,
-        decl: &str,
-        f: F,
-    ) -> Result<(), LuaError>
+    pub fn async_func<F, A, R, FR>(&mut self, name: &str, decl: &str, f: F) -> Result<(), LuaError>
     where
         F: Fn(Lua, A) -> FR + MaybeSend + 'static,
         A: FromLuaMulti + LuauArgs + 'static,
@@ -287,8 +285,7 @@ impl<'lua> Ns<'lua> {
         FR: Future<Output = mlua::Result<R>> + MaybeSend + 'static,
     {
         let signature = self.check::<A, R>(name, decl)?;
-        self.table
-            .set(name, self.lua.create_async_function(f)?)?;
+        self.table.set(name, self.lua.create_async_function(f)?)?;
         self.signatures
             .record(&format!("{}.{name}", self.path), signature);
         Ok(())
@@ -301,9 +298,8 @@ impl<'lua> Ns<'lua> {
     /// Unchecked by construction: there is no Rust type to check against. Use
     /// it only where a closure genuinely cannot carry the declaration.
     pub fn declare_only(&mut self, name: &str, decl: &str) -> Result<(), LuaError> {
-        let ty = LuaType::parse(decl).map_err(|e| {
-            LuaError::Runtime(format!("{}.{name}: {e}", self.path))
-        })?;
+        let ty = LuaType::parse(decl)
+            .map_err(|e| LuaError::Runtime(format!("{}.{name}: {e}", self.path)))?;
         self.signatures.record(&format!("{}.{name}", self.path), ty);
         Ok(())
     }
@@ -393,9 +389,7 @@ fn refines(declared: &LuaType, rust: &LuaType) -> bool {
     match (declared, rust) {
         // Rust could not say more than "a value" or "a table".
         (_, LuaType::Any) => true,
-        (_, LuaType::Map(key, value))
-            if **key == LuaType::String && **value == LuaType::Any =>
-        {
+        (_, LuaType::Map(key, value)) if **key == LuaType::String && **value == LuaType::Any => {
             // `Table`: any shape, and `nil` is not one of them.
             !matches!(declared, LuaType::Optional(_))
         }
@@ -431,7 +425,9 @@ mod tests {
         let answer: bool = lua.load("return cru.probe.exists('x')").eval().unwrap();
         assert!(answer);
         assert_eq!(
-            HostSignatures::of(&lua).get("cru.probe.exists").map(|t| t.to_luau()),
+            HostSignatures::of(&lua)
+                .get("cru.probe.exists")
+                .map(|t| t.to_luau()),
             Some("(path: string) -> boolean".to_string())
         );
     }
@@ -444,7 +440,9 @@ mod tests {
         let lua = vm();
         let mut ns = Ns::new(&lua, "cru.probe").expect("ns");
         let err = ns
-            .func("mkdir", "(path: string) -> boolean", |_, _path: String| Ok(()))
+            .func("mkdir", "(path: string) -> boolean", |_, _path: String| {
+                Ok(())
+            })
             .expect_err("a wrong return must be refused");
         assert!(err.to_string().contains("returns"), "{err}");
     }
@@ -485,7 +483,9 @@ mod tests {
         let lua = vm();
         let mut ns = Ns::new(&lua, "cru.probe").expect("ns");
         let err = ns
-            .func("count", "(name: number) -> number", |_, _name: String| Ok(1u32))
+            .func("count", "(name: number) -> number", |_, _name: String| {
+                Ok(1u32)
+            })
             .expect_err("a swapped primitive must be refused");
         assert!(err.to_string().contains("name"), "{err}");
     }
@@ -501,9 +501,11 @@ mod tests {
             |lua, _command: String| lua.create_table(),
         )
         .expect("a table may be narrowed");
-        ns.func("which", "(command: string) -> string?", |_, _command: String| {
-            Ok(Value::Nil)
-        })
+        ns.func(
+            "which",
+            "(command: string) -> string?",
+            |_, _command: String| Ok(Value::Nil),
+        )
         .expect("a value may be narrowed");
     }
 
@@ -557,7 +559,9 @@ mod tests {
     fn a_wrong_parameter_name_still_registers() {
         let lua = vm();
         let mut ns = Ns::new(&lua, "cru.probe").expect("ns");
-        ns.func("sleep", "(milliseconds: number) -> ()", |_, _secs: f64| Ok(()))
-            .expect("nothing here can see that the name is wrong");
+        ns.func("sleep", "(milliseconds: number) -> ()", |_, _secs: f64| {
+            Ok(())
+        })
+        .expect("nothing here can see that the name is wrong");
     }
 }
