@@ -56,6 +56,7 @@ pub mod handler_budget;
 mod handlers;
 mod hooks;
 pub mod host_api;
+pub mod host_registry;
 mod http;
 pub mod isolation;
 mod json_query;
@@ -188,6 +189,7 @@ pub use handlers::{
     TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use host_api::render_declarations;
+pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};
 pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
 pub use luau_compat::register_stdlib_compat;
 pub use manifest::{

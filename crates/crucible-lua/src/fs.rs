@@ -78,54 +78,55 @@ fn ensure_parent(path: &Path) -> Result<(), LuaError> {
 }
 
 /// Register the fs module.
+///
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`].
 pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
-    let fs_table = lua.create_table()?;
+    let mut fs = crate::host_registry::Ns::new(lua, "cru.fs")?;
 
-    // fs.mkdir(path) -> nil — creates parents, like `mkdir -p`.
-    let mkdir_fn = lua.create_function(|_lua, path: String| {
+    // Creates parents, like `mkdir -p`. Answers with nothing and raises on
+    // failure.
+    fs.func("mkdir", "(path: string) -> ()", |_lua, path: String| {
         let target = checked(&path)?;
         fs::create_dir_all(target)
             .lua_runtime()
             .map_err(mlua::Error::external)
     })?;
-    fs_table.set("mkdir", mkdir_fn)?;
 
-    // fs.exists(path) -> bool
-    let exists_fn = lua.create_function(|_lua, path: String| Ok(checked(&path)?.exists()))?;
-    fs_table.set("exists", exists_fn)?;
+    fs.func("exists", "(path: string) -> boolean", |_lua, path: String| {
+        Ok(checked(&path)?.exists())
+    })?;
 
-    // fs.is_file(path) -> bool
-    let is_file_fn = lua.create_function(|_lua, path: String| Ok(checked(&path)?.is_file()))?;
-    fs_table.set("is_file", is_file_fn)?;
+    fs.func("is_file", "(path: string) -> boolean", |_lua, path: String| {
+        Ok(checked(&path)?.is_file())
+    })?;
 
-    // fs.is_dir(path) -> bool
-    let is_dir_fn = lua.create_function(|_lua, path: String| Ok(checked(&path)?.is_dir()))?;
-    fs_table.set("is_dir", is_dir_fn)?;
+    fs.func("is_dir", "(path: string) -> boolean", |_lua, path: String| {
+        Ok(checked(&path)?.is_dir())
+    })?;
 
-    // fs.remove_all(path) -> nil — recursive delete, under a name that says
-    // so. For one file, stdlib `os.remove` is the tool.
-    let remove_all_fn = lua.create_function(|_lua, path: String| {
+    // Recursive delete, under a name that says so. For one file, stdlib
+    // `os.remove` is the tool.
+    fs.func("remove_all", "(path: string) -> ()", |_lua, path: String| {
         let target = checked(&path)?;
         fs::remove_dir_all(target)
             .lua_runtime()
             .map_err(mlua::Error::external)
     })?;
-    fs_table.set("remove_all", remove_all_fn)?;
 
-    // fs.remove — the data-loss guard. Always raises: the caller expected
-    // either a recursive delete or a single-file delete, and silently
-    // guessing (or handing back a nil) risks deleting the wrong amount.
-    let remove_fn = lua.create_function(|_lua, _path: String| -> mlua::Result<()> {
-        Err(mlua::Error::external(LuaError::Runtime(
+    // The data-loss guard. Always raises: the caller expected either a
+    // recursive delete or a single-file delete, and silently guessing (or
+    // handing back a nil) risks deleting the wrong amount.
+    fs.func("remove", "(path: string) -> ()", |_lua, _path: String| {
+        Err::<(), _>(mlua::Error::external(LuaError::Runtime(
             "cru.fs.remove is removed: use cru.fs.remove_all (recursive) \
              or os.remove (single file)"
                 .to_string(),
         )))
     })?;
-    fs_table.set("remove", remove_fn)?;
 
-    // fs.list(path) -> table of strings
-    let list_fn = lua.create_function(|lua, path: String| {
+    fs.func("list", "(path: string) -> { string }", |lua, path: String| {
         let target = checked(&path)?;
         let entries = fs::read_dir(target)
             .lua_runtime()
@@ -141,22 +142,23 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
         }
         Ok(table)
     })?;
-    fs_table.set("list", list_fn)?;
 
-    // fs.copy(src, dest) -> nil — creates dest's parent, as it always has.
-    let copy_fn = lua.create_function(|_lua, (src, dest): (String, String)| {
-        let from = checked(&src)?;
-        let to = checked(&dest)?;
-        ensure_parent(to).map_err(mlua::Error::external)?;
-        fs::copy(from, to)
-            .lua_runtime()
-            .map_err(mlua::Error::external)?;
-        Ok(())
-    })?;
-    fs_table.set("copy", copy_fn)?;
+    // Creates dest's parent, as it always has.
+    fs.func(
+        "copy",
+        "(src: string, dest: string) -> ()",
+        |_lua, (src, dest): (String, String)| {
+            let from = checked(&src)?;
+            let to = checked(&dest)?;
+            ensure_parent(to).map_err(mlua::Error::external)?;
+            fs::copy(from, to)
+                .lua_runtime()
+                .map_err(mlua::Error::external)?;
+            Ok(())
+        },
+    )?;
 
-    crate::lua_util::register_module(lua, "fs", fs_table)?;
-
+    fs.publish()?;
     Ok(())
 }
 

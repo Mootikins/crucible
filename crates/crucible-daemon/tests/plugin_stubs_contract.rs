@@ -404,10 +404,19 @@ async fn every_function_is_signed_or_listed() {
             .expect("walk the plugin VM")
             .into_iter()
             .collect();
-    let signed: std::collections::BTreeSet<&str> = crucible_lua::host_api::declared_signatures()
-        .keys()
-        .copied()
-        .collect();
+    // Signed either way: beside its registration (`host_registry::Ns`, the
+    // form that is checked against the Rust types) or in the static table
+    // that has not moved yet.
+    let mut signed: std::collections::BTreeSet<String> =
+        crucible_lua::host_api::declared_signatures()
+            .keys()
+            .map(|path| path.to_string())
+            .collect();
+    signed.extend(
+        crucible_lua::HostSignatures::of(&loader.executor().lua().clone())
+            .paths()
+            .into_iter(),
+    );
     let listed: std::collections::BTreeSet<&str> =
         crucible_lua::host_api::UNSIGNED.iter().copied().collect();
 

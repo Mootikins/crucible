@@ -66,7 +66,11 @@ impl StubGenerator {
         // reads `cru.lua`; `luau-analyze` reads this.
         fs::write(
             output_dir.join("cru.d.luau"),
-            crate::host_api::render_declarations(&paths, &values),
+            crate::host_api::render_declarations_with(
+                &paths,
+                &values,
+                &crate::host_registry::HostSignatures::of(lua),
+            ),
         )?;
         let docs_json = serde_json::to_string_pretty(&docs)
             .map_err(|e| LuaError::Serialization(e.to_string()))?;

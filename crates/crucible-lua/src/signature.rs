@@ -305,14 +305,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_union(&mut self) -> Result<LuaType, TypeError> {
-        let mut options = vec![self.parse_postfix()?];
+        let mut options = vec![self.parse_intersection()?];
         while self.eat("|") {
-            options.push(self.parse_postfix()?);
+            options.push(self.parse_intersection()?);
         }
         if options.len() == 1 {
             return Ok(options.remove(0));
         }
         Ok(LuaType::Union(options))
+    }
+
+    fn parse_intersection(&mut self) -> Result<LuaType, TypeError> {
+        let mut parts = vec![self.parse_postfix()?];
+        while self.eat("&") {
+            parts.push(self.parse_postfix()?);
+        }
+        if parts.len() == 1 {
+            return Ok(parts.remove(0));
+        }
+        Ok(LuaType::Intersection(parts))
     }
 
     fn parse_postfix(&mut self) -> Result<LuaType, TypeError> {
@@ -332,6 +343,13 @@ impl<'a> Parser<'a> {
         self.skip_space();
         if self.eat("{") {
             return self.parse_record();
+        }
+        if self.rest.starts_with("...") {
+            self.rest = &self.rest[3..];
+            return Ok(LuaType::Variadic(Box::new(self.parse_postfix()?)));
+        }
+        if self.eat("(") {
+            return self.parse_parenthesised();
         }
 
         let name = self.parse_name()?;
@@ -373,7 +391,135 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// `(` has two meanings: a function's parameter list, and grouping. Only
+    /// the `->` after the closing paren tells them apart, so both are parsed
+    /// here.
+    fn parse_parenthesised(&mut self) -> Result<LuaType, TypeError> {
+        let mut params = Vec::new();
+        let mut grouped: Option<LuaType> = None;
+
+        if !self.eat(")") {
+            loop {
+                self.skip_space();
+                // `name: type`, or a bare type when this turns out to be a
+                // grouping rather than a parameter list.
+                let checkpoint = self.rest;
+                let name = self.parse_name().ok();
+                let named = name.is_some() && {
+                    let optional = self.eat("?");
+                    if self.eat(":") {
+                        true
+                    } else {
+                        self.rest = checkpoint;
+                        let _ = optional;
+                        false
+                    }
+                };
+
+                if named {
+                    let name = name.expect("a named parameter has a name");
+                    let ty = self.parse_union()?;
+                    params.push(Param {
+                        name,
+                        ty,
+                        description: None,
+                        optional: false,
+                    });
+                } else {
+                    self.rest = checkpoint;
+                    let ty = self.parse_union()?;
+                    if params.is_empty() {
+                        grouped = Some(ty.clone());
+                    }
+                    params.push(Param {
+                        name: format!("arg{}", params.len() + 1),
+                        ty,
+                        description: None,
+                        optional: false,
+                    });
+                }
+
+                if self.eat(",") {
+                    continue;
+                }
+                if self.eat(")") {
+                    break;
+                }
+                return Err(self.fail("expected ',' or ')' in a parameter list"));
+            }
+        }
+
+        if !self.eat("->") {
+            // A grouping: `(T)`. Anything else with no arrow is a mistake.
+            return match grouped {
+                Some(ty) if params.len() == 1 => Ok(ty),
+                _ => Err(self.fail("expected '->' after a parameter list")),
+            };
+        }
+
+        let returns = self.parse_returns()?;
+        // A trailing `?` on a parameter belongs to its type, and
+        // `LuaType::Optional` already carries it.
+        for param in &mut params {
+            param.optional = matches!(param.ty, LuaType::Optional(_));
+        }
+        Ok(LuaType::Function(Box::new(Signature { params, returns })))
+    }
+
+    /// What follows `->`: `()`, one type, or `(A, B)`.
+    fn parse_returns(&mut self) -> Result<Vec<LuaType>, TypeError> {
+        self.skip_space();
+        if self.rest.starts_with("()") {
+            self.rest = &self.rest[2..];
+            return Ok(Vec::new());
+        }
+        if self.eat("(") {
+            let mut returns = vec![self.parse_union()?];
+            while self.eat(",") {
+                returns.push(self.parse_union()?);
+            }
+            if !self.eat(")") {
+                return Err(self.fail("expected ')' to close a return list"));
+            }
+            return Ok(returns);
+        }
+        Ok(vec![self.parse_union()?])
+    }
+
     fn parse_record(&mut self) -> Result<LuaType, TypeError> {
+        // `{ [K]: V }` — an index signature, which is how Luau writes a map.
+        self.skip_space();
+        if self.eat("[") {
+            let key = self.parse_union()?;
+            if !self.eat("]") {
+                return Err(self.fail("expected ']' to close an index signature"));
+            }
+            if !self.eat(":") {
+                return Err(self.fail("expected ':' after an index signature"));
+            }
+            let value = self.parse_union()?;
+            if !self.eat("}") {
+                return Err(self.fail("expected '}' to close a table type"));
+            }
+            return Ok(LuaType::Map(Box::new(key), Box::new(value)));
+        }
+
+        // `{ T }` — an array. Told apart from a record by what follows the
+        // first token: a record's is `:`.
+        let checkpoint = self.rest;
+        if !self.rest.starts_with('}') {
+            let element = self.parse_union();
+            let is_array = element.is_ok() && {
+                self.skip_space();
+                self.rest.starts_with('}')
+            };
+            if is_array {
+                self.rest = &self.rest[1..];
+                return Ok(LuaType::Array(Box::new(element.expect("checked"))));
+            }
+            self.rest = checkpoint;
+        }
+
         let mut fields = Vec::new();
         loop {
             self.skip_space();
