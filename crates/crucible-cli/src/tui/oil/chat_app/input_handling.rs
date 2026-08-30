@@ -35,6 +35,14 @@ impl OilChatApp {
             return Action::Continue;
         }
 
+        let ctrl = key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL);
+        if key.code == KeyCode::Char('t') && ctrl {
+            self.toggle_thinking_with_toast();
+            return Action::Continue;
+        }
+
         if self.popup.show {
             return self.handle_popup_key(key);
         }
@@ -43,15 +51,6 @@ impl OilChatApp {
             return self.handle_ctrl_c();
         }
         self.message_queue.last_ctrl_c = None;
-
-        // Handle Ctrl+T to toggle thinking display (works anytime, not just during streaming)
-        let ctrl = key
-            .modifiers
-            .contains(crossterm::event::KeyModifiers::CONTROL);
-        if key.code == KeyCode::Char('t') && ctrl {
-            self.toggle_thinking_with_toast();
-            return Action::Continue;
-        }
 
         if key.code == KeyCode::BackTab {
             return self.cycle_mode();
@@ -209,6 +208,12 @@ impl OilChatApp {
             return Action::Continue;
         };
 
+        if self.popup.kind == AutocompleteKind::Model
+            && matches!(item.kind.as_deref(), Some("info") | Some("error"))
+        {
+            return Action::Continue;
+        }
+
         let label = item.label.clone();
         let kind = self.popup.kind.clone();
         self.insert_autocomplete_selection(&label);
@@ -307,5 +312,23 @@ mod tests {
             "important draft",
             "the draft must survive the cancel so it can be sent afterwards"
         );
+    }
+
+    #[test]
+    fn ctrl_t_toggles_thinking_without_inserting_text_while_popup_is_open() {
+        let mut app = OilChatApp::default();
+        app.popup.show = true;
+        app.popup.kind = AutocompleteKind::Command;
+        app.set_input("draft");
+        let show_thinking_before = app.show_thinking;
+
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+
+        assert!(matches!(action, Action::Continue));
+        assert_ne!(
+            app.show_thinking, show_thinking_before,
+            "Ctrl+T must reach the global shortcut"
+        );
+        assert_eq!(app.input.content(), "draft", "Ctrl+T must not insert `t`");
     }
 }

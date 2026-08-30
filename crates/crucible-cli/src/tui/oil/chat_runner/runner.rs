@@ -556,6 +556,7 @@ impl OilChatRunner {
     fn convert_event(&mut self, ct_event: CtEvent) -> io::Result<Event> {
         match ct_event {
             CtEvent::Key(key) => Ok(Event::Key(key)),
+            CtEvent::Paste(text) => Ok(Event::Paste(text)),
             CtEvent::Resize(w, h) => {
                 self.terminal.handle_resize()?;
                 Ok(Event::Resize {

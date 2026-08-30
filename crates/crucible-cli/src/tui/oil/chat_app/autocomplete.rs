@@ -791,4 +791,25 @@ mod tests {
         app.insert_autocomplete_selection("gpt-4o");
         assert_eq!(app.input_content(), ":model gpt-4o");
     }
+
+    #[test]
+    fn model_picker_status_rows_cannot_be_selected() {
+        let mut app = OilChatApp::default();
+        app.model_list_state = ModelListState::Loading;
+        app.set_input(":model ");
+        app.check_autocomplete_trigger();
+
+        let action = app.select_popup_item();
+
+        assert!(matches!(action, Action::Continue));
+        assert!(app.popup.show, "loading indicator should remain visible");
+        assert_eq!(app.input_content(), ":model ");
+
+        app.model_list_state = ModelListState::Failed;
+        let action = app.select_popup_item();
+
+        assert!(matches!(action, Action::Continue));
+        assert!(app.popup.show, "failure indicator should remain visible");
+        assert_eq!(app.input_content(), ":model ");
+    }
 }

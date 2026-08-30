@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 #[derive(Debug, Clone)]
 pub enum Event {
     Key(KeyEvent),
+    Paste(String),
     Resize { width: u16, height: u16 },
     Tick,
 }
@@ -229,5 +230,6 @@ impl InputBuffer {
     pub fn insert_str(&mut self, s: &str) {
         self.content.insert_str(self.cursor, s);
         self.cursor += s.len();
+        self.history_index = None;
     }
 }

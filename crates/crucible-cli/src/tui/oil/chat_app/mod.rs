@@ -216,6 +216,11 @@ impl OilChatApp {
     pub fn update(&mut self, event: Event) -> Action<ChatAppMsg> {
         match event {
             Event::Key(key) => self.handle_key(key),
+            Event::Paste(text) => {
+                self.input.insert_str(&text);
+                self.check_autocomplete_trigger()
+                    .unwrap_or(Action::Continue)
+            }
             Event::Tick => {
                 // Shell modal tick polls for child process output.
                 // Also runs in render_frame() via expire_toasts(), but kept

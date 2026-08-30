@@ -5,8 +5,8 @@ use crate::render::CursorInfo;
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveToColumn, MoveUp, SetCursorStyle, Show},
     event::{
-        self, Event as CtEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, EnableBracketedPaste, Event as CtEvent,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute, terminal,
 };
@@ -19,6 +19,7 @@ pub struct Terminal<W: Write = Stdout> {
     planner: FramePlanner,
     output: OutputBuffer<W>,
     keyboard_enhanced: bool,
+    bracketed_paste: bool,
     last_cursor: Option<CursorInfo>,
     cursor_style: SetCursorStyle,
     last_snapshot: Option<FrameSnapshot>,
@@ -39,6 +40,7 @@ impl Terminal<Stdout> {
             planner: FramePlanner::new(width, height),
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
+            bracketed_paste: false,
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
             last_snapshot: None,
@@ -60,6 +62,12 @@ impl Terminal<Stdout> {
         }
 
         let w = self.output.writer();
+        if execute!(w, EnableBracketedPaste).is_ok() {
+            self.bracketed_paste = true;
+            tracing::debug!("bracketed paste enabled");
+        }
+
+        let w = self.output.writer();
         execute!(w, Hide)?;
         let w = self.output.writer();
         let _ = execute!(w, self.cursor_style);
@@ -77,6 +85,10 @@ impl Terminal<Stdout> {
         execute!(w, Show)?;
         if kb_enhanced {
             let _ = execute!(w, PopKeyboardEnhancementFlags);
+        }
+        if self.bracketed_paste {
+            let w = self.output.writer();
+            let _ = execute!(w, DisableBracketedPaste);
         }
         terminal::disable_raw_mode()?;
         let w = self.output.writer();
@@ -133,6 +145,7 @@ impl Terminal<Vec<u8>> {
             planner: FramePlanner::new(width, height),
             output: OutputBuffer::with_writer(Vec::new(), width as usize, height as usize),
             keyboard_enhanced: false,
+            bracketed_paste: false,
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
             last_snapshot: None,
