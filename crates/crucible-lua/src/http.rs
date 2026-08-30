@@ -37,18 +37,41 @@
 //! - `ok` - Whether status is 2xx (boolean)
 //! - `error` - Error message if request failed (string, only on error)
 
+use crate::error::LuaResult;
 use crucible_core::http::{HttpExecutor, HttpMethod, HttpRequest};
 use mlua::{Lua, Result, Table};
 use std::sync::Arc;
 
+/// The options every request function reads (`build_request`). `timeout` is
+/// in SECONDS — the closure feeds `Duration::from_secs`.
+const REQUEST_OPTIONS: &str =
+    "{ headers: table<string, string>?, body: string?, timeout: number? }";
+
+/// The table every request function answers with (`execute_request`).
+///
+/// `error` appears only on the failure path, which is why it is optional; the
+/// other four keys are set on both paths, so a caller reads `ok` rather than
+/// testing for `error`.
+const RESPONSE: &str = "{ status: number, ok: boolean, headers: table<string, string>, \
+                         body: string, error: string? }";
+
 /// Register HTTP module with Lua.
 ///
-/// Provides `http.get`, `http.post`, `http.put`, `http.delete`, and `http.request` functions.
-pub fn register_http_module(lua: &Lua) -> Result<()> {
-    let http = lua.create_table()?;
+/// Provides `http.get`, `http.post`, `http.put`, `http.delete`, `http.patch`
+/// and `http.request`.
+///
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`].
+pub fn register_http_module(lua: &Lua) -> LuaResult<()> {
+    let mut http = crate::host_registry::Ns::new(lua, "cru.http")?;
     let executor = Arc::new(HttpExecutor::new());
 
     // http.get / post / put / delete / patch (url, opts?)
+    //
+    // The method is fixed by the name, so none of these five read
+    // `opts.method`; `http.request` is the one that does.
+    let declaration = format!("(url: string, options: {REQUEST_OPTIONS}?) -> {RESPONSE}");
     for (name, method) in [
         ("get", HttpMethod::Get),
         ("post", HttpMethod::Post),
@@ -57,24 +80,34 @@ pub fn register_http_module(lua: &Lua) -> Result<()> {
         ("patch", HttpMethod::Patch),
     ] {
         let exec = executor.clone();
-        http.set(
+        http.async_func(
             name,
-            lua.create_async_function(move |lua, args: (String, Option<Table>)| {
+            &declaration,
+            move |lua, args: (String, Option<Table>)| {
                 let exec = exec.clone();
                 async move {
                     let (url, opts) = args;
                     let req = build_request(method, url, opts)?;
                     execute_request(&lua, exec, req).await
                 }
-            })?,
+            },
         )?;
     }
 
     // http.request(opts) - full control
+    //
+    // `url` is REQUIRED: the closure reads it with `?`, so a table without one
+    // raises. `method` defaults to GET, and an unrecognised name also reads as
+    // GET (`parse_method`).
     let exec = executor.clone();
-    http.set(
+    http.async_func(
         "request",
-        lua.create_async_function(move |lua, opts: Table| {
+        &format!(
+            "(options: {{ url: string, method: string?, \
+             headers: table<string, string>?, body: string?, timeout: number? }}) \
+             -> {RESPONSE}"
+        ),
+        move |lua, opts: Table| {
             let exec = exec.clone();
             async move {
                 let url: String = opts.get("url")?;
@@ -83,10 +116,10 @@ pub fn register_http_module(lua: &Lua) -> Result<()> {
                 let req = build_request(method, url, Some(opts))?;
                 execute_request(&lua, exec, req).await
             }
-        })?,
+        },
     )?;
 
-    crate::lua_util::register_module(lua, "http", http)?;
+    http.publish()?;
     Ok(())
 }
 

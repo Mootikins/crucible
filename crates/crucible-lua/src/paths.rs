@@ -89,62 +89,74 @@ fn plugin_state_dir(home: &Path, plugin: &str) -> Result<PathBuf, LuaError> {
     Ok(dir)
 }
 
-/// Register the paths module with a Lua state
+/// Register the paths module with a Lua state.
+///
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`].
 pub fn register_paths_module(lua: &Lua, context: PathsContext) -> Result<(), LuaError> {
-    let paths = lua.create_table()?;
+    let mut paths = crate::host_registry::Ns::new(lua, "cru.paths")?;
 
-    // paths.session() -> string or nil
+    // `-> string`, never `string?`: an unconfigured session RAISES. A declared
+    // `string?` would make every caller nil-check what cannot be nil.
     let session_path = context.session.clone();
-    let session_fn = lua.create_function(move |lua, ()| match &session_path {
-        Some(path) => Ok(Value::String(
-            lua.create_string(path.to_string_lossy().as_ref())?,
-        )),
-        None => Err(mlua::Error::external(LuaError::Runtime(
-            "Session path not configured".to_string(),
-        ))),
-    })?;
-    paths.set("session", session_fn)?;
+    paths.func(
+        "session",
+        "() -> string",
+        move |lua, ()| match &session_path {
+            Some(path) => Ok(Value::String(
+                lua.create_string(path.to_string_lossy().as_ref())?,
+            )),
+            None => Err(mlua::Error::external(LuaError::Runtime(
+                "Session path not configured".to_string(),
+            ))),
+        },
+    )?;
 
-    // paths.workspace() -> string or nil
+    // Raises when no workspace is configured, exactly as `session` does.
     let workspace_path = context.workspace.clone();
-    let workspace_fn = lua.create_function(move |lua, ()| match &workspace_path {
-        Some(path) => Ok(Value::String(
-            lua.create_string(path.to_string_lossy().as_ref())?,
-        )),
-        None => Err(mlua::Error::external(LuaError::Runtime(
-            "Workspace path not configured".to_string(),
-        ))),
-    })?;
-    paths.set("workspace", workspace_fn)?;
+    paths.func(
+        "workspace",
+        "() -> string",
+        move |lua, ()| match &workspace_path {
+            Some(path) => Ok(Value::String(
+                lua.create_string(path.to_string_lossy().as_ref())?,
+            )),
+            None => Err(mlua::Error::external(LuaError::Runtime(
+                "Workspace path not configured".to_string(),
+            ))),
+        },
+    )?;
 
-    // paths.state(plugin) -> string
-    //
     // Not derived from `context`: the daemon loads every plugin into one Lua
     // state, so a state directory baked in at registration would be the same
     // directory for all of them.
-    let state_fn = lua.create_function(|lua, plugin: String| {
-        let dir = plugin_state_dir(&crucible_core::config::crucible_home(), &plugin)
-            .map_err(mlua::Error::external)?;
-        Ok(Value::String(
-            lua.create_string(dir.to_string_lossy().as_ref())?,
-        ))
-    })?;
-    paths.set("state", state_fn)?;
-
-    // paths.config() -> string
     //
+    // The plugin names ITSELF, so the name is untrusted: `plugin_state_dir`
+    // raises for anything that is not one path component.
+    paths.func(
+        "state",
+        "(plugin: string) -> string",
+        |lua, plugin: String| {
+            // `?` converts a `LuaError` on its own (`error.rs`).
+            let dir = plugin_state_dir(&crucible_core::config::crucible_home(), &plugin)?;
+            Ok(Value::String(
+                lua.create_string(dir.to_string_lossy().as_ref())?,
+            ))
+        },
+    )?;
+
     // Where `init.lua` lives. Not derived from `context`: the config root is
     // the same directory for every VM, and the loader computes it from the
     // one function this calls.
-    let config_fn = lua.create_function(|lua, ()| {
+    paths.func("config", "() -> string", |lua, ()| {
         let dir = crate::config::default_config_dir();
         Ok(Value::String(
             lua.create_string(dir.to_string_lossy().as_ref())?,
         ))
     })?;
-    paths.set("config", config_fn)?;
 
-    crate::lua_util::register_module(lua, "paths", paths)?;
+    paths.publish()?;
 
     Ok(())
 }
@@ -253,11 +265,24 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_kiln_error() {
+    /// An unconfigured path RAISES. That is why `cru.paths.session` is
+    /// declared `-> string` and not `-> string?`: there is no nil answer to
+    /// nil-check for.
+    ///
+    /// This asked `cru.paths.kiln()` until 2026-08-30 — a function this
+    /// module has never registered. It passed because indexing nil raises,
+    /// so it proved nothing about paths at all.
+    fn an_unconfigured_path_raises() {
         let ctx = PathsContext::new(); // No paths configured
         let lua = create_lua_with_paths(ctx);
 
-        let result: Result<String, _> = lua.load("return cru.paths.kiln()").eval();
-        assert!(result.is_err());
+        for call in ["cru.paths.session()", "cru.paths.workspace()"] {
+            let result: Result<String, _> = lua.load(format!("return {call}")).eval();
+            let err = result.expect_err("an unconfigured path must raise");
+            assert!(
+                err.to_string().contains("not configured"),
+                "{call} must say what is missing: {err}"
+            );
+        }
     }
 }

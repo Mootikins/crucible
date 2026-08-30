@@ -116,12 +116,6 @@ fn log_declaration() -> LuaType {
     )
 }
 
-/// `cru.shell.exec` and `cru.shell.spawn` both answer with this.
-fn shell_result() -> LuaType {
-    LuaType::parse("{ success: boolean, exit_code: number, stdout: string, stderr: string }")
-        .expect("the shell result type is well formed")
-}
-
 /// The declared surface. Ordered by path so the generated file is stable.
 const DECLARED: &[Declared] = &[
     Declared {
@@ -185,14 +179,6 @@ const DECLARED: &[Declared] = &[
         bound_at_load: false,
     },
     Declared {
-        // Never nil: `paths.rs` raises when no workspace is configured, so a
-        // declared `string?` would make every caller nil-check what cannot be
-        // nil.
-        path: "cru.paths.workspace",
-        ty: || function(Vec::new(), vec![string()]),
-        bound_at_load: false,
-    },
-    Declared {
         // Bound to the loading plugin at load, so a walk of an idle VM never
         // sees it. The host declares it because it is the API regardless.
         path: "cru.plugin.publish",
@@ -216,84 +202,6 @@ const DECLARED: &[Declared] = &[
             )
         },
         bound_at_load: true,
-    },
-    Declared {
-        // One options TABLE, not a string: `session`, `key` and `text` are
-        // required, `plugin`, `level` and `progress` are not
-        // (`plugin_status.rs`). Declaring `(status: string)` rejected every
-        // real call — `oci` makes six of them.
-        path: "cru.plugin.set_status",
-        ty: || {
-            function(
-                vec![param(
-                    "status",
-                    LuaType::parse(
-                        "{ session: string, key: string, text: string, plugin: string?, \
-                         level: string?, progress: any? }",
-                    )
-                    .expect("well formed"),
-                )],
-                Vec::new(),
-            )
-        },
-        bound_at_load: false,
-    },
-    Declared {
-        path: "cru.shell.exec",
-        ty: || {
-            function(
-                vec![
-                    param("command", string()),
-                    // REQUIRED: the closure takes `Vec<String>`, and mlua
-                    // refuses to build one from nil — `cru.shell.exec("git")`
-                    // raises "error converting Lua nil to Vec<String>".
-                    param("args", LuaType::Array(Box::new(string()))),
-                    optional(
-                        "options",
-                        LuaType::parse(
-                            "{ cwd: string?, env: table<string, string>?, stdin: string? }",
-                        )
-                        .expect("well formed"),
-                    ),
-                ],
-                vec![shell_result()],
-            )
-        },
-        bound_at_load: false,
-    },
-    Declared {
-        path: "cru.shell.which",
-        ty: || {
-            function(
-                vec![param("command", string())],
-                vec![LuaType::Optional(Box::new(string()))],
-            )
-        },
-        bound_at_load: false,
-    },
-    Declared {
-        path: "cru.timer.clock",
-        ty: || function(Vec::new(), vec![LuaType::Number]),
-        bound_at_load: false,
-    },
-    Declared {
-        // SECONDS, not milliseconds: `timer.rs` takes an `f64` into
-        // `Duration::from_secs_f64`. The parameter name is the whole
-        // declaration here — both spellings typecheck, so a wrong name sends
-        // an author who wanted one second to sleep for a thousand.
-        path: "cru.timer.sleep",
-        ty: || function(vec![param("seconds", LuaType::Number)], Vec::new()),
-        bound_at_load: false,
-    },
-    Declared {
-        path: "cru.timer.spawn",
-        ty: || {
-            function(
-                vec![param("task", LuaType::Function(Box::default()))],
-                Vec::new(),
-            )
-        },
-        bound_at_load: false,
     },
 ];
 
@@ -332,12 +240,6 @@ pub const UNSIGNED: &[&str] = &[
     "cru.health.ok",
     "cru.health.start",
     "cru.health.warn",
-    "cru.http.delete",
-    "cru.http.get",
-    "cru.http.patch",
-    "cru.http.post",
-    "cru.http.put",
-    "cru.http.request",
     "cru.inspect",
     "cru.isolation.require",
     "cru.json.array",
@@ -386,10 +288,6 @@ pub const UNSIGNED: &[&str] = &[
     "cru.oq.toml",
     "cru.oq.toon",
     "cru.oq.yaml",
-    "cru.paths.config",
-    "cru.paths.session",
-    "cru.paths.state",
-    "cru.plugin.clear_status",
     "cru.plugin.config.get",
     "cru.ratelimit.new",
     "cru.retry",
@@ -428,7 +326,6 @@ pub const UNSIGNED: &[&str] = &[
     "cru.session.undo_depth",
     "cru.session.undo_history",
     "cru.session.unsubscribe",
-    "cru.shell.spawn",
     "cru.storage.delete",
     "cru.storage.find",
     "cru.storage.get",
@@ -436,7 +333,6 @@ pub const UNSIGNED: &[&str] = &[
     "cru.storage.set",
     "cru.tbl_deep_extend",
     "cru.tbl_get",
-    "cru.timer.timeout",
     "cru.tools.batch",
     "cru.tools.call",
     "cru.tools.get_active",
@@ -589,7 +485,11 @@ export type LuaFile = {
 /// The shape is a nested `declare` of the `cru` table, so `luau-analyze` reads
 /// `cru.shell.exec("git", { "status" })` as a call with a known result type.
 pub fn render_declarations(paths: &[String], values: &[crate::stubs::ValueMember]) -> String {
-    render_declarations_with(paths, values, &crate::host_registry::HostSignatures::default())
+    render_declarations_with(
+        paths,
+        values,
+        &crate::host_registry::HostSignatures::default(),
+    )
 }
 
 /// [`render_declarations`], reading the signatures a VM's own registrations
@@ -774,11 +674,25 @@ impl Node {
 mod tests {
     use super::*;
 
+    /// A VM with the modules whose signatures live beside their closures, and
+    /// the signatures those registrations recorded.
+    ///
+    /// The tests below read a REGISTERED signature rather than a table entry,
+    /// because that is now where a migrated function's type comes from.
+    fn registered_vm() -> crate::host_registry::HostSignatures {
+        let lua = mlua::Lua::new();
+        crate::fs::register_fs_module(&lua).expect("cru.fs");
+        crate::shell::register_shell_module(&lua, crate::shell::PluginShellPolicy::default())
+            .expect("cru.shell");
+        crate::host_registry::HostSignatures::of(&lua)
+    }
+
     #[test]
     fn a_signed_function_declares_its_real_types() {
-        let rendered = render_declarations(
+        let rendered = render_declarations_with(
             &["cru.shell.exec".to_string(), "cru.shell.which".to_string()],
             &[],
+            &registered_vm(),
         );
         assert!(
             rendered.contains("exec: (command: string, args: { string },"),
@@ -803,9 +717,10 @@ mod tests {
     /// the surface is actually described.
     #[test]
     fn the_header_counts_the_signed_functions() {
-        let rendered = render_declarations(
+        let rendered = render_declarations_with(
             &["cru.shell.exec".to_string(), "cru.nothing.here".to_string()],
             &[],
+            &registered_vm(),
         );
         assert!(
             rendered.contains("1 of 2 functions carry a declared signature"),
@@ -815,9 +730,10 @@ mod tests {
 
     #[test]
     fn the_declaration_nests_the_namespaces() {
-        let rendered = render_declarations(
+        let rendered = render_declarations_with(
             &["cru.fs.exists".to_string(), "cru.json.encode".to_string()],
             &[],
+            &registered_vm(),
         );
         assert!(rendered.starts_with("--!strict\n"));
         assert!(rendered.contains("declare cru: {"));

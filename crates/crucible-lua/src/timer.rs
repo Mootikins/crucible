@@ -14,33 +14,34 @@
 //! end)
 //! ```
 
-use mlua::{Function, Lua, Result, Value};
+use crate::error::LuaError;
+use mlua::{Function, Lua, Value};
 use std::time::Duration;
 
 /// Register the timer module under `cru.timer`.
 ///
-/// Functions:
-/// - `timer.sleep(seconds)` — async sleep, yields the coroutine
-/// - `timer.timeout(seconds, fn)` — run fn with a timeout, returns (ok, result_or_err)
-/// - `timer.clock()` — monotonic wall-clock time in seconds (f64)
-pub fn register_timer_module(lua: &Lua) -> Result<()> {
-    let timer = lua.create_table()?;
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`].
+pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
+    let mut timer = crate::host_registry::Ns::new(lua, "cru.timer")?;
 
     // Capture a reference instant for monotonic clock
     let epoch = std::time::Instant::now();
 
-    // timer.clock() — monotonic wall-clock time in seconds (high resolution)
     // Unlike os.clock() which returns CPU time, this returns wall time that
     // advances even when the Lua VM is yielded at async points.
-    timer.set(
-        "clock",
-        lua.create_function(move |_lua, ()| Ok(epoch.elapsed().as_secs_f64()))?,
-    )?;
+    timer.func("clock", "() -> number", move |_lua, ()| {
+        Ok(epoch.elapsed().as_secs_f64())
+    })?;
 
-    // timer.sleep(seconds) — async, yields until duration elapses
-    timer.set(
+    // SECONDS, not milliseconds: the closure feeds `Duration::from_secs_f64`.
+    // Nothing here can check the NAME, so it is the half a reader must trust —
+    // and the half that was wrong before.
+    timer.async_func(
         "sleep",
-        lua.create_async_function(|_lua, secs: f64| async move {
+        "(seconds: number) -> ()",
+        |_lua, secs: f64| async move {
             if !secs.is_finite() || secs < 0.0 {
                 return Err(mlua::Error::runtime(
                     "sleep duration must be a finite non-negative number",
@@ -48,14 +49,16 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
             }
             tokio::time::sleep(Duration::from_secs_f64(secs)).await;
             Ok(())
-        })?,
+        },
     )?;
 
-    // timer.timeout(seconds, fn) — run fn with timeout
-    // Returns (true, result) on success, (false, "timeout") on timeout, (false, err) on error
-    timer.set(
+    // Run `body` with a deadline. Answers `(true, result)` on success,
+    // `(false, "timeout")` on the deadline, and `(false, message)` when the
+    // body raised — so a caller reads the first value to know which.
+    timer.async_func(
         "timeout",
-        lua.create_async_function(|lua, (secs, func): (f64, Function)| async move {
+        "(seconds: number, body: () -> any) -> (boolean, any)",
+        |lua, (secs, func): (f64, Function)| async move {
             if !secs.is_finite() || secs < 0.0 {
                 return Err(mlua::Error::runtime(
                     "timeout duration must be a finite non-negative number",
@@ -67,7 +70,7 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
                 Ok(Err(e)) => Ok((false, Value::String(lua.create_string(e.to_string())?))),
                 Err(_) => Ok((false, Value::String(lua.create_string("timeout")?))),
             }
-        })?,
+        },
     )?;
 
     // timer.spawn(fn) — spawn an async Lua function as an independent task.
@@ -75,20 +78,20 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
     // This is needed when event handlers (called via pcall) need to perform
     // async operations that require yielding (e.g. subscribe, next_event).
     // Requires the `send` feature (mlua/send) since tokio::spawn needs Send.
+    //
+    // The task is called with no arguments and anything it answers is
+    // dropped, so it is declared `() -> ()`.
     #[cfg(feature = "send")]
-    {
-        let spawn_fn = lua.create_function(|_lua, func: Function| {
-            tokio::spawn(async move {
-                if let Err(e) = func.call_async::<()>(()).await {
-                    tracing::warn!("Spawned Lua task error: {}", e);
-                }
-            });
-            Ok(())
-        })?;
-        timer.set("spawn", spawn_fn)?;
-    }
+    timer.func("spawn", "(task: () -> ()) -> ()", |_lua, func: Function| {
+        tokio::spawn(async move {
+            if let Err(e) = func.call_async::<()>(()).await {
+                tracing::warn!("Spawned Lua task error: {}", e);
+            }
+        });
+        Ok(())
+    })?;
 
-    crate::lua_util::register_module(lua, "timer", timer)?;
+    timer.publish()?;
 
     Ok(())
 }

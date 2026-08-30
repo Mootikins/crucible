@@ -159,7 +159,17 @@ impl LuaType {
                 .map(LuaType::to_luau)
                 .collect::<Vec<_>>()
                 .join(" | "),
-            LuaType::Optional(inner) => format!("{}?", inner.to_luau()),
+            // A function or an intersection needs parentheses before the
+            // `?`, or Luau reads the `?` as part of the RETURN type:
+            // `(stream: string, line: string) -> ()?` is an optional empty
+            // return, not an optional callback. `cru.shell.spawn`'s
+            // `options.on_line` is the first declaration to need it.
+            LuaType::Optional(inner) => match **inner {
+                LuaType::Function(_) | LuaType::Intersection(_) | LuaType::Union(_) => {
+                    format!("({})?", inner.to_luau())
+                }
+                _ => format!("{}?", inner.to_luau()),
+            },
             LuaType::Function(signature) => signature.to_luau(),
             LuaType::Variadic(inner) => format!("...{}", inner.to_luau()),
             LuaType::Intersection(parts) => parts

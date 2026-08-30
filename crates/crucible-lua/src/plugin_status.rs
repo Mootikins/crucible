@@ -9,7 +9,7 @@
 //! keyed so the chrome owner renders any plugin's slots generically, without
 //! knowing what plugins exist.
 
-use mlua::{Lua, Result as LuaResult, Table};
+use mlua::{Lua, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -115,57 +115,80 @@ impl StatusRegistry {
 ///   level   = "info",       -- info | warn | error
 /// }
 /// ```
-pub fn register_status_module(lua: &Lua, registry: StatusRegistry) -> LuaResult<()> {
-    let set_registry = registry.clone();
-    let set_status = lua.create_function(move |_, opts: Table| {
-        let session: String = opts.get("session").map_err(|_| {
-            mlua::Error::runtime("cru.plugin.set_status: `session` is required (use session.id)")
-        })?;
-        let key: String = opts
-            .get("key")
-            .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `key` is required"))?;
-        let text: String = opts
-            .get("text")
-            .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `text` is required"))?;
-        let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
-        let level: String = opts.get("level").unwrap_or_else(|_| "info".to_string());
-        // `progress = true` is indeterminate; a number is a fraction. Out of
-        // range is clamped rather than refused: a plugin miscounting steps
-        // should show a full bar, not fail the operation it is reporting on.
-        let progress = match opts.get::<mlua::Value>("progress") {
-            Ok(mlua::Value::Boolean(true)) => Some(Progress::Indeterminate),
-            Ok(mlua::Value::Number(n)) => Some(Progress::Fraction(n.clamp(0.0, 1.0))),
-            Ok(mlua::Value::Integer(n)) => Some(Progress::Fraction((n as f64).clamp(0.0, 1.0))),
-            _ => None,
-        };
-
-        set_registry.set(
-            &session,
-            &key,
-            StatusEntry {
-                plugin,
-                text,
-                level,
-                progress,
-            },
-        );
-        Ok(())
-    })?;
+pub fn register_status_module(
+    lua: &Lua,
+    registry: StatusRegistry,
+) -> Result<(), crate::error::LuaError> {
+    // `cru.plugin` already carries members other modules registered, so the
+    // namespace opens OVER the existing table and never publishes a fresh one.
     let plugin = crate::lua_util::get_or_create_module(lua, "plugin")?;
-    plugin.set("set_status", set_status)?;
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.plugin", plugin);
 
+    // One options TABLE, not a string: `session`, `key` and `text` are
+    // required — the closure raises a named error for each — while `plugin`,
+    // `level` and `progress` have defaults. `progress` is `true` for
+    // indeterminate or a fraction, so it is neither boolean nor number alone.
+    let set_registry = registry.clone();
+    ns.func(
+        "set_status",
+        "(status: { session: string, key: string, text: string, plugin: string?, \
+         level: string?, progress: (boolean | number)? }) -> ()",
+        move |_, opts: Table| {
+            let session: String = opts.get("session").map_err(|_| {
+                mlua::Error::runtime(
+                    "cru.plugin.set_status: `session` is required (use session.id)",
+                )
+            })?;
+            let key: String = opts
+                .get("key")
+                .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `key` is required"))?;
+            let text: String = opts
+                .get("text")
+                .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `text` is required"))?;
+            let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
+            let level: String = opts.get("level").unwrap_or_else(|_| "info".to_string());
+            // `progress = true` is indeterminate; a number is a fraction. Out of
+            // range is clamped rather than refused: a plugin miscounting steps
+            // should show a full bar, not fail the operation it is reporting on.
+            let progress = match opts.get::<mlua::Value>("progress") {
+                Ok(mlua::Value::Boolean(true)) => Some(Progress::Indeterminate),
+                Ok(mlua::Value::Number(n)) => Some(Progress::Fraction(n.clamp(0.0, 1.0))),
+                Ok(mlua::Value::Integer(n)) => Some(Progress::Fraction((n as f64).clamp(0.0, 1.0))),
+                _ => None,
+            };
+
+            set_registry.set(
+                &session,
+                &key,
+                StatusEntry {
+                    plugin,
+                    text,
+                    level,
+                    progress,
+                },
+            );
+            Ok(())
+        },
+    )?;
+
+    // `session` and `key` name the slot; nothing else is read. Setting empty
+    // text is *not* the same as clearing, which is why this exists.
     let clear_registry = registry;
-    let clear_status = lua.create_function(move |_, opts: Table| {
-        let session: String = opts
-            .get("session")
-            .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `session` is required"))?;
-        let key: String = opts
-            .get("key")
-            .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `key` is required"))?;
-        clear_registry.clear(&session, &key);
-        Ok(())
-    })?;
-    plugin.set("clear_status", clear_status)?;
+    ns.func(
+        "clear_status",
+        "(slot: { session: string, key: string }) -> ()",
+        move |_, opts: Table| {
+            let session: String = opts.get("session").map_err(|_| {
+                mlua::Error::runtime("cru.plugin.clear_status: `session` is required")
+            })?;
+            let key: String = opts
+                .get("key")
+                .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `key` is required"))?;
+            clear_registry.clear(&session, &key);
+            Ok(())
+        },
+    )?;
+
     Ok(())
 }
 

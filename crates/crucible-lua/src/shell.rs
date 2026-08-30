@@ -362,16 +362,34 @@ pub async fn exec_command(
     })
 }
 
-/// Register the shell module with a Lua state
+/// The table both `exec` and `spawn` answer with.
+///
+/// Read off the closures below, which build exactly these four keys.
+const SHELL_RESULT: &str =
+    "{ success: boolean, exit_code: number, stdout: string, stderr: string }";
+
+/// Register the shell module with a Lua state.
+///
+/// Every function declares its Luau type beside its closure, and `Ns` holds
+/// the declaration to the Rust types at registration. See
+/// [`crate::host_registry`].
 pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(), LuaError> {
-    let shell = lua.create_table()?;
+    let mut shell = crate::host_registry::Ns::new(lua, "cru.shell")?;
 
     // Wrap policy in Arc for sharing with async closures
     let policy = Arc::new(policy);
 
-    // shell.exec(cmd, args, options) -> result table
+    // `args` is REQUIRED, not optional: the closure takes `Vec<String>`, and
+    // mlua refuses to build one from nil — `cru.shell.exec("git")` raises
+    // "error converting Lua nil to Vec<String>".
     let policy_clone = policy.clone();
-    let exec_fn = lua.create_async_function(
+    shell.async_func(
+        "exec",
+        &format!(
+            "(command: string, args: {{ string }}, \
+             options: {{ cwd: string?, env: table<string, string>?, stdin: string? }}?) \
+             -> {SHELL_RESULT}"
+        ),
         move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
             let policy = policy_clone.clone();
             async move {
@@ -403,8 +421,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     stdin_data.as_deref(),
                     &policy,
                 )
-                .await
-                .map_err(mlua::Error::external)?;
+                .await?;
 
                 // Build result table
                 let result_table = lua.create_table()?;
@@ -417,15 +434,22 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
             }
         },
     )?;
-    shell.set("exec", exec_fn)?;
 
-    // shell.spawn(cmd, args, options) -> result table
-    //
     // Same result shape as `exec`, plus `options.on_line(stream, line)` called
     // as output arrives. A plugin building an image can report progress
     // instead of going silent for minutes.
+    //
+    // `stdin` is NOT read here — `spawn_command` takes no stdin — so the
+    // options shape is `exec`'s with `stdin` replaced by `on_line`.
     let policy_clone = policy.clone();
-    let spawn_fn = lua.create_async_function(
+    shell.async_func(
+        "spawn",
+        &format!(
+            "(command: string, args: {{ string }}, \
+             options: {{ cwd: string?, env: table<string, string>?, \
+             on_line: ((stream: string, line: string) -> ())? }}?) \
+             -> {SHELL_RESULT}"
+        ),
         move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
             let policy = policy_clone.clone();
             async move {
@@ -477,8 +501,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                         &policy,
                         &mut sink,
                     )
-                    .await
-                    .map_err(mlua::Error::external)?
+                    .await?
                 };
                 if let Some(e) = callback_error {
                     return Err(mlua::Error::runtime(e));
@@ -493,36 +516,39 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
             }
         },
     )?;
-    shell.set("spawn", spawn_fn)?;
 
-    // shell.which(cmd) -> path or nil (simple PATH lookup)
-    let which_fn = lua.create_function(|lua, cmd: String| {
-        if let Ok(path) = std::env::var("PATH") {
-            let sep = if cfg!(windows) { ';' } else { ':' };
-            for dir in path.split(sep) {
-                let full_path = PathBuf::from(dir).join(&cmd);
-                if full_path.exists() {
-                    return Ok(Value::String(
-                        lua.create_string(full_path.to_string_lossy().as_ref())?,
-                    ));
-                }
-                // Check with .exe on Windows
-                #[cfg(windows)]
-                {
-                    let exe_path = full_path.with_extension("exe");
-                    if exe_path.exists() {
+    // A simple PATH lookup. Answers nil rather than raising when the command
+    // is not on PATH, and when `$PATH` is unset at all.
+    shell.func(
+        "which",
+        "(command: string) -> string?",
+        |lua, cmd: String| {
+            if let Ok(path) = std::env::var("PATH") {
+                let sep = if cfg!(windows) { ';' } else { ':' };
+                for dir in path.split(sep) {
+                    let full_path = PathBuf::from(dir).join(&cmd);
+                    if full_path.exists() {
                         return Ok(Value::String(
-                            lua.create_string(exe_path.to_string_lossy().as_ref())?,
+                            lua.create_string(full_path.to_string_lossy().as_ref())?,
                         ));
+                    }
+                    // Check with .exe on Windows
+                    #[cfg(windows)]
+                    {
+                        let exe_path = full_path.with_extension("exe");
+                        if exe_path.exists() {
+                            return Ok(Value::String(
+                                lua.create_string(exe_path.to_string_lossy().as_ref())?,
+                            ));
+                        }
                     }
                 }
             }
-        }
-        Ok(Value::Nil)
-    })?;
-    shell.set("which", which_fn)?;
+            Ok(Value::Nil)
+        },
+    )?;
 
-    crate::lua_util::register_module(lua, "shell", shell)?;
+    shell.publish()?;
 
     Ok(())
 }
