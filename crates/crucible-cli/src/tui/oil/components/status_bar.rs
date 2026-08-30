@@ -45,11 +45,21 @@ pub struct StatusBar {
     /// Prompt-cache hit rate (0.0..=1.0) from the latest `message_complete`.
     /// `None` when no cache event has fired for this session yet.
     pub cache_hit_rate: Option<f64>,
+    /// Tools still running after they left the transcript.
+    ///
+    /// A split tool has no transcript node to show progress in, so the count
+    /// is the only place its in-flight state appears.
+    pub background_tasks: usize,
 }
 
 impl StatusBar {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn background_tasks(mut self, count: usize) -> Self {
+        self.background_tasks = count;
+        self
     }
 
     pub fn mode(mut self, mode: impl Into<String>) -> Self {

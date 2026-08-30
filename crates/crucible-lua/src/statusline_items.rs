@@ -83,6 +83,8 @@ impl Region {
 pub enum StatusCond {
     Streaming,
     HasNotification,
+    /// True while at least one split tool is still running.
+    HasBackgroundTasks,
     ModeIs(String),
 }
 
@@ -91,6 +93,7 @@ impl StatusCond {
         match s {
             "streaming" => Some(StatusCond::Streaming),
             "has_notification" => Some(StatusCond::HasNotification),
+            "has_background_tasks" => Some(StatusCond::HasBackgroundTasks),
             other => other
                 .strip_prefix("mode:")
                 .map(|m| StatusCond::ModeIs(m.to_string())),
@@ -101,6 +104,7 @@ impl StatusCond {
         match self {
             StatusCond::Streaming => "streaming".into(),
             StatusCond::HasNotification => "has_notification".into(),
+            StatusCond::HasBackgroundTasks => "has_background_tasks".into(),
             StatusCond::ModeIs(m) => format!("mode:{m}"),
         }
     }
@@ -118,6 +122,11 @@ pub enum StatusItem {
     },
     Context,
     Cache,
+    /// Count of tools still running in the background.
+    ///
+    /// A slow tool leaves the transcript as two immutable nodes, so its
+    /// in-flight state has no node to live in. This item is where it shows.
+    Tasks,
     Status,
     Notification,
     Text(String),
@@ -223,6 +232,7 @@ pub fn item_to_wire(item: &StatusItem) -> Json {
         }
         StatusItem::Context => json!({ "t": "context" }),
         StatusItem::Cache => json!({ "t": "cache" }),
+        StatusItem::Tasks => json!({ "t": "tasks" }),
         StatusItem::Status => json!({ "t": "status" }),
         StatusItem::Notification => json!({ "t": "notification" }),
         StatusItem::Text(s) => json!({ "t": "text", "v": s }),
@@ -258,6 +268,7 @@ pub fn item_from_wire(v: &Json) -> Option<StatusItem> {
         },
         "context" => StatusItem::Context,
         "cache" => StatusItem::Cache,
+        "tasks" => StatusItem::Tasks,
         "status" => StatusItem::Status,
         "notification" => StatusItem::Notification,
         "text" => StatusItem::Text(crate::statusline_exprs::sanitize_uncapped(

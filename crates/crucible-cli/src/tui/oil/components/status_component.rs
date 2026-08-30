@@ -24,6 +24,9 @@ pub struct StatusComponent<'a> {
     pub cache_hit_rate: Option<f64>,
     /// Whether a turn is streaming — readable by `sl.when("streaming", ...)`.
     pub streaming: bool,
+    /// Tools still running after they left the transcript, readable by
+    /// `sl.when("has_background_tasks", ...)`.
+    pub background_tasks: usize,
 }
 
 impl<'a> StatusComponent<'a> {
@@ -66,6 +69,11 @@ impl<'a> StatusComponent<'a> {
         self
     }
 
+    pub fn background_tasks(mut self, count: usize) -> Self {
+        self.background_tasks = count;
+        self
+    }
+
     pub fn streaming(mut self, streaming: bool) -> Self {
         self.streaming = streaming;
         self
@@ -84,7 +92,8 @@ impl<'a> StatusComponent<'a> {
             .mode(self.mode)
             .model(self.model)
             .context(self.context_used, self.context_total)
-            .status(self.status);
+            .status(self.status)
+            .background_tasks(self.background_tasks);
         bar.cache_hit_rate = self.cache_hit_rate;
         if let Some((text, kind)) = self.toast {
             bar = bar.toast(text, kind);

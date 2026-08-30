@@ -180,6 +180,13 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
             None => String::new(),
         }),
 
+        // No count renders as nothing, so a bar can carry the slot
+        // unconditionally without a permanent "0 running".
+        StatusItem::Tasks => text_frag(match ctx.data.background_tasks {
+            0 => String::new(),
+            n => format!("\u{2699} {n}"),
+        }),
+
         StatusItem::Status => text_frag(ctx.data.status.clone()),
 
         // Renders as message plus a reversed severity badge, or — with no
@@ -289,6 +296,7 @@ fn cond_holds(cond: &StatusCond, ctx: &ItemContext<'_>) -> bool {
     match cond {
         StatusCond::Streaming => ctx.streaming,
         StatusCond::HasNotification => ctx.data.notification_toast.is_some(),
+        StatusCond::HasBackgroundTasks => ctx.data.background_tasks > 0,
         StatusCond::ModeIs(name) => mode_name(ctx).eq_ignore_ascii_case(name),
     }
 }
@@ -339,7 +347,26 @@ mod tests {
             notification_toast: None,
             notification_counts: Vec::new(),
             cache_hit_rate: None,
+            background_tasks: 0,
         }
+    }
+
+    #[test]
+    fn tasks_item_is_blank_with_no_background_work() {
+        // A bar can carry the slot unconditionally; an idle session must not
+        // show a permanent zero.
+        let data = data();
+        assert_eq!(render(&[StatusItem::Tasks], &data, /*streaming*/ false), "");
+    }
+
+    #[test]
+    fn tasks_item_reports_the_running_count() {
+        let mut data = data();
+        data.background_tasks = 2;
+        assert!(
+            render(&[StatusItem::Tasks], &data, /*streaming*/ false).contains('2'),
+            "the running count must appear"
+        );
     }
 
     fn render(items: &[StatusItem], data: &StatusBar, streaming: bool) -> String {
