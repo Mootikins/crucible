@@ -5,10 +5,6 @@
 //! cru.defaults.temperature   = 0.3
 //! ```
 //!
-//! ```fennel
-//! (set cru.defaults.system_prompt "You are Crucible…")
-//! ```
-//!
 //! ## Why this is not `cru.o`
 //!
 //! [`crate::session_api`] deliberately rejects a `vim.o`-style global, and that
@@ -26,9 +22,8 @@
 //!
 //! ## Why properties rather than an `opt` object
 //!
-//! Assignment (`cru.defaults.x = v`) reads the same in Lua and Fennel.
-//! Neovim's `vim.opt.x:append(…)` does not — in Fennel it degrades to
-//! `(: (. cru.opt :x) :append …)`. List-valued options would be the only
+//! Neovim's `vim.opt.x:append(…)` is deliberately not part of this API.
+//! List-valued options would be the only
 //! reason to want the method form, and there are none here, so the surface
 //! stays plain assignment and callers use ordinary string operations:
 //!
@@ -418,44 +413,6 @@ mod tests {
             .eval::<Value>()
             .unwrap_err();
         assert!(read.to_string().contains("unknown default"), "got: {read}");
-    }
-
-    /// The surface is assignment-only specifically so it survives the Fennel
-    /// round-trip. `vim.opt.x:append(…)` would compile to
-    /// `(: (. cru.opt :x) :append …)`; these compile to `set`/`..`, which
-    /// is why there is no `opt` object. Compiled and RUN, not eyeballed — a
-    /// form that parses but assigns to the wrong place would still pass a
-    /// compile-only check.
-    #[cfg(feature = "fennel")]
-    #[test]
-    fn the_surface_reads_and_works_in_fennel() {
-        let (lua, defaults) = lua_with_defaults();
-
-        let lua_src = crate::fennel::compile_fennel(
-            r#"(set cru.defaults.system_prompt "from fennel")
-               (set cru.defaults.temperature 0.4)"#,
-        )
-        .expect("fennel source must compile");
-        lua.load(&lua_src).exec().expect("compiled fennel must run");
-
-        assert_eq!(
-            defaults.get().system_prompt.as_deref(),
-            Some("from fennel"),
-            "assignment must reach the store through the Fennel round-trip"
-        );
-        assert_eq!(defaults.get().temperature, Some(0.4));
-
-        // The append idiom, in Fennel.
-        let append = crate::fennel::compile_fennel(
-            r#"(set cru.defaults.system_prompt
-                    (.. cru.defaults.system_prompt " + more"))"#,
-        )
-        .expect("fennel append must compile");
-        lua.load(&append).exec().expect("compiled fennel must run");
-        assert_eq!(
-            defaults.get().system_prompt.as_deref(),
-            Some("from fennel + more")
-        );
     }
 
     /// The store is shared by handle, so a default set on one VM is visible to

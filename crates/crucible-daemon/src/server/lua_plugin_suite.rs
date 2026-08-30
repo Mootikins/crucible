@@ -1,6 +1,6 @@
 //! The `cru plugin test` runner: discovers a plugin's `*_test.lua` files,
-//! loads them into an executor whose `package.path` mirrors the runtime
-//! plugin loader exactly, and runs them through the bundled busted-style
+//! loads them into an executor whose module roots mirror the runtime plugin
+//! loader, and runs them through the bundled busted-style
 //! framework. Includes the CI gates that run every shipped plugin's suite.
 
 use super::*;
@@ -53,14 +53,8 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
         return internal_error(req.id, anyhow::Error::from(e));
     }
 
-    // Mirror the runtime plugin loader's package.path EXACTLY. The loader
-    // gives a plugin `<plugins_parent>/?.lua`, `<plugins_parent>/?/init.lua`
-    // (configure_runtime_path) and `<plugin_dir>/lua/?.lua` (execute_plugin) —
-    // nothing else. The harness previously also granted `<plugin_dir>/?.lua`,
-    // under which `require("lua.container")` resolved in tests while failing
-    // in the daemon: a suite could be green against a plugin that could not
-    // load. Tests load their plugin the way the runtime does:
-    // `require("<plugin-name>")` via the parent's `?/init.lua` entry.
+    // Mirror the runtime loader: plugin siblings are visible by name and a
+    // plugin's own `lua/` directory is private to its execution.
     let plugin_root = test_path
         .canonicalize()
         .unwrap_or_else(|_| test_path.clone());
@@ -72,41 +66,8 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
     } else {
         plugin_root
     };
-    let plugin_root_str = plugin_root.to_string_lossy();
-    if let Err(e) = executor
-        .lua()
-        .load(format!(
-            r#"
-local plugin_root = {plugin_root_str:?}
-local plugin_parent = plugin_root:match("^(.*)/[^/]+$") or plugin_root
-local entries = {{
-    plugin_parent .. "/?.lua",
-    plugin_parent .. "/?/init.lua",
-    plugin_root .. "/lua/?.lua",
-}}
-for _, entry in ipairs(entries) do
-    if not ((";" .. package.path .. ";"):find(";" .. entry .. ";", 1, true)) then
-        package.path = entry .. ";" .. package.path
-    end
-end
-"#
-        ))
-        .set_name("plugin_package_path")
-        .exec()
-    {
-        return internal_error(req.id, e);
-    }
-
-    // Make a Fennel plugin requirable by name, the way a Lua one already is.
-    //
-    // `package.path` has no `.fnl` templates and Lua has no Fennel searcher —
-    // the daemon compiles a plugin's `.fnl` main by path and never goes
-    // through `require` — so `(require :graph-view)` from that plugin's own
-    // suite failed with "module not found". A Fennel plugin was therefore
-    // untestable: the runner would compile its *test* files and then have no
-    // way to load the thing under test. Preloading the compiled main closes
-    // that without inventing a searcher the daemon does not have.
-    if let Err(e) = preload_fennel_main(&executor, &plugin_root) {
+    let plugin_parent = plugin_root.parent().unwrap_or(&plugin_root).to_path_buf();
+    if let Err(e) = executor.configure_module_roots(vec![plugin_root.clone(), plugin_parent]) {
         return internal_error(req.id, e);
     }
 
@@ -176,22 +137,6 @@ end
             }
         };
 
-        // `.fnl` suites compile to Lua first — discovery has always accepted
-        // them, but they were loaded raw, so every Fennel test file counted
-        // as a load failure with a Lua parse error that never said why.
-        let is_fennel = file.extension().is_some_and(|e| e == "fnl");
-        let file_contents = if is_fennel {
-            match executor.compile_fennel_source(&file_contents) {
-                Ok(lua_source) => lua_source,
-                Err(e) => {
-                    note_load_failure(file, format!("fennel compile: {e}"));
-                    continue;
-                }
-            }
-        } else {
-            file_contents
-        };
-
         // `@` marks the chunk name as a file path. Without it Lua treats the
         // name as literal source text and renders every location as
         // `[string "/path/to/foo_test.lua"]:3:` instead of
@@ -252,44 +197,7 @@ end
     )
 }
 
-/// Put `<plugin_root>/init.fnl`, compiled, into `package.preload` under the
-/// plugin's directory name.
-///
-/// A no-op for a Lua plugin, or for a path that is a single file rather than a
-/// plugin directory. A compile error is returned rather than swallowed: a
-/// Fennel plugin whose main does not compile should fail the run loudly, not
-/// look like a plugin with no tests.
-fn preload_fennel_main(executor: &LuaExecutor, plugin_root: &Path) -> Result<()> {
-    let main = plugin_root.join("init.fnl");
-    if !main.is_file() {
-        return Ok(());
-    }
-    let Some(name) = plugin_root.file_name().and_then(|n| n.to_str()) else {
-        return Ok(());
-    };
-
-    let source = std::fs::read_to_string(&main)?;
-    let lua_source =
-        anyhow::Context::with_context(executor.compile_fennel_source(&source), || {
-            format!("compiling {}", main.display())
-        })?;
-
-    let chunk = executor
-        .lua()
-        .load(&lua_source)
-        .set_name(format!("@{}", main.display()))
-        .into_function()?;
-
-    let preload: mlua::Table = executor
-        .lua()
-        .globals()
-        .get::<mlua::Table>("package")?
-        .get("preload")?;
-    preload.set(name, chunk)?;
-    Ok(())
-}
-
-/// Discover test files in a plugin directory (files ending with _test.lua or _test.fnl)
+/// Discover test files in a plugin directory (files ending with `_test.lua`).
 pub(super) fn discover_plugin_test_files(path: &Path) -> Result<Vec<PathBuf>> {
     if path.is_file() {
         return Ok(vec![path.to_path_buf()]);
@@ -317,7 +225,7 @@ fn collect_plugin_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         if path.is_file() {
             let stem = path.file_stem().and_then(|name| name.to_str());
             let ext = path.extension().and_then(|e| e.to_str());
-            if matches!((stem, ext), (Some(s), Some("lua" | "fnl")) if s.ends_with("_test")) {
+            if matches!((stem, ext), (Some(s), Some("lua")) if s.ends_with("_test")) {
                 out.push(path);
             }
         }
@@ -404,7 +312,6 @@ mod shipped_plugin_tests {
     #[test_case("auto-title")]
     #[test_case("daily-notes")]
     #[test_case("discord")]
-    #[test_case("graph-view")]
     #[test_case("oci")]
     #[test_case("reflection")]
     #[test_case("review")]
@@ -628,51 +535,6 @@ mod plugin_test_diagnostics_tests {
             .block_on(super::handle_lua_run_plugin_tests(req));
         assert!(resp.error.is_none(), "handler errored: {:?}", resp.error);
         resp.result.expect("result present")
-    }
-
-    /// `.fnl` suites have always been *discovered*; until the compile step
-    /// they were loaded as raw Lua and every one counted as a load failure.
-    #[test]
-    fn a_fennel_test_file_compiles_and_runs() {
-        let tmp = TempDir::new().unwrap();
-        fs::write(
-            tmp.path().join("arith_test.fnl"),
-            "(describe \"fennel math\" (fn []\n\
-               (it \"adds two numbers\" (fn []\n\
-                 (expect.equal 2 (+ 1 1))))))\n",
-        )
-        .unwrap();
-
-        let result = run(tmp.path());
-        assert_eq!(
-            result["load_failures"].as_u64(),
-            Some(0),
-            "fennel suite should compile, not fail to load: {result:#}"
-        );
-        assert_eq!(result["passed"].as_u64(), Some(1), "{result:#}");
-        assert_eq!(result["failed"].as_u64(), Some(0), "{result:#}");
-    }
-
-    /// A Fennel syntax error is reported as a compile failure naming the
-    /// file, not a baffling Lua parse error.
-    #[test]
-    fn a_broken_fennel_file_reports_a_compile_error() {
-        let tmp = TempDir::new().unwrap();
-        fs::write(
-            tmp.path().join("broken_test.fnl"),
-            "(describe \"unclosed\"\n",
-        )
-        .unwrap();
-
-        let result = run(tmp.path());
-        assert_eq!(result["load_failures"].as_u64(), Some(1), "{result:#}");
-        let detail = &result["load_failure_details"][0];
-        assert!(
-            detail["error"]
-                .as_str()
-                .is_some_and(|e| e.contains("fennel compile")),
-            "failure should say it was a fennel compile error: {result:#}"
-        );
     }
 
     #[test]

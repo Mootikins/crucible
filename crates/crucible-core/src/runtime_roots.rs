@@ -372,7 +372,6 @@ mod tests {
             "plugins/oci/init.lua",
             "plugins/oci/plugin.yaml",
             "plugins/oci/lua/container.lua",
-            "plugins/graph-view/init.fnl",
             "plugins/web-search/lua/providers/ddg.lua",
             "defaults/init.lua",
         ] {

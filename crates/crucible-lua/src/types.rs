@@ -18,9 +18,6 @@ pub struct LuaTool {
 
     /// Source file path
     pub source_path: String,
-
-    /// Whether this is a Fennel source (vs plain Lua)
-    pub is_fennel: bool,
 }
 
 /// Parameter definition for a tool

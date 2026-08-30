@@ -667,52 +667,21 @@ impl DaemonPluginLoader {
     /// Returns the list of [`PluginSpec`]s extracted from successfully loaded
     /// plugins. Service functions are stored internally and can be retrieved
     /// via [`take_service_fns`].
-    /// Add plugin search paths to Lua's `package.path` so `require("plugin")`
-    /// works globally (from user init.lua, BUILTIN_INIT_LUA, or other plugins).
-    ///
-    /// Each search path gets two entries:
-    /// - `{path}/?.lua` — for single-file plugins
-    /// - `{path}/?/init.lua` — for directory plugins (e.g., `require("kiln-expert")` finds `kiln-expert/init.lua`)
+    /// Configure host-owned module roots so `require("plugin")` works from
+    /// user init, built-ins, and other plugins.
     fn configure_runtime_path(
         &self,
         plugin_paths: &[(PathBuf, PluginSource)],
     ) -> anyhow::Result<()> {
-        let lua = self.executor.lua();
-        let mut entries = Vec::new();
-
-        for (path, _source) in plugin_paths {
-            if !path.exists() {
-                continue;
-            }
-            let path_str = path.to_string_lossy().replace('\\', "/");
-            entries.push(format!("{path_str}/?.lua"));
-            entries.push(format!("{path_str}/?/init.lua"));
-        }
-
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        let new_paths = entries.join(";");
-        // Guarded prepend: reload re-runs this, and unguarded prepends grew
-        // package.path by one copy of every entry per reload for the
-        // daemon's lifetime.
-        let code = format!(
-            r#"
-for entry in string.gmatch({new_paths:?}, "[^;]+") do
-    -- Delimiter-aware membership: a plain substring find lets a longer
-    -- pattern suppress insertion of a distinct shorter one.
-    if not ((";" .. package.path .. ";"):find(";" .. entry .. ";", 1, true)) then
-        package.path = entry .. ";" .. package.path
-    end
-end
-"#
-        );
-        lua.load(&code)
-            .exec()
-            .map_err(|e| anyhow::anyhow!("configure runtime path: {e}"))?;
-
-        tracing::debug!("Configured Lua runtime path with {} entries", entries.len());
+        let roots = plugin_paths
+            .iter()
+            .map(|(path, _)| path)
+            .filter(|path| path.exists())
+            .cloned()
+            .collect();
+        self.executor
+            .configure_module_roots(roots)
+            .map_err(|e| anyhow::anyhow!("configure module roots: {e}"))?;
         Ok(())
     }
 
@@ -1023,8 +992,8 @@ end
 
     /// Execute a plugin's init.lua in the daemon's Lua executor (async).
     ///
-    /// Sets up `package.path` so that `require("gateway")` etc. resolves
-    /// to files in the plugin's `lua/` directory, then evaluates the init file
+    /// Gives this plugin's directory priority for `require("gateway")` and
+    /// evaluates the init file
     /// using `eval_async` to enable async Lua function yielding.
     ///
     /// Calls the returned spec's `setup(cfg)` with this plugin's
@@ -1037,6 +1006,12 @@ end
         init_path: &std::path::Path,
     ) -> anyhow::Result<PluginExports> {
         let lua = self.executor.lua();
+        let plugin_dir = init_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
+        self.executor
+            .prepend_module_root(plugin_dir.to_path_buf())
+            .map_err(|e| anyhow::anyhow!("configure plugin module root: {e}"))?;
 
         // One module, one setup, per plugin: a plugin whose entry module the
         // user's init.lua already `require`d is activated FROM that same
@@ -1088,16 +1063,6 @@ end
             return Ok(extract_exports(&spec));
         }
 
-        let plugin_dir = init_path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
-        let lua_dir = plugin_dir.join("lua");
-
-        // Add plugin's lua/ dir to package.path so require() works
-        let lua_dir_str = lua_dir
-            .to_string_lossy()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"");
         // Rebind `cru.plugin.publish` to THIS plugin before its body runs.
         //
         // One Lua VM serves every plugin, so a single global binding would
@@ -1110,41 +1075,10 @@ end
         self.options.release_plugin(name);
         crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
 
-        let setup_code = format!(
-            r#"
-local entry = "{}/?.lua"
-if not ((";" .. package.path .. ";"):find(";" .. entry .. ";", 1, true)) then
-    package.path = entry .. ";" .. package.path
-end
-"#,
-            lua_dir_str
-        );
-        lua.load(&setup_code)
-            .exec()
-            .map_err(|e| anyhow::anyhow!("package.path setup: {e}"))?;
-
-        // All plugins share one Lua VM, so `package.loaded` is shared too.
-        // Several plugins ship a module named `config`; without this, the
-        // second one to load silently gets the first one's module.
-        self.clear_plugin_lua_cache(&lua_dir)?;
-
-        // Read (and for `.fnl`, compile) the source BEFORE the plugin context
-        // is entered, so a read/compile failure cannot leave it behind.
-        //
-        // A `.fnl` main is compiled first. The discovery pass in `crucible-lua`
-        // already did this for its throwaway sandbox VM, so a Fennel plugin
-        // looked healthy right up to here and then died loading its own source
-        // as Lua ("syntax error near '-'", from the `;;;` header comment).
-        // No Fennel plugin had ever executed in the daemon.
+        // Read source before entering plugin context so a read failure cannot
+        // leave it behind.
         let source = std::fs::read_to_string(init_path)
             .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
-        let source = if init_path.extension().is_some_and(|ext| ext == "fnl") {
-            self.executor
-                .compile_fennel_source(&source)
-                .map_err(|e| anyhow::anyhow!("fennel compile {}: {e}", init_path.display()))?
-        } else {
-            source
-        };
 
         // Drop this plugin's previously-registered handlers and session hooks,
         // and mark it as the loading plugin so anything it registers now is
@@ -1410,31 +1344,6 @@ end
         // skips known names — a reinstall loads nothing and reports success.
         self.plugin_manager.forget(name);
         Ok(())
-    }
-
-    /// Clear `package.loaded` entries for modules whose `.lua` file lives under `lua_dir`.
-    fn clear_plugin_lua_cache(&self, lua_dir: &std::path::Path) -> anyhow::Result<()> {
-        let lua = self.executor.lua();
-        let lua_dir_str = lua_dir
-            .to_string_lossy()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"");
-
-        lua.load(format!(
-            r#"
-            local dir = "{lua_dir_str}"
-            for mod_name, _ in pairs(package.loaded) do
-                local path = dir .. "/" .. mod_name:gsub("%.", "/") .. ".lua"
-                local f = io.open(path, "r")
-                if f then
-                    f:close()
-                    package.loaded[mod_name] = nil
-                end
-            end
-            "#,
-        ))
-        .exec()
-        .map_err(|e| anyhow::anyhow!("clear lua cache: {e}"))
     }
 
     pub fn loaded_plugin_names(&self) -> Vec<String> {

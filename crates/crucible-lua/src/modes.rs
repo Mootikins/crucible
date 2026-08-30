@@ -9,11 +9,6 @@
 //! cru.modes.review = nil   -- and it's gone
 //! ```
 //!
-//! ```fennel
-//! (set cru.modes.review {:tools ["read_*" "bash"]
-//!                        :permissions {:default :deny :allow ["bash:rg *"]}})
-//! ```
-//!
 //! A mode is two things: which tools it exposes, and what it does when one of
 //! them needs permission. Both were previously Rust constants
 //! (`default_internal_modes`, `PLAN_TOOL_NAMES`) plus a pair of shipped Lua
@@ -494,21 +489,6 @@ mod tests {
         let (lua, _) = lua_with_modes();
         let err = lua.load(r#"cru.modes.x = 5"#).exec().unwrap_err();
         assert!(err.to_string().contains("table or nil"), "got: {err}");
-    }
-
-    #[cfg(feature = "fennel")]
-    #[test]
-    fn the_surface_reads_and_works_in_fennel() {
-        let (lua, registry) = lua_with_modes();
-        let src = crate::fennel::compile_fennel(
-            r#"(set cru.modes.review {:tools ["read_*"] :permissions :ask})"#,
-        )
-        .expect("fennel must compile");
-        lua.load(&src).exec().expect("compiled fennel must run");
-
-        let mode = registry.get("review").expect("registered from fennel");
-        assert!(mode.tools.matches("read_note"));
-        assert_eq!(mode.permissions.default, ModeStance::Ask);
     }
 
     /// The gap a name-glob cannot close: "review may use bash, but only for

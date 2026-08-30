@@ -39,7 +39,9 @@
 
 use std::time::{Duration, Instant};
 
-use mlua::{HookTriggers, Lua, VmState};
+#[cfg(not(feature = "luau"))]
+use mlua::HookTriggers;
+use mlua::{Lua, VmState};
 
 /// How often the VM asks the clock.
 ///
@@ -78,34 +80,42 @@ struct Deadline {
     label: String,
 }
 
-/// Install the instruction hook that enforces deadlines on this VM.
+/// Install the execution interrupt that enforces deadlines on this VM.
 ///
 /// Idempotent, and cheap while no deadline is set: the hook reads one app-data
 /// slot and returns. Every VM that runs a handler needs it — the plugin VM and
 /// each session VM — because the deadline is a property of the VM the handler
 /// runs in.
 ///
-/// `set_global_hook`, not `set_hook`: an async handler runs on a coroutine
-/// mlua creates for the call, and a thread hook set on the main thread does
-/// not reach it.
+/// Luau's interrupt callback reaches loops and function calls in every
+/// execution thread. PUC Lua needs a global instruction hook because an async
+/// handler runs in an mlua-created coroutine.
 pub fn install_deadline_hook(lua: &Lua) -> mlua::Result<()> {
+    #[cfg(feature = "luau")]
+    {
+        lua.set_interrupt(deadline_state);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "luau"))]
     lua.set_global_hook(
         HookTriggers::new().every_nth_instruction(CHECK_EVERY_N_INSTRUCTIONS),
-        |lua, _debug| {
-            // Cloned out, and the borrow dropped, before anything else runs:
-            // an error raised while the app-data borrow is live would block
-            // the `set_app_data` a guard makes on the way out.
-            let expired = {
-                let slot = lua.app_data_ref::<CurrentDeadline>();
-                slot.and_then(|slot| slot.0.clone())
-                    .filter(|deadline| Instant::now() >= deadline.at)
-            };
-            match expired {
-                Some(deadline) => Err(mlua::Error::runtime(deadline.message(lua))),
-                None => Ok(VmState::Continue),
-            }
-        },
+        |lua, _debug| deadline_state(lua),
     )
+}
+
+fn deadline_state(lua: &Lua) -> mlua::Result<VmState> {
+    // Cloned out, and the borrow dropped, before anything else runs: an error
+    // raised while the app-data borrow is live would block a guard's restore.
+    let expired = {
+        let slot = lua.app_data_ref::<CurrentDeadline>();
+        slot.and_then(|slot| slot.0.clone())
+            .filter(|deadline| Instant::now() >= deadline.at)
+    };
+    match expired {
+        Some(deadline) => Err(mlua::Error::runtime(deadline.message(lua))),
+        None => Ok(VmState::Continue),
+    }
 }
 
 impl Deadline {
@@ -222,6 +232,29 @@ mod tests {
             .eval()
             .expect("a chunk with no deadline must finish");
         assert_eq!(sum, 20_000_100_000);
+    }
+
+    /// The selected backend accepts Luau's gradual-type syntax. Runtime
+    /// execution deliberately erases the annotation; `luau-analyze` remains
+    /// the separate gate that proves a declared type is correct.
+    #[cfg(feature = "luau")]
+    #[test]
+    fn a_strict_luau_chunk_with_type_annotations_executes() {
+        let lua = vm();
+        let total: i64 = lua
+            .load(
+                r#"
+                --!strict
+                type Totals = { left: number, right: number }
+                local function add(values: Totals): number
+                    return values.left + values.right
+                end
+                return add({ left = 20, right = 22 })
+                "#,
+            )
+            .eval()
+            .expect("Luau annotations must parse in the plugin VM");
+        assert_eq!(total, 42);
     }
 
     /// The guard restores what it replaced, so one overrun does not poison the

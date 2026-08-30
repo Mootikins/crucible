@@ -378,7 +378,6 @@ mod tests {
             }],
             return_type: None,
             source_path: "test".to_string(),
-            is_fennel: false,
         }
     }
 
@@ -390,7 +389,6 @@ mod tests {
             input_hint: Some("[args]".to_string()),
             source_path: "test".to_string(),
             handler_fn: name.to_string(),
-            is_fennel: false,
         }
     }
 

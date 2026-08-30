@@ -38,6 +38,7 @@ pub struct PluginManager {
     tools: Vec<RegisteredItem<DiscoveredTool>>,
     commands: Vec<RegisteredItem<DiscoveredCommand>>,
     lua: Lua,
+    module_resolver: Arc<Mutex<lua_integration::ModuleResolver>>,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
     error_log: Arc<Mutex<PluginErrorLog>>,
@@ -85,6 +86,8 @@ impl PluginManager {
         if let Err(error) = spec::setup_spec_sandbox(&lua) {
             warn!("Failed to set up plugin runtime sandbox: {}", error);
         }
+        let module_resolver = lua_integration::install_module_resolver(&lua)
+            .expect("the Luau module resolver must install before plugins run");
 
         Self {
             plugins: HashMap::new(),
@@ -93,6 +96,7 @@ impl PluginManager {
             tools: Vec::new(),
             commands: Vec::new(),
             lua,
+            module_resolver,
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),
             error_log,

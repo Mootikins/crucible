@@ -92,7 +92,7 @@ pub(crate) fn clear_plugin_auth_hooks(lua: &Lua, plugin: &str) -> LuaResult<()> 
     for i in 1..=hooks.raw_len() {
         // A missing owner entry means unowned — always kept.
         let owned_by_plugin = owners
-            .raw_get::<Option<mlua::LuaString>>(i)
+            .raw_get::<Option<mlua::String>>(i)
             .ok()
             .flatten()
             .is_some_and(|o| o.to_string_lossy() == plugin);

@@ -9,9 +9,8 @@
 //! at the top of its own `init.lua`.
 //!
 //! The context lives in the VM's Rust-side app data instead. Lua cannot reach
-//! it. The Lua registry is NOT an alternative here: the plugin VM opens
-//! `StdLib::DEBUG` for Fennel, so `debug.getregistry()` hands Lua every
-//! registry entry, named entries included.
+//! it. The Lua registry is not an alternative either: it is a VM-internal
+//! implementation detail, not a capability boundary.
 //!
 //! Two writers bracket the context:
 //!
@@ -138,7 +137,7 @@ mod tests {
             }),
         );
 
-        let found: bool = lua
+        let found = lua
             .load(
                 r#"
                 for _, value in pairs(debug.getregistry()) do
@@ -149,9 +148,11 @@ mod tests {
                 return false
                 "#,
             )
-            .eval()
-            .expect("walking the registry succeeds");
-        assert!(!found, "the plugin context must not be reachable from Lua");
+            .eval::<bool>();
+        assert!(
+            found.is_err() || !found.expect("a successful registry walk returns a boolean"),
+            "the plugin context must not be reachable from Lua"
+        );
         assert!(!current_may_intercept(&lua));
     }
 }

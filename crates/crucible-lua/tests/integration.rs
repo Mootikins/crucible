@@ -1,11 +1,9 @@
-//! Integration tests for Lua/Fennel tool discovery and execution
+//! Integration tests for Luau tool discovery and execution
 
 #[path = "integration/cru_inspect.rs"]
 mod cru_inspect;
 #[path = "integration/cru_tbl.rs"]
 mod cru_tbl;
-#[path = "integration/fennel.rs"]
-mod fennel;
 #[path = "integration/health.rs"]
 mod health;
 #[path = "integration/mocks.rs"]

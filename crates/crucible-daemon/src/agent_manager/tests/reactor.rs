@@ -960,7 +960,6 @@ mod gate_ordering {
                 params: Vec::new(),
                 return_type: None,
                 source_path: "grabby/init.lua".to_string(),
-                is_fennel: false,
             }],
             &[],
             HashMap::from([(tool.to_string(), func)]),

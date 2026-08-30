@@ -191,13 +191,11 @@ fn test_active_plugins_iterator() {
     assert_eq!(active[0].name(), "active");
 }
 
-/// `PluginManager` loads the shipped tree: Lua and Fennel, tools, commands and
-/// views.
+/// `PluginManager` loads the shipped Luau tree: tools, commands and views.
 ///
 /// These three plugins used to live under `docs/plugins/` as "documentation
-/// examples" that CI did not run, which is how `graph-view` reached the tree
-/// with a `.fnl` main that had never executed in the daemon at all. They ship
-/// now, so this walks `runtime/plugins/` — the same directory
+/// examples" that CI did not run. They ship now, so this walks
+/// `runtime/plugins/` — the same directory
 /// `every_shipped_plugin_executes` drives through the real loader.
 #[test]
 fn test_load_shipped_plugins() {
@@ -221,8 +219,8 @@ fn test_load_shipped_plugins() {
 
     let discovered = manager.discover().unwrap();
     assert!(
-        discovered.len() >= 3,
-        "Expected at least 3 shipped plugins, found {}: {:?}",
+        discovered.len() >= 2,
+        "Expected at least 2 shipped plugins, found {}: {:?}",
         discovered.len(),
         discovered
     );
@@ -235,20 +233,16 @@ fn test_load_shipped_plugins() {
         discovered.contains(&"daily-notes".to_string()),
         "daily-notes plugin not discovered"
     );
-    assert!(
-        discovered.contains(&"graph-view".to_string()),
-        "graph-view plugin not discovered"
-    );
 
     let loaded = manager.load_all().unwrap();
     assert!(
-        loaded.len() >= 3,
-        "Expected at least 3 plugins loaded, got {}: {:?}",
+        loaded.len() >= 2,
+        "Expected at least 2 plugins loaded, got {}: {:?}",
         loaded.len(),
         loaded
     );
 
-    for name in &["todo-list", "daily-notes", "graph-view"] {
+    for name in &["todo-list", "daily-notes"] {
         let plugin = manager
             .get(name)
             .unwrap_or_else(|| panic!("{} should be loaded", name));
@@ -277,10 +271,6 @@ fn test_load_shipped_plugins() {
     assert!(
         tool_names.contains(&&"daily_create".to_string()),
         "daily_create tool not found"
-    );
-    assert!(
-        tool_names.contains(&&"graph_stats".to_string()),
-        "graph_stats tool not found"
     );
 }
 

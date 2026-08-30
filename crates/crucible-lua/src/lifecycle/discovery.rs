@@ -145,9 +145,9 @@ impl PluginManager {
                         }
                     }
                 } else if path.is_file() {
-                    // Single-file plugin: .lua or .fnl file directly in plugins dir
+                    // Single-file plugin: .lua file directly in plugins dir
                     let ext = path.extension().and_then(|e| e.to_str());
-                    if matches!(ext, Some("lua") | Some("fnl")) {
+                    if matches!(ext, Some("lua")) {
                         let stem = path
                             .file_stem()
                             .and_then(|s| s.to_str())
@@ -206,7 +206,7 @@ impl PluginManager {
             plugin_dir.display()
         );
 
-        // Try spec-based loading first (execute init.lua/init.fnl, inspect returned table)
+        // Try spec-based loading first (execute init.lua, inspect returned table)
         if main_path.exists()
             && main_path
                 .extension()
@@ -293,7 +293,7 @@ impl PluginManager {
             )
         };
 
-        self.configure_plugin_package_path(&plugin_dir)?;
+        self.configure_plugin_module_root(&plugin_dir)?;
 
         // Both markers ride ONE context, in Rust-side app data. As Lua globals
         // they were forgeable: a plugin assigned itself another plugin's
@@ -306,34 +306,10 @@ impl PluginManager {
 
         let load_result = (|| -> LifecycleResult<()> {
             let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;
-            let is_fennel = main_path.extension().is_some_and(|ext| ext == "fnl");
-
-            let lua_source = if is_fennel {
-                #[cfg(feature = "fennel")]
-                {
-                    crate::fennel::compile_fennel(&source).map_err(|e| {
-                        LifecycleError::LoadError(format!(
-                            "Fennel compilation failed for {}: {}",
-                            main_path.display(),
-                            e
-                        ))
-                    })?
-                }
-                #[cfg(not(feature = "fennel"))]
-                {
-                    return Err(LifecycleError::LoadError(format!(
-                        "Fennel file {} requires the 'fennel' feature",
-                        main_path.display()
-                    )));
-                }
-            } else {
-                source
-            };
-
             let chunk_name = main_path.to_string_lossy().to_string();
             let result: Value = self
                 .lua
-                .load(&lua_source)
+                .load(&source)
                 .set_name(chunk_name.as_str())
                 .eval()
                 .map_err(|e| LifecycleError::LoadError(format_lua_error(Some(name), &e)))?;
@@ -342,18 +318,20 @@ impl PluginManager {
                 Value::Table(spec_table) => {
                     self.capture_on_unload_hook(name, &spec_table)?;
                     self.capture_on_load_hook(name, &spec_table)?;
-                    let package: mlua::Table = self.lua.globals().get("package").map_err(|e| {
-                        LifecycleError::LoadError(format!("Failed to access package table: {}", e))
-                    })?;
-                    let loaded: mlua::Table = package.get("loaded").map_err(|e| {
-                        LifecycleError::LoadError(format!("Failed to access package.loaded: {}", e))
-                    })?;
-                    loaded.set(name, spec_table).map_err(|e| {
+                    let key = self.lua.create_registry_value(spec_table).map_err(|e| {
                         LifecycleError::LoadError(format!(
                             "Failed to cache plugin module {}: {}",
                             name, e
                         ))
                     })?;
+                    self.module_resolver
+                        .lock()
+                        .map_err(|_| {
+                            LifecycleError::LoadError(
+                                "plugin module resolver lock poisoned".to_string(),
+                            )
+                        })?
+                        .cache(name.to_string(), key);
                 }
                 _ => {
                     self.on_unload_hooks.remove(name);

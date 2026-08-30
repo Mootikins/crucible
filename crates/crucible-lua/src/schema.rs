@@ -107,7 +107,6 @@ mod tests {
                 },
             ],
             source_path: "tools/search.lua".to_string(),
-            is_fennel: false,
         };
 
         let schema = generate_input_schema(&tool);

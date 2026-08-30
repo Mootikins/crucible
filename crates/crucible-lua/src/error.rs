@@ -9,10 +9,6 @@ pub enum LuaError {
     #[error("Lua error: {0}")]
     Runtime(String),
 
-    /// Fennel compilation error
-    #[error("Fennel compile error: {0}")]
-    FennelCompile(String),
-
     /// Tool not found
     #[error("Tool not found: {0}")]
     NotFound(String),

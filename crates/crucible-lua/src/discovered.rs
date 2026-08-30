@@ -5,7 +5,7 @@
 //! (`lifecycle/spec.rs`).
 //!
 //! This module used to also hold `AnnotationParser`, which scraped LDoc-style
-//! `-- @tool` / `-- @handler` doc comments out of `.lua` and `.fnl` files as a
+//! `-- @tool` / `-- @handler` doc comments out of `.lua` files as a
 //! second way to declare the same things. It is gone: `parse_tools`,
 //! `parse_commands` and `parse_views` had no callers on any live path, and the
 //! one route that did reach `parse_handlers` — a per-session scan of a kiln's
@@ -15,7 +15,7 @@
 
 use crate::types::{LuaTool, ToolParam};
 
-/// Discovered tool from Lua/Fennel source
+/// Discovered tool from Luau source
 #[derive(Debug, Clone)]
 pub struct DiscoveredTool {
     pub name: String,
@@ -23,7 +23,6 @@ pub struct DiscoveredTool {
     pub params: Vec<DiscoveredParam>,
     pub return_type: Option<String>,
     pub source_path: String,
-    pub is_fennel: bool,
 }
 
 /// Discovered parameter from annotations
@@ -35,7 +34,7 @@ pub struct DiscoveredParam {
     pub optional: bool,
 }
 
-/// Discovered handler from Lua/Fennel source
+/// Discovered handler from Luau source
 #[derive(Debug, Clone)]
 pub struct DiscoveredHandler {
     pub name: String,
@@ -45,10 +44,9 @@ pub struct DiscoveredHandler {
     pub description: String,
     pub source_path: String,
     pub handler_fn: String,
-    pub is_fennel: bool,
 }
 
-/// Discovered slash command from Lua/Fennel source
+/// Discovered slash command from Luau source
 #[derive(Debug, Clone)]
 pub struct DiscoveredCommand {
     /// Command name (without leading /)
@@ -63,8 +61,6 @@ pub struct DiscoveredCommand {
     pub source_path: String,
     /// Name of the handler function in the source
     pub handler_fn: String,
-    /// Whether this is a Fennel source
-    pub is_fennel: bool,
 }
 
 /// Discovered long-running service from plugin spec table.
@@ -101,7 +97,6 @@ impl From<DiscoveredTool> for LuaTool {
                 })
                 .collect(),
             source_path: tool.source_path,
-            is_fennel: tool.is_fennel,
         }
     }
 }

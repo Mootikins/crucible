@@ -1,11 +1,9 @@
 //! Lua script executor
 //!
-//! Executes Lua (and Fennel) scripts with async support and
+//! Executes Luau scripts with async support and
 //! optional thread safety via the `send` feature.
 
 use crate::error::LuaError;
-#[cfg(feature = "fennel")]
-use crate::fennel::FennelCompiler;
 use crate::fs::register_fs_module;
 use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
@@ -13,9 +11,11 @@ use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, CurrentSession, Session};
 #[cfg(any(test, feature = "test-utils"))]
 use crate::types::LuaExecutionResult;
-use mlua::{Function, Lua, LuaOptions, LuaSerdeExt, RegistryKey, StdLib, Table, Value};
+use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
 use serde_json::Value as JsonValue;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 #[cfg(any(test, feature = "test-utils"))]
 use std::time::Instant;
 
@@ -25,8 +25,7 @@ use std::time::Instant;
 /// for multi-threaded use.
 pub struct LuaExecutor {
     lua: Lua,
-    #[cfg(feature = "fennel")]
-    fennel: Option<FennelCompiler>,
+    module_roots: Arc<Mutex<Vec<PathBuf>>>,
     current_session: CurrentSession,
     on_session_start_hooks: Vec<RegistryKey>,
     /// Parallel to `on_session_start_hooks`: whether each opted into refusing
@@ -38,24 +37,7 @@ pub struct LuaExecutor {
 impl LuaExecutor {
     /// Create a new Lua executor
     pub fn new() -> Result<Self, LuaError> {
-        // Fennel needs PACKAGE (require/modules) and DEBUG (stack traces).
-        // DEBUG is not in ALL_SAFE, so the VM is built with unsafe_new_with.
-        //
-        // That constructor skips mlua's own `disable_c_modules`, which is the
-        // only thing that keeps `package.loadlib` and the two C searchers out
-        // of reach. This VM runs every plugin, not just Fennel we shipped, so
-        // `disable_c_modules_after_unsafe_new` below puts them back out of
-        // reach. Without it a plugin loads a `.so` and leaves Lua entirely.
-        #[cfg(feature = "fennel")]
-        let lua = unsafe {
-            Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
-        };
-
-        #[cfg(not(feature = "fennel"))]
         let lua = Lua::new();
-
-        #[cfg(feature = "fennel")]
-        disable_c_modules_after_unsafe_new(&lua)?;
 
         // Every handler budget is enforced from inside this hook, so it has to
         // be installed before any plugin code can run. See `handler_budget`.
@@ -63,41 +45,20 @@ impl LuaExecutor {
 
         // Set up safe globals and Crucible API
         Self::setup_globals(&lua)?;
-
-        // Try to load Fennel - it's optional (may not have vendor/fennel.lua)
-        #[cfg(feature = "fennel")]
-        let fennel = match FennelCompiler::new(&lua) {
-            Ok(compiler) => Some(compiler),
-            Err(e) => {
-                tracing::debug!("Fennel compiler initialization failed: {}", e);
-                None
-            }
-        };
+        let module_roots = Arc::new(Mutex::new(Vec::new()));
+        let module_cache = Arc::new(Mutex::new(HashMap::new()));
+        Self::install_module_resolver(&lua, Arc::clone(&module_roots), Arc::clone(&module_cache))?;
 
         let current_session = register_session_module(&lua)?;
 
         Ok(Self {
             lua,
-            #[cfg(feature = "fennel")]
-            fennel,
+            module_roots,
             current_session,
             on_session_start_hooks: Vec::new(),
             on_session_start_required: Vec::new(),
             on_session_end_hooks: Vec::new(),
         })
-    }
-
-    /// Check if Fennel compiler is available
-    #[cfg(test)]
-    pub fn fennel_available(&self) -> bool {
-        #[cfg(feature = "fennel")]
-        {
-            self.fennel.is_some()
-        }
-        #[cfg(not(feature = "fennel"))]
-        {
-            false
-        }
     }
 
     pub fn current_session(&self) -> &CurrentSession {
@@ -335,63 +296,18 @@ impl LuaExecutor {
         crate::prelude::register_test_harness(&self.lua).map_err(LuaError::from)
     }
 
-    /// Compile Fennel source to Lua with this executor's compiler.
-    ///
-    /// Public so callers that `lua().load()` sources directly (the plugin
-    /// test runner) can handle `.fnl` files the same way `execute_source`
-    /// does — those files used to be discovered, loaded raw, and counted as
-    /// a load failure with a parse error that never said why.
-    pub fn compile_fennel_source(&self, source: &str) -> Result<String, LuaError> {
-        #[cfg(feature = "fennel")]
-        {
-            match &self.fennel {
-                Some(fennel) => fennel.compile_with_lua(&self.lua, source),
-                None => Err(LuaError::FennelCompile(
-                    "Fennel compiler not available. Download fennel.lua from \
-                    https://fennel-lang.org/downloads and place in \
-                    crates/crucible-lua/vendor/fennel.lua"
-                        .into(),
-                )),
-            }
-        }
-        #[cfg(not(feature = "fennel"))]
-        {
-            let _ = source;
-            Err(LuaError::FennelCompile(
-                "Fennel support not enabled (compile with 'fennel' feature)".into(),
-            ))
-        }
-    }
-
-    /// Execute Lua or Fennel source code
+    /// Execute Luau source code.
     #[cfg(any(test, feature = "test-utils"))]
     pub async fn execute_source(
         &self,
         source: &str,
-        is_fennel: bool,
+        _: bool,
         args: JsonValue,
     ) -> Result<LuaExecutionResult, LuaError> {
         let start = Instant::now();
 
-        // Compile Fennel to Lua if needed
-        #[cfg(feature = "fennel")]
-        let lua_source = if is_fennel {
-            self.compile_fennel_source(source)?
-        } else {
-            source.to_string()
-        };
-
-        #[cfg(not(feature = "fennel"))]
-        let lua_source = if is_fennel {
-            return Err(LuaError::FennelCompile(
-                "Fennel support not enabled (compile with 'fennel' feature)".into(),
-            ));
-        } else {
-            source.to_string()
-        };
-
         // Execute the script
-        let result = self.execute_lua(&lua_source, args);
+        let result = self.execute_lua(source, args);
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -440,6 +356,110 @@ impl LuaExecutor {
     /// Use this for advanced integration (e.g., registering custom functions).
     pub fn lua(&self) -> &Lua {
         &self.lua
+    }
+
+    /// Restrict `require` to the supplied plugin roots and their `lua/`
+    /// subdirectories. Luau has no mutable `package.path`; lookup belongs to
+    /// the host so plugin code cannot widen its own import authority.
+    pub fn configure_module_roots(&self, roots: Vec<PathBuf>) -> Result<(), LuaError> {
+        self.ensure_package_compatibility()?;
+        *self
+            .module_roots
+            .lock()
+            .map_err(|_| LuaError::Runtime("plugin module resolver lock poisoned".into()))? = roots;
+        Ok(())
+    }
+
+    /// Prefer one plugin's private modules for the duration of its load.
+    pub fn prepend_module_root(&self, root: PathBuf) -> Result<(), LuaError> {
+        self.ensure_package_compatibility()?;
+        self.module_roots
+            .lock()
+            .map_err(|_| LuaError::Runtime("plugin module resolver lock poisoned".into()))?
+            .insert(0, root);
+        Ok(())
+    }
+
+    fn ensure_package_compatibility(&self) -> Result<(), LuaError> {
+        if matches!(self.lua.globals().get::<Value>("package")?, Value::Nil) {
+            let package = self.lua.create_table()?;
+            package.set("loaded", self.lua.create_table()?)?;
+            self.lua.globals().set("package", package)?;
+        }
+        Ok(())
+    }
+
+    fn install_module_resolver(
+        lua: &Lua,
+        roots: Arc<Mutex<Vec<PathBuf>>>,
+        cache: Arc<Mutex<HashMap<(PathBuf, String), RegistryKey>>>,
+    ) -> mlua::Result<()> {
+        let loaded = lua.create_table()?;
+        let package = lua.create_table()?;
+        package.set("loaded", loaded)?;
+        lua.globals().set("package", package)?;
+
+        let require = lua.create_function(move |lua, name: String| {
+            if name.is_empty()
+                || name.split('.').any(|part| {
+                    part.is_empty()
+                        || !part
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+                })
+            {
+                return Err(mlua::Error::runtime(format!(
+                    "invalid plugin module name '{name}'"
+                )));
+            }
+            let loaded: Table = lua.globals().get::<Table>("package")?.get("loaded")?;
+            if let Ok(value) = loaded.get::<Value>(name.as_str()) {
+                if !matches!(value, Value::Nil) {
+                    return Ok(value);
+                }
+            }
+            let relative = name.replace('.', "/");
+            let roots = roots
+                .lock()
+                .map_err(|_| mlua::Error::runtime("plugin module resolver lock poisoned"))?;
+            for root in roots.iter() {
+                if let Some(key) = cache
+                    .lock()
+                    .map_err(|_| mlua::Error::runtime("plugin module resolver lock poisoned"))?
+                    .get(&(root.clone(), name.clone()))
+                {
+                    return lua.registry_value(key);
+                }
+                for base in [root.to_path_buf(), root.join("lua")] {
+                    let path = base.join(&relative).with_extension("lua");
+                    let path = if path.is_file() {
+                        path
+                    } else {
+                        let init = base.join(&relative).join("init.lua");
+                        if init.is_file() {
+                            init
+                        } else {
+                            continue;
+                        }
+                    };
+                    let value: Value = lua
+                        .load(std::fs::read_to_string(&path).map_err(mlua::Error::external)?)
+                        .set_name(path.to_string_lossy().as_ref())
+                        .eval()?;
+                    let key = lua.create_registry_value(value.clone())?;
+                    cache
+                        .lock()
+                        .map_err(|_| mlua::Error::runtime("plugin module resolver lock poisoned"))?
+                        .insert((root.clone(), name.clone()), key);
+                    loaded.set(name, value.clone())?;
+                    return Ok(value);
+                }
+            }
+            Err(mlua::Error::runtime(format!(
+                "plugin module '{name}' was not found"
+            )))
+        })?;
+        lua.globals().set("require", require)
     }
 }
 
@@ -509,19 +529,6 @@ mod tests {
 
         assert!(result.success);
         assert_eq!(result.content, Some(args));
-    }
-
-    #[test]
-    fn test_fennel_available() {
-        let executor = LuaExecutor::new().unwrap();
-        // Should be available when fennel feature is enabled (default)
-        #[cfg(feature = "fennel")]
-        assert!(
-            executor.fennel_available(),
-            "Fennel should be available with fennel feature"
-        );
-        #[cfg(not(feature = "fennel"))]
-        assert!(!executor.fennel_available());
     }
 
     #[test]
@@ -705,39 +712,36 @@ mod tests {
     }
 }
 
-/// Put `package.loadlib` and the C searchers out of reach.
-///
-/// `Lua::new_with` does this itself; `unsafe_new_with` does not, and Fennel
-/// forces the unsafe constructor because it needs the DEBUG library. This is
-/// the same work mlua does in safe mode: replace `loadlib`, replace the third
-/// searcher, drop the fourth (the all-in-one C loader).
-#[cfg(feature = "fennel")]
-fn disable_c_modules_after_unsafe_new(lua: &Lua) -> Result<(), LuaError> {
-    let package: mlua::Table = lua.globals().get("package")?;
-    package.set(
-        "loadlib",
-        lua.create_function(|_, ()| -> mlua::Result<()> {
-            Err(mlua::Error::runtime(
-                "package.loadlib is disabled: a plugin may not load a C module",
-            ))
-        })?,
-    )?;
-    let searchers: mlua::Table = package.get("searchers")?;
-    let refuse = lua.create_function(|_, ()| Ok("\n\tC modules are disabled"))?;
-    searchers.raw_set(3, refuse)?;
-    if searchers.raw_len() >= 4 {
-        searchers.raw_remove(4)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod vm_safety_tests {
     use super::*;
 
-    /// A plugin must not reach a C module. The VM is built with
-    /// `unsafe_new_with` for Fennel's DEBUG library, which skips mlua's own
-    /// safety pass, so the pass is redone by hand.
+    /// A plugin must not reach a C module. Luau has no package library, so
+    /// the host compatibility table exposes a module cache and nothing that
+    /// loads native code.
+    #[cfg(feature = "luau")]
+    #[test]
+    fn a_script_cannot_load_a_c_module() {
+        let executor = LuaExecutor::new().expect("executor");
+        let package: mlua::Table = executor
+            .lua()
+            .globals()
+            .get("package")
+            .expect("compatibility package table");
+        assert!(
+            package.get::<mlua::Value>("path").unwrap().is_nil(),
+            "Luau must not expose a mutable package.path"
+        );
+        assert!(
+            package.get::<mlua::Value>("loadlib").unwrap().is_nil(),
+            "Luau must not expose package.loadlib"
+        );
+        assert!(package.get::<mlua::Table>("loaded").is_ok());
+    }
+
+    /// A plugin must not reach a C module. PUC Lua keeps `loadlib` and the C
+    /// searchers, so the host puts both out of reach.
+    #[cfg(not(feature = "luau"))]
     #[test]
     fn a_script_cannot_load_a_c_module() {
         let executor = LuaExecutor::new().expect("executor");

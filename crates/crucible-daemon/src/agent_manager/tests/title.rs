@@ -69,7 +69,6 @@ fn install_titler(
             input_hint: None,
             source_path: "test".to_string(),
             handler_fn: "fn".to_string(),
-            is_fennel: false,
         }],
         HashMap::new(),
         HashMap::from([(command.to_string(), func)]),

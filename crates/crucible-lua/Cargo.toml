@@ -2,21 +2,20 @@
 name = "crucible-lua"
 version.workspace = true
 edition = "2021"
-description = "Lua 5.4 scripting runtime for Crucible with Fennel support"
+description = "Luau scripting runtime spike for Crucible"
 license.workspace = true
 authors.workspace = true
 
 [features]
-default = ["fennel"]
-# Fennel compiles Lisp to Lua - macros, pattern matching, clean syntax
-fennel = ["mlua/lua54"]
+default = ["luau"]
+luau = ["mlua/luau"]
 send = ["mlua/send"]  # Enable Send+Sync for multi-threaded use
 # Test-only `PluginManager` API. The daemon never compiles it.
 test-utils = []
 
 [dependencies]
-# Runtime: Lua 5.4 with optional Fennel compiler
-mlua = { version = "0.12", features = ["vendored", "async", "serialize", "lua54"] }
+# Runtime backend is Luau.
+mlua = { version = "0.11.6", features = ["vendored", "async", "serialize"] }
 
 # Static analysis: Parse Lua for documentation extraction
 

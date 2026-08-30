@@ -774,7 +774,6 @@ fn registry_with_one_plugin_tool() -> (mlua::Lua, Arc<crate::plugin_tools::Plugi
             }],
             return_type: None,
             source_path: "fixture".to_string(),
-            is_fennel: false,
         }],
         &[],
         std::collections::HashMap::from([("plugin_echo".to_string(), func)]),

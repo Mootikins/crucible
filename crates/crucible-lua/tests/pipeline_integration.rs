@@ -294,42 +294,6 @@ fn test_plugin_reload_picks_up_changes() {
     assert_eq!(after, "v2");
 }
 
-#[cfg(feature = "fennel")]
-#[test]
-fn test_fennel_test_execution() {
-    let temp = TempDir::new().unwrap();
-    let fennel_test_path = temp.path().join("fennel_test.fnl");
-    let fennel_source = "(describe \"fennel\" (fn [] (it \"works\" (fn [] (expect.equal 1 1)))))";
-    fs::write(&fennel_test_path, fennel_source).unwrap();
-
-    let executor = LuaExecutor::new().unwrap();
-    executor.install_test_harness().unwrap();
-    let lua = executor.lua();
-
-    lua.load("test_mocks.setup()")
-        .set_name("test_mocks_setup")
-        .exec()
-        .unwrap();
-
-    let raw = fs::read_to_string(fennel_test_path).unwrap();
-    let compiled: String = lua
-        .load(format!("return fennel.compileString({raw:?})"))
-        .eval()
-        .unwrap();
-
-    lua.load(&compiled)
-        .set_name("fennel_test.fnl")
-        .exec()
-        .unwrap();
-
-    let results: mlua::Table = lua.load("return run_tests()").eval().unwrap();
-    let passed: usize = results.get("passed").unwrap();
-    let failed: usize = results.get("failed").unwrap();
-
-    assert_eq!(passed, 1);
-    assert_eq!(failed, 0);
-}
-
 #[test]
 fn test_scaffold_template_validity() {
     let plugin_name = "template-check";

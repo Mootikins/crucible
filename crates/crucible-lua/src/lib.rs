@@ -1,10 +1,10 @@
-//! Lua 5.4 scripting integration for Crucible
+//! Luau scripting integration for Crucible
 //!
-//! This crate provides Lua scripting with optional Fennel support:
+//! This crate provides Luau scripting:
 //! - **LLM-friendly**: Simple syntax, massive training data
 //! - **Spec tables**: Plugins declare exports by returning a table from `init.lua`
 //! - **Threading**: `send` feature enables Send+Sync
-//! - **Fennel**: Lisp syntax with macros (compiles to Lua)
+//! - **Luau types**: native type annotations and strict mode
 //!
 //! ## Architecture
 //!
@@ -40,7 +40,7 @@
 //!
 //! ## Feature Flags
 //!
-//! - `fennel` (default): Bundle the Fennel compiler (~255KB)
+//! - `luau` (default): Use the Luau runtime
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
 pub mod auth_plugin;
@@ -50,8 +50,6 @@ pub mod discovered;
 mod error;
 mod error_ext;
 mod executor;
-#[cfg(feature = "fennel")]
-mod fennel;
 mod fs;
 pub mod handler_budget;
 mod handlers;
@@ -122,8 +120,6 @@ pub use discovered::{
 };
 pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
-#[cfg(feature = "fennel")]
-pub use fennel::FennelCompiler;
 pub use fs::register_fs_module;
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,

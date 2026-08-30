@@ -88,30 +88,6 @@ if not io then io = setmetatable({}, stub_mt) end
 pub fn load_plugin_spec(init_path: &Path) -> LifecycleResult<Option<PluginSpec>> {
     let source = std::fs::read_to_string(init_path).map_err(LifecycleError::Io)?;
 
-    // Compile Fennel to Lua if needed
-    let is_fennel = init_path.extension().is_some_and(|ext| ext == "fnl");
-
-    if is_fennel {
-        #[cfg(feature = "fennel")]
-        {
-            let lua_source = crate::fennel::compile_fennel(&source).map_err(|e| {
-                LifecycleError::LoadError(format!(
-                    "Fennel compilation failed for {}: {}",
-                    init_path.display(),
-                    e
-                ))
-            })?;
-            return load_plugin_spec_from_source(&lua_source, init_path);
-        }
-        #[cfg(not(feature = "fennel"))]
-        {
-            return Err(LifecycleError::LoadError(format!(
-                "Fennel file {} requires the 'fennel' feature",
-                init_path.display()
-            )));
-        }
-    }
-
     load_plugin_spec_from_source(&source, init_path)
 }
 
@@ -142,7 +118,6 @@ pub(crate) fn load_plugin_spec_from_source(
 ) -> LifecycleResult<Option<PluginSpec>> {
     let lua = Lua::new();
     let source_path_str = source_path.to_string_lossy().to_string();
-    let is_fennel = source_path.extension().is_some_and(|ext| ext == "fnl");
 
     // Set up a permissive environment so plugins that use require(), crucible.*,
     // cru.*, io.*, etc. don't crash before we can read their spec table.
@@ -206,7 +181,6 @@ pub(crate) fn load_plugin_spec_from_source(
                     params,
                     return_type: None,
                     source_path: source_path_str.clone(),
-                    is_fennel,
                 });
             }
         }
@@ -229,7 +203,6 @@ pub(crate) fn load_plugin_spec_from_source(
                     input_hint: hint,
                     source_path: source_path_str.clone(),
                     handler_fn: cmd_name,
-                    is_fennel,
                 });
             }
         }
@@ -258,7 +231,6 @@ pub(crate) fn load_plugin_spec_from_source(
                         description: desc,
                         source_path: source_path_str.clone(),
                         handler_fn: name,
-                        is_fennel,
                     });
                 }
             }
