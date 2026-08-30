@@ -11,7 +11,7 @@
 
 use anyhow::Context;
 use crucible_core::config::{CliAppConfig, SourceTag};
-use crucible_lua::PluginSource;
+use crucible_lua::{ModuleRegistry, ModuleRequest, PluginSource, RootKind};
 use mlua::{Lua, Table, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -44,15 +44,9 @@ const BOOT_GUARDED_NAMESPACES: [&str; 3] = ["kiln", "sessions", "storage"];
 pub(crate) struct BootRequireState {
     /// Whether the boot phase is live. The searcher is inert when false.
     active: bool,
-    /// `<config_root>/lua/?.lua` and `<config_root>/lua/?/init.lua` — always
-    /// first on `package.path`, so a user module shadows a same-named plugin
-    /// module.
-    user_patterns: Vec<String>,
     /// The plugin search roots (canonicalized), for attributing a required
     /// file to a plugin.
     plugin_roots: Vec<PathBuf>,
-    /// The module patterns those roots contribute, for the shadow check.
-    plugin_patterns: Vec<String>,
     /// Module name → the plugin entry file the user's `require` loaded.
     loaded_modules: HashMap<String, PathBuf>,
     /// Plugins whose `setup` the user called during the evaluation.
@@ -272,9 +266,10 @@ pub async fn evaluate_boot_config_with_paths(
     let seed_rtp: Vec<PathBuf> = seed_config.runtimepath.clone();
     let mut eval_error: Option<String> = {
         let lua = loader.executor().lua();
+        let modules = loader.executor().modules().clone();
         let plugin_dirs = plugin_paths(&seed_rtp);
-        seed_boot_search_path(lua, &config_root, &plugin_dirs)?;
-        install_boot_searcher(lua, loader.publications(), loader.options())?;
+        seed_boot_search_path(lua, &modules, &config_root, &plugin_dirs)?;
+        install_boot_hook(&modules, loader.publications(), loader.options());
         // The UI namespaces must exist on the VM that evaluates the user's
         // file, or `cru.colorscheme.setup{...}` is an index-nil error.
         crucible_lua::config::register_ui_namespaces(lua)?;
@@ -283,11 +278,13 @@ pub async fn evaluate_boot_config_with_paths(
         // INSIDE the `cru.config.set` call, before it returns — Neovim's
         // invalidate-and-rebuild.
         let extender_paths = Arc::clone(&plugin_paths);
+        let extender_modules = modules.clone();
+        let extender_root = config_root.clone();
         crucible_lua::set_runtimepath_extender(Some(Arc::new(
             move |lua: &Lua, entries: &[String]| {
                 let rtp: Vec<PathBuf> = entries.iter().map(PathBuf::from).collect();
                 let dirs = extender_paths(&rtp);
-                if let Err(e) = refresh_plugin_dirs(lua, &dirs) {
+                if let Err(e) = refresh_plugin_dirs(lua, &extender_modules, &extender_root, &dirs) {
                     warn!("runtimepath change did not reach the module search path: {e}");
                 }
             },
@@ -322,7 +319,7 @@ pub async fn evaluate_boot_config_with_paths(
         // without this sweep activation would execute its file a second
         // time — doubling every top-level hook and publish.
         if eval_error.is_none() {
-            record_boot_loaded_modules(lua);
+            record_boot_loaded_modules(lua, &modules);
         }
 
         // The boot phase ends: the searcher goes inert, the extender comes
@@ -341,7 +338,8 @@ pub async fn evaluate_boot_config_with_paths(
         // state is byte-for-byte the no-init.lua boot.
         loader = DaemonPluginLoader::new(HashMap::new())?;
         let lua = loader.executor().lua();
-        seed_boot_search_path(lua, &config_root, &plugin_paths(&seed_rtp))?;
+        let modules = loader.executor().modules().clone();
+        seed_boot_search_path(lua, &modules, &config_root, &plugin_paths(&seed_rtp))?;
         if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
             state.active = false;
         }
@@ -451,75 +449,48 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), String> {
     }
 }
 
-/// The two module patterns a directory contributes.
-fn patterns_for_dir(dir: &Path) -> [String; 2] {
-    let dir = dir.to_string_lossy().replace('\\', "/");
-    [format!("{dir}/?.lua"), format!("{dir}/?/init.lua")]
+/// Existing plugin directories → their canonical roots.
+fn plugin_dir_roots(dirs: &[(PathBuf, PluginSource)]) -> Vec<PathBuf> {
+    dirs.iter()
+        .filter(|(dir, _)| dir.exists())
+        .filter_map(|(dir, _)| std::fs::canonicalize(dir).ok())
+        .collect()
 }
 
-/// Existing plugin directories → their module patterns and canonical roots.
-fn plugin_dir_patterns(dirs: &[(PathBuf, PluginSource)]) -> (Vec<String>, Vec<PathBuf>) {
-    let mut patterns = Vec::new();
-    let mut roots = Vec::new();
-    for (dir, _source) in dirs {
-        if !dir.exists() {
-            continue;
-        }
-        patterns.extend(patterns_for_dir(dir));
-        if let Ok(canonical) = std::fs::canonicalize(dir) {
-            roots.push(canonical);
-        }
-    }
-    (patterns, roots)
-}
-
-/// Set `package.path` to: the user patterns, then `patterns`, then whatever
-/// the path already held (deduplicated, first position wins).
+/// Put the search roots on the VM's resolver: the user's `lua/` directory
+/// first, then every plugin root.
 ///
-/// This is the invalidate-and-rebuild: every change reconstructs the same
-/// ordered structure, so the user's `<config_root>/lua` entries stay first
-/// and a rebuilt path never grows duplicate entries.
-fn rebuild_package_path(
-    lua: &Lua,
-    user_patterns: &[String],
-    plugin_patterns: &[String],
+/// The user entry is first so a user module shadows a same-named plugin
+/// module, which is the order `package.path` used to encode as a string. The
+/// resolver owns it now, so nothing a plugin runs can reorder it.
+fn apply_search_roots(
+    modules: &ModuleRegistry,
+    config_root: &Path,
+    plugin_roots: &[PathBuf],
 ) -> mlua::Result<()> {
-    let package: Table = lua.globals().get("package")?;
-    let current: String = package.get("path")?;
-
-    let mut seen: HashSet<&str> = HashSet::new();
-    let mut parts: Vec<&str> = Vec::new();
-    for pattern in user_patterns.iter().chain(plugin_patterns.iter()) {
-        if seen.insert(pattern.as_str()) {
-            parts.push(pattern.as_str());
+    let mut roots: Vec<(PathBuf, RootKind)> = vec![(config_root.join("lua"), RootKind::User)];
+    for root in plugin_roots {
+        if !roots.iter().any(|(existing, _)| existing == root) {
+            roots.push((root.clone(), RootKind::Plugin));
         }
     }
-    for pattern in current.split(';') {
-        if !pattern.is_empty() && seen.insert(pattern) {
-            parts.push(pattern);
-        }
-    }
-    package.set("path", parts.join(";"))
+    modules.set_roots(roots)
 }
 
-/// Step 3's seeding: compute the user patterns, put them and the plugin
-/// patterns on `package.path`, and store the boot require state.
+/// Step 3's seeding: put the user and plugin roots on the resolver, and
+/// store the boot require state.
 fn seed_boot_search_path(
     lua: &Lua,
+    modules: &ModuleRegistry,
     config_root: &Path,
     plugin_dirs: &[(PathBuf, PluginSource)],
 ) -> mlua::Result<()> {
-    let user_lua = config_root.join("lua");
-    let user_patterns: Vec<String> = patterns_for_dir(&user_lua).into();
-    let (plugin_patterns, plugin_roots) = plugin_dir_patterns(plugin_dirs);
-
-    rebuild_package_path(lua, &user_patterns, &plugin_patterns)?;
+    let plugin_roots = plugin_dir_roots(plugin_dirs);
+    apply_search_roots(modules, config_root, &plugin_roots)?;
 
     lua.set_app_data(BootRequireState {
         active: true,
-        user_patterns,
         plugin_roots,
-        plugin_patterns,
         loaded_modules: HashMap::new(),
         user_setup: HashSet::new(),
         wrapped_setups: Vec::new(),
@@ -529,117 +500,78 @@ fn seed_boot_search_path(
 
 /// A `runtimepath` change during evaluation: recompute the plugin dirs,
 /// update the searcher's view, rebuild the search path.
-fn refresh_plugin_dirs(lua: &Lua, plugin_dirs: &[(PathBuf, PluginSource)]) -> mlua::Result<()> {
-    let (plugin_patterns, plugin_roots) = plugin_dir_patterns(plugin_dirs);
-    let user_patterns = match lua.app_data_mut::<BootRequireState>() {
-        Some(mut state) => {
-            state.plugin_patterns = plugin_patterns.clone();
-            state.plugin_roots = plugin_roots;
-            state.user_patterns.clone()
-        }
-        None => Vec::new(),
-    };
-    rebuild_package_path(lua, &user_patterns, &plugin_patterns)
+fn refresh_plugin_dirs(
+    lua: &Lua,
+    modules: &ModuleRegistry,
+    config_root: &Path,
+    plugin_dirs: &[(PathBuf, PluginSource)],
+) -> mlua::Result<()> {
+    let plugin_roots = plugin_dir_roots(plugin_dirs);
+    if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
+        state.plugin_roots = plugin_roots.clone();
+    }
+    apply_search_roots(modules, config_root, &plugin_roots)
 }
 
-/// Install the boot searcher at `package.searchers[2]` — ahead of the
-/// standard Lua loader, resolving through the same `package.path`.
+/// Install the boot load hook on the module resolver.
 ///
-/// For a module that resolves under a plugin search root it returns a loader
-/// that stamps the plugin context around the file's execution (so `cru.on`
+/// The hook claims one shape only: a plugin ENTRY module — an undotted name
+/// answered by `<plugin root>/<name>.lua` or `<plugin root>/<name>/init.lua`.
+/// For those it runs the file under the plugin's context (so `cru.on`
 /// registrations are attributed and a later reload can clear them), records
-/// the module for activation reuse, and wraps the returned table's `setup`
-/// so a direct user call is recorded as ownership. For every other module it
-/// declines and the standard loader proceeds identically — logging a debug
-/// line when a user `lua/` module shadows a same-named plugin module.
-fn install_boot_searcher(
-    lua: &Lua,
+/// the module for activation reuse, and wraps the returned table's `setup` so
+/// a direct user call is recorded as ownership.
+///
+/// Every other module — the user's own `lua/` tree, a plugin's private
+/// submodule — is declined, and the resolver loads it the ordinary way. A
+/// plugin's nested `require` therefore cannot rebind the publish attribution
+/// away from the outer plugin. A user module that shadows a plugin module is
+/// logged on the way past.
+fn install_boot_hook(
+    modules: &ModuleRegistry,
     publications: PublicationRegistry,
     options: OptionsRegistry,
-) -> mlua::Result<()> {
-    let searcher = lua.create_function(move |lua, name: String| {
-        let publications = publications.clone();
-        let options = options.clone();
-        let (active, plugin_patterns) = match lua.app_data_ref::<BootRequireState>() {
-            Some(state) => (state.active, state.plugin_patterns.clone()),
-            None => (false, Vec::new()),
-        };
-        if !active {
-            return Ok(Value::Nil);
-        }
-
-        let package: Table = lua.globals().get("package")?;
-        let searchpath: mlua::Function = package.get("searchpath")?;
-        let path: String = package.get("path")?;
-        let found: (Option<String>, Option<String>) = searchpath.call((name.clone(), path))?;
-        let Some(file) = found.0 else {
-            return Ok(Value::Nil);
-        };
-        let Ok(canonical) = std::fs::canonicalize(&file) else {
-            return Ok(Value::Nil);
-        };
-
-        // A plugin ENTRY module is `<root>/<name>.lua` or
-        // `<root>/<name>/init.lua` for the whole module name. A plugin's own
-        // `lua/` submodule (or a dotted module under a root) is NOT claimed:
-        // it loads through the standard loader under whatever plugin context
-        // is already ambient, so a nested `require` inside a plugin body
-        // cannot rebind the publish attribution away from the outer plugin.
-        let is_plugin_entry = lua.app_data_ref::<BootRequireState>().is_some_and(|state| {
-            state.plugin_roots.iter().any(|root| {
-                canonical.strip_prefix(root).is_ok_and(|rel| {
-                    rel == Path::new(&format!("{name}.lua"))
-                        || rel == Path::new(&name).join("init.lua")
-                })
-            })
-        });
-
-        if !is_plugin_entry {
-            // The user's lua/ (or some other path entry) answered. Say so
-            // when a plugin module of the same name is being shadowed.
-            if !plugin_patterns.is_empty() {
-                let shadowed: (Option<String>, Option<String>) =
-                    searchpath.call((name.clone(), plugin_patterns.join(";")))?;
-                if let Some(plugin_file) = shadowed.0 {
-                    debug!(
-                        module = %name,
-                        user_file = %file,
-                        plugin_file = %plugin_file,
-                        "user lua/ module shadows a plugin module"
-                    );
-                }
+) {
+    let hook_modules = modules.clone();
+    modules.set_load_hook(Some(Arc::new(
+        move |lua: &Lua, request: &ModuleRequest| -> Option<mlua::Result<Value>> {
+            let active = lua
+                .app_data_ref::<BootRequireState>()
+                .is_some_and(|state| state.active);
+            if !active {
+                return None;
             }
-            return Ok(Value::Nil);
-        }
 
-        let plugin = plugin_of_module(&name).to_string();
-        let module_name = name.clone();
-        let loader = lua.create_function(move |lua, _args: mlua::MultiValue| {
-            boot_load_plugin_module(
+            if request.shadows_plugin {
+                debug!(
+                    module = %request.name,
+                    user_file = %request.path.display(),
+                    "user lua/ module shadows a plugin module"
+                );
+            }
+            if !request.is_entry {
+                return None;
+            }
+
+            let plugin = plugin_of_module(&request.name).to_string();
+            Some(boot_load_plugin_module(
                 lua,
+                &hook_modules,
                 &plugin,
-                &canonical,
-                &module_name,
+                &request.path,
+                &request.name,
                 &publications,
                 &options,
-            )
-        })?;
-        Ok(Value::Function(loader))
-    })?;
-
-    lua.load(
-        r#"
-local searcher = ...
-table.insert(package.searchers, 2, searcher)
-"#,
-    )
-    .call::<()>(searcher)
+            ))
+        },
+    )));
 }
 
 /// Load one plugin entry module for a boot-phase `require`: execute the file
 /// under the plugin's context, record it, and wrap its `setup`.
 fn boot_load_plugin_module(
     lua: &Lua,
+    modules: &ModuleRegistry,
     plugin: &str,
     file: &Path,
     module_name: &str,
@@ -658,19 +590,13 @@ fn boot_load_plugin_module(
     options.release_plugin(plugin);
     register_options_module(lua, options.clone(), plugin.to_string())?;
 
-    // The plugin's lua/ dir joins the search space exactly as activation
-    // would add it, so an entry module's own `require("submodule")` works.
-    if let Some(plugin_dir) = file.parent() {
-        let lua_dir = plugin_dir.join("lua");
-        if lua_dir.exists() {
-            let (user_patterns, mut plugin_patterns) = lua
-                .app_data_ref::<BootRequireState>()
-                .map(|s| (s.user_patterns.clone(), s.plugin_patterns.clone()))
-                .unwrap_or_default();
-            plugin_patterns.extend(patterns_for_dir(&lua_dir));
-            rebuild_package_path(lua, &user_patterns, &plugin_patterns)?;
-        }
-    }
+    // The plugin's own `lua/` dir is resolvable for the duration of this
+    // load, exactly as activation makes it — so an entry module's own
+    // `require("submodule")` works, and no other plugin inherits it.
+    let _module_scope = match file.parent() {
+        Some(plugin_dir) => Some(modules.enter_plugin_root(plugin_dir)?),
+        None => None,
+    };
 
     // Context restored on every exit path: an unrestored context would
     // misattribute whatever the user's file registers next.
@@ -712,48 +638,27 @@ end
     Ok(value)
 }
 
-/// Record every `package.loaded` module whose file lies under a plugin
-/// search root — the generalized half of the searcher's bookkeeping, run
-/// once after the evaluation so activation can reuse by FILE identity.
-fn record_boot_loaded_modules(lua: &Lua) {
+/// Record every module the evaluation loaded from under a plugin root.
+///
+/// The hook records the entries it CLAIMED; a module whose name does not
+/// match the entry shape — a plugin whose declared name differs from its
+/// directory — was loaded the ordinary way and is invisible to it. The
+/// resolver knows both, so this sweep asks the resolver and activation
+/// reuses by file identity rather than executing the file a second time.
+fn record_boot_loaded_modules(lua: &Lua, modules: &ModuleRegistry) {
     let roots = match lua.app_data_ref::<BootRequireState>() {
         Some(state) => state.plugin_roots.clone(),
         None => return,
     };
-    let Ok(package) = lua.globals().get::<Table>("package") else {
-        return;
-    };
-    let (Ok(loaded), Ok(searchpath), Ok(path)) = (
-        package.get::<Table>("loaded"),
-        package.get::<mlua::Function>("searchpath"),
-        package.get::<String>("path"),
-    ) else {
-        return;
-    };
-
-    for pair in loaded.pairs::<Value, Value>() {
-        let Ok((Value::String(name), _)) = pair else {
-            continue;
-        };
-        let Ok(name) = name.to_str().map(|s| s.to_string()) else {
-            continue;
-        };
+    for (name, file) in modules.loaded_modules() {
         let already = lua
             .app_data_ref::<BootRequireState>()
             .is_some_and(|state| state.loaded_modules.contains_key(&name));
         if already {
             continue;
         }
-        let Ok((Some(file), _)) =
-            searchpath.call::<(Option<String>, Option<String>)>((name.clone(), path.clone()))
-        else {
-            continue;
-        };
-        let Ok(canonical) = std::fs::canonicalize(&file) else {
-            continue;
-        };
-        if roots.iter().any(|root| canonical.starts_with(root)) {
-            BootRequireState::record_module(lua, &name, canonical);
+        if roots.iter().any(|root| file.starts_with(root)) {
+            BootRequireState::record_module(lua, &name, file);
         }
     }
 }
@@ -957,13 +862,9 @@ error("boom")
         )
         .unwrap();
 
-        let path_of = |boot: &BootConfig| -> String {
-            boot.loader
-                .executor()
-                .lua()
-                .load("return package.path")
-                .eval::<String>()
-                .expect("package.path")
+        // The search path is the resolver's root list now, not a string.
+        let path_of = |boot: &BootConfig| -> Vec<std::path::PathBuf> {
+            boot.loader.executor().modules().plugin_roots()
         };
 
         // Failed evaluation → fresh VM.
@@ -1000,10 +901,10 @@ error("boom")
             failed_path, clean_path,
             "the rebuilt VM must be seeded exactly as a no-init boot"
         );
-        // And the seeded path is real: the fixture plugin resolves on both.
+        // And the seeded path is real: the fixture root reached both.
         assert!(
-            failed_path.contains("sp_probe") || failed_path.contains("extra"),
-            "precondition: the seed runtimepath reached the search path: {failed_path}"
+            failed_path.iter().any(|root| root.starts_with(&rtp)),
+            "precondition: the seed runtimepath reached the search roots: {failed_path:?}"
         );
     }
 

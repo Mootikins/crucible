@@ -38,7 +38,7 @@ pub struct PluginManager {
     tools: Vec<RegisteredItem<DiscoveredTool>>,
     commands: Vec<RegisteredItem<DiscoveredCommand>>,
     lua: Lua,
-    module_resolver: Arc<Mutex<lua_integration::ModuleResolver>>,
+    modules: crate::modules::ModuleRegistry,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
     error_log: Arc<Mutex<PluginErrorLog>>,
@@ -83,10 +83,16 @@ impl PluginManager {
         }
         let error_log = Arc::new(Mutex::new(PluginErrorLog::new(100)));
         lua.set_app_data(Arc::clone(&error_log));
+        if let Err(error) = crate::luau_compat::register_stdlib_compat(&lua) {
+            warn!(
+                "Failed to install the Luau stdlib compatibility layer: {}",
+                error
+            );
+        }
         if let Err(error) = spec::setup_spec_sandbox(&lua) {
             warn!("Failed to set up plugin runtime sandbox: {}", error);
         }
-        let module_resolver = lua_integration::install_module_resolver(&lua)
+        let modules = crate::modules::ModuleRegistry::install(&lua)
             .expect("the Luau module resolver must install before plugins run");
 
         Self {
@@ -96,7 +102,7 @@ impl PluginManager {
             tools: Vec::new(),
             commands: Vec::new(),
             lua,
-            module_resolver,
+            modules,
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),
             error_log,

@@ -59,9 +59,11 @@ pub mod isolation;
 mod json_query;
 pub mod lifecycle;
 pub mod lua_util;
+pub mod luau_compat;
 pub mod manifest;
 mod mcp;
 mod modes;
+pub mod modules;
 pub mod namespace;
 pub mod notify;
 mod oil;
@@ -182,6 +184,7 @@ pub use handlers::{
     TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
+pub use luau_compat::register_stdlib_compat;
 pub use manifest::{
     Capability, LoadedPlugin, ManifestError, ManifestResult, PluginDependency, PluginManifest,
     PluginSource, PluginState,
@@ -190,6 +193,7 @@ pub use mcp::register_mcp_module_stub;
 pub use modes::{
     register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
 };
+pub use modules::{ModuleLoadHook, ModuleRegistry, ModuleRequest, PrivateRootGuard, RootKind};
 pub use session_api::{
     register_session_module, CurrentSession, Session, SessionConfigRpc, SessionVariables,
     UnsupportedSessionRpc,

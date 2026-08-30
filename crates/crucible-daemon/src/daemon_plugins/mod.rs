@@ -992,9 +992,10 @@ impl DaemonPluginLoader {
 
     /// Execute a plugin's init.lua in the daemon's Lua executor (async).
     ///
-    /// Gives this plugin's directory priority for `require("gateway")` and
-    /// evaluates the init file
-    /// using `eval_async` to enable async Lua function yielding.
+    /// Makes this plugin's own `lua/` directory resolvable for the duration
+    /// of the load — `require("gateway")` finds the plugin's copy and no
+    /// other plugin's — then evaluates the init file with `eval_async`, so an
+    /// async Lua function may yield.
     ///
     /// Calls the returned spec's `setup(cfg)` with this plugin's
     /// `[plugins.<name>]` section — the documented configuration mechanism.
@@ -1009,9 +1010,24 @@ impl DaemonPluginLoader {
         let plugin_dir = init_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
+
+        // This plugin's own `lua/` directory is resolvable while the guard
+        // lives, and only while it lives. An unscoped root list made
+        // resolution depend on plugin load order, and let one plugin's
+        // private `config` module answer another plugin's `require`.
+        let _module_scope = self
+            .executor
+            .enter_plugin_root(plugin_dir)
+            .map_err(|e| anyhow::anyhow!("enter plugin module root: {e}"))?;
+
+        // A reload must re-read this plugin's private modules. Their cache is
+        // keyed by file, so forgetting the plugin's directory is enough — and
+        // only the private half is forgotten, because the entry instance in
+        // `package.loaded` is what a user's boot `require` created and what
+        // activation reuses instead of executing the file twice.
         self.executor
-            .prepend_module_root(plugin_dir.to_path_buf())
-            .map_err(|e| anyhow::anyhow!("configure plugin module root: {e}"))?;
+            .invalidate_private_modules_under(plugin_dir)
+            .map_err(|e| anyhow::anyhow!("invalidate plugin modules: {e}"))?;
 
         // One module, one setup, per plugin: a plugin whose entry module the
         // user's init.lua already `require`d is activated FROM that same

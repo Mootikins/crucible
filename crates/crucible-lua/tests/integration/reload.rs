@@ -42,10 +42,7 @@ return {
     assert_eq!(before, "v1");
 
     std::fs::write(
-        temp.path()
-            .join(plugin_name)
-            .join(plugin_name)
-            .join("core.lua"),
+        temp.path().join(plugin_name).join("core.lua"),
         "return { value = 'v2' }\n",
     )
     .unwrap();
@@ -98,10 +95,7 @@ return {
     assert_eq!(initial_trace, "L");
 
     std::fs::write(
-        temp.path()
-            .join(plugin_name)
-            .join(plugin_name)
-            .join("core.lua"),
+        temp.path().join(plugin_name).join("core.lua"),
         "return { value = 'v2' }\n",
     )
     .unwrap();

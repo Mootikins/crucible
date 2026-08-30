@@ -26,10 +26,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
     assert!(result.success);
     let content = result.content.unwrap();
     assert!(content["found"].as_bool().unwrap());
@@ -51,10 +48,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
 
     // The shell.exec should fail due to policy
     assert!(!result.success);

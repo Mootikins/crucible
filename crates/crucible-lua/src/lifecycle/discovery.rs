@@ -293,7 +293,8 @@ impl PluginManager {
             )
         };
 
-        self.configure_plugin_module_root(&plugin_dir)?;
+        // The private root pops when this guard drops, at the end of the load.
+        let _module_scope = self.enter_plugin_modules(&plugin_dir)?;
 
         // Both markers ride ONE context, in Rust-side app data. As Lua globals
         // they were forgeable: a plugin assigned itself another plugin's
@@ -318,20 +319,21 @@ impl PluginManager {
                 Value::Table(spec_table) => {
                     self.capture_on_unload_hook(name, &spec_table)?;
                     self.capture_on_load_hook(name, &spec_table)?;
-                    let key = self.lua.create_registry_value(spec_table).map_err(|e| {
+                    // `require("<plugin>")` must answer with the table this
+                    // load produced, not evaluate the file a second time.
+                    let loaded: mlua::Table = self
+                        .lua
+                        .globals()
+                        .get::<mlua::Table>("package")
+                        .and_then(|package| package.get("loaded"))
+                        .map_err(|e| LifecycleError::LoadError(format!("package.loaded: {e}")))?;
+                    loaded.set(name, spec_table).map_err(|e| {
                         LifecycleError::LoadError(format!(
                             "Failed to cache plugin module {}: {}",
                             name, e
                         ))
                     })?;
-                    self.module_resolver
-                        .lock()
-                        .map_err(|_| {
-                            LifecycleError::LoadError(
-                                "plugin module resolver lock poisoned".to_string(),
-                            )
-                        })?
-                        .cache(name.to_string(), key);
+                    self.modules().record_public(name, &main_path);
                 }
                 _ => {
                     self.on_unload_hooks.remove(name);

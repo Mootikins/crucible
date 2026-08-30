@@ -86,20 +86,21 @@ fn test_manifest_takes_precedence_over_lua_table() {
 }
 
 /// Pure-Lua vendoring is THE supported dependency mechanism: native rocks
-/// cannot load into the statically vendored interpreter, and
-/// `configure_plugin_package_path` is what makes `require` resolve inside the
-/// plugin directory. The vendored module sits under the plugin's own
-/// namespace directory (`my-plugin/vendored.lua`, required as
-/// `"my-plugin.vendored"`), so two plugins vendoring the same library cannot
-/// collide. The assertion pins the VALUE the vendored module returned — read
-/// back out of the VM — so a require that silently resolved elsewhere fails.
+/// cannot load into the statically vendored interpreter. A vendored module
+/// sits in the plugin's own directory and is required under the plugin's
+/// name (`my-plugin/vendored.lua`, required as `"my-plugin.vendored"`), so
+/// two plugins vendoring the same library cannot collide. The manager and
+/// the daemon resolve it identically, through the plugin root the plugin
+/// directory sits in — the parity the two loaders used to lack. The
+/// assertion pins the VALUE the vendored module returned, read back out of
+/// the VM, so a require that silently resolved elsewhere fails.
 #[test]
-fn a_vendored_module_resolves_through_the_plugin_package_path() {
+fn a_vendored_module_resolves_under_the_plugin_namespace() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = temp.path().join("my-plugin");
-    std::fs::create_dir_all(plugin_dir.join("my-plugin")).unwrap();
+    std::fs::create_dir_all(&plugin_dir).unwrap();
     std::fs::write(
-        plugin_dir.join("my-plugin/vendored.lua"),
+        plugin_dir.join("vendored.lua"),
         r#"return { version = "3.1.4-vendored" }"#,
     )
     .unwrap();

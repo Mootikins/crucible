@@ -53,8 +53,10 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
         return internal_error(req.id, anyhow::Error::from(e));
     }
 
-    // Mirror the runtime loader: plugin siblings are visible by name and a
-    // plugin's own `lua/` directory is private to its execution.
+    // Mirror the runtime loader exactly: the plugin's siblings are visible by
+    // name through the parent root, and the plugin's own `lua/` directory is
+    // private to its execution. A suite that passes here therefore proves the
+    // plugin loads in the daemon.
     let plugin_root = test_path
         .canonicalize()
         .unwrap_or_else(|_| test_path.clone());
@@ -67,9 +69,17 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
         plugin_root
     };
     let plugin_parent = plugin_root.parent().unwrap_or(&plugin_root).to_path_buf();
-    if let Err(e) = executor.configure_module_roots(vec![plugin_root.clone(), plugin_parent]) {
+    if let Err(e) = executor.configure_module_roots(vec![plugin_parent]) {
         return internal_error(req.id, e);
     }
+    // The plugin under test owns its `lua/` directory for the whole run, and
+    // nothing else: the runtime grants exactly this. The harness used to add
+    // `<plugin_dir>/?.lua` as well, under which `require("lua.container")`
+    // passed here and failed in the daemon.
+    let _module_scope = match executor.enter_plugin_root(&plugin_root) {
+        Ok(guard) => guard,
+        Err(e) => return internal_error(req.id, e),
+    };
 
     // Setup test mocks
     if let Err(e) = executor

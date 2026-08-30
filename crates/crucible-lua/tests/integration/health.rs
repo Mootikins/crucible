@@ -33,10 +33,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
 
     assert!(result.success);
     let content = result.content.unwrap();
@@ -73,10 +70,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
 
     assert!(result.success);
     let content = result.content.unwrap();

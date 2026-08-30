@@ -118,10 +118,39 @@ local function decode_entities(s)
     end))
 end
 
+--- Strip tags in LINEAR time.
+---
+--- `s:gsub("<[^>]*>", "")` is accidentally quadratic on the input this parser
+--- is written to survive: for every `<` with no `>` after it, `[^>]*` scans to
+--- the end of the string before the match fails. A row of 4KB of `<` costs
+--- 16M character steps, and a page of them multiplies that by the row count.
+--- The same hazard `rows_of` documents, one layer down — and the same remedy:
+--- `find(..., plain)` advances a cursor instead of backtracking.
+---
+--- An unterminated `<` is not a tag, so it is kept, exactly as the pattern
+--- form kept it.
+local function strip_tags(s)
+    local out, pos = {}, 1
+    while true do
+        local open = s:find("<", pos, true)
+        if not open then
+            out[#out + 1] = s:sub(pos)
+            return table.concat(out)
+        end
+        out[#out + 1] = s:sub(pos, open - 1)
+        local close = s:find(">", open + 1, true)
+        if not close then
+            out[#out + 1] = s:sub(open)
+            return table.concat(out)
+        end
+        pos = close + 1
+    end
+end
+
 --- Tags first, entities second. The other order would turn an escaped
 --- `&lt;script&gt;` in the page text into a tag and then delete it.
 local function clean(s)
-    return decode_entities((s:gsub("<[^>]*>", "")))
+    return decode_entities(strip_tags(s))
 end
 
 --- lite wraps some hits in `//duckduckgo.com/l/?uddg=<percent-encoded target>`.

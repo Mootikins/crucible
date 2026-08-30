@@ -47,10 +47,36 @@ end
 --- Records are blank-line separated. A record has a `worktree <path>` line and
 --- either a `branch refs/heads/<name>` line or a `detached` line — detached
 --- worktrees map no branch and are skipped.
+--- Iterate the lines of `text`, blank ones included, exactly once each.
+---
+--- `gmatch("[^\n]*")` is NOT this. An empty match is legal for that pattern,
+--- and the two runtimes disagree about what to do with one: PUC Lua rejects an
+--- empty match that ends where the last match ended, Luau does not. Under Luau
+--- the same string yields an extra `""` after EVERY line, and a parser that
+--- treats a blank line as a record separator sees every record end
+--- immediately. Splitting on the separator says what is meant and reads the
+--- same on both.
+function M.each_line(text)
+  local source = text or ""
+  local pos = 1
+  return function()
+    if pos > #source then return nil end
+    local newline = source:find("\n", pos, true)
+    if not newline then
+      local line = source:sub(pos)
+      pos = #source + 1
+      return line
+    end
+    local line = source:sub(pos, newline - 1)
+    pos = newline + 1
+    return line
+  end
+end
+
 function M.parse_worktrees(porcelain)
   local map = {}
   local current = nil
-  for line in (porcelain or ""):gmatch("[^\n]*") do
+  for line in M.each_line(porcelain) do
     local path = line:match("^worktree (.+)$")
     local branch = line:match("^branch (.+)$")
     if path then

@@ -48,7 +48,16 @@ pub(super) fn parse_capability(s: &str) -> Option<Capability> {
 /// Stubs `require()`, `crucible`, `cru`, and `io` so that plugin init files
 /// can be evaluated for their return table without crashing on missing runtime
 /// dependencies. The stubs are no-ops — we only care about the spec table structure.
+///
+/// The `package` table comes from the resolver rather than from the language:
+/// Luau ships no package library, and a shipped plugin's last line is
+/// `package.loaded[NAME] = plugin`. Without it, spec extraction dies on the
+/// line that makes the plugin requirable.
 pub(super) fn setup_spec_sandbox(lua: &Lua) -> Result<(), mlua::Error> {
+    if matches!(lua.globals().get::<Value>("package")?, Value::Nil) {
+        crate::modules::ModuleRegistry::install(lua)?;
+    }
+    crate::luau_compat::register_stdlib_compat(lua)?;
     lua.load(
         r#"
 -- Stub require: return an empty table that tolerates any method call.

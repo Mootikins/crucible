@@ -20,10 +20,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
 
     assert!(result.success);
     let content = result.content.unwrap();
@@ -52,7 +49,7 @@ function handler(args)
 end
 "#;
     let result = executor
-        .execute_source(source, false, serde_json::json!({}))
+        .execute_source(source, serde_json::json!({}))
         .await
         .unwrap();
     assert!(result.success, "Failed: {:?}", result.error);
@@ -107,10 +104,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
     assert!(result.success, "Failed: {:?}", result.error);
     let content = result.content.unwrap();
 
@@ -175,10 +169,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
     assert!(result.success, "Failed: {:?}", result.error);
     let content = result.content.unwrap();
 
@@ -240,10 +231,7 @@ function handler(args)
 end
 "#;
 
-    let result = executor
-        .execute_source(source, false, json!({}))
-        .await
-        .unwrap();
+    let result = executor.execute_source(source, json!({})).await.unwrap();
     assert!(result.success, "Failed: {:?}", result.error);
     let content = result.content.unwrap();
 

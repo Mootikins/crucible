@@ -42,42 +42,26 @@ fn write_scaffold_plugin(root: &Path, name: &str) {
     .unwrap();
 }
 
-fn configure_package_path(lua: &mlua::Lua, plugin_dir: &Path) {
-    let plugin_dir = plugin_dir.to_string_lossy();
-    lua.load(format!(
-        r#"
-local plugin_dir = {plugin_dir:?}
-local plugin_parent = plugin_dir:match("^(.*)/[^/]+$") or plugin_dir
-local entries = {{
-    -- The entry the RUNTIME provides, and the one a plugin's own suite uses:
-    -- a plugin is required by its directory name. Without it a scaffolded
-    -- suite's `require("<plugin-name>")` finds nothing here while working
-    -- perfectly under `cru plugin test`.
-    plugin_parent .. "/?/init.lua",
-    -- Wider than the runtime, deliberately: these fixtures put submodules at
-    -- `<plugin_dir>/<name>/core.lua` and require them as `<name>.core`. This
-    -- harness exercises the reload and scaffold pipelines, NOT runtime
-    -- package.path fidelity — `shipped_plugin_lua_suite_passes` is the gate
-    -- that mirrors the loader exactly.
-    plugin_dir .. "/?.lua",
-    plugin_dir .. "/?/init.lua",
-    plugin_dir .. "/tests/?.lua",
-}}
-
-for _, entry in ipairs(entries) do
-    if not package.path:find(entry, 1, true) then
-        package.path = entry .. ";" .. package.path
-    end
-end
-"#
-    ))
-    .exec()
-    .unwrap();
+/// Give the executor the roots the RUNTIME gives a plugin, and no others:
+/// the plugin's parent (so `require("<plugin-name>")` works) plus the
+/// plugin's own `lua/` directory, which the returned guard scopes.
+///
+/// The harness used to add `<plugin_dir>/?.lua` on top, which made a require
+/// pass here that failed in the daemon. `shipped_plugin_lua_suite_passes` is
+/// the gate that mirrors the loader; this must not disagree with it.
+fn configure_modules(executor: &LuaExecutor, plugin_dir: &Path) -> crucible_lua::PrivateRootGuard {
+    let parent = plugin_dir.parent().unwrap_or(plugin_dir).to_path_buf();
+    executor
+        .configure_module_roots(vec![parent])
+        .expect("module roots");
+    executor
+        .enter_plugin_root(plugin_dir)
+        .expect("plugin module root")
 }
 
 fn create_reload_plugin_files(root: &Path, name: &str, module_value: &str) {
     let plugin_dir = root.join(name);
-    fs::create_dir_all(plugin_dir.join(name)).unwrap();
+    fs::create_dir_all(&plugin_dir).unwrap();
     fs::write(
         plugin_dir.join("plugin.yaml"),
         format!(
@@ -105,7 +89,7 @@ return {{
     );
     fs::write(plugin_dir.join("init.lua"), init_source).unwrap();
     fs::write(
-        plugin_dir.join(name).join("core.lua"),
+        plugin_dir.join("core.lua"),
         format!("return {{ value = '{module_value}' }}\n"),
     )
     .unwrap();
@@ -125,7 +109,7 @@ async fn test_plugin_test_roundtrip() {
     executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
-    configure_package_path(lua, &plugin_dir);
+    let _module_scope = configure_modules(&executor, &plugin_dir);
 
     lua.load("test_mocks.setup()")
         .set_name("test_mocks_setup")
@@ -176,7 +160,7 @@ end
 "#;
 
     let result = executor
-        .execute_source(source, false, serde_json::json!({}))
+        .execute_source(source, serde_json::json!({}))
         .await
         .unwrap();
 
@@ -275,10 +259,7 @@ fn test_plugin_reload_picks_up_changes() {
     assert_eq!(before, "v1");
 
     fs::write(
-        temp.path()
-            .join(plugin_name)
-            .join(plugin_name)
-            .join("core.lua"),
+        temp.path().join(plugin_name).join("core.lua"),
         "return { value = 'v2' }\n",
     )
     .unwrap();
@@ -313,7 +294,7 @@ fn test_scaffold_template_validity() {
     let executor = LuaExecutor::new().unwrap();
     executor.install_test_harness().unwrap();
     let lua = executor.lua();
-    configure_package_path(lua, &plugin_dir);
+    let _module_scope = configure_modules(&executor, &plugin_dir);
     lua.load("test_mocks.setup()")
         .set_name("test_mocks_setup")
         .exec()

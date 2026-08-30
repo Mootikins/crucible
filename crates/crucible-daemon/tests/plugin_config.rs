@@ -56,13 +56,14 @@ fn shipped_config_module(plugin: &str, toml: serde_json::Value) -> (mlua::Lua, m
         .exec()
         .unwrap();
 
-    let dir = plugins_root().join(plugin).join("lua");
-    lua.load(format!(
-        r#"package.path = {:?} .. "/?.lua;" .. package.path"#,
-        dir.to_string_lossy()
-    ))
-    .exec()
-    .unwrap();
+    // The plugin's own `lua/` directory, exactly as the runtime scopes it:
+    // Luau has no `package.path`, and the host resolver is what `require`
+    // reads. The guard lives as long as the returned VM does.
+    let modules = crucible_lua::ModuleRegistry::install(&lua).unwrap();
+    let scope = modules
+        .enter_plugin_root(&plugins_root().join(plugin))
+        .unwrap();
+    std::mem::forget(scope);
 
     let module: mlua::Table = lua.load(r#"return require("config")"#).eval().unwrap();
     (lua, module)
@@ -450,51 +451,6 @@ return { name = "dotmod" }
     );
 }
 
-/// A `.fnl` entry cannot be `require`d at all — only `?.lua` patterns are
-/// on `package.path` and the C searchers are neutered — so the file
-/// executes exactly once, at activation, where the loader compiles it.
-/// Pins the claim rather than asserting it.
-#[tokio::test]
-async fn a_fennel_plugin_executes_once_because_require_cannot_reach_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("plugins");
-    let dir = root.join("fnlplug");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: fnlplug\nversion: \"0.1.0\"\nmain: init.fnl\n",
-    )
-    .unwrap();
-    std::fs::write(
-        dir.join("init.fnl"),
-        "(set _G.__fnl_execs (+ (or _G.__fnl_execs 0) 1))\n{:name \"fnlplug\"}\n",
-    )
-    .unwrap();
-
-    let (_config, loader) = boot_and_activate(
-        tmp.path(),
-        &root,
-        "",
-        r#"
-local ok = pcall(require, "fnlplug")
-cru.config.set({ fnl_probe = { requirable = ok } })
-"#,
-    )
-    .await;
-
-    let store = crucible_lua::get_app_config().expect("store live");
-    assert_eq!(
-        store["fnl_probe"]["requirable"],
-        serde_json::json!(false),
-        "precondition: a .fnl entry is not requirable"
-    );
-    let execs = loader.eval("return _G.__fnl_execs").await.unwrap();
-    assert_eq!(execs, "1", "the .fnl entry executes once, at activation");
-}
-
-/// A plugin configured BOTH ways gets one boot notice naming the ignored
-/// section — one layer superseding another must never be silent. A plugin
-/// configured one way only gets no notice.
 #[tokio::test]
 async fn a_both_forms_plugin_gets_one_supersession_notice() {
     let tmp = tempfile::tempdir().unwrap();

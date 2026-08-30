@@ -7,15 +7,14 @@ use crate::error::LuaError;
 use crate::fs::register_fs_module;
 use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
+use crate::modules::{ModuleRegistry, PrivateRootGuard, RootKind};
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, CurrentSession, Session};
 #[cfg(any(test, feature = "test-utils"))]
 use crate::types::LuaExecutionResult;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 #[cfg(any(test, feature = "test-utils"))]
 use std::time::Instant;
 
@@ -25,7 +24,7 @@ use std::time::Instant;
 /// for multi-threaded use.
 pub struct LuaExecutor {
     lua: Lua,
-    module_roots: Arc<Mutex<Vec<PathBuf>>>,
+    modules: ModuleRegistry,
     current_session: CurrentSession,
     on_session_start_hooks: Vec<RegistryKey>,
     /// Parallel to `on_session_start_hooks`: whether each opted into refusing
@@ -45,15 +44,13 @@ impl LuaExecutor {
 
         // Set up safe globals and Crucible API
         Self::setup_globals(&lua)?;
-        let module_roots = Arc::new(Mutex::new(Vec::new()));
-        let module_cache = Arc::new(Mutex::new(HashMap::new()));
-        Self::install_module_resolver(&lua, Arc::clone(&module_roots), Arc::clone(&module_cache))?;
+        let modules = ModuleRegistry::install(&lua)?;
 
         let current_session = register_session_module(&lua)?;
 
         Ok(Self {
             lua,
-            module_roots,
+            modules,
             current_session,
             on_session_start_hooks: Vec::new(),
             on_session_start_required: Vec::new(),
@@ -213,6 +210,10 @@ impl LuaExecutor {
     fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
         let globals = lua.globals();
 
+        // `io` and the file-touching half of `os` are the host's, because
+        // Luau ships neither. See `crate::luau_compat`.
+        crate::luau_compat::register_stdlib_compat(lua)?;
+
         // Create the cru namespace — the one Lua root Crucible owns.
         lua.load("cru = cru or {}").exec()?;
 
@@ -301,7 +302,6 @@ impl LuaExecutor {
     pub async fn execute_source(
         &self,
         source: &str,
-        _: bool,
         args: JsonValue,
     ) -> Result<LuaExecutionResult, LuaError> {
         let start = Instant::now();
@@ -358,108 +358,41 @@ impl LuaExecutor {
         &self.lua
     }
 
-    /// Restrict `require` to the supplied plugin roots and their `lua/`
-    /// subdirectories. Luau has no mutable `package.path`; lookup belongs to
-    /// the host so plugin code cannot widen its own import authority.
+    /// The module resolver this VM's `require` reads.
+    pub fn modules(&self) -> &ModuleRegistry {
+        &self.modules
+    }
+
+    /// Restrict `require` to the supplied plugin roots. Luau has no mutable
+    /// `package.path`; lookup belongs to the host so plugin code cannot widen
+    /// its own import authority.
     pub fn configure_module_roots(&self, roots: Vec<PathBuf>) -> Result<(), LuaError> {
-        self.ensure_package_compatibility()?;
-        *self
-            .module_roots
-            .lock()
-            .map_err(|_| LuaError::Runtime("plugin module resolver lock poisoned".into()))? = roots;
+        self.configure_roots(
+            roots
+                .into_iter()
+                .map(|root| (root, RootKind::Plugin))
+                .collect(),
+        )
+    }
+
+    /// Set the search roots, user roots included.
+    pub fn configure_roots(&self, roots: Vec<(PathBuf, RootKind)>) -> Result<(), LuaError> {
+        self.modules.set_roots(roots)?;
         Ok(())
     }
 
-    /// Prefer one plugin's private modules for the duration of its load.
-    pub fn prepend_module_root(&self, root: PathBuf) -> Result<(), LuaError> {
-        self.ensure_package_compatibility()?;
-        self.module_roots
-            .lock()
-            .map_err(|_| LuaError::Runtime("plugin module resolver lock poisoned".into()))?
-            .insert(0, root);
-        Ok(())
+    /// Make one plugin's own `lua/` directory resolvable while the guard
+    /// lives. The guard pops it, so the next plugin does not inherit it.
+    pub fn enter_plugin_root(&self, plugin_dir: &Path) -> Result<PrivateRootGuard, LuaError> {
+        Ok(self.modules.enter_plugin_root(plugin_dir)?)
     }
 
-    fn ensure_package_compatibility(&self) -> Result<(), LuaError> {
-        if matches!(self.lua.globals().get::<Value>("package")?, Value::Nil) {
-            let package = self.lua.create_table()?;
-            package.set("loaded", self.lua.create_table()?)?;
-            self.lua.globals().set("package", package)?;
-        }
+    /// Forget the plugin's private modules cached from under `dir`, so a
+    /// reload re-reads them. The entry instance in `package.loaded` stays:
+    /// activation reuses the one a boot `require` created.
+    pub fn invalidate_private_modules_under(&self, dir: &Path) -> Result<(), LuaError> {
+        self.modules.invalidate_private_under(&self.lua, dir)?;
         Ok(())
-    }
-
-    fn install_module_resolver(
-        lua: &Lua,
-        roots: Arc<Mutex<Vec<PathBuf>>>,
-        cache: Arc<Mutex<HashMap<(PathBuf, String), RegistryKey>>>,
-    ) -> mlua::Result<()> {
-        let loaded = lua.create_table()?;
-        let package = lua.create_table()?;
-        package.set("loaded", loaded)?;
-        lua.globals().set("package", package)?;
-
-        let require = lua.create_function(move |lua, name: String| {
-            if name.is_empty()
-                || name.split('.').any(|part| {
-                    part.is_empty()
-                        || !part
-                            .bytes()
-                            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
-                })
-            {
-                return Err(mlua::Error::runtime(format!(
-                    "invalid plugin module name '{name}'"
-                )));
-            }
-            let loaded: Table = lua.globals().get::<Table>("package")?.get("loaded")?;
-            if let Ok(value) = loaded.get::<Value>(name.as_str()) {
-                if !matches!(value, Value::Nil) {
-                    return Ok(value);
-                }
-            }
-            let relative = name.replace('.', "/");
-            let roots = roots
-                .lock()
-                .map_err(|_| mlua::Error::runtime("plugin module resolver lock poisoned"))?;
-            for root in roots.iter() {
-                if let Some(key) = cache
-                    .lock()
-                    .map_err(|_| mlua::Error::runtime("plugin module resolver lock poisoned"))?
-                    .get(&(root.clone(), name.clone()))
-                {
-                    return lua.registry_value(key);
-                }
-                for base in [root.to_path_buf(), root.join("lua")] {
-                    let path = base.join(&relative).with_extension("lua");
-                    let path = if path.is_file() {
-                        path
-                    } else {
-                        let init = base.join(&relative).join("init.lua");
-                        if init.is_file() {
-                            init
-                        } else {
-                            continue;
-                        }
-                    };
-                    let value: Value = lua
-                        .load(std::fs::read_to_string(&path).map_err(mlua::Error::external)?)
-                        .set_name(path.to_string_lossy().as_ref())
-                        .eval()?;
-                    let key = lua.create_registry_value(value.clone())?;
-                    cache
-                        .lock()
-                        .map_err(|_| mlua::Error::runtime("plugin module resolver lock poisoned"))?
-                        .insert((root.clone(), name.clone()), key);
-                    loaded.set(name, value.clone())?;
-                    return Ok(value);
-                }
-            }
-            Err(mlua::Error::runtime(format!(
-                "plugin module '{name}' was not found"
-            )))
-        })?;
-        lua.globals().set("require", require)
     }
 }
 
@@ -478,7 +411,7 @@ mod tests {
         "#;
 
         let args = serde_json::json!({ "x": 1, "y": 2 });
-        let result = executor.execute_source(source, false, args).await.unwrap();
+        let result = executor.execute_source(source, args).await.unwrap();
 
         assert!(result.success);
         assert_eq!(result.content, Some(serde_json::json!({ "result": 3 })));
@@ -496,7 +429,7 @@ mod tests {
         "#;
 
         let result = executor
-            .execute_source(source, false, serde_json::json!({}))
+            .execute_source(source, serde_json::json!({}))
             .await
             .unwrap();
 
@@ -522,10 +455,7 @@ mod tests {
             "nested": { "key": "value" }
         });
 
-        let result = executor
-            .execute_source(source, false, args.clone())
-            .await
-            .unwrap();
+        let result = executor.execute_source(source, args.clone()).await.unwrap();
 
         assert!(result.success);
         assert_eq!(result.content, Some(args));
