@@ -22,19 +22,17 @@
 //!     end
 //! end
 //!
-//! -- Search notes (async) - semantic search
+//! -- Search notes (async). BOTH bodies answer with an empty table today:
+//! -- the stub and the store-backed one build a table and never fill it, so
+//! -- the scored `{ path, title, score, snippet }` rows this once advertised
+//! -- do not exist. The declaration says `{ any }` for that reason.
 //! local results = cru.kiln.search("machine learning", {limit = 5, threshold = 0.6})
-//! for _, result in ipairs(results) do
-//!     print(result.path, result.title, result.score, result.snippet)
-//! end
 //!
-//! -- Create a note (daemon-only; writes file and indexes synchronously)
-//! local path = cru.kiln.create_note({
-//!   path = "Entities/Jane Doe.md",
-//!   body = "# Jane Doe\n\nWorks on [[Crucible]].",
-//!   frontmatter = { type = "entity", aliases = { "jane", "JD" } },
-//!   overwrite = false,           -- default; set true to replace existing
-//! })
+//! -- There is no `cru.kiln.create_note`. This block used to document one,
+//! -- with a frontmatter table and an `overwrite` flag; nothing in `crates/`
+//! -- has ever registered it. A plugin author following the example got a
+//! -- nil-index error. Writing a note is the `create_note` TOOL, through the
+//! -- agent surface.
 //!
 //! -- Get outgoing links from a note (async) - resolved note paths
 //! local links = cru.kiln.outlinks("path/to/note.md")
