@@ -832,7 +832,7 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 
 | Type | Location | Purpose |
 |---|---|---|
-| `LuaExecutor` | `crucible-lua/src/executor.rs:25` | Owns the VM, the Fennel compiler, the current session |
+| `LuaExecutor` | `crucible-lua/src/executor.rs:25` | Owns the Luau VM, the module registry, the current session |
 | `PluginManager` | `crucible-lua/src/lifecycle/mod.rs:31` | Discovers, loads, reloads, enables plugins |
 | `PluginSpec` | `crucible-lua/src/lifecycle/spec.rs:16` | Parsed spec table an `init.lua` returns |
 | `PluginManifest`, `Capability`, `PluginState`, `PluginSource` | `crucible-lua/src/manifest.rs:48,80,325,295` | `plugin.yaml` model |
@@ -857,7 +857,8 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `ConfigState`, `CONFIG` | `crucible-lua/src/config.rs:38,55` | Process-global `OnceLock<RwLock<ConfigState>>` |
 | `LuaNode` | `crucible-lua/src/oil.rs:138` | `cru.oil.*` node handle; nothing in the CLI consumes it |
 | `PathsContext` | `crucible-lua/src/paths.rs:33` | kiln, session, workspace paths |
-| `FennelCompiler` | `crucible-lua/src/fennel.rs:53` | Cached `compileString`; on by default |
+| `ModuleRegistry` | `crucible-lua/src/modules.rs` | Host-owned `require`: public roots by name, a plugin's `lua/` by path |
+| `LuaType`, `Signature` | `crucible-lua/src/signature.rs` | One reading of a declared type: Luau, JSON Schema, message |
 | `DaemonPluginLoader` | `crucible-daemon/src/daemon_plugins/mod.rs:113` | One VM for all plugins; 16 fields, 1404 lines |
 | `PluginServiceFn`, `BootstrapOutcome` | `daemon_plugins/mod.rs:57`, `bootstrap.rs:133` | Service spawn input; git clone result |
 | `PluginRegistry`, `PluginToolExecutor` | `crucible-daemon/src/plugin_tools.rs:43,296` | Lua tools and commands by name |
@@ -930,7 +931,6 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   rule is documented and not checked (`skills/types.rs:95`).
 - `StubGenerator::verify` writes under `std::env::temp_dir()` (`stubs.rs:82`).
   `hooks.rs:14-26` and `auth_plugin.rs:15-33` `unwrap()` inside `unwrap_or_else`.
-  `fennel.rs:44` carries a stale `#[allow(unused_imports)]`.
 - `LuaTool`/`DiscoveredTool` and `ToolParam`/`DiscoveredParam` are duplicate
   shapes (`types.rs:9,28`, `discovered.rs:20,31`); `executor.rs:306,418`
   (`execute_file`, `execute_tool`) and `execute_source` have no production
@@ -941,9 +941,10 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
 - `shell.rs:159-185,289-312` repeat Command setup; `http.rs:50-116` repeats
   five closures; `fs.rs:58,75,127,145` repeat the ensure-parent block.
 
-Still true from the older notes: Fennel compiles and runs in the daemon VM
-(`shipped.rs::a_fennel_plugin_executes_in_the_daemon_vm`); `StubGenerator`
-emits Lua stubs only; the `targets` channel plus `resolve_command` is the
+Changed 2026-08-30: the runtime is Luau, Fennel is gone, and `StubGenerator`
+emits both the EmmyLua stubs and `cru.d.luau` declarations built from the
+host's own signature table (`host_api.rs`). Still true from the older notes:
+the `targets` channel plus `resolve_command` is the
 end-to-end publication pattern (`workspace_targets.rs`); the web shows plugin
 commands only as a count and has no renderer for `cru.plugin.set_status` slots.
 
@@ -1373,8 +1374,7 @@ Production items that only tests use:
   `server/bind.rs:74,96,109`; `crucible-core/src/types/notification.rs:20`;
   `crucible-core/src/parser/block_extractor.rs:828`.
 - `#[allow(unused_imports)]` that hide test-only re-exports:
-  `server/session/mod.rs:23`, `rpc/mod.rs:15-18`, `rpc_helpers.rs:160`,
-  `crucible-lua/src/fennel.rs:44`.
+  `server/session/mod.rs:23`, `rpc/mod.rs:15-18`, `rpc_helpers.rs:160`.
 - Test-only constructors and builders in production: `KilnManager::new` and
   `Default` (`kiln_manager.rs:400,1086`); `NotePipeline::new`
   (`note_pipeline.rs:78`); `LlmProviderConfigBuilder`
@@ -1493,7 +1493,5 @@ Production items that only tests use:
   (`send.rs:1`, `stream.rs:23`, `tool_call.rs:1`, `permission.rs:1`,
   `review_gate.rs:40`, `precognition/mod.rs:12`), so the dependency set on
   `agent_manager/mod.rs` is invisible at the file head.
-- `lifecycle/spec.rs:92-109` and `discovery.rs:290-306` duplicate the
-  `#[cfg(feature = "fennel")]` branches.
 - `crucible-core/src/protocol/lifecycle.rs:59` declares `extern "C" fn geteuid`
   by hand while `dirs` already pulls `libc`.

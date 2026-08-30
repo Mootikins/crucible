@@ -233,4 +233,4 @@ fn test_status_bar_normal_mode() {
 - [[Help/TUI/Index]] — TUI overview
 - [[Help/TUI/Keybindings]] — Keyboard shortcuts
 - [[Help/TUI/Commands]] — REPL commands (`:set`, `:model`, etc.)
-- [[Help/Extending/Scripted UI]] — Lua/Fennel UI building with `cru.oil`
+- [[Help/Extending/Scripted UI]] — Luau UI building with `cru.oil`

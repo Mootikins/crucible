@@ -21,7 +21,7 @@ Crucible is a knowledge-grounded agent runtime — agents that draw from a knowl
 - **Knowledge-grounded agents** — Precognition auto-injects relevant context before each LLM turn
 - **Sessions are notes** — every conversation persists as searchable, linkable markdown
 - **Wikilink-based knowledge graph** with block-level semantic search
-- **Neovim-like architecture** — Lua/Fennel plugins, TUI-first, headless daemon with RPC
+- **Neovim-like architecture** — Luau plugins, TUI-first, headless daemon with RPC
 - **Plaintext first** — markdown files are your source of truth, no lock-in
 
 ## Prerequisites

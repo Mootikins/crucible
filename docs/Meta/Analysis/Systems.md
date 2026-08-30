@@ -85,7 +85,7 @@ See: [[Help/Workflows/Workflow Syntax]]
 The extension layer.
 
 - Hook points (stages and events)
-- Scripting runtime (Lua, with Fennel support)
+- Scripting runtime (Luau)
 - Runtime modules under the `cru.*` namespace: `cru.timer`, `cru.ratelimit`, `cru.retry`, `cru.emitter`, `cru.check`, `cru.fs`, `cru.http`, `cru.session` (`daemon_plugins/mod.rs:173`)
 - Daemon-side plugins, for example the Discord integration (`runtime/plugins/discord`)
 

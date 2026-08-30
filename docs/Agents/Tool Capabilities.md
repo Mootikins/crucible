@@ -70,7 +70,7 @@ classifies and filters them:
 | `just_` | A `justfile` recipe exposed as a tool |
 | `gh_`, `mcp_`, or a name containing `::` | An upstream MCP server reached through the gateway |
 
-Tools registered by Lua or Fennel plugins are exposed under their registered names with no
+Tools registered by Luau plugins are exposed under their registered names with no
 prefix added, so `discover_tools` classifies them alongside the built-ins.
 
 ## Declaring capabilities on a card

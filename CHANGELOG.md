@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- **The scripting runtime is Luau, and Fennel is removed.** A `.fnl` plugin,
+  module or test file no longer loads; port it to `.lua`. The bundled Fennel
+  compiler, the `fennel` feature and the `graph-view` plugin (whose main was
+  Fennel) are gone.
+
+- **`package.path` and `package.searchers` no longer exist.** Luau ships no
+  package library, so the host owns `require`: plugin directories and the
+  user's `lua/` are the search roots, a plugin's own `lua/` directory is
+  private to it, and a plugin cannot widen its own import authority.
+  `package.loaded` and `package.preload` still work, and a plugin's
+  `package.loaded[NAME] = plugin` line still makes `require` answer with that
+  instance. An `init.lua` that wrote `package.path` must use `runtimepath`.
+
+- **A tool parameter's declared type must be a type the host can read.**
+  `string`, `number`, `boolean`, `any`, a name, `T?`, `T[]`, `array<T>`,
+  `table<K, V>`, `T|U` and `{ field: T }`. An unreadable declaration now
+  refuses the load instead of reaching the agent as `"type": "string"`.
+
+### Added
+
+- `cru plugin check <dir>`: every file compiles, every declaration is
+  readable, and — where `luau-analyze` is installed — the plugin typechecks
+  against the generated `cru.d.luau` declarations. A missing checker is
+  reported as SKIPPED, never as a pass.
+
+- `cru plugin stubs` writes `cru.d.luau` beside `cru.lua`: Luau declarations
+  generated from the host's own signature table, with a header counting how
+  many functions still carry `(...any) -> any`.
+
+- `io`, `os.getenv`, `os.tmpname`, `os.remove` and `os.rename` are provided by
+  the host, because Luau ships none of them. There is deliberately no
+  `io.popen` and no `os.execute`: `cru.shell` is the gated way to run a
+  command.
+
+### Fixed
+
+- `web-search`'s DuckDuckGo parser stripped tags with a quadratic pattern: a
+  60KB page of maximum-size rows took 9.1 s, and now takes 0.02 s.
+
+- `worktree` split `git worktree list` output with `gmatch("[^\n]*")`, whose
+  empty-match handling differs between Lua runtimes; it splits on the
+  separator now, so every record is read.
+
+- A plugin reload re-reads the plugin's own `lua/` modules. The module cache
+  is keyed by file, and the entry instance a user's boot `require` created
+  survives, so activation still does not execute the file twice.
+
 ## [0.29.0] - 2026-08-29
 
 ### Breaking

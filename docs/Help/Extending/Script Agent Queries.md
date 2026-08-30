@@ -14,7 +14,7 @@ aliases:
 
 # Script Agent Queries
 
-> **Not implemented.** There is no way for a Lua or Fennel script to ask an LLM a question
+> **Not implemented.** There is no way for a Luau script to ask an LLM a question
 > today. `ask.agent()` does not exist, and neither does any other `cru.*` binding that
 > sends a prompt to a provider. Earlier revisions of this page documented such an API in
 > detail; none of it was real.

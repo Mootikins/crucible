@@ -39,7 +39,7 @@ the [`oq`](https://crates.io/crates/oq) crate, which wraps
 ## Where Crucible uses it
 
 **Lua tool results served over `cru mcp`.** The MCP server (`cru mcp`, and the
-daemon-managed server it mirrors) discovers Lua and Fennel tools from the plugin
+daemon-managed server it mirrors) discovers Luau tools from the plugin
 directories by their spec-table declarations, and encodes their object or array
 results as TOON before returning them to the connected client
 (`crates/crucible-daemon/src/tools/toon_response.rs`, called from

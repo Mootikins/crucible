@@ -4,7 +4,7 @@
 
 **Crucible** is a knowledge-grounded agent runtime: notes, sessions and wikilinks form a
 knowledge graph agents draw from and contribute to. Plaintext-first, Neovim-like (headless
-daemon + RPC, Lua/Fennel extensibility, TUI-first, plugin-driven).
+daemon + RPC, Luau extensibility, TUI-first, plugin-driven).
 
 ## Architecture
 
@@ -15,7 +15,7 @@ daemon + RPC, Lua/Fennel extensibility, TUI-first, plugin-driven).
 | `crucible-daemon` | RPC server, sessions, ACP host, embeddings, SQLite, skills, tools |
 | `crucible-web` | Axum server + SolidJS frontend (`web/`, embedded via rust-embed) |
 | `crucible-oil` | Terminal rendering primitives |
-| `crucible-lua` | Lua/Luau scripting with Fennel support |
+| `crucible-lua` | Luau scripting: the VM, the module resolver, the `cru.*` projections |
 
 Single `cru` binary. The daemon is auto-spawned by `DaemonClient::connect_or_start()`;
 JSON-RPC 2.0 over a per-uid 0700 Unix socket (`$CRUCIBLE_SOCKET`, else `$XDG_RUNTIME_DIR`,
@@ -54,6 +54,23 @@ notify, paths) are safe in isolation. Interception is not: `runtime/defaults/ini
 compiled in as `BUILTIN_INIT_LUA` and is the *only* definition of the three permission modes,
 the plan-mode deny hook, the default system prompt and the precognition formatter.
 `ModeRegistry` has no Rust default and no fallback.
+
+**The runtime is Luau, and `require` is the host's.** Luau ships no
+`package.path`, no `package.searchers`, no `io` and no file half of `os`.
+`crucible-lua/src/modules.rs` owns module lookup — public roots cache by name
+in a `package.loaded` compatibility table, a plugin's own `lua/` directory is
+private to it and cached by path — and `luau_compat.rs` provides `io`,
+`os.getenv`, `os.tmpname`, `os.remove` and `os.rename`. Never reintroduce
+`package.path`: lookup is import authority, so it belongs to the host. A
+plugin that wants to run a command uses `cru.shell`, which the permission
+layer gates; there is deliberately no `io.popen` and no `os.execute`.
+
+**A declared type is checked, not decorated.** `signature.rs` reads a tool's
+declared parameter types and renders them as JSON Schema, as Luau
+declarations, and as messages. An unreadable declaration refuses the load
+(`LifecycleError::InvalidDeclaration`); `host_api.rs` holds the host's own
+`cru.*` signatures, and every one of them must name a function the running VM
+has.
 
 **Adding a name to a closed set → one enumerated table with a real gate.** `tools/surface.rs`
 is the exemplar: exhaustive match, two module-level clippy denies (both needed — with one, a

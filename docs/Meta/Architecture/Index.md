@@ -21,4 +21,4 @@ section 6. Two later notes record what the Lua-and-config program changed:
 [[Config Boot]] (the one-VM boot inversion) and [[State Stores]] (the
 machine-written JSON registries and how state overlays config). For the older analyses, see [[Systems]], [[Type Flows]],
 [[Storage Schema]], [[Canvas]], [[Filesystem Containment]], [[Bash Permission Layers]],
-[[Workspace and Runtime Targets]] and [[Fennel for Plugins]].
+[[Workspace and Runtime Targets]].

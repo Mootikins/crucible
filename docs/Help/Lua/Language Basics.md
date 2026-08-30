@@ -1,27 +1,44 @@
 ---
-title: "Lua Language Basics"
-description: Lua scripting reference for Crucible
+title: "Luau Language Basics"
+description: Luau scripting reference for Crucible
 status: implemented
 tags:
   - lua
-  - fennel
+  - luau
   - scripting
   - reference
 ---
 
-# Lua Language Basics
+# Luau Language Basics
 
-Crucible embeds PUC Lua 5.4 (via the `mlua` crate) for plugin development, with optional Fennel support.
+Crucible embeds Luau (via the `mlua` crate) for plugin development. Luau is Lua
+with a gradual type system: a plugin is ordinary Lua until it declares types,
+and `--!strict` at the top of a file turns the declarations into a check.
 
-## Why Lua?
+## Why Luau?
 
-Lua is one of the most widely-used scripting languages, with simple syntax that's easy for both humans and LLMs to write. If you want AI to generate your plugins, Lua is an excellent choice.
+Lua is one of the most widely-used scripting languages, with simple syntax that's easy for both humans and LLMs to write. If you want AI to generate your plugins, Lua is an excellent choice. Luau adds the type annotations that make a generated plugin checkable before it runs.
 
 ## Key Features
 
 - **Simple syntax**: Easy to learn if you know JavaScript or Python
-- **Fennel support**: Write in Lisp syntax, compile to Lua
+- **Gradual types**: annotate what matters, leave the rest untyped
 - **LLM-friendly**: Models generate high-quality Lua code
+
+## What Luau does not have
+
+Luau is not PUC Lua 5.4, and three differences reach plugin authors:
+
+| Missing | Use instead |
+|---------|-------------|
+| `package.path`, `package.searchers` | Nothing. The host resolves `require` over the plugin roots. `package.loaded` and `package.preload` work. |
+| `setfenv`, `getfenv`, `loadstring` | `load`, and ordinary upvalues. |
+| `goto` labels | A loop or an early return. |
+
+Crucible provides `io` and the file half of `os` (`getenv`, `tmpname`,
+`remove`, `rename`) itself, so a plugin reads and writes files exactly as it
+did under PUC Lua. There is deliberately no `io.popen` and no `os.execute`:
+running a command is `cru.shell`'s job, which the permission layer gates.
 
 ## The `cru` Namespace
 
@@ -224,15 +241,26 @@ cru.session.unsubscribe(session.id)
 cru.session.end_session(session.id)
 ```
 
-## Fennel
+## Types
 
-Fennel is a Lisp that compiles to Lua. Use `.fnl` files if you prefer Lisp syntax with Lua's runtime.
+```lua
+--!strict
+type Task = { text: string, done: boolean }
+
+local function render(task: Task): string
+    return (task.done and "[x] " or "[ ] ") .. task.text
+end
+```
+
+The annotations are erased at runtime. `luau-analyze` is what checks them; see
+[[Help/Extending/Creating Plugins]] for the plugin scaffold, which starts every
+file with `--!strict`.
 
 ## Resources
 
-- [Lua Reference Manual](https://www.lua.org/manual/5.4/)
-- [Fennel Language](https://fennel-lang.org/)
-- [[Help/Concepts/Scripting Languages]] -- Language comparison
+- [Luau Reference](https://luau.org/)
+- [Lua 5.1 Reference Manual](https://www.lua.org/manual/5.1/) — the language Luau derives from
+- [[Help/Concepts/Scripting Languages]] -- the scripting reference
 - [[Help/Extending/Creating Plugins]] -- Plugin development guide
 - [[Help/Plugins/Lua Runtime API]] -- Complete daemon-side Lua API reference
 

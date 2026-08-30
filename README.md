@@ -20,7 +20,7 @@ Memory and knowledge are too fundamental to be an afterthought. Most AI tools tr
 
 - **Knowledge-grounded agents.** Precognition auto-injects relevant context from your knowledge graph before each LLM turn. Block-level embeddings power semantic search at paragraph granularity. The more you use it, the smarter your agents get.
 - **Sessions are searchable knowledge.** Every chat saves as markdown under the daemon data root, searchable with `cru session search` and scoped by the kilns a session shares with yours. What a session *learns* goes into your kiln as notes; the transcript itself stays out of it, so a kiln stays shareable.
-- **Neovim-like architecture.** Lua/Fennel plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
+- **Neovim-like architecture.** Luau plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
 - **Bring any LLM.** Ollama, OpenAI, Anthropic, Cohere, OpenRouter, GitHub Copilot, Vertex AI, or a custom HTTP endpoint. Embeddings run locally by default.
 - **Plaintext first.** No proprietary formats. Files are the source of truth. The database is optional acceleration.
 
@@ -35,7 +35,7 @@ The difference is architectural, not a feature checklist.
 | Index | SQLite, rebuildable from the files | Not exposed | Varies by plugin |
 | Retrieval granularity | Blocks (paragraph-level embeddings) | Not exposed | Varies by plugin |
 | LLM choice | Any provider, or a local model | The vendor's | Varies by plugin |
-| Extension surface | Lua/Fennel against a headless daemon | None | The editor's plugin API |
+| Extension surface | Luau against a headless daemon | None | The editor's plugin API |
 
 ## Install
 
@@ -152,7 +152,7 @@ field, including per-profile trust and delegation limits.
 
 ### Lua Plugins
 
-Drop a `.lua` or `.fnl` file into `~/.config/crucible/plugins/`. It returns a spec table; the
+Drop a `.lua` file into `~/.config/crucible/plugins/`. It returns a spec table; the
 daemon registers whatever it declares.
 
 ```lua
@@ -217,7 +217,7 @@ See the [plugin guide](./docs/Help/Extending/Creating%20Plugins.md) for the full
 | `cru config show` | | Show effective configuration |
 | `cru agents list` | | List registered agent cards |
 | `cru skills list` | | List discovered agent skills |
-| `cru plugin list` | | List installed Lua/Fennel plugins |
+| `cru plugin list` | | List installed Luau plugins |
 | `cru tasks list` | | Manage tasks from TASKS.md |
 | `cru daemon start` | | Start background daemon |
 | `cru daemon status` | | Check daemon status |
@@ -235,7 +235,7 @@ Run `cru <command> --help` for full options.
 
 - [x] TUI chat with session persistence and resume
 - [x] MCP server for external agents
-- [x] Lua/Fennel plugin system
+- [x] Luau plugin system
 - [x] Block-level semantic search with reranking
 - [x] Precognition (auto-RAG before each turn)
 - [x] Daemon with auto-spawn, file watching, multi-session support

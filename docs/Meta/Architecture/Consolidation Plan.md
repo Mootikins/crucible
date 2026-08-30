@@ -543,7 +543,7 @@ These items meet the definition but live in a protected path. Do them in a sessi
 
 ## 3. Tier 2 — mechanically dead, no skeptic
 
-Read the definition first. Skip an item if it carries `serde`, `mlua` or `rpc` attributes. Skip an item if a string literal with the same name appears in a `.lua`, `.fnl` or `.ts` file. Report every skip.
+Read the definition first. Skip an item if it carries `serde`, `mlua` or `rpc` attributes. Skip an item if a string literal with the same name appears in a `.lua` or `.ts` file. Report every skip.
 
 The 117 mechanically dead items overlap the skeptic lists. 94 are already in Tier 1 or Tier 3. The 23 below have no skeptic verdict.
 
@@ -826,7 +826,7 @@ Items the pass kept, with the reason:
 - [keep] load_plugin_spec_from_source (lifecycle/spec.rs:136) — The claim is wrong. Only the pub(crate) re-export in lifecycle/mod.rs:30 is test-only; it could become #[cfg(test)] but that is trivial.
 - [keep] PluginSpec.handlers, DiscoveredHandler (lifecycle/spec.rs:23) — Handlers are parsed but never dispatched; the daemon warns about this on purpose. The count appears in an RPC response (server/plugins.rs:55), so removal changes a wire payload.
 - [keep] cru.tbl_get, cru.tbl_deep_extend, cru.on_error (prelude/qol.rs:123) — These are documented public Lua API for user plugins, not internal code. No bundled runtime plugin uses them. cru.on_error is documented as a reserved slot that nothing invokes; deleting it means remo
-- [keep] compile_fennel (fennel.rs:105) — The claim is wrong. The function is the only Fennel compile path for spec extraction and discovery.
+- [done] compile_fennel (fennel.rs:105) — Removed with Fennel on 2026-08-30.
 - [keep] McpGatewayManager::upstream_status tools/mcp_gateway.rs:454 (weak: own tests only) — The item is already gone. Nothing to remove. Strike the claim from the plan.
 - [keep-protected-path] RpcMethod::SessionReindex rpc/dispatch.rs:175 (weak; protected path; retired name in METHODS) — Referenced by a handler arm, a CLI test and the changelog. Protected path rpc/dispatch.rs. Removal is a wire change (METHODS list).
 - [keep] PluginManager::eval_runtime (crates/crucible-lua/src/lifecycle/lua_integration.rs:54) — Already test-gated; nothing further to narrow. Tests that use it verify reload and load/unload hooks, not only eval_runtime itself.
@@ -846,7 +846,7 @@ Items the pass kept, with the reason:
 
 ### 5.1 Second skeptic pass checklist (done; kept for the record)
 
-For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ examples/` for `.rs .lua .fnl .ts .tsx .json .toml .md`. Then open every hit. Record: definition only / test only / production. Items already ruled on elsewhere in this plan are not repeated here.
+For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ examples/` for `.rs .lua .ts .tsx .json .toml .md`. Then open every hit. Record: definition only / test only / production. Items already ruled on elsewhere in this plan are not repeated here.
 
 **crucible-daemon**
 - [ ] `acp/mod.rs:9` re-exports of `agent_client_protocol` message types
@@ -868,7 +868,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 
 **crucible-lua**
 - [ ] `LuaExecutor::execute_file`, `execute_source`, `execute_tool` `executor.rs:306`
-- [ ] `fennel_available`, `session_start_hooks` `executor.rs:78`
+- [x] `fennel_available` — removed with Fennel; `session_start_hooks` `executor.rs:78`
 - [ ] `FunctionSignature`, `TypedParam`, `LuauType`, `type_to_string` `schema.rs:31`
 - [ ] `PluginManager::eval_runtime` `lifecycle/lua_integration.rs:53`
 - [ ] `PluginManager::reload` `lifecycle/loading.rs:198`
@@ -879,8 +879,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - [ ] `PluginErrorLog::clear`, `is_empty` `lifecycle/error_log.rs:55`
 - [ ] `load_plugin_spec_from_source` `lifecycle/spec.rs:136`
 - [ ] `PluginSpec.handlers`, `DiscoveredHandler` `lifecycle/spec.rs:23`
-- [ ] `cru.tbl_get`, `cru.tbl_deep_extend`, `cru.on_error` `prelude/qol.rs:123` (grep `runtime/` Lua and Fennel)
-- [ ] `compile_fennel` `fennel.rs:105`
+- [ ] `cru.tbl_get`, `cru.tbl_deep_extend`, `cru.on_error` `prelude/qol.rs:123` (grep `runtime/` Lua)
 - [ ] `get_pending_notifications`, `get_messages_action` `notify.rs:241`, `:262`
 - [ ] `ModeRegistry::is_empty` `modes.rs:183`
 - [ ] `StatuslineExprRegistry::forget` `statusline_exprs.rs:188`

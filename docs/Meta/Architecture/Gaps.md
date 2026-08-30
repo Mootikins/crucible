@@ -760,8 +760,9 @@ break them.
   Expected 4.2.3).
 - **Skill scopes are four** and the bundled scope sits below every user scope
   (`skills/types.rs:14`; Expected 8.17).
-- **Fennel compiles and runs in the daemon VM** (`shipped.rs`). This closes
-  Expected open question 27.
+- **Luau is the runtime and `require` is the host's** (`crucible-lua/src/modules.rs`,
+  `luau_compat.rs`; Fennel is removed). Expected open question 27 is now about
+  typed plugins, which `cru plugin check` answers in part.
 - **Delegation limits** (depth, allowlist, concurrency, timeout) and the model
   chain card, `[llm.models]`, parent are in place (`delegation.rs:93`;
   Expected 4.14).

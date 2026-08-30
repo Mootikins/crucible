@@ -15,7 +15,7 @@ User stories for Crucible's plugin/extension system, organized by persona and ma
 
 ## Design Context
 
-**Extension Languages:** Lua with Fennel support
+**Extension Languages:** Luau
 **Future Extensions:** WASM, dynamic libraries
 
 **MVP vs Full-Featured:**

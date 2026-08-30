@@ -83,7 +83,7 @@ Navigate by topic:
 
 ### Scripting Languages
 - **[[Help/Concepts/Scripting Languages]]** — Overview
-- **[[Help/Lua/Language Basics]]** — Lua with Fennel support
+- **[[Help/Lua/Language Basics]]** — Luau syntax and the `cru` namespace
 - **[[Help/Lua/Configuration]]** — Lua configuration system
 
 ### Core Features

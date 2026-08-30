@@ -61,7 +61,7 @@ other software, and the boundary matters when deciding whether a finding is a bu
 
 - Escaping the permission gate — a tool call executing without the approval the
   configuration requires.
-- A Lua or Fennel plugin reaching capabilities its declared permissions exclude, or
+- A Luau plugin reaching capabilities its declared permissions exclude, or
   reading state belonging to another session or kiln.
 - The daemon's Unix socket, the MCP server, or the web server accepting a request from
   a principal that should not have been able to reach them, or leaking another user's

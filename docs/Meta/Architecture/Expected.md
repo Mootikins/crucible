@@ -27,7 +27,7 @@ drafts agree, this document states the point once. Where the drafts differ, this
 document uses one position in the body, marks it with `[Dn]`, and records both
 positions in section 10. Both drafts assumed the same constraints: a Rust
 workspace, one `cru` binary, a headless daemon with JSON-RPC 2.0 over a Unix
-socket, thin TUI and web clients, Lua and Fennel scripting, SQLite on the daemon
+socket, thin TUI and web clients, Luau scripting, SQLite on the daemon
 side, and the ACP and MCP protocols.
 
 The clean room had one input class: feature documents. Neither draft read a
@@ -255,7 +255,7 @@ entry but no shipped proof.
 
 | # | Feature | Source |
 |---|---------|--------|
-| F170 | Lua 5.4 runtime; Fennel compiles to Lua | P, R, PL |
+| F170 | Luau runtime; host-owned `require`; `io`/`os` compatibility from the host | P, R, PL |
 | F171 | Plugin system: discovery on a search path, `plugin.yaml` manifest or bare `init.lua`, lifecycle, hot reload | P, R |
 | F172 | Plugin spec table: `tools`, `commands`, `handlers`, `setup(cfg)` | P, R |
 | F173 | Event hooks `cru.on(name, opts, handler)` with `pattern` and `priority` | P, R, PL |
@@ -856,7 +856,7 @@ pub struct Plugin {
     version: Version,
     source: PluginSource,            // EnvPath | User | RuntimePath(PathBuf) | Runtime
     dir: PathBuf,
-    language: ScriptLang,            // Lua | Fennel
+    language: ScriptLang,            // Luau
     state: PluginState,
     last_error: Option<String>,
     declares: PluginDecl,            // tools, commands, services, hooks, config schema
@@ -1412,7 +1412,7 @@ It is not an organization tool.
 | Crate | Holds | Reason for the split |
 |-------|-------|----------------------|
 | `crucible-core` | Parser, canvas read and write, task file, workflow engine (pure), domain types from section 3 with no I/O, `SessionEvent`, `InteractionRequest`, `ContextMessage`, `Scope`, `KilnName`, hashing, config loader, runtime root resolution, theme and statusline wire types, the embedded default runtime tree | Every other crate needs the types. The parser must compile without SQLite, tokio or Lua. |
-| `crucible-lua` | The Lua VM, Fennel compiler, `cru.*` module projections, hook and mode registries, test runner, stub generator | Lua bindings need `mlua` and must not pull the daemon. Depends on `crucible-core` only. [D19] |
+| `crucible-lua` | The Luau VM, the module resolver, `cru.*` module projections, hook and mode registries, test runner, stub and declaration generator | Lua bindings need `mlua` and must not pull the daemon. Depends on `crucible-core` only. [D19] |
 | `crucible-oil` | Terminal rendering primitives: nodes, Taffy layout, styles, palette mapping, graduation planning, `render_to_string` | Pure rendering with tests that need no terminal. Depends on `crucible-core` only. [D19] |
 | `crucible-daemon` | Sections 4.2 to 4.26: storage (SQLite, FTS, vectors), pipeline, watcher, session manager and log, turn loop, agent factory, providers, tools, permissions, interactions, delegation, jobs, skills, cards, rules, plugin host glue, event bus, ACP host, ACP agent server, MCP server and gateway, review, workflow runner, scm, RPC dispatch and the RPC client | All storage lives here. All business logic lives here. The RPC client lives here so the CLI and the web share one client. |
 | `crucible-web` | Axum server, routes, middleware, SSE translators, PTY, asset embedding; the SolidJS app under `web/`, built with bun and embedded with rust-embed | Needs axum, tower, rust-embed and a JavaScript build. Behind a default-on `web` feature of the binary, so a build without bun still works. |
@@ -1946,7 +1946,7 @@ determine the design.
 24. **Durable scheduled jobs and the global estop.** Planned. Whether a job run is a session, where the estop sentinel lives, and which admission points check it (session admission, delegation spawn, the scheduled-job tick) are specified only in outline.
 25. **Verification evidence ledger.** A second record type in `review.jsonl`. The rules that classify a bash call as evidence are named but not defined.
 26. **Plugin shadow-by-name.** The priority table promises it. No test proves it. The tie-break when two `runtimepath` trees hold the same name is unspecified.
-27. **Fennel plugins in the daemon.** Discovered, then fail to execute. Whether Fennel is a first-class plugin language or a tool-and-test language only is a product decision.
+27. **Typed plugins.** `cru plugin check` proves a plugin parses and its declarations are readable; the type check itself runs only where `luau-analyze` is installed, and how much of `cru.*` carries a real signature is still growing.
 28. **Plugin manifest permissions and sandboxing.** The plugin stories ask for declared capabilities (`read`, `write`, `network`). The product has `cru.tools.call` under operator rules and an `oci` sandbox for tools, but no per-plugin capability model for the Lua VM itself.
 29. **Dry run and undo for plugins.** The plugin stories want a preview of what a plugin would change. The product has turn undo via `WorkspaceSnapshot`. Whether a plugin run is a turn, and therefore undoable, is unspecified.
 30. **Template and registry packaging.** A single file with frontmatter, or a folder with a manifest. A self-hosted or GitHub-based registry. Both are open in the plugin stories.

@@ -1,6 +1,6 @@
 ---
 title: Plugin Conventions
-description: Superseded Rust/WASM plugin architecture study — the shipped plugin system is Lua/Fennel
+description: Superseded Rust/WASM plugin architecture study — the shipped plugin system is Luau
 status: superseded
 tags:
   - meta
@@ -16,7 +16,7 @@ tags:
 > with priorities and dead-letter queues, VSCode-style contribution points,
 > and a WASM/Extism capability sandbox. **None of it exists in the codebase.**
 >
-> The plugin system Crucible ships is **Lua/Fennel**: plugins are directories
+> The plugin system Crucible ships is **Luau**: plugins are directories
 > with an `init.lua` returning a spec table (tools, commands, services), hooks
 > register via `cru.on()`, and manifest capabilities are informational
 > rather than sandbox-enforced. See [[Help/Extending/Creating Plugins]] and

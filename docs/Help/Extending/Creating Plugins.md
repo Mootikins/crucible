@@ -85,7 +85,6 @@ extracted on first run. Every one of them loads **enabled by default**:
 | `auto-title` | Names a session after its opening exchange |
 | `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
 | `discord` | Discord gateway + REST integration |
-| `graph-view` | `graph_links`, `graph_stats`, `/graph` (Fennel) |
 | `oci` | Routes workspace tools into containers |
 | `reflection` | Post-session retrospective notes |
 | `review` | `review_*` tools over the attributed diff |
@@ -158,16 +157,12 @@ end
 return M
 ```
 
-## Plugin Languages
+## Plugin Language
 
-Plugins can be written in:
-
-| Language | Extension | Status |
-|----------|-----------|--------|
-| Lua | `.lua` | Implemented |
-| Fennel | `.fnl` | Implemented (compiles to Lua) |
-
-File extension determines the runtime. All languages use the same discovery and registration system.
+Plugins are written in Luau, in `.lua` files. Luau is Lua with gradual types:
+an untyped plugin runs unchanged, and `--!strict` at the top of a file turns
+its annotations into a check that `luau-analyze` enforces before the plugin
+ships. See [[Help/Lua/Language Basics]] for the differences from PUC Lua 5.4.
 
 ## Single-File Plugin
 
@@ -450,22 +445,38 @@ There is no timeout by default — commands run to completion, so builds and
 long-running processes are never silently killed. A shell policy may set a
 deadline; there is no per-call option.
 
-## Fennel Support
+## Typed Plugins
 
-For a Lisp-like experience with macros, use Fennel:
+A plugin declares types where they earn their keep — the tool arguments and
+the values a tool returns:
 
-```fennel
-;; ~/.config/crucible/plugins/greet.fnl
+```lua
+--!strict
+-- ~/.config/crucible/plugins/greet.lua
 
-(fn greet [args]
-  "A friendly greeting tool"
-  {:message (.. "Hello, " args.name "!")})
+type GreetArgs = { name: string }
 
-;; Export
-{:greet greet}
+local function greet(args: GreetArgs): { message: string }
+    return { message = "Hello, " .. args.name .. "!" }
+end
+
+return {
+    name = "greet",
+    version = "0.1.0",
+    tools = {
+        greet = {
+            desc = "A friendly greeting tool",
+            params = { { name = "name", type = "string", desc = "who to greet" } },
+            fn = greet,
+        },
+    },
+}
 ```
 
-Fennel files are compiled to Lua at load time. See [[Help/Lua/Language Basics]] for more on the Lua ecosystem.
+`cru plugin check <dir>` runs `luau-analyze` over the plugin with the generated
+`cru.*` declarations on its path, so a tool that returns the wrong shape is a
+build failure rather than a runtime surprise. `cru plugin stubs` writes those
+declarations.
 
 ## Providing Commands
 
@@ -729,7 +740,7 @@ Enable watch mode in `config.toml` to reload plugins whenever their files change
 watch = true
 ```
 
-With this enabled, saving a `.lua` or `.fnl` file inside any plugin directory triggers an automatic reload. Changes are debounced per-plugin, so rapid saves don't cause repeated reloads.
+With this enabled, saving a `.lua` file inside any plugin directory triggers an automatic reload. Changes are debounced per-plugin, so rapid saves don't cause repeated reloads.
 
 Watch mode pairs well with a split terminal: editor on one side, Crucible TUI on the other. Save your file, see the effect immediately.
 
@@ -758,7 +769,7 @@ Add a `.luarc.json` to your plugin directory (or your kiln root):
     "workspace.library": [
         "~/.config/crucible/stubs"
     ],
-    "runtime.version": "Lua 5.4",
+    "runtime.version": "Lua 5.1",
     "diagnostics.globals": [
         "cru",
         "describe",
