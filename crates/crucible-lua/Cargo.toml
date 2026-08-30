@@ -14,8 +14,9 @@ send = ["mlua/send"]  # Enable Send+Sync for multi-threaded use
 test-utils = []
 
 [dependencies]
-# Runtime backend is Luau.
-mlua = { version = "0.11.6", features = ["vendored", "async", "serialize"] }
+# Runtime backend is Luau. The version tracks the workspace pin; the
+# `luau` feature comes from this crate's own `luau` feature below.
+mlua = { version = "0.12", features = ["vendored", "async", "serialize"] }
 
 # Static analysis: Parse Lua for documentation extraction
 
