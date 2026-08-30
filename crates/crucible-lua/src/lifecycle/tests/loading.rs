@@ -459,3 +459,42 @@ fn test_backward_compat_no_hooks() {
         "no errors should be logged for clean plugin"
     );
 }
+
+/// A tool whose declared parameter type is unreadable does not load, and the
+/// refusal names the tool, the parameter and the text. The old behaviour was
+/// two silent wrong answers: `"type": "string"` in the JSON Schema an agent
+/// reads, and `any` in the generated declaration.
+#[test]
+fn a_tool_with_an_unreadable_parameter_type_is_refused() {
+    let temp = TempDir::new().unwrap();
+    create_test_plugin_with_source(
+        temp.path(),
+        "badtype",
+        "1.0.0",
+        r#"
+        return {
+            name = "badtype",
+            tools = {
+                search = {
+                    desc = "search",
+                    params = { { name = "tags", type = "array<", desc = "" } },
+                    fn = function() end,
+                },
+            },
+        }
+    "#,
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    let err = manager
+        .load("badtype")
+        .expect_err("an unreadable parameter type must refuse the load");
+    let message = err.to_string();
+    for expected in ["search", "tags", "array<"] {
+        assert!(
+            message.contains(expected),
+            "the refusal must name {expected}: {message}"
+        );
+    }
+}

@@ -8,6 +8,7 @@ use clap::Subcommand;
 use crate::config::CliConfig;
 
 mod add;
+mod check;
 mod health;
 mod list;
 mod new;
@@ -102,6 +103,9 @@ pub enum PluginCommands {
     New(NewArgs),
     /// Generate LuaLS type stubs for IDE autocomplete
     Stubs(StubsArgs),
+    /// Check a plugin: it parses, its declarations are readable, and (with
+    /// `luau-analyze` installed) it typechecks
+    Check(CheckArgs),
     /// Run plugin health checks
     Health(HealthArgs),
     /// Add a plugin from a git URL
@@ -146,6 +150,16 @@ pub struct StubsArgs {
 }
 
 #[derive(Debug, clap::Parser)]
+pub struct CheckArgs {
+    /// Path to the plugin directory
+    pub path: std::path::PathBuf,
+    /// Luau declaration file to check against (defaults to the generated
+    /// `cru.d.luau` in the stub directory)
+    #[arg(long)]
+    pub definitions: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, clap::Parser)]
 pub struct HealthArgs {
     /// Path to plugin directory
     pub path: std::path::PathBuf,
@@ -160,6 +174,7 @@ pub async fn execute(config: CliConfig, cmd: PluginCommands) -> Result<()> {
         PluginCommands::Test(args) => test::execute(config, args).await,
         PluginCommands::New(args) => new::execute(config, args).await,
         PluginCommands::Stubs(args) => stubs::execute(config, args).await,
+        PluginCommands::Check(args) => check::execute(config, args).await,
         PluginCommands::Health(args) => health::execute(config, args).await,
         PluginCommands::Add(args) => add::execute(args).await,
         PluginCommands::List(args) => list::execute(args).await,

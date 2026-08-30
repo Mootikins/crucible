@@ -1,7 +1,18 @@
+--!strict
 --- {{name}} Plugin
 --- A starter plugin template for Crucible
+---
+--- `--!strict` on line one turns Luau's type checking on for this file.
+--- `cru plugin check` runs `luau-analyze` over it with the generated `cru.*`
+--- declarations, so a wrong argument or a wrong result shape is a build
+--- failure rather than a surprise at load.
 
 local M = {}
+
+--- What `greet` accepts, and what it answers with. Declaring both is what
+--- lets the checker catch a caller that forgets `name`.
+export type GreetArgs = { name: string?, greeting: string? }
+export type Greeting = { message: string, timestamp: number }
 
 --- Greet someone.
 ---
@@ -10,7 +21,7 @@ local M = {}
 --- discovered: `parse_tools` has no caller on any live path, and a plugin that
 --- returns a spec table has its exports read from that table and nothing else.
 --- A tool declared only by annotation never reaches an agent.
-function M.greet(args)
+function M.greet(args: GreetArgs): Greeting
     local name = args.name or "World"
     local greeting = args.greeting or "Hello"
 
@@ -39,7 +50,7 @@ return {
 
     --- Called at load with this plugin's `[plugins.{{name}}]` config section,
     --- or an empty table when there is none. Delete if you read no config.
-    setup = function(cfg) end,
+    setup = function(cfg: { [string]: any }) end,
 
     -- Tools exported to agents
     tools = {

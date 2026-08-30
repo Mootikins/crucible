@@ -44,6 +44,7 @@
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
 pub mod auth_plugin;
+pub mod check;
 mod context;
 mod context_attach;
 pub mod discovered;
@@ -54,6 +55,7 @@ mod fs;
 pub mod handler_budget;
 mod handlers;
 mod hooks;
+pub mod host_api;
 mod http;
 pub mod isolation;
 mod json_query;
@@ -80,6 +82,7 @@ pub mod session_api;
 mod session_defaults;
 mod sessions;
 mod shell;
+pub mod signature;
 mod storage_api;
 pub mod stubs;
 mod timer;
@@ -170,6 +173,7 @@ pub use ws::register_ws_module;
 /// theirs.
 pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.lua");
 // Handler system
+pub use check::{check_plugin, CheckReport, Finding, TypecheckStatus};
 pub use handlers::{
     execute_permission_hooks, execute_tool_before_execute_hooks,
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
@@ -183,6 +187,7 @@ pub use handlers::{
     hook_names, EventName, HookName, StageId, SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT,
     TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
+pub use host_api::render_declarations;
 pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
 pub use luau_compat::register_stdlib_compat;
 pub use manifest::{
@@ -205,6 +210,7 @@ pub use sessions::{
     register_sessions_module, register_sessions_module_with_api,
     register_sessions_module_with_api_and_current, DaemonSessionApi, ResponsePart,
 };
+pub use signature::{LuaType, Param as SignatureParam, Signature, TypeError};
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};
 pub use ui::{register_ui_module, register_ui_module_with_api, INTERACTION_KINDS};
 

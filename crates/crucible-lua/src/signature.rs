@@ -96,7 +96,11 @@ pub struct TypeError {
 
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "cannot read the type '{}': {}", self.declaration, self.reason)
+        write!(
+            f,
+            "cannot read the type '{}': {}",
+            self.declaration, self.reason
+        )
     }
 }
 
@@ -496,7 +500,10 @@ mod tests {
         );
         let schema = signature.to_input_schema();
         assert_eq!(schema["properties"]["query"]["type"], "string");
-        assert_eq!(schema["properties"]["query"]["description"], "what to search for");
+        assert_eq!(
+            schema["properties"]["query"]["description"],
+            "what to search for"
+        );
         assert_eq!(schema["required"], json!(["query"]));
     }
 

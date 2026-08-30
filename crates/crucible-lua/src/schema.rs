@@ -1,61 +1,70 @@
-//! JSON Schema generation for Lua tools
+//! JSON Schema generation for Luau tools, over the one signature model.
 //!
 //! Type information comes from a plugin's spec-table declarations (see
-//! `discovered.rs`), not inline
-//! type syntax (Lua 5.4 doesn't support type annotations in syntax).
+//! `discovered.rs`). Those declarations are *text*, and this module used to
+//! match four literals — `string`, `number`, `boolean`, and everything else
+//! became `"string"`. A `string[]` parameter reached the agent as a string,
+//! and an author's typo reached it the same way, silently.
+//!
+//! [`crate::signature`] reads the same text into a type, so `string[]`,
+//! `string?`, `table<string, number>` and `{ name: string }` all mean here
+//! what they mean in the Luau declaration the stub generator writes. A
+//! declaration the model cannot read is reported by
+//! [`crate::signature::LuaType::parse`] at load, where the author sees it.
 //!
 //! ## Example
 //!
 //! ```lua
-//! --- Search the knowledge base
-//! -- @tool
-//! -- @param query string The search term
-//! -- @param limit number? Maximum results
-//! function search(query, limit)
-//!     return kb_search(query, limit or 10)
-//! end
+//! return {
+//!     tools = {
+//!         search = {
+//!             desc = "Search the knowledge base",
+//!             params = {
+//!                 { name = "query", type = "string", desc = "The search term" },
+//!                 { name = "tags", type = "string[]", desc = "Filter", optional = true },
+//!             },
+//!             fn = search,
+//!         },
+//!     },
+//! }
 //! ```
-//!
-//! Tool parameters are converted to schemas using this module's types.
 
 use crate::discovered::DiscoveredParam;
+use crate::signature::{LuaType, Param, Signature};
 use crate::types::LuaTool;
 #[cfg(test)]
 use crate::types::ToolParam;
 use serde_json::Value as JsonValue;
 
-/// Build an object JSON Schema from `(name, ldoc_type, description, required)` tuples.
-fn object_schema<'a>(
-    params: impl Iterator<Item = (&'a str, &'a str, &'a str, bool)> + Clone,
-) -> JsonValue {
-    let properties: serde_json::Map<String, JsonValue> = params
-        .clone()
-        .map(|(name, ty, desc, _)| {
-            let schema = match ty {
-                "string" => serde_json::json!({ "type": "string", "description": desc }),
-                "number" => serde_json::json!({ "type": "number", "description": desc }),
-                "boolean" => serde_json::json!({ "type": "boolean", "description": desc }),
-                _ => serde_json::json!({ "type": "string", "description": desc }),
-            };
-            (name.to_string(), schema)
-        })
-        .collect();
+/// Read one declared type, falling back to `any` for text the model refuses.
+///
+/// The fallback is `any` and not `string`: a parameter whose declaration is
+/// unreadable has no known shape, and saying "string" invents one. Load-time
+/// validation is what turns the unreadable declaration into an error the
+/// author sees; this keeps the tool usable in the meantime.
+fn declared_type(text: &str) -> LuaType {
+    LuaType::parse(text).unwrap_or(LuaType::Any)
+}
 
-    let required: Vec<String> = params
-        .filter(|(_, _, _, required)| *required)
-        .map(|(name, _, _, _)| name.to_string())
-        .collect();
-
-    serde_json::json!({
-        "type": "object",
-        "properties": properties,
-        "required": required
-    })
+/// Build the signature a set of `(name, type, description, required)` tuples
+/// describes.
+fn signature_of<'a>(params: impl Iterator<Item = (&'a str, &'a str, &'a str, bool)>) -> Signature {
+    Signature {
+        params: params
+            .map(|(name, ty, description, required)| Param {
+                name: name.to_string(),
+                ty: declared_type(ty),
+                description: Some(description.to_string()),
+                optional: !required,
+            })
+            .collect(),
+        returns: Vec::new(),
+    }
 }
 
 /// Generate a JSON Schema for a tool's input parameters
 pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
-    object_schema(tool.params.iter().map(|p| {
+    signature_of(tool.params.iter().map(|p| {
         (
             p.name.as_str(),
             p.param_type.as_str(),
@@ -63,6 +72,7 @@ pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
             p.required,
         )
     }))
+    .to_input_schema()
 }
 
 /// Generate a JSON Schema from spec-declared params.
@@ -71,7 +81,7 @@ pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
 /// `required` — the two declaration syntaxes are inverses, so they cannot share
 /// one struct without lying about one of them.
 pub fn discovered_params_to_json_schema(params: &[DiscoveredParam]) -> JsonValue {
-    object_schema(params.iter().map(|p| {
+    signature_of(params.iter().map(|p| {
         (
             p.name.as_str(),
             p.param_type.as_str(),
@@ -79,6 +89,23 @@ pub fn discovered_params_to_json_schema(params: &[DiscoveredParam]) -> JsonValue
             !p.optional,
         )
     }))
+    .to_input_schema()
+}
+
+/// The Luau signature a declared tool has, for the generated declarations.
+pub fn tool_signature(params: &[DiscoveredParam], returns: Option<&str>) -> Signature {
+    let mut signature = signature_of(params.iter().map(|p| {
+        (
+            p.name.as_str(),
+            p.param_type.as_str(),
+            p.description.as_str(),
+            !p.optional,
+        )
+    }));
+    if let Some(returns) = returns {
+        signature.returns = vec![declared_type(returns)];
+    }
+    signature
 }
 
 #[cfg(test)]
@@ -115,5 +142,51 @@ mod tests {
         assert!(schema["properties"]["query"].is_object());
         assert!(schema["properties"]["limit"].is_object());
         assert_eq!(schema["required"], serde_json::json!(["query"]));
+    }
+
+    /// The shapes the old four-label match rendered as `string`.
+    #[test]
+    fn a_compound_declaration_reaches_the_schema_intact() {
+        let params = vec![
+            DiscoveredParam {
+                name: "tags".to_string(),
+                param_type: "string[]".to_string(),
+                description: "filter tags".to_string(),
+                optional: true,
+            },
+            DiscoveredParam {
+                name: "where".to_string(),
+                param_type: "{ kiln: string, depth: number? }".to_string(),
+                description: "scope".to_string(),
+                optional: false,
+            },
+        ];
+
+        let schema = discovered_params_to_json_schema(&params);
+        assert_eq!(schema["properties"]["tags"]["type"], "array");
+        assert_eq!(schema["properties"]["tags"]["items"]["type"], "string");
+        assert_eq!(schema["properties"]["where"]["type"], "object");
+        assert_eq!(
+            schema["properties"]["where"]["properties"]["kiln"]["type"],
+            "string"
+        );
+        assert_eq!(schema["required"], serde_json::json!(["where"]));
+    }
+
+    /// An unreadable declaration leaves the parameter unconstrained. It must
+    /// NOT be quietly called a string — that is a shape nobody declared.
+    #[test]
+    fn an_unreadable_declaration_constrains_nothing() {
+        let params = vec![DiscoveredParam {
+            name: "mystery".to_string(),
+            param_type: "array<".to_string(),
+            description: String::new(),
+            optional: false,
+        }];
+        let schema = discovered_params_to_json_schema(&params);
+        assert!(
+            schema["properties"]["mystery"].get("type").is_none(),
+            "an unreadable type must not be rendered as a string: {schema:#}"
+        );
     }
 }

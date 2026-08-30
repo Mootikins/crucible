@@ -309,6 +309,49 @@ mod shipped_plugin_tests {
     /// Runs each shipped plugin's busted-style Lua suite in-process through the
     /// same handler `cru plugin test` uses — no daemon, so it runs under
     /// nextest alongside everything else. Also exercises the package.path
+    /// Every shipped plugin passes `cru plugin check`: it parses, and every
+    /// tool parameter's declared type is one the host can read.
+    ///
+    /// The type check on top of that runs only where `luau-analyze` is
+    /// installed, and the report says which happened — a gate that reported a
+    /// skipped typecheck as a pass would be reporting the absence of evidence
+    /// as evidence. What is unconditional is the parse and the declarations,
+    /// and those are what turn a bad `type = "array<"` into a build failure
+    /// instead of a made-up JSON Schema an agent is handed.
+    #[test]
+    fn every_shipped_plugin_typechecks() {
+        let stubs = tempfile::TempDir::new().expect("tempdir");
+        let definitions = stubs.path().join("cru.d.luau");
+        crucible_lua::stubs::StubGenerator::generate(stubs.path()).expect("generate declarations");
+
+        let mut failures: Vec<String> = Vec::new();
+        for entry in std::fs::read_dir(shipped_plugins_dir()).expect("shipped plugins") {
+            let dir = entry.expect("entry").path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let report = crucible_lua::check_plugin(&dir, Some(&definitions)).expect("check");
+            if !report.passed() {
+                failures.push(format!(
+                    "{}: {}",
+                    dir.file_name().unwrap_or_default().to_string_lossy(),
+                    report
+                        .findings
+                        .iter()
+                        .map(|f| f.to_string())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "shipped plugins failed `cru plugin check`:\n{}",
+            failures.join("\n")
+        );
+    }
+
     /// setup that lets `require("config")` resolve a plugin's lua/ submodule.
     //
     // Arms are listed explicitly so that a plugin can sit in `runtime/plugins/`

@@ -278,3 +278,55 @@ fn cru_kiln_path_resolves_a_registered_name_through_the_registry() {
         .expect_err("an unregistered name must be refused");
     assert!(err.to_string().contains("absent"), "unhelpful: {err}");
 }
+
+/// Every signature the host declares must name a function the plugin VM
+/// really has.
+///
+/// A declaration is read as authoritative: an author who sees
+/// `cru.shell.exec(command: string, ...)` in `cru.d.luau` writes the call and
+/// expects it to exist. A signature for a path nobody registered is worse
+/// than no signature at all, so the table is checked against the running VM
+/// rather than against itself.
+#[tokio::test]
+async fn every_declared_signature_exists_on_the_vm() {
+    let loader =
+        crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+            .expect("loader");
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    loader.generate_stubs(dir.path()).expect("generate stubs");
+    let declarations = std::fs::read_to_string(dir.path().join("cru.d.luau")).expect("cru.d.luau");
+
+    let missing: Vec<&str> = crucible_lua::host_api::declared_signatures()
+        .keys()
+        .copied()
+        .filter(|path| {
+            let leaf = path.rsplit('.').next().unwrap_or(path);
+            !declarations.contains(&format!("{leaf}: ("))
+        })
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "declared signatures name functions the plugin VM does not have: {missing:?}"
+    );
+}
+
+/// The declarations describe the same VM the stubs do, so a plugin author
+/// checking against them is checking against what the daemon runs.
+#[tokio::test]
+async fn the_luau_declarations_cover_the_vm_namespaces() {
+    let loader =
+        crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+            .expect("loader");
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    loader.generate_stubs(dir.path()).expect("generate stubs");
+    let declarations = std::fs::read_to_string(dir.path().join("cru.d.luau")).expect("cru.d.luau");
+
+    assert!(declarations.starts_with("--!strict"), "{declarations}");
+    for namespace in ["fs", "json", "shell", "timer"] {
+        assert!(
+            declarations.contains(&format!("{namespace}: {{")),
+            "the declarations must cover cru.{namespace}: {declarations}"
+        );
+    }
+}

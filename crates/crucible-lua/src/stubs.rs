@@ -44,9 +44,15 @@ impl StubGenerator {
     pub fn generate_from(lua: &Lua, output_dir: &Path) -> Result<(), LuaError> {
         fs::create_dir_all(output_dir)?;
 
-        let (emmylua, docs) = render_stubs(lua)?;
+        let (emmylua, docs, paths) = render_stubs(lua)?;
 
         fs::write(output_dir.join("cru.lua"), emmylua)?;
+        // The Luau declarations, from the host's own signature table. LuaLS
+        // reads `cru.lua`; `luau-analyze` reads this.
+        fs::write(
+            output_dir.join("cru.d.luau"),
+            crate::host_api::render_declarations(&paths),
+        )?;
         let docs_json = serde_json::to_string_pretty(&docs)
             .map_err(|e| LuaError::Serialization(e.to_string()))?;
         fs::write(output_dir.join("cru-docs.json"), docs_json)?;
@@ -83,17 +89,22 @@ impl StubGenerator {
             Self::generate(&tmp_dir)?;
 
             let generated_lua = fs::read_to_string(tmp_dir.join("cru.lua"))?;
+            let generated_luau = fs::read_to_string(tmp_dir.join("cru.d.luau"))?;
             let generated_docs = fs::read_to_string(tmp_dir.join("cru-docs.json"))?;
 
             let committed_docs = committed_path.with_file_name("cru-docs.json");
-            if !committed_path.exists() || !committed_docs.exists() {
+            let committed_luau = committed_path.with_file_name("cru.d.luau");
+            if !committed_path.exists() || !committed_docs.exists() || !committed_luau.exists() {
                 return Ok(false);
             }
 
             let existing_lua = fs::read_to_string(committed_path)?;
             let existing_docs = fs::read_to_string(committed_docs)?;
+            let existing_luau = fs::read_to_string(committed_luau)?;
 
-            Ok(generated_lua == existing_lua && generated_docs == existing_docs)
+            Ok(generated_lua == existing_lua
+                && generated_docs == existing_docs
+                && generated_luau == existing_luau)
         })();
 
         let _ = fs::remove_dir_all(&tmp_dir);
@@ -101,7 +112,10 @@ impl StubGenerator {
     }
 }
 
-fn render_stubs(lua: &Lua) -> Result<(String, BTreeMap<String, DocEntry>), LuaError> {
+/// The EmmyLua stubs, their docs, and every function path found on the VM.
+type RenderedStubs = (String, BTreeMap<String, DocEntry>, Vec<String>);
+
+fn render_stubs(lua: &Lua) -> Result<RenderedStubs, LuaError> {
     let cru: Table = lua.globals().get("cru")?;
 
     let mut class_paths = BTreeSet::new();
@@ -172,7 +186,8 @@ fn render_stubs(lua: &Lua) -> Result<(String, BTreeMap<String, DocEntry>), LuaEr
         docs.insert(function.path.clone(), DocEntry { documentation });
     }
 
-    Ok((out, docs))
+    let paths = functions.iter().map(|f| f.path.clone()).collect();
+    Ok((out, docs, paths))
 }
 
 fn collect_function_stubs(

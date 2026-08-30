@@ -269,6 +269,10 @@ impl PluginManager {
                         name
                     );
                 }
+                // An unreadable DECLARATION is fatal; every other spec
+                // failure keeps failing open, so a plugin with an odd spec
+                // still loads and merely exports nothing.
+                Err(e @ LifecycleError::InvalidDeclaration(_)) => return Err(e),
                 Err(e) => {
                     warn!("Failed to load spec for plugin {}: {}", name, e);
                 }

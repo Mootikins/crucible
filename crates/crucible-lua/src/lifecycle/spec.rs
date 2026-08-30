@@ -100,6 +100,28 @@ pub fn load_plugin_spec(init_path: &Path) -> LifecycleResult<Option<PluginSpec>>
     load_plugin_spec_from_source(&source, init_path)
 }
 
+/// Refuse a parameter whose declared type the host cannot read.
+///
+/// The type text is not decoration: it becomes the JSON Schema an agent sees
+/// and the Luau declaration a plugin is checked against. An unreadable
+/// declaration used to become `"type": "string"` in the schema and `any` in
+/// the stub — two different wrong answers, neither of which the author was
+/// told about. Now the plugin does not load, and the message names the tool,
+/// the parameter and the text.
+fn validate_declared_types(tool: &str, params: &[DiscoveredParam]) -> LifecycleResult<()> {
+    for param in params {
+        if let Err(error) = crate::signature::LuaType::parse(&param.param_type) {
+            return Err(LifecycleError::InvalidDeclaration(format!(
+                "tool '{tool}', parameter '{}': {error}. Declare one of: \
+                 string, number, boolean, any, a name, `T?`, `T[]`, \
+                 `array<T>`, `table<K, V>`, `T|U`, or `{{ field: T }}`",
+                param.name
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Extract `DiscoveredParam` entries from a Lua params table.
 fn extract_params_from_table(def: &mlua::Table) -> Vec<DiscoveredParam> {
     let mut params = Vec::new();
@@ -183,6 +205,7 @@ pub(crate) fn load_plugin_spec_from_source(
                 let desc = tool_def.get::<String>("desc").unwrap_or_default();
 
                 let params = extract_params_from_table(&tool_def);
+                validate_declared_types(&tool_name, &params)?;
 
                 spec.tools.push(DiscoveredTool {
                     name: tool_name,
