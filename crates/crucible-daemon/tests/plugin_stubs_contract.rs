@@ -440,4 +440,17 @@ async fn every_function_is_signed_or_listed() {
         "`host_api::UNSIGNED` names functions the plugin VM does not have. \
          Remove them:\n{stale:#?}"
     );
+
+    // A path that is BOTH signed and listed leaves the list overstating the
+    // gap, which is how it stops being an inventory and becomes decoration.
+    // Signing a function is therefore also deleting its line here.
+    let signed_but_listed: Vec<&&str> = listed
+        .iter()
+        .filter(|path| signed.contains(**path))
+        .collect();
+    assert!(
+        signed_but_listed.is_empty(),
+        "these functions carry a signature AND are listed as unsigned. \
+         Delete them from `host_api::UNSIGNED`:\n{signed_but_listed:#?}"
+    );
 }
