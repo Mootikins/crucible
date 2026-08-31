@@ -1,6 +1,6 @@
 name: {{name}}
 version: "0.1.0"
 description: "A Crucible plugin"
-main: init.lua
+main: init.luau
 
 capabilities: []

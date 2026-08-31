@@ -582,7 +582,15 @@ plugin-check: luau-lsp
     # VM, so each needs the definitions for ITS profile. That mapping, and the
     # assertion that it covers every `.lua` in the repository, live in
     # `every_shipped_lua_file_typechecks`.
-    if ! cargo test -q -p crucible-daemon --lib every_shipped_lua_file_typechecks; then
+    #
+    # `--exact`, and the output is checked for one PASS: a cargo test name
+    # filter that matches nothing still exits 0, so renaming or deleting the
+    # test would leave this recipe reporting a green run of no tests at all.
+    if ! cargo test -q -p crucible-daemon --lib \
+        server::lua_plugin_suite::shipped_plugin_tests::every_shipped_lua_file_typechecks \
+        -- --exact \
+        | tee /dev/stderr | grep -q '1 passed'; then
+        echo "the whole-repo Lua typecheck did not run (renamed? deleted?)" >&2
         failed=1
     fi
     exit $failed

@@ -541,6 +541,39 @@ fn a_luau_plugin_is_discovered_and_loads() {
     );
 }
 
+/// A directory with two entry points is REPORTED, never silently dropped.
+///
+/// `init_file(&path).ok().flatten()` turned the collision into "not a
+/// plugin", so a directory that had loaded from `init.lua` for months
+/// vanished the moment someone added `init.luau` beside it — discovered by
+/// nothing, logged by nothing.
+#[test]
+fn a_plugin_with_both_entry_points_is_a_discovery_error() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("ambiguous");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(plugin_dir.join("init.lua"), "return { name = 'ambiguous' }\n").unwrap();
+    std::fs::write(plugin_dir.join("init.luau"), "return { name = 'ambiguous' }\n").unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+    assert!(
+        !discovered.iter().any(|name| name == "ambiguous"),
+        "a directory with two entry points must not load one of them at random"
+    );
+
+    let reported = manager
+        .discovery_errors()
+        .iter()
+        .find(|e| e.path.ends_with("ambiguous"))
+        .expect("the collision must be RECORDED, not dropped");
+    assert!(
+        reported.error.contains("init.luau") && reported.error.contains("init.lua"),
+        "the report must name both files: {}",
+        reported.error
+    );
+}
+
 /// Two entry points answering to one name is refused, not resolved. Picking
 /// one silently means an edit to the other appears to do nothing.
 #[test]

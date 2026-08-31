@@ -111,11 +111,22 @@ impl PluginManager {
                         Ok(None) => {
                             // No manifest — an `init.luau` or `init.lua` makes
                             // this a plugin anyway.
-                            if crate::source_files::init_file(&path)
-                                .ok()
-                                .flatten()
-                                .is_some()
-                            {
+                            //
+                            // A directory holding BOTH is recorded as a
+                            // discovery error, not dropped. `.ok().flatten()`
+                            // turned the collision into "not a plugin", so a
+                            // directory that used to load simply vanished with
+                            // nothing in the log — the user renames a file,
+                            // leaves the old one behind, and their plugin is
+                            // gone with no way to find out why.
+                            let entry = match crate::source_files::init_file(&path) {
+                                Ok(found) => found,
+                                Err(ambiguous) => {
+                                    self.record_discovery_error(&path, ambiguous);
+                                    continue;
+                                }
+                            };
+                            if entry.is_some() {
                                 match PluginManifest::from_directory_defaults(&path) {
                                     Ok(manifest) => {
                                         let name = manifest.name.clone();

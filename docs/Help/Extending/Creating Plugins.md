@@ -159,10 +159,13 @@ return M
 
 ## Plugin Language
 
-Plugins are written in Luau, in `.luau` or `.lua` files. `.luau` is preferred —
-it is what Luau's own editor tooling recognises — and `.lua` keeps working for
-good. A directory holding both `init.luau` and `init.lua` is refused rather
-than resolved, because an edit to the wrong one would appear to do nothing.
+Plugins are written in Luau, in `.luau` or `.lua` files. `cru plugin new`
+writes `.luau` — it is what Luau's own editor tooling recognises — and `.lua`
+keeps working for good, so every plugin already on disk is unaffected.
+
+A directory holding both `init.luau` and `init.lua` is refused rather than
+resolved: an edit to the wrong one would appear to do nothing. The refusal is
+reported by discovery and by `cru plugin check`, naming both files.
 
 **You do not have to annotate anything.** Write plain Lua and the checker
 already catches a misspelled namespace, a wrong argument count and a wrong

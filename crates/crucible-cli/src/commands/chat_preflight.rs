@@ -234,7 +234,13 @@ pub fn fill_default_model_if_missing(config: &mut CliConfig) {
 /// (that is daemon-side, after session.create).
 pub(crate) fn ensure_kiln_scaffold(kiln_root: &std::path::Path) -> Result<bool> {
     let crucible_dir = kiln_root.join(".crucible");
-    if crucible_dir.join("init.lua").exists() || crucible_dir.join("config.toml").exists() {
+    // Either entry-point name counts as "already set up"; looking for one
+    // would scaffold over a workspace that had renamed its config.
+    let has_init = crucible_lua::source_files::init_file(&crucible_dir)
+        .ok()
+        .flatten()
+        .is_some();
+    if has_init || crucible_dir.join("config.toml").exists() {
         return Ok(false);
     }
     let init_lua = crate::commands::init::generate_kiln_init_lua("ollama", "llama3.2");

@@ -233,8 +233,11 @@ impl DaemonPluginLoader {
             Self::register_plugin_config(lua, plugin_config.clone()),
         )?;
 
-        // `cru.modes`, `cru.statusline`, `cru.colorscheme`, `cru.hl`,
-        // `cru.syntax` and `cru.defaults`. The daemon evaluates the user's
+        // `cru.statusline`, `cru.colorscheme`, `cru.hl`, `cru.geometry` and
+        // `cru.syntax` — NOT `cru.modes` or `cru.defaults`, which only the
+        // session VM registers (`agent_manager/session_vm.rs`).
+        //
+        // The daemon evaluates the user's
         // `init.lua` on THIS VM (`daemon_plugins::boot`, step 3), so these
         // belong to the loader's shape, not to a later call on it.
         //

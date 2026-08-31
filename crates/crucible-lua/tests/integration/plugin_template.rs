@@ -16,12 +16,15 @@ fn test_plugin_template_yaml_is_valid() {
         "version field should be present"
     );
     assert!(manifest["main"].is_string(), "main field should be present");
-    assert_eq!(manifest["main"].as_str().unwrap(), "init.lua");
+    // `.luau` is what `cru plugin new` writes: the extension Luau's own
+    // editor tooling recognises. `.lua` still loads for every plugin
+    // already on disk.
+    assert_eq!(manifest["main"].as_str().unwrap(), "init.luau");
 }
 
 #[test]
 fn test_plugin_template_init_lua_is_syntactically_valid() {
-    let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.lua");
+    let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
     let substituted = template_lua.replace("{{name}}", "test-plugin");
 
     let lua = mlua::Lua::new();
@@ -58,7 +61,7 @@ fn test_plugin_template_init_lua_is_syntactically_valid() {
 /// A starter template that leads with three no-ops teaches them.
 #[test]
 fn test_plugin_template_uses_only_live_constructs() {
-    let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.lua");
+    let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
 
     // Anchored to a comment at the start of a line: the template names these
     // constructs in prose precisely to say that they do nothing.
@@ -88,7 +91,7 @@ fn test_plugin_template_uses_only_live_constructs() {
 #[test]
 fn test_plugin_template_health_lua_is_syntactically_valid() {
     let template_lua =
-        include_str!("../../../crucible-cli/src/commands/plugin/templates/health.lua");
+        include_str!("../../../crucible-cli/src/commands/plugin/templates/health.luau");
     let substituted = template_lua.replace("{{name}}", "test-plugin");
 
     let lua = mlua::Lua::new();

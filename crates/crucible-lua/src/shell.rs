@@ -19,6 +19,7 @@
 
 use crate::error::LuaError;
 use mlua::{Lua, Table, Value};
+use std::time::Duration;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -81,8 +82,14 @@ impl PluginShellPolicy {
     /// sandbox's. `None` on both sides means no deadline, which is the
     /// default — plugins run builds and servers whose duration the policy
     /// cannot predict.
-    pub fn deadline_for(&self, requested: Option<u64>) -> Option<u64> {
-        match (requested, self.timeout_secs) {
+    ///
+    /// A `Duration`, not whole seconds. Reading the Lua option as `u64`
+    /// truncated `timeout = 0.5` to zero, and a zero deadline kills the
+    /// command in under two milliseconds — the declared type is `number?`, so
+    /// a fraction is exactly what a caller is invited to pass.
+    pub fn deadline_for(&self, requested: Option<Duration>) -> Option<Duration> {
+        let cap = self.timeout_secs.map(Duration::from_secs);
+        match (requested, cap) {
             (Some(asked), Some(cap)) => Some(asked.min(cap)),
             (Some(asked), None) => Some(asked),
             (None, cap) => cap,
@@ -199,7 +206,7 @@ pub async fn spawn_command(
     env: Option<&HashMap<String, String>>,
     policy: &PluginShellPolicy,
     on_line: LineSink<'_>,
-    timeout_secs: Option<u64>,
+    timeout: Option<Duration>,
 ) -> Result<ExecResult, LuaError> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -270,9 +277,8 @@ pub async fn spawn_command(
         }
     };
 
-    match policy.deadline_for(timeout_secs) {
-        Some(secs) => {
-            let deadline = std::time::Duration::from_secs(secs);
+    match policy.deadline_for(timeout) {
+        Some(deadline) => {
             match tokio::time::timeout(deadline, pump).await {
                 Ok(result) => result?,
                 Err(_) => {
@@ -283,7 +289,8 @@ pub async fn spawn_command(
                     let _ = child.start_kill();
                     return Err(LuaError::Runtime(format!(
                         "Command '{}' timed out after {} seconds",
-                        cmd, secs
+                        cmd,
+                        deadline.as_secs_f64()
                     )));
                 }
             }
@@ -305,6 +312,31 @@ pub async fn spawn_command(
 }
 
 /// Execute a shell command (async)
+/// The `timeout` option, in seconds, as a `Duration`.
+///
+/// RAISES on a value that cannot be a deadline. `cru.timer.sleep` validates
+/// exactly this and raises; `cru.shell` used to read `u64` and say nothing,
+/// so `timeout = 0.5` truncated to zero and killed the command in under two
+/// milliseconds, and `timeout = -1` was dropped so the call silently ran under
+/// the policy's deadline instead of the caller's.
+fn read_timeout(opts: &Table) -> mlua::Result<Option<Duration>> {
+    let Ok(value) = opts.get::<Value>("timeout") else {
+        return Ok(None);
+    };
+    if matches!(value, Value::Nil) {
+        return Ok(None);
+    }
+    let secs: f64 = opts.get("timeout").map_err(|_| {
+        mlua::Error::runtime("shell timeout must be a number of seconds")
+    })?;
+    if !secs.is_finite() || secs < 0.0 {
+        return Err(mlua::Error::runtime(
+            "shell timeout must be a finite non-negative number of seconds",
+        ));
+    }
+    Ok(Some(Duration::from_secs_f64(secs)))
+}
+
 pub async fn exec_command(
     cmd: &str,
     args: &[String],
@@ -312,9 +344,9 @@ pub async fn exec_command(
     env: Option<&HashMap<String, String>>,
     stdin_data: Option<&str>,
     policy: &PluginShellPolicy,
-    timeout_secs: Option<u64>,
+    timeout: Option<Duration>,
 ) -> Result<ExecResult, LuaError> {
-    let deadline = policy.deadline_for(timeout_secs);
+    let deadline = policy.deadline_for(timeout);
     let mut command = prepare_command(policy, cmd, args, cwd, env)?;
     debug!("Executing: {} {:?}", cmd, args);
 
@@ -332,21 +364,20 @@ pub async fn exec_command(
     // Await a child's output, honoring the policy deadline when one is set.
     async fn output_with_deadline<F>(
         fut: F,
-        timeout_secs: Option<u64>,
+        deadline: Option<Duration>,
         cmd: &str,
     ) -> Result<std::process::Output, LuaError>
     where
         F: std::future::Future<Output = std::io::Result<std::process::Output>>,
     {
-        let io_result = match timeout_secs {
-            Some(secs) => tokio::time::timeout(std::time::Duration::from_secs(secs), fut)
-                .await
-                .map_err(|_| {
-                    LuaError::Runtime(format!(
-                        "Command '{}' timed out after {} seconds",
-                        cmd, secs
-                    ))
-                })?,
+        let io_result = match deadline {
+            Some(limit) => tokio::time::timeout(limit, fut).await.map_err(|_| {
+                LuaError::Runtime(format!(
+                    "Command '{}' timed out after {} seconds",
+                    cmd,
+                    limit.as_secs_f64()
+                ))
+            })?,
             None => fut.await,
         };
         io_result.map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))
@@ -415,9 +446,9 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                 let mut cwd = None;
                 let mut env = None;
                 let mut stdin_data = None;
-                // SECONDS. Bounded by the policy: a plugin may shorten its own
-                // deadline and may not lengthen the sandbox's.
-                let mut timeout_secs = None;
+                // Bounded by the policy: a plugin may shorten its own deadline
+                // and may not lengthen the sandbox's.
+                let mut timeout = None;
 
                 if let Some(opts) = options {
                     if let Ok(dir) = opts.get::<String>("cwd") {
@@ -433,9 +464,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     if let Ok(data) = opts.get::<String>("stdin") {
                         stdin_data = Some(data);
                     }
-                    if let Ok(secs) = opts.get::<u64>("timeout") {
-                        timeout_secs = Some(secs);
-                    }
+                    timeout = read_timeout(&opts)?;
                 }
 
                 let result = exec_command(
@@ -445,7 +474,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     env.as_ref(),
                     stdin_data.as_deref(),
                     &policy,
-                    timeout_secs,
+                    timeout,
                 )
                 .await?;
 
@@ -482,8 +511,8 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                 let mut cwd = None;
                 let mut env = None;
                 let mut on_line: Option<mlua::Function> = None;
-                // SECONDS, and bounded by the policy — see `deadline_for`.
-                let mut timeout_secs = None;
+                // Bounded by the policy — see `deadline_for`.
+                let mut timeout = None;
 
                 if let Some(opts) = &options {
                     if let Ok(dir) = opts.get::<String>("cwd") {
@@ -499,9 +528,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     if let Ok(f) = opts.get::<mlua::Function>("on_line") {
                         on_line = Some(f);
                     }
-                    if let Ok(secs) = opts.get::<u64>("timeout") {
-                        timeout_secs = Some(secs);
-                    }
+                    timeout = read_timeout(opts)?;
                 }
 
                 // A callback that raises must not be swallowed: the plugin
@@ -531,7 +558,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                         env.as_ref(),
                         &policy,
                         &mut sink,
-                        timeout_secs,
+                        timeout,
                     )
                     .await?
                 };
@@ -595,43 +622,101 @@ mod tests {
     /// killed them. A policy can still opt into a deadline with `Some(_)`.
     /// A per-call `timeout` is honoured, and a policy cap still wins.
     ///
-    /// It used to be read by nothing. `cru.shell.exec(cmd, args, { timeout = 30 })`
-    /// parsed, typechecked and was discarded, so every deadline a plugin set
-    /// was silently the policy's — which defaults to none. The `oci` plugin
-    /// passes one on every container call and on every build, so
-    /// `[plugins.oci] build_timeout` had never once applied.
+    /// `deadline_for` alone proved nothing about the wiring — the `timeout`
+    /// key on the Lua options table reaching `exec_command` is the exact path
+    /// that was dead, so it is what this drives: through the registered
+    /// `cru.shell.exec`, against a real `sleep`.
+    #[tokio::test]
+    async fn a_per_call_deadline_reaches_the_command() {
+        let lua = Lua::new();
+        register_shell_module(&lua, PluginShellPolicy::permissive()).expect("register");
+
+        // Asked for less than the command needs: the deadline must fire.
+        let started = std::time::Instant::now();
+        let err = lua
+            .load(r#"return cru.shell.exec("sleep", { "5" }, { timeout = 1 })"#)
+            .exec_async()
+            .await
+            .expect_err("a 1s deadline must stop a 5s sleep");
+        assert!(
+            err.to_string().contains("timed out"),
+            "expected a timeout, got: {err}"
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "the deadline did not reach the command: {elapsed:?}"
+        );
+
+        // A FRACTION is not truncated to zero. Read as `u64` it was, and a
+        // zero deadline killed the command in under two milliseconds while
+        // the declared type invited exactly this value.
+        let started = std::time::Instant::now();
+        let _ = lua
+            .load(r#"return cru.shell.exec("sleep", { "3" }, { timeout = 0.5 })"#)
+            .exec_async()
+            .await;
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(400),
+            "0.5 truncated to a zero deadline: {elapsed:?}"
+        );
+    }
+
+    /// A `timeout` that cannot be a deadline is REFUSED, not dropped.
+    ///
+    /// Dropping it ran the call under the policy's deadline instead of the
+    /// caller's, which is the opposite of what the caller asked for.
+    #[tokio::test]
+    async fn an_impossible_deadline_is_refused() {
+        let lua = Lua::new();
+        register_shell_module(&lua, PluginShellPolicy::permissive()).expect("register");
+
+        for bad in ["-1", "0/0", "1/0"] {
+            let err = lua
+                .load(&format!(
+                    r#"return cru.shell.exec("true", {{}}, {{ timeout = {bad} }})"#
+                ))
+                .exec_async()
+                .await
+                .expect_err("a {bad} deadline must be refused");
+            assert!(
+                err.to_string().contains("finite non-negative"),
+                "timeout = {bad} was not refused: {err}"
+            );
+        }
+    }
+
+    /// The policy caps what a call may ask for, and never lengthens it.
     #[test]
-    fn a_per_call_deadline_is_honoured_and_the_policy_caps_it() {
+    fn the_policy_caps_a_per_call_deadline() {
+        let secs = Duration::from_secs;
         let uncapped = PluginShellPolicy::default();
         assert_eq!(uncapped.timeout_secs, None, "no default cap");
         assert_eq!(
-            uncapped.deadline_for(Some(30)),
-            Some(30),
+            uncapped.deadline_for(Some(secs(30))),
+            Some(secs(30)),
             "with no policy cap, the caller's deadline is the deadline"
         );
-        assert_eq!(
-            uncapped.deadline_for(None),
-            None,
-            "and asking for none still means none"
-        );
+        assert_eq!(uncapped.deadline_for(None), None, "none still means none");
 
         let capped = PluginShellPolicy {
             timeout_secs: Some(10),
             ..PluginShellPolicy::default()
         };
         assert_eq!(
-            capped.deadline_for(Some(30)),
-            Some(10),
+            capped.deadline_for(Some(secs(30))),
+            Some(secs(10)),
             "a plugin may not lengthen the sandbox's deadline"
         );
         assert_eq!(
-            capped.deadline_for(Some(5)),
-            Some(5),
+            capped.deadline_for(Some(secs(5))),
+            Some(secs(5)),
             "but it may shorten its own"
         );
         assert_eq!(
             capped.deadline_for(None),
-            Some(10),
+            Some(secs(10)),
             "and saying nothing leaves the policy's in force"
         );
     }

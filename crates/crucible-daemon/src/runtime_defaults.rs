@@ -70,16 +70,26 @@ fn defaults_candidates_from(
 ) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
+    // Both entry-point names at every root, preferred first: a copied-out
+    // `defaults/init.luau` was invisible while this looked for one name.
+    let names = crucible_lua::source_files::init_file_names();
+
     for rtp in runtimepath {
-        candidates.push(rtp.join("defaults").join("init.lua"));
+        for name in &names {
+            candidates.push(rtp.join("defaults").join(name));
+        }
     }
 
     if let Some(base) = env_runtime {
-        candidates.push(PathBuf::from(base).join("defaults").join("init.lua"));
+        for name in &names {
+            candidates.push(PathBuf::from(base).join("defaults").join(name));
+        }
     }
 
     for root in exe_roots {
-        candidates.push(root.join("defaults").join("init.lua"));
+        for name in &names {
+            candidates.push(root.join("defaults").join(name));
+        }
     }
 
     // Each candidate is Lua the session VM executes before the user's config,
@@ -136,25 +146,37 @@ fn load_defaults_from(
 mod tests {
     use super::*;
 
+    /// Root order beats extension order.
+    ///
+    /// Each root offers BOTH entry-point names, `.luau` first, but a
+    /// higher-priority root's `.lua` still outranks a lower one's `.luau` —
+    /// otherwise adding a file to a low-priority root could displace the
+    /// defaults a user copied out.
     #[test]
     fn runtimepath_entries_outrank_everything_else() {
         let rtp = vec![PathBuf::from("/a"), PathBuf::from("/b")];
         let candidates = defaults_candidates(&rtp, Some("/env"));
 
-        assert_eq!(candidates[0], PathBuf::from("/a/defaults/init.lua"));
-        assert_eq!(candidates[1], PathBuf::from("/b/defaults/init.lua"));
-        assert_eq!(candidates[2], PathBuf::from("/env/defaults/init.lua"));
+        assert_eq!(candidates[0], PathBuf::from("/a/defaults/init.luau"));
+        assert_eq!(candidates[1], PathBuf::from("/a/defaults/init.lua"));
+        assert_eq!(candidates[2], PathBuf::from("/b/defaults/init.luau"));
+        assert_eq!(candidates[3], PathBuf::from("/b/defaults/init.lua"));
+        assert_eq!(candidates[4], PathBuf::from("/env/defaults/init.luau"));
+        assert_eq!(candidates[5], PathBuf::from("/env/defaults/init.lua"));
     }
 
     #[test]
     fn env_runtime_is_used_when_no_runtimepath_is_configured() {
         let candidates = defaults_candidates(&[], Some("/env"));
-        assert_eq!(candidates[0], PathBuf::from("/env/defaults/init.lua"));
+        assert_eq!(candidates[0], PathBuf::from("/env/defaults/init.luau"));
+        assert_eq!(candidates[1], PathBuf::from("/env/defaults/init.lua"));
     }
 
     #[test]
     fn exe_relative_candidates_are_the_last_resort_before_builtin() {
         let candidates = defaults_candidates(&[], None);
+        // Each root offers both names, so the LAST pair is the extracted
+        // tree's; `last` is its `.lua`.
         let (last, rest) = candidates
             .split_last()
             .expect("the exe-relative pair is always offered");
@@ -172,16 +194,20 @@ mod tests {
                     "the extracted copy is the last file candidate, ahead of only the built-in"
                 );
                 assert!(
-                    rest.iter()
-                        .all(|c| c.ends_with("runtime/defaults/init.lua")),
+                    rest.iter().all(|c| {
+                        c.ends_with("runtime/defaults/init.lua")
+                            || c.ends_with("runtime/defaults/init.luau")
+                            || c == &bundled.join("defaults").join("init.luau")
+                    }),
                     "expected only exe-relative candidates ahead of it, got {rest:?}"
                 );
             }
             // No data directory on this box, so nothing to extract to.
             None => assert!(
-                candidates
-                    .iter()
-                    .all(|c| c.ends_with("runtime/defaults/init.lua")),
+                candidates.iter().all(|c| {
+                    c.ends_with("runtime/defaults/init.lua")
+                        || c.ends_with("runtime/defaults/init.luau")
+                }),
                 "expected only exe-relative candidates, got {candidates:?}"
             ),
         }

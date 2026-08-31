@@ -503,7 +503,7 @@ mod shipped_plugin_tests {
     /// `every_shipped_plugin_typechecks` above walks `runtime/plugins/` only,
     /// which is what `just plugin-check` iterates too. Eleven shipped files sat
     /// outside it and no machine had ever checked one — including
-    /// `plugin/templates/init.lua`, the scaffold `cru plugin new` copies, whose
+    /// `plugin/templates/init.luau`, the scaffold `cru plugin new` copies, whose
     /// `health.lua` did not pass `cru plugin check`.
     ///
     /// The profile matters as much as the coverage. `runtime/defaults/init.lua`

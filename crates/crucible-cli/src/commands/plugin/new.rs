@@ -6,10 +6,10 @@ use super::NewArgs;
 use crate::config::CliConfig;
 
 const TEMPLATE_PLUGIN_YAML: &str = include_str!("templates/plugin.yaml");
-const TEMPLATE_INIT_LUA: &str = include_str!("templates/init.lua");
-const TEMPLATE_HEALTH_LUA: &str = include_str!("templates/health.lua");
+const TEMPLATE_INIT_LUA: &str = include_str!("templates/init.luau");
+const TEMPLATE_HEALTH_LUA: &str = include_str!("templates/health.luau");
 const TEMPLATE_LUARC_JSON: &str = include_str!("templates/.luarc.json");
-const TEMPLATE_TESTS_INIT: &str = include_str!("templates/tests/init_test.lua");
+const TEMPLATE_TESTS_INIT: &str = include_str!("templates/tests/init_test.luau");
 
 pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     let output_dir = args
@@ -38,10 +38,14 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     let tests_init = TEMPLATE_TESTS_INIT.replace("{{name}}", &args.name);
 
     fs::write(plugin_dir.join("plugin.yaml"), plugin_yaml)?;
-    fs::write(plugin_dir.join("init.lua"), init_lua)?;
-    fs::write(plugin_dir.join("health.lua"), health_lua)?;
+    // `.luau`, the extension Luau's own editor tooling recognises. Both load;
+    // this is the one place Crucible creates a file, so it is the one place
+    // the preference can be acted on rather than merely documented.
+    let ext = crucible_lua::source_files::PREFERRED_EXTENSION;
+    fs::write(plugin_dir.join(format!("init.{ext}")), init_lua)?;
+    fs::write(plugin_dir.join(format!("health.{ext}")), health_lua)?;
     fs::write(plugin_dir.join(".luarc.json"), luarc_json(&stub_dir()))?;
-    fs::write(plugin_dir.join("tests/init_test.lua"), tests_init)?;
+    fs::write(plugin_dir.join(format!("tests/init_test.{ext}")), tests_init)?;
 
     println!(
         "✓ Plugin '{}' created at {}",

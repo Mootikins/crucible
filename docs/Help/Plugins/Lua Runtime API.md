@@ -154,7 +154,9 @@ end
   - `cwd` (string) — working directory
   - `env` (table) — additional environment variables as key/value pairs
   - `stdin` (string) — data to pipe to the process's stdin
-  - `timeout` (number) — SECONDS to wait before the call raises
+  - `timeout` (number) — SECONDS to wait before the call raises. Fractions
+    work: `0.5` is half a second, not zero. A negative or infinite value is
+    refused rather than ignored.
 
 **Returns a table:**
 - `success` (bool) — `true` if exit code was 0
