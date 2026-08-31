@@ -56,7 +56,9 @@ local function ddg_rows()
                 local target = href:match("uddg=([^&]+)")
                 if target then
                     href = target:gsub("%%(%x%x)", function(h)
-                        return string.char(tonumber(h, 16))
+                        -- `%x%x` guarantees two hex digits, so this never
+                        -- fails; `assert` says so to the typechecker too.
+                        return string.char(assert(tonumber(h, 16)))
                     end)
                 end
                 pending = { title = unescape(title), url = href }

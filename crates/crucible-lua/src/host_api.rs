@@ -324,7 +324,13 @@ declare test_mocks: {
     setup: (fixture: { [string]: any }?) -> (),
     reset: () -> (),
     get_calls: (namespace: string, name: string) -> { any },
+    mock: (partial: any) -> any,
 }
+
+-- A deliberate stand-in for a host namespace. Identity at run time; it exists
+-- so a partial mock can be assigned to a full namespace without the checker
+-- reporting a defect where the author wrote exactly what they meant.
+declare function mock(partial: any): any
 "#;
 
 /// An open file, as `io.open` answers with. Named so the declarations can

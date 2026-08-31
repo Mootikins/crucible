@@ -36,7 +36,7 @@ cru.isolation = {
     table.insert(isolation_calls, opts)
   end,
 }
-cru.plugin = {
+cru.plugin = mock({
   set_status = function(opts)
     table.insert(status_calls, opts)
   end,
@@ -49,12 +49,15 @@ cru.plugin = {
   options = function(tree)
     declared_options = tree
   end,
-}
+})
 
 -- Scripted shell. Responders are keyed by "<cmd> <first-arg>" (then "<cmd>"),
 -- and every call is logged so tests can assert on the exact argv.
 local exec_log = {}
-local responders = {}
+-- Annotated: it is reset to an empty table in several `before_each`
+-- blocks, and Luau otherwise seals the type from the first block that puts
+-- keys in, making every later reset a type error.
+local responders: { [string]: any } = {}
 local ok_reply = { success = true, exit_code = 0, stdout = "", stderr = "" }
 
 local function stub_exec(cmd, args, opts)
@@ -91,11 +94,10 @@ end
 
 local function install_shell()
   cru.shell = { exec = stub_exec, spawn = stub_spawn, which = stub_which }
-  cru.json = { encode = function(t) return t end }
+  cru.json = mock({ encode = function(t) return t end })
   ;(cru :: any).log = function() end
 end
 
-cru = cru or {}
 -- Captured before install_shell() replaces cru.json with an encode-only stub:
 -- the devcontainer tests need a real decoder, and the runtime one is gone once
 -- this file loads.
@@ -250,7 +252,7 @@ describe("oci session lifecycle", function()
     responders["podman run"] = { success = false, exit_code = 125, stdout = "", stderr = "boom" }
     local ok, err = pcall(start_session, "s-fail")
     expect.falsy(ok, "a session whose sandbox did not start must be refused")
-    expect.truthy(tostring(err):find("container start failed", 1, true))
+    expect.truthy((tostring(err):find("container start failed", 1, true)))
     expect.equals(0, #isolation_calls, "no isolation claim for a container that never started")
   end)
 
@@ -259,14 +261,14 @@ describe("oci session lifecycle", function()
     available = {}
     local ok, err = pcall(start_session, "s-noruntime")
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("no container runtime", 1, true))
+    expect.truthy((tostring(err):find("no container runtime", 1, true)))
   end)
 
   it("raises when the session has no workspace to isolate", function()
     spec.setup({ image = "alpine:latest" })
     local ok, err = pcall(lifecycle.start.fn, { id = "s-nows", workspace = "" })
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("no workspace", 1, true))
+    expect.truthy((tostring(err):find("no workspace", 1, true)))
   end)
 
   it("stops and removes the container and clears status on session end", function()
@@ -426,7 +428,7 @@ describe("oci container sharing", function()
 
     local ok, err = pcall(start_session, "s-child", ws)
     expect.falsy(ok, "a dead sandbox must refuse the session, not silently start a fresh one")
-    expect.truthy(tostring(err):find("no longer running", 1, true))
+    expect.truthy((tostring(err):find("no longer running", 1, true)))
   end)
 end)
 
@@ -500,7 +502,7 @@ describe("oci per-session isolation", function()
   it("refuses a session naming an isolation profile that does not exist", function()
     local ok, err = pcall(start_isolated_session, "iso-unknown", "nope", fresh_ws())
     expect.falsy(ok, "an unknown profile must not fall back to the default image")
-    expect.truthy(tostring(err):find("nope", 1, true))
+    expect.truthy((tostring(err):find("nope", 1, true)))
     expect.equals(0, #exec_log)
   end)
 
@@ -531,13 +533,13 @@ describe("oci per-session isolation", function()
     local ok, err = pcall(start_isolated_session, "iso-addressed-unknown",
       { plugin = "oci", target = "nope" }, fresh_ws())
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("nope", 1, true))
+    expect.truthy((tostring(err):find("nope", 1, true)))
   end)
 
   it("refuses an isolation table that names no image", function()
     local ok, err = pcall(start_isolated_session, "iso-imageless", { env = { A = "1" } }, fresh_ws())
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("no image", 1, true))
+    expect.truthy((tostring(err):find("no image", 1, true)))
   end)
 
   -- `true` is "isolate me" without naming how. With a default it means the
@@ -552,7 +554,7 @@ describe("oci per-session isolation", function()
     spec.setup({})
     local ok, err = pcall(start_isolated_session, "iso-true-unconfigured", true, fresh_ws())
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("asked to be isolated", 1, true))
+    expect.truthy((tostring(err):find("asked to be isolated", 1, true)))
   end)
 
   -- `runtime` describes the box, not the image. A profile that omits it must
@@ -579,8 +581,8 @@ describe("oci per-session isolation", function()
 
     local ok, err = pcall(start_isolated_session, "iso-intruder", "heavy", ws)
     expect.falsy(ok, "joining would silently give this session an image it did not ask for")
-    expect.truthy(tostring(err):find("heavy:latest", 1, true))
-    expect.truthy(tostring(err):find("alpine:latest", 1, true))
+    expect.truthy((tostring(err):find("heavy:latest", 1, true)))
+    expect.truthy((tostring(err):find("alpine:latest", 1, true)))
   end)
 end)
 
@@ -705,8 +707,8 @@ describe("oci mount target", function()
 
     local ok, err = pcall(start_isolated_session, "s-target-intruder", "elsewhere", ws)
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("/elsewhere", 1, true))
-    expect.truthy(tostring(err):find("/workspace", 1, true))
+    expect.truthy((tostring(err):find("/elsewhere", 1, true)))
+    expect.truthy((tostring(err):find("/workspace", 1, true)))
   end)
 end)
 
@@ -948,7 +950,7 @@ describe("oci devcontainer resolution", function()
 
     local ok, err = pcall(start_session, "dc-lifecycle", ws)
     expect.falsy(ok, "a devcontainer needing the CLI must refuse, not fall back to the profile")
-    expect.truthy(tostring(err):find("postCreateCommand", 1, true))
+    expect.truthy((tostring(err):find("postCreateCommand", 1, true)))
     -- Nothing may be *started* from a config that could not be honoured.
     for _, call in ipairs(exec_log) do
       expect.equals("git", call.cmd,
@@ -1047,7 +1049,7 @@ describe("oci devcontainer resolution", function()
 
     local ok, err = pcall(start_session, "dc-cli-fail", ws)
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("devcontainer up", 1, true))
+    expect.truthy((tostring(err):find("devcontainer up", 1, true)))
     expect.equals(0, #isolation_calls)
   end)
 end)

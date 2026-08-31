@@ -6,16 +6,15 @@
 -- command, or stops sanitizing what the model answered.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local publications = {}
 local completions = {}
 local next_answer = { "  A perfectly good title  " }
 
 cru.plugin.publish = function(key, value) publications[key] = value end
 
-cru = cru or {}
 ;(cru :: any).log = function() end
-cru.session = cru.session or {}
+cru.session = cru.session or mock({})
 cru.session.complete = function(session_id, opts)
   table.insert(completions, { session_id = session_id, opts = opts })
   return next_answer[1], next_answer[2]

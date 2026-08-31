@@ -10,7 +10,7 @@
 --- rather than inferred from the refusal.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local quota = require("quota")
 
 -- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,

@@ -40,13 +40,13 @@ local function with_env(files, present, fn)
     handle:close()
   end
 
-  cru.shell = {
+  cru.shell = mock({
     which = function(cmd) return found[cmd] and ("/usr/bin/" .. cmd) or nil end,
     exec = function(cmd, args, opts)
       local passthrough = saved_shell and saved_shell.exec
       return passthrough and passthrough(cmd, args, opts)
     end,
-  }
+  })
   cru.json = real_json
 
   local ok, err = pcall(fn, workspace)
@@ -410,7 +410,7 @@ describe("devcontainer.resolve", function()
     with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, {}, function(ws)
       local ok, err = pcall(devcontainer.resolve, ws)
       expect.falsy(ok, "a devcontainer needing the CLI must not build a partial environment")
-      expect.truthy(tostring(err):find("postCreateCommand", 1, true))
+      expect.truthy((tostring(err):find("postCreateCommand", 1, true)))
       expect.truthy(tostring(err):find("devcontainers/cli", 1, true),
         "the refusal must say what would honour it")
     end)
@@ -433,7 +433,7 @@ describe("devcontainer.resolve", function()
       { "devcontainer" }, function(ws)
         local ok, err = pcall(devcontainer.resolve, ws)
         expect.falsy(ok, "an installed CLI must not bypass the host gate")
-        expect.truthy(tostring(err):find("dockerComposeFile", 1, true))
+        expect.truthy((tostring(err):find("dockerComposeFile", 1, true)))
       end)
   end)
 
@@ -442,8 +442,8 @@ describe("devcontainer.resolve", function()
       {}, function(ws)
       local ok, err = pcall(devcontainer.resolve, ws)
       expect.falsy(ok)
-      expect.truthy(tostring(err):find("onCreateCommand", 1, true))
-      expect.truthy(tostring(err):find("postCreateCommand", 1, true))
+      expect.truthy((tostring(err):find("onCreateCommand", 1, true)))
+      expect.truthy((tostring(err):find("postCreateCommand", 1, true)))
     end)
   end)
 end)

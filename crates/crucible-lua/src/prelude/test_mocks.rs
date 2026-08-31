@@ -315,5 +315,20 @@ function test_mocks.get_calls(module, method)
     return _calls[module][method]
 end
 
+--- Mark a value as a deliberate stand-in for a host namespace.
+---
+--- Returns its argument unchanged. It exists for the TYPE: a suite replaces
+--- `cru.timer` with a two-field table on purpose, and a checker that holds
+--- that assignment to the real four-field namespace reports a defect where
+--- the author wrote exactly what they meant.
+---
+--- Without it a suite has to be excluded from the typecheck entirely, which
+--- costs every other check in the file. With it the monkey-patch is one
+--- greppable word and everything around it is still checked.
+function test_mocks.mock(partial)
+    return partial
+end
+
+_G.mock = test_mocks.mock
 _G.test_mocks = test_mocks
 "#;

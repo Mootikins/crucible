@@ -39,7 +39,7 @@ describe("sanitize", function()
   -- produce a title no client can render.
   it("caps by codepoint, not by byte", function()
     local result = title.sanitize(string.rep("日", 200))
-    expect.equals(80, utf8.len(result))
+    expect.equals(80, (utf8.len(result)))
   end)
 end)
 
@@ -50,7 +50,7 @@ describe("clip", function()
 
   it("keeps whole characters when it cuts", function()
     local result = title.clip(string.rep("日", 10), 4)
-    expect.equals(4, utf8.len(result))
+    expect.equals(4, (utf8.len(result)))
     expect.equals("日日日日", result)
   end)
 

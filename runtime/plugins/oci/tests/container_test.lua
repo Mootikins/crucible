@@ -9,11 +9,11 @@ local function with_path(available, fn)
   for _, name in ipairs(available) do present[name] = true end
 
   local saved = cru.shell
-  cru.shell = {
+  cru.shell = mock({
     which = function(cmd)
       return present[cmd] and ("/usr/bin/" .. cmd) or nil
     end,
-  }
+  })
   local ok, err = pcall(fn)
   cru.shell = saved
   if not ok then error(err, 0) end
@@ -279,7 +279,7 @@ describe("container.git_common_dir", function()
   local function with_git(stdout, success, fn)
     local saved = cru.shell
     local calls = {}
-    cru.shell = {
+    cru.shell = mock({
       exec = function(cmd, args, opts)
         table.insert(calls, { cmd = cmd, args = args, opts = opts })
         return {
@@ -290,7 +290,7 @@ describe("container.git_common_dir", function()
         }
       end,
       which = saved and saved.which,
-    }
+    })
     local ok, err = pcall(fn, calls)
     cru.shell = saved
     if not ok then error(err, 0) end
@@ -395,14 +395,14 @@ describe("container.git_works", function()
   local function with_probes(resolves, installed, fn)
     local saved = cru.shell
     local calls = {}
-    cru.shell = {
+    cru.shell = mock({
       exec = function(cmd, args, opts)
         table.insert(calls, { cmd = cmd, args = args, opts = opts })
         local ok = index_of(args, "--version") and installed or resolves
         return { success = ok, exit_code = ok and 0 or 128, stdout = "", stderr = "" }
       end,
       which = saved and saved.which,
-    }
+    })
     local ok, err = pcall(fn, calls)
     cru.shell = saved
     if not ok then error(err, 0) end

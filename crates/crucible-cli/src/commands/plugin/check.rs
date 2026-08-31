@@ -17,14 +17,16 @@ pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
     // catches everything inside the plugin itself.
     let definitions = args.definitions.or_else(default_definitions);
 
-    let report = check_plugin_with(&plugin_dir, definitions.as_deref(), args.include_tests)
+    let report = check_plugin_with(&plugin_dir, definitions.as_deref(), !args.skip_tests)
         .with_context(|| format!("checking {}", plugin_dir.display()))?;
 
     println!("{} file(s) parsed", report.files_checked);
     match report.typecheck {
-        TypecheckStatus::Ran if args.include_tests => println!("typecheck: ran (suite included)"),
+        TypecheckStatus::Ran if args.skip_tests => {
+            println!("typecheck: ran (shipped code only; the suite was skipped)")
+        }
         TypecheckStatus::Ran => {
-            println!("typecheck: ran (shipped code; --include-tests for the suite)")
+            println!("typecheck: ran (shipped code and suite)")
         }
         TypecheckStatus::Skipped => println!(
             "typecheck: SKIPPED — install `luau-lsp` (or set CRUCIBLE_LUAU_ANALYZE) \

@@ -8,7 +8,7 @@
 --- it is the likelier way this regresses.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local plugin = require("discord")
 local service_fn = plugin.services.gateway.fn
 

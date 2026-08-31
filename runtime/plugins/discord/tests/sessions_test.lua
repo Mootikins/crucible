@@ -6,7 +6,7 @@
 --- same failure for the full session TTL, instead of once.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local sessions = require("sessions")
 
 --- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,

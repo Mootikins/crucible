@@ -8,7 +8,7 @@
 --- told their request is waiting and nothing else.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local responder = require("responder")
 local api = require("api")
 
@@ -30,7 +30,7 @@ local function with_env(cfg, env, fn)
     cru.session = env.sessions
     -- A fixed clock keeps the typing refresh out of the way; `sleep` is where
     -- the test stands in for the reply arriving over the gateway.
-    cru.timer = { clock = function() return 0 end, sleep = env.sleep or function() end }
+    cru.timer = mock({ clock = function() return 0 end, sleep = env.sleep or function() end })
     api.send_message = env.send_message
     api.trigger_typing = function() return {}, nil end
     api.create_dm_channel = env.create_dm_channel
@@ -343,7 +343,7 @@ describe("self approval", function()
 
     it("does not let a bystander answer for the requester", function()
         local answers, attempt = {}, nil
-        local sent, send = recorder()
+        local _sent, send = recorder()
 
         with_env({}, {
             sessions = permission_session(answers),

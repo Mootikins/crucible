@@ -7,7 +7,7 @@
 -- containing a space or a `;` would otherwise become two arguments.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local publications = {}
 local declared_options
 
@@ -27,11 +27,10 @@ local function subcommand(args)
   return (args[i] or "") .. " " .. (args[i + 1] or "")
 end
 
-cru = cru or {}
 ;(cru :: any).log = function() end
-cru.fs = cru.fs or {}
+cru.fs = cru.fs or mock({})
 cru.fs.exists = function(path) return existing_paths[path] == true end
-cru.shell = cru.shell or {}
+cru.shell = cru.shell or mock({})
 cru.shell.exec = function(cmd, args, opts)
   table.insert(exec_log, { cmd = cmd, args = args, opts = opts })
   local key = subcommand(args)
@@ -78,12 +77,14 @@ local function worktree_add_argv()
   for _, call in ipairs(exec_log) do
     if subcommand(call.args) == "worktree add" then return call.args end
   end
+  return nil
 end
 
 local function index_of(list, needle)
   for i, v in ipairs(list) do
     if v == needle then return i end
   end
+  return nil
 end
 
 local targets = plugin.commands["worktree.targets"].fn
@@ -188,7 +189,7 @@ describe("worktree.resolve", function()
     a_repo()
     local ok, err = pcall(resolve, { workspace = "/repo", target = "-b" })
     expect.falsy(ok)
-    expect.truthy(tostring(err):find("-b", 1, true))
+    expect.truthy((tostring(err):find("-b", 1, true)))
   end)
 
   it("refuses a name git itself rejects", function()

@@ -343,7 +343,11 @@ mod shipped_plugin_tests {
             if !dir.is_dir() {
                 continue;
             }
-            let report = crucible_lua::check_plugin(&dir, Some(&definitions)).expect("check");
+            // The suite too. Excluding it hid 46 diagnostics in the shipped
+            // plugins, and `mock(...)` now marks the deliberate monkey-patch
+            // so the rest of a test file stays checkable.
+            let report = crucible_lua::check_plugin_with(&dir, Some(&definitions), true)
+                .expect("check");
             if !report.passed() {
                 failures.push(format!(
                     "{}: {}",
@@ -479,8 +483,6 @@ mod shipped_plugin_tests {
                 "crates/crucible-cli/src/commands/plugin/templates/",
                 VmProfile::Daemon,
             ),
-            // The prelude's pure-Lua half and the test harness it installs.
-            ("crates/crucible-lua/lib/", VmProfile::Daemon),
         ];
 
         let root = repo_root();

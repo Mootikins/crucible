@@ -8,8 +8,8 @@
 --- neither a stale caller (`cru.spawn`) nor a missing registration can pass.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
-local plugin = require("discord") -- registers the MESSAGE_CREATE handler
+cru.plugin = cru.plugin or mock({})
+local _plugin = require("discord") -- registers the MESSAGE_CREATE handler
 local gateway = require("gateway")
 local config = require("config")
 
@@ -56,9 +56,9 @@ describe("message dispatch", function()
         cru.timer.clock = function() return 1000.0 end
         -- No persistence: `state_path` pcalls this and answers nil, so the run
         -- touches no disk.
-        cru.paths = {
+        cru.paths = mock({
             state = function() error("dispatch_test: no persistence here") end,
-        }
+        })
 
         -- Counts spawns that LANDED. `cru.timer` stays the REAL table and
         -- `real_spawn` the real function: the increment sits after the call,
@@ -73,14 +73,14 @@ describe("message dispatch", function()
         end
 
         local created = {}
-        cru.session = {
+        cru.session = mock({
             create = function(opts)
                 table.insert(created, opts)
                 return { id = "dispatch-session-1" }
             end,
             configure_agent = function() return true, nil end,
             end_session = function() end,
-        }
+        })
 
         local receives = 0
         cru.ws = {
@@ -100,7 +100,7 @@ describe("message dispatch", function()
             end,
         }
 
-        local ok, err = pcall(gateway.connect)
+        local _ok, _err = pcall(gateway.connect)
 
         cru.ws = had_ws
         cru.session = had_sessions

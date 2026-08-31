@@ -21,7 +21,7 @@ local calls
 
 local function stub(overrides)
     calls = {}
-    cru.session = cru.session or {}
+    cru.session = cru.session or mock({})
     local function record(name)
         return function(...)
             table.insert(calls, { name = name, args = { ... } })

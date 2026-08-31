@@ -12,7 +12,7 @@
 --- there tomorrow.
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
-cru.plugin = cru.plugin or {}
+cru.plugin = cru.plugin or mock({})
 local sessions = require("sessions")
 
 local DM_SESSION_TTL = 86400
@@ -67,9 +67,9 @@ local function with_env(cfg, session_api, fn)
     local had_config, had_sessions, had_paths = cru.plugin.config, cru.session, cru.paths
     cru.plugin.config = { get = function(key) return cfg[key] end }
     cru.session = session_api
-    cru.paths = {
+    cru.paths = mock({
         state = function(plugin) return state_root .. "/" .. plugin end,
-    }
+    })
 
     local ok, err = pcall(fn)
 
@@ -240,7 +240,9 @@ describe("DM session persistence", function()
     -- it must still route messages.
     it("keeps working where no paths module exists", function()
         local had_paths = cru.paths
-        cru.paths = nil
+        -- Removing the namespace is the point of this test: the cast says so,
+        -- because the declaration rightly holds `cru.paths` to being there.
+        cru.paths = (nil :: any)
         local calls, api = recording_api("cold")
         local ok, err = pcall(function()
             local had_config, had_sessions = cru.plugin.config, cru.session

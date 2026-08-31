@@ -15,11 +15,15 @@
 local M = {}
 
 -- The suite has no notion of a working directory, so locate this directory the
--- same way `require` located this file. package.path is set identically by the
--- test harness and the runtime plugin loader, so this resolves in both.
-local self_path = package.searchpath("web-search.tests.fixtures", package.path)
+-- same way `require` located this file.
+--
+-- No `package.path` second argument: Luau has none, and Crucible resolves
+-- modules through the host rather than through a search string, so
+-- `package.searchpath` ignores it. Passing `package.path` read as nil and
+-- worked only because the host discards the argument.
+local self_path = package.searchpath("web-search.tests.fixtures")
 if not self_path then
-    error("web-search fixtures: cannot locate tests/fixtures on package.path")
+    error("web-search fixtures: the module registry cannot locate tests/fixtures")
 end
 M.dir = self_path:gsub("[/\\]init%.lua$", "")
 

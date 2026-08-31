@@ -158,12 +158,20 @@ pub struct StubsArgs {
 pub struct CheckArgs {
     /// Path to the plugin directory
     pub path: std::path::PathBuf,
-    /// Typecheck the plugin's test suite too. Off by default: a suite
-    /// monkey-patches the host on purpose, and every stub is a type error
-    /// against declarations that describe the real host. Tests are always
-    /// parse-checked.
+    /// Skip typechecking the plugin's test suite.
+    ///
+    /// The suite IS checked by default. It used to be excluded because a suite
+    /// monkey-patches the host on purpose and every stub read as a type error —
+    /// but excluding it hid 46 real diagnostics in the shipped suites, among
+    /// them eighteen calls that passed a multi-return expression as the last
+    /// argument and silently filled the next parameter with a match position.
+    ///
+    /// `mock(...)` marks the monkey-patch instead, so the boundary is one
+    /// greppable word and everything around it is still checked. Use this flag
+    /// for a suite that has not been through that yet. Tests are always
+    /// parse-checked either way.
     #[arg(long)]
-    pub include_tests: bool,
+    pub skip_tests: bool,
     /// Luau declaration file to check against (defaults to the generated
     /// `cru.d.luau` in the stub directory)
     #[arg(long)]

@@ -24,7 +24,7 @@ local function with_gateway_env(env, fn)
     local had_get_token = config.get_token
     local had_random = math.random
 
-    cru.timer = { sleep = function() end, clock = env.clock }
+    cru.timer = mock({ sleep = function() end, clock = env.clock })
     cru.ws = { connect = env.connect }
     config.get_token = function() return "gateway-test-token" end
     -- Discord's first heartbeat is jittered by `math.random()`; pin it so the
