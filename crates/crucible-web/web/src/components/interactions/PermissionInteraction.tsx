@@ -2,7 +2,7 @@ import { Component, Show, createSignal, createResource } from 'solid-js';
 import type { InteractionOf, PermResponse, PermissionScope } from '@/lib/types';
 import { getFileContent } from '@/lib/api';
 import { DiffViewer } from '@/components/DiffViewer';
-import { btnPrimary, btnDanger, btnNeutral } from '@/lib/button-style';
+import { btnConsent, btnNeutral } from '@/lib/button-style';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
 
 interface Props {
@@ -12,7 +12,7 @@ interface Props {
 
 // Tinted chip per action kind — the loud full-saturation bar (bg-attention
 // slab) clashed with the UI's tinted vocabulary. A 15% fill + 50% border
-// reads as the same family as btnPrimary/btnDanger while still flagging the
+// reads as the same family as btnPrimary/btnConsent while still flagging the
 // action type at a glance.
 const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
   bash: { label: 'Execute', chip: 'bg-attention/15 text-attention border border-attention/50' },
@@ -212,17 +212,35 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </div>
       </Show>
 
+      {/* The two halves of a consent gate cost different amounts, so they must
+          not look and reach alike.
+
+          Deny comes FIRST — first in the reading order, first tab stop, one
+          keystroke away — and wears the quiet neutral treatment. It was
+          an error-tinted button, which painted the SAFE choice red: refusing an agent
+          destroys nothing, and the red said otherwise.
+
+          Allow comes second in `attention`, the theme's "this is waiting on
+          your judgement" hue, not `btnPrimary`'s friendly confirm. This is the
+          click that lets an agent run a command or write to disk; it should
+          read as a decision, not as the OK button.
+
+          Deliberately NOT autofocused. The card renders inline in a live
+          transcript, and pulling focus off the composer would eat whatever the
+          user was typing when the agent happened to stop. */}
       <div class="flex items-center gap-2 flex-wrap">
-        <button onClick={handleAllow} class={btnPrimary}>
-          Allow
-        </button>
-        <button onClick={handleDeny} class={btnDanger}>
+        <button onClick={handleDeny} class={btnNeutral} data-testid="perm-deny">
           Deny
         </button>
+        <button onClick={handleAllow} class={btnConsent} data-testid="perm-allow">
+          Allow
+        </button>
 
+        {/* Quieter than either: a disclosure, not a third choice. */}
         <button
           onClick={() => setShowScopes(!showScopes())}
-          class={btnNeutral}
+          data-testid="perm-scopes-toggle"
+          class="px-2 py-1.5 text-xs text-muted hover:text-shell-ink transition-colors"
         >
           {showScopes() ? 'Hide options' : 'More options...'}
         </button>

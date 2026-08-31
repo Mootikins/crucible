@@ -177,6 +177,35 @@ describe('PermissionInteraction', () => {
     expect(screen.getByText('Deny')).toBeInTheDocument();
   });
 
+  // Two adjacent buttons of equal weight told the user the choices cost the
+  // same. Allowing lets an agent run a command or write to disk; denying
+  // costs a retry.
+  it('weights the consent pair: Deny first and quiet, Allow marked as the consequential one', () => {
+    const request: InteractionOf<'permission'> = {
+      kind: 'permission',
+      id: 'perm-weight',
+      action_type: 'bash',
+      tokens: ['rm', '-rf', 'build'],
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    const deny = screen.getByTestId('perm-deny');
+    const allow = screen.getByTestId('perm-allow');
+
+    // Deny is the first tab stop and the first thing read.
+    expect(deny.compareDocumentPosition(allow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Deny is the quiet neutral, NOT the red that framed the safe choice as
+    // the dangerous one.
+    expect(deny.className).toContain('bg-surface-elevated');
+    expect(deny.className).not.toContain('error');
+    // Allow wears `attention` — a decision — not `primary`'s friendly confirm.
+    expect(allow.className).toContain('attention');
+    expect(allow.className).not.toContain('primary');
+    // ...and the two do not share a treatment.
+    expect(allow.className).not.toBe(deny.className);
+  });
+
   it('names a tool exactly once, in the action chip', () => {
     // The card used to carry a generic "Tool" chip plus a "Tool: <name>"
     // line: the word twice, two lines for one fact.
