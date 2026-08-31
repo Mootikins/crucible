@@ -544,7 +544,17 @@ fn validate_name(name: &str) -> mlua::Result<PathBuf> {
 ///
 /// The order lives in [`crate::source_files::module_candidates`], which every
 /// other site that resolves a module name uses too.
+///
+/// `None` when TWO extensions of one name are there. `init.luau` beside
+/// `init.lua` was already refused for a plugin's entry point; `helper.luau`
+/// beside `helper.lua` used to resolve silently in favour of `.luau`, so the
+/// same mistake by the same author had two different answers depending on
+/// whether the file happened to be an entry point. See
+/// [`crate::source_files::collides`].
 fn module_file(root: &Path, relative: &Path) -> Option<PathBuf> {
+    if crate::source_files::collides(root, relative).is_some() {
+        return None;
+    }
     let root_canonical = std::fs::canonicalize(root).ok()?;
     for candidate in crate::source_files::module_candidates(root, relative) {
         if !candidate.is_file() {
@@ -939,7 +949,6 @@ mod tests {
 #[cfg(test)]
 mod extension_tests {
     use super::*;
-    use crate::source_files::PREFERRED_EXTENSION;
 
     fn write(path: &Path, body: &str) {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
@@ -980,21 +989,41 @@ mod extension_tests {
         );
     }
 
-    /// A bare file beats a directory, and `.luau` beats `.lua`, so a rename
-    /// that leaves the old file behind loads the NEW one — not whichever the
-    /// filesystem happened to list first.
+    /// Two extensions of one name RESOLVE TO NOTHING, at every depth.
+    ///
+    /// This used to prefer `.luau` silently. An entry point in the same state
+    /// was refused and both files named, so one mistake had two answers
+    /// depending on whether the file was an entry point — a line no author
+    /// would predict, and the silent half is the one where an edit to the
+    /// wrong file appears to do nothing.
     #[test]
-    fn luau_wins_when_both_exist() {
+    fn two_extensions_of_one_name_resolve_to_nothing() {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path().join("plugins");
         write(&root.join("helper.lua"), "return { which = 'lua' }");
         write(&root.join("helper.luau"), "return { which = 'luau' }");
-
-        let resolved = module_file(&root, Path::new("helper")).expect("resolves");
         assert!(
-            resolved.ends_with(format!("helper.{PREFERRED_EXTENSION}")),
-            "the preferred extension must win, got {}",
-            resolved.display()
+            module_file(&root, Path::new("helper")).is_none(),
+            "a collision must refuse, not pick the preferred extension"
+        );
+
+        // The same rule one level down, where the name is a directory.
+        write(&root.join("mod/init.lua"), "return {}");
+        write(&root.join("mod/init.luau"), "return {}");
+        assert!(
+            module_file(&root, Path::new("mod")).is_none(),
+            "a directory entry point collides the same way"
+        );
+
+        // And the ordinary case still resolves: one of the two, not both.
+        assert!(
+            module_file(&root, Path::new("alone")).is_none(),
+            "nothing there resolves to nothing"
+        );
+        write(&root.join("alone.luau"), "return {}");
+        assert!(
+            module_file(&root, Path::new("alone")).is_some(),
+            "one file of the pair still resolves"
         );
     }
 }

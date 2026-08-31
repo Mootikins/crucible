@@ -1,3 +1,4 @@
+--!strict
 --[[
   Custom UI Plugin Example
   
@@ -35,7 +36,7 @@
   - oil.spinner() - Loading indicator
   - oil.badge() - Small labeled badge
   - oil.progress() - Progress bar
-  - oil.divider() / oil.hr() - Horizontal lines
+  - oil.divider() - Horizontal lines
   - oil.bullet_list() / oil.numbered_list() - Lists
   - oil.kv() - Key-value pairs
   - oil.markup() - XML-like markup syntax
@@ -54,8 +55,10 @@ local oil = cru.oil
 
 -- PATTERN: Card component with border and padding
 -- Demonstrates: oil.col(), border styling, padding, nested content
-local function card(title, content, opts)
-    opts = opts or {}
+local function card(title: string, content: any, options: { [string]: any }?)
+    -- Annotate the LOCAL, not the expression: `options or {}` widens to
+    -- `T | {}` and a field read fails against the empty half.
+    local opts: { [string]: any } = options or {}
     local border_style = opts.border or "rounded"
     local padding = opts.padding or 1
     
@@ -71,7 +74,7 @@ end
 
 -- PATTERN: Status badge with semantic colors
 -- Demonstrates: oil.badge(), color mapping, text styling
-local function status_badge(status)
+local function status_badge(status: string)
     local colors = {
         success = "green",
         error = "red",
@@ -86,7 +89,7 @@ end
 
 -- PATTERN: Key-value pair display
 -- Demonstrates: oil.row(), gap spacing, label/value styling
-local function info_row(label, value)
+local function info_row(label: string, value: any)
     return oil.row({ gap = 2 },
         oil.text(label .. ":", { fg = "cyan" }),
         oil.text(value)
@@ -95,7 +98,7 @@ end
 
 -- PATTERN: Message block with role indicator
 -- Demonstrates: oil.col(), oil.row(), conditional styling, borders
-local function message_block(role, content)
+local function message_block(role: string, content: any)
     local role_colors = {
         user = "green",
         assistant = "blue",
@@ -126,7 +129,7 @@ end
 
 -- PATTERN: Progress indicator with label and percentage
 -- Demonstrates: oil.progress(), oil.row(), formatting, color coding
-local function progress_indicator(label, current, total)
+local function progress_indicator(label: string, current: number, total: number)
     local percentage = math.floor((current / total) * 100)
     
     return oil.col({ gap = 0 },
@@ -141,7 +144,7 @@ end
 
 -- PATTERN: Tool call display with status and result
 -- Demonstrates: oil.when() for conditional rendering, oil.spinner(), nested layouts
-local function tool_call_display(name, status, result)
+local function tool_call_display(name: string, status: string, result: any)
     -- `status_badge` below owns the colour for each status; the table that
     -- used to sit here was a second, unread copy of the same mapping.
     return oil.col({ border = "rounded", padding = 1, gap = 1 },
@@ -162,7 +165,7 @@ end
 
 -- PATTERN: Status bar with mode, model, and context usage
 -- Demonstrates: oil.row(), oil.spacer() for right-alignment, background colors
-local function status_bar(mode, model, context_pct)
+local function status_bar(mode: string, model: string, context_pct: number)
     local mode_colors = {
         NORMAL = "green",
         PLAN = "blue",
@@ -224,11 +227,11 @@ local function dashboard_view()
 end
 
 -- VIEW 3: Progress tracking
--- Demonstrates: progress_indicator(), status_badge(), oil.hr()
+-- Demonstrates: progress_indicator(), status_badge(), oil.divider()
 local function progress_view()
     return oil.col({ gap = 2 },
         oil.text("Task Progress", { bold = true, fg = "cyan" }),
-        oil.hr(),
+        oil.divider(),
         
         progress_indicator("Processing files", 7, 10),
         progress_indicator("Generating embeddings", 42, 100),
@@ -246,7 +249,7 @@ end
 local function conditional_view(loading, error_msg, data)
     return oil.col({ gap = 1 },
         oil.text("Data Viewer", { bold = true }),
-        oil.hr(),
+        oil.divider(),
         
         oil.when(loading, oil.col({ gap = 1 },
             oil.spinner("Loading data..."),
@@ -297,7 +300,7 @@ local function composition_view()
     
     return oil.col({ gap = 2 },
         oil.text("Component Composition", { bold = true, fg = "cyan" }),
-        oil.hr(),
+        oil.divider(),
         
         InfoCard({ gap = 2 },
             oil.text("Custom Card", { bold = true }),
@@ -320,7 +323,7 @@ local function advanced_layout_view()
     
     return oil.col({ gap = 2, padding = 1 },
         oil.text("Advanced Layout Patterns", { bold = true, fg = "cyan" }),
-        oil.hr(),
+        oil.divider(),
         
         oil.text("Using spacer() for alignment:", { bold = true }),
         oil.row({ gap = 1 },
@@ -355,7 +358,7 @@ local function either_example_view()
     
     return oil.col({ gap = 2, padding = 1 },
         oil.text("Either/If-Else Example", { bold = true, fg = "cyan" }),
-        oil.hr(),
+        oil.divider(),
         
         oil.either(is_authenticated,
             oil.col({ gap = 1 },

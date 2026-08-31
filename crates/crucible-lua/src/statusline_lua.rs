@@ -124,6 +124,16 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
         ("spacer", StatusItem::Align),
     ] {
         statusline.set(name, lua.create_userdata(LuaItem(item))?)?;
+        // Declared, not left to the walk. The walk sees userdata and renders
+        // it `any?`, under which `sl.mode:hl("StatusMode")` reads as a method
+        // call on a possible nil — against the shipped statusline, which does
+        // exactly that.
+        crate::host_registry::declare_value(
+            lua,
+            &format!("cru.statusline.{name}"),
+            "StatusItem",
+        )
+        .map_err(|e| mlua::Error::external(e.to_string()))?;
     }
 
     // The five constructors, each declared beside its closure. `Ns::over` —
@@ -143,7 +153,7 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
     // from an optional provider is the ordinary case here.
     ns.func(
         "any",
-        "(...StatusItem) -> StatusItem",
+        "(...StatusSlot) -> StatusItem",
         |_, args: mlua::Variadic<Value>| {
             Ok(LuaItem(StatusItem::Any(
                 args.iter().filter_map(value_to_item).collect(),
@@ -159,7 +169,7 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
 
     ns.func(
         "when",
-        "(condition: string, item: StatusItem) -> StatusItem",
+        "(condition: string, item: StatusSlot) -> StatusItem",
         |_, (cond, item): (String, Value)| {
             let Some(cond) = StatusCond::from_name(&cond) else {
                 return Err(mlua::Error::RuntimeError(format!(
@@ -208,6 +218,8 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
     // sl.input — the editor's position within the prompt region. A marker
     // value, not a function.
     statusline.set("input", LuaInput)?;
+    crate::host_registry::declare_value(lua, "cru.statusline.input", "StatusItem")
+        .map_err(|e| mlua::Error::external(e.to_string()))?;
 
     Ok(())
 }

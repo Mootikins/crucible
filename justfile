@@ -576,12 +576,12 @@ plugin-check: luau-lsp
             failed=1
         fi
     done
-    # The loop above walks `runtime/plugins/` only. Crucible ships eleven more
-    # Lua files — the shipped defaults, the themes, the statusline, the prelude
-    # and the `cru plugin new` scaffold — and they do not all run on the same
-    # VM, so each needs the definitions for ITS profile. That mapping, and the
-    # assertion that it covers every `.lua` in the repository, live in
-    # `every_shipped_lua_file_typechecks`.
+    # The loop above walks `runtime/plugins/` only. Crucible ships more Lua
+    # outside it — the shipped defaults, the themes, the statusline, the help
+    # plugin, the `cru plugin new` scaffold and the Oil example — and they do
+    # not all run on the same VM, so each needs the definitions for ITS
+    # profile. That mapping, and the assertion that it covers every Lua file in
+    # the repository, live in `every_shipped_lua_file_typechecks`.
     #
     # `--exact`, and the output is checked for one PASS: a cargo test name
     # filter that matches nothing still exits 0, so renaming or deleting the

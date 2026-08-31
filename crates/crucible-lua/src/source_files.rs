@@ -18,12 +18,24 @@
 //! convention: adding `.luau` to ten of eleven sites produces a plugin that
 //! discovers but does not load, or loads but does not typecheck.
 //!
-//! ## Ambiguity is refused, not resolved
+//! ## Ambiguity is refused, not resolved — everywhere
 //!
 //! A directory holding both `config.luau` and `config.lua` has no obvious
 //! answer, and picking one silently means an edit to the wrong file appears to
-//! do nothing. [`module_candidates`] returns both, and the caller reports the
-//! collision.
+//! do nothing.
+//!
+//! Both [`init_file`] and [`collides`] report that collision, and the two
+//! callers that resolve a name — plugin discovery and `require` — refuse on
+//! it. This used to be true of the ENTRY POINT only: `init.luau` beside
+//! `init.lua` was refused and named, while `helper.luau` beside `helper.lua`
+//! was silently resolved in favour of `.luau` and reported by nothing, not
+//! even `cru plugin check`. That is the same mistake by the same author, and
+//! the line between the two cases — entry point versus submodule — is not one
+//! anyone would predict.
+//!
+//! [`module_candidates`] only ORDERS the names. The preference it encodes
+//! decides nothing once a collision is refused; it still matters for the
+//! ordinary case of a directory holding one of the two.
 
 use std::path::{Path, PathBuf};
 
@@ -67,6 +79,9 @@ pub fn init_file(dir: &Path) -> Result<Option<PathBuf>, Ambiguous> {
 /// Every file `require("<relative>")` may resolve to under `root`, preferred
 /// first: `<relative>.luau`, `<relative>.lua`, then the same two as
 /// `<relative>/init.*`.
+///
+/// ORDERING only. Whether a collision between two of these is acceptable is
+/// [`collides`]'s question, and the answer is no.
 pub fn module_candidates(root: &Path, relative: &Path) -> Vec<PathBuf> {
     let mut out = Vec::with_capacity(4);
     for ext in SOURCE_EXTENSIONS {
@@ -76,6 +91,26 @@ pub fn module_candidates(root: &Path, relative: &Path) -> Vec<PathBuf> {
         out.push(root.join(relative).join(name));
     }
     out
+}
+
+/// The two files that answer to one name, if both are there.
+///
+/// A collision is two EXTENSIONS of one path — `helper.luau` beside
+/// `helper.lua`, or `helper/init.luau` beside `helper/init.lua`. A bare file
+/// beside a directory of the same name (`helper.lua` and `helper/init.lua`)
+/// is the ordinary Lua shadowing rule and is left alone.
+pub fn collides(root: &Path, relative: &Path) -> Option<Ambiguous> {
+    for stem in [root.join(relative), root.join(relative).join("init")] {
+        let both: Vec<PathBuf> = SOURCE_EXTENSIONS
+            .iter()
+            .map(|ext| stem.with_extension(ext))
+            .filter(|path| path.is_file())
+            .collect();
+        if both.len() > 1 {
+            return Some(Ambiguous(both));
+        }
+    }
+    None
 }
 
 /// Two files that answer to one name.

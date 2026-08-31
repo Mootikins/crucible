@@ -1,3 +1,4 @@
+--!strict
 -- Default dark theme for Crucible TUI
 -- Mirrors ThemeConfig::default_dark() exactly.
 -- All color values match ThemeConfig::default_dark().

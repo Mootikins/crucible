@@ -245,8 +245,14 @@ impl DaemonPluginLoader {
         // sites. `generate_stubs` introspects the loader's VM, so it rendered a
         // definitions file without them, and `runtime/defaults/init.lua` —
         // shipped, and evaluated on a VM that HAS them — reported five type
-        // errors for API that works. The three later calls are guarded and stay
-        // harmless; this one makes the shape true at construction.
+        // errors for API that works.
+        //
+        // The three later calls REPLACE the colorscheme, hl, geometry and
+        // syntax tables rather than merging into them — only
+        // `register_statusline_namespace` guards itself. That is harmless
+        // because nothing else puts members on those four, which is a property
+        // of today's code and not of the design. Anything that starts adding to
+        // one of them must guard here first.
         reg("ui namespaces", crucible_lua::config::register_ui_namespaces(lua))?;
 
         let plugin_manager = PluginManager::new();

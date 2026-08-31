@@ -1,3 +1,4 @@
+--!strict
 -- Crucible built-in Lua defaults
 -- Loaded into every daemon session VM automatically.
 -- Override by creating .crucible/lua/init.lua in your project directory.

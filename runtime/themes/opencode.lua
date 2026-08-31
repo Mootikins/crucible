@@ -1,3 +1,4 @@
+--!strict
 -- OpenCode-inspired dark theme for Crucible TUI
 -- An alternative theme proving the Lua theme system works with different values.
 --

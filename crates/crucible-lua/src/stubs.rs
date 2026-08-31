@@ -295,8 +295,7 @@ fn render_stubs(lua: &Lua) -> Result<RenderedStubs, LuaError> {
             if index == 0 {
                 out.push_str("--- ");
             } else if line.starts_with("---") {
-                // Already a marker line (the separator above).
-                out.push_str("");
+                // Already a marker line (the separator above): emit it as is.
             } else {
                 out.push_str("--- ");
             }

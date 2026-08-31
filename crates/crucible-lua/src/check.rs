@@ -131,6 +131,33 @@ pub fn check_plugin_with(
     // The loader FAILS OPEN on the rest — a plugin whose spec cannot be read
     // still loads and merely exports nothing — but a check that stayed silent
     // about it would print a tick for a plugin the daemon cannot use.
+    // Two extensions of ONE name, anywhere under the plugin. The entry point
+    // was reported below and a submodule was not, so `helper.luau` beside
+    // `helper.lua` passed the check and then resolved to nothing at run time.
+    // Collected from the file list rather than by walking again, so it sees
+    // exactly what the checker sees.
+    let mut colliding: Vec<PathBuf> = files
+        .iter()
+        .filter(|file| {
+            crate::source_files::is_lua_source(file)
+                && file.extension().is_some_and(|ext| ext == "luau")
+                && file.with_extension("lua").is_file()
+        })
+        .cloned()
+        .collect();
+    colliding.sort();
+    for luau in colliding {
+        findings.push(Finding::Load {
+            message: format!(
+                "two files answer to the same module name, so which one loads would \
+                 depend on the search order rather than on anything the author \
+                 wrote: {} and {}. Delete one.",
+                luau.display(),
+                luau.with_extension("lua").display()
+            ),
+        });
+    }
+
     // Both extensions, and a directory holding both is refused rather than
     // resolved — see `source_files`.
     let init = match crate::source_files::init_file(plugin_dir) {

@@ -360,12 +360,25 @@ export type PermissionDecision = {
     deny: boolean?,
 }?
 
--- One piece of a statusline. Opaque: it is Rust userdata, its fields are
--- private, and the only thing a config does with one is hand it back to
--- `cru.statusline.setup` or wrap it in `when`/`any`. Aliased to `any` rather
--- than to a table shape so that the bare items (`cru.statusline.mode`, which
--- the walk renders as a value) stay assignable to it.
-export type StatusItem = any
+-- One piece of a statusline.
+--
+-- Rust userdata with two members: `:hl(group)` returns a styled copy, and
+-- CALLING it with an options table returns a configured copy —
+-- `sl.model{ max = 25 }`. `& (...)` is how Luau states a table that is also
+-- callable.
+--
+-- It used to be `any`, which made `when(condition, item)` and
+-- `any(...StatusItem)` constrain nothing: `cru.statusline.when("streaming", 42)`
+-- typechecked and raised at run time.
+export type StatusItem = ((opts: { [string]: any }?) -> StatusItem) & {
+    hl: (self: StatusItem, group: string) -> StatusItem,
+}
+
+-- Anything a region will render. A bare STRING is a legitimate item —
+-- `value_to_item` turns one into literal text — so every position that
+-- accepts an item accepts a string too, and the shipped statusline puts a
+-- `" "` separator directly in its list.
+export type StatusSlot = StatusItem | string
 
 -- A live WebSocket, as `cru.ws.connect` answers with.
 --

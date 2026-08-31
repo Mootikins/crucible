@@ -1,3 +1,4 @@
+--!strict
 --- crucible-help — Registers Crucible documentation as agent skill context.
 ---
 --- Skills are discovered automatically by FolderDiscovery from
