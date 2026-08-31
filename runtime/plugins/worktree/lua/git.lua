@@ -90,10 +90,10 @@ export type Branch = {
 function M.parse_worktrees(porcelain: string?): { [string]: string }
   local map: { [string]: string } = {}
   local current: string? = nil
-  for line in M.each_line(porcelain) do
+  for entry in M.each_line(porcelain) do
     -- `each_line` answers `string?` so the iterator can end; inside the body
     -- it is always a string.
-    local line = line :: string
+    local line = entry :: string
     local path = line:match("^worktree (.+)$")
     local branch = line:match("^branch (.+)$")
     if path then

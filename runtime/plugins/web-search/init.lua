@@ -145,7 +145,10 @@ local MIN_PROVIDER_SECONDS = 3
 
 --- Escape a literal string for use as a Lua pattern.
 local function escape_pattern(literal: string): string
-    return (literal:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%1"))
+    -- `%0` is the whole match. `%1` reads the same way on Luau — verified, not
+    -- assumed — but names a capture the pattern does not have, and the linter
+    -- rightly refuses to distinguish that from a real off-by-one.
+    return (literal:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"))
 end
 
 --- Remove configured secrets from text on its way to model context.
@@ -392,10 +395,10 @@ end
 --- `error` first.
 type ToolResult = { [string]: any }
 
-function M.web_search(args: { [string]: any }?): ToolResult
-    -- Annotate the LOCAL, not the expression: `args or {}` widens to
+function M.web_search(options: { [string]: any }?): ToolResult
+    -- Annotate the LOCAL, not the expression: `options or {}` widens to
     -- `T | {}` and a field read fails against the empty half.
-    local args: { [string]: any } = args or {}
+    local args: { [string]: any } = options or {}
 
     local query = trimmed(args.query)
     if not query then

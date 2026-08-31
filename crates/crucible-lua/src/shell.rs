@@ -74,6 +74,21 @@ impl Default for PluginShellPolicy {
 }
 
 impl PluginShellPolicy {
+    /// The deadline for one call: what the caller asked for, but never longer
+    /// than the policy allows.
+    ///
+    /// A plugin may shorten its own deadline and may not lengthen the
+    /// sandbox's. `None` on both sides means no deadline, which is the
+    /// default — plugins run builds and servers whose duration the policy
+    /// cannot predict.
+    pub fn deadline_for(&self, requested: Option<u64>) -> Option<u64> {
+        match (requested, self.timeout_secs) {
+            (Some(asked), Some(cap)) => Some(asked.min(cap)),
+            (Some(asked), None) => Some(asked),
+            (None, cap) => cap,
+        }
+    }
+
     /// Create a permissive policy (for trusted scripts)
     pub fn permissive() -> Self {
         Self {
@@ -184,6 +199,7 @@ pub async fn spawn_command(
     env: Option<&HashMap<String, String>>,
     policy: &PluginShellPolicy,
     on_line: LineSink<'_>,
+    timeout_secs: Option<u64>,
 ) -> Result<ExecResult, LuaError> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -254,7 +270,7 @@ pub async fn spawn_command(
         }
     };
 
-    match policy.timeout_secs {
+    match policy.deadline_for(timeout_secs) {
         Some(secs) => {
             let deadline = std::time::Duration::from_secs(secs);
             match tokio::time::timeout(deadline, pump).await {
@@ -296,7 +312,9 @@ pub async fn exec_command(
     env: Option<&HashMap<String, String>>,
     stdin_data: Option<&str>,
     policy: &PluginShellPolicy,
+    timeout_secs: Option<u64>,
 ) -> Result<ExecResult, LuaError> {
+    let deadline = policy.deadline_for(timeout_secs);
     let mut command = prepare_command(policy, cmd, args, cwd, env)?;
     debug!("Executing: {} {:?}", cmd, args);
 
@@ -349,9 +367,9 @@ pub async fn exec_command(
             drop(stdin);
         }
 
-        output_with_deadline(child.wait_with_output(), policy.timeout_secs, cmd).await?
+        output_with_deadline(child.wait_with_output(), deadline, cmd).await?
     } else {
-        output_with_deadline(command.output(), policy.timeout_secs, cmd).await?
+        output_with_deadline(command.output(), deadline, cmd).await?
     };
 
     Ok(ExecResult {
@@ -387,7 +405,8 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
         "exec",
         &format!(
             "(command: string, args: {{ string }}, \
-             options: {{ cwd: string?, env: table<string, string>?, stdin: string? }}?) \
+             options: {{ cwd: string?, env: table<string, string>?, stdin: string?, \
+             timeout: number? }}?) \
              -> {SHELL_RESULT}"
         ),
         move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
@@ -396,6 +415,9 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                 let mut cwd = None;
                 let mut env = None;
                 let mut stdin_data = None;
+                // SECONDS. Bounded by the policy: a plugin may shorten its own
+                // deadline and may not lengthen the sandbox's.
+                let mut timeout_secs = None;
 
                 if let Some(opts) = options {
                     if let Ok(dir) = opts.get::<String>("cwd") {
@@ -411,6 +433,9 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     if let Ok(data) = opts.get::<String>("stdin") {
                         stdin_data = Some(data);
                     }
+                    if let Ok(secs) = opts.get::<u64>("timeout") {
+                        timeout_secs = Some(secs);
+                    }
                 }
 
                 let result = exec_command(
@@ -420,6 +445,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     env.as_ref(),
                     stdin_data.as_deref(),
                     &policy,
+                    timeout_secs,
                 )
                 .await?;
 
@@ -447,7 +473,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
         &format!(
             "(command: string, args: {{ string }}, \
              options: {{ cwd: string?, env: table<string, string>?, \
-             on_line: ((stream: string, line: string) -> ())? }}?) \
+             on_line: ((stream: string, line: string) -> ())?, timeout: number? }}?) \
              -> {SHELL_RESULT}"
         ),
         move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
@@ -456,6 +482,8 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                 let mut cwd = None;
                 let mut env = None;
                 let mut on_line: Option<mlua::Function> = None;
+                // SECONDS, and bounded by the policy — see `deadline_for`.
+                let mut timeout_secs = None;
 
                 if let Some(opts) = &options {
                     if let Ok(dir) = opts.get::<String>("cwd") {
@@ -470,6 +498,9 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                     }
                     if let Ok(f) = opts.get::<mlua::Function>("on_line") {
                         on_line = Some(f);
+                    }
+                    if let Ok(secs) = opts.get::<u64>("timeout") {
+                        timeout_secs = Some(secs);
                     }
                 }
 
@@ -500,6 +531,7 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
                         env.as_ref(),
                         &policy,
                         &mut sink,
+                        timeout_secs,
                     )
                     .await?
                 };
@@ -561,6 +593,49 @@ mod tests {
     /// commands with no natural end (dev servers) or unbounded duration
     /// (builds, PDF extraction of large files), and a default cap silently
     /// killed them. A policy can still opt into a deadline with `Some(_)`.
+    /// A per-call `timeout` is honoured, and a policy cap still wins.
+    ///
+    /// It used to be read by nothing. `cru.shell.exec(cmd, args, { timeout = 30 })`
+    /// parsed, typechecked and was discarded, so every deadline a plugin set
+    /// was silently the policy's — which defaults to none. The `oci` plugin
+    /// passes one on every container call and on every build, so
+    /// `[plugins.oci] build_timeout` had never once applied.
+    #[test]
+    fn a_per_call_deadline_is_honoured_and_the_policy_caps_it() {
+        let uncapped = PluginShellPolicy::default();
+        assert_eq!(uncapped.timeout_secs, None, "no default cap");
+        assert_eq!(
+            uncapped.deadline_for(Some(30)),
+            Some(30),
+            "with no policy cap, the caller's deadline is the deadline"
+        );
+        assert_eq!(
+            uncapped.deadline_for(None),
+            None,
+            "and asking for none still means none"
+        );
+
+        let capped = PluginShellPolicy {
+            timeout_secs: Some(10),
+            ..PluginShellPolicy::default()
+        };
+        assert_eq!(
+            capped.deadline_for(Some(30)),
+            Some(10),
+            "a plugin may not lengthen the sandbox's deadline"
+        );
+        assert_eq!(
+            capped.deadline_for(Some(5)),
+            Some(5),
+            "but it may shorten its own"
+        );
+        assert_eq!(
+            capped.deadline_for(None),
+            Some(10),
+            "and saying nothing leaves the policy's in force"
+        );
+    }
+
     #[test]
     fn default_policy_has_no_timeout() {
         assert_eq!(PluginShellPolicy::default().timeout_secs, None);
@@ -584,6 +659,7 @@ mod tests {
             None,
             None,
             &policy,
+            None,
         )
         .await
         .expect("exec should not time out");
@@ -606,6 +682,7 @@ mod tests {
             None,
             None,
             &policy,
+            None,
         )
         .await
         .expect_err("should time out");
@@ -641,6 +718,7 @@ mod tests {
                     .unwrap()
                     .push((stream.to_string(), line.to_string()));
             },
+            None,
         )
         .await
         .expect("spawn");
@@ -683,6 +761,7 @@ mod tests {
             None,
             &policy,
             &mut |_, _| {},
+            None,
         )
         .await
         .expect("spawn");
@@ -747,7 +826,7 @@ mod tests {
     #[tokio::test]
     async fn spawn_refuses_a_command_the_policy_blocks() {
         let policy = PluginShellPolicy::default();
-        let err = spawn_command("rm", &[], None, None, &policy, &mut |_, _| {})
+        let err = spawn_command("rm", &[], None, None, &policy, &mut |_, _| {}, None)
             .await
             .expect_err("the policy must gate streaming exactly as it gates exec");
         assert!(err.to_string().contains("not allowed"), "{err}");
@@ -786,7 +865,7 @@ mod tests {
     #[tokio::test]
     async fn test_exec_echo() {
         let policy = PluginShellPolicy::permissive();
-        let result = exec_command("echo", &["hello".to_string()], None, None, None, &policy)
+        let result = exec_command("echo", &["hello".to_string()], None, None, None, &policy, None)
             .await
             .unwrap();
 
@@ -805,6 +884,7 @@ mod tests {
             None,
             None,
             &policy,
+            None,
         )
         .await;
 
@@ -825,6 +905,7 @@ mod tests {
             Some(&env),
             None,
             &policy,
+            None,
         )
         .await
         .unwrap();
@@ -836,7 +917,7 @@ mod tests {
     #[tokio::test]
     async fn test_exec_with_stdin() {
         let policy = PluginShellPolicy::permissive();
-        let result = exec_command("cat", &[], None, None, Some("hello world"), &policy)
+        let result = exec_command("cat", &[], None, None, Some("hello world"), &policy, None)
             .await
             .unwrap();
 
@@ -848,7 +929,7 @@ mod tests {
     async fn test_exec_with_stdin_multiline() {
         let policy = PluginShellPolicy::permissive();
         let content = "line1\nline2\nline3";
-        let result = exec_command("cat", &[], None, None, Some(content), &policy)
+        let result = exec_command("cat", &[], None, None, Some(content), &policy, None)
             .await
             .unwrap();
 
@@ -859,7 +940,7 @@ mod tests {
     #[tokio::test]
     async fn test_exec_without_stdin_does_not_hang() {
         let policy = PluginShellPolicy::permissive();
-        let result = exec_command("echo", &["no-stdin".to_string()], None, None, None, &policy)
+        let result = exec_command("echo", &["no-stdin".to_string()], None, None, None, &policy, None)
             .await
             .unwrap();
 
@@ -906,6 +987,7 @@ mod tests {
                     ..Default::default()
                 },
                 &mut |_stream, _line| {},
+                None,
             ));
             let _ = tx.send(result.is_err());
         });

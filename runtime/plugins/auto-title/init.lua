@@ -61,12 +61,12 @@ local config: Config = {}
 --- Raises rather than returning a fallback: the daemon owns the fallback (it
 --- truncates the first user message), and a plugin inventing a second one
 --- would make which of the two you got depend on where the failure happened.
-local function generate(args: { [string]: any }?)
-  -- Annotate the LOCAL, not the expression. `args or {}` widens to
+local function generate(options: { [string]: any }?)
+  -- Annotate the LOCAL, not the expression. `options or {}` widens to
   -- `T | {}`, and reading a field off that union fails against the empty
   -- half — which is why the whole `args = args or {}` idiom reads as a
   -- defect under a typechecker while being perfectly correct Lua.
-  local args: { [string]: any } = args or {}
+  local args: { [string]: any } = options or {}
   local user = args.user
   if type(user) ~= "string" or user == "" then
     error("auto-title: no user message to derive a title from")

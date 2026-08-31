@@ -1,3 +1,4 @@
+--!strict
 --- Read a project's `.devcontainer/devcontainer.json` into the environment
 --- shape the rest of the plugin uses.
 ---
@@ -129,11 +130,11 @@ local MOUNT_KEYS = {
 -- Paths
 -- ─────────────────────────────────────────────────────────────────────────────
 
-local function basename(path)
+local function basename(path: string): string
   return (path or ""):match("([^/]+)/?$") or ""
 end
 
-local function dirname(path)
+local function dirname(path: string): string
   return path:match("^(.*)/[^/]+/?$") or "."
 end
 
@@ -143,7 +144,7 @@ end
 --- directory*, not the workspace root. Resolving them against the workspace
 --- builds from a Dockerfile that is usually not there — and when it is, it is
 --- the wrong one.
-local function resolve_rel(dir, path)
+local function resolve_rel(dir: string, path: string): string
   if path:sub(1, 1) == "/" then return path end
   -- `"context": "."` is the spec's own default and the common way to write it;
   -- `<dir>/.` is the same directory to a runtime but not to a reader, or to a
@@ -161,7 +162,7 @@ end
 --- Both stripping passes need this: a `//` inside a URL and a `,` inside a
 --- message are not syntax, and a pass that cannot tell the difference corrupts
 --- the file it is trying to read.
-local function copy_string(text, i, out)
+local function copy_string(text: string, i: number, out: { string }): number
   out[#out + 1] = text:sub(i, i)
   i = i + 1
   local n = #text
@@ -179,7 +180,7 @@ local function copy_string(text, i, out)
   return i
 end
 
-local function strip_comments(text)
+local function strip_comments(text: string): string
   local out, i, n = {}, 1, #text
   while i <= n do
     local c = text:sub(i, i)
@@ -198,7 +199,7 @@ local function strip_comments(text)
   return table.concat(out)
 end
 
-local function strip_trailing_commas(text)
+local function strip_trailing_commas(text: string): string
   local out, i, n = {}, 1, #text
   while i <= n do
     local c = text:sub(i, i)
@@ -227,7 +228,7 @@ end
 --- practice — VS Code's own templates ship with comments and trailing commas.
 --- Treating a decode failure as "this project has no devcontainer" would fall
 --- through to a profile and build a different environment without saying so.
-function M.strip_jsonc(text)
+function M.strip_jsonc(text: string): string
   return strip_trailing_commas(strip_comments(text))
 end
 
@@ -241,7 +242,7 @@ end
 --- `${localWorkspaceFolderBasename}`. Left alone, the literal `${…}` reaches
 --- the runtime as a directory name or an env value — so an unknown variable is
 --- refused rather than passed through.
-local function substitute(value, vars)
+local function substitute(value: any, vars: { [string]: string }): any
   if type(value) == "table" then
     local out = {}
     for k, v in pairs(value) do out[k] = substitute(v, vars) end
@@ -269,9 +270,9 @@ end
 --- equivalent object; `[plugins.oci] mounts` are already `-v` specs. The two
 --- shapes must not be conflated — appending a devcontainer mount verbatim after
 --- `-v` is rejected by every runtime.
-local function mount_spec(entry, index)
-  local fields = {}
-  local function put(key, value)
+local function mount_spec(entry: any, index: number): (string?, string?)
+  local fields: { [string]: string } = {}
+  local function put(key: string, value: any): ()
     local canonical = MOUNT_KEYS[key]
     if not canonical then
       error("oci: devcontainer.json mounts[" .. index .. "] uses '" .. key
@@ -312,14 +313,14 @@ end
 ---
 --- `pairs` order is unspecified, and a refusal that names an arbitrary one of
 --- several offending keys is a refusal whose message changes run to run.
-local function sorted_keys(t)
+local function sorted_keys(t: { [string]: any }): { string }
   local keys = {}
   for k in pairs(t) do keys[#keys + 1] = k end
   table.sort(keys)
   return keys
 end
 
-local function quoted_list(items)
+local function quoted_list(items: { string }): string
   local quoted = {}
   for i, item in ipairs(items) do quoted[i] = "'" .. item .. "'" end
   return table.concat(quoted, ", ")
@@ -334,7 +335,7 @@ end
 ---
 --- `allow_host` permits the [`M.HOST_KEYS`]; without it they are refused
 --- whatever the file says, because the agent can write the file.
-function M.parse(text, workspace, dir, allow_host)
+function M.parse(text: string, workspace: string, dir: string, allow_host: boolean?): { [string]: any }
   local decoded = cru.json.decode(M.strip_jsonc(text))
   if type(decoded) ~= "table" or #decoded > 0 then
     error("oci: devcontainer.json did not parse as a JSON object")
@@ -427,7 +428,7 @@ end
 ---
 --- The basename alone collides across checkouts of the same repo; the full path
 --- is not a legal tag. djb2 over the path disambiguates in a fixed width.
-function M.image_tag(workspace)
+function M.image_tag(workspace: string): string
   local hash = 5381
   for i = 1, #workspace do
     hash = (hash * 33 + workspace:byte(i)) % 4294967296
@@ -441,7 +442,7 @@ end
 -- ─────────────────────────────────────────────────────────────────────────────
 
 --- The devcontainer file this project has, as `path, text, dir`, or nil.
-function M.find(workspace)
+function M.find(workspace: string): (string?, string?, string?)
   for _, relative in ipairs(M.CANDIDATES) do
     local path = workspace .. "/" .. relative
     -- `io.open` is the existence check and the read in one: a nil handle
@@ -471,13 +472,14 @@ end
 ---
 --- Raises when the file names something this plugin cannot honour and
 --- `@devcontainers/cli` is not installed to honour it instead.
-function M.resolve(workspace, allow_host)
+function M.resolve(workspace: string, allow_host: boolean?): { [string]: any }?
   if not workspace or workspace == "" then return nil end
 
   local path, text, dir = M.find(workspace)
   if not path then return nil end
 
-  local env = M.parse(text, workspace, dir, allow_host)
+  -- `find` answers all three or none, so a path proves the other two.
+  local env = M.parse(text :: string, workspace, dir :: string, allow_host)
 
   if env.cli_keys then
     if not cru.shell.which(M.CLI) then
@@ -499,7 +501,7 @@ end
 ---
 --- It is one JSON line after however much build log precedes it, so scan for
 --- the last line that decodes with an `outcome`.
-function M.up_result(stdout)
+function M.up_result(stdout: string?): ({ [string]: any }?, string?)
   local found
   for line in (stdout or ""):gmatch("[^\n]+") do
     local ok, decoded = pcall(cru.json.decode, line)

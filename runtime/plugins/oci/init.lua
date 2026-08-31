@@ -1,3 +1,4 @@
+--!strict
 --- OCI Container Plugin
 -- Manages container lifecycle and tool interception for sandboxed workspace tool execution.
 -- When a project has [container] config, this plugin:
@@ -24,7 +25,18 @@ local remap = require("remap")
 --
 -- `refs` is why a parent's container outlives its children: teardown removes it
 -- only when the last session using it ends.
-local containers = {} -- workspace -> { name, runtime, workspace, image, target, refs }
+--- Workspace path to the container serving it. One container per workspace,
+--- which is what makes the image and mount-target checks below meaningful.
+export type Container = {
+  name: string,
+  runtime: string,
+  workspace: string,
+  image: string,
+  target: string,
+  refs: number,
+}
+
+local containers: { [string]: Container } = {}
 
 -- Per session, because handlers are registered once at plugin load and are
 -- shared by every session. A single global was only ever correct when
@@ -44,7 +56,7 @@ local sessions = {} -- session_id -> workspace
 --- session id can legitimately be re-registered, and only a repeat of the same
 --- workspace is already counted. A session that moves releases the container it
 --- left, so a re-fire cannot strand a reference on the old one either.
-local function register(session_id, workspace)
+local function register(session_id: string, workspace: string): ()
   local previous = sessions[session_id]
   if previous == workspace then return end
   if previous and containers[previous] then
@@ -83,7 +95,7 @@ local function claim_isolation(session_id, exempt, runtime, name, target)
 end
 
 --- The container serving this tool call, or nil if the session has none.
-local function active_for(ctx)
+local function active_for(ctx: any): Container?
   local id = ctx and ctx.session_id
   if not id then return nil end
   local workspace = sessions[id]
@@ -101,10 +113,14 @@ local truncate_lines = remap.truncate_lines
 -- Tool handlers
 -- ─────────────────────────────────────────────────────────────────────────────
 
-local function handle_bash(ctx, event)
+--- What a tool interception answers with: `{ handled = true, result = json }`
+--- to take the call, or nil to let the host tool run.
+type Interception = { handled: boolean, result: string }?
+
+local function handle_bash(ctx: any, event: { [string]: any }): Interception
   local active = active_for(ctx)
   if not active then return nil end
-  local args = event.args or {}
+  local args: { [string]: any } = event.args or {}
   local cmd = args.command or ""
   local timeout = args.timeout_ms or 120000
 
@@ -119,10 +135,10 @@ local function handle_bash(ctx, event)
   return { handled = true, result = cru.json.encode({ result = result }) }
 end
 
-local function handle_read_file(ctx, event)
+local function handle_read_file(ctx: any, event: { [string]: any }): Interception
   local active = active_for(ctx)
   if not active then return nil end
-  local args = event.args or {}
+  local args: { [string]: any } = event.args or {}
   local path = remap_path(active.workspace, args.path, active.target)
   local offset = args.offset or 1
   local limit = args.limit
@@ -143,10 +159,10 @@ local function handle_read_file(ctx, event)
   return { handled = true, result = cru.json.encode({ result = r.stdout }) }
 end
 
-local function handle_write_file(ctx, event)
+local function handle_write_file(ctx: any, event: { [string]: any }): Interception
   local active = active_for(ctx)
   if not active then return nil end
-  local args = event.args or {}
+  local args: { [string]: any } = event.args or {}
   local path = remap_path(active.workspace, args.path, active.target)
   local content = args.content or ""
 
@@ -163,10 +179,10 @@ local function handle_write_file(ctx, event)
   }) }
 end
 
-local function handle_edit_file(ctx, event)
+local function handle_edit_file(ctx: any, event: { [string]: any }): Interception
   local active = active_for(ctx)
   if not active then return nil end
-  local args = event.args or {}
+  local args: { [string]: any } = event.args or {}
   local path = remap_path(active.workspace, args.path, active.target)
   local old_string = args.old_string or ""
   local new_string = args.new_string or ""
@@ -191,7 +207,10 @@ local function handle_edit_file(ctx, event)
     new_content, count = content:gsub(escaped, escaped_replacement)
   else
     local s, e = content:find(old_string, 1, true)
-    new_content = content:sub(1, s - 1) .. new_string .. content:sub(e + 1)
+    -- The caller already refused a missing `old_string` above, so the find
+    -- succeeds; `assert` states that rather than leaving `s - 1` to read as
+    -- arithmetic on a nil.
+    new_content = content:sub(1, assert(s) - 1) .. new_string .. content:sub(assert(e) + 1)
     count = 1
   end
 
@@ -214,10 +233,10 @@ local function handle_edit_file(ctx, event)
   }) }
 end
 
-local function handle_glob(ctx, event)
+local function handle_glob(ctx: any, event: { [string]: any }): Interception
   local active = active_for(ctx)
   if not active then return nil end
-  local args = event.args or {}
+  local args: { [string]: any } = event.args or {}
   local pattern = args.pattern or "*"
   local limit = args.limit or 100
 
@@ -244,10 +263,10 @@ local function handle_glob(ctx, event)
   }) }
 end
 
-local function handle_grep(ctx, event)
+local function handle_grep(ctx: any, event: { [string]: any }): Interception
   local active = active_for(ctx)
   if not active then return nil end
-  local args = event.args or {}
+  local args: { [string]: any } = event.args or {}
   local pattern = args.pattern or ""
   local glob_filter = args.glob
   local limit = args.limit or 50
@@ -332,7 +351,12 @@ local config: Config = {}
 ---
 --- The timeouts fall back to the top level for the same reason `runtime` does:
 --- they describe how slow this box is, not what the image is.
-local function environment(p)
+--- The resolved environment the start hook uses. An open map rather than a
+--- record: the fields come from three shapes (the section, a profile, an
+--- inline override) and cross to the daemon as JSON.
+export type Environment = { [string]: any }
+
+local function environment(p: { [string]: any }): Environment
   return {
     image = p.image,
     runtime = p.runtime or config.runtime,
@@ -362,7 +386,7 @@ end
 --- something has asked for isolation at all. `devcontainer = false` opts a
 --- project back out, so a repo with both a devcontainer and a profile can
 --- choose the profile.
-local function project_devcontainer(session, requested)
+local function project_devcontainer(session: any, requested: any): { [string]: any }?
   if config.devcontainer == false then return nil end
   local asked = requested == true
     or config.devcontainer == true
@@ -394,7 +418,7 @@ end
 --- isolation *off*. Anything the plugin cannot honour raises rather than
 --- falling back: isolation asked for and not delivered is never a silently
 --- unsandboxed session.
-local function resolve_config(session)
+local function resolve_config(session: any): Environment?
   local requested = session and session.isolation
   if requested == false then return nil end
 

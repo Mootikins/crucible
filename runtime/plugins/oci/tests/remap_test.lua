@@ -1,3 +1,4 @@
+--!strict
 -- Unit tests for path remapping and shell quoting.
 -- Run with: cru plugin test runtime/plugins/oci
 --

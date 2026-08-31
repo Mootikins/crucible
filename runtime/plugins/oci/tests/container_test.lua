@@ -1,10 +1,11 @@
+--!strict
 -- Unit tests for container runtime resolution and the `run` argv.
 -- Run with: cru plugin test runtime/plugins/oci
 
 local container = require("container")
 
 --- Stub `cru.shell.which` so runtime probing is deterministic.
-local function with_path(available, fn)
+local function with_path(available: { string }, fn: () -> ())
   local present = {}
   for _, name in ipairs(available) do present[name] = true end
 
@@ -14,7 +15,12 @@ local function with_path(available, fn)
       return present[cmd] and ("/usr/bin/" .. cmd) or nil
     end,
   })
-  local ok, err = pcall(fn)
+  -- The inner function returns nil so `pcall` has a second slot: Luau types
+  -- it `(boolean, R...)` and `fn` answers with nothing.
+  local ok, err = pcall(function()
+    fn()
+    return nil
+  end)
   cru.shell = saved
   if not ok then error(err, 0) end
 end
@@ -23,7 +29,7 @@ end
 ---
 --- Saved and restored like `with_path`: the plugin test files share one Lua VM,
 --- so a stub left installed leaks into whatever runs next.
-local function with_exec(fn)
+local function with_exec(fn: (calls: { { [string]: any } }) -> ())
   local calls = {}
   local saved = cru.shell
   cru.shell = {
@@ -34,18 +40,21 @@ local function with_exec(fn)
     -- Recorded the same way, so a test can assert which of the two a caller
     -- chose — `build` streams only when given an `on_progress`.
     spawn = function(cmd, args, opts)
-      table.insert(calls, { cmd = cmd, args = args, opts = opts, streamed = true })
+      table.insert(calls, { cmd = cmd, args = args, opts = opts, streamed = true } :: { [string]: any })
       return { success = true, exit_code = 0, stdout = "", stderr = "" }
     end,
     which = saved and saved.which,
   }
-  local ok, err = pcall(fn, calls)
+  local ok, err = pcall(function()
+    fn(calls)
+    return nil
+  end)
   cru.shell = saved
   if not ok then error(err, 0) end
 end
 
 --- Index of `needle` in an argv list, or nil.
-local function index_of(args, needle)
+local function index_of(args: { any }, needle: any): number?
   for i, v in ipairs(args) do
     if v == needle then return i end
   end
@@ -81,7 +90,7 @@ describe("container.detect", function()
     with_path({ "podman" }, function()
       local runtime, err = container.detect("docker")
       expect.is_nil(runtime)
-      expect.truthy(err:find("docker", 1, true))
+      expect.truthy((err:find("docker", 1, true)))
     end)
   end)
 
@@ -89,13 +98,13 @@ describe("container.detect", function()
     with_path({}, function()
       local runtime, err = container.detect(nil)
       expect.is_nil(runtime)
-      expect.truthy(err:find("no container runtime", 1, true))
+      expect.truthy((err:find("no container runtime", 1, true)))
     end)
   end)
 end)
 
 describe("container.run_args", function()
-  local function base_args(overrides)
+  local function base_args(overrides: { [string]: any }?): { string }
     local opts = {
       name = "crucible-s1",
       session_id = "s1",
@@ -110,9 +119,9 @@ describe("container.run_args", function()
     local args = base_args()
     local i = index_of(args, "/home/user/project:/workspace:rw,z")
     expect.is_not_nil(i)
-    expect.equals("-v", args[i - 1])
+    expect.equals("-v", args[assert(i) - 1])
     local w = index_of(args, "-w")
-    expect.equals("/workspace", args[w + 1])
+    expect.equals("/workspace", args[assert(w) + 1])
   end)
 
   -- A devcontainer's workspaceFolder is typically /workspaces/<name>. The bind
@@ -123,10 +132,10 @@ describe("container.run_args", function()
     local args = base_args({ target = "/workspaces/project" })
     local i = index_of(args, "/home/user/project:/workspaces/project:rw,z")
     expect.is_not_nil(i, "the bind mount must follow the resolved target")
-    expect.equals("-v", args[i - 1])
+    expect.equals("-v", args[assert(i) - 1])
 
     local w = index_of(args, "-w")
-    expect.equals("/workspaces/project", args[w + 1])
+    expect.equals("/workspaces/project", args[assert(w) + 1])
     expect.is_nil(index_of(args, "/workspace"), "no /workspace left behind")
   end)
 
@@ -144,7 +153,7 @@ describe("container.run_args", function()
   it("omits --userns when none is resolved", function()
     local args = base_args()
     for _, v in ipairs(args) do
-      expect.falsy(v:find("^%-%-userns"))
+      expect.falsy((v:find("^%-%-userns")))
     end
   end)
 
@@ -175,8 +184,9 @@ describe("container.run_args", function()
     local args = base_args({ run_args = { "--cap-add", "SYS_PTRACE" } })
     local i = index_of(args, "--cap-add")
     expect.is_not_nil(i)
-    expect.equals("SYS_PTRACE", args[i + 1])
-    expect.truthy(i < index_of(args, "alpine:latest"), "run_args must precede the image")
+    expect.equals("SYS_PTRACE", args[assert(i) + 1])
+    expect.truthy(assert(i) < assert(index_of(args, "alpine:latest")),
+      "run_args must precede the image")
   end)
 
   -- A devcontainer's `remoteUser`. Distinct from the uid-mapping pin, which
@@ -185,7 +195,7 @@ describe("container.run_args", function()
     local args = base_args({ user = "vscode" })
     local i = index_of(args, "--user")
     expect.is_not_nil(i)
-    expect.equals("vscode", args[i + 1])
+    expect.equals("vscode", args[assert(i) + 1])
   end)
 
   -- The measured pairing wins when both are present: keep-id maps the *host*
@@ -194,7 +204,7 @@ describe("container.run_args", function()
   it("prefers the mapped host uid over a resolved user", function()
     local args = base_args({ user = "vscode", userns = "keep-id", run_as_uid = "1000", run_as_gid = "1000" })
     local i = index_of(args, "--user")
-    expect.equals("1000:1000", args[i + 1])
+    expect.equals("1000:1000", args[assert(i) + 1])
     expect.is_nil(index_of(args, "vscode"))
   end)
 end)
@@ -210,7 +220,7 @@ describe("container timeouts", function()
     image = "alpine:latest",
   }
 
-  local function with_extra(base, overrides)
+  local function with_extra(base: { [string]: any }, overrides: { [string]: any }): { [string]: any }
     local opts = {}
     for k, v in pairs(base) do opts[k] = v end
     for k, v in pairs(overrides) do opts[k] = v end
@@ -263,7 +273,7 @@ describe("container.build args", function()
       local args = calls[1].args
       local i = index_of(args, "--build-arg")
       expect.is_not_nil(i)
-      expect.equals("VARIANT=1.83", args[i + 1])
+      expect.equals("VARIANT=1.83", args[assert(i) + 1])
       expect.equals("/ws/.devcontainer", args[#args], "the context stays last")
     end)
   end)
@@ -276,7 +286,7 @@ end)
 -- the normal way to work on a branch.
 describe("container.git_common_dir", function()
   --- Stub git's answer for `rev-parse --git-common-dir`.
-  local function with_git(stdout, success, fn)
+  local function with_git(stdout: string, success: boolean, fn: (calls: { { [string]: any } }) -> ())
     local saved = cru.shell
     local calls = {}
     cru.shell = mock({
@@ -291,7 +301,10 @@ describe("container.git_common_dir", function()
       end,
       which = saved and saved.which,
     })
-    local ok, err = pcall(fn, calls)
+    local ok, err = pcall(function()
+      fn(calls)
+      return nil
+    end)
     cru.shell = saved
     if not ok then error(err, 0) end
   end
@@ -352,7 +365,7 @@ describe("container.run_args with a worktree", function()
     local i = index_of(args, "type=bind,source=/home/user/project/.git,"
       .. "destination=/home/user/project/.git,relabel=shared")
     expect.is_not_nil(i, "the main git dir must be mounted at its own path")
-    expect.equals("--mount", args[i - 1])
+    expect.equals("--mount", args[assert(i) - 1])
     -- ...and the workspace mount is still there.
     expect.is_not_nil(index_of(args, "/home/user/worktrees/feat:/workspace:rw,z"))
   end)
@@ -392,7 +405,7 @@ end)
 describe("container.git_works", function()
   --- Script the two in-container probes: `rev-parse --git-dir`, then, only on
   --- failure, `git --version`.
-  local function with_probes(resolves, installed, fn)
+  local function with_probes(resolves: any, installed: any, fn: (calls: { { [string]: any } }) -> ())
     local saved = cru.shell
     local calls = {}
     cru.shell = mock({
@@ -403,7 +416,10 @@ describe("container.git_works", function()
       end,
       which = saved and saved.which,
     })
-    local ok, err = pcall(fn, calls)
+    local ok, err = pcall(function()
+      fn(calls)
+      return nil
+    end)
     cru.shell = saved
     if not ok then error(err, 0) end
   end

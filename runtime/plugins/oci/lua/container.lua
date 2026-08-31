@@ -1,3 +1,4 @@
+--!strict
 --- OCI container lifecycle operations
 -- Thin wrappers around docker/podman CLI commands.
 local remap = require("remap")
@@ -29,7 +30,7 @@ M.CANDIDATES = { "podman", "docker", "nerdctl" }
 --- `--version` was considered and proves little more: `docker --version`
 --- succeeds with no daemon running, so a which-hit that can't actually serve
 --- fails at container start with a real error either way.
-function M.detect(configured)
+function M.detect(configured: string?): string?
   if configured and configured ~= "" then
     if cru.shell.which(configured) then
       return configured
@@ -60,7 +61,7 @@ end
 --- which is not the mapped id — so writes fail exactly as they did without it.
 --- Mapping only works when the running uid is also pinned. Do not "simplify"
 --- this to a bare keep-id; it was tried and it does not work.
-function M.image_runs_as_non_root(runtime, image)
+function M.image_runs_as_non_root(runtime: string, image: string): boolean
   local r = cru.shell.exec(runtime, {
     "image", "inspect", "--format", "{{.Config.User}}", image,
   })
@@ -78,7 +79,7 @@ end
 --- Needed to pin the container's running uid when mapping a non-root image;
 --- `keep-id` alone is not enough. Read via `id` rather than a Lua API because
 --- none exposes it, and `id` is present anywhere a container runtime is.
-function M.host_ids()
+function M.host_ids(): (string?, string?)
   local u = cru.shell.exec("id", { "-u" })
   local g = cru.shell.exec("id", { "-g" })
   if not u or not u.success then return nil end
@@ -98,7 +99,7 @@ end
 ---
 --- Returns nil when the workspace is an ordinary checkout (its common dir is
 --- `<workspace>/.git`, already inside the mount) or is not a repository at all.
-function M.git_common_dir(workspace)
+function M.git_common_dir(workspace: string): string?
   if not workspace or workspace == "" then return nil end
   local r = cru.shell.exec("git", {
     "-C", workspace, "rev-parse", "--path-format=absolute", "--git-common-dir",
@@ -118,7 +119,7 @@ end
 ---
 --- `runtime` is passed as well as used as the command because one mount option
 --- is podman-only; see the git-dir mount below.
-function M.run_args(opts, runtime)
+function M.run_args(opts: { [string]: any }, runtime: string): { string }
   -- The bind target and the working directory are the same value on purpose:
   -- mounting the workspace at one path and starting in another puts every
   -- relative tool call in an empty directory.
@@ -207,7 +208,7 @@ end
 
 --- Create and start a container with the sleep infinity sidecar pattern.
 --- Covers the image pull, which is the part that can take minutes.
-function M.run(runtime, opts)
+function M.run(runtime: string, opts: { [string]: any }): ({ [string]: any }?, string?)
   return cru.shell.exec(runtime, M.run_args(opts, runtime), {
     timeout = opts.start_timeout or M.DEFAULT_START_TIMEOUT,
   })
@@ -228,7 +229,7 @@ end
 --- The second exec is what separates the two. A slim base image with no git
 --- fails the same `rev-parse`, and reporting a mount failure there sends
 --- someone debugging a mount that is fine; it only runs when the first fails.
-function M.git_works(runtime, name, target)
+function M.git_works(runtime: string, name: string, target: string): boolean
   local r = cru.shell.exec(runtime, {
     "exec", "-w", target, name, "git", "rev-parse", "--git-dir",
   })
@@ -243,7 +244,7 @@ end
 --- `build_args` is a devcontainer's `build.args`. Dropping it would build with
 --- the Dockerfile's own ARG defaults — a different image than the editor's,
 --- with nothing to show for it.
-function M.build(runtime, opts)
+function M.build(runtime: string, opts: { [string]: any }): { [string]: any }
   local args = { "build", "-t", opts.image, "-f", opts.dockerfile }
 
   -- Sorted, so a rebuild of the same config produces the same argv.
@@ -273,17 +274,17 @@ function M.build(runtime, opts)
 end
 
 --- Stop a container (5 second grace period).
-function M.stop(runtime, name)
+function M.stop(runtime: string, name: string): ()
   return cru.shell.exec(runtime, { "stop", "-t", "5", name })
 end
 
 --- Force-remove a container.
-function M.rm(runtime, name)
+function M.rm(runtime: string, name: string): ()
   return cru.shell.exec(runtime, { "rm", "-f", name })
 end
 
 --- Check if a container is currently running.
-function M.is_running(runtime, name)
+function M.is_running(runtime: string, name: string): boolean
   local r = cru.shell.exec(runtime, {
     "inspect", "--format", "{{.State.Running}}", name,
   })
@@ -291,7 +292,7 @@ function M.is_running(runtime, name)
 end
 
 --- List all crucible-labeled containers.
-function M.list_crucible(runtime)
+function M.list_crucible(runtime: string): { { name: string, session_id: string, status: string } }
   local r = cru.shell.exec(runtime, {
     "ps", "-a",
     "--filter", "label=crucible=true",
@@ -299,11 +300,18 @@ function M.list_crucible(runtime)
   })
   if not r.success then return {} end
 
-  local containers = {}
+  local containers: { { name: string, session_id: string, status: string } } = {}
   for line in r.stdout:gmatch("[^\n]+") do
     local name, sid, status = line:match("^(.-)\t(.-)\t(.+)$")
     if name then
-      table.insert(containers, { name = name, session_id = sid, status = status })
+      -- The `if name` guard proves the pattern matched, so all three
+      -- captures are strings; `match` types them optional because a failed
+      -- match answers nil for every capture at once.
+      table.insert(containers, {
+        name = name,
+        session_id = sid :: string,
+        status = status :: string,
+      })
     end
   end
   return containers

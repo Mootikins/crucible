@@ -1,3 +1,4 @@
+--!strict
 --- Pure path/text helpers for routing tool calls into a container.
 --
 -- Extracted from init.lua so tests exercise the same code the plugin runs.
@@ -19,11 +20,14 @@ M.DEFAULT_TARGET = "/workspace"
 --- default, but a devcontainer's `workspaceFolder` is typically
 --- /workspaces/<name>, and a path remapped against the wrong root names a file
 --- the container does not have.
-function M.remap_path(workspace_host, path, target)
-  target = target or M.DEFAULT_TARGET
+function M.remap_path(workspace_host: string?, path: string?, mount: string?): string
+  local target: string = mount or M.DEFAULT_TARGET
   if not path then return target end
-  if path:sub(1, #workspace_host) == workspace_host then
-    local suffix = path:sub(#workspace_host + 1)
+  -- No workspace root to strip: everything is either absolute (pass through)
+  -- or relative to the mount target.
+  local root: string = workspace_host or ""
+  if root ~= "" and path:sub(1, #root) == root then
+    local suffix = path:sub(#root + 1)
     if suffix == "" or suffix == "/" then return target end
     if suffix:sub(1, 1) == "/" then suffix = suffix:sub(2) end
     return target .. "/" .. suffix
@@ -35,12 +39,12 @@ function M.remap_path(workspace_host, path, target)
 end
 
 --- Shell-escape a string for use inside single quotes.
-function M.sq(s)
+function M.sq(s: any): string
   return s:gsub("'", "'\\''")
 end
 
 --- Format a list of lines with a count footer, truncating if over limit.
-function M.truncate_lines(lines, limit, noun)
+function M.truncate_lines(lines: { string }, limit: number, noun: string): string
   local truncated = #lines > limit
   local kept = {}
   for i = 1, math.min(#lines, limit) do kept[i] = lines[i] end

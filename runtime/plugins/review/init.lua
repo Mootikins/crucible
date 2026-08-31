@@ -73,12 +73,12 @@ function M.list_hunks(args: { [string]: any }): ToolResult
         return { error = "session_id is required" }
     end
 
-    local hunks, err = cru.session.review_list_hunks(args.session_id)
+    local found, err = cru.session.review_list_hunks(args.session_id)
     if err then
         return { error = err }
     end
     -- `review_list_hunks` answers `({any}?, string?)`: no error means a list.
-    local hunks = hunks or {}
+    local hunks: { any } = found or {}
 
     local out: { { [string]: any } } = {}
     local unreviewed = 0

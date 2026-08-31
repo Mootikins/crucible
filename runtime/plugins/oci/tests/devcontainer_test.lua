@@ -1,3 +1,4 @@
+--!strict
 -- Parsing `.devcontainer/devcontainer.json`, and the resolution it feeds.
 --
 -- Every decision here is about *which environment to build*, so none of it
@@ -22,7 +23,7 @@ local real_json = cru.json
 --- no mock to agree with. The directory's path is handed to `fn`. `present`
 --- lists commands `cru.shell.which` should find. `real_dirs` makes the
 --- `cru.fs.mkdir` mock create directories for real.
-local function with_env(files, present, fn)
+local function with_env(files: { [string]: any }, present: any, fn: (workspace: string) -> ())
   local saved_shell, saved_json = cru.shell, cru.json
   local found = {}
   for _, name in ipairs(present or {}) do found[name] = true end
@@ -49,7 +50,10 @@ local function with_env(files, present, fn)
   })
   cru.json = real_json
 
-  local ok, err = pcall(fn, workspace)
+  local ok, err = pcall(function()
+    fn(workspace)
+    return nil
+  end)
   cru.shell, cru.json = saved_shell, saved_json
   if not ok then error(err, 0) end
 end
@@ -59,28 +63,28 @@ end
 --- `allow_host` mirrors `[plugins.oci] devcontainer_host_access`. Most parsing
 --- tests are about shape rather than trust and pass it; the ones asserting the
 --- default refusal deliberately do not.
-local function parse(text, workspace, allow_host)
-  workspace = workspace or "/home/user/project"
-  local out
+local function parse(text: string, workspace: string?, allow_host: boolean?): { [string]: any }
+  local out: { [string]: any }
+  local ws: string = workspace or "/home/user/project"
   with_env({}, {}, function()
-    out = devcontainer.parse(text, workspace, workspace .. "/.devcontainer", allow_host)
+    out = devcontainer.parse(text, ws, ws .. "/.devcontainer", allow_host)
   end)
   return out
 end
 
 --- Parse with the host-reaching keys permitted, for tests about how a key is
 --- converted rather than whether it is allowed.
-local function parse_trusted(text, workspace)
+local function parse_trusted(text: string, workspace: string?): { [string]: any }
   return parse(text, workspace, true)
 end
 
-local function parse_error(text, workspace, allow_host)
+local function parse_error(text: string, workspace: string?, allow_host: boolean?): string
   local ok, err = pcall(parse, text, workspace, allow_host)
   expect.falsy(ok, "expected the file to be refused, but it parsed")
   return tostring(err)
 end
 
-local function contains(list, value)
+local function contains(list: { any }, value: any): boolean
   for _, v in ipairs(list or {}) do
     if v == value then return true end
   end
@@ -97,18 +101,18 @@ describe("devcontainer.strip_jsonc", function()
   it("removes line comments", function()
     local out = devcontainer.strip_jsonc('{\n  // a comment\n  "image": "alpine"\n}')
     expect.is_nil(out:find("comment", 1, true))
-    expect.truthy(out:find('"image"', 1, true))
+    expect.truthy((out:find('"image"', 1, true)))
   end)
 
   it("removes block comments", function()
     local out = devcontainer.strip_jsonc('{ /* nope\n still nope */ "image": "alpine" }')
     expect.is_nil(out:find("nope", 1, true))
-    expect.truthy(out:find('"image"', 1, true))
+    expect.truthy((out:find('"image"', 1, true)))
   end)
 
   it("leaves a comment marker that is inside a string alone", function()
     local out = devcontainer.strip_jsonc('{ "name": "https://example.com/x" }')
-    expect.truthy(out:find("https://example.com/x", 1, true))
+    expect.truthy((out:find("https://example.com/x", 1, true)))
   end)
 
   it("removes a trailing comma before a closing brace or bracket", function()
@@ -119,7 +123,7 @@ describe("devcontainer.strip_jsonc", function()
 
   it("leaves a comma that is inside a string alone", function()
     local out = devcontainer.strip_jsonc('{ "name": "a, }" }')
-    expect.truthy(out:find("a, }", 1, true))
+    expect.truthy((out:find("a, }", 1, true)))
   end)
 end)
 
@@ -232,7 +236,7 @@ describe("devcontainer.parse substitutes", function()
   -- Anything else would reach the runtime verbatim.
   it("and refuses a variable it cannot compute", function()
     local err = parse_error('{ "image": "alpine:${localEnv:TAG}" }')
-    expect.truthy(err:find("localEnv:TAG", 1, true))
+    expect.truthy((err:find("localEnv:TAG", 1, true)))
   end)
 end)
 
@@ -242,28 +246,28 @@ end)
 describe("devcontainer.parse refuses", function()
   it("a key it cannot honour, naming that key", function()
     local err = parse_error('{ "image": "alpine", "remoteEnv": { "A": "1" } }')
-    expect.truthy(err:find("remoteEnv", 1, true))
+    expect.truthy((err:find("remoteEnv", 1, true)))
   end)
 
   it("a mount attribute it cannot honour, naming it", function()
     local err = parse_error(
       '{ "image": "alpine", "mounts": ["source=/h,target=/c,bind-propagation=shared"] }', nil, true)
-    expect.truthy(err:find("bind-propagation", 1, true))
+    expect.truthy((err:find("bind-propagation", 1, true)))
   end)
 
   it("a build key it cannot honour, naming it", function()
     local err = parse_error('{ "build": { "dockerfile": "Dockerfile", "cacheFrom": "x" } }')
-    expect.truthy(err:find("cacheFrom", 1, true))
+    expect.truthy((err:find("cacheFrom", 1, true)))
   end)
 
   it("a file that names neither an image nor a build", function()
     local err = parse_error('{ "name": "empty" }')
-    expect.truthy(err:find("image", 1, true))
+    expect.truthy((err:find("image", 1, true)))
   end)
 
   it("a file that is not a JSON object", function()
     local err = parse_error('[1, 2, 3]')
-    expect.truthy(err:find("object", 1, true))
+    expect.truthy((err:find("object", 1, true)))
   end)
 end)
 
@@ -348,7 +352,7 @@ describe("devcontainer.parse refuses the keys that reach the host", function()
   -- @devcontainers/cli instead of refusing it.
   it("initializeCommand before deferring it to the CLI", function()
     local err = parse_error('{ "image": "alpine", "initializeCommand": "echo hi" }')
-    expect.truthy(err:find("initializeCommand", 1, true))
+    expect.truthy((err:find("initializeCommand", 1, true)))
   end)
 
   -- Gating a CLI key must not disable it: with the opt-in set, a compose

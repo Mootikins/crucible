@@ -1,3 +1,4 @@
+--!strict
 -- Integration tests for the oci plugin entry point.
 -- Run with: cru plugin test runtime/plugins/oci
 --
@@ -11,12 +12,16 @@
 -- tool handlers at load time.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-local hooks = {}          -- pattern -> { fn, opts }
-local lifecycle = {}      -- start = {fn, opts}, end_fn
-local isolation_calls = {}
-local status_calls = {}
-local clear_status_calls = {}
-local publications = {}      -- key -> published value
+--- pattern -> { fn, opts }. Open maps throughout: these record whatever the
+--- plugin passed, and the assertions read fields off the recording.
+local hooks: { [string]: any } = {}
+--- start = { fn, opts }, end_fn
+local lifecycle: { [string]: any } = {}
+local isolation_calls: { any } = {}
+local status_calls: { { [string]: any } } = {}
+local clear_status_calls: { { [string]: any } } = {}
+--- key -> published value
+local publications: { [string]: any } = {}
 local declared_options       -- the settings tree the plugin declared
 
 ;(cru :: any).on = function(event, opts, fn)
@@ -53,14 +58,14 @@ cru.plugin = mock({
 
 -- Scripted shell. Responders are keyed by "<cmd> <first-arg>" (then "<cmd>"),
 -- and every call is logged so tests can assert on the exact argv.
-local exec_log = {}
+local exec_log: { { [string]: any } } = {}
 -- Annotated: it is reset to an empty table in several `before_each`
 -- blocks, and Luau otherwise seals the type from the first block that puts
 -- keys in, making every later reset a type error.
 local responders: { [string]: any } = {}
 local ok_reply = { success = true, exit_code = 0, stdout = "", stderr = "" }
 
-local function stub_exec(cmd, args, opts)
+local function stub_exec(cmd: string, args: { string }, opts: { [string]: any }?): { [string]: any }
   table.insert(exec_log, { cmd = cmd, args = args, opts = opts })
   local r = responders[cmd .. " " .. (args[1] or "")] or responders[cmd]
   if type(r) == "function" then return r(cmd, args, opts) end
@@ -75,14 +80,14 @@ local function stub_exec(cmd, args, opts)
   return ok_reply
 end
 
-local available = { podman = true }
-local function stub_which(name)
+local available: { [string]: boolean } = { podman = true }
+local function stub_which(name: string): string?
   return available[name] and ("/usr/bin/" .. name) or nil
 end
 
 --- `spawn` is `exec` plus line delivery, so scripted responders drive both and
 --- a test can assert on what a streaming caller reported.
-local function stub_spawn(cmd, args, opts)
+local function stub_spawn(cmd: string, args: { string }, opts: { [string]: any }?): { [string]: any }
   local r = stub_exec(cmd, args, opts)
   if opts and opts.on_line then
     for line in (r.stdout or ""):gmatch("[^\n]+") do
@@ -92,7 +97,7 @@ local function stub_spawn(cmd, args, opts)
   return r
 end
 
-local function install_shell()
+local function install_shell(): ()
   cru.shell = { exec = stub_exec, spawn = stub_spawn, which = stub_which }
   cru.json = mock({ encode = function(t) return t end })
   ;(cru :: any).log = function() end
@@ -110,14 +115,14 @@ install_shell()
 local spec = require("oci")
 
 --- The logged call whose argv starts with `verb`, or nil.
-local function exec_call(verb)
+local function exec_call(verb: string): { [string]: any }?
   for _, call in ipairs(exec_log) do
     if call.args[1] == verb then return call end
   end
   return nil
 end
 
-local function index_of(args, needle)
+local function index_of(args: { any }, needle: any): number?
   for i, v in ipairs(args) do
     if v == needle then return i end
   end
@@ -130,12 +135,12 @@ end
 --- workspace and that state lives for the daemon's lifetime — two tests sharing
 --- a default would have the second join the first's container. Tests that mean
 --- to share pass the same workspace explicitly.
-local function start_session(id, workspace)
+local function start_session(id: string, workspace: string?): ()
   return lifecycle.start.fn({ id = id, workspace = workspace or ("/home/user/" .. id) })
 end
 
 --- Same, with the per-session `isolation` param the daemon forwards untouched.
-local function start_isolated_session(id, isolation, workspace)
+local function start_isolated_session(id: string, isolation: any, workspace: string?): ()
   return lifecycle.start.fn({
     id = id,
     workspace = workspace or ("/home/user/" .. id),
@@ -185,7 +190,7 @@ describe("oci session lifecycle", function()
     spec.setup({ image = "alpine:latest", exempt = { "read_note" } })
     start_session("s1", "/home/user/s1-project")
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(run, "expected a container run")
     expect.equals("podman", run.cmd)
     expect.is_not_nil(index_of(run.args, "crucible-s1"))
@@ -229,11 +234,11 @@ describe("oci session lifecycle", function()
     responders["id -g"] = { success = true, exit_code = 0, stdout = "1000\n", stderr = "" }
     start_session("s-nonroot")
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(index_of(run.args, "--userns=keep-id"))
     local user_flag = index_of(run.args, "--user")
     expect.is_not_nil(user_flag, "keep-id without --user does not fix workspace writes")
-    expect.equals("1000:1000", run.args[user_flag + 1])
+    expect.equals("1000:1000", run.args[assert(user_flag) + 1])
   end)
 
   it("leaves uid mapping off for a root image", function()
@@ -241,7 +246,7 @@ describe("oci session lifecycle", function()
     responders["podman image"] = { success = true, exit_code = 0, stdout = "\n", stderr = "" }
     start_session("s-root")
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     for _, v in ipairs(run.args) do
       expect.falsy(v:find("^%-%-userns"))
     end
@@ -250,7 +255,10 @@ describe("oci session lifecycle", function()
   it("raises when the container fails to start, refusing the session", function()
     spec.setup({ image = "alpine:latest" })
     responders["podman run"] = { success = false, exit_code = 125, stdout = "", stderr = "boom" }
-    local ok, err = pcall(start_session, "s-fail")
+    local ok, err = pcall(function()
+      start_session("s-fail")
+      return nil
+    end)
     expect.falsy(ok, "a session whose sandbox did not start must be refused")
     expect.truthy((tostring(err):find("container start failed", 1, true)))
     expect.equals(0, #isolation_calls, "no isolation claim for a container that never started")
@@ -259,7 +267,10 @@ describe("oci session lifecycle", function()
   it("raises when no runtime exists rather than running unsandboxed", function()
     spec.setup({ image = "alpine:latest" })
     available = {}
-    local ok, err = pcall(start_session, "s-noruntime")
+    local ok, err = pcall(function()
+      start_session("s-noruntime")
+      return nil
+    end)
     expect.falsy(ok)
     expect.truthy((tostring(err):find("no container runtime", 1, true)))
   end)
@@ -277,8 +288,8 @@ describe("oci session lifecycle", function()
     exec_log = {}
 
     lifecycle.end_fn({ id = "s-end" })
-    local stop = exec_call("stop")
-    local rm = exec_call("rm")
+    local stop = assert(exec_call("stop"))
+    local rm = assert(exec_call("rm"))
     expect.is_not_nil(stop)
     expect.is_not_nil(index_of(stop.args, "crucible-s-end"))
     expect.is_not_nil(rm)
@@ -301,7 +312,7 @@ end)
 -- and when a child gets its own worktree (a distinct workspace) it gets its own
 -- container for the same reason, with no branch added anywhere.
 describe("oci container sharing", function()
-  local function count_calls(verb)
+  local function count_calls(verb: string): number
     local n = 0
     for _, call in ipairs(exec_log) do
       if call.args[1] == verb then n = n + 1 end
@@ -352,7 +363,7 @@ describe("oci container sharing", function()
 
     responders["podman exec"] = { success = true, exit_code = 0, stdout = "hi\n", stderr = "" }
     hooks.bash.fn({ session_id = "s-child" }, { tool = "bash", args = { command = "echo hi" } })
-    local call = exec_call("exec")
+    local call = assert(exec_call("exec"))
     expect.is_not_nil(index_of(call.args, "crucible-s-parent"),
       "the child's tools must run in the container its workspace resolved to")
   end)
@@ -364,7 +375,7 @@ describe("oci container sharing", function()
     start_session("s-b", ws_b)
 
     expect.equals(1, count_calls("run"), "a different workspace is a different sandbox")
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(index_of(run.args, ws_b .. ":/workspace:rw,z"))
   end)
 
@@ -382,7 +393,7 @@ describe("oci container sharing", function()
     expect.equals("s-child", clear_status_calls[1].session)
 
     lifecycle.end_fn({ id = "s-parent" })
-    local rm = exec_call("rm")
+    local rm = assert(exec_call("rm"))
     expect.is_not_nil(rm)
     expect.is_not_nil(index_of(rm.args, "crucible-s-parent"))
   end)
@@ -400,7 +411,7 @@ describe("oci container sharing", function()
 
     lifecycle.end_fn({ id = "s-resumed" })
 
-    local rm = exec_call("rm")
+    local rm = assert(exec_call("rm"))
     expect.is_not_nil(rm, "a re-fired start hook left the container referenced forever")
     expect.is_not_nil(index_of(rm.args, "crucible-s-resumed"))
   end)
@@ -418,7 +429,7 @@ describe("oci container sharing", function()
     expect.equals(0, count_calls("rm"), "s-two is still in the container")
 
     lifecycle.end_fn({ id = "s-two" })
-    expect.is_not_nil(exec_call("rm"))
+    expect.is_not_nil(assert(exec_call("rm")))
   end)
 
   it("refuses a session whose shared container is gone rather than running on the host", function()
@@ -426,7 +437,10 @@ describe("oci container sharing", function()
     start_session("s-parent", ws)
     responders["podman inspect"] = { success = true, exit_code = 0, stdout = "false\n", stderr = "" }
 
-    local ok, err = pcall(start_session, "s-child", ws)
+    local ok, err = pcall(function()
+      start_session("s-child", ws)
+      return nil
+    end)
     expect.falsy(ok, "a dead sandbox must refuse the session, not silently start a fresh one")
     expect.truthy((tostring(err):find("no longer running", 1, true)))
   end)
@@ -446,8 +460,8 @@ describe("oci per-session isolation", function()
 
   --- Assert the container was started from `image`. The argv ends with the
   --- keepalive command, so match on presence rather than position.
-  local function assert_ran_image(image)
-    local run = exec_call("run")
+  local function assert_ran_image(image: string): ()
+    local run = assert(exec_call("run"))
     expect.is_not_nil(run, "expected a container run")
     expect.is_not_nil(index_of(run.args, image),
       "container was not started from " .. image)
@@ -500,7 +514,10 @@ describe("oci per-session isolation", function()
   -- Isolation asked for and not delivered is never silently downgraded — the
   -- same rule that makes a failed container start refuse the session.
   it("refuses a session naming an isolation profile that does not exist", function()
-    local ok, err = pcall(start_isolated_session, "iso-unknown", "nope", fresh_ws())
+    local ok, err = pcall(function()
+      start_isolated_session("iso-unknown", "nope", fresh_ws())
+      return nil
+    end)
     expect.falsy(ok, "an unknown profile must not fall back to the default image")
     expect.truthy((tostring(err):find("nope", 1, true)))
     expect.equals(0, #exec_log)
@@ -530,14 +547,19 @@ describe("oci per-session isolation", function()
   end)
 
   it("still refuses a profile it does not have when the target is addressed here", function()
-    local ok, err = pcall(start_isolated_session, "iso-addressed-unknown",
-      { plugin = "oci", target = "nope" }, fresh_ws())
+    local ok, err = pcall(function()
+      start_isolated_session("iso-addressed-unknown", { plugin = "oci", target = "nope" }, fresh_ws())
+      return nil
+    end)
     expect.falsy(ok)
     expect.truthy((tostring(err):find("nope", 1, true)))
   end)
 
   it("refuses an isolation table that names no image", function()
-    local ok, err = pcall(start_isolated_session, "iso-imageless", { env = { A = "1" } }, fresh_ws())
+    local ok, err = pcall(function()
+      start_isolated_session("iso-imageless", { env = { A = "1" } }, fresh_ws())
+      return nil
+    end)
     expect.falsy(ok)
     expect.truthy((tostring(err):find("no image", 1, true)))
   end)
@@ -552,7 +574,10 @@ describe("oci per-session isolation", function()
 
   it("refuses true when nothing is configured to isolate with", function()
     spec.setup({})
-    local ok, err = pcall(start_isolated_session, "iso-true-unconfigured", true, fresh_ws())
+    local ok, err = pcall(function()
+      start_isolated_session("iso-true-unconfigured", true, fresh_ws())
+      return nil
+    end)
     expect.falsy(ok)
     expect.truthy((tostring(err):find("asked to be isolated", 1, true)))
   end)
@@ -562,14 +587,14 @@ describe("oci per-session isolation", function()
   it("inherits runtime and exempt from the top-level config into a profile", function()
     available = { podman = true, docker = true }
     start_isolated_session("iso-inherit", "heavy", fresh_ws())
-    expect.equals("podman", exec_call("run").cmd)
+    expect.equals("podman", assert(exec_call("run")).cmd)
     expect.equals("read_note", isolation_calls[#isolation_calls].exempt[1])
   end)
 
   it("lets a profile override the runtime it inherits", function()
     available = { podman = true, docker = true }
     start_isolated_session("iso-override-rt", "other_runtime", fresh_ws())
-    expect.equals("docker", exec_call("run").cmd)
+    expect.equals("docker", assert(exec_call("run")).cmd)
   end)
 
   -- One container per workspace is the sharing rule; it cannot also hand a
@@ -579,7 +604,10 @@ describe("oci per-session isolation", function()
     responders["podman inspect"] = { success = true, exit_code = 0, stdout = "true\n", stderr = "" }
     start_isolated_session("iso-owner", nil, ws)
 
-    local ok, err = pcall(start_isolated_session, "iso-intruder", "heavy", ws)
+    local ok, err = pcall(function()
+      start_isolated_session("iso-intruder", "heavy", ws)
+      return nil
+    end)
     expect.falsy(ok, "joining would silently give this session an image it did not ask for")
     expect.truthy((tostring(err):find("heavy:latest", 1, true)))
     expect.truthy((tostring(err):find("alpine:latest", 1, true)))
@@ -614,10 +642,10 @@ describe("oci mount target", function()
     local ws = fresh_ws()
     start_session("s-target-default", ws)
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(index_of(run.args, ws .. ":/workspace:rw,z"))
     local w = index_of(run.args, "-w")
-    expect.equals("/workspace", run.args[w + 1])
+    expect.equals("/workspace", run.args[assert(w) + 1])
   end)
 
   it("mounts and works in a configured workspace_folder", function()
@@ -625,10 +653,10 @@ describe("oci mount target", function()
     local ws = fresh_ws()
     start_session("s-target-cfg", ws)
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(index_of(run.args, ws .. ":/workspaces/app:rw,z"))
     local w = index_of(run.args, "-w")
-    expect.equals("/workspaces/app", run.args[w + 1])
+    expect.equals("/workspaces/app", run.args[assert(w) + 1])
   end)
 
   it("lets a profile choose its own workspace_folder", function()
@@ -639,7 +667,7 @@ describe("oci mount target", function()
     local ws = fresh_ws()
     start_isolated_session("s-target-profile", "dev", ws)
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(index_of(run.args, ws .. ":/src:rw,z"))
   end)
 
@@ -652,10 +680,10 @@ describe("oci mount target", function()
     responders["podman exec"] = { success = true, exit_code = 0, stdout = "hi\n", stderr = "" }
     hooks.bash.fn({ session_id = "s-target-bash" }, { tool = "bash", args = { command = "echo hi" } })
 
-    local call = exec_call("exec")
+    local call = assert(exec_call("exec"))
     local w = index_of(call.args, "-w")
     expect.is_not_nil(w)
-    expect.equals("/workspaces/app", call.args[w + 1])
+    expect.equals("/workspaces/app", call.args[assert(w) + 1])
   end)
 
   it("remaps tool paths under the resolved target", function()
@@ -670,8 +698,8 @@ describe("oci mount target", function()
       { tool = "read_file", args = { path = ws .. "/src/main.rs" } }
     )
 
-    local call = exec_call("exec")
-    local script = call.args[index_of(call.args, "sh") + 2]
+    local call = assert(exec_call("exec"))
+    local script = call.args[assert(index_of(call.args, "sh")) + 2]
     expect.truthy(script:find("/workspaces/app/src/main.rs", 1, true))
     expect.falsy(script:find("/workspace/", 1, true))
   end)
@@ -683,12 +711,12 @@ describe("oci mount target", function()
     exec_log = {}
 
     hooks.glob.fn({ session_id = "s-target-search" }, { tool = "glob", args = { pattern = "*.rs" } })
-    local glob_script = exec_call("exec").args[index_of(exec_call("exec").args, "sh") + 2]
+    local glob_script = assert(exec_call("exec")).args[assert(index_of(assert(exec_call("exec")).args, "sh")) + 2]
     expect.truthy(glob_script:find("'/workspaces/app'", 1, true))
 
     exec_log = {}
     hooks.grep.fn({ session_id = "s-target-search" }, { tool = "grep", args = { pattern = "todo" } })
-    local grep_script = exec_call("exec").args[index_of(exec_call("exec").args, "sh") + 2]
+    local grep_script = assert(exec_call("exec")).args[assert(index_of(assert(exec_call("exec")).args, "sh")) + 2]
     expect.truthy(grep_script:find("'/workspaces/app'", 1, true))
   end)
 
@@ -705,7 +733,10 @@ describe("oci mount target", function()
     local ws = fresh_ws()
     start_session("s-target-owner", ws)
 
-    local ok, err = pcall(start_isolated_session, "s-target-intruder", "elsewhere", ws)
+    local ok, err = pcall(function()
+      start_isolated_session("s-target-intruder", "elsewhere", ws)
+      return nil
+    end)
     expect.falsy(ok)
     expect.truthy((tostring(err):find("/elsewhere", 1, true)))
     expect.truthy((tostring(err):find("/workspace", 1, true)))
@@ -734,20 +765,20 @@ describe("oci configured timeouts", function()
   it("passes a configured start_timeout to the run", function()
     spec.setup({ image = "alpine:latest", start_timeout = 60 })
     start_session("s-start-timeout", fresh_ws())
-    expect.equals(60, exec_call("run").opts.timeout)
+    expect.equals(60, assert(exec_call("run")).opts.timeout)
   end)
 
   it("passes a configured build_timeout to the build", function()
     spec.setup({ image = "alpine:latest", dockerfile = "Dockerfile", build_timeout = 1800 })
     start_session("s-build-timeout", fresh_ws())
-    expect.equals(1800, exec_call("build").opts.timeout)
+    expect.equals(1800, assert(exec_call("build")).opts.timeout)
   end)
 
   it("falls back to the documented defaults when neither is configured", function()
     spec.setup({ image = "alpine:latest", dockerfile = "Dockerfile" })
     start_session("s-default-timeouts", fresh_ws())
-    expect.equals(900, exec_call("build").opts.timeout)
-    expect.equals(300, exec_call("run").opts.timeout)
+    expect.equals(900, assert(exec_call("build")).opts.timeout)
+    expect.equals(300, assert(exec_call("run")).opts.timeout)
   end)
 end)
 
@@ -774,7 +805,7 @@ describe("oci devcontainer resolution", function()
   --- `head_body` defaults to `body`: the ordinary case is a devcontainer whose
   --- working tree matches what is committed. Pass it to model an edit that has
   --- not been committed, which resolution ignores.
-  local function with_devcontainer(ws, body, present, head_body)
+  local function with_devcontainer(ws: string, body: string, present: any, head_body: string?): ()
     head_body = head_body or body
     local found = { podman = true }
     for _, name in ipairs(present or {}) do found[name] = true end
@@ -793,16 +824,16 @@ describe("oci devcontainer resolution", function()
       if verb == "rev-parse" then
         return { success = true, exit_code = 0, stdout = ws .. "/.git\n", stderr = "" }
       elseif verb == "show" and spec_arg:match("devcontainer%.json$") then
-        return { success = true, exit_code = 0, stdout = head_body, stderr = "" }
+        return { success = true, exit_code = 0, stdout = head_body or "", stderr = "" }
       end
       return { success = false, exit_code = 128, stdout = "",
                stderr = "fatal: path does not exist in 'HEAD'" }
     end
   end
 
-  local function index_run(needle)
-    local run = exec_call("run")
-    expect.is_not_nil(run, "expected a container run")
+  --- The index of `needle` in the container's `run` argv, and the call itself.
+  local function index_run(needle: string): (number?, { [string]: any })
+    local run = assert(exec_call("run"), "expected a container run")
     return index_of(run.args, needle), run
   end
 
@@ -840,7 +871,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-optin", ws)
-    expect.is_not_nil(index_run("dc:latest"))
+    expect.is_not_nil((index_run("dc:latest")))
   end)
 
   -- The design's order: the devcontainer is the project's environment, so it
@@ -850,8 +881,8 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-wins", ws)
-    expect.is_not_nil(index_run("dc:latest"))
-    expect.is_nil(index_run("alpine:latest"))
+    expect.is_not_nil((index_run("dc:latest")))
+    expect.is_nil((index_run("alpine:latest")))
   end)
 
   -- ...but not an explicit session param, which is first in the order.
@@ -860,7 +891,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_isolated_session("dc-inline", { image = "inline:latest" }, ws)
-    expect.is_not_nil(index_run("inline:latest"))
+    expect.is_not_nil((index_run("inline:latest")))
   end)
 
   it("is not read at all when the session opted out", function()
@@ -876,7 +907,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-off", ws)
-    expect.is_not_nil(index_run("alpine:latest"))
+    expect.is_not_nil((index_run("alpine:latest")))
   end)
 
   -- The devcontainer default is /workspaces/<name>, not the plugin's
@@ -888,9 +919,10 @@ describe("oci devcontainer resolution", function()
     with_devcontainer(ws, '{ "image": "dc:latest", "workspaceFolder": "/src" }')
     start_session("dc-target", ws)
 
-    local i, run = index_run(ws .. ":/src:rw,z")
+    local i, found = index_run(ws .. ":/src:rw,z")
+    local run = assert(found, "the run call must be there")
     expect.is_not_nil(i, "the bind mount must follow the devcontainer's workspaceFolder")
-    expect.equals("/src", run.args[index_of(run.args, "-w") + 1])
+    expect.equals("/src", run.args[assert(index_of(run.args, "-w")) + 1])
   end)
 
   it("defaults the mount to /workspaces/<name> as the devcontainer spec does", function()
@@ -898,7 +930,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-default-target", ws)
-    expect.is_not_nil(index_run(ws .. ":/workspaces/" .. ws:match("[^/]+$") .. ":rw,z"))
+    expect.is_not_nil((index_run(ws .. ":/workspaces/" .. assert(ws:match("[^/]+$")) .. ":rw,z")))
   end)
 
   -- Refused by default, because the agent can commit the file that asks for
@@ -908,7 +940,10 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest", "runArgs": ["--privileged"] }')
 
-    local ok, err = pcall(start_session, "dc-runargs-denied", ws)
+    local ok, err = pcall(function()
+      start_session("dc-runargs-denied", ws)
+      return nil
+    end)
     expect.falsy(ok, "a devcontainer reaching the host must not start a session")
     expect.truthy(tostring(err):find("devcontainer_host_access", 1, true), tostring(err))
     expect.is_nil(exec_call("run"), "and nothing may have been started")
@@ -923,10 +958,11 @@ describe("oci devcontainer resolution", function()
     responders["podman image"] = { success = true, exit_code = 0, stdout = "\n", stderr = "" }
     start_session("dc-runargs", ws)
 
-    local i, run = index_run("--cap-add")
+    local i, found = index_run("--cap-add")
+    local run = assert(found, "the run call must be there")
     expect.is_not_nil(i)
-    expect.equals("SYS_PTRACE", run.args[i + 1])
-    expect.equals("vscode", run.args[index_of(run.args, "--user") + 1])
+    expect.equals("SYS_PTRACE", run.args[assert(i) + 1])
+    expect.equals("vscode", run.args[assert(index_of(run.args, "--user")) + 1])
   end)
 
   it("builds from build.dockerfile with the devcontainer directory as context", function()
@@ -935,7 +971,7 @@ describe("oci devcontainer resolution", function()
     with_devcontainer(ws, '{ "build": { "dockerfile": "Dockerfile" } }')
     start_session("dc-build", ws)
 
-    local build = exec_call("build")
+    local build = assert(exec_call("build"))
     expect.is_not_nil(build, "a devcontainer naming a Dockerfile must build it")
     expect.is_not_nil(index_of(build.args, ws .. "/.devcontainer/Dockerfile"))
     expect.is_not_nil(index_of(build.args, ws .. "/.devcontainer"))
@@ -948,7 +984,10 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest", "postCreateCommand": "make" }')
 
-    local ok, err = pcall(start_session, "dc-lifecycle", ws)
+    local ok, err = pcall(function()
+      start_session("dc-lifecycle", ws)
+      return nil
+    end)
     expect.falsy(ok, "a devcontainer needing the CLI must refuse, not fall back to the profile")
     expect.truthy((tostring(err):find("postCreateCommand", 1, true)))
     -- Nothing may be *started* from a config that could not be honoured.
@@ -1024,7 +1063,7 @@ describe("oci devcontainer resolution", function()
     start_session("dc-cli", ws)
 
     expect.is_nil(exec_call("run"), "the CLI creates the container, not the plugin")
-    local up = exec_call("up")
+    local up = assert(exec_call("up"))
     expect.is_not_nil(up)
     expect.equals("devcontainer", up.cmd)
     expect.is_not_nil(index_of(up.args, ws))
@@ -1034,9 +1073,9 @@ describe("oci devcontainer resolution", function()
     exec_log = {}
     responders["podman exec"] = { success = true, exit_code = 0, stdout = "hi\n", stderr = "" }
     hooks.bash.fn({ session_id = "dc-cli" }, { tool = "bash", args = { command = "echo hi" } })
-    local call = exec_call("exec")
+    local call = assert(exec_call("exec"))
     expect.is_not_nil(index_of(call.args, "dc-abc"))
-    expect.equals("/workspaces/app", call.args[index_of(call.args, "-w") + 1])
+    expect.equals("/workspaces/app", call.args[assert(index_of(call.args, "-w")) + 1])
   end)
 
   it("refuses the session when devcontainer up fails", function()
@@ -1047,7 +1086,10 @@ describe("oci devcontainer resolution", function()
       success = false, exit_code = 1, stdout = "", stderr = "compose not found",
     }
 
-    local ok, err = pcall(start_session, "dc-cli-fail", ws)
+    local ok, err = pcall(function()
+      start_session("dc-cli-fail", ws)
+      return nil
+    end)
     expect.falsy(ok)
     expect.truthy((tostring(err):find("devcontainer up", 1, true)))
     expect.equals(0, #isolation_calls)
@@ -1078,11 +1120,11 @@ describe("oci tool interception", function()
     expect.truthy(res.handled)
     expect.equals("hi\n", res.result.result)
 
-    local call = exec_call("exec")
+    local call = assert(exec_call("exec"))
     expect.is_not_nil(index_of(call.args, "crucible-s-tools"))
     local sh = index_of(call.args, "sh")
-    expect.equals("-c", call.args[sh + 1])
-    expect.equals("echo hi", call.args[sh + 2])
+    expect.equals("-c", call.args[assert(sh) + 1])
+    expect.equals("echo hi", call.args[assert(sh) + 2])
   end)
 
   it("remaps read_file paths into /workspace", function()
@@ -1093,9 +1135,9 @@ describe("oci tool interception", function()
     )
     expect.truthy(res.handled)
 
-    local call = exec_call("exec")
+    local call = assert(exec_call("exec"))
     local sh = index_of(call.args, "sh")
-    local script = call.args[sh + 2]
+    local script = call.args[assert(sh) + 2]
     expect.truthy(script:find("/workspace/src/main.rs", 1, true))
     expect.falsy(script:find("/home/user/project", 1, true))
   end)
@@ -1306,7 +1348,7 @@ describe("oci with a worktree workspace", function()
   --- Answer `rev-parse --git-common-dir` on the host with `common`, and the two
   --- in-container probes per `git_ok` (does the repository resolve) and
   --- `git_installed` (is there a git binary in the image at all).
-  local function with_git(common, git_ok, git_installed)
+  local function with_git(common: string?, git_ok: boolean?, git_installed: boolean?): ()
     responders["git"] = function(_, args)
       if index_of(args, "--git-common-dir") then
         return { success = common ~= nil, exit_code = 0, stdout = (common or "") .. "\n", stderr = "" }
@@ -1329,7 +1371,7 @@ describe("oci with a worktree workspace", function()
 
   --- A committed devcontainer only `@devcontainers/cli` can build, with the CLI
   --- installed: the path where the plugin adopts a container it did not create.
-  local function with_cli_devcontainer(ws, common, git_ok, git_installed)
+  local function with_cli_devcontainer(ws: string, common: string?, git_ok: boolean?, git_installed: boolean?): ()
     with_git(common, git_ok, git_installed)
     available = { podman = true, devcontainer = true }
     local body = '{ "image": "dc:latest", "postCreateCommand": "make" }'
@@ -1366,7 +1408,7 @@ describe("oci with a worktree workspace", function()
     with_git("/home/user/project/.git", true)
     start_session("s-wt", "/home/user/worktrees/feat")
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_not_nil(run)
     expect.is_not_nil(index_of(run.args, "type=bind,source=/home/user/project/.git,"
       .. "destination=/home/user/project/.git,relabel=shared"),
@@ -1379,7 +1421,7 @@ describe("oci with a worktree workspace", function()
     with_git("/home/user/plain/.git", true)
     start_session("s-plain", "/home/user/plain")
 
-    local run = exec_call("run")
+    local run = assert(exec_call("run"))
     expect.is_nil(index_of(run.args, "--mount"),
       "an ordinary checkout already has its git dir inside the workspace mount")
   end)
@@ -1429,12 +1471,12 @@ describe("oci with a worktree workspace", function()
     with_cli_devcontainer(ws, "/home/user/project/.git", true)
     start_session("s-wt-cli", ws)
 
-    local up = exec_call("up")
+    local up = assert(exec_call("up"))
     expect.is_not_nil(up)
     local i = index_of(up.args, "--mount")
     expect.is_not_nil(i, "a worktree built by the CLI still needs the main repo mounted")
     expect.equals("type=bind,source=/home/user/project/.git,"
-      .. "target=/home/user/project/.git", up.args[i + 1])
+      .. "target=/home/user/project/.git", up.args[assert(i) + 1])
   end)
 
   it("warns when git does not resolve in a CLI-built container", function()
