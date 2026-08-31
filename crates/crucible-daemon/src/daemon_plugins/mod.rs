@@ -253,7 +253,10 @@ impl DaemonPluginLoader {
         // because nothing else puts members on those four, which is a property
         // of today's code and not of the design. Anything that starts adding to
         // one of them must guard here first.
-        reg("ui namespaces", crucible_lua::config::register_ui_namespaces(lua))?;
+        reg(
+            "ui namespaces",
+            crucible_lua::config::register_ui_namespaces(lua),
+        )?;
 
         let plugin_manager = PluginManager::new();
 

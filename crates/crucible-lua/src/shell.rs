@@ -19,11 +19,11 @@
 
 use crate::error::LuaError;
 use mlua::{Lua, Table, Value};
-use std::time::Duration;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::process::Command;
 use tracing::debug;
 
@@ -326,9 +326,9 @@ fn read_timeout(opts: &Table) -> mlua::Result<Option<Duration>> {
     if matches!(value, Value::Nil) {
         return Ok(None);
     }
-    let secs: f64 = opts.get("timeout").map_err(|_| {
-        mlua::Error::runtime("shell timeout must be a number of seconds")
-    })?;
+    let secs: f64 = opts
+        .get("timeout")
+        .map_err(|_| mlua::Error::runtime("shell timeout must be a number of seconds"))?;
     if !secs.is_finite() || secs < 0.0 {
         return Err(mlua::Error::runtime(
             "shell timeout must be a finite non-negative number of seconds",
@@ -950,9 +950,17 @@ mod tests {
     #[tokio::test]
     async fn test_exec_echo() {
         let policy = PluginShellPolicy::permissive();
-        let result = exec_command("echo", &["hello".to_string()], None, None, None, &policy, None)
-            .await
-            .unwrap();
+        let result = exec_command(
+            "echo",
+            &["hello".to_string()],
+            None,
+            None,
+            None,
+            &policy,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert_eq!(result.exit_code, 0);
@@ -1025,9 +1033,17 @@ mod tests {
     #[tokio::test]
     async fn test_exec_without_stdin_does_not_hang() {
         let policy = PluginShellPolicy::permissive();
-        let result = exec_command("echo", &["no-stdin".to_string()], None, None, None, &policy, None)
-            .await
-            .unwrap();
+        let result = exec_command(
+            "echo",
+            &["no-stdin".to_string()],
+            None,
+            None,
+            None,
+            &policy,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert_eq!(result.stdout.trim(), "no-stdin");

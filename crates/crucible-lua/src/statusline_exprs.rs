@@ -239,9 +239,7 @@ pub fn register_statusline_exprs(
     ns.func(
         "clear",
         "(session_id: string, key: string) -> boolean",
-        move |_, (session_id, key): (String, String)| {
-            Ok(clear_registry.clear(&session_id, &key))
-        },
+        move |_, (session_id, key): (String, String)| Ok(clear_registry.clear(&session_id, &key)),
     )?;
     ns.doc(
         "clear",

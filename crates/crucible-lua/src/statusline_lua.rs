@@ -128,12 +128,8 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
         // it `any?`, under which `sl.mode:hl("StatusMode")` reads as a method
         // call on a possible nil — against the shipped statusline, which does
         // exactly that.
-        crate::host_registry::declare_value(
-            lua,
-            &format!("cru.statusline.{name}"),
-            "StatusItem",
-        )
-        .map_err(|e| mlua::Error::external(e.to_string()))?;
+        crate::host_registry::declare_value(lua, &format!("cru.statusline.{name}"), "StatusItem")
+            .map_err(|e| mlua::Error::external(e.to_string()))?;
     }
 
     // The five constructors, each declared beside its closure. `Ns::over` —
@@ -203,10 +199,14 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
          empty until something sets that key.",
     );
 
-    ns.func("setup", "(layout: { [string]: any }) -> ()", |_, config: Table| {
-        crate::config::set_layout(layout_from_setup_table(&config));
-        Ok(())
-    })?;
+    ns.func(
+        "setup",
+        "(layout: { [string]: any }) -> ()",
+        |_, config: Table| {
+            crate::config::set_layout(layout_from_setup_table(&config));
+            Ok(())
+        },
+    )?;
     ns.doc(
         "setup",
         "Place items into the regions `top`, `prompt` and `bottom`. Replaces \

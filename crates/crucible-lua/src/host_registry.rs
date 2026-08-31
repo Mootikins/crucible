@@ -389,7 +389,8 @@ impl<'lua> Ns<'lua> {
     /// Call it after the `func` it describes; a path with no member is still
     /// recorded, and simply describes nothing.
     pub fn doc(&mut self, name: &str, text: &str) {
-        self.signatures.record_doc(&format!("{}.{name}", self.path), text);
+        self.signatures
+            .record_doc(&format!("{}.{name}", self.path), text);
     }
 
     /// Publish the table onto `cru`.

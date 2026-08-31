@@ -349,9 +349,8 @@ mod shipped_plugin_tests {
             // The suite too. Excluding it hid 46 diagnostics in the shipped
             // plugins, and `mock(...)` now marks the deliberate monkey-patch
             // so the rest of a test file stays checkable.
-            let report =
-                crucible_lua::check_plugin_using(&dir, Some(&definitions), true, &checker)
-                    .expect("check");
+            let report = crucible_lua::check_plugin_using(&dir, Some(&definitions), true, &checker)
+                .expect("check");
             assert_eq!(
                 report.typecheck,
                 crucible_lua::TypecheckStatus::Ran,

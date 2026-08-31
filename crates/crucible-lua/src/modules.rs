@@ -1018,7 +1018,10 @@ mod extension_tests {
             &root.join("demo/init.luau"),
             "return { value = require('./lua/helper').value }",
         );
-        write(&root.join("demo/lua/helper.luau"), "return { value = 'luau' }");
+        write(
+            &root.join("demo/lua/helper.luau"),
+            "return { value = 'luau' }",
+        );
 
         let resolved = module_file(&root, Path::new("demo")).expect("no collision");
         assert_eq!(

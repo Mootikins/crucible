@@ -45,7 +45,10 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     fs::write(plugin_dir.join(format!("init.{ext}")), init_lua)?;
     fs::write(plugin_dir.join(format!("health.{ext}")), health_lua)?;
     fs::write(plugin_dir.join(".luarc.json"), luarc_json(&stub_dir()))?;
-    fs::write(plugin_dir.join(format!("tests/init_test.{ext}")), tests_init)?;
+    fs::write(
+        plugin_dir.join(format!("tests/init_test.{ext}")),
+        tests_init,
+    )?;
 
     println!(
         "✓ Plugin '{}' created at {}",

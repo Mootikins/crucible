@@ -552,8 +552,16 @@ fn a_plugin_with_both_entry_points_is_a_discovery_error() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = temp.path().join("ambiguous");
     std::fs::create_dir_all(&plugin_dir).unwrap();
-    std::fs::write(plugin_dir.join("init.lua"), "return { name = 'ambiguous' }\n").unwrap();
-    std::fs::write(plugin_dir.join("init.luau"), "return { name = 'ambiguous' }\n").unwrap();
+    std::fs::write(
+        plugin_dir.join("init.lua"),
+        "return { name = 'ambiguous' }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plugin_dir.join("init.luau"),
+        "return { name = 'ambiguous' }\n",
+    )
+    .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     let discovered = manager.discover().unwrap();
@@ -581,8 +589,16 @@ fn a_plugin_with_both_entry_points_is_reported() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = temp.path().join("ambiguous");
     std::fs::create_dir_all(&plugin_dir).unwrap();
-    std::fs::write(plugin_dir.join("init.lua"), "return { name = 'ambiguous' }\n").unwrap();
-    std::fs::write(plugin_dir.join("init.luau"), "return { name = 'ambiguous' }\n").unwrap();
+    std::fs::write(
+        plugin_dir.join("init.lua"),
+        "return { name = 'ambiguous' }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plugin_dir.join("init.luau"),
+        "return { name = 'ambiguous' }\n",
+    )
+    .unwrap();
 
     // No checker: this test is about the COLLISION, and what a typecheck adds
     // depends on what the machine has installed.

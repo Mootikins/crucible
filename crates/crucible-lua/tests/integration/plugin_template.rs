@@ -24,7 +24,8 @@ fn test_plugin_template_yaml_is_valid() {
 
 #[test]
 fn test_plugin_template_init_lua_is_syntactically_valid() {
-    let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
+    let template_lua =
+        include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
     let substituted = template_lua.replace("{{name}}", "test-plugin");
 
     let lua = mlua::Lua::new();
@@ -61,7 +62,8 @@ fn test_plugin_template_init_lua_is_syntactically_valid() {
 /// A starter template that leads with three no-ops teaches them.
 #[test]
 fn test_plugin_template_uses_only_live_constructs() {
-    let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
+    let template_lua =
+        include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
 
     // Anchored to a comment at the start of a line: the template names these
     // constructs in prose precisely to say that they do nothing.

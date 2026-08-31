@@ -167,11 +167,8 @@ pub fn check_plugin_using(
         // The wording lives in `Ambiguous`, not here. A second copy of it is
         // a second thing to keep in step with the rule it describes.
         findings.push(Finding::Load {
-            message: crate::source_files::Ambiguous(vec![
-                luau.clone(),
-                luau.with_extension("lua"),
-            ])
-            .to_string(),
+            message: crate::source_files::Ambiguous(vec![luau.clone(), luau.with_extension("lua")])
+                .to_string(),
         });
     }
 
@@ -181,9 +178,7 @@ pub fn check_plugin_using(
     // The refusal is NOT reported here: `init.luau` beside `init.lua` is a
     // `.luau` with a `.lua` sibling, so the sweep above already named that
     // pair. Reporting it here too printed one mistake twice.
-    let init = crate::source_files::init_file(plugin_dir)
-        .ok()
-        .flatten();
+    let init = crate::source_files::init_file(plugin_dir).ok().flatten();
     if let Some(init) = init {
         if let Err(e) = load_plugin_spec(&init) {
             let message = e.to_string();
@@ -284,7 +279,12 @@ pub fn check_file_using(
 
     findings.extend(checker.finding());
 
-    let typecheck = match analyze(&parent, std::slice::from_ref(&file), definitions, checker.checker()) {
+    let typecheck = match analyze(
+        &parent,
+        std::slice::from_ref(&file),
+        definitions,
+        checker.checker(),
+    ) {
         Some(diagnostics) => {
             findings.extend(diagnostics);
             TypecheckStatus::Ran
@@ -679,8 +679,7 @@ mod tests {
             "init.lua",
             "--!strict\nreturn { name = 'ok', version = '0.1.0' }\n",
         )]);
-        let report =
-            check_plugin_using(tmp.path(), None, false, &NO_CHECKER).expect("check runs");
+        let report = check_plugin_using(tmp.path(), None, false, &NO_CHECKER).expect("check runs");
         assert!(report.passed(), "{:?}", report.findings);
         assert_eq!(report.files_checked, 1);
 
@@ -690,8 +689,8 @@ mod tests {
         // given, both became findings, and a well-formed plugin failed with
         // eight of them on any machine that had the checker installed.
         if let Some(checker) = installed_checker() {
-            let checked = check_plugin_using(tmp.path(), None, false, &checker)
-                .expect("check runs");
+            let checked =
+                check_plugin_using(tmp.path(), None, false, &checker).expect("check runs");
             assert_eq!(
                 checked.typecheck,
                 TypecheckStatus::Ran,
@@ -783,8 +782,7 @@ mod tests {
         std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let checker = CheckerChoice::Use(Checker::at(&fake));
-        let report =
-            check_plugin_using(tmp.path(), None, false, &checker).expect("check runs");
+        let report = check_plugin_using(tmp.path(), None, false, &checker).expect("check runs");
 
         assert!(
             !report.passed(),
@@ -801,10 +799,9 @@ mod tests {
         let report = check_plugin_using(tmp.path(), None, false, &NO_CHECKER).expect("check runs");
         assert!(!report.passed(), "{report:?}");
         assert!(
-            report
-                .findings
-                .iter()
-                .any(|f| matches!(f, Finding::Load { message } if message.contains("no Lua source"))),
+            report.findings.iter().any(
+                |f| matches!(f, Finding::Load { message } if message.contains("no Lua source"))
+            ),
             "{:?}",
             report.findings
         );
@@ -841,8 +838,7 @@ mod tests {
     #[test]
     fn a_missing_analyzer_is_reported_as_skipped() {
         let tmp = plugin(&[("init.lua", "return { name = 'ok' }\n")]);
-        let report =
-            check_plugin_using(tmp.path(), None, false, &NO_CHECKER).expect("check runs");
+        let report = check_plugin_using(tmp.path(), None, false, &NO_CHECKER).expect("check runs");
         assert_eq!(report.typecheck, TypecheckStatus::Skipped);
         assert!(report.passed(), "{:?}", report.findings);
     }
@@ -864,7 +860,11 @@ mod tests {
         let choice = find_checker();
         restore_env(restore);
 
-        assert_eq!(choice, CheckerChoice::Use(Checker::at(&named)), "{choice:?}");
+        assert_eq!(
+            choice,
+            CheckerChoice::Use(Checker::at(&named)),
+            "{choice:?}"
+        );
     }
 
     /// A checker an operator NAMED and that is not there is a failure, not a
@@ -971,7 +971,9 @@ mod tests {
         let Some(CheckerChoice::Use(checker)) = installed_checker() else {
             return;
         };
-        checker.proves_types().expect("the pinned build checks types");
+        checker
+            .proves_types()
+            .expect("the pinned build checks types");
     }
 
     fn restore_env(restore: Option<std::ffi::OsString>) {
