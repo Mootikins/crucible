@@ -17,6 +17,20 @@ export const EditorProvider: ParentComponent = (props) => {
   const [activeFile, setActiveFileSignal] = createSignal<string | null>(null);
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  /**
+   * The call that produced `error()`, ready to be re-issued.
+   *
+   * A failed save used to strand a dirty buffer behind a red line with no way
+   * out but Ctrl+S again — and nothing on screen said that Ctrl+S was the way
+   * out. The banner needs the ACTUAL failed call, not a guess: the panel knows
+   * the active file, but the failure may belong to a background open of a
+   * different one.
+   *
+   * A setter given a function treats it as an updater, so the stored closure
+   * is wrapped one level deeper on every write.
+   */
+  const [retryFailedOperation, setRetryFailedOperation] =
+    createSignal<(() => Promise<void>) | null>(null);
 
     // Number of live panels holding each open path. A file's edited buffer
     // lives only here, so it must survive a panel unmount+remount (tab move or
@@ -38,6 +52,7 @@ export const EditorProvider: ParentComponent = (props) => {
 
     setIsLoading(true);
     setError(null);
+    setRetryFailedOperation(null);
 
     try {
       // Load the raw file bytes from disk. get_note_by_name returns metadata
@@ -55,6 +70,7 @@ export const EditorProvider: ParentComponent = (props) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to open file';
       setError(msg);
+      setRetryFailedOperation(() => () => openFile(path, opts));
       console.error('Failed to open file:', err);
     } finally {
       setIsLoading(false);
@@ -113,6 +129,7 @@ export const EditorProvider: ParentComponent = (props) => {
 
     setIsLoading(true);
     setError(null);
+    setRetryFailedOperation(null);
 
     try {
       // Save by absolute path (symmetric with the load) — the editor addresses
@@ -128,6 +145,9 @@ export const EditorProvider: ParentComponent = (props) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save file';
       setError(msg);
+      // The buffer is still dirty and still holds the user's bytes, so the
+      // recovery is the SAME save — never a reload, which would drop them.
+      setRetryFailedOperation(() => () => saveFile(path));
       console.error('Failed to save file:', err);
     } finally {
       setIsLoading(false);
@@ -163,6 +183,7 @@ export const EditorProvider: ParentComponent = (props) => {
     updateFileContent,
     isLoading,
     error,
+    retryFailedOperation,
   };
 
   return (
@@ -192,6 +213,7 @@ const fallbackEditorContext: EditorContextValue = {
   updateFileContent: () => {},
   isLoading: () => false,
   error: () => null,
+  retryFailedOperation: () => null,
 };
 
 export function useEditorSafe(): EditorContextValue {

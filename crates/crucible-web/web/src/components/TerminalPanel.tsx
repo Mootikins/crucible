@@ -17,6 +17,7 @@ import { nextReconnectDelay } from '@/lib/terminal-backoff';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { theme } from '@/lib/theme';
+import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
 
 /**
  * Real terminal: xterm.js over the daemon's PTY WebSocket
@@ -375,14 +376,16 @@ export const TerminalPanel: Component = () => {
             {/* z-20: xterm's accessibility layer is z-10 inside the term —
                 the overlay must stay clickable above it. */}
             <div class="absolute inset-0 z-20 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
-              <button
-                type="button"
-                data-testid="terminal-reconnect"
-                onClick={reconnect}
-                class="px-3 py-1.5 rounded border border-hairline-strong bg-control text-shell-ink text-sm hover:bg-hover-wash transition-colors"
-              >
-                {status() === 'reconnecting' ? 'Reconnecting… — retry now' : 'Session ended — reconnect'}
-              </button>
+              <ConnectionBanner
+                // `transient` for BOTH: a closed PTY is a session that ended,
+                // not a failure, and the socket drop heals on its own timer.
+                tone="transient"
+                message={status() === 'reconnecting' ? 'Reconnecting…' : 'Session ended'}
+                retryLabel={status() === 'reconnecting' ? 'Retry now' : 'Reconnect'}
+                onRetry={reconnect}
+                testid="terminal-connection-banner"
+                retryTestid="terminal-reconnect"
+              />
             </div>
           </Show>
         </div>

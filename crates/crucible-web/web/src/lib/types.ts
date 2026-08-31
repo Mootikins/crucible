@@ -546,9 +546,14 @@ interface ErrorEvent {
  * never from the daemon. Must NOT be routed through the daemon-error path — a
  * reconnect must not corrupt an in-flight streaming message.
  */
+/** Transport health of the chat event stream. `reconnecting` means the stream
+ *  dropped and a backoff timer is running — the surface owes the user a retry
+ *  control, because the wait is skippable. */
+export type ConnectionStatus = 'reconnecting' | 'connected';
+
 interface ConnectionEvent {
   type: 'connection';
-  status: 'reconnecting' | 'connected';
+  status: ConnectionStatus;
   message?: string;
 }
 

@@ -9,6 +9,7 @@ import type {
   ContextUsage,
   ChatMode,
   TokenUsage,
+  ConnectionStatus,
 } from '@/lib/types';
 
 type ArraySetter<T> = (value: T[] | ((prev: T[]) => T[])) => void;
@@ -33,6 +34,10 @@ interface ChatEventReducerDeps {
   onTitleChanged: (title: string) => void;
   setPendingInteraction: (request: InteractionRequest | null) => void;
   setError: (value: string | null) => void;
+  /** Transport health of the SSE stream, separate from `setError`. The error
+   * line is a message; this is the STATE that decides whether the surface owes
+   * the user a retry control. */
+  setConnectionStatus: (value: ConnectionStatus) => void;
   setIsLoading: (value: boolean) => void;
   setIsStreaming: (value: boolean) => void;
 }
@@ -357,6 +362,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // Transport reconnect — a transient banner ONLY. Must not touch the
         // streaming message, its content, or currentStreamingMessageId, or a
         // routine idle reconnect would corrupt/drop an in-flight turn.
+        deps.setConnectionStatus(event.status === 'connected' ? 'connected' : 'reconnecting');
         if (event.status === 'connected') {
           deps.setError(null);
         } else {

@@ -6,6 +6,7 @@ import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { listKilns, resolveNotePath } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
+import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
 
 const getFilename = (path: string): string => {
   return path.split('/').pop() ?? path;
@@ -48,7 +49,7 @@ const Tab: Component<{
 };
 
 export const EditorPanel: Component = () => {
-  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error, openFile } = useEditorSafe();
+  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error, openFile, retryFailedOperation } = useEditorSafe();
   const { settings } = useSettingsSafe();
 
   const activeFileData = () => {
@@ -114,13 +115,25 @@ export const EditorPanel: Component = () => {
           </div>
         </Show>
 
+        {/* A failed save leaves the buffer dirty and the bytes unwritten, so
+            the banner carries the save back. `retryFailedOperation` is the
+            actual failed call — see EditorContext. */}
         <Show when={error()}>
-          <div class="mx-4 mt-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 shrink-0">
-              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-            </svg>
-            <span>{error()}</span>
-          </div>
+          {(message) => (
+            <ConnectionBanner
+              class="mx-4 mt-2"
+              tone="error"
+              message={message()}
+              retryLabel="Retry"
+              onRetry={
+                retryFailedOperation()
+                  ? () => void retryFailedOperation()?.()
+                  : undefined
+              }
+              testid="editor-error-banner"
+              retryTestid="editor-error-retry"
+            />
+          )}
         </Show>
 
         <div class="flex-1 overflow-hidden relative">

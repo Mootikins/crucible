@@ -20,6 +20,8 @@ vi.mock('@/contexts/ChatContext', () => ({
     isStreaming: () => false,
     cancelStream: mockCancelStream,
     error: () => null,
+    connectionStatus: () => 'connected',
+    retryConnection: vi.fn(),
     chatMode: () => 'normal',
     setChatMode: mockSetChatMode,
     switchMode: mockSwitchMode,

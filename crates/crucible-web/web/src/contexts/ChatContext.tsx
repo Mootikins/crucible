@@ -16,6 +16,7 @@ import type {
   ContextUsage,
   ChatMode,
   ModeDescriptor,
+  ConnectionStatus,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
 import {
@@ -55,6 +56,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [isStreaming, setIsStreamingRaw] = createSignal(false);
   const [pendingInteraction, setPendingInteractionRaw] = createSignal<InteractionRequest | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  // Transport health, held apart from `error`: the error line also carries
+  // daemon failures ("Failed to send: …"), and a "retry the connection"
+  // control under one of THOSE would offer a cure for the wrong illness.
+  const [connectionStatus, setConnectionStatus] = createSignal<ConnectionStatus>('connected');
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
   const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
   const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
@@ -108,6 +113,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   let eventSourceCleanup: (() => void) | null = null;
+  /** The session the live stream belongs to. `retryConnection` needs it, and
+   *  `props.sessionId` is not it: the stream is opened by an effect that also
+   *  handles the null case, so the two can disagree for a tick. */
+  let streamSessionId: string | null = null;
   let historyAbortController: AbortController | null = null;
   let currentStreamingMessageId: string | null = null;
   let previousSessionId: string | null = null;
@@ -252,6 +261,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setChatMode,
     setPendingInteraction,
     setError,
+    setConnectionStatus,
     setIsLoading,
     setIsStreaming,
   });
@@ -430,6 +440,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (eventSourceCleanup) {
       eventSourceCleanup();
       eventSourceCleanup = null;
+      streamSessionId = null;
     }
     
     // Abort any in-flight history load from a previous session
@@ -466,6 +477,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const sseOpen = new Promise<void>((resolve) => {
       resolveSseOpen = resolve;
     });
+    streamSessionId = newSessionId;
     eventSourceCleanup = subscribeToEvents(newSessionId, handleEvent, resolveSseOpen);
 
     // Lazy creation handoff: the draft surface staged the user's first
@@ -502,6 +514,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (eventSourceCleanup) {
       eventSourceCleanup();
       eventSourceCleanup = null;
+      streamSessionId = null;
     }
     if (historyAbortController) {
       historyAbortController.abort();
@@ -648,6 +661,22 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     currentStreamingMessageId = null;
   };
 
+  /**
+   * Skip the backoff wait.
+   *
+   * `subscribeToEvents`'s cleanup clears the pending timer AND closes the dead
+   * EventSource, so a fresh subscription is a real re-issue of the connect, not
+   * a cosmetic one. The status is NOT set optimistically: the new stream emits
+   * `connection/connected` when it opens, and `connection/reconnecting` when it
+   * fails again, so the banner reports what happened rather than what we hoped.
+   */
+  const retryConnection = () => {
+    const id = streamSessionId;
+    if (!id) return;
+    eventSourceCleanup?.();
+    eventSourceCleanup = subscribeToEvents(id, handleEvent);
+  };
+
   const value: ChatContextValue = {
     sessionId: () => props.sessionId,
     messages: () => messages,
@@ -655,6 +684,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     isStreaming,
     pendingInteraction,
     error,
+    connectionStatus,
+    retryConnection,
     subagentEvents: () => subagentEvents,
     contextUsage,
     chatMode,
@@ -693,6 +724,8 @@ const fallbackChatContext: ChatContextValue = {
   isStreaming: () => false,
   pendingInteraction: () => null,
   error: () => null,
+  connectionStatus: () => 'connected',
+  retryConnection: () => {},
   subagentEvents: () => [],
   contextUsage: () => null,
   chatMode: () => 'normal',

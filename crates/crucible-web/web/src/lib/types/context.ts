@@ -16,6 +16,7 @@ import type {
   ProviderInfo,
   Project,
   EditorFile,
+  ConnectionStatus,
 } from '../types';
 import type { Accessor } from 'solid-js';
 import type { SessionScope } from '@/lib/api';
@@ -32,6 +33,12 @@ export interface ChatContextValue {
   isStreaming: Accessor<boolean>;
   pendingInteraction: Accessor<InteractionRequest | null>;
   error: Accessor<string | null>;
+  /** Transport health of the SSE stream. Separate from `error`, which also
+   * carries daemon-side failures that no reconnect can fix. */
+  connectionStatus: Accessor<ConnectionStatus>;
+  /** Drop the pending backoff and re-open the stream now. A no-op when no
+   * session is bound — there is then nothing to re-subscribe to. */
+  retryConnection: () => void;
   subagentEvents: Accessor<SubagentEvent[]>;
   contextUsage: Accessor<ContextUsage | null>;
   chatMode: Accessor<ChatMode>;
@@ -117,4 +124,8 @@ export interface EditorContextValue {
   updateFileContent: (path: string, content: string) => void;
   isLoading: Accessor<boolean>;
   error: Accessor<string | null>;
+  /** Re-issue the call that produced `error()`, or null when nothing failed.
+   * A failed save leaves the buffer dirty, so the user needs the save back —
+   * not a reload that would discard the edit. */
+  retryFailedOperation: Accessor<(() => Promise<void>) | null>;
 }

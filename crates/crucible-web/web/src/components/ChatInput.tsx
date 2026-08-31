@@ -11,8 +11,9 @@ import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import { ArrowUp, X } from '@/lib/icons';
+import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
 export const ChatInput: Component = () => {
-  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
+  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, connectionStatus, retryConnection, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
   const [input, setInput] = createSignal('');
   let formRef: HTMLFormElement | undefined;
@@ -113,7 +114,23 @@ export const ChatInput: Component = () => {
       class="border-t border-hairline p-3"
       data-testid="chat-input-form"
     >
-      <Show when={error()}>
+      {/* A dropped stream and a daemon-side failure are different faults, so
+          they get different affordances. The stream is skippable-waitable, so
+          it gets the same banner (and the same retry) the terminal has; the
+          daemon error has nothing to re-issue from here and stays a statement. */}
+      <Show when={connectionStatus() === 'reconnecting'}>
+        <ConnectionBanner
+          class="mb-2"
+          tone="transient"
+          message={error() ?? 'Reconnecting…'}
+          retryLabel="Retry now"
+          onRetry={retryConnection}
+          testid="chat-connection-banner"
+          retryTestid="chat-connection-retry"
+        />
+      </Show>
+
+      <Show when={connectionStatus() !== 'reconnecting' && error()}>
         <div class="mb-2 px-2 py-1 text-sm text-error bg-error-dark/20 rounded">
           {error()}
         </div>

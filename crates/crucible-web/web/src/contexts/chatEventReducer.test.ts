@@ -10,6 +10,7 @@ import type {
   ContextUsage,
   ChatMode,
   InteractionRequest,
+  ConnectionStatus,
 } from '@/lib/types';
 
 vi.mock('@/stores/statusBarStore', () => ({
@@ -57,6 +58,7 @@ interface ReducerHarness {
     chatMode: ChatMode;
     pendingInteraction: InteractionRequest | null;
     error: string | null;
+    connectionStatus: ConnectionStatus;
     isLoading: boolean;
     isStreaming: boolean;
   };
@@ -81,6 +83,7 @@ function createHarness(): ReducerHarness {
     chatMode: 'normal',
     pendingInteraction: null,
     error: null,
+    connectionStatus: 'connected',
     isLoading: false,
     isStreaming: false,
   };
@@ -156,6 +159,9 @@ function createHarness(): ReducerHarness {
     },
     setError: (value) => {
       state.error = value;
+    },
+    setConnectionStatus: (value) => {
+      state.connectionStatus = value;
     },
     setIsLoading: (value) => {
       state.isLoading = value;
