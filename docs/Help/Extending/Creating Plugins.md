@@ -494,12 +494,35 @@ return {
 declarations, so a call with the wrong argument type or a tool returning the
 wrong shape is a build failure rather than a runtime surprise. `cru plugin
 stubs` writes those declarations; add `--offline` to build them from your
-working tree rather than from a running daemon.
+working tree rather than from a running daemon. When no generated set exists,
+`cru plugin check` builds one into a temporary directory for the check, so the
+command needs no setup step.
 
-The checker is `luau-lsp`, which is what `just plugin-check` installs and what
-CI runs. Without one installed, `cru plugin check` still proves that every
-file parses and every declared tool parameter type is readable, and reports
-the typecheck as SKIPPED rather than as a pass.
+Pass `--definitions <file>` to check against a set you name.
+
+The checker is `luau-lsp`. `cru plugin check` looks in three places, in this
+order:
+
+1. `CRUCIBLE_LUAU_ANALYZE`, for a binary under another name or outside PATH.
+   A path that names no file is a failure, not a skip.
+2. `target/tools/luau-lsp` beside the running `cru`. This is the pinned build
+   that `just luau-lsp` fetches, so a `cru` built from the checkout needs no
+   install. The location is read relative to the BINARY, never to the
+   directory you run in: a check you point at code you downloaded must not
+   take its type checker from that code.
+3. `luau-lsp` on PATH, then `luau-analyze`.
+
+The command prints which one it used. The daemon's typecheck gates read the
+same three places, so the command and the gates agree about what checked what.
+
+Whichever answers must PROVE it checks types before the check trusts it: it is
+handed a file that assigns a string to a `number` and must complain. A binary
+that runs and reports nothing is refused by name rather than reported as a
+passing typecheck.
+
+Without a checker, `cru plugin check` still proves that every file parses and
+every declared tool parameter type is readable, and reports the typecheck as
+SKIPPED rather than as a pass.
 
 ### What the types do not catch
 

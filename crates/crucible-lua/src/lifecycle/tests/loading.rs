@@ -584,7 +584,10 @@ fn a_plugin_with_both_entry_points_is_reported() {
     std::fs::write(plugin_dir.join("init.lua"), "return { name = 'ambiguous' }\n").unwrap();
     std::fs::write(plugin_dir.join("init.luau"), "return { name = 'ambiguous' }\n").unwrap();
 
-    let report = crate::check_plugin(&plugin_dir, None).expect("check runs");
+    // No checker: this test is about the COLLISION, and what a typecheck adds
+    // depends on what the machine has installed.
+    let report = crate::check_plugin_using(&plugin_dir, None, false, &crate::CheckerChoice::None)
+        .expect("check runs");
     assert!(
         report.findings.iter().any(|f| {
             let text = f.to_string();

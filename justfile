@@ -579,11 +579,27 @@ plugin-check: luau-lsp
     stubs=$(mktemp -d)
     trap 'rm -rf "$stubs"' EXIT
     cargo run -q -p crucible-cli -- plugin stubs --offline --output "$stubs"
-    export CRUCIBLE_LUAU_ANALYZE="$PWD/target/tools/luau-lsp"
+    # No CRUCIBLE_LUAU_ANALYZE here on purpose. `cru plugin check` reads the
+    # pinned `target/tools/luau-lsp` that the `luau-lsp` recipe above just
+    # fetched, so this recipe proves the lookup the documentation describes.
+    # Exporting the variable checked the binary and proved nothing about how
+    # an author's own run would find it.
     failed=0
     for plugin in runtime/plugins/*/; do
-        if ! cargo run -q -p crucible-cli -- plugin check "$plugin" \
-            --definitions "$stubs/cru.d.luau"; then
+        # Captured, not piped: `grep -q` exits on its first match and the
+        # SIGPIPE that follows would fail the whole pipeline under `pipefail`.
+        if out=$(cargo run -q -p crucible-cli -- plugin check "$plugin" \
+            --definitions "$stubs/cru.d.luau"); then
+            printf '%s\n' "$out"
+            # A SKIPPED typecheck exits 0. Reporting that as a pass is the
+            # failure this recipe exists to prevent, so the output has to SAY
+            # the check ran.
+            if ! printf '%s\n' "$out" | grep -q '^typecheck: ran'; then
+                echo "$plugin: no typecheck ran" >&2
+                failed=1
+            fi
+        else
+            printf '%s\n' "$out"
             failed=1
         fi
     done

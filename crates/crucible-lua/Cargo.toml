@@ -49,6 +49,10 @@ oq = { workspace = true }
 # and, in tests, over `handlers::hook_name` — completeness is proved by
 # walking what the compiler knows rather than a second hand-written list.
 strum = { version = "0.28", features = ["derive"] }
+# `Checker::proves_types` writes a deliberately ill-typed file and requires
+# the binary to complain about it. That probe ships, because `cru plugin check`
+# must refuse a "checker" that checks nothing just as the gates do.
+tempfile = { workspace = true }
 
 [dev-dependencies]
 # Tests under `tests/` drive the `PluginManager` test-only API.
@@ -56,5 +60,4 @@ crucible-lua = { path = ".", features = ["test-utils"] }
 # `EnvVarGuard`, for the one test that reads `$CRUCIBLE_CONFIG_DIR` on purpose.
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tempfile = "3"
 proptest = "1"

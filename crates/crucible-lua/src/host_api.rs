@@ -333,6 +333,31 @@ declare test_mocks: {
 declare function mock(partial: any): any
 "#;
 
+/// Every global name the host declares, `cru` included.
+///
+/// Read out of the declarations rather than listed a second time: a list that
+/// can drift from what it describes is the defect class this migration keeps
+/// finding. Without a definitions file the checker reports each of these as an
+/// unknown global against correct code, so a check that has no definitions
+/// drops exactly these diagnostics and keeps every other one.
+pub(crate) fn host_global_names() -> Vec<&'static str> {
+    let mut names = vec!["cru"];
+    for line in HOST_ENVIRONMENT.lines() {
+        let rest = match line.strip_prefix("declare ") {
+            Some(rest) => rest.strip_prefix("function ").unwrap_or(rest),
+            None => continue,
+        };
+        let name = rest
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .next()
+            .unwrap_or_default();
+        if !name.is_empty() {
+            names.push(name);
+        }
+    }
+    names
+}
+
 /// An open file, as `io.open` answers with. Named so the declarations can
 /// refer to it; the host implements it in `luau_compat.rs`.
 /// Payload types: the tables the HOST builds and hands to a plugin callback.

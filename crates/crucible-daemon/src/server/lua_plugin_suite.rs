@@ -323,9 +323,6 @@ mod shipped_plugin_tests {
     fn every_shipped_plugin_typechecks() {
         // Fails when no checker exists, rather than skipping.
         let checker = required_checker();
-        // SAFETY: tests in this module run under nextest, one process per
-        // test, so no other thread is reading the environment concurrently.
-        unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", &checker) };
 
         let stubs = tempfile::TempDir::new().expect("tempdir");
         let definitions = stubs.path().join("cru.d.luau");
@@ -352,8 +349,9 @@ mod shipped_plugin_tests {
             // The suite too. Excluding it hid 46 diagnostics in the shipped
             // plugins, and `mock(...)` now marks the deliberate monkey-patch
             // so the rest of a test file stays checkable.
-            let report = crucible_lua::check_plugin_with(&dir, Some(&definitions), true)
-                .expect("check");
+            let report =
+                crucible_lua::check_plugin_using(&dir, Some(&definitions), true, &checker)
+                    .expect("check");
             assert_eq!(
                 report.typecheck,
                 crucible_lua::TypecheckStatus::Ran,
@@ -390,81 +388,50 @@ mod shipped_plugin_tests {
     /// CI `test` job runs nextest with no such variable and no `luau-lsp`, so
     /// both ran green having checked nothing at all.
     ///
-    /// Three places, in order: the variable an operator set, the pinned binary
-    /// `just luau-lsp` writes, and the PATH. Absent from all three is a
-    /// failure, because the alternative is a tick that means nothing.
-    fn required_checker() -> PathBuf {
-        if let Some(configured) = std::env::var_os("CRUCIBLE_LUAU_ANALYZE") {
-            let path = PathBuf::from(configured);
-            assert!(
-                path.is_file(),
+    /// `crucible_lua::find_checker` looks in the three places — the variable an
+    /// operator set, the pinned binary `just luau-lsp` writes, the PATH — and
+    /// the shipped `cru plugin check` reads exactly the same three. This gate
+    /// used to search that list itself and reach `target/tools`, which the CLI
+    /// did not: the gate typechecked, the CLI printed SKIPPED over the same
+    /// files, and a defect the gate should have caught stayed invisible.
+    ///
+    /// Nothing here writes the environment. The variable is the OPERATOR's
+    /// channel; the gates pass the checker they resolved, so a test cannot
+    /// remove a variable another test is reading on the way out.
+    fn required_checker() -> crucible_lua::CheckerChoice {
+        let choice = crucible_lua::find_checker();
+        let checker = match &choice {
+            crucible_lua::CheckerChoice::Use(checker) => checker,
+            crucible_lua::CheckerChoice::Missing(path) => panic!(
                 "CRUCIBLE_LUAU_ANALYZE names {}, which is not a file",
                 path.display()
-            );
-            assert_is_a_luau_checker(&path);
-            return path;
+            ),
+            crucible_lua::CheckerChoice::None => panic!(
+                "no Luau type checker. These gates check types; without one they \
+                 would pass having proved nothing. Run `just luau-lsp` to fetch \
+                 the pinned build, or set CRUCIBLE_LUAU_ANALYZE to your own."
+            ),
+        };
+        // Whichever of the three it came from, it must PROVE it checks types.
+        // The probe used to run on the env-named binary alone, so the pinned
+        // build and anything called `luau-lsp` on PATH were trusted on their
+        // file name.
+        if let Err(why) = checker.proves_types() {
+            panic!("{why}");
         }
-        let pinned = repo_root().join("target/tools/luau-lsp");
-        if pinned.is_file() {
-            return pinned;
-        }
-        if let Ok(found) = which_on_path("luau-lsp") {
-            return found;
-        }
-        panic!(
-            "no Luau type checker. These gates check types; without one they \
-             would pass having proved nothing. Run `just luau-lsp` to fetch the \
-             pinned build, or set CRUCIBLE_LUAU_ANALYZE to your own."
-        );
+        choice
     }
 
-    /// The binary must PROVE it checks types, by finding one that is wrong.
+    /// The binary behind a resolved choice.
     ///
-    /// `is_file()` was the whole test, and `analyzer_binary` then classifies by
-    /// whether the file name contains "lsp" — so
-    /// `CRUCIBLE_LUAU_ANALYZE=/bin/true` ran, exited 0, produced no
-    /// diagnostics, and every gate reported `TypecheckStatus::Ran` over a
-    /// deliberately broken file. "Something ran" is not "a type checker ran",
-    /// and that distinction is the whole point of these gates.
-    ///
-    /// Not a `--version` probe: `luau-lsp --version` prints a bare `1.69.0`
-    /// with the word "luau" nowhere in it, so a string match would have
-    /// rejected the pinned build. Handing it a file that cannot typecheck and
-    /// requiring a complaint tests the property the gates actually rely on.
-    fn assert_is_a_luau_checker(path: &std::path::Path) {
-        let probe = tempfile::TempDir::new().expect("tempdir");
-        let file = probe.path().join("checker_probe.luau");
-        std::fs::write(&file, "--!strict\nlocal n: number = \"not a number\"\nreturn n\n")
-            .expect("probe");
-
-        // SAFETY: one process per test under nextest.
-        let restore = std::env::var_os("CRUCIBLE_LUAU_ANALYZE");
-        unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", path) };
-        let report = crucible_lua::check_file(&file, None).expect("run the checker");
-        match restore {
-            Some(v) => unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", v) },
-            None => unsafe { std::env::remove_var("CRUCIBLE_LUAU_ANALYZE") },
+    /// One gate runs the checker itself, to prove a definitions file LOADS
+    /// rather than to check a file. `required_checker` answers `Use` or
+    /// panics, so no other variant can reach here.
+    fn checker_binary(choice: &crucible_lua::CheckerChoice) -> &std::path::Path {
+        match choice {
+            crucible_lua::CheckerChoice::Use(checker) => checker.path(),
+            _ => unreachable!("required_checker answers Use or panics"),
         }
-
-        assert!(
-            !report.passed(),
-            "{} reported no problem with a file that assigns a string to a \
-             `number`, so it is not checking types. These gates would be green \
-             having checked nothing.",
-            path.display()
-        );
-    }
-
-    /// First `name` on PATH, executable.
-    fn which_on_path(name: &str) -> Result<PathBuf, ()> {
-        let path = std::env::var_os("PATH").ok_or(())?;
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-        Err(())
     }
 
     /// Every profile's definitions file must LOAD.
@@ -506,7 +473,7 @@ mod shipped_plugin_tests {
                 "{} renders no definitions file",
                 profile.name()
             );
-            let output = std::process::Command::new(&checker)
+            let output = std::process::Command::new(checker_binary(&checker))
                 .arg("analyze")
                 .arg(format!("--definitions={}", definitions.display()))
                 .arg(&probe)
@@ -587,8 +554,6 @@ mod shipped_plugin_tests {
         ];
 
         let checker = required_checker();
-        // SAFETY: as above — one process per test under nextest.
-        unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", &checker) };
 
         let root = repo_root();
         let stubs = tempfile::TempDir::new().expect("tempdir");
@@ -618,7 +583,8 @@ mod shipped_plugin_tests {
             let definitions = stubs.path().join(profile.definitions_file());
             // One file at a time: `check_plugin` takes a directory, and these
             // are loose files whose neighbours may run on a different VM.
-            let report = crucible_lua::check_file(&file, Some(&definitions)).expect("check");
+            let report =
+                crucible_lua::check_file_using(&file, Some(&definitions), &checker).expect("check");
             assert_eq!(
                 report.typecheck,
                 crucible_lua::TypecheckStatus::Ran,

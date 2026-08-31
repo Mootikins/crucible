@@ -48,6 +48,10 @@ crucible-core = { path = "../crucible-core" }
 crucible-lua = { path = "../crucible-lua" }
 
 crucible-daemon = { path = "../crucible-daemon", default-features = false }
+# `cru plugin check` builds the `cru.*` declarations into a temporary
+# directory when no generated set exists, so the check reads the same
+# declarations the daemon's gates do.
+tempfile = { workspace = true }
 
 
 crucible-oil = { path = "../crucible-oil", default-features = false }
