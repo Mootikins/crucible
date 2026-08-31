@@ -202,8 +202,13 @@ pub fn register_statusline_exprs(
         }
     };
 
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.statusline", statusline);
+
     let set_registry = Arc::clone(&registry);
-    let set_fn = lua.create_function(
+    ns.func(
+        "set",
+        "(session_id: string, key: string, value: string) -> \
+         { ok: boolean, value: string?, reason: string?, unchanged: boolean? }",
         move |lua, (session_id, key, value): (String, String, String)| {
             let result = lua.create_table()?;
             match set_registry.set(&session_id, &key, &value) {
@@ -222,13 +227,27 @@ pub fn register_statusline_exprs(
             Ok(result)
         },
     )?;
-    statusline.set("set", set_fn)?;
+    ns.doc(
+        "set",
+        "Fill the slot `cru.statusline.expr(key)` renders. Answers a result \
+         table rather than raising. `ok = false` with `unchanged = true` means \
+         the value was already that, which is a normal outcome — repaint on \
+         `ok`, not on the absence of it.",
+    );
 
     let clear_registry = Arc::clone(&registry);
-    let clear_fn = lua.create_function(move |_, (session_id, key): (String, String)| {
-        Ok(clear_registry.clear(&session_id, &key))
-    })?;
-    statusline.set("clear", clear_fn)?;
+    ns.func(
+        "clear",
+        "(session_id: string, key: string) -> boolean",
+        move |_, (session_id, key): (String, String)| {
+            Ok(clear_registry.clear(&session_id, &key))
+        },
+    )?;
+    ns.doc(
+        "clear",
+        "Empty one slot. Answers whether the key had a value; clearing a key \
+         that was never set is not an error.",
+    );
 
     Ok(())
 }

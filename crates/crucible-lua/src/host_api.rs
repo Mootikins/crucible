@@ -353,6 +353,13 @@ export type PermissionDecision = {
     allow: boolean?,
     deny: boolean?,
 }?
+
+-- One piece of a statusline. Opaque: it is Rust userdata, its fields are
+-- private, and the only thing a config does with one is hand it back to
+-- `cru.statusline.setup` or wrap it in `when`/`any`. Aliased to `any` rather
+-- than to a table shape so that the bare items (`cru.statusline.mode`, which
+-- the walk renders as a value) stay assignable to it.
+export type StatusItem = any
 "#;
 
 const FILE_TYPE: &str = r#"

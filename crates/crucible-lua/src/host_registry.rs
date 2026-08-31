@@ -176,6 +176,17 @@ fn unchecked_args() -> LuaType {
 /// ...children: OilNode)` tells them something that `(...any)` does not. What
 /// it costs is stated here rather than implied — nothing about those
 /// arguments is verified.
+/// A homogeneous variadic: every argument has the same Rust type.
+///
+/// Unlike `MultiValue` this DOES carry a type, so the declaration is held to
+/// it: `Variadic<String>` may be declared `(...string)` and not `(...number)`.
+/// The arity is still open, which is what a variadic means.
+impl<T: LuauValue> LuauArgs for mlua::Variadic<T> {
+    fn arg_types() -> Vec<LuaType> {
+        vec![LuaType::Variadic(Box::new(T::ty()))]
+    }
+}
+
 impl LuauArgs for mlua::MultiValue {
     fn arg_types() -> Vec<LuaType> {
         vec![unchecked_args()]
@@ -218,8 +229,15 @@ luau_args_tuple!(A, B, C, D, E, F, G, H);
 ///
 /// Held in the VM's app data, so the declarations a generator renders come
 /// from the same VM it walked rather than from a table that hopes to match.
+#[derive(Default)]
+struct Registered {
+    types: HashMap<String, LuaType>,
+    /// Prose for a path, when a registration wrote some. See [`Ns::doc`].
+    docs: HashMap<String, String>,
+}
+
 #[derive(Clone, Default)]
-pub struct HostSignatures(Arc<Mutex<HashMap<String, LuaType>>>);
+pub struct HostSignatures(Arc<Mutex<Registered>>);
 
 impl HostSignatures {
     /// The signatures registered on this VM.
@@ -235,21 +253,32 @@ impl HostSignatures {
     }
 
     fn record(&self, path: &str, ty: LuaType) {
-        if let Ok(mut map) = self.0.lock() {
-            map.insert(path.to_string(), ty);
+        if let Ok(mut inner) = self.0.lock() {
+            inner.types.insert(path.to_string(), ty);
+        }
+    }
+
+    fn record_doc(&self, path: &str, text: &str) {
+        if let Ok(mut inner) = self.0.lock() {
+            inner.docs.insert(path.to_string(), text.to_string());
         }
     }
 
     /// The declared type of one path, if it has one.
     pub fn get(&self, path: &str) -> Option<LuaType> {
-        self.0.lock().ok()?.get(path).cloned()
+        self.0.lock().ok()?.types.get(path).cloned()
+    }
+
+    /// The prose written at one path's registration, if any.
+    pub fn doc(&self, path: &str) -> Option<String> {
+        self.0.lock().ok()?.docs.get(path).cloned()
     }
 
     /// Every declared path.
     pub fn paths(&self) -> Vec<String> {
         self.0
             .lock()
-            .map(|map| map.keys().cloned().collect())
+            .map(|inner| inner.types.keys().cloned().collect())
             .unwrap_or_default()
     }
 }
@@ -348,6 +377,21 @@ impl<'lua> Ns<'lua> {
         Ok(())
     }
 
+    /// Attach prose to the member just registered.
+    ///
+    /// For what the TYPE cannot say. `cru.timer.sleep` takes seconds, and
+    /// `(seconds: number) -> ()` states the unit in a parameter name that no
+    /// tool checks and no editor shows. A function that RAISES rather than
+    /// answering with nil has no type at all. Both are the half a reader has to
+    /// be told, and both used to live only in a Rust comment that stopped at
+    /// the crate boundary.
+    ///
+    /// Call it after the `func` it describes; a path with no member is still
+    /// recorded, and simply describes nothing.
+    pub fn doc(&mut self, name: &str, text: &str) {
+        self.signatures.record_doc(&format!("{}.{name}", self.path), text);
+    }
+
     /// Publish the table onto `cru`.
     pub fn publish(self) -> Result<Table, LuaError> {
         let leaf = self.path.rsplit('.').next().unwrap_or(&self.path);
@@ -390,6 +434,17 @@ impl<'lua> Ns<'lua> {
                 LuaType::Optional(Box::new(param.ty.clone()))
             } else {
                 param.ty.clone()
+            };
+            // A variadic parameter stores its ELEMENT type, on both sides:
+            // `(...StatusItem)` parses to one param whose `ty` is `StatusItem`,
+            // and `Variadic<Value>` yields `Variadic(Any)`. Comparing the
+            // element against the whole variadic reports the element as wrong
+            // when it is exactly right.
+            let expected = match expected {
+                LuaType::Variadic(inner) if param.name == crate::signature::VARIADIC => {
+                    inner.as_ref()
+                }
+                other => other,
             };
             if !refines(&declared, expected) {
                 return Err(LuaError::Runtime(format!(

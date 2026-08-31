@@ -457,18 +457,26 @@ pub fn register_statusline_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaEr
 /// for code highlighting. `colorscheme` is also the word Neovim uses for
 /// exactly this — the thing highlight groups resolve against.
 pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
-    let theme = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::new(lua, "cru.colorscheme")?;
 
-    // cru.colorscheme.setup(config) — parses and stores the theme config
-    let setup_fn = lua.create_function(|lua, config: Table| {
-        let theme_config = crate::theme::parse_theme_from_table(lua, &config);
-        debug!("Theme config parsed successfully: {}", theme_config.name);
-        set_theme_config(theme_config);
-        Ok(())
-    })?;
-    theme.set("setup", setup_fn)?;
+    ns.func(
+        "setup",
+        "(palette: { [string]: any }) -> ()",
+        |lua, config: Table| {
+            let theme_config = crate::theme::parse_theme_from_table(lua, &config);
+            debug!("Theme config parsed successfully: {}", theme_config.name);
+            set_theme_config(theme_config);
+            Ok(())
+        },
+    )?;
+    ns.doc(
+        "setup",
+        "Replace the colour palette. Never raises: a key it does not recognise \
+         is ignored and the rest of the table still applies, so a palette \
+         written for a newer Crucible still loads on an older one.",
+    );
 
-    cru.set("colorscheme", theme)?;
+    cru.set("colorscheme", ns.table().clone())?;
     Ok(())
 }
 
@@ -546,18 +554,26 @@ fn register_include(lua: &Lua, ns: &Table, config_dir: PathBuf) -> Result<(), Lu
 /// not geometry. `theme = "name"` picks a syntect theme by name; `colors = {}`
 /// overrides individual scopes on top of whatever the colorscheme derives.
 pub fn register_syntax_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
-    let syntax = lua.create_table()?;
-    let setup_fn = lua.create_function(|lua, config: Table| {
-        let json: serde_json::Value = lua
-            .from_value(Value::Table(config))
-            .map_err(mlua::Error::external)?;
-        if let Ok(mut state) = get_config().write() {
-            state.syntax = Some(json);
-        }
-        Ok(())
-    })?;
-    syntax.set("setup", setup_fn)?;
-    cru.set("syntax", syntax)?;
+    let mut ns = crate::host_registry::Ns::new(lua, "cru.syntax")?;
+    ns.func(
+        "setup",
+        "(config: { [string]: any }) -> ()",
+        |lua, config: Table| {
+            let json: serde_json::Value = lua
+                .from_value(Value::Table(config))
+                .map_err(mlua::Error::external)?;
+            if let Ok(mut state) = get_config().write() {
+                state.syntax = Some(json);
+            }
+            Ok(())
+        },
+    )?;
+    ns.doc(
+        "setup",
+        "Store the syntax-highlighting configuration. RAISES when the table \
+         holds a value that does not convert to JSON — a function, or a cycle.",
+    );
+    cru.set("syntax", ns.table().clone())?;
     Ok(())
 }
 

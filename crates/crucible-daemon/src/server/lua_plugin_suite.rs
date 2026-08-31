@@ -364,6 +364,82 @@ mod shipped_plugin_tests {
         );
     }
 
+    /// Every profile's definitions file must LOAD.
+    ///
+    /// A definitions file that names an undefined type is rejected WHOLE by
+    /// `luau-lsp`, which then reports "Unknown global 'cru'" for every line of
+    /// every plugin. That is loud, but it is loud in a way that reads like a
+    /// hundred plugin bugs rather than one host bug, and the message that says
+    /// what really happened goes to stderr with an `[ERROR]` tag that no gate
+    /// looked at.
+    ///
+    /// It has happened twice. Once from rendering `(...: any) -> any`, which is
+    /// not valid Luau, and once from declaring a `StatusItem` return before
+    /// exporting the type. Both times a plugin author would have seen a
+    /// definitions file that appeared to do nothing.
+    #[test]
+    fn every_profile_definitions_file_loads() {
+        let stubs = tempfile::TempDir::new().expect("tempdir");
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("loader");
+        loader
+            .generate_stubs(stubs.path())
+            .expect("generate declarations");
+
+        let Some(checker) = std::env::var_os("CRUCIBLE_LUAU_ANALYZE") else {
+            // Nothing to run. Say so rather than passing: a definitions file
+            // nobody loaded is a definitions file nobody proved loads.
+            eprintln!(
+                "every_profile_definitions_file_loads: CRUCIBLE_LUAU_ANALYZE is \
+                 unset, so nothing checked whether the definitions parse"
+            );
+            return;
+        };
+
+        // A file that is syntactically fine but references an undefined type
+        // still loads; the reference has to be USED. An empty Lua file is
+        // enough — the loader parses the whole definitions file first.
+        let probe = stubs.path().join("probe.lua");
+        std::fs::write(&probe, "return {}\n").expect("probe");
+
+        let mut broken = Vec::new();
+        for profile in crate::vm_profiles::VmProfile::all() {
+            let definitions = stubs.path().join(profile.definitions_file());
+            assert!(
+                definitions.is_file(),
+                "{} renders no definitions file",
+                profile.name()
+            );
+            let output = std::process::Command::new(&checker)
+                .arg("analyze")
+                .arg(format!("--definitions={}", definitions.display()))
+                .arg(&probe)
+                .output()
+                .expect("run the checker");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stderr.contains("Failed to read definitions")
+                || stdout.contains("Failed to read definitions")
+            {
+                broken.push(format!(
+                    "{} ({}): {}{}",
+                    profile.name(),
+                    profile.definitions_file(),
+                    stdout.trim(),
+                    stderr.trim()
+                ));
+            }
+        }
+
+        assert!(
+            broken.is_empty(),
+            "a definitions file did not load, so every `cru.*` in every plugin \
+             checked against it reads as an unknown global:\n{}",
+            broken.join("\n")
+        );
+    }
+
     /// Every OTHER `.lua` file Crucible ships, checked against the profile of
     /// the VM it actually runs on.
     ///

@@ -33,6 +33,15 @@ struct LuaInput;
 
 impl UserData for LuaInput {}
 
+/// A statusline item is USERDATA, so `Ns` needs to be told what to call it.
+/// Named rather than structural: the fields are private to Rust and a plugin
+/// only ever passes one back to `cru.statusline.setup`.
+impl crate::host_registry::LuauValue for LuaItem {
+    fn ty() -> crate::signature::LuaType {
+        crate::signature::LuaType::Named("StatusItem".to_string())
+    }
+}
+
 impl UserData for LuaItem {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // item:hl("Group")
@@ -117,49 +126,88 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
         statusline.set(name, lua.create_userdata(LuaItem(item))?)?;
     }
 
-    // sl.text("literal")
-    let text_fn = lua.create_function(|_, s: String| Ok(LuaItem(StatusItem::Text(s))))?;
-    statusline.set("text", text_fn)?;
+    // The five constructors, each declared beside its closure. `Ns::over` —
+    // the table already exists and holds the bare items placed above.
+    let mut ns = crate::host_registry::Ns::over(lua, "cru.statusline", statusline.clone());
 
-    // sl.any(a, b, ...) — first non-empty wins.
-    let any_fn = lua.create_function(|_, args: mlua::Variadic<Value>| {
-        Ok(LuaItem(StatusItem::Any(
-            args.iter().filter_map(value_to_item).collect(),
-        )))
+    ns.func("text", "(literal: string) -> StatusItem", |_, s: String| {
+        Ok(LuaItem(StatusItem::Text(s)))
     })?;
-    statusline.set("any", any_fn)?;
+    ns.doc(
+        "text",
+        "A literal string. Rendered exactly as given, with no substitution.",
+    );
 
-    // sl.when("streaming", item)
-    let when_fn = lua.create_function(|_, (cond, item): (String, Value)| {
-        let Some(cond) = StatusCond::from_name(&cond) else {
-            return Err(mlua::Error::RuntimeError(format!(
-                "unknown statusline condition '{cond}'"
-            )));
-        };
-        let Some(item) = value_to_item(&item) else {
-            return Err(mlua::Error::RuntimeError(
-                "sl.when needs a renderable item".to_string(),
-            ));
-        };
-        Ok(LuaItem(StatusItem::When {
-            cond,
-            item: Box::new(item),
-        }))
+    // First NON-EMPTY wins, so the last argument is the fallback. Anything that
+    // is not a renderable item is dropped rather than raising, because a nil
+    // from an optional provider is the ordinary case here.
+    ns.func(
+        "any",
+        "(...StatusItem) -> StatusItem",
+        |_, args: mlua::Variadic<Value>| {
+            Ok(LuaItem(StatusItem::Any(
+                args.iter().filter_map(value_to_item).collect(),
+            )))
+        },
+    )?;
+    ns.doc(
+        "any",
+        "The first argument that renders to something non-empty. Later \
+         arguments are fallbacks. An argument that is not a renderable item is \
+         skipped rather than refused.",
+    );
+
+    ns.func(
+        "when",
+        "(condition: string, item: StatusItem) -> StatusItem",
+        |_, (cond, item): (String, Value)| {
+            let Some(cond) = StatusCond::from_name(&cond) else {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "unknown statusline condition '{cond}'"
+                )));
+            };
+            let Some(item) = value_to_item(&item) else {
+                return Err(mlua::Error::RuntimeError(
+                    "sl.when needs a renderable item".to_string(),
+                ));
+            };
+            Ok(LuaItem(StatusItem::When {
+                cond,
+                item: Box::new(item),
+            }))
+        },
+    )?;
+    ns.doc(
+        "when",
+        "Render `item` only while `condition` holds. RAISES on a condition name \
+         it does not know, and on an argument that is not a renderable item — \
+         a silently blank statusline is far harder to diagnose.",
+    );
+
+    ns.func("expr", "(key: string) -> StatusItem", |_, key: String| {
+        Ok(LuaItem(StatusItem::Expr { key }))
     })?;
-    statusline.set("when", when_fn)?;
+    ns.doc(
+        "expr",
+        "A slot filled from `cru.statusline.set(session, key, value)`. Renders \
+         empty until something sets that key.",
+    );
 
-    // sl.expr("key") — placed here, populated by a daemon-side provider.
-    let expr_fn = lua.create_function(|_, key: String| Ok(LuaItem(StatusItem::Expr { key })))?;
-    statusline.set("expr", expr_fn)?;
-
-    // sl.input — the editor's position within the prompt region.
-    statusline.set("input", LuaInput)?;
-
-    let setup_fn = lua.create_function(|_, config: Table| {
+    ns.func("setup", "(layout: { [string]: any }) -> ()", |_, config: Table| {
         crate::config::set_layout(layout_from_setup_table(&config));
         Ok(())
     })?;
-    statusline.set("setup", setup_fn)?;
+    ns.doc(
+        "setup",
+        "Place items into the regions `top`, `prompt` and `bottom`. Replaces \
+         the whole layout. A key that is not a region places nothing and logs a \
+         warning; it is not an error, because the old spelling for a bar was a \
+         name.",
+    );
+
+    // sl.input — the editor's position within the prompt region. A marker
+    // value, not a function.
+    statusline.set("input", LuaInput)?;
 
     Ok(())
 }

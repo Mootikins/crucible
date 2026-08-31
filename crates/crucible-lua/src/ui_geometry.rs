@@ -205,13 +205,21 @@ pub fn geometry_from_lua(config: &Table) -> UiGeometry {
 /// the table configures, and it ends that collision: `cru.ui` asks, and
 /// `cru.geometry` shapes surfaces.
 pub fn register_geometry_namespace(lua: &Lua, cru: &Table) -> Result<(), crate::error::LuaError> {
-    let geometry = lua.create_table()?;
-    let setup_fn = lua.create_function(|_, config: Table| {
-        crate::config::set_ui_geometry(geometry_from_lua(&config));
-        Ok(())
-    })?;
-    geometry.set("setup", setup_fn)?;
-    cru.set("geometry", geometry)?;
+    let mut ns = crate::host_registry::Ns::new(lua, "cru.geometry")?;
+    ns.func(
+        "setup",
+        "(geometry: { [string]: any }) -> ()",
+        |_, config: Table| {
+            crate::config::set_ui_geometry(geometry_from_lua(&config));
+            Ok(())
+        },
+    )?;
+    ns.doc(
+        "setup",
+        "Set the surface geometry — borders, padding and widths. Replaces the \
+         whole geometry. An unrecognised key is ignored rather than refused.",
+    );
+    cru.set("geometry", ns.table().clone())?;
     Ok(())
 }
 

@@ -51,6 +51,13 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
             Ok(())
         },
     )?;
+    timer.doc(
+        "sleep",
+        "Yield for `seconds`. SECONDS, not milliseconds — the parameter name is \
+         the only statement of the unit, and nothing checks a parameter name. \
+         Raises on a negative or non-finite duration. Does not block the \
+         runtime: other tasks run while this one waits.",
+    );
 
     // Run `body` with a deadline. Answers `(true, result)` on success,
     // `(false, "timeout")` on the deadline, and `(false, message)` when the
@@ -72,6 +79,13 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
             }
         },
     )?;
+    timer.doc(
+        "timeout",
+        "Run `body` with a deadline in SECONDS. Answers `(true, result)` when \
+         the body finished, `(false, \"timeout\")` when the deadline passed, and \
+         `(false, message)` when the body raised — so read the first value to \
+         know which of the two the second one is.",
+    );
 
     // timer.spawn(fn) — spawn an async Lua function as an independent task.
     // The function runs concurrently with the caller (fire-and-forget).

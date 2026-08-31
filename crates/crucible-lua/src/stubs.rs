@@ -252,13 +252,36 @@ fn render_stubs(lua: &Lua) -> Result<RenderedStubs, LuaError> {
         out.push_str(" = {}\n\n");
     }
 
+    // Every entry used to be the literal string "Lua API function <path>",
+    // which told a reader exactly what the path already told them. The prose a
+    // registration wrote comes first; failing that, the DECLARED TYPE, which is
+    // real information and exists for all of them; the placeholder survives only
+    // for a function with neither.
+    let signatures = crate::host_registry::HostSignatures::of(lua);
     let mut docs = BTreeMap::new();
     for function in &functions {
-        let documentation = format!("Lua API function {}", function.path);
+        let documentation = match (
+            signatures.doc(&function.path),
+            signatures.get(&function.path),
+        ) {
+            (Some(prose), Some(ty)) => format!("{prose}\n---\n--- `{}`", ty.to_luau()),
+            (Some(prose), None) => prose,
+            (None, Some(ty)) => format!("`{}`", ty.to_luau()),
+            (None, None) => format!("Lua API function {}", function.path),
+        };
 
-        out.push_str("--- ");
-        out.push_str(&documentation);
-        out.push('\n');
+        for (index, line) in documentation.lines().enumerate() {
+            if index == 0 {
+                out.push_str("--- ");
+            } else if line.starts_with("---") {
+                // Already a marker line (the separator above).
+                out.push_str("");
+            } else {
+                out.push_str("--- ");
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
 
         if function.ui_only {
             out.push_str("---@note ");

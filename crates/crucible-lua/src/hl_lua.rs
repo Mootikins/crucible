@@ -37,29 +37,46 @@ fn group_from_lua(table: &Table) -> HlGroup {
 
 /// Register `cru.hl` on an existing `cru` table.
 pub fn register_hl_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
-    let hl = lua.create_table()?;
+    let mut ns = crate::host_registry::Ns::new(lua, "cru.hl")?;
 
-    // cru.hl.set(name, spec)
-    let set_fn = lua.create_function(|_, (name, spec): (String, Table)| {
-        crate::config::set_hl_group(name, group_from_lua(&spec));
-        Ok(())
-    })?;
-    hl.set("set", set_fn)?;
+    ns.func(
+        "set",
+        "(group: string, spec: { fg: string?, bg: string?, bold: boolean?, \
+         dim: boolean?, italic: boolean?, underline: boolean?, link: string? }) -> ()",
+        |_, (name, spec): (String, Table)| {
+            crate::config::set_hl_group(name, group_from_lua(&spec));
+            Ok(())
+        },
+    )?;
+    ns.doc(
+        "set",
+        "Define one highlight group. A colour may name a palette entry, which \
+         resolves against whatever `cru.colorscheme.setup` is in force rather \
+         than at the moment of this call.",
+    );
 
-    // cru.hl.link(from, to) — sugar for set(from, { link = to })
-    let link_fn = lua.create_function(|_, (from, to): (String, String)| {
-        crate::config::set_hl_group(
-            from,
-            HlGroup {
-                link: Some(to),
-                ..Default::default()
-            },
-        );
-        Ok(())
-    })?;
-    hl.set("link", link_fn)?;
+    ns.func(
+        "link",
+        "(from: string, to: string) -> ()",
+        |_, (from, to): (String, String)| {
+            crate::config::set_hl_group(
+                from,
+                HlGroup {
+                    link: Some(to),
+                    ..Default::default()
+                },
+            );
+            Ok(())
+        },
+    )?;
+    ns.doc(
+        "link",
+        "Point one group at another. The same as `cru.hl.set(from, { link = to })`. \
+         A link to a group that does not exist is not an error; it renders \
+         unstyled.",
+    );
 
-    cru.set("hl", hl)?;
+    cru.set("hl", ns.table().clone())?;
     Ok(())
 }
 
