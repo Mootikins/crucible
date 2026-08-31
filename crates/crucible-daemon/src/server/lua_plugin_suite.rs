@@ -401,6 +401,7 @@ mod shipped_plugin_tests {
                 "CRUCIBLE_LUAU_ANALYZE names {}, which is not a file",
                 path.display()
             );
+            assert_is_a_luau_checker(&path);
             return path;
         }
         let pinned = repo_root().join("target/tools/luau-lsp");
@@ -414,6 +415,43 @@ mod shipped_plugin_tests {
             "no Luau type checker. These gates check types; without one they \
              would pass having proved nothing. Run `just luau-lsp` to fetch the \
              pinned build, or set CRUCIBLE_LUAU_ANALYZE to your own."
+        );
+    }
+
+    /// The binary must PROVE it checks types, by finding one that is wrong.
+    ///
+    /// `is_file()` was the whole test, and `analyzer_binary` then classifies by
+    /// whether the file name contains "lsp" — so
+    /// `CRUCIBLE_LUAU_ANALYZE=/bin/true` ran, exited 0, produced no
+    /// diagnostics, and every gate reported `TypecheckStatus::Ran` over a
+    /// deliberately broken file. "Something ran" is not "a type checker ran",
+    /// and that distinction is the whole point of these gates.
+    ///
+    /// Not a `--version` probe: `luau-lsp --version` prints a bare `1.69.0`
+    /// with the word "luau" nowhere in it, so a string match would have
+    /// rejected the pinned build. Handing it a file that cannot typecheck and
+    /// requiring a complaint tests the property the gates actually rely on.
+    fn assert_is_a_luau_checker(path: &std::path::Path) {
+        let probe = tempfile::TempDir::new().expect("tempdir");
+        let file = probe.path().join("checker_probe.luau");
+        std::fs::write(&file, "--!strict\nlocal n: number = \"not a number\"\nreturn n\n")
+            .expect("probe");
+
+        // SAFETY: one process per test under nextest.
+        let restore = std::env::var_os("CRUCIBLE_LUAU_ANALYZE");
+        unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", path) };
+        let report = crucible_lua::check_file(&file, None).expect("run the checker");
+        match restore {
+            Some(v) => unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", v) },
+            None => unsafe { std::env::remove_var("CRUCIBLE_LUAU_ANALYZE") },
+        }
+
+        assert!(
+            !report.passed(),
+            "{} reported no problem with a file that assigns a string to a \
+             `number`, so it is not checking types. These gates would be green \
+             having checked nothing.",
+            path.display()
         );
     }
 

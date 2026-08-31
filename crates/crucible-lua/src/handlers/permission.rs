@@ -148,6 +148,31 @@ pub fn register_permission_hook_api(
     Ok(())
 }
 
+/// The table a permission hook receives.
+///
+/// One function so `PermissionRequest` in `host_api` has something to be
+/// checked against. The declaration was a hand-written constant beside a
+/// hand-written table and nothing held the two together: a field added here
+/// and missing there becomes a false type error at every correct read of it,
+/// and a field dropped here leaves the declaration lying the other way.
+/// `the_permission_payload_matches_its_declaration` compares them.
+pub(crate) fn build_request_table(
+    lua: &Lua,
+    request: &crate::PermissionRequest,
+) -> LuaResult<Table> {
+    let request_table = lua.create_table()?;
+    request_table.set("tool_name", request.tool_name.as_str())?;
+    request_table.set("args", lua.to_value(&request.args)?)?;
+    if let Some(ref path) = request.file_path {
+        request_table.set("file_path", path.as_str())?;
+    }
+    if let Some(ref mode) = request.mode {
+        request_table.set("mode", mode.as_str())?;
+    }
+    request_table.set("is_safe", request.is_safe)?;
+    Ok(request_table)
+}
+
 /// Execute permission hooks and return the result
 ///
 /// Executes all registered permission hooks in order. The first hook to return
@@ -189,16 +214,7 @@ pub fn execute_permission_hooks(
         return Ok(PermissionHookResult::Prompt);
     }
 
-    let request_table = lua.create_table()?;
-    request_table.set("tool_name", request.tool_name.as_str())?;
-    request_table.set("args", lua.to_value(&request.args)?)?;
-    if let Some(ref path) = request.file_path {
-        request_table.set("file_path", path.as_str())?;
-    }
-    if let Some(ref mode) = request.mode {
-        request_table.set("mode", mode.as_str())?;
-    }
-    request_table.set("is_safe", request.is_safe)?;
+    let request_table = build_request_table(lua, request)?;
 
     // Lower priority first, registration order breaking ties (`sort_by_key` is
     // stable). First non-nil answer wins, so this ordering is what decides
@@ -259,4 +275,54 @@ pub fn execute_permission_hooks(
     }
 
     Ok(PermissionHookResult::Prompt)
+}
+
+#[cfg(test)]
+mod payload_contract {
+    use super::*;
+
+    /// The payload table and its declared type must name the SAME fields.
+    ///
+    /// B1 asked for a payload record checked at registration the way a
+    /// function's signature is. That mechanism was never built — the type is a
+    /// hand-written string in `host_api::PAYLOAD_TYPES` and the table is
+    /// hand-written here — so nothing noticed when the two drifted. Adding a
+    /// field to the Rust and not the declaration produces a false type error
+    /// at every correct read of it; dropping one leaves the declaration lying
+    /// the other way. This is the narrower thing that IS testable: the field
+    /// names, compared.
+    #[test]
+    fn the_permission_payload_matches_its_declaration() {
+        let lua = Lua::new();
+        // Every optional field populated, so the table carries its whole
+        // surface rather than the subset a particular request happens to fill.
+        let request = crate::PermissionRequest {
+            tool_name: "bash".to_string(),
+            args: serde_json::json!({ "command": "ls" }),
+            file_path: Some("/tmp/x".to_string()),
+            mode: Some("plan".to_string()),
+            is_safe: false,
+        };
+        let table = build_request_table(&lua, &request).expect("build the payload");
+
+        let built: std::collections::BTreeSet<String> = table
+            .pairs::<String, mlua::Value>()
+            .flatten()
+            .map(|(key, _)| key)
+            .collect();
+
+        let declared: std::collections::BTreeSet<String> =
+            match crate::signature::LuaType::parse(crate::host_api::PERMISSION_REQUEST) {
+                Ok(crate::signature::LuaType::Record(fields)) => {
+                    fields.into_iter().map(|field| field.name).collect()
+                }
+                other => panic!("PermissionRequest must parse as a record, got {other:?}"),
+            };
+
+        assert_eq!(
+            built, declared,
+            "the payload table and `PermissionRequest` name different fields. \
+             Add the field to both, or remove it from both."
+        );
+    }
 }

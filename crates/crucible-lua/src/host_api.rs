@@ -344,14 +344,22 @@ declare function mock(partial: any): any
 /// Only fixed-shape payloads appear here. `cru.on`'s handler takes
 /// `(ctx: any, payload: any)` because the payload shape varies per event name,
 /// and a union of every event would type nothing usefully.
-pub(crate) const PAYLOAD_TYPES: &str = r#"
-export type PermissionRequest = {
-    tool_name: string,
-    args: any,
-    file_path: string?,
-    mode: string?,
-    is_safe: boolean,
-}
+/// The table `execute_permission_hooks` builds and hands to a hook.
+///
+/// A constant rather than a literal inside [`PAYLOAD_TYPES`] so a test can
+/// parse it and compare its fields against the Rust that builds the table —
+/// see `handlers::permission::payload_contract`. B1 asked for a payload
+/// record checked at registration; this is the narrower thing that exists.
+pub(crate) const PERMISSION_REQUEST: &str = "{ \
+    tool_name: string, \
+    args: any, \
+    file_path: string?, \
+    mode: string?, \
+    is_safe: boolean \
+}";
+
+const PAYLOAD_TYPES_TEMPLATE: &str = r#"
+export type PermissionRequest = {PERMISSION_REQUEST}
 
 -- nil means "no opinion, show the normal prompt". A table with neither
 -- `allow` nor `deny` true means the same thing.
@@ -400,6 +408,12 @@ export type WebSocket = {
     close: (self: WebSocket) -> (),
 }
 "#;
+
+/// [`PAYLOAD_TYPES_TEMPLATE`] with the field lists filled in from the
+/// constants a test can parse.
+fn payload_types() -> String {
+    PAYLOAD_TYPES_TEMPLATE.replace("{PERMISSION_REQUEST}", PERMISSION_REQUEST)
+}
 
 const FILE_TYPE: &str = r#"
 export type LuaFile = {
@@ -559,7 +573,7 @@ pub fn render_declarations_with(
     }
     out.push('\n');
     out.push_str(FILE_TYPE.trim_start());
-    out.push_str(PAYLOAD_TYPES);
+    out.push_str(&payload_types());
     out.push_str(OIL_TYPES);
     out.push_str(HOST_ENVIRONMENT);
     out.push('\n');
