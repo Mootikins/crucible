@@ -1,3 +1,4 @@
+--!strict
 --- daily-notes — create and navigate dated journal notes.
 ---
 --- Paths resolve against the KILN, never the process working directory. The
@@ -49,7 +50,7 @@ end
 --- where it used to resolve, once, and move NOTHING: never relocate user
 --- data on their behalf.
 local warned_legacy = false
-local function warn_if_legacy_dir(resolved)
+local function warn_if_legacy_dir(resolved: string): ()
     if warned_legacy then return end
     local ok, seen = pcall(cru.fs.is_dir, resolved)
     if ok and seen then return end
@@ -65,7 +66,7 @@ end
 
 --- The root the journal folder hangs off: the active kiln, else the
 --- workspace, else nil.
-local function resolve_root()
+local function resolve_root(): string?
     local active = cru.kiln and cru.kiln.active
     if type(active) == "string" then
         local ok, root = pcall(cru.kiln.path, active)
@@ -80,7 +81,7 @@ local function resolve_root()
     return nil
 end
 
-local function notes_dir()
+local function notes_dir(): string
     if config.folder:sub(1, 1) == "/" then
         return config.folder
     end
@@ -94,17 +95,19 @@ local function notes_dir()
     return config.folder
 end
 
-local function date_string(timestamp)
-    return os.date(config.date_format, timestamp)
+local function date_string(timestamp: number?): string
+    -- `os.date` answers `any` because a `*t` format gives a table. This
+    -- format never does, so the result is always a string.
+    return os.date(config.date_format, timestamp) :: string
 end
 
-local function note_path(timestamp)
+local function note_path(timestamp: number?): string
     return notes_dir() .. "/" .. date_string(timestamp) .. ".md"
 end
 
 --- `nil` for a missing or unreadable template, so a bad path degrades to the
 --- built-in body instead of failing the write.
-local function read_template()
+local function read_template(): string?
     if config.template == "" then
         return nil
     end
@@ -119,15 +122,21 @@ local function read_template()
     return content
 end
 
-local function default_body(date_str)
+local function default_body(date_str: string): string
     return "# " .. date_str .. "\n\n## Notes\n\n## Tasks\n\n- [ ] \n"
 end
 
-local function create_note(timestamp)
+local function create_note(timestamp: number?): (string?, string?)
     local path = note_path(timestamp)
     local date_str = date_string(timestamp)
 
-    local ok, err = pcall(cru.fs.mkdir, notes_dir())
+    -- The inner function returns nil so `pcall` has a second slot for the
+    -- error to bind to: `cru.fs.mkdir` answers with nothing, and Luau types
+    -- `pcall` as `(boolean, R...)`.
+    local ok, err = pcall(function()
+        cru.fs.mkdir(notes_dir())
+        return nil
+    end)
     if not ok then
         return nil, "Cannot create directory: " .. tostring(err)
     end
@@ -144,18 +153,26 @@ local function create_note(timestamp)
     if not handle then
         return nil, "Cannot create file: " .. tostring(open_err)
     end
-    local wrote, write_err = handle:write(content)
+    -- `pcall`, not a `(nil, err)` pair: Crucible's `file:write` RAISES on a
+    -- failed write and answers with the handle otherwise, so
+    -- `local wrote, write_err = handle:write(...)` left `write_err` nil
+    -- forever and let a full disk escape this function as a raise instead of
+    -- the `(nil, message)` every caller here reads.
+    local wrote, write_err = pcall(function()
+        handle:write(content)
+        return nil
+    end)
     handle:close()
     if not wrote then
         return nil, "Cannot create file: " .. tostring(write_err)
     end
-    return path
+    return path, nil
 end
 
 --- Timestamp for an explicit `YYYY-MM-DD`, or now. Second return is an error.
-local function parse_date(date)
+local function parse_date(date: string?): (number?, string?)
     if not date then
-        return os.time()
+        return os.time(), nil
     end
     local y, m, d = date:match("^(%d%d%d%d)-(%d%d)-(%d%d)$")
     if not y then
@@ -165,16 +182,26 @@ local function parse_date(date)
     -- midnight timestamp lands on the previous day in any zone observing DST
     -- that morning, so `daily_create{date="2025-06-15"}` could write
     -- `2025-06-14.md`.
-    return os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
+    return os.time({
+        year = tonumber(y) :: number,
+        month = tonumber(m) :: number,
+        day = tonumber(d) :: number,
+        hour = 12,
+    }), nil
 end
 
-local function exists(path)
+local function exists(path: string): boolean
     local ok, present = pcall(cru.fs.exists, path)
     return ok and present
 end
 
+--- What a tool handler answers with: either `{ error = "..." }` or the
+--- handler's own result shape. Both cross to JSON, and the daemon reads
+--- `error` first.
+type ToolResult = { [string]: any }
+
 --- Create the note for a date, or report that it already exists.
-function M.daily_create(args)
+function M.daily_create(args: { [string]: any }): ToolResult
     local timestamp, err = parse_date(args.date)
     if not timestamp then
         return { error = err }
@@ -198,7 +225,7 @@ function M.daily_create(args)
 end
 
 --- Open a date's note, creating it if missing.
-function M.daily_open(args)
+function M.daily_open(args: { [string]: any }): ToolResult
     local timestamp, err = parse_date(args.date)
     if not timestamp then
         return { error = err }
@@ -219,7 +246,7 @@ function M.daily_open(args)
 end
 
 --- The last `days` days, newest first, each flagged with whether it exists.
-function M.daily_list(args)
+function M.daily_list(args: { [string]: any }): ToolResult
     local days = args.days or 7
     if type(days) ~= "number" or days < 1 then
         return { error = "days must be a positive number" }
@@ -241,7 +268,7 @@ function M.daily_list(args)
 end
 
 --- /daily [today|yesterday|YYYY-MM-DD|list]
-function M.daily_command(args, ctx)
+function M.daily_command(args: { [string]: any }, ctx: any): ()
     local subcommand = args._positional and args._positional[1] or "today"
     local date = nil
 

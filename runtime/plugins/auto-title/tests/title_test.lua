@@ -1,3 +1,4 @@
+--!strict
 -- Unit tests for the auto-title plugin's pure title logic.
 -- Run with: cru plugin test runtime/plugins/auto-title
 --

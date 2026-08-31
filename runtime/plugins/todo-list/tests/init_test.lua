@@ -1,3 +1,4 @@
+--!strict
 --- Tests for the todo-list plugin.
 ---
 --- The tasks file is REAL: the plugin reads and writes it with `io.open`,
@@ -34,14 +35,14 @@ local SECTIONED = table.concat({
     "- [ ] ship it",
 }, "\n") .. "\n"
 
-local function with_file(content)
+local function with_file(content: string?)
     local handle = assert(io.open(TASKS_PATH, "w"))
     handle:write(content or SECTIONED)
     handle:close()
 end
 
 --- What the tasks file holds right now, or nil when it does not exist.
-local function written()
+local function written(): string?
     local handle = io.open(TASKS_PATH, "r")
     if not handle then return nil end
     local content = handle:read("a")
@@ -182,7 +183,7 @@ describe("todo-list", function()
             plugin.tools.tasks_list.fn({})
             -- Byte-identical content is the point: a listing that rewrites the
             -- file is the regression that flattened section headings.
-            expect.equal(written(), SECTIONED)
+            expect.equal(assert(written()), SECTIONED)
         end)
     end)
 
@@ -199,23 +200,23 @@ describe("todo-list", function()
             with_file()
             local result = plugin.tools.tasks_add.fn({ text = "new thing" })
             expect.equal(result.success, true)
-            expect.truthy(written():find("\n%- %[ %] new thing\n$"))
+            expect.truthy((assert(written()):find("\n%- %[ %] new thing\n$")))
         end)
 
         it("preserves every heading and blank line", function()
             with_file()
             plugin.tools.tasks_add.fn({ text = "new thing" })
-            local out = written()
-            expect.truthy(out:find("# Tasks", 1, true))
-            expect.truthy(out:find("## Now", 1, true))
-            expect.truthy(out:find("## Later", 1, true))
-            expect.truthy(out:find("Some prose that must survive an edit.", 1, true))
+            local out = assert(written())
+            expect.truthy((out:find("# Tasks", 1, true)))
+            expect.truthy((out:find("## Now", 1, true)))
+            expect.truthy((out:find("## Later", 1, true)))
+            expect.truthy((out:find("Some prose that must survive an edit.", 1, true)))
         end)
 
         it("leaves the original content byte-identical apart from the new line", function()
             with_file()
             plugin.tools.tasks_add.fn({ text = "new thing" })
-            expect.equal(written(), SECTIONED .. "- [ ] new thing\n")
+            expect.equal(assert(written()), SECTIONED .. "- [ ] new thing\n")
         end)
 
         it("files a task under a named section", function()
@@ -230,13 +231,13 @@ describe("todo-list", function()
         it("appends when the named section does not exist", function()
             with_file()
             plugin.tools.tasks_add.fn({ text = "orphan", section = "Nowhere" })
-            expect.truthy(written():find("\n%- %[ %] orphan\n$"))
+            expect.truthy((assert(written()):find("\n%- %[ %] orphan\n$")))
         end)
 
         it("creates the file when it is missing", function()
             local result = plugin.tools.tasks_add.fn({ text = "first" })
             expect.equal(result.success, true)
-            expect.equal(written(), "# Tasks\n\n- [ ] first\n")
+            expect.equal(assert(written()), "# Tasks\n\n- [ ] first\n")
         end)
     end)
 
@@ -283,7 +284,7 @@ describe("todo-list", function()
             with_file()
             plugin.tools.tasks_complete.fn({ id = 1 })
             local expected = (SECTIONED:gsub("%- %[ %] write the parser", "- [x] write the parser", 1))
-            expect.equal(written(), expected)
+            expect.equal(assert(written()), expected)
         end)
 
         it("does not re-complete an already completed task", function()
@@ -291,13 +292,13 @@ describe("todo-list", function()
             local result = plugin.tools.tasks_complete.fn({ id = 2 })
             expect.equal(result.success, false)
             expect.equal(result.message, "Task already completed")
-            expect.equal(written(), SECTIONED)
+            expect.equal(assert(written()), SECTIONED)
         end)
 
         it("does not rewrite a checkbox that appears in the task text", function()
             with_file("- [ ] fix the [ ] rendering\n")
             plugin.tools.tasks_complete.fn({ id = 1 })
-            expect.equal(written(), "- [x] fix the [ ] rendering\n")
+            expect.equal(assert(written()), "- [x] fix the [ ] rendering\n")
         end)
     end)
 

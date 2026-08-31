@@ -1,3 +1,4 @@
+--!strict
 -- Integration tests for the auto-title plugin entry point.
 -- Run with: cru plugin test runtime/plugins/auto-title
 --
@@ -7,16 +8,23 @@
 
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
 cru.plugin = cru.plugin or mock({})
-local publications = {}
-local completions = {}
-local next_answer = { "  A perfectly good title  " }
+local publications: { [string]: any } = {}
+-- `cru.session.complete` declares `opts` as `string | { [string]: any }`,
+-- because a caller may pass a bare prompt. This plugin always passes the
+-- table, and the assertions below read fields off it, so the recorder
+-- narrows once here rather than at every call site.
+local completions: { { session_id: string, opts: { [string]: any } } } = {}
+-- `{ answer, error }`: the pair `cru.session.complete` answers with. A test
+-- that scripts a failure sets the second and clears the first, so both
+-- slots have to accept nil.
+local next_answer: { string? } = { "  A perfectly good title  " }
 
 cru.plugin.publish = function(key, value) publications[key] = value end
 
 ;(cru :: any).log = function() end
 cru.session = cru.session or mock({})
 cru.session.complete = function(session_id, opts)
-  table.insert(completions, { session_id = session_id, opts = opts })
+  table.insert(completions, { session_id = session_id, opts = opts :: { [string]: any } })
   return next_answer[1], next_answer[2]
 end
 

@@ -1,3 +1,4 @@
+--!strict
 --- todo-list — manage a markdown checklist file.
 ---
 --- Two things this plugin gets right that the obvious implementation does not:
@@ -44,7 +45,7 @@ end
 ---
 --- The root a relative `file` hangs off: the ACTIVE kiln (by name, through
 --- `cru.kiln.path` — the one name-to-path API), else the workspace, else nil.
-local function resolve_root()
+local function resolve_root(): string?
     local active = cru.kiln and cru.kiln.active
     if type(active) == "string" then
         local ok, root = pcall(cru.kiln.path, active)
@@ -66,7 +67,7 @@ end
 --- the file used to resolve, once, and move NOTHING: never relocate user
 --- data on their behalf.
 local warned_legacy = false
-local function warn_if_legacy_file(resolved, legacy)
+local function warn_if_legacy_file(resolved: string, legacy: string): ()
     if warned_legacy then return end
     local ok, seen = pcall(cru.fs.exists, resolved)
     if ok and seen then return end
@@ -82,7 +83,7 @@ end
 
 --- An absolute `file` is taken as given. A relative one hangs off the active
 --- kiln's root, falling back to the workspace and then to the path as written.
-local function tasks_file(args)
+local function tasks_file(args: { [string]: any }?): string
     local name = (args and args.file) or config.default_file
     if name:sub(1, 1) == "/" then
         return name
@@ -98,7 +99,7 @@ local function tasks_file(args)
 end
 
 --- Every line of the file, or nil if it does not exist.
-local function read_lines(path)
+local function read_lines(path: string): { string }?
     -- A missing file and an unreadable one land the same way: `io.open`
     -- answers nil, and the caller treats the list as absent.
     local handle = io.open(path, "r")
@@ -123,12 +124,18 @@ local function read_lines(path)
     return lines
 end
 
-local function write_lines(path, lines)
+local function write_lines(path: string, lines: { string }): (boolean, any)
     local handle, open_err = io.open(path, "w")
     if not handle then
         return false, open_err
     end
-    local wrote, write_err = handle:write(table.concat(lines, "\n") .. "\n")
+    -- `pcall`, not a pair: Crucible's `file:write` RAISES on failure and
+    -- answers with the handle otherwise, so `write_err` was nil forever and a
+    -- full disk escaped this function as a raise.
+    local wrote, write_err = pcall(function()
+        handle:write(table.concat(lines, "\n") .. "\n")
+        return nil
+    end)
     handle:close()
     if not wrote then
         return false, write_err
@@ -141,8 +148,17 @@ end
 --- Each task carries `line`, its 1-based index into `lines`, which is what
 --- makes a line-local edit possible. `id` is its position among tasks and is
 --- stable regardless of any filtering a caller applies afterwards.
-local function parse_tasks(lines)
-    local tasks = {}
+--- One task, as every handler below reads it.
+export type Task = {
+    id: number,
+    text: string,
+    completed: boolean,
+    section: string,
+    line: number,
+}
+
+local function parse_tasks(lines: { string }): { Task }
+    local tasks: { Task } = {}
     local section = "Tasks"
     for index, line in ipairs(lines) do
         local heading = line:match("^#+%s+(.+)$")
@@ -153,7 +169,10 @@ local function parse_tasks(lines)
         if status then
             tasks[#tasks + 1] = {
                 id = #tasks + 1,
-                text = text,
+                -- The `if status` guard proves the pattern matched, so both
+                -- captures are strings; `match` types them optional because a
+                -- failed match answers with nil for every capture at once.
+                text = text :: string,
                 completed = status:lower() == "x",
                 section = section,
                 line = index,
@@ -163,14 +182,19 @@ local function parse_tasks(lines)
     return tasks
 end
 
-local function load(args)
+local function load(args: { [string]: any }?): (string, { string }?, { Task })
     local path = tasks_file(args)
     local lines = read_lines(path)
     return path, lines, parse_tasks(lines or {})
 end
 
+--- What a tool handler answers with: either `{ error = "..." }` or the
+--- handler's own result shape. Both cross to JSON, and the daemon reads
+--- `error` first.
+type ToolResult = { [string]: any }
+
 --- List tasks. `show_completed` defaults to the configured value.
-function M.tasks_list(args)
+function M.tasks_list(args: { [string]: any }): ToolResult
     local path, _, tasks = load(args)
     local show_completed = args.show_completed
     if show_completed == nil then
@@ -195,13 +219,15 @@ function M.tasks_list(args)
 end
 
 --- Append a task, under `section` if that heading exists.
-function M.tasks_add(args)
+function M.tasks_add(args: { [string]: any }): ToolResult
     if not args.text or args.text == "" then
         return { error = "Task text is required" }
     end
 
-    local path, lines, tasks = load(args)
-    lines = lines or { "# Tasks", "" }
+    local path, loaded, tasks = load(args)
+    -- Annotate the LOCAL: `loaded or {...}` widens to `{string} | {string}`
+    -- but keeps the optional half unless the target says otherwise.
+    local lines: { string } = loaded or { "# Tasks", "" }
 
     local entry = "- [ ] " .. args.text
     local inserted = false
@@ -240,7 +266,7 @@ function M.tasks_add(args)
 end
 
 --- Flip one task to complete, touching only its line.
-function M.tasks_complete(args)
+function M.tasks_complete(args: { [string]: any }): ToolResult
     if not args.id then
         return { error = "Task ID is required" }
     end
@@ -276,7 +302,7 @@ function M.tasks_complete(args)
 end
 
 --- The first uncompleted task in document order.
-function M.tasks_next(args)
+function M.tasks_next(args: { [string]: any }): ToolResult
     local path, _, tasks = load(args)
 
     local remaining = 0
@@ -304,7 +330,7 @@ function M.tasks_next(args)
 end
 
 --- /tasks [list|add|next]
-function M.tasks_command(args, ctx)
+function M.tasks_command(args: { [string]: any }, ctx: any): ()
     local subcommand = args._positional and args._positional[1] or "list"
 
     if subcommand == "list" then

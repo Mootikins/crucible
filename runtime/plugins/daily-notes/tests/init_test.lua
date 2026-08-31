@@ -1,3 +1,4 @@
+--!strict
 --- Tests for the daily-notes plugin.
 ---
 --- Notes are REAL files: the plugin writes them with `io.open`, which has no
@@ -17,7 +18,7 @@ local plugin = require("daily-notes")
 local KILN
 
 --- What `path` holds on disk, or nil when it does not exist.
-local function on_disk(path)
+local function on_disk(path: string): string?
     local handle = io.open(path, "r")
     if not handle then return nil end
     local content = handle:read("a")

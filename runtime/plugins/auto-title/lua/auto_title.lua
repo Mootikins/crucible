@@ -1,3 +1,4 @@
+--!strict
 --- Pure title logic for the auto-title plugin.
 ---
 --- Named `auto_title`, not `title`: one Lua VM serves every plugin and
@@ -63,7 +64,7 @@ end
 local QUOTES = { ['"'] = true, ["'"] = true, ["`"] = true, ["\u{201c}"] = true, ["\u{201d}"] = true }
 
 --- Strip quote characters from both ends, repeatedly.
-local function trim_quotes(s)
+local function trim_quotes(s: string): string
   local changed = true
   while changed and s ~= "" do
     changed = false
@@ -86,23 +87,33 @@ end
 ---
 --- Every rule here answers something a model actually did. The scaffolding
 --- strip is why `Title: Session archiving sweep` does not become a title
+--- Strip leading and trailing whitespace.
+---
+--- `^%s*(.-)%s*$` matches every string, so `match` never really answers nil.
+--- No checker can know that, and `assert` would state it as a claim a reader
+--- has to verify; `or s` states the fallback instead, and is correct either
+--- way.
+local function trim(s: string): string
+  return (s:match("^%s*(.-)%s*$")) or s
+end
+
 --- beginning with the word "Title".
-function M.sanitize(raw)
+function M.sanitize(raw: any): string
   if type(raw) ~= "string" then return "" end
 
   local line = ""
   for candidate in (raw .. "\n"):gmatch("([^\n]*)\n") do
-    local trimmed = candidate:match("^%s*(.-)%s*$")
+    local trimmed = trim(candidate)
     if trimmed ~= "" then
       line = trimmed
       break
     end
   end
 
-  local title = trim_quotes(line):match("^%s*(.-)%s*$")
+  local title = trim(trim_quotes(line))
   for _, prefix in ipairs({ "Title:", "title:", "TITLE:" }) do
     if title:sub(1, #prefix) == prefix then
-      title = title:sub(#prefix + 1):match("^%s*(.-)%s*$")
+      title = trim(title:sub(#prefix + 1))
     end
   end
 
@@ -111,8 +122,8 @@ function M.sanitize(raw)
   end
 
   -- Collapse every run of whitespace, newlines included, to one space.
-  title = table.concat((function()
-    local words = {}
+  title = table.concat((function(): { string }
+    local words: { string } = {}
     for word in title:gmatch("%S+") do words[#words + 1] = word end
     return words
   end)(), " ")
