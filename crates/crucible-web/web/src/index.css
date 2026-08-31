@@ -120,6 +120,36 @@
   --color-term-bright-cyan: #9adcd7;
   --color-term-bright-white: #e7e4df;
 
+  /* ── Canvas preset colours ────────────────────────────────────────────
+   * The six slots JSON Canvas numbers 1-6, which a user picks per card
+   * (`src/lib/canvas-types.ts`). CATEGORICAL, not semantic: slot 4 means
+   * "the green one", never "ok". So this ramp is tuned for one job only —
+   * telling six cards apart at a glance — and it must not read as a second
+   * brand accent.
+   *
+   * Two rules shape it. First, EVERY SLOT IS QUIETER THAN THE EMBER: the
+   * loudest here is S60 against the ember's S73, so a coloured card sits
+   * behind the one accent that means "act on this". Second, THE EMBER OWNS
+   * ITS OWN HUE: the ramp opens at H2 and its next step is H34, leaving the
+   * ember's H16 a ~16-degree berth on each side, and the orange slot is an
+   * ochre (S56, L54) rather than a second #e0653a.
+   *
+   * The hues are the terminal ramp's, minus blue and plus orange, so the app
+   * speaks one colour vocabulary. The VALUES are separate: an ANSI slot is
+   * text on a panel, a canvas colour is a card border, a 10% wash, a minimap
+   * rect, an edge stroke AND the file-node header text, so it owes 4.5:1 on
+   * every dark surface including `surface-overlay`, the lightest. The floor
+   * measured here is 5.40:1.
+   *
+   * `canvas-types.ts` repeats these six values as `var()` fallbacks. Change
+   * one here and change it there; `canvas-viewport.test.ts` fails otherwise. */
+  --color-canvas-red: #dd7a76;
+  --color-canvas-orange: #cb9147;
+  --color-canvas-yellow: #cdb75f;
+  --color-canvas-green: #8fc47f;
+  --color-canvas-cyan: #6bbfbb;
+  --color-canvas-purple: #ae90d6;
+
   /* ── Radii ────────────────────────────────────────────────────────────
    * Tight and consistent, the way an editor rounds its chrome. Overrides
    * Tailwind's defaults so every `rounded-*` in the app tightens at once —
@@ -237,6 +267,25 @@
   --color-term-bright-magenta: #63308a;
   --color-term-bright-cyan: #0d585f;
   --color-term-bright-white: #17161c;
+
+  /* ── Canvas preset colours, light ──────────────────────────────────────
+   * The same six hues, darkened until each clears 4.5:1 on white — which is
+   * `surface-elevated` and `surface-overlay` here, so it is the floor for a
+   * card body, the swatch popover and the minimap alike. The floor measured
+   * is 5.40:1.
+   *
+   * Saturation RISES against the dark half (S38-78 against S37-60) and that
+   * is deliberate, for the reason the light ANSI ramp gives: on a light
+   * ground a dark accent loses its hue before it loses its weight, so the
+   * chroma has to hold. The "quieter than the ember" rule survives it — the
+   * light ember is #b04823 at L41, and the ochre orange sits at L31, ten
+   * steps darker at a 20-degree remove, so the two never trade places. */
+  --color-canvas-red: #b32d2d;
+  --color-canvas-orange: #8a5a14;
+  --color-canvas-yellow: #6f5b0f;
+  --color-canvas-green: #33713b;
+  --color-canvas-cyan: #0e6b73;
+  --color-canvas-purple: #6f3fa0;
 
   /* ── Elevation, light ─────────────────────────────────────────────────
    * The dark ramp is near-black at alpha 0.30–0.60. It has to be: a shadow on

@@ -33,6 +33,13 @@ import {
   type CanvasNode,
   type GroupNode,
 } from '../canvas-types';
+import {
+  darkTokens,
+  fallbackIn,
+  lightTokens,
+  resolveToken,
+  tokenReferenceIn,
+} from '@/test-utils/css-tokens';
 
 const viewport = (over: Partial<Viewport> = {}): Viewport => ({
   x: 0,
@@ -198,11 +205,41 @@ describe('canvas document helpers', () => {
     expect(toEndOf(bare)).toBe('arrow');
   });
 
-  it('maps preset colours to tokens and passes hex through', () => {
-    expect(resolveCanvasColor('1')).toContain('--canvas-red');
+  it('passes an authored hex through and rejects anything else', () => {
     expect(resolveCanvasColor('#abcdef')).toBe('#abcdef');
     expect(resolveCanvasColor(undefined)).toBeUndefined();
     expect(resolveCanvasColor('not-a-colour')).toBeUndefined();
+  });
+
+  /**
+   * The gate here used to be `expect(resolveCanvasColor('1')).toContain(
+   * '--canvas-red')`, which passes on the returned STRING whether or not the
+   * token exists. It did not exist: none of the six was declared anywhere, so
+   * the `var()` fallbacks always painted, identically in both themes, and a
+   * canvas ignored the theme completely while the test stayed green.
+   *
+   * So the assertion follows the name into `index.css` and reads the VALUE.
+   * Delete a declaration and `resolveToken` throws; give the two themes the
+   * same value and the difference check fails.
+   */
+  it.each(['1', '2', '3', '4', '5', '6'])('resolves preset %s in both themes', (slot) => {
+    const value = resolveCanvasColor(slot)!;
+    const name = tokenReferenceIn(value);
+    expect(name).not.toBeNull();
+
+    const dark = resolveToken(darkTokens, name!);
+    const light = resolveToken(lightTokens, name!);
+    expect(dark).toMatch(/^#[0-9a-f]{6}$/);
+    expect(light).toMatch(/^#[0-9a-f]{6}$/);
+
+    // A theme-blind palette is the whole defect; one value in both blocks
+    // would reproduce it with the tokens declared.
+    expect(light).not.toBe(dark);
+
+    // The literal fallback is a second copy of the dark value, kept because a
+    // consumer that cannot read custom properties would otherwise paint
+    // nothing. Two copies drift; this is the only thing that stops them.
+    expect(fallbackIn(value)).toBe(dark);
   });
 
   it('anchors edges to the correct side midpoints', () => {

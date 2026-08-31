@@ -85,14 +85,21 @@ export interface CanvasResponse {
  * The six preset slots, mapped to theme tokens rather than raw hex so a canvas
  * reads correctly in both light and dark. A hex colour authored by the user is
  * passed through as-is.
+ *
+ * The names were `--canvas-red` … `--canvas-purple`, which `index.css` never
+ * declared, so the fallbacks always painted and a canvas ignored the theme
+ * entirely. They now name the real tokens.
+ *
+ * The fallbacks REPEAT the dark values from `index.css` and must keep matching
+ * them; `canvas-viewport.test.ts` compares the two and fails when they drift.
  */
 const PRESET_COLORS: Record<string, string> = {
-  '1': 'var(--canvas-red, #e5534b)',
-  '2': 'var(--canvas-orange, #d98032)',
-  '3': 'var(--canvas-yellow, #d9c02f)',
-  '4': 'var(--canvas-green, #48a860)',
-  '5': 'var(--canvas-cyan, #3d9fb0)',
-  '6': 'var(--canvas-purple, #9a5fc4)',
+  '1': 'var(--color-canvas-red, #dd7a76)',
+  '2': 'var(--color-canvas-orange, #cb9147)',
+  '3': 'var(--color-canvas-yellow, #cdb75f)',
+  '4': 'var(--color-canvas-green, #8fc47f)',
+  '5': 'var(--color-canvas-cyan, #6bbfbb)',
+  '6': 'var(--color-canvas-purple, #ae90d6)',
 };
 
 export function resolveCanvasColor(color: CanvasColor | undefined): string | undefined {
