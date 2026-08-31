@@ -4,7 +4,7 @@ description: Web search over a configurable provider chain (SearXNG, DuckDuckGo,
 author: Crucible Team
 license: MIT
 
-main: init.lua
+main: init.luau
 
 capabilities:
   - network

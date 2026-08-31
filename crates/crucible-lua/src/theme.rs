@@ -1003,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_default_theme_loads() {
-        let lua = include_str!("../../../runtime/themes/default.lua");
+        let lua = include_str!("../../../runtime/themes/default.luau");
         let config = load_theme_from_lua(lua).expect("default theme should load");
         assert_eq!(config.name, "default");
         assert!(config.is_dark);
@@ -1277,7 +1277,7 @@ mod tests {
 
     #[test]
     fn test_default_theme_loads_all_tokens() {
-        let lua_src = include_str!("../../../runtime/themes/default.lua");
+        let lua_src = include_str!("../../../runtime/themes/default.luau");
         let config = load_theme_from_lua(lua_src).expect("default theme should load");
         let dark = ThemeConfig::default_dark();
 
@@ -1338,7 +1338,7 @@ mod tests {
 
     #[test]
     fn test_opencode_theme_loads() {
-        let lua_src = include_str!("../../../runtime/themes/opencode.lua");
+        let lua_src = include_str!("../../../runtime/themes/opencode.luau");
         let theme = load_theme_from_lua(lua_src).expect("opencode theme should load");
         assert_eq!(theme.name, "opencode");
         assert!(theme.is_dark);
@@ -1355,7 +1355,7 @@ mod tests {
     }
     #[test]
     fn default_lua_matches_default_dark() {
-        let from_lua = load_theme_from_lua(include_str!("../../../runtime/themes/default.lua"))
+        let from_lua = load_theme_from_lua(include_str!("../../../runtime/themes/default.luau"))
             .expect("default.lua should load");
         let from_rust = ThemeConfig::default_dark();
 

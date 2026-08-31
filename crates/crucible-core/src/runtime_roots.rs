@@ -345,7 +345,7 @@ mod tests {
             .expect("read extracted init.lua");
         assert_eq!(
             extracted,
-            include_str!("../../../runtime/defaults/init.lua"),
+            include_str!("../../../runtime/defaults/init.luau"),
             "the extracted defaults must be the shipped defaults"
         );
     }
@@ -403,7 +403,7 @@ mod tests {
         sync_bundled_runtime(tmp.path()).expect("third extract");
         assert_eq!(
             std::fs::read_to_string(&init).expect("read"),
-            include_str!("../../../runtime/defaults/init.lua"),
+            include_str!("../../../runtime/defaults/init.luau"),
             "a missing or mismatched stamp must force a full rewrite"
         );
     }

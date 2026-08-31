@@ -4,7 +4,7 @@ description: Create and navigate daily notes
 author: Crucible Contributors
 license: MIT
 
-main: init.lua
+main: init.luau
 
 capabilities:
   - filesystem

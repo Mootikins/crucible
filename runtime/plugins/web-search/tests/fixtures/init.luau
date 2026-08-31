@@ -26,7 +26,12 @@ local self_path = package.searchpath("web-search.tests.fixtures")
 if not self_path then
     error("web-search fixtures: the module registry cannot locate tests/fixtures")
 end
-M.dir = self_path:gsub("[/\\]init%.lua$", "")
+-- Strip the FILE NAME, whichever extension it has. Hardcoding `init%.lua$`
+-- meant the rename to `.luau` left `M.dir` holding the whole file path, and
+-- every fixture became `.../init.luau/ddg_lite.html` — a directory that is
+-- really a file. `%.lua` would also have matched `.luau` if it were not
+-- anchored, so the anchor is what turned a silent near-miss into a loud one.
+M.dir = self_path:gsub("[/\\]init%.luau?$", "")
 
 local cache = {}
 

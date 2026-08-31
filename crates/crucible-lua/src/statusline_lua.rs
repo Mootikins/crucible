@@ -17,7 +17,7 @@ use crate::statusline_items::{Element, Layout, Region, StatusCond, StatusItem};
 use mlua::{Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 /// The shipped default layout, authored in Lua.
-const DEFAULT_STATUSLINE_LUA: &str = include_str!("../../../runtime/statusline/default.lua");
+const DEFAULT_STATUSLINE_LUA: &str = include_str!("../../../runtime/statusline/default.luau");
 
 /// A statusline item as seen from Lua.
 #[derive(Clone)]

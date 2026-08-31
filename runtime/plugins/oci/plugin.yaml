@@ -4,7 +4,7 @@ description: Run agent workspace tools inside OCI containers
 author: Crucible Team
 license: MIT
 
-main: init.lua
+main: init.luau
 
 capabilities:
   - shell

@@ -4,7 +4,7 @@ description: Task management with TASKS.md format
 author: Crucible Contributors
 license: MIT
 
-main: init.lua
+main: init.luau
 
 capabilities:
   - filesystem

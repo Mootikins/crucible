@@ -174,7 +174,7 @@ pub use ws::register_ws_module;
 /// the runtimepath first; this constant is what a bare binary with no runtime
 /// directory falls back to, matching how themes and the statusline embed
 /// theirs.
-pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.lua");
+pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.luau");
 // Handler system
 pub use check::{check_file, check_plugin, check_plugin_with, CheckReport, Finding, TypecheckStatus};
 pub use handlers::{

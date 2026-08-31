@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{debug, info, warn};
 
-const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lua");
+const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.luau");
 
 /// Global config state - stores parsed configuration from Lua
 #[derive(Debug, Default, Clone)]

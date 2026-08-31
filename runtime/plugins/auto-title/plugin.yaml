@@ -4,7 +4,7 @@ description: Name a session after what it is about
 author: Crucible Team
 license: MIT
 
-main: init.lua
+main: init.luau
 
 capabilities:
   # The one-shot completion against the session's own model.
