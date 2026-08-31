@@ -66,9 +66,13 @@ end
 --- Returns `dir, porcelain, head, locals, remotes` or nil when `path` is not a
 --- repository — which is not an error: plenty of projects are not repos, and
 --- the chip simply offers nothing for them.
---- Five values, or five nils. Every early exit answers with the same ARITY:
---- a caller writes `local dir, porcelain, head, locals, remotes = survey(p)`
---- and a bare `return nil` left the other four unbound.
+--- Five values, or five nils.
+---
+--- Every early exit answers with the same ARITY because the DECLARATION says
+--- five and Luau holds each `return` to it. Lua itself does not care — a
+--- caller writing `local a, b, c, d, e = survey(p)` gets nil for the missing
+--- four either way — so this is a statement for the checker and the reader,
+--- not a fix for a binding bug.
 local function survey(path: string?): (string?, string?, string?, string?, string?)
   local dir = workdir(path)
   if not dir then return nil, nil, nil, nil, nil end

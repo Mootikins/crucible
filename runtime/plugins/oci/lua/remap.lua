@@ -23,10 +23,18 @@ M.DEFAULT_TARGET = "/workspace"
 function M.remap_path(workspace_host: string?, path: string?, mount: string?): string
   local target: string = mount or M.DEFAULT_TARGET
   if not path then return target end
-  -- No workspace root to strip: everything is either absolute (pass through)
-  -- or relative to the mount target.
+  -- An EMPTY root matches every path, because `path:sub(1, 0)` is `""` and
+  -- `"" == ""`. That is deliberate and it is the containing direction: with no
+  -- root to strip, every path is reparented under the mount target rather than
+  -- passed through to the host. Guarding this with `root ~= ""` let an
+  -- absolute host path escape the mount, which is the one thing this function
+  -- exists to prevent.
+  --
+  -- `or ""` where the original indexed `#workspace_host` directly: a nil root
+  -- used to raise here, and reparenting is the safer answer to the same
+  -- question.
   local root: string = workspace_host or ""
-  if root ~= "" and path:sub(1, #root) == root then
+  if path:sub(1, #root) == root then
     local suffix = path:sub(#root + 1)
     if suffix == "" or suffix == "/" then return target end
     if suffix:sub(1, 1) == "/" then suffix = suffix:sub(2) end

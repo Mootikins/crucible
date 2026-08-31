@@ -133,3 +133,23 @@ describe("remap.truncate_lines", function()
     expect.equals("a\nb\n\n[2 matches, truncated at 2]", out)
   end)
 end)
+
+-- The gap that let a containment regression through review: every case here
+-- passed a real workspace root, so nothing covered the one input where the
+-- prefix test is degenerate.
+describe("remap_path with no workspace root", function()
+  it("reparents an absolute path rather than passing it through", function()
+    -- `path:sub(1, 0)` is `""`, so an empty root matches everything and the
+    -- strip branch runs. Reparenting is the containing answer: passing the
+    -- path through would name a HOST file from inside the container.
+    expect.equals("/workspace/etc/passwd", remap.remap_path("", "/etc/passwd", "/workspace"))
+  end)
+
+  it("treats a nil root the same way", function()
+    expect.equals("/workspace/etc/passwd", remap.remap_path(nil, "/etc/passwd", "/workspace"))
+  end)
+
+  it("still answers the target itself for the root path", function()
+    expect.equals("/workspace", remap.remap_path("", "/", "/workspace"))
+  end)
+end)

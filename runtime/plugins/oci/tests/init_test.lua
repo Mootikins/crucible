@@ -190,8 +190,7 @@ describe("oci session lifecycle", function()
     spec.setup({ image = "alpine:latest", exempt = { "read_note" } })
     start_session("s1", "/home/user/s1-project")
 
-    local run = assert(exec_call("run"))
-    expect.is_not_nil(run, "expected a container run")
+    local run = assert(exec_call("run"), "expected a container run")
     expect.equals("podman", run.cmd)
     expect.is_not_nil(index_of(run.args, "crucible-s1"))
     expect.is_not_nil(index_of(run.args, "/home/user/s1-project:/workspace:rw,z"))
@@ -290,9 +289,7 @@ describe("oci session lifecycle", function()
     lifecycle.end_fn({ id = "s-end" })
     local stop = assert(exec_call("stop"))
     local rm = assert(exec_call("rm"))
-    expect.is_not_nil(stop)
     expect.is_not_nil(index_of(stop.args, "crucible-s-end"))
-    expect.is_not_nil(rm)
     expect.is_not_nil(index_of(rm.args, "crucible-s-end"))
     expect.equals(1, #clear_status_calls)
     expect.equals("oci", clear_status_calls[1].key)
@@ -394,7 +391,6 @@ describe("oci container sharing", function()
 
     lifecycle.end_fn({ id = "s-parent" })
     local rm = assert(exec_call("rm"))
-    expect.is_not_nil(rm)
     expect.is_not_nil(index_of(rm.args, "crucible-s-parent"))
   end)
 
@@ -411,8 +407,7 @@ describe("oci container sharing", function()
 
     lifecycle.end_fn({ id = "s-resumed" })
 
-    local rm = assert(exec_call("rm"))
-    expect.is_not_nil(rm, "a re-fired start hook left the container referenced forever")
+    local rm = assert(exec_call("rm"), "a re-fired start hook left the container referenced forever")
     expect.is_not_nil(index_of(rm.args, "crucible-s-resumed"))
   end)
 
@@ -429,7 +424,7 @@ describe("oci container sharing", function()
     expect.equals(0, count_calls("rm"), "s-two is still in the container")
 
     lifecycle.end_fn({ id = "s-two" })
-    expect.is_not_nil(assert(exec_call("rm")))
+    assert(exec_call("rm"), "expected the call to have been made")
   end)
 
   it("refuses a session whose shared container is gone rather than running on the host", function()
@@ -461,8 +456,7 @@ describe("oci per-session isolation", function()
   --- Assert the container was started from `image`. The argv ends with the
   --- keepalive command, so match on presence rather than position.
   local function assert_ran_image(image: string): ()
-    local run = assert(exec_call("run"))
-    expect.is_not_nil(run, "expected a container run")
+    local run = assert(exec_call("run"), "expected a container run")
     expect.is_not_nil(index_of(run.args, image),
       "container was not started from " .. image)
   end
@@ -971,8 +965,7 @@ describe("oci devcontainer resolution", function()
     with_devcontainer(ws, '{ "build": { "dockerfile": "Dockerfile" } }')
     start_session("dc-build", ws)
 
-    local build = assert(exec_call("build"))
-    expect.is_not_nil(build, "a devcontainer naming a Dockerfile must build it")
+    local build = assert(exec_call("build"), "a devcontainer naming a Dockerfile must build it")
     expect.is_not_nil(index_of(build.args, ws .. "/.devcontainer/Dockerfile"))
     expect.is_not_nil(index_of(build.args, ws .. "/.devcontainer"))
   end)
@@ -1064,7 +1057,6 @@ describe("oci devcontainer resolution", function()
 
     expect.is_nil(exec_call("run"), "the CLI creates the container, not the plugin")
     local up = assert(exec_call("up"))
-    expect.is_not_nil(up)
     expect.equals("devcontainer", up.cmd)
     expect.is_not_nil(index_of(up.args, ws))
     expect.equals(1, #isolation_calls, "an adopted container is still a claimed sandbox")
@@ -1409,7 +1401,6 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt", "/home/user/worktrees/feat")
 
     local run = assert(exec_call("run"))
-    expect.is_not_nil(run)
     expect.is_not_nil(index_of(run.args, "type=bind,source=/home/user/project/.git,"
       .. "destination=/home/user/project/.git,relabel=shared"),
       "a worktree session must mount the main repo's git dir")
@@ -1472,7 +1463,6 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt-cli", ws)
 
     local up = assert(exec_call("up"))
-    expect.is_not_nil(up)
     local i = index_of(up.args, "--mount")
     expect.is_not_nil(i, "a worktree built by the CLI still needs the main repo mounted")
     expect.equals("type=bind,source=/home/user/project/.git,"

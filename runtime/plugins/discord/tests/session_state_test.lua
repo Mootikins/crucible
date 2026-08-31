@@ -47,12 +47,12 @@ end
 --- The recorder and the stub API. `calls` is a record, not a list: the tests
 --- read `calls.created`, `calls.configured` and `calls.ended` by name.
 type Calls = { created: { any }, configured: number, ended: { any } }
-local function recording_api(prefix: string?): (Calls, { [string]: any })
+local function recording_api(prefix: string): (Calls, { [string]: any })
     local calls: Calls = { created = {}, configured = 0, ended = {} }
     return calls, {
         create = function(o)
             table.insert(calls.created, o)
-            return { id = tostring(prefix) .. "-" .. #calls.created }
+            return { id = prefix .. "-" .. #calls.created }
         end,
         configure_agent = function()
             calls.configured = calls.configured + 1
@@ -76,7 +76,10 @@ local function with_env(cfg: { [string]: any }?, session_api: any, fn: () -> ())
     cru.plugin.config = mock({ get = function(key) return (cfg or {})[key] end })
     cru.session = session_api
     cru.paths = mock({
-        state = function(plugin) return tostring(state_root) .. "/" .. plugin end,
+        -- `assert`, not `tostring`: a nil root here means `ensure_state_root`
+        -- did not run, and `tostring` would quietly write to a directory
+        -- literally named "nil" instead of failing the test.
+        state = function(plugin) return assert(state_root) .. "/" .. plugin end,
     })
 
     -- The inner function returns nil so `pcall` has a second slot for the
