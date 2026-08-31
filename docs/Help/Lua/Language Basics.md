@@ -12,8 +12,13 @@ tags:
 # Luau Language Basics
 
 Crucible embeds Luau (via the `mlua` crate) for plugin development. Luau is Lua
-with a gradual type system: a plugin is ordinary Lua until it declares types,
-and `--!strict` at the top of a file turns the declarations into a check.
+with a gradual type system: a plugin is ordinary Lua until it declares types.
+
+**Most of the benefit needs no annotations at all.** Crucible generates a
+declarations file for every `cru.*` function, and the checker reads it whether
+or not your file says `--!strict`. A misspelled namespace, a wrong argument
+count and a wrong argument type are caught in plain Lua. `--!strict` adds
+checks on your OWN code.
 
 ## Why Luau?
 
@@ -252,9 +257,65 @@ local function render(task: Task): string
 end
 ```
 
-The annotations are erased at runtime. `luau-analyze` is what checks them; see
-[[Help/Extending/Creating Plugins]] for the plugin scaffold, which starts every
-file with `--!strict`.
+The annotations are erased at runtime. `luau-lsp analyze` is what checks them;
+see [[Help/Extending/Creating Plugins]] for the plugin scaffold.
+
+### Five idioms `--!strict` asks for
+
+Every plugin Crucible ships is `--!strict`, and getting there needed the same
+five changes over and over. None of them is a workaround: each one is correct
+Lua that the checker cannot see through, and writing it the other way says out
+loud what a reader had to infer.
+
+**1. Annotate the local, not the expression.**
+
+```lua
+-- Reads as a defect: `args or {}` widens to `Args | {}`, and a field read
+-- fails against the empty half.
+args = args or {}
+
+-- Correct, and the type is stated once.
+local args: Args = options or {}
+```
+
+**2. `pcall` on a function that answers with nothing.**
+
+Luau types `pcall` as `(boolean, R...)`. With an empty `R...` there is no
+second slot, even though at run time the error is always there.
+
+```lua
+local ok, err = pcall(function()
+    do_the_thing()
+    return nil
+end)
+```
+
+**3. Parenthesise a multi-return call used as the last argument.**
+
+`string.find` answers `(start, stop)`. As the last argument it silently fills
+the NEXT parameter — eighteen assertions in the shipped suites were passing a
+match position as their failure message.
+
+```lua
+expect.truthy((text:find("needle", 1, true)))
+```
+
+**4. `assert`, not a truthiness assertion, when the next line indexes.**
+
+Both fail when the value is missing. Only `assert` narrows the type.
+
+```lua
+local handle = assert(io.open(path, "r"))
+```
+
+**5. Give every exit the same arity.**
+
+A function answering five values on one path and one `nil` on another leaves
+four names unbound at the call site. Say `return nil, nil, nil, nil, nil`.
+
+A pattern like `("%s*(.-)%s*"):match` always succeeds, but no checker knows
+that. Write `(s:match(...)) or s` rather than asserting something a reader has
+to verify.
 
 ## Resources
 

@@ -154,6 +154,7 @@ end
   - `cwd` (string) — working directory
   - `env` (table) — additional environment variables as key/value pairs
   - `stdin` (string) — data to pipe to the process's stdin
+  - `timeout` (number) — SECONDS to wait before the call raises
 
 **Returns a table:**
 - `success` (bool) — `true` if exit code was 0
@@ -161,11 +162,20 @@ end
 - `stdout` (string)
 - `stderr` (string)
 
-There is no per-call timeout option, and the default shell policy sets no deadline — commands run to completion (use `cru.shell.spawn` for streaming output from long-running work). A policy configured with a timeout raises an error for calls that outlive it.
+`timeout` is in **seconds**, and the default shell policy sets no deadline at
+all — a call with no `timeout` runs to completion (use `cru.shell.spawn` for
+streaming output from long-running work). Where a policy also sets one, the
+shorter of the two wins: a plugin may shorten its own deadline and may not
+lengthen the sandbox's. A call that outlives its deadline raises.
+
+`timeout` was accepted and silently discarded until 2026-08-30. A plugin that
+set one got no deadline whatever, because the deadline came from the policy
+alone.
 
 ### cru.shell.spawn(cmd, args, opts?)
 
-Like `exec`, but streams output as it arrives. `opts` takes `cwd` and `env` as
+Like `exec`, but streams output as it arrives. `opts` takes `cwd`, `env`,
+`timeout` (seconds, bounded by the policy as above) and
 above, plus `on_line(stream, line)` — called with `"stdout"` or `"stderr"` and
 each line as it is produced. Returns the same result table as `exec`. Useful
 for long-running commands (an image build, say) that should report progress

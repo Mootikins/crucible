@@ -159,10 +159,22 @@ return M
 
 ## Plugin Language
 
-Plugins are written in Luau, in `.lua` files. Luau is Lua with gradual types:
-an untyped plugin runs unchanged, and `--!strict` at the top of a file turns
-its annotations into a check that `luau-analyze` enforces before the plugin
-ships. See [[Help/Lua/Language Basics]] for the differences from PUC Lua 5.4.
+Plugins are written in Luau, in `.luau` or `.lua` files. `.luau` is preferred —
+it is what Luau's own editor tooling recognises — and `.lua` keeps working for
+good. A directory holding both `init.luau` and `init.lua` is refused rather
+than resolved, because an edit to the wrong one would appear to do nothing.
+
+**You do not have to annotate anything.** Write plain Lua and the checker
+already catches a misspelled namespace, a wrong argument count and a wrong
+argument type on all 182 `cru.*` functions, and your editor completes them.
+That comes from the generated declarations, not from anything in your file:
+a plain file and a `--!strict` file produce identical diagnostics for host API
+misuse.
+
+`--!strict` adds checks on **your own** code — your locals, your tables, your
+own functions. It is worth turning on, and it is a choice. Every plugin
+Crucible ships carries it; see [[Help/Lua/Language Basics]] for what it costs
+and the idioms that make it painless.
 
 ## Single-File Plugin
 
@@ -442,8 +454,10 @@ local result = cru.shell.exec("cargo", {"build"}, {
 ```
 
 There is no timeout by default — commands run to completion, so builds and
-long-running processes are never silently killed. A shell policy may set a
-deadline; there is no per-call option.
+long-running processes are never silently killed. Pass `timeout` (in SECONDS)
+in the options table for a per-call deadline. A shell policy may set its own,
+and the shorter of the two wins: a plugin may shorten its deadline and may not
+lengthen the sandbox's.
 
 ## Typed Plugins
 

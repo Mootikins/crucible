@@ -1,3 +1,4 @@
+--!strict
 --- Tests for {{name}} plugin
 
 -- The plugin is required by its DIRECTORY NAME, never by `init`: the test

@@ -1,3 +1,4 @@
+--!strict
 --- Health check example for {{name}} plugin
 --- Demonstrates using the cru.health API
 
