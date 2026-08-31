@@ -98,6 +98,22 @@ test.describe('Editor wikilink navigation', () => {
     await expect(page.getByTestId('wikilink-preview')).toBeHidden();
     await expect(page.locator('[data-window-id]')).toHaveCount(0, { timeout: 5000 });
     await story.step(page, 'wikilink decorated');
+
+    // The COLOUR, in the one place that can settle it. The markdown grammar
+    // highlights the brackets and the name inside the mark, so a syntax colour
+    // lands on a DESCENDANT of `.cm-wikilink` and used to win there — every
+    // wikilink painted One Dark's string green instead of the ember. The
+    // screenshot below cannot catch that: `maxDiffPixelRatio` is 0.04, and a
+    // link's glyphs are a fraction of one percent of a `.cm-editor` frame.
+    // Only a real browser resolves `var(--color-primary)`, so it is asserted
+    // here rather than in jsdom.
+    const ember = 'rgb(224, 101, 58)'; // --color-primary, dark
+    const painted = await link.evaluate((el) =>
+      [el, ...el.querySelectorAll('*')].map((n) => getComputedStyle(n).color),
+    );
+    expect(painted.length).toBeGreaterThan(0);
+    expect(painted.every((c) => c === ember)).toBe(true);
+
     await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-wikilink-decorated.png');
 
     // 2. Hover spawns a transient floating window (Hover Editor) opening

@@ -54,20 +54,44 @@ const wikilinkHighlighter = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-// Ember-tinted pill rather than an underline: reads as "knowledge link",
-// stays distinct from markdown's own [link](url) styling, and the underline
-// only appears on hover as the follow affordance.
+/**
+ * Ember-tinted pill rather than an underline: reads as "knowledge link",
+ * stays distinct from markdown's own [link](url) styling, and the underline
+ * only appears on hover as the follow affordance.
+ *
+ * `.cm-wikilink span` beside `.cm-wikilink`, and that second selector is the
+ * whole fix. The mark decoration does not own the text it wraps: the markdown
+ * language reads `[[Note]]` as a link label and highlights the brackets and
+ * the name, so the DOM CodeMirror builds is
+ *
+ *     <span class="cm-wikilink">[<span class="ͼ10 ͼ13">[</span>…
+ *
+ * and the syntax class sits on a DESCENDANT. A descendant's own `color` beats
+ * an ancestor's whatever the extension order says, so `.cm-wikilink` alone
+ * left every wikilink painted in the syntax theme's string colour — One Dark's
+ * green #98c379 in the dark theme, measured, not the ember asked for here.
+ *
+ * NOT a precedence problem, and a precedence fix does not touch it: this stays
+ * a `baseTheme` (`Prec.lowest`) and still wins, because `.cm-wikilink span`
+ * outranks a bare `.ͼ10` on SPECIFICITY. Promoting it to `EditorView.theme`
+ * changes no computed colour — checked by reverting it and watching the tests
+ * stay green. `!important` would be wrong twice over: unnecessary here, and it
+ * would outrank the review and search decorations that legitimately recolour
+ * a span inside a link.
+ */
 const wikilinkTheme = EditorView.baseTheme({
+  '.cm-wikilink, .cm-wikilink span': {
+    color: 'var(--color-primary)',
+  },
   '.cm-wikilink': {
-    color: 'var(--color-primary, #e0653a)',
-    backgroundColor: 'color-mix(in srgb, var(--color-primary, #e0653a) 10%, transparent)',
+    backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
     borderRadius: '3px',
     cursor: 'pointer',
   },
   '.cm-wikilink:hover': {
     textDecoration: 'underline',
     textUnderlineOffset: '3px',
-    backgroundColor: 'color-mix(in srgb, var(--color-primary, #e0653a) 18%, transparent)',
+    backgroundColor: 'color-mix(in srgb, var(--color-primary) 18%, transparent)',
   },
 });
 
