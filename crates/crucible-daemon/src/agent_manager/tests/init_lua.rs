@@ -1,6 +1,74 @@
 use super::*;
 use crate::test_support::temp_session_manager;
 
+/// The session PROFILE — what `cru plugin stubs` renders the session
+/// definitions file from — must describe the VM `AgentManager` really builds.
+///
+/// `init_lua_builtin_loads_against_the_session_vm_surface` below proves the
+/// shipped defaults LOAD. It cannot prove the definitions file is right, and
+/// those are different failures: the defaults loaded perfectly while the only
+/// published stub file reported five type errors against them, because that
+/// file described the daemon VM and the defaults run here.
+///
+/// Compared as SETS, both directions reported. A path the real VM has and the
+/// profile lacks makes the checker reject working code. The reverse makes it
+/// accept code that is nil at run time — the worse one, and the one a
+/// "does it load" test never catches.
+#[tokio::test]
+async fn the_session_profile_matches_a_real_session_vm() {
+    let session_manager = temp_session_manager();
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = create_test_agent_manager(session_manager);
+    let state = agent_manager.get_or_create_session_state(&session.id);
+    let guard = state.lock().await;
+    let real = crate::vm_profiles::tests::surface(&guard.lua);
+    drop(guard);
+
+    let built = crate::vm_profiles::session_vm().expect("the session profile must build");
+    let profile = crate::vm_profiles::tests::surface(&built);
+
+    let missing: Vec<&String> = real.iter().filter(|p| !profile.contains(p)).collect();
+    assert!(
+        missing.is_empty(),
+        "the session profile omits API a real session VM has, so the session \
+         definitions file would report a type error for working code: {missing:?}"
+    );
+
+    // `cru.session.*` is registered only when boot bound a `DaemonSessionApi`
+    // (`session_vm.rs`, `if let Some(api) = self.session_api()`). A booted
+    // daemon always binds one, so it belongs in the definitions file; this
+    // harness never boots, so the VM it builds lacks it. That ONE difference is
+    // named here rather than waived wholesale — anything else the profile
+    // invents still fails, which is the direction that would otherwise pass
+    // code that is nil at run time.
+    let invented: Vec<&String> = profile
+        .iter()
+        .filter(|p| !real.contains(p))
+        .filter(|p| !p.starts_with("cru.session"))
+        .collect();
+    assert!(
+        invented.is_empty(),
+        "the session profile advertises API a real session VM does NOT have, so \
+         the session definitions file would pass code that is nil at run time: \
+         {invented:?}"
+    );
+
+    // And the waiver above must stay a waiver, not a hole: the profile really
+    // does carry the session module, so the definitions file describes it.
+    assert!(
+        profile.iter().any(|p| p == "cru.session.complete"),
+        "the session profile must carry cru.session.*, which a booted daemon has"
+    );
+}
+
 /// Fast syntax + API gate: the shipped defaults must load against exactly the
 /// surface the daemon session VM registers, and no more.
 ///

@@ -329,6 +329,32 @@ declare test_mocks: {
 
 /// An open file, as `io.open` answers with. Named so the declarations can
 /// refer to it; the host implements it in `luau_compat.rs`.
+/// Payload types: the tables the HOST builds and hands to a plugin callback.
+///
+/// A plugin cannot annotate a parameter without a type to name, and inventing
+/// one per plugin would produce N copies of a contract the daemon owns, with
+/// nothing checking any copy. These are that contract, written once.
+///
+/// Only fixed-shape payloads appear here. `cru.on`'s handler takes
+/// `(ctx: any, payload: any)` because the payload shape varies per event name,
+/// and a union of every event would type nothing usefully.
+pub(crate) const PAYLOAD_TYPES: &str = r#"
+export type PermissionRequest = {
+    tool_name: string,
+    args: any,
+    file_path: string?,
+    mode: string?,
+    is_safe: boolean,
+}
+
+-- nil means "no opinion, show the normal prompt". A table with neither
+-- `allow` nor `deny` true means the same thing.
+export type PermissionDecision = {
+    allow: boolean?,
+    deny: boolean?,
+}?
+"#;
+
 const FILE_TYPE: &str = r#"
 export type LuaFile = {
     read: (self: LuaFile, format: (string | number)?) -> string?,
@@ -466,6 +492,7 @@ pub fn render_declarations_with(
     }
     out.push('\n');
     out.push_str(FILE_TYPE.trim_start());
+    out.push_str(PAYLOAD_TYPES);
     out.push_str(OIL_TYPES);
     out.push_str(HOST_ENVIRONMENT);
     out.push('\n');

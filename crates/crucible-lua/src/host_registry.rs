@@ -254,6 +254,24 @@ impl HostSignatures {
     }
 }
 
+/// Declare the type of a member the host installs as USERDATA.
+///
+/// `cru.modes` and `cru.defaults` are `UserData` with `__index` and
+/// `__newindex` metamethods, not tables of closures, so [`Ns::func`] cannot
+/// carry their types and the stub walk cannot see their fields. They were the
+/// last members registered with a bare `Table::set`, which left them out of
+/// every definitions file — and `runtime/defaults/init.lua`, which uses both,
+/// reported five type errors for API that works.
+///
+/// Unchecked by construction, like [`Ns::declare_only`]: there is no Rust type
+/// to compare against, because a metamethod's Rust type is `Value`. Read the
+/// `UserData` impl before you trust one.
+pub fn declare_value(lua: &Lua, path: &str, decl: &str) -> Result<(), LuaError> {
+    let ty = LuaType::parse(decl).map_err(|e| LuaError::Runtime(format!("{path}: {e}")))?;
+    HostSignatures::of(lua).record(path, ty);
+    Ok(())
+}
+
 /// A `cru.*` namespace under construction.
 pub struct Ns<'lua> {
     lua: &'lua Lua,

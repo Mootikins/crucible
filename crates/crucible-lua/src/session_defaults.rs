@@ -313,6 +313,18 @@ impl SessionConfigRpc for SessionDefaultsRpc {
 /// Register `cru.defaults` on `lua`.
 pub fn register_session_defaults(lua: &Lua, defaults: SessionDefaults) -> LuaResult<()> {
     crate::lua_util::get_or_create_namespace(lua, "cru")?.set("defaults", defaults)?;
+    // A CLOSED record, unlike `cru.modes`: the `__index` above raises on a key
+    // it does not know, so the four names here are the whole surface. Luau
+    // therefore catches a misspelled default at check time, which is the one
+    // place in `cru.*` where a typo in an all-optional table IS caught — the
+    // record is exact, so an unknown key reads as absent from the type.
+    crate::host_registry::declare_value(
+        lua,
+        "cru.defaults",
+        "{ system_prompt: string?, temperature: number?, max_tokens: number?, \
+         thinking_budget: number? }",
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
 }
 

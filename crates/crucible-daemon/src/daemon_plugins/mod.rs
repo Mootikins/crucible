@@ -233,6 +233,19 @@ impl DaemonPluginLoader {
             Self::register_plugin_config(lua, plugin_config.clone()),
         )?;
 
+        // `cru.modes`, `cru.statusline`, `cru.colorscheme`, `cru.hl`,
+        // `cru.syntax` and `cru.defaults`. The daemon evaluates the user's
+        // `init.lua` on THIS VM (`daemon_plugins::boot`, step 3), so these
+        // belong to the loader's shape, not to a later call on it.
+        //
+        // They used to be registered only AFTER construction, at three call
+        // sites. `generate_stubs` introspects the loader's VM, so it rendered a
+        // definitions file without them, and `runtime/defaults/init.lua` —
+        // shipped, and evaluated on a VM that HAS them — reported five type
+        // errors for API that works. The three later calls are guarded and stay
+        // harmless; this one makes the shape true at construction.
+        reg("ui namespaces", crucible_lua::config::register_ui_namespaces(lua))?;
+
         let plugin_manager = PluginManager::new();
 
         // Validator registry is created up front so plugins can register
@@ -1442,7 +1455,12 @@ impl DaemonPluginLoader {
     /// runtime. Read-only: `render_stubs` only walks tables.
     pub fn generate_stubs(&self, output_dir: &std::path::Path) -> anyhow::Result<()> {
         crucible_lua::stubs::StubGenerator::generate_from(self.executor.lua(), output_dir)
-            .map_err(|e| anyhow::anyhow!("stub generation: {e}"))
+            .map_err(|e| anyhow::anyhow!("stub generation: {e}"))?;
+        // The session and config VMs carry a DIFFERENT `cru.*` surface, and
+        // shipped files run on them: `runtime/defaults/init.lua` on the session
+        // VM, `runtime/themes/*.lua` on the config VM. Checking those against
+        // this VM's file reports type errors for working API.
+        crate::vm_profiles::write_other_definitions(output_dir)
     }
 
     pub fn executor(&self) -> &LuaExecutor {

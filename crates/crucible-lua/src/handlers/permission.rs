@@ -134,6 +134,17 @@ pub fn register_permission_hook_api(
         })?;
 
     permissions.set("on_request", on_request_fn)?;
+    // `Ns::over` on the live table, then a declaration for the one function on
+    // it. The payload is the table `execute_permission_hooks` builds below, so
+    // the two are read from the same file — the closest a hand-written payload
+    // type gets to being checked.
+    crate::host_registry::declare_value(
+        lua,
+        "cru.permissions.on_request",
+        "(handler: (request: PermissionRequest) -> PermissionDecision, \
+          opts: { pattern: string?, priority: number? }?) -> ()",
+    )
+    .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
 }
 

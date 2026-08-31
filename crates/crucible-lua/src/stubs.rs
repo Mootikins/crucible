@@ -79,6 +79,28 @@ impl StubGenerator {
         Ok(())
     }
 
+    /// Write ONE definitions file describing `lua`, and nothing else.
+    ///
+    /// [`Self::generate_from`] writes the LuaLS stubs, the doc index and the
+    /// declarations together, which is right for the profile a plugin author
+    /// works in. The other profiles need only the declarations — a session file
+    /// and a theme are checked, not authored against an editor index.
+    pub fn write_declarations(lua: &Lua, path: &Path) -> Result<(), LuaError> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let (_, _, paths, values) = render_stubs(lua)?;
+        fs::write(
+            path,
+            crate::host_api::render_declarations_with(
+                &paths,
+                &values,
+                &crate::host_registry::HostSignatures::of(lua),
+            ),
+        )?;
+        Ok(())
+    }
+
     /// Stubs for the modules this crate can register on its own.
     ///
     /// Necessarily a subset — the daemon registers a dozen more — so this is

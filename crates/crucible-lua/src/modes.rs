@@ -334,9 +334,29 @@ impl UserData for ModeRegistry {
     }
 }
 
+/// The Luau type of one entry of `cru.modes`.
+///
+/// Read and write are NOT the same shape, and Luau has one type for both. A
+/// read always answers with `name`; a write never supplies it. `tools` reads
+/// as `"*"` or a list and writes as either. `permissions` reads as a string
+/// when the mode has no rules and as a table when it has. So every field is
+/// optional: the type states the union of both directions, which is the most
+/// a single type can say here. The `__newindex` above is what rejects a
+/// malformed write, and it does so at run time.
+const MODE: &str = "{ \
+    name: string?, \
+    description: string?, \
+    tools: (string | { string })?, \
+    permissions: (string | { default: string?, allow: { string }?, deny: { string }?, ask: { string }? })? \
+}";
+
 /// Register `cru.modes` on `lua`.
 pub fn register_modes(lua: &Lua, registry: ModeRegistry) -> LuaResult<()> {
     crate::lua_util::get_or_create_namespace(lua, "cru")?.set("modes", registry)?;
+    // Userdata, so the stub walk cannot see a field. Assigning nil deletes a
+    // mode, which is why the value is optional.
+    crate::host_registry::declare_value(lua, "cru.modes", &format!("{{ [string]: {MODE}? }}"))
+        .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
 }
 
