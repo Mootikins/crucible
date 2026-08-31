@@ -10,6 +10,7 @@ import {
 } from 'solid-js';
 import { FileText, Pencil } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
+import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style';
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
@@ -132,9 +133,6 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
       v.focus();
     })();
   };
-
-  const menuItemClass =
-    'flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash';
 
   /** Rendered as bytes, never opened as text — see the early return below. */
   const isImage = () => !!props.filePath && IMAGE_EXT.test(props.filePath);
@@ -506,13 +504,13 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           />
           <Portal>
           <Menu.Positioner>
-            <Menu.Content class="min-w-[11rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
-              <Menu.Item value="cut" class={menuItemClass}>Cut</Menu.Item>
-              <Menu.Item value="copy" class={menuItemClass}>Copy</Menu.Item>
-              <Menu.Item value="paste" class={menuItemClass}>Paste</Menu.Item>
-              <Menu.Item value="select-all" class={menuItemClass}>Select All</Menu.Item>
-              <Menu.Separator class="my-1 border-t border-hairline" />
-              <Menu.Item value="copy-file-path" class={menuItemClass}>Copy File Path</Menu.Item>
+            <Menu.Content class={`${menuContent} z-50`}>
+              <Menu.Item value="cut" class={menuItem}>Cut</Menu.Item>
+              <Menu.Item value="copy" class={menuItem}>Copy</Menu.Item>
+              <Menu.Item value="paste" class={menuItem}>Paste</Menu.Item>
+              <Menu.Item value="select-all" class={menuItem}>Select All</Menu.Item>
+              <Menu.Separator class={menuSeparator} />
+              <Menu.Item value="copy-file-path" class={menuItem}>Copy File Path</Menu.Item>
             </Menu.Content>
           </Menu.Positioner>
           </Portal>

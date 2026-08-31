@@ -5,9 +5,21 @@
  * `tree-style.ts` is the same idea for tree-ish surfaces.
  */
 
-/** The floating panel. */
+/**
+ * The floating panel.
+ *
+ * Border and shadow are deliberately in proportion. This was a `border-hairline`
+ * (the FAINTEST rule in the palette) under `shadow-lg`, whose blur is 20px — a
+ * 20:1 ratio of soft to hard, which is the shape of a panel that has been given
+ * a big drop shadow to make up for an edge that does not read. On a near-black
+ * canvas the shadow did nothing anyway; on the light theme it did too much.
+ *
+ * The edge does the separating now (`hairline-strong`, the same rule the rest
+ * of the shell uses where an edge must be seen) and the shadow only lifts:
+ * `shadow-md` is 8px, so the ratio is 8:1.
+ */
 export const menuContent =
-  'min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none';
+  'focus-ring min-w-[10rem] rounded border border-hairline-strong bg-surface-elevated py-1 text-xs text-shell-ink shadow-md';
 
 /** One row. Ark stamps `data-highlighted` on the keyboard/pointer cursor. */
 export const menuItem =

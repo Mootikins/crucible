@@ -10,6 +10,7 @@ import { windowStore, windowActions, findEdgePanelForGroup } from '@/stores/wind
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/lib/tab-guards';
+import { menuContent, menuItem } from '@/components/ui/menu-style';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/lib/context-menu';
@@ -366,22 +367,22 @@ const TabContextMenu: Component<{
           strip (it scrolled the tabs and broke pointer hit-testing). */}
       <Portal>
         <Menu.Positioner>
-          <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
+          <Menu.Content class={`${menuContent} z-50`}>
           <Menu.Item
             value="close"
-            class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+            class={menuItem}
           >
             Close
           </Menu.Item>
           <Menu.Item
             value="close-others"
-            class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+            class={menuItem}
           >
             Close Others
           </Menu.Item>
           <Menu.Item
             value="close-right"
-            class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+            class={menuItem}
           >
             Close to the Right
           </Menu.Item>

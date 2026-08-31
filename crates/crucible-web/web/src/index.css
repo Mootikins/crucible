@@ -237,6 +237,51 @@
   --color-term-bright-magenta: #63308a;
   --color-term-bright-cyan: #0d585f;
   --color-term-bright-white: #17161c;
+
+  /* ── Elevation, light ─────────────────────────────────────────────────
+   * The dark ramp is near-black at alpha 0.30–0.60. It has to be: a shadow on
+   * a #0e0d11 canvas has almost nowhere left to darken, so it buys separation
+   * with opacity. Painted unchanged on #edecf2 the same values are a grey
+   * smear under every menu, and these tokens WERE unchanged — declared once,
+   * in `@theme`, and never re-declared here.
+   *
+   * The geometry is identical, step for step; only the ink changes. Each light
+   * alpha is about a third of its dark counterpart, which holds the ramp's
+   * proportions while landing inside the range light themes actually use
+   * (Primer 0.04–0.16, Material 3 0.15, IntelliJ 0.10–0.20).
+   *
+   * The ink is #17161c — the light theme's own `shell-ink`, not pure black.
+   * These neutrals were generated at the dark theme's hue on purpose, and a
+   * neutral-black shadow under them reads a half-step warmer than the surface
+   * it falls on. */
+  --shadow-sm: 0 1px 2px rgba(23, 22, 28, 0.08);
+  --shadow-md: 0 2px 8px -2px rgba(23, 22, 28, 0.11);
+  --shadow-lg: 0 6px 20px -6px rgba(23, 22, 28, 0.14);
+  --shadow-xl: 0 12px 32px -8px rgba(23, 22, 28, 0.17);
+  --shadow-2xl: 0 18px 46px -10px rgba(23, 22, 28, 0.2);
+}
+
+/* ── Elevation, light: the tokens above have to be RE-APPLIED ───────────
+ * Tailwind v4 does not emit `--shadow-*` as custom properties. It INLINES the
+ * `@theme` value into each utility at build time:
+ *
+ *   .shadow-lg { --tw-shadow: 0 6px 20px -6px var(--tw-shadow-color,#00000080) }
+ *
+ * so re-declaring `--shadow-lg` under the light selector — the obvious fix,
+ * and the one the colour tokens above genuinely use — changes nothing that
+ * paints. `--tw-shadow-color` is no way in either: it is registered
+ * `@property … inherits:false`, so a value set on `:root` never reaches the
+ * element that reads it.
+ *
+ * What is left is to re-assign `--tw-shadow` per utility, under a selector
+ * that outranks the bare class (0,2,1 against 0,1,0). The VALUES still live in
+ * one place — the token block above — so this stays a mapping, not a copy. */
+@layer utilities {
+  :root[data-theme='light'] .shadow-sm { --tw-shadow: var(--shadow-sm); }
+  :root[data-theme='light'] .shadow-md { --tw-shadow: var(--shadow-md); }
+  :root[data-theme='light'] .shadow-lg { --tw-shadow: var(--shadow-lg); }
+  :root[data-theme='light'] .shadow-xl { --tw-shadow: var(--shadow-xl); }
+  :root[data-theme='light'] .shadow-2xl { --tw-shadow: var(--shadow-2xl); }
 }
 
 /* ── shiki, light ───────────────────────────────────────────────────────
