@@ -234,8 +234,9 @@ fn collect_plugin_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         let path = entry?.path();
         if path.is_file() {
             let stem = path.file_stem().and_then(|name| name.to_str());
-            let ext = path.extension().and_then(|e| e.to_str());
-            if matches!((stem, ext), (Some(s), Some("lua")) if s.ends_with("_test")) {
+            if crucible_lua::source_files::is_lua_source(&path)
+                && stem.is_some_and(|s| s.ends_with("_test"))
+            {
                 out.push(path);
             }
         }
@@ -565,7 +566,7 @@ mod shipped_plugin_tests {
                         continue;
                     }
                     walk(&path, out);
-                } else if path.extension().is_some_and(|e| e == "lua" || e == "luau") {
+                } else if crucible_lua::source_files::is_lua_source(&path) {
                     out.push(path);
                 }
             }

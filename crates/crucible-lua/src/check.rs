@@ -131,8 +131,18 @@ pub fn check_plugin_with(
     // The loader FAILS OPEN on the rest — a plugin whose spec cannot be read
     // still loads and merely exports nothing — but a check that stayed silent
     // about it would print a tick for a plugin the daemon cannot use.
-    let init = plugin_dir.join("init.lua");
-    if init.is_file() {
+    // Both extensions, and a directory holding both is refused rather than
+    // resolved — see `source_files`.
+    let init = match crate::source_files::init_file(plugin_dir) {
+        Ok(found) => found,
+        Err(ambiguous) => {
+            findings.push(Finding::Load {
+                message: ambiguous.to_string(),
+            });
+            None
+        }
+    };
+    if let Some(init) = init {
         if let Err(e) = load_plugin_spec(&init) {
             let message = e.to_string();
             findings.push(match e {
@@ -162,7 +172,7 @@ pub fn check_plugin_with(
     // pass.
     if files.is_empty() {
         findings.push(Finding::Load {
-            message: format!("no .lua files under {}", plugin_dir.display()),
+            message: format!("no Lua source under {}", plugin_dir.display()),
         });
     }
 
@@ -419,7 +429,7 @@ fn lua_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     if !dir.is_dir() {
-        if dir.extension().is_some_and(|ext| ext == "lua") {
+        if crate::source_files::is_lua_source(dir) {
             out.push(dir.to_path_buf());
         }
         return Ok(());
@@ -428,7 +438,7 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
         let path = entry?.path();
         if path.is_dir() {
             collect(&path, out)?;
-        } else if path.extension().is_some_and(|ext| ext == "lua") {
+        } else if crate::source_files::is_lua_source(&path) {
             out.push(path);
         }
     }
@@ -564,7 +574,7 @@ mod tests {
             report
                 .findings
                 .iter()
-                .any(|f| matches!(f, Finding::Load { message } if message.contains("no .lua"))),
+                .any(|f| matches!(f, Finding::Load { message } if message.contains("no Lua source"))),
             "{:?}",
             report.findings
         );

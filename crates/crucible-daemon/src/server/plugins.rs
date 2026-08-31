@@ -699,8 +699,9 @@ pub(super) fn spawn_plugin_watcher(
                     return;
                 }
                 for path in &event.paths {
-                    let ext = path.extension().and_then(|e| e.to_str());
-                    if matches!(ext, Some("lua") | Some("fnl")) {
+                    // `fnl` used to be watched here; Fennel is gone, and the
+                    // pair that replaced it lives in `source_files`.
+                    if crucible_lua::source_files::is_lua_source(path) {
                         let _ = sync_tx.send(path.clone());
                     }
                 }

@@ -158,7 +158,19 @@ impl PluginManifest {
             description: String::new(),
             author: String::new(),
             license: None,
-            main: "init.lua".to_string(),
+            // The file that is really there, preferred extension first. A
+            // manifest-less plugin has no `main` field to read, so guessing one
+            // name meant a `init.luau` plugin resolved to a path that does not
+            // exist.
+            main: crate::source_files::init_file(dir)
+                .ok()
+                .flatten()
+                .and_then(|path| {
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.to_string())
+                })
+                .unwrap_or_else(|| "init.lua".to_string()),
             capabilities: Vec::new(),
             dependencies: Vec::new(),
             enabled: None,

@@ -50,10 +50,13 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
 
     let explicit_override = config_path_override.is_some();
     let config_path = config_path_override.unwrap_or_else(CliConfig::default_config_path);
-    let init_lua_path = config_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("init.lua");
+    // Whichever of `init.luau` / `init.lua` is really there, so `cru doctor`
+    // does not report a missing config beside the file the daemon is loading.
+    let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+    let init_lua_path = crucible_lua::source_files::init_file(config_dir)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| config_dir.join("init.lua"));
     let mut loaded_config: Option<CliConfig> = None;
 
     // Check 2: Config. The config is `init.lua`; `config.toml`, where it
@@ -433,7 +436,10 @@ async fn evaluate_config_check(
         }
     };
 
-    let init_lua = boot.config_root.join("init.lua");
+    let init_lua = crucible_lua::source_files::init_file(&boot.config_root)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| boot.config_root.join("init.lua"));
     match &boot.eval_error {
         Some(error) => results.push(DoctorCheckResult {
             check_name: "Config evaluation".to_string(),

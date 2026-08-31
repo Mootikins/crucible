@@ -84,6 +84,7 @@ mod session_defaults;
 mod sessions;
 mod shell;
 pub mod signature;
+pub mod source_files;
 mod storage_api;
 pub mod stubs;
 mod timer;

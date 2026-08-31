@@ -109,8 +109,13 @@ impl PluginManager {
                             discovered.push(name);
                         }
                         Ok(None) => {
-                            // No manifest — check for init.lua (manifest-less plugin)
-                            if path.join("init.lua").exists() {
+                            // No manifest — an `init.luau` or `init.lua` makes
+                            // this a plugin anyway.
+                            if crate::source_files::init_file(&path)
+                                .ok()
+                                .flatten()
+                                .is_some()
+                            {
                                 match PluginManifest::from_directory_defaults(&path) {
                                     Ok(manifest) => {
                                         let name = manifest.name.clone();
@@ -145,9 +150,9 @@ impl PluginManager {
                         }
                     }
                 } else if path.is_file() {
-                    // Single-file plugin: .lua file directly in plugins dir
-                    let ext = path.extension().and_then(|e| e.to_str());
-                    if matches!(ext, Some("lua")) {
+                    // Single-file plugin: a source file directly in the
+                    // plugins dir.
+                    if crate::source_files::is_lua_source(&path) {
                         let stem = path
                             .file_stem()
                             .and_then(|s| s.to_str())
@@ -207,11 +212,9 @@ impl PluginManager {
         );
 
         // Try spec-based loading first (execute init.lua, inspect returned table)
-        if main_path.exists()
-            && main_path
-                .extension()
-                .is_some_and(|e| e == "lua" || e == "fnl")
-        {
+        // `fnl` used to be accepted here; Fennel is gone, and `.luau` is what
+        // replaced it as the second extension.
+        if main_path.exists() && crate::source_files::is_lua_source(&main_path) {
             match load_plugin_spec(&main_path) {
                 Ok(Some(spec)) => {
                     debug!(

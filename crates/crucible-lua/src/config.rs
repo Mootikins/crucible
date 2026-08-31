@@ -482,8 +482,8 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
 
 /// List available theme names from a config directory's `themes/` subdirectory.
 ///
-/// Returns sorted theme names (without `.lua` extension) discovered in
-/// `config_dir/themes/*.lua`.
+/// Returns sorted theme names (without the extension) discovered in
+/// `config_dir/themes/`.
 pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
     let themes_dir = config_dir.join("themes");
     if !themes_dir.exists() {
@@ -493,7 +493,7 @@ pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
     if let Ok(entries) = std::fs::read_dir(&themes_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("lua") {
+            if crate::source_files::is_lua_source(&path) {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     names.push(stem.to_string());
                 }

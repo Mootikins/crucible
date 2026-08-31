@@ -144,7 +144,13 @@ pub fn boot_input_hash(config_source: &Path) -> String {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut hasher = blake3::Hasher::new();
-    for file in [config_source, &config_root.join("init.lua")] {
+    // Both names hash in. A user who renames `init.lua` to `init.luau` changes
+    // the boot input, and the staleness warning has to notice.
+    let init_paths: Vec<PathBuf> = crucible_lua::source_files::init_file_names()
+        .iter()
+        .map(|name| config_root.join(name))
+        .collect();
+    for file in std::iter::once(config_source).chain(init_paths.iter().map(|p| p.as_path())) {
         match std::fs::read(file) {
             Ok(bytes) => {
                 hasher.update(&(bytes.len() as u64).to_le_bytes());
@@ -298,7 +304,17 @@ pub async fn evaluate_boot_config_with_paths(
         // `_G` mutation with it. "Seed plus whatever registered before the
         // error line" would depend on WHERE the file failed; the rollback
         // makes a broken config mean exactly what the warning says.
-        let init_path = config_root.join("init.lua");
+        // `init.luau` or `init.lua`, preferred first. A config directory
+        // holding both is refused rather than resolved: the user edits one and
+        // watches nothing happen otherwise.
+        let init_path = match crucible_lua::source_files::init_file(&config_root) {
+            Ok(Some(path)) => path,
+            Ok(None) => config_root.join("init.lua"),
+            Err(ambiguous) => {
+                warn!("{ambiguous}");
+                config_root.join("init.lua")
+            }
+        };
         let eval_error = if init_path.exists() {
             let pre_eval = crucible_lua::snapshot_state().expect("the config state is live");
             let error = evaluate_init_file(lua, &init_path).await.err();

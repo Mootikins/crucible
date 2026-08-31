@@ -498,3 +498,66 @@ fn a_tool_with_an_unreadable_parameter_type_is_refused() {
         );
     }
 }
+
+/// A plugin written with the extension Luau's own tooling expects must be
+/// discovered, loaded and executed exactly like a `.lua` one.
+///
+/// Manifest-LESS on purpose: with no `main` field to read, the loader has to
+/// find the entry point itself, and that is the path that used to guess
+/// `init.lua` and then fail to open it.
+#[test]
+fn a_luau_plugin_is_discovered_and_loads() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("luau-plugin");
+    std::fs::create_dir_all(plugin_dir.join("lua")).unwrap();
+    std::fs::write(
+        plugin_dir.join("init.luau"),
+        "return { name = 'luau-plugin', version = '1.0.0', description = 'a .luau plugin' }\n",
+    )
+    .unwrap();
+    // A `.luau` submodule beside it. `require` resolution for both extensions
+    // is proved in `modules::extension_tests`; what matters here is that a
+    // directory containing one is still discovered as a plugin.
+    std::fs::write(
+        plugin_dir.join("lua/helper.luau"),
+        "return { text = 'resolved through .luau' }\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+    assert!(
+        discovered.iter().any(|name| name == "luau-plugin"),
+        "a directory with an init.luau is a plugin: {discovered:?}"
+    );
+
+    manager.load("luau-plugin").unwrap();
+    let plugin = manager.get("luau-plugin").unwrap();
+    assert_eq!(plugin.state, PluginState::Active);
+    assert!(
+        plugin.manifest.main.ends_with("init.luau"),
+        "the manifest's entry point must be the file that is really there, got {}",
+        plugin.manifest.main
+    );
+}
+
+/// Two entry points answering to one name is refused, not resolved. Picking
+/// one silently means an edit to the other appears to do nothing.
+#[test]
+fn a_plugin_with_both_entry_points_is_reported() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("ambiguous");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(plugin_dir.join("init.lua"), "return { name = 'ambiguous' }\n").unwrap();
+    std::fs::write(plugin_dir.join("init.luau"), "return { name = 'ambiguous' }\n").unwrap();
+
+    let report = crate::check_plugin(&plugin_dir, None).expect("check runs");
+    assert!(
+        report.findings.iter().any(|f| {
+            let text = f.to_string();
+            text.contains("init.luau") && text.contains("init.lua")
+        }),
+        "the collision must be reported and must name both files: {:?}",
+        report.findings
+    );
+}

@@ -538,14 +538,15 @@ fn validate_name(name: &str) -> mlua::Result<PathBuf> {
     Ok(relative)
 }
 
-/// `<root>/<relative>.lua`, else `<root>/<relative>/init.lua`, canonicalized
-/// and proved to still lie under the root.
+/// The first of `<root>/<relative>.luau`, `.lua`, `<relative>/init.luau` and
+/// `init.lua` that exists, canonicalized and proved to still lie under the
+/// root.
+///
+/// The order lives in [`crate::source_files::module_candidates`], which every
+/// other site that resolves a module name uses too.
 fn module_file(root: &Path, relative: &Path) -> Option<PathBuf> {
     let root_canonical = std::fs::canonicalize(root).ok()?;
-    for candidate in [
-        root.join(relative).with_extension("lua"),
-        root.join(relative).join("init.lua"),
-    ] {
+    for candidate in crate::source_files::module_candidates(root, relative) {
         if !candidate.is_file() {
             continue;
         }
@@ -931,6 +932,69 @@ mod tests {
         assert!(
             found.is_some_and(|path| path.ends_with("tests/fixtures/init.lua")),
             "searchpath must answer over the host roots"
+        );
+    }
+}
+
+#[cfg(test)]
+mod extension_tests {
+    use super::*;
+    use crate::source_files::PREFERRED_EXTENSION;
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(path, body).expect("write");
+    }
+
+    /// `.luau` is what Luau's own tooling expects, and Crucible reads it.
+    #[test]
+    fn a_luau_module_resolves() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("plugins");
+        write(
+            &root.join("demo/init.luau"),
+            "return { value = require('./lua/helper').value }",
+        );
+        write(&root.join("demo/lua/helper.luau"), "return { value = 'luau' }");
+
+        let resolved = module_file(&root, Path::new("demo"));
+        assert_eq!(
+            resolved,
+            Some(std::fs::canonicalize(root.join("demo/init.luau")).unwrap()),
+            "an init.luau directory must resolve"
+        );
+    }
+
+    /// Every plugin already on a user's disk is `.lua`, and stays working.
+    #[test]
+    fn a_lua_module_still_resolves() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("plugins");
+        write(&root.join("demo/lua/helper.lua"), "return {}");
+
+        let resolved = module_file(&root, Path::new("demo/lua/helper"));
+        assert_eq!(
+            resolved,
+            Some(std::fs::canonicalize(root.join("demo/lua/helper.lua")).unwrap()),
+            "the legacy extension must keep resolving"
+        );
+    }
+
+    /// A bare file beats a directory, and `.luau` beats `.lua`, so a rename
+    /// that leaves the old file behind loads the NEW one — not whichever the
+    /// filesystem happened to list first.
+    #[test]
+    fn luau_wins_when_both_exist() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("plugins");
+        write(&root.join("helper.lua"), "return { which = 'lua' }");
+        write(&root.join("helper.luau"), "return { which = 'luau' }");
+
+        let resolved = module_file(&root, Path::new("helper")).expect("resolves");
+        assert!(
+            resolved.ends_with(format!("helper.{PREFERRED_EXTENSION}")),
+            "the preferred extension must win, got {}",
+            resolved.display()
         );
     }
 }
