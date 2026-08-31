@@ -101,7 +101,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           {/* Prompt */}
           <Show when={props.event.prompt}>
             <div class="px-3 py-2 bg-surface-base">
-              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Prompt</div>
+              <div class="text-[11px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Prompt</div>
               <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {props.event.prompt}
               </p>
@@ -111,7 +111,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           {/* Summary (completed) */}
           <Show when={props.event.status === 'completed' && props.event.summary}>
             <div class={`px-3 py-2 bg-surface-base ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Summary</div>
+              <div class="text-[11px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Summary</div>
               <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                 {props.event.summary}
               </p>
@@ -121,7 +121,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           {/* Error (failed) */}
           <Show when={props.event.status === 'failed' && props.event.error}>
             <div class={`px-3 py-2 bg-error/10 ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-error/70 mb-1 font-semibold">Error</div>
+              <div class="text-[11px] uppercase tracking-wider text-error/70 mb-1 font-semibold">Error</div>
               <pre class="text-xs text-error font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
                 {props.event.error}
               </pre>
@@ -139,7 +139,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           </Show>
 
           {/* ID */}
-          <div class="px-3 py-1.5 text-[10px] text-muted-dark border-t border-hairline">
+          <div class="px-3 py-1.5 text-[11px] text-muted-dark border-t border-hairline">
             ID: {props.event.id}
           </div>
         </div>

@@ -85,7 +85,7 @@ export const LinkPrompt: Component<{
       >
         <input
           ref={input}
-          class="bg-transparent px-3 py-2 text-sm text-shell-ink outline-none"
+          class="focus-ring bg-transparent px-3 py-2 text-sm text-shell-ink"
           placeholder="https://…"
           value={value()}
           data-testid="canvas-link-prompt-input"

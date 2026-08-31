@@ -62,13 +62,13 @@ export const SessionRow: Component<{
       {/* Only when it says something the group row does not. */}
       <Show when={props.showKiln && props.kilnLabel} keyed>
         {(k) => (
-          <span class="shrink-0 truncate max-w-[80px] text-[10px] text-muted-dark">{k}</span>
+          <span class="shrink-0 truncate max-w-[80px] text-[11px] text-muted-dark">{k}</span>
         )}
       </Show>
       <Show when={props.branch} keyed>
         {(b) => (
           <span
-            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-[10px] text-muted-dark"
+            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-[11px] text-muted-dark"
             title={`branch · ${b}`}
           >
             <GitBranch class="w-2.5 h-2.5 shrink-0" />

@@ -156,7 +156,49 @@ The README states that the project is in early development.
 
 ## Accessibility & Inclusion
 
+**The target is WCAG 2.1 Level AA.** The decision is on record; it is not open.
+New work meets AA, and a change that lowers a ratio below AA is a defect.
+
+**Verified mechanically.** `src/lib/__tests__/contrast.test.ts` parses the token
+blocks in `index.css` and computes WCAG contrast from the parsed values. It
+holds four floors, in BOTH themes:
+
+- every ink weight — `shell-ink`, `shell-body`, `muted`, `muted-dark` — clears
+  4.5:1 on every panel surface, including the lightest one;
+- `shell-ink`, `shell-body` and `muted` clear 4.5:1 on `--color-control`;
+  `muted-dark` is too faint for a control fill and is not allowed there;
+- `--color-on-primary` clears 4.5:1 on a solid ember fill, at rest and on hover;
+- `--color-focus-ring` clears the 3:1 non-text floor on every surface.
+
+The test also holds the two themes to the same `--color-*` token set, and holds
+the ink ramp to four steps that stay apart. It never greps for a hex literal.
+
+**Verified by construction.** One focus treatment, the `focus-ring` utility in
+`index.css`. It suppresses the outline for a pointer focus and draws a 2px ember
+outline for `:focus-visible`. It replaces `focus:outline-none`; the two are never
+written together.
+
+**A floor for functional text: 11px.** Fifty `text-[10px]` labels moved up to
+it. Four files still hold the old size; they are listed below.
+
+**Not verified mechanically, and not claimed.** No axe or Lighthouse run is
+wired into CI. Screen-reader behaviour, focus ORDER, live-region announcements,
+target size and reflow are unmeasured. `aria-` attributes appear in 51 source
+files, which is a signal, not a result.
+
+**Known open failures**, measured and recorded rather than quietly carried:
+
+- `bg-error` with white text is 3.76:1 on the dark theme (5.92:1 light). The
+  error ramp is untouched so far.
+- The command palette marks its selected row with `bg-primary/15`, which is
+  1.21:1 against the surface behind it — under the 3:1 a state indicator owes.
+  An ember outline now rides along with that tint, so the state is carried by
+  something that clears the floor.
+- `text-[10px]` survives in `ToolCard.tsx`, `ChangesPanel.tsx`, `EmptyPane.tsx`
+  and `EdgePanel.tsx` (8px there).
+
+Two more facts, unchanged:
+
 - `index.css` honors `prefers-reduced-motion`.
 - The audience lives in a terminal, so full keyboard operation matters. A
   command palette and vim keybindings are present.
-- **Undecided:** a target WCAG level. No formal standard is on record.

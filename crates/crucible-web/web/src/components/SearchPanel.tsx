@@ -111,8 +111,8 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
       <div class="flex items-center gap-1.5 min-w-0">
         <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
         <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
-        <span class="text-[10px] text-muted-dark shrink-0">:{props.hit.line}</span>
-        <span class="text-[10px] text-muted-dark truncate ml-auto pl-2">{props.hit.relPath}</span>
+        <span class="text-[11px] text-muted-dark shrink-0">:{props.hit.line}</span>
+        <span class="text-[11px] text-muted-dark truncate ml-auto pl-2">{props.hit.relPath}</span>
       </div>
       <div class="mt-0.5 pl-5 text-[11px] font-mono leading-snug text-muted whitespace-pre-wrap break-all line-clamp-2">
         {parts()[0]}
@@ -134,9 +134,9 @@ const SemanticRow: Component<{ hit: SemanticHit; onOpen: () => void }> = (props)
   >
     <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
     <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
-    <span class="text-[10px] text-muted-dark truncate min-w-0">{props.hit.relPath}</span>
+    <span class="text-[11px] text-muted-dark truncate min-w-0">{props.hit.relPath}</span>
     <span
-      class="ml-auto shrink-0 text-[10px] font-mono tabular-nums text-primary/90 bg-primary/10 rounded px-1"
+      class="ml-auto shrink-0 text-[11px] font-mono tabular-nums text-primary/90 bg-primary/10 rounded px-1"
       title="similarity"
     >
       {Math.round(props.hit.score * 100)}%
@@ -300,7 +300,7 @@ export const SearchPanel: Component = () => {
             onKeyDown={(e) => { if (e.key === 'Escape' && query()) { e.stopPropagation(); setQuery(''); } }}
             placeholder={`Search ${scope().name.toLowerCase()}…`}
             aria-label="Search content"
-            class="flex-1 min-w-0 bg-transparent text-sm text-shell-ink placeholder-muted-dark outline-none"
+            class="focus-ring flex-1 min-w-0 bg-transparent text-sm text-shell-ink placeholder-muted-dark"
             data-testid="search-input"
           />
           <Show when={query()}>
@@ -408,7 +408,7 @@ export const SearchPanel: Component = () => {
                 <ClipboardList class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
                 <span class="text-xs text-shell-body truncate">{s.title ?? 'Untitled session'}</span>
                 <Show when={s.started_at}>
-                  <span class="text-[10px] text-muted-dark shrink-0 ml-auto pl-2">{relativeTime(s.started_at!)}</span>
+                  <span class="text-[11px] text-muted-dark shrink-0 ml-auto pl-2">{relativeTime(s.started_at!)}</span>
                 </Show>
               </button>
             )}
@@ -500,11 +500,11 @@ const ScopeMenu: Component<{
       >
         <For each={props.options.filter((s) => s.kind === 'everywhere' || s.kind === 'sessions')}>{(s) => <Row s={s} />}</For>
         <Show when={props.options.some((s) => s.kind === 'kiln')}>
-          <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
+          <div class="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
           <For each={props.options.filter((s) => s.kind === 'kiln')}>{(s) => <Row s={s} />}</For>
         </Show>
         <Show when={props.options.some((s) => s.kind === 'project')}>
-          <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
+          <div class="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
           <For each={props.options.filter((s) => s.kind === 'project')}>{(s) => <Row s={s} />}</For>
         </Show>
       </div>

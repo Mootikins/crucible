@@ -97,7 +97,7 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
         aria-label={props.ariaLabel}
         rows={props.rows ?? 1}
         disabled={props.disabled}
-        class="w-full bg-transparent text-sm text-shell-ink placeholder-muted-dark resize-none outline-none px-1 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
+        class="focus-ring w-full bg-transparent text-sm text-shell-ink placeholder-muted-dark resize-none px-1 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
         data-testid={props.testid}
       />
       <Show when={autocomplete.isOpen()}>

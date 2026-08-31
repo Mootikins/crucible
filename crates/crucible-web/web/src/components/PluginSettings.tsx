@@ -92,7 +92,7 @@ const OptionRow: Component<{
         <label class="block text-xs text-shell-body mb-1">
           {props.node.name ?? props.path.at(-1)}
           <Show when={props.node.writable === false}>
-            <span class="ml-1 text-[10px] text-muted" title="This setting is read-only">
+            <span class="ml-1 text-[11px] text-muted" title="This setting is read-only">
               (read-only)
             </span>
           </Show>

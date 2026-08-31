@@ -97,7 +97,7 @@ export const AutocompletePopup: Component<AutocompletePopupProps> = (props) => {
               aria-selected={index() === props.selectedIndex}
               // Keyboard selection reads as an ember tint (distinct from the
               // lighter hover wash) so it's clear what Enter will insert.
-              class="w-full px-3 py-2 text-left text-sm text-shell-ink hover:bg-hover-wash transition-colors focus-visible:outline-none"
+              class="focus-ring w-full px-3 py-2 text-left text-sm text-shell-ink hover:bg-hover-wash transition-colors"
               classList={{ 'bg-primary/15': index() === props.selectedIndex }}
               onMouseDown={(e) => {
                 e.preventDefault();

@@ -242,12 +242,12 @@ export const PluginPanel: Component = () => {
                   </div>
                   <div class="mt-1 flex items-center gap-1.5">
                     <span
-                      class={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceColor(plugin.source)}`}
+                      class={`text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceColor(plugin.source)}`}
                     >
                       {plugin.source}
                     </span>
                     <span
-                      class={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${stateColor(plugin.state)}`}
+                      class={`text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${stateColor(plugin.state)}`}
                     >
                       {plugin.state}
                     </span>
@@ -345,7 +345,7 @@ export const PluginPanel: Component = () => {
               type="button"
               onClick={handleInstall}
               disabled={installing()}
-              class="text-xs px-3 py-1 bg-primary hover:bg-primary-hover rounded text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-xs px-3 py-1 bg-primary hover:bg-primary-hover rounded text-on-primary disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="plugins-install-submit"
             >
               {installing() ? 'Installing…' : 'Install'}

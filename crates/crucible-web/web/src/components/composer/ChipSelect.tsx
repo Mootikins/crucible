@@ -457,7 +457,7 @@ export const ChipSelect: Component<{
                   }}
                   placeholder={`Search ${props.name}…`}
                   aria-label={`Search ${props.name}`}
-                  class="w-full bg-transparent text-xs text-shell-ink placeholder-muted-dark outline-none py-1"
+                  class="focus-ring w-full bg-transparent text-xs text-shell-ink placeholder-muted-dark py-1"
                 />
               </div>
             </Show>
@@ -571,7 +571,7 @@ export const ChipSelect: Component<{
                     }}
                     placeholder={props.action!.placeholder}
                     aria-label={props.action!.label}
-                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted-dark rounded border border-hairline focus:border-primary outline-none px-2 py-1"
+                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted rounded border border-hairline focus:border-primary outline-none px-2 py-1"
                     data-testid={props.testid ? `${props.testid}-action-input` : undefined}
                   />
                   <button

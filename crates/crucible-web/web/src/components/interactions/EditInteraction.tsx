@@ -34,7 +34,7 @@ export const EditInteraction: Component<Props> = (props) => {
         onInput={(e) => setContent(e.currentTarget.value)}
         rows={12}
         spellcheck={isProse()}
-        class={`w-full px-3 py-2 mb-3 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted-dark focus:outline-none focus:ring-2 focus:ring-primary resize-y ${
+        class={`w-full px-3 py-2 mb-3 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary resize-y ${
           isProse() ? '' : 'font-mono text-sm'
         }`}
       />

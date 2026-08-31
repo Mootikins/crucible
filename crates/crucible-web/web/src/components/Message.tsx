@@ -114,7 +114,7 @@ export const Message: Component<MessageProps> = (props) => {
               </button>
               <button
                 type="button"
-                class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover transition-colors"
+                class="rounded bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary-hover transition-colors"
                 onClick={handleEditSave}
                 title="Sends the edited text as a new message (history is immutable)"
               >

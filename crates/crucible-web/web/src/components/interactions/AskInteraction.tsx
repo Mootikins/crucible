@@ -63,7 +63,7 @@ export const AskInteraction: Component<Props> = (props) => {
           placeholder={props.request.choices ? 'Or type your own...' : 'Type your answer...'}
           value={otherText()}
           onInput={(e) => setOtherText(e.currentTarget.value)}
-          class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted-dark focus:outline-none focus:ring-2 focus:ring-primary mb-3"
+          class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary mb-3"
         />
       </Show>
 

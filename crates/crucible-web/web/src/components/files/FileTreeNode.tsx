@@ -158,7 +158,7 @@ export const FileTreeNode: Component<{
             {/* fade-scroll masks the overflow with a gradient (no ellipsis
                 glyph to collide with the open-file dot); marquees on hover. */}
             <TreeView.ItemText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.ItemText>
-            <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
+            <TreeView.NodeRenameInput class="focus-ring bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary min-w-0 flex-1" />
             {/* Open-in-editor marker: an absolute dot so it never shifts the
                 icon / name / indent guides (the old left border did). */}
             <Show when={isCurrent()}>
@@ -185,7 +185,7 @@ export const FileTreeNode: Component<{
               <ChevronRight class="w-3.5 h-3.5" />
             </TreeView.BranchIndicator>
             <TreeView.BranchText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.BranchText>
-            <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
+            <TreeView.NodeRenameInput class="focus-ring bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary min-w-0 flex-1" />
           </TreeView.BranchControl>
           <TreeView.BranchContent>
             <For each={props.node.children}>

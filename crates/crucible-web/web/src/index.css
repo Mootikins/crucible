@@ -17,6 +17,19 @@
   --color-primary-hover: #f08a5e;
   --color-primary-active: #c4552e;
 
+  /* The ink that sits ON a solid ember fill. `text-white` on #e0653a is 3.45:1
+   * and fails AA; the ember is a brand constant, so the FOREGROUND moves. On a
+   * dark field the ember is the lighter half of the pair, so its ink is the
+   * canvas near-black (5.62:1 at rest, 7.84:1 on hover). On a light field the
+   * ember darkens to #b04823 and the ink inverts to white (5.53:1 / 7.09:1). */
+  --color-on-primary: #0e0d11;
+
+  /* ONE focus treatment for the whole app — see the `focus-ring` utility near
+   * the end of this file. Ember, because it is the only colour the UI already
+   * uses to mean "this is the one you are on", and it clears the 3:1 non-text
+   * floor on every surface in both themes (4.62:1 at worst). */
+  --color-focus-ring: var(--color-primary);
+
   /* ── Neutral ramp ─────────────────────────────────────────────────────
    * An even, low-chroma near-black stack, IDE-native: each step is a small,
    * deliberate lift from the one below, so depth reads without heavy fills.
@@ -35,11 +48,24 @@
 
   /* ── Ink ──────────────────────────────────────────────────────────────
    * Four weights, high → faint. Metadata lives on muted-dark; it should read
-   * as present-but-quiet, never competing with body text. */
+   * as present-but-quiet, never competing with body text.
+   *
+   * ALL FOUR ARE TEXT, so all four clear WCAG 2.1 AA (4.5:1) against every
+   * PANEL surface — shell-bg, shell-panel, surface-base, surface-elevated and
+   * surface-overlay. The floor is set by surface-overlay, the lightest of the
+   * five: a step that reads on the deep canvas can still fail inside a popover.
+   * muted-dark was #656069, which is 3.16:1 on the canvas and 2.60:1 in a
+   * popover, and it carries timestamps, counts and kiln names — text a user
+   * reads. Lifting it to the floor pushed muted up with it, or the bottom two
+   * steps would have collapsed into one shade.
+   *
+   * `--color-control` is NOT in that set. It is a control FILL, and it is light
+   * enough that muted-dark cannot clear 4.5:1 on it. Text on a control starts
+   * at `muted` — including a placeholder, which is text. */
   --color-shell-ink: #e7e4df;
   --color-shell-body: #c4c0ba;
-  --color-muted: #928d99;
-  --color-muted-dark: #656069;
+  --color-muted: #9f9ba5;
+  --color-muted-dark: #8d8990;
 
   /* ── Separators ───────────────────────────────────────────────────────
    * Barely-there by design (Cursor's language): a hairline is a hint of an
@@ -136,8 +162,9 @@
  * ember stays the only warm thing in either theme.
  *
  * The four ink steps are chosen by CONTRAST, not by hex: each targets its dark
- * counterpart's ratio (15.3 / 10.7 / 6.0), so a token carries the same visual
- * weight in both themes.
+ * counterpart's ratio on shell-bg (15.3 / 10.7 / 7.1 / 5.6), so a token carries
+ * the same visual weight in both themes. The bottom two numbers moved when the
+ * dark ramp was lifted to clear WCAG AA; both halves moved together.
  *
  * The accents all darken. #e0653a over white is 3.45:1 and #c4552e is 4.48:1 —
  * both fail as text and as a button fill. Never reuse a dark accent on a light
@@ -153,12 +180,13 @@
 
   --color-shell-ink: #17161c;
   --color-shell-body: #34323c;
-  --color-muted: #5a5763;
-  /* 4.46:1, NOT the 3.20:1 twin of the dark theme's muted-dark. Every theme
-   * lets its faintest step fall under 4.5, but only for placeholders, gutters
-   * and disabled labels. Ours carries timestamps, counts and kiln names —
-   * text a user reads — so it has to clear the text floor. */
-  --color-muted-dark: #6d6b75;
+  --color-muted: #4f4d57;
+  /* Was #6d6b75, which the same comment claimed cleared the text floor and did
+   * not: 4.46:1 on shell-bg by an in-page check, 4.51:1 by this file's own
+   * formula, and under 4.5 either way. It carries timestamps, counts and kiln
+   * names — text a user reads — so it now clears with margin (4.90:1). The
+   * light steps still track their dark counterparts by RATIO, not by hex. */
+  --color-muted-dark: #66656e;
 
   --color-hairline: #dedde4;
   --color-hairline-strong: #c7c5ce;
@@ -168,6 +196,11 @@
   --color-primary: #b04823;
   --color-primary-hover: #963c1c;
   --color-primary-active: #7d3116;
+
+  /* Inverted from the dark theme, and for the same reason: the ink is whatever
+   * half of the pair the ember is not. */
+  --color-on-primary: #ffffff;
+  --color-focus-ring: var(--color-primary);
 
   --color-error: #c02626;
   --color-error-dark: #8a1b1b;
@@ -217,6 +250,33 @@
 :root[data-theme='light'] .shiki span {
   color: var(--shiki-light) !important;
   font-style: var(--shiki-light-font-style, normal) !important;
+}
+
+/* ── Focus ──────────────────────────────────────────────────────────────
+ * ONE focus treatment for the whole app. Before this there were five, and
+ * fifteen elements — eight of them text inputs — had `outline-none` with NO
+ * replacement, so a keyboard user lost the caret's only affordance.
+ *
+ * This utility REPLACES `focus:outline-none`; do not write both. It suppresses
+ * the outline for a pointer focus and draws the ring only for `:focus-visible`,
+ * which is the same rule a browser applies to its own default ring.
+ *
+ * `outline` rather than a ring built from `box-shadow`: an outline follows the
+ * border shape, costs no layout, and survives inside a clipping ancestor that
+ * would crop a shadow. The 2px offset keeps the ring off a solid ember fill,
+ * where an ember ring would be invisible.
+ *
+ * Declared with `@utility` so it lands in Tailwind's utilities layer. In
+ * `@layer components` it would lose the cascade to any `outline-*` utility. */
+@utility focus-ring {
+  &:focus {
+    outline: none;
+  }
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
 }
 
 @layer base {
@@ -985,8 +1045,13 @@ details.callout[open] > summary.callout-title::after {
 .canvas-card-body .cm-gutters {
   display: none;
 }
+/* A canvas card is small and its editor fills it edge to edge, so the shared
+ * 2px offset would draw the ring outside the card. Pull it inside instead of
+ * dropping it — this rule used to be `outline: none`, which left the card with
+ * no focus affordance at all. */
 .canvas-card-body .cm-editor.cm-focused {
-  outline: none;
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }
 
 /* An edge label sits ON the connection line, so it needs to knock the line out

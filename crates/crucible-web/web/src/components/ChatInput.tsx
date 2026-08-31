@@ -163,7 +163,7 @@ export const ChatInput: Component = () => {
                 aria-label="Send message"
                 classList={{
                   'px-2.5 flex items-center justify-center transition-colors': true,
-                  'bg-primary text-white hover:bg-primary-hover': !!canSend(),
+                  'bg-primary text-on-primary hover:bg-primary-hover': !!canSend(),
                   'bg-transparent text-muted-dark cursor-not-allowed': !canSend(),
                 }}
                 data-testid="send-button"

@@ -665,7 +665,7 @@ const ApiAccessSection: Component = () => {
             type="button"
             onClick={() => void save()}
             disabled={!draft().trim()}
-            class="ml-2 rounded bg-primary px-2 py-1 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
+            class="ml-2 rounded bg-primary px-2 py-1 text-sm text-on-primary hover:bg-primary-hover disabled:opacity-50"
             data-testid="settings-api-token-save"
           >
             Sign in

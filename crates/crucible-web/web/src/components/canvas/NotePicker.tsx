@@ -109,7 +109,7 @@ export const NotePicker: Component<{
       >
         <input
           ref={input}
-          class="border-b border-hairline bg-transparent px-3 py-2 text-sm text-shell-ink outline-none"
+          class="focus-ring border-b border-hairline bg-transparent px-3 py-2 text-sm text-shell-ink"
           placeholder="Reference a note…"
           value={query()}
           data-testid="canvas-note-picker-input"
@@ -135,7 +135,7 @@ export const NotePicker: Component<{
                 >
                   <FileText class="h-3 w-3 shrink-0 text-muted" />
                   <span class="truncate">{note.title}</span>
-                  <span class="ml-auto truncate text-[10px] text-muted-dark">{note.rel}</span>
+                  <span class="ml-auto truncate text-[11px] text-muted-dark">{note.rel}</span>
                 </button>
               )}
             </For>

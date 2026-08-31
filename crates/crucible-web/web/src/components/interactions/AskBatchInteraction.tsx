@@ -66,7 +66,7 @@ export const AskBatchInteraction: Component<Props> = (props) => {
         {(question, qi) => (
           <div class="mb-4 last:mb-3">
             <Show when={question.header}>
-              <span class="inline-block px-2 py-0.5 mb-1 rounded bg-control text-muted-dark text-xs">
+              <span class="inline-block px-2 py-0.5 mb-1 rounded bg-control text-muted text-xs">
                 {question.header}
               </span>
             </Show>
@@ -97,7 +97,7 @@ export const AskBatchInteraction: Component<Props> = (props) => {
                 }
                 value={other()[qi()] ?? ''}
                 onInput={(e) => setOtherAt(qi(), e.currentTarget.value)}
-                class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted-dark focus:outline-none focus:ring-2 focus:ring-primary"
+                class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </Show>
           </div>

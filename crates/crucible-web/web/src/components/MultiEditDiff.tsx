@@ -35,7 +35,7 @@ export const MultiEditDiff: Component<Props> = (props) => {
     <div class="rounded-lg border border-hairline overflow-hidden">
       <div class="flex items-center gap-3 px-3 py-2 bg-surface-elevated border-b border-hairline text-xs">
         <span class="font-mono text-shell-body truncate">{props.fileName}</span>
-        <span class="text-muted-dark text-[10px] uppercase tracking-wider">
+        <span class="text-muted-dark text-[11px] uppercase tracking-wider">
           {props.edits.length} edits
         </span>
         <div class="flex items-center gap-2 ml-auto">
@@ -47,7 +47,7 @@ export const MultiEditDiff: Component<Props> = (props) => {
         <For each={props.edits}>
           {(edit, i) => (
             <div>
-              <div class="px-3 py-1 bg-surface-base text-[10px] uppercase tracking-wider text-muted-dark font-mono">
+              <div class="px-3 py-1 bg-surface-base text-[11px] uppercase tracking-wider text-muted-dark font-mono">
                 Edit {i() + 1} of {props.edits.length}
               </div>
               <DiffViewer

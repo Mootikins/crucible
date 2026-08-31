@@ -628,7 +628,7 @@ export const CenterComposer: Component<{
                 title="Start session (Enter)"
                 classList={{
                   'px-2.5 flex items-center justify-center transition-colors': true,
-                  'bg-primary text-white hover:bg-primary-hover': !!message().trim(),
+                  'bg-primary text-on-primary hover:bg-primary-hover': !!message().trim(),
                   'bg-transparent text-muted-dark cursor-not-allowed': !message().trim(),
                 }}
                 data-testid="composer-send"

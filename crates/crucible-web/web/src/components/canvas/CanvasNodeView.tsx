@@ -222,7 +222,7 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
             class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2 opacity-0 transition-opacity group-hover:opacity-100"
             data-testid="canvas-link-hint"
           >
-            <span class="rounded-full border border-hairline bg-surface-elevated/90 px-2 py-0.5 text-[10px] text-muted backdrop-blur-sm">
+            <span class="rounded-full border border-hairline bg-surface-elevated/90 px-2 py-0.5 text-[11px] text-muted backdrop-blur-sm">
               Click to interact
             </span>
           </div>

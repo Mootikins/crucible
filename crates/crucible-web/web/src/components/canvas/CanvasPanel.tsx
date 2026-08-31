@@ -1204,7 +1204,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
       <div
         ref={surface}
-        class="relative min-h-0 flex-1 overflow-hidden outline-none"
+        class="focus-ring relative min-h-0 flex-1 overflow-hidden"
         classList={{ 'cursor-grab': spaceHeld() }}
         data-testid="canvas-surface"
         onWheel={onWheel}

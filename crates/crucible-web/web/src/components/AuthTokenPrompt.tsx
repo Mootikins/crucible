@@ -76,7 +76,7 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
               type="button"
               onClick={() => void save()}
               disabled={!value().trim()}
-              class="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+              class="rounded bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
               data-testid="auth-token-save"
             >
               Sign in & reload

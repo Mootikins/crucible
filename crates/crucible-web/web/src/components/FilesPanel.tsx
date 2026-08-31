@@ -643,7 +643,7 @@ export const FilesPanel: Component = () => {
             aria-pressed={hideExts()}
             onClick={toggleHideExts}
             onContextMenu={(e) => { e.preventDefault(); editHiddenExts(); }}
-            classList={{ 'p-1 rounded hover:bg-hover-wash text-[10px] font-mono leading-none w-6 h-6 flex items-center justify-center': true, 'text-primary': hideExts(), 'text-muted': !hideExts() }}
+            classList={{ 'p-1 rounded hover:bg-hover-wash text-[11px] font-mono leading-none w-6 h-6 flex items-center justify-center': true, 'text-primary': hideExts(), 'text-muted': !hideExts() }}
           >
             .ext
           </button>
