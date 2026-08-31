@@ -1,3 +1,4 @@
+--!strict
 --- Discord agent response collection and delivery
 --- Routes messages to Crucible sessions and streams response parts back to Discord.
 
@@ -13,8 +14,11 @@ local TYPING_INTERVAL = 8    -- seconds between typing indicator refreshes
 --- Find structural break positions in text up to `limit`, scored by priority:
 --- 3 = heading (\n#), 2 = paragraph (\n\n), 1 = single newline.
 --- Each entry: {pos = byte where next section starts, priority = int}.
-local function find_structural_breaks(text, limit)
-    local breaks = {}
+--- One place a chunk may be split, and how good a place it is.
+type Break = { pos: number, priority: number }
+
+local function find_structural_breaks(text: string, limit: number): { Break }
+    local breaks: { Break } = {}
     local i = 1
     while i <= limit do
         local nl = text:find("\n", i, true)
@@ -43,8 +47,8 @@ end
 
 --- Split text into balanced chunks that fit within Discord's message limit.
 --- Prefers heading and paragraph boundaries; avoids tiny orphan messages.
-local function chunk_text(text, max_len)
-    max_len = max_len or MAX_MESSAGE_LEN
+local function chunk_text(text: string, limit: number?): { string }
+    local max_len: number = limit or MAX_MESSAGE_LEN
     if #text <= max_len then
         return { text }
     end
@@ -209,7 +213,7 @@ M.pending_replies = {}
 --- different account — so the second request is refused here, before anything
 --- is shown, and denied. Queueing it instead would leave the approver answering
 --- prompts they can no longer see, which is the same ambiguity deferred.
-local function reserve_pending(channel_id, user_id)
+local function reserve_pending(channel_id: string, user_id: string?): { [string]: any }?
     if M.pending_replies[channel_id] then return nil end
     local pending = { state = "waiting", user_id = user_id }
     M.pending_replies[channel_id] = pending
@@ -217,7 +221,7 @@ local function reserve_pending(channel_id, user_id)
 end
 
 --- Release a slot, but only if it is still the one we claimed.
-local function release_pending(channel_id, pending)
+local function release_pending(channel_id: string, pending: any): ()
     if M.pending_replies[channel_id] == pending then
         M.pending_replies[channel_id] = nil
     end
@@ -251,7 +255,7 @@ end
 --- Waits on the entry it was handed rather than on whatever the channel's slot
 --- holds when it wakes: a verdict belongs to the request it was given for, and
 --- reading the slot back is how it would come to belong to another one.
-local function wait_for_permission_reply(channel_id, pending)
+local function wait_for_permission_reply(channel_id: string, pending: any): { [string]: any }?
     local waited = 0
     while pending.state == "waiting" and waited < PERMISSION_TIMEOUT do
         cru.timer.sleep(0.5)
@@ -306,7 +310,7 @@ end
 --- Returns nil and a reason when the approver cannot be reached, which denies.
 --- Prompting the requester instead would be a fallback to the weaker rule the
 --- approver list exists to replace.
-local function permission_target(channel_id, requester_id)
+local function permission_target(channel_id: string, requester_id: string?): ({ [string]: any }?, string?)
     local approver = sessions.approvers()[1]
     if not approver then
         return { channel_id = channel_id, user_id = requester_id, delegated = false }
@@ -329,14 +333,14 @@ end
 --- retry budget, and one raised on the way out of `ask_permission` would
 --- abandon the turn with the daemon's request still outstanding — worse than
 --- the notice going unsent.
-local function notify(channel_id, text, reply_to)
+local function notify(channel_id: string, text: string, reply_to: string?): ()
     pcall(api.send_message, channel_id, text, { reply_to = reply_to })
 end
 
 --- Ask the target for a verdict and return it, denying on a timeout or a
 --- failure to reach the approver. Never raises and never returns nil: an
 --- unanswered prompt is a denial, and so is one that could not be shown.
-local function ask_permission(part, channel_id, requester_id, reply_to)
+local function ask_permission(part: any, channel_id: string, requester_id: string?, reply_to: string?): { [string]: any }
     local target, target_err = permission_target(channel_id, requester_id)
     if not target then
         cru.log("warn", "Discord plugin: could not open an approver DM: " .. tostring(target_err))
@@ -383,7 +387,7 @@ local function ask_permission(part, channel_id, requester_id, reply_to)
         notify(channel_id, "> \u{23f0} No answer — denying.")
         reply = { allowed = false }
     end
-    return reply
+    return reply :: { [string]: any }
 end
 
 ---@param channel_id string Discord channel ID
@@ -432,7 +436,9 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
             pcall(api.trigger_typing, channel_id)
             last_typing = now
         end
-        return next_part()
+        -- The iterator is bound above and never cleared; `assert` is what
+        -- says so, since a nil here would be a silent end of stream.
+        return assert(next_part)()
     end
 
     local first_message = true

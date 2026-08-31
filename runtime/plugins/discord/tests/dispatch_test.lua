@@ -1,3 +1,4 @@
+--!strict
 --- The MESSAGE_CREATE path must reach `cru.timer.spawn`.
 ---
 --- With no shims, a missed rename is a runtime nil-call, and the emitter
@@ -13,7 +14,7 @@ local _plugin = require("discord") -- registers the MESSAGE_CREATE handler
 local gateway = require("gateway")
 local config = require("config")
 
-local function frame(payload)
+local function frame(payload: { [string]: any }): { [string]: any }
     return { type = "text", data = cru.json.encode(payload) }
 end
 
@@ -67,9 +68,10 @@ describe("message dispatch", function()
         local real_spawn = cru.timer.spawn
         local landed = 0
         cru.timer.spawn = function(fn)
-            local result = real_spawn(fn)
+            -- `cru.timer.spawn` answers with nothing, so there is no result
+            -- to pass on; counting is the whole point of the wrapper.
+            real_spawn(fn)
             landed = landed + 1
-            return result
         end
 
         local created = {}

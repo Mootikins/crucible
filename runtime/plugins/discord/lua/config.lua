@@ -1,3 +1,4 @@
+--!strict
 --- Discord plugin configuration helpers
 
 local M = {}
@@ -9,7 +10,7 @@ local GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
 local cached_token = nil
 
 --- Get a config value with default fallback
-function M.get(key, default)
+function M.get(key: string, default: any?): any
     local ok, val = pcall(function()
         return cru.plugin.config.get("discord." .. key)
     end)
@@ -18,7 +19,7 @@ function M.get(key, default)
 end
 
 --- Get bot token from config (cached after first call)
-function M.get_token()
+function M.get_token(): string
     if cached_token then return cached_token end
 
     local token = M.get("bot_token", "")
@@ -46,7 +47,7 @@ end
 --- bot's defaults.
 local MODES = { personal = true, server = true }
 
-function M.mode()
+function M.mode(): string
     local mode = M.get("mode", "personal")
     if not MODES[mode] then
         error("Discord: unknown mode '" .. tostring(mode) .. "'; expected \"personal\" or \"server\"")
@@ -67,12 +68,12 @@ local DEFAULT_INTENTS = 1        -- GUILDS          (1 << 0)
     + 4096                       -- DIRECT_MESSAGES (1 << 12)
     + 32768                      -- MESSAGE_CONTENT (1 << 15)
 
-function M.get_intents()
+function M.get_intents(): number
     return M.get("intents", DEFAULT_INTENTS)
 end
 
 --- Authorization headers for REST API
-function M.auth_headers()
+function M.auth_headers(): { [string]: string }
     return {
         ["Authorization"] = "Bot " .. M.get_token(),
         ["Content-Type"] = "application/json",
@@ -80,7 +81,7 @@ function M.auth_headers()
     }
 end
 
-function M.api_base() return API_BASE end
-function M.gateway_url() return GATEWAY_URL end
+function M.api_base(): string return API_BASE end
+function M.gateway_url(): string return GATEWAY_URL end
 
 return M

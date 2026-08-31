@@ -1,3 +1,4 @@
+--!strict
 --- Who answers a permission prompt, and where it is shown.
 ---
 --- The `ask` tier used to post the prompt in the channel the request came from
@@ -18,7 +19,8 @@ local api = require("api")
 --- `cru.plugin.config` and `cru.session` are absent in the test VM. `api` is
 --- stubbed by replacing fields on the module table, because `responder`
 --- captured that table at load and it is what the stub has to reach.
-local function with_env(cfg, env, fn)
+local function with_env(cfg: { [string]: any }?, environment: { [string]: any }?, fn: () -> ())
+    local env: { [string]: any } = environment or {}
     local had_config = cru.plugin.config
     local had_sessions = cru.session
     local had_timer = cru.timer
@@ -26,8 +28,8 @@ local function with_env(cfg, env, fn)
     local had_typing = api.trigger_typing
     local had_dm = api.create_dm_channel
 
-    cru.plugin.config = { get = function(key) return cfg[key] end }
-    cru.session = env.sessions
+    cru.plugin.config = mock({ get = function(key) return (cfg or {})[key] end })
+    cru.session = mock(env.sessions)
     -- A fixed clock keeps the typing refresh out of the way; `sleep` is where
     -- the test stands in for the reply arriving over the gateway.
     cru.timer = mock({ clock = function() return 0 end, sleep = env.sleep or function() end })
@@ -36,7 +38,17 @@ local function with_env(cfg, env, fn)
     api.create_dm_channel = env.create_dm_channel
         or function() error("no approver DM should be opened here") end
 
-    local ok, err = pcall(fn)
+    -- The inner function returns nil so `pcall` has a second slot for the
+
+    -- error to bind to: `fn` answers with nothing.
+
+    local ok, err = pcall(function()
+
+        fn()
+
+        return nil
+
+    end)
 
     api.create_dm_channel = had_dm
     api.trigger_typing = had_typing
@@ -50,7 +62,8 @@ end
 --- A session bridge whose one and only part is a permission request, recording
 --- the verdict it is eventually answered with. `request_id` names the request
 --- so a test with two turns in flight can tell their answers apart.
-local function permission_session(answers, request_id)
+local function permission_session(recorded: { { [string]: any } }?, request_id: string?): { [string]: any }
+    local answers: { { [string]: any } } = recorded or {}
     local parts = { {
         type = "permission_request",
         request_id = request_id or "req-1",
@@ -73,7 +86,7 @@ local function permission_session(answers, request_id)
 end
 
 --- Records every message the bot sends, in order, with the channel it went to.
-local function recorder()
+local function recorder(): ({ { [string]: any } }, (...any) -> ...any)
     local sent = {}
     return sent, function(channel_id, content, opts)
         table.insert(sent, { channel = channel_id, text = content, opts = opts })
@@ -81,11 +94,11 @@ local function recorder()
     end
 end
 
-local function is_prompt(entry)
+local function is_prompt(entry: { [string]: any }): boolean
     return entry.text:find("wants to run", 1, true) ~= nil
 end
 
-local function prompts_to(sent, channel_id)
+local function prompts_to(sent: { { [string]: any } }, channel_id: string): number
     local n = 0
     for _, entry in ipairs(sent) do
         if entry.channel == channel_id and is_prompt(entry) then n = n + 1 end
@@ -95,7 +108,7 @@ end
 
 --- Run a second turn from a different account while the first is waiting, with
 --- its own request id so the two verdicts are distinguishable.
-local function second_turn(answers, channel_id, author_id)
+local function second_turn(answers: { any }?, channel_id: string?, author_id: string?)
     local outer = cru.session
     cru.session = permission_session(answers, "req-second")
     responder.respond("chat-2", channel_id, "write it too", "msg-2", author_id, true)
@@ -186,7 +199,7 @@ describe("delegated approval", function()
     -- approver list exists to replace, so an unreachable approver denies.
     -- Both shapes of failure: `api_request` returns `(nil, err)` on a 4xx and
     -- *raises* when `cru.retry` runs out of attempts.
-    local function denies_when_dm_fails(open_dm)
+    local function denies_when_dm_fails(open_dm: (...any) -> ...any)
         local answers = {}
         local sent, send = recorder()
 
@@ -369,7 +382,7 @@ describe("responder error disclosure", function()
     -- people the session's own tier would never have let near it.
     local SECRET = "/home/moot/.crucible/sessions/abc-123/transcript.jsonl"
 
-    local function failing_session(message)
+    local function failing_session(message: string): { [string]: any }
         return {
             send_and_collect = function() return nil, message end,
             interaction_respond = function() return true, nil end,

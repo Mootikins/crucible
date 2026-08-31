@@ -1,3 +1,4 @@
+--!strict
 --- The gateway must actually reconnect.
 ---
 --- `cru.ws.connect` raises a *string* (`mlua::Error::runtime`, ws.rs), never a
@@ -18,7 +19,7 @@ local config = require("config")
 --- `cru.plugin.config`, because the real one *caches* the first token it resolves
 --- and that cache would outlive this file — the suite shares one Lua VM, and
 --- `service_test` asserts on the un-cached, no-token path.
-local function with_gateway_env(env, fn)
+local function with_gateway_env(env: { [string]: any }, fn: () -> ())
     local had_timer = cru.timer
     local had_ws = cru.ws
     local had_get_token = config.get_token
@@ -31,7 +32,17 @@ local function with_gateway_env(env, fn)
     -- tick the test drives is the tick the loop takes.
     math.random = function() return 0.5 end
 
-    local ok, err = pcall(fn)
+    -- The inner function returns nil so `pcall` has a second slot for the
+
+    -- error to bind to: `fn` answers with nothing.
+
+    local ok, err = pcall(function()
+
+        fn()
+
+        return nil
+
+    end)
 
     math.random = had_random
     config.get_token = had_get_token
@@ -40,7 +51,7 @@ local function with_gateway_env(env, fn)
     if not ok then error(err) end
 end
 
-local function frame(payload)
+local function frame(payload: { [string]: any }): { [string]: any }
     return { type = "text", data = cru.json.encode(payload) }
 end
 
@@ -67,7 +78,7 @@ describe("gateway intents", function()
         MESSAGE_CONTENT = 15,
     }
 
-    local function identify_intents()
+    local function identify_intents(): number
         local sent = nil
         with_gateway_env({
             clock = function() return 1000.0 end,
@@ -79,7 +90,7 @@ describe("gateway intents", function()
                         return true
                     end,
                     close = function() end,
-                    receive = function()
+                    receive = function(): any
                         -- HELLO, then stop: IDENTIFY is sent before this returns again.
                         if sent == nil then return HELLO end
                         gateway.disconnect()
@@ -88,12 +99,15 @@ describe("gateway intents", function()
                 }
             end,
         }, function()
-            pcall(gateway.connect)
+            pcall(function()
+                gateway.connect()
+                return nil
+            end)
         end)
         return sent
     end
 
-    local function has_bit(mask, bit)
+    local function has_bit(mask: number, bit: number): boolean
         return math.floor(mask / (2 ^ bit)) % 2 == 1
     end
 
@@ -120,7 +134,7 @@ describe("gateway reconnection", function()
         local socket = {
             send = function() return true end,
             close = function() end,
-            receive = function()
+            receive = function(): any
                 receives = receives + 1
                 if receives == 1 then return READY end
                 -- READY has landed; end the run the only clean way there is.
@@ -155,7 +169,7 @@ describe("gateway reconnection", function()
         local socket = {
             send = function() return true end,
             close = function() end,
-            receive = function()
+            receive = function(): any
                 receives = receives + 1
                 if receives == 1 then return HELLO end
                 if receives == 2 then
@@ -165,7 +179,7 @@ describe("gateway reconnection", function()
                 end
                 if receives == 3 then
                     now = now + 10.0
-                    return nil
+                    return nil :: any
                 end
                 error("gateway_test: receive script exhausted")
             end,
@@ -213,7 +227,7 @@ describe("gateway state across connections", function()
         local zombie = {
             send = function() return true end,
             close = function() end,
-            receive = function()
+            receive = function(): any
                 zombie_receives = zombie_receives + 1
                 if zombie_receives == 1 then return HELLO end
                 now = now + 10.0
@@ -226,7 +240,7 @@ describe("gateway state across connections", function()
         local live = {
             send = function() return true end,
             close = function() end,
-            receive = function()
+            receive = function(): any
                 live_receives = live_receives + 1
                 if live_receives == 1 then return HELLO end
                 now = now + 10.0
@@ -267,7 +281,7 @@ describe("gateway state across connections", function()
         local zombie = {
             send = function() return true end,
             close = function() end,
-            receive = function()
+            receive = function(): any
                 zombie_receives = zombie_receives + 1
                 if zombie_receives == 1 then return HELLO end
                 now = now + 10.0
@@ -296,7 +310,7 @@ describe("gateway state across connections", function()
 
         with_gateway_env({
             clock = function() return now end,
-            connect = function()
+            connect = function(): any
                 dials = dials + 1
                 if dials == 1 then return zombie end
                 return resumed
@@ -323,7 +337,7 @@ describe("gateway state across connections", function()
                     return {
                         send = function() return true end,
                         close = function() end,
-                        receive = function()
+                        receive = function(): any
                             gateway.disconnect()
                             error("gateway_test: dropped mid-session")
                         end,
@@ -352,13 +366,13 @@ describe("gateway retry budget", function()
 
         -- Every socket connects, then drops. With one lifetime budget this
         -- stops at eleven dials; with a per-outage budget it keeps going.
-        local function flaky_socket()
+        local function flaky_socket(): { [string]: any }
             sockets_seen = sockets_seen + 1
             local receives = 0
             return {
                 send = function() return true end,
                 close = function() end,
-                receive = function()
+                receive = function(): any
                     receives = receives + 1
                     if receives == 1 then return HELLO end
                     if receives == 2 then return READY end

@@ -1,3 +1,4 @@
+--!strict
 --- Session creation refuses rather than half-succeeding.
 ---
 --- Both behaviours below shipped without a test, and the review proved it by
@@ -13,13 +14,23 @@ local sessions = require("sessions")
 --- and the test VM has no `cru.plugin.config` — same shape as `routing_test`.
 --- `cru.session` is stubbed for the same reason: the plugin VM has the real
 --- bridge, the test VM has nothing.
-local function with_env(cfg, session_api, fn)
+local function with_env(cfg: { [string]: any }?, session_api: any, fn: () -> ())
     local had_config = cru.plugin.config
     local had_session = cru.session
-    cru.plugin.config = { get = function(key) return cfg[key] end }
+    cru.plugin.config = mock({ get = function(key) return (cfg or {})[key] end })
     cru.session = session_api
 
-    local ok, err = pcall(fn)
+    -- The inner function returns nil so `pcall` has a second slot for the
+
+    -- error to bind to: `fn` answers with nothing.
+
+    local ok, err = pcall(function()
+
+        fn()
+
+        return nil
+
+    end)
 
     cru.session = had_session
     cru.plugin.config = had_config
@@ -31,17 +42,25 @@ end
 --- Ages are the whole subject of the reply path's guards and of the sweep, and
 --- moving the clock is the only way a unit test reaches them: `sessions.lua`
 --- reads `os.time()` at each use rather than capturing it.
-local function at_offset(seconds, fn)
+local function at_offset(seconds: number, fn: () -> ())
     local real_time = os.time
     os.time = function() return real_time() + seconds end
-    local ok, err = pcall(fn)
+    -- The inner function returns nil so `pcall` has a second slot for the
+    -- error to bind to: `fn` answers with nothing.
+    local ok, err = pcall(function()
+        fn()
+        return nil
+    end)
     os.time = real_time
     if not ok then error(err) end
 end
 
 --- A session API that records what it was asked to do.
-local function recording_api(opts)
-    local calls = { created = {}, configured = 0, ended = {} }
+--- The recorder and the stub API. `calls` is a record, not a list: the tests
+--- read `calls.created`, `calls.configured` and `calls.ended` by name.
+type Calls = { created: { any }, configured: number, ended: { any } }
+local function recording_api(opts: { [string]: any }?): (Calls, { [string]: any })
+    local calls: Calls = { created = {}, configured = 0, ended = {} }
     return calls, {
         -- Each session gets its own id: sessions are keyed per sender now, so
         -- "did these two messages land in one session?" is the question most
@@ -53,14 +72,17 @@ local function recording_api(opts)
         -- The bridge returns `(result, err)` rather than raising — every
         -- `cru.session.*` method surfaces its error as a second return value
         -- (`DaemonSessionApi`), and `configure_agent` branches on `err`.
-        configure_agent = function()
+        configure_agent = function(): (boolean?, string?)
             calls.configured = calls.configured + 1
             if opts and opts.configure_fails then
                 return nil, "no such provider"
             end
             return true, nil
         end,
-        end_session = function(id) table.insert(calls.ended, id) end,
+        end_session = function(id): (boolean, string?)
+            table.insert(calls.ended, id)
+            return true, nil
+        end,
     }
 end
 
@@ -161,7 +183,7 @@ describe("agent cards", function()
         ["discord.agent_card"] = "researcher",
     }
 
-    local function with_card(extra, fn)
+    local function with_card(extra: { [string]: any }?, fn: (calls: Calls) -> ())
         local cfg = {}
         for k, v in pairs(card_cfg) do cfg[k] = v end
         for k, v in pairs(extra or {}) do cfg[k] = v end
@@ -222,7 +244,7 @@ end)
 -- It used to be set anyway, which read as configured and was not.
 describe("agent_name", function()
     it("still reaches an acp agent", function()
-        local seen
+        local seen: { [string]: any }?
         local _, api = recording_api()
         api.configure_agent = function(_, cfg) seen = cfg; return true, nil end
         with_env({
@@ -234,8 +256,8 @@ describe("agent_name", function()
         }, api, function()
             sessions.get_or_create("chan-acp", "g1", "u1")
         end)
-        expect.equals("acp", seen.agent_type)
-        expect.equals("claude", seen.agent_name)
+        expect.equals("acp", assert(seen).agent_type)
+        expect.equals("claude", assert(seen).agent_name)
     end)
 
     it("is refused on an internal agent", function()
@@ -260,8 +282,8 @@ end)
 -- and the guild it came from — and it is fixed when that sender's session is
 -- created, so every later message from them in that channel reuses it.
 describe("access tiers", function()
-    local function tier_with(access, guild_id, author_id)
-        local result
+    local function tier_with(access: { [string]: any }?, guild_id: string?, author_id: string?): string
+        local result: string
         with_env({ ["discord.access"] = access }, {}, function()
             result = sessions.access_tier(guild_id, author_id)
         end)
@@ -299,7 +321,7 @@ describe("access tiers", function()
     end)
 
     it("gives a write tier the write tools and a read tier only reads", function()
-        local seen = {}
+        local seen: { { [string]: any } } = {}
         local calls, api = recording_api()
         api.configure_agent = function(_, cfg)
             table.insert(seen, cfg.tool_policy)
@@ -329,8 +351,8 @@ end)
 -- keeps working when a new moderator arrives — no config edit, no restart.
 -- Roles reach the plugin as `data.member.roles` on a guild MESSAGE_CREATE.
 describe("role grants", function()
-    local function tier_with(access, guild_id, author_id, roles)
-        local result
+    local function tier_with(access: { [string]: any }?, guild_id: string?, author_id: string?, roles: { any }?): string
+        local result: string
         with_env({ ["discord.access"] = access }, {}, function()
             result = sessions.access_tier(guild_id, author_id, roles)
         end)
@@ -384,7 +406,7 @@ describe("role grants", function()
     -- The tier is only worth resolving if it reaches the agent: `get_or_create`
     -- has to carry the roles from the event through to `configure_agent`.
     it("configures the agent from the role's tier", function()
-        local seen
+        local seen: { [string]: any }?
         local _, api = recording_api()
         api.configure_agent = function(_, cfg) seen = cfg.tool_policy; return true, nil end
         with_env({
@@ -396,8 +418,8 @@ describe("role grants", function()
             sessions.get_or_create("chan-roles", "g1", "u-mod", { roles = { "r-mod" } })
         end)
 
-        expect.equals("allow", seen.write_file)
-        expect.equals("allow", seen.read_file)
+        expect.equals("allow", assert(seen).write_file)
+        expect.equals("allow", assert(seen).read_file)
     end)
 end)
 
@@ -406,9 +428,14 @@ end)
 -- what decides whether there is one is `approvers` — with none configured the
 -- requester answers, so the grant has to have named *them*.
 describe("the ask tier", function()
-    local function tier_with(access, guild_id, author_id, opts)
-        opts = opts or {}
-        local result
+    local function tier_with(
+        access: { [string]: any }?,
+        guild_id: string?,
+        author_id: string?,
+        options: { [string]: any }?
+    ): string
+        local opts: { [string]: any } = options or {}
+        local result: string
         local cfg = { ["discord.access"] = access }
         if opts.approvers then cfg["discord.approvers"] = opts.approvers end
         with_env(cfg, {}, function()
@@ -454,7 +481,7 @@ describe("the ask tier", function()
     end)
 
     it("asks for the write tools and still allows reads outright", function()
-        local seen
+        local seen: { [string]: any }?
         local _, api = recording_api()
         api.configure_agent = function(_, cfg) seen = cfg.tool_policy; return true, nil end
         with_env({
@@ -466,12 +493,12 @@ describe("the ask tier", function()
             sessions.get_or_create("dm-asker", nil, "asker")
         end)
 
-        expect.equals("ask", seen.write_file)
-        expect.equals("ask", seen.create_note)
+        expect.equals("ask", assert(seen).write_file)
+        expect.equals("ask", assert(seen).create_note)
         -- Reads stay `allow`: prompting for every grep would make the tier
         -- unusable, and reads are what the read tier already grants freely.
-        expect.equals("allow", seen.read_file)
-        expect.equals("allow", seen.grep)
+        expect.equals("allow", assert(seen).read_file)
+        expect.equals("allow", assert(seen).grep)
     end)
 end)
 
@@ -480,7 +507,7 @@ end)
 -- gives each speaker their own session, which is what makes per-sender tiers,
 -- quota attribution and one-prompt-per-person possible at all.
 describe("per-sender keying", function()
-    local function chat_cfg(access)
+    local function chat_cfg(access: { [string]: any }?): { [string]: any }
         return {
             ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
@@ -538,7 +565,7 @@ end)
 -- even when the bot said it to somebody else. `referenced_message` is on every
 -- MESSAGE_CREATE, so this is deterministic and costs no model call.
 describe("reply-chain continuity", function()
-    local function chat_cfg(access)
+    local function chat_cfg(access: { [string]: any }?): { [string]: any }
         return {
             ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",

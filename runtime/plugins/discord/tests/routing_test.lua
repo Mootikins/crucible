@@ -1,3 +1,4 @@
+--!strict
 --- Who the bot will answer.
 ---
 --- Every path that spends the operator's API key on a stranger's message goes
@@ -13,19 +14,24 @@ local routing = require("routing")
 -- so the suite stubs that lookup rather than the plugin's own accessor — the
 -- key-prefixing and the default-on-missing behaviour stay under test. The test
 -- VM has no `cru.plugin.config`, hence the table is created and then restored.
-local function with_config(tbl, fn)
+local function with_config(tbl: { [string]: any }, fn: () -> ())
     local had_config = cru.plugin.config
-    cru.plugin.config = { get = function(key) return tbl[key] end }
-    local ok, err = pcall(fn)
+    cru.plugin.config = mock({ get = function(key) return tbl[key] end })
+    -- The inner function returns nil so `pcall` has a second slot for the
+    -- error to bind to: `fn` answers with nothing.
+    local ok, err = pcall(function()
+        fn()
+        return nil
+    end)
     cru.plugin.config = had_config
     if not ok then error(err) end
 end
 
-local function dm_from(user_id)
+local function dm_from(user_id: string): { [string]: any }
     return { content = "hello", author = { id = user_id } }
 end
 
-local function guild_message(guild_id, content)
+local function guild_message(guild_id: string, content: string?): { [string]: any }
     return { content = content or "hello", guild_id = guild_id, author = { id = "u1" } }
 end
 
@@ -90,7 +96,7 @@ end)
 describe("should_respond guild matching", function()
     local BOT = "botid"
 
-    local function guild_msg(content)
+    local function guild_msg(content: string): { [string]: any }
         return { content = content, guild_id = "g1", author = { id = "u1" } }
     end
 

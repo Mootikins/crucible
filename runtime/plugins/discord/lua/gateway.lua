@@ -1,3 +1,4 @@
+--!strict
 --- Discord Gateway WebSocket client
 --- Connects directly to Discord Gateway via cru.ws.connect()
 --- Handles: Hello -> Identify -> Heartbeat loop -> Dispatch events
@@ -22,7 +23,9 @@ local OP = {
 }
 
 -- State
-local ws = nil
+--- The live socket, or nil between connections. `cru.ws.connect` answers a
+--- handle whose type the declarations name; nil is the disconnected state.
+local ws: any = nil
 local heartbeat_interval = nil
 local last_sequence = nil
 local session_id = nil
@@ -202,7 +205,12 @@ function M.connect()
     -- which is the old behaviour and the correct one.
     while not stopped do
         connected_this_cycle = false
-        local ok, err = pcall(M.connect_once)
+        -- The inner function returns nil so `pcall` has a second slot for
+        -- the error: `connect_once` answers with nothing.
+        local ok, err = pcall(function()
+            M.connect_once()
+            return nil
+        end)
         if stopped or ok then
             return
         end

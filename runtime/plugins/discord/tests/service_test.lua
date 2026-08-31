@@ -1,3 +1,4 @@
+--!strict
 --- The gateway service must be fail-closed.
 ---
 --- Every declared service is spawned unconditionally when the plugin loads, so
@@ -21,13 +22,13 @@ local service_fn = plugin.services.gateway.fn
 --- `os.getenv` is stubbed away too: `config.get_token` falls back to
 --- DISCORD_BOT_TOKEN, and a developer who has one exported must not turn the
 --- no-token case green.
-local function dialed_with(cfg)
+local function dialed_with(cfg: { [string]: any }?): boolean
     local had_config = cru.plugin.config
     local had_ws = cru.ws
     local had_getenv = os.getenv
     local dialed = false
 
-    cru.plugin.config = { get = function(key) return cfg[key] end }
+    cru.plugin.config = mock({ get = function(key) return (cfg or {})[key] end })
     os.getenv = function() return nil end
     cru.ws = {
         connect = function()

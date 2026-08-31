@@ -1,3 +1,4 @@
+--!strict
 --- Per-user daily turn cap.
 ---
 --- Split out of `init.lua` for the same reason `routing.lua` was: `init.lua`
@@ -29,7 +30,7 @@ local seen = {}
 --- `day` is injectable so the rollover is testable; callers pass nothing.
 --- No `await` anywhere in here — the caller runs it inline on the gateway
 --- receive loop so the check and the increment cannot interleave.
-function M.charge(user_id, day)
+function M.charge(user_id: string, day: string?): (boolean, string?)
     day = day or os.date("!%Y-%m-%d")
     local cap = config.get("quota_turns_per_day", 50)
 

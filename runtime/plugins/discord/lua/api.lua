@@ -1,3 +1,4 @@
+--!strict
 --- Discord REST API wrapper
 --- Uses cru.http for all HTTP requests to Discord API v10
 
@@ -14,7 +15,7 @@ local limiter = cru.ratelimit.new({ capacity = 5, interval = 0.2 })
 -- Internal helpers
 -- ---------------------------------------------------------------------------
 
-local function api_request(method, path, body)
+local function api_request(method: string, path: string, body: any?): (any, string?)
     limiter:acquire()
 
     local url = config.api_base() .. path
@@ -64,15 +65,15 @@ end
 -- Channel Messages
 -- ---------------------------------------------------------------------------
 
-function M.send_message(channel_id, content, opts)
-    opts = opts or {}
-    local payload = { content = content }
+function M.send_message(channel_id: string, content: string, options: { [string]: any }?): (any, string?)
+    local opts: { [string]: any } = options or {}
+    local payload: { [string]: any } = { content = content }
     if opts.embeds then payload.embeds = opts.embeds end
     if opts.reply_to then payload.message_reference = { message_id = opts.reply_to } end
     return api_request("POST", "/channels/" .. channel_id .. "/messages", payload)
 end
 
-function M.get_messages(channel_id, limit, before)
+function M.get_messages(channel_id: string, limit: number?, before: string?): (any, string?)
     limit = limit or 50
     local path = "/channels/" .. channel_id .. "/messages?limit=" .. tostring(limit)
     if before then path = path .. "&before=" .. before end
@@ -83,13 +84,13 @@ end
 -- Typing & DM helpers
 -- ---------------------------------------------------------------------------
 
-function M.trigger_typing(channel_id)
+function M.trigger_typing(channel_id: string): (any, string?)
     return api_request("POST", "/channels/" .. channel_id .. "/typing")
 end
 
 -- Dead until delegated approval lands, which DMs a named approver rather than
 -- prompting in the channel the request came from.
-function M.create_dm_channel(user_id)
+function M.create_dm_channel(user_id: string): (any, string?)
     return api_request("POST", "/users/@me/channels", { recipient_id = user_id })
 end
 

@@ -1,3 +1,4 @@
+--!strict
 --- Who the bot answers.
 ---
 --- Split out of `init.lua` because this is the decision that spends the
@@ -14,7 +15,7 @@ local config = require("config")
 --- Empty (the default) means *nobody*, not *everybody*. Discord ids arrive
 --- from the gateway as strings but are routinely written unquoted in TOML, so
 --- both sides are compared as strings.
-local function allowed(key, id)
+local function allowed(key: string, id: any): boolean
     local list = config.get(key, {})
     if type(list) ~= "table" or not id then return false end
     for _, entry in ipairs(list) do
@@ -27,7 +28,7 @@ end
 ---
 --- `bot_user_id` is the id captured from READY, passed in rather than read
 --- from module state so this stays a pure function.
-function M.should_respond(data, bot_user_id)
+function M.should_respond(data: { [string]: any }, bot_user_id: string?): (boolean, string?)
     -- Never respond to bots
     if data.author and data.author.bot then return false end
 

@@ -1,3 +1,4 @@
+--!strict
 --- DM sessions outlive a daemon restart. Channel sessions do not.
 ---
 --- The daemon half is already settled: `agent_manager/tests/revive_cold.rs`
@@ -24,15 +25,16 @@ local DM_SESSION_TTL = 86400
 --- first use, because the state file outlives each test on purpose: entries
 --- written by an earlier test are exactly the entries a restart would find.
 --- `real_dirs` makes the `cru.fs.mkdir` mock create the directory for real.
-local state_root
-local STATE_FILE
-local function ensure_state_root()
+local state_root: string?
+local STATE_FILE: string
+local function ensure_state_root(): ()
     if state_root then return end
     test_mocks.setup({ fs = { real_dirs = true } })
-    state_root = os.tmpname()
-    os.remove(state_root)
-    cru.fs.mkdir(state_root .. "/discord")
-    STATE_FILE = state_root .. "/discord/sessions.json"
+    local root = os.tmpname()
+    os.remove(root)
+    cru.fs.mkdir(root .. "/discord")
+    state_root = root
+    STATE_FILE = root .. "/discord/sessions.json"
 end
 
 --- A session API that records what it was asked to do.
@@ -42,18 +44,24 @@ end
 --- written by an earlier test are exactly the entries a restart would find.
 --- Two tests minting "state-1" would make "is this the id I created?"
 --- unanswerable.
-local function recording_api(prefix)
-    local calls = { created = {}, configured = 0, ended = {} }
+--- The recorder and the stub API. `calls` is a record, not a list: the tests
+--- read `calls.created`, `calls.configured` and `calls.ended` by name.
+type Calls = { created: { any }, configured: number, ended: { any } }
+local function recording_api(prefix: string?): (Calls, { [string]: any })
+    local calls: Calls = { created = {}, configured = 0, ended = {} }
     return calls, {
         create = function(o)
             table.insert(calls.created, o)
-            return { id = prefix .. "-" .. #calls.created }
+            return { id = tostring(prefix) .. "-" .. #calls.created }
         end,
         configure_agent = function()
             calls.configured = calls.configured + 1
             return true, nil
         end,
-        end_session = function(id) table.insert(calls.ended, id) end,
+        end_session = function(id): (boolean, string?)
+            table.insert(calls.ended, id)
+            return true, nil
+        end,
     }
 end
 
@@ -62,16 +70,26 @@ end
 --- runner builds does not. The file itself is REAL: every round trip below is
 --- an `io.open` write followed by an `io.open` read on disk, rather than a
 --- stub agreeing with itself.
-local function with_env(cfg, session_api, fn)
+local function with_env(cfg: { [string]: any }?, session_api: any, fn: () -> ())
     ensure_state_root()
     local had_config, had_sessions, had_paths = cru.plugin.config, cru.session, cru.paths
-    cru.plugin.config = { get = function(key) return cfg[key] end }
+    cru.plugin.config = mock({ get = function(key) return (cfg or {})[key] end })
     cru.session = session_api
     cru.paths = mock({
-        state = function(plugin) return state_root .. "/" .. plugin end,
+        state = function(plugin) return tostring(state_root) .. "/" .. plugin end,
     })
 
-    local ok, err = pcall(fn)
+    -- The inner function returns nil so `pcall` has a second slot for the
+
+    -- error to bind to: `fn` answers with nothing.
+
+    local ok, err = pcall(function()
+
+        fn()
+
+        return nil
+
+    end)
 
     cru.paths = had_paths
     cru.session = had_sessions
@@ -79,7 +97,7 @@ local function with_env(cfg, session_api, fn)
     if not ok then error(err) end
 end
 
-local function configured(extra)
+local function configured(extra: { [string]: any }?): { [string]: any }
     local cfg = {
         ["discord.kiln"] = "/tmp/kiln",
         ["discord.provider"] = "p",
@@ -96,7 +114,7 @@ end
 --- under that key, and hardcoding its shape would leave this file green while
 --- the restore path it exercises had become unreachable. `harvest_key` pins
 --- the two together instead.
-local function harvest_key()
+local function harvest_key(): string?
     local _, api = recording_api("harvest")
     local key
     with_env(configured(), api, function()

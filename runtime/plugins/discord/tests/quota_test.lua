@@ -1,3 +1,4 @@
+--!strict
 --- The per-user daily turn cap.
 ---
 --- Turns, not tokens: usage is only recorded `if let Some(u) = usage`
@@ -16,10 +17,15 @@ local quota = require("quota")
 -- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
 -- and the test VM has no `cru.plugin.config` at all — so the table is created and
 -- then restored, exactly as `routing_test.lua` does.
-local function with_config(tbl, fn)
+local function with_config(tbl: { [string]: any }, fn: () -> ())
     local had_config = cru.plugin.config
-    cru.plugin.config = { get = function(key) return tbl[key] end }
-    local ok, err = pcall(fn)
+    cru.plugin.config = mock({ get = function(key) return tbl[key] end })
+    -- The inner function returns nil so `pcall` has a second slot for the
+    -- error to bind to: `fn` answers with nothing.
+    local ok, err = pcall(function()
+        fn()
+        return nil
+    end)
     cru.plugin.config = had_config
     if not ok then error(err) end
 end

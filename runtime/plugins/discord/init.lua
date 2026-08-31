@@ -1,3 +1,4 @@
+--!strict
 --- Discord integration plugin for Crucible
 --- Connects to Discord via Gateway WebSocket and REST API.
 --- Routes @mentions and DMs to Crucible agent sessions for chatbot responses.
@@ -20,12 +21,13 @@ local bot_user_id = nil
 -- ============================================================================
 
 --- Strip bot mention and command prefix from message content.
-local function clean_content(content)
-    if not content then return "" end
+local function clean_content(raw: string?): string
+    if not raw then return "" end
+    local content: string = raw
 
     -- Strip @mention
     if bot_user_id then
-        content = content:gsub("<@!?" .. bot_user_id .. ">", "")
+        content = content:gsub("<@!?" .. tostring(bot_user_id) .. ">", "")
     end
 
     -- Strip command prefix
@@ -183,7 +185,7 @@ function M.discord_command(args)
         }
     end
 
-    return { error = "Unknown subcommand: " .. sub .. ". Try: connect, disconnect, status" }
+    return { error = "Unknown subcommand: " .. tostring(sub) .. ". Try: connect, disconnect, status" }
 end
 
 -- ============================================================================

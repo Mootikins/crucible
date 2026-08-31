@@ -1,3 +1,4 @@
+--!strict
 --- Discord sender-to-session mapping
 --- Manages Crucible agent sessions per Discord channel and speaker.
 
@@ -44,26 +45,26 @@ local STATE_FILE    = "sessions.json"
 local STATE_VERSION = 1
 
 --- Get the session TTL based on context (DM vs channel).
-local function session_ttl(guild_id)
+local function session_ttl(guild_id: string?): number
     if not guild_id then
         return DM_SESSION_TTL
     end
     return CHANNEL_SESSION_TTL
 end
 
-local function sender_key(channel_id, author_id)
+local function sender_key(channel_id: string, author_id: string): string
     return tostring(channel_id) .. "\0" .. tostring(author_id or "-")
 end
 
 --- Whether this entry is still the live session for its sender. An entry
 --- reached through the reply index may have been ended and replaced since.
-local function is_live(entry)
+local function is_live(entry: any): boolean
     return entry and sender_sessions[entry.key] == entry
 end
 
 --- Remember which session a message routed to, so the bot's answer to it can
 --- be indexed when the gateway echoes it back.
-local function note_dispatch(message_id, entry)
+local function note_dispatch(message_id: string?, entry: any): ()
     if message_id then
         dispatched[tostring(message_id)] = { entry = entry, at = os.time() }
     end
@@ -90,7 +91,7 @@ end
 --- that lacks it — the plugin test VM, most obviously — gets no persistence
 --- and full routing. Persistence is an improvement on forgetting, never a
 --- prerequisite for answering.
-local function state_path()
+local function state_path(): string?
     local ok, path = pcall(function()
         -- STATE_FILE is one plain file name, so string concat is the whole
         -- join; `paths.state` already returns an absolute directory.
@@ -111,7 +112,7 @@ end
 --- whose sessions this file may not carry, and a reply to something said
 --- before a restart falling through to a new session costs a lost thread
 --- rather than a wrong one.
-local function encode_dms(map)
+local function encode_dms(map: { [string]: any }): string
     local entries = {}
     for key, entry in pairs(map) do
         if not entry.guild_id and entry.session_id then
@@ -127,7 +128,7 @@ local function encode_dms(map)
 end
 
 --- Write the DM sessions of `map` to `path`. Returns whether it landed.
-function M.save_to(path, map)
+function M.save_to(path: string?, map: { [string]: any }): boolean
     if not path then return false end
     -- `paths.state` creates the directory on demand, so the parent exists by
     -- the time there is a path at all; `io.open` failing is a real error.
@@ -136,7 +137,12 @@ function M.save_to(path, map)
         cru.log("warn", "Discord plugin: could not persist sessions: " .. tostring(open_err))
         return false
     end
-    local wrote, write_err = handle:write(encode_dms(map))
+    -- `pcall`, not a pair: Crucible's `file:write` RAISES on failure and
+    -- answers with the handle otherwise, so `write_err` was nil forever.
+    local wrote, write_err = pcall(function()
+        handle:write(encode_dms(map))
+        return nil
+    end)
     handle:close()
     if not wrote then
         cru.log("warn", "Discord plugin: could not persist sessions: " .. tostring(write_err))
@@ -149,7 +155,7 @@ end
 ---
 --- Anything unreadable is treated as no state at all: a corrupt blob costs the
 --- conversations it held, not the plugin's ability to answer the next message.
-function M.load_from(path)
+function M.load_from(path: string?): { [string]: any }?
     if not path then return {} end
     -- A missing file and an unreadable one land the same way: `io.open`
     -- answers nil, and the plugin starts empty.
@@ -190,8 +196,8 @@ end
 ---
 --- A key that is already live wins: the file records what was, the map holds
 --- what is, and a restore must never displace a session mid-conversation.
-function M.restore()
-    for key, entry in pairs(M.load_from(state_path())) do
+function M.restore(): ()
+    for key, entry in pairs(M.load_from(state_path()) or {}) do
         if sender_sessions[key] == nil then
             sender_sessions[key] = entry
         end
@@ -205,7 +211,7 @@ local loaded = false
 --- Lazily rather than from `init.lua`, because `init.lua` returns a manifest
 --- and the map lives here: the file that owns the state owns reloading it, and
 --- no caller has to remember to ask.
-local function ensure_loaded()
+local function ensure_loaded(): ()
     if loaded then return end
     loaded = true
     M.restore()
@@ -213,7 +219,7 @@ end
 
 --- Persist, when the entry that changed was a DM. Guild sessions are not in
 --- the file, so a guild mutation would rewrite it byte-identical.
-local function persist(guild_id)
+local function persist(guild_id: string?): ()
     if guild_id then return end
     M.save_to(state_path(), sender_sessions)
 end
@@ -224,8 +230,13 @@ end
 --- `opts.message_id` is the incoming message's id, `opts.reply_to` the id of
 --- the message it replies to, if any, and `opts.roles` the sender's guild role
 --- ids (`data.member.roles`; absent in a DM).
-function M.get_or_create(channel_id, guild_id, author_id, opts)
-    opts = opts or {}
+function M.get_or_create(
+    channel_id: string,
+    guild_id: string?,
+    author_id: string,
+    options: { [string]: any }?
+): (any, string?)
+    local opts: { [string]: any } = options or {}
     ensure_loaded()
     local tier = M.access_tier(guild_id, author_id, opts.roles)
     local key = sender_key(channel_id, author_id)
@@ -431,7 +442,7 @@ function M.tier_is_interactive(tier) return tier == "ask" end
 ---
 --- Requires a guild. A role id means nothing outside the guild that issued it,
 --- and a DM event carries no `member` to read one from in the first place.
-local function role_tier(access, guild_id, roles)
+local function role_tier(access: { [string]: any }, guild_id: string?, roles: { any }?): string?
     if not guild_id or type(roles) ~= "table" then return nil end
     for _, role_id in ipairs(roles) do
         local tier = access["role:" .. tostring(role_id)]
@@ -454,7 +465,12 @@ end
 --- Which kind of key granted a tier, alongside the tier itself. The source is
 --- what decides whether an `ask` grant has a principal behind it: `user:` and
 --- `role:` name accounts, `guild:` and `default` name a room.
-local function granted_tier(access, guild_id, author_id, roles)
+local function granted_tier(
+    access: { [string]: any },
+    guild_id: string?,
+    author_id: string?,
+    roles: { any }?
+): (string?, string?)
     local user_key = author_id and ("user:" .. tostring(author_id))
     if user_key and access[user_key] then return access[user_key], "user" end
 
@@ -496,7 +512,7 @@ end
 ---     "role:9012" = "write"     # anyone holding that server role
 ---     "guild:5678" = "read"     # everyone else in that server may look only
 ---     default = "read"
-function M.access_tier(guild_id, author_id, roles)
+function M.access_tier(guild_id: string?, author_id: string?, roles: { any }?): string
     local access = config.get("access", {})
     if type(access) ~= "table" then return "read" end
 
@@ -515,14 +531,15 @@ function M.access_tier(guild_id, author_id, roles)
     -- shared one, so server mode needs a named approver whatever the grant's
     -- source; personal mode keeps the narrower rule, where only a key naming a
     -- ROOM (`guild:`, `default`) cannot answer for itself.
+    local key_kind: string = source or "default"
     local needs_approver = config.mode() == "server"
-        or source == "guild" or source == "default"
+        or key_kind == "guild" or key_kind == "default"
     if tier == "ask" and #M.approvers() == 0 and needs_approver then
         cru.log("info",
-            "Discord plugin: 'ask' from a " .. source .. " key needs an approvers list; using read")
+            "Discord plugin: 'ask' from a " .. key_kind .. " key needs an approvers list; using read")
         return "read"
     end
-    return tier
+    return tier :: string
 end
 
 --- The tool policy a session at `tier` runs under.
