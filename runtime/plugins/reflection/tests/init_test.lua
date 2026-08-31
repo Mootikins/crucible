@@ -1,3 +1,4 @@
+--!strict
 describe("reflection", function()
   local plugin = require("reflection")
 
@@ -205,12 +206,14 @@ describe("reflection", function()
       expect.truthy(staged[1]:find("%.md$"))
 
       -- A REAL file, not a mock record: `io.open` has no mock to agree with.
-      local handle = io.open(staged[1], "r")
-      expect.truthy(handle)
-      local body = handle:read("a")
+      -- `assert` rather than `expect.truthy`: both fail the test when the
+      -- file is missing, but only `assert` narrows the type, so the four
+      -- lines below stop reading as calls on a possible nil.
+      local handle = assert(io.open(staged[1], "r"))
+      local body = assert(handle:read("a"))
       handle:close()
-      expect.truthy(body:find("source: reflection"))
-      expect.truthy(body:find("B"))
+      expect.truthy((body:find("source: reflection")))
+      expect.truthy((body:find("B")))
     end)
 
     it("raises when the session names a kiln that is not registered", function()

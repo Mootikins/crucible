@@ -1,7 +1,14 @@
+--!strict
 -- Unit tests for the worktree plugin's pure git helpers.
 -- Run with: cru plugin test runtime/plugins/worktree
 
 local git = require("git")
+
+-- `to_targets` reads `is_current` and `remote_only` as booleans, and nil is
+-- already falsy, so the rows below are deliberately minimal. Naming the type
+-- once is what lets four literals of different shapes sit in one array: Luau
+-- unifies an array literal's element type before it ever sees the parameter.
+type Row = { name: string, worktree_path: string?, is_current: boolean?, remote_only: boolean? }
 
 describe("validate_branch", function()
   it("accepts ordinary branch names, slashes and all", function()
@@ -188,7 +195,7 @@ describe("to_targets", function()
       { name = "feat/x", worktree_path = "/repo/tree/feat-x" },
       { name = "only-remote", remote_only = true },
       { name = "zebra" },
-    })
+    } :: { Row })
     expect.equals("current", targets[1].hint)
     expect.equals("feat-x", targets[2].hint)
     expect.equals("remote · new worktree", targets[3].hint)
@@ -196,7 +203,7 @@ describe("to_targets", function()
   end)
 
   it("carries the branch name as the value the daemon resolves", function()
-    local targets = git.to_targets({ { name = "feat/x" } })
+    local targets = git.to_targets({ { name = "feat/x" } } :: { Row })
     expect.equals("feat/x", targets[1].value)
     expect.equals("feat/x", targets[1].label)
   end)
@@ -208,7 +215,7 @@ describe("to_targets", function()
     local targets = git.to_targets({
       { name = "feat/x", worktree_path = "/repo/tree/feat-x" },
       { name = "zebra" },
-    })
+    } :: { Row })
     expect.equals("/repo/tree/feat-x", targets[1].path)
     expect.equals(nil, targets[2].path)
   end)
@@ -216,7 +223,7 @@ describe("to_targets", function()
   -- `nil`, not `false`: an absent key survives the Lua→JSON crossing as absent,
   -- while `false` would arrive as a value clients have to know to ignore.
   it("marks the current branch and leaves the others unmarked", function()
-    local targets = git.to_targets({ { name = "master", is_current = true }, { name = "zebra" } })
+    local targets = git.to_targets({ { name = "master", is_current = true }, { name = "zebra" } } :: { Row })
     expect.equals(true, targets[1].current)
     expect.equals(nil, targets[2].current)
   end)

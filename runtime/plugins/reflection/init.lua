@@ -1,3 +1,4 @@
+--!strict
 --- reflection — a second self-improvement avenue, alongside knowledge insertion.
 ---
 --- Knowledge insertion is reactive: the agent writes notes mid-turn when it
@@ -112,7 +113,7 @@ end
 --- Parse the reviewer's output into a proposal array. Tolerates surrounding
 --- whitespace and accidental code fences. Returns a table (possibly empty) or
 --- nil if the output is not valid JSON.
-function M.parse_proposals(text)
+function M.parse_proposals(text: string?): { any }?
     if not text or text == "" then return {} end
 
     -- Strip a leading/trailing ```json ... ``` fence if the model added one.
@@ -184,7 +185,7 @@ end
 -- Orchestration (daemon-facing)
 -- ============================================================================
 
-local function collect_text(iter)
+local function collect_text(iter: (() -> any)?): string
     local parts = {}
     if iter then
         while true do
@@ -246,7 +247,7 @@ end
 --- The on_session_end handler. Reviews the finished session and stages
 --- proposals. Best-effort: any failure is logged, never raised (a reflection
 --- error must not disrupt session teardown).
-function M.run(session)
+function M.run(session: any): ()
     if not config.get("enabled", true) then return end
     if not session or not session.id then return end
     local session_id = session.id
@@ -353,7 +354,14 @@ end
 -- ============================================================================
 
 cru.on_session_end(function(session)
-    local ok, err = pcall(M.run, session)
+    -- `M.run` answers with nothing, and Luau types `pcall` as
+    -- `(boolean, R...)`, so with an empty `R...` there is no second slot for
+    -- `err` to bind — even though at run time `pcall` always puts the error
+    -- there. The inner function returns nil to give that slot a type.
+    local ok, err = pcall(function()
+        M.run(session)
+        return nil
+    end)
     if not ok then
         cru.log("error", "reflection: handler error: " .. tostring(err))
     end

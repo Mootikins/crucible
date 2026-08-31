@@ -1,3 +1,4 @@
+--!strict
 --- Pure git helpers for the worktree plugin.
 ---
 --- Everything here is a string-in/string-out function so the tests exercise
@@ -19,13 +20,13 @@ local M = {}
 --- leading `/`) are refused whatever git's own rules say about them.
 ---
 --- Returns `true`, or `false, reason`.
-function M.validate_branch(name)
+function M.validate_branch(name: any): (boolean, string?)
   if type(name) ~= "string" or name == "" then return false, "empty" end
   if name:find("..", 1, true) then return false, "contains '..'" end
   if name:sub(1, 1) == "-" then return false, "starts with '-'" end
   if name:sub(1, 1) == "/" then return false, "starts with '/'" end
   if name:find("\\", 1, true) then return false, "contains '\\'" end
-  return true
+  return true, nil
 end
 
 --- Where a new worktree goes, from a template (default `{repo}/tree/{branch}`).
@@ -56,10 +57,10 @@ end
 --- treats a blank line as a record separator sees every record end
 --- immediately. Splitting on the separator says what is meant and reads the
 --- same on both.
-function M.each_line(text)
+function M.each_line(text: string?): () -> string?
   local source = text or ""
   local pos = 1
-  return function()
+  return function(): string?
     if pos > #source then return nil end
     local newline = source:find("\n", pos, true)
     if not newline then
@@ -73,16 +74,32 @@ function M.each_line(text)
   end
 end
 
-function M.parse_worktrees(porcelain)
-  local map = {}
-  local current = nil
+--- One row of the branch menu.
+--- One row of the branch menu.
+---
+--- `is_current` and `remote_only` are OPTIONAL because `to_targets` reads them
+--- as booleans and nil is already falsy, so a caller building a minimal row
+--- does not have to write `false` twice. `build_branches` sets all four.
+export type Branch = {
+  name: string,
+  worktree_path: string?,
+  is_current: boolean?,
+  remote_only: boolean?,
+}
+
+function M.parse_worktrees(porcelain: string?): { [string]: string }
+  local map: { [string]: string } = {}
+  local current: string? = nil
   for line in M.each_line(porcelain) do
+    -- `each_line` answers `string?` so the iterator can end; inside the body
+    -- it is always a string.
+    local line = line :: string
     local path = line:match("^worktree (.+)$")
     local branch = line:match("^branch (.+)$")
     if path then
       current = path
     elseif branch and current then
-      map[(branch:gsub("^refs/heads/", ""))] = current
+      map[(branch:gsub("^refs/heads/", ""))] = current :: string
     elseif line == "" then
       current = nil
     end
@@ -98,15 +115,15 @@ end
 
 --- `origin/feat/x` → `feat/x`, or nil for the symbolic `<remote>/HEAD` entries,
 --- which name no branch.
-function M.strip_remote(short)
+function M.strip_remote(short: string?): string?
   local _, branch = (short or ""):match("^([^/]+)/(.+)$")
   if not branch or branch == "HEAD" then return nil end
   return branch
 end
 
 --- Split command output into non-empty lines.
-function M.lines(text)
-  local out = {}
+function M.lines(text: string?): { string }
+  local out: { string } = {}
   for line in (text or ""):gmatch("[^\n]+") do
     if line ~= "" then out[#out + 1] = line end
   end
@@ -119,8 +136,8 @@ end
 --- The ordering is the menu's whole usability story: the branch you are on and
 --- the ones you can jump to without creating anything belong at the top, and
 --- everything else is a longer action.
-function M.sort_branches(branches)
-  local rank = function(b)
+function M.sort_branches(branches: { Branch }): { Branch }
+  local rank = function(b: Branch): number
     if b.is_current then return 0 end
     if b.worktree_path then return 1 end
     return 2
@@ -137,11 +154,17 @@ end
 --- Separated from the shelling out so the assembly — which branch is current,
 --- which already has a worktree, which exists only on a remote — is testable
 --- against fixed strings instead of a real repository.
-function M.build_branches(porcelain, head, locals, remotes)
+function M.build_branches(
+  porcelain: string?,
+  head: string?,
+  locals: string?,
+  remotes: string?
+): { Branch }
   local worktrees = M.parse_worktrees(porcelain)
-  local current = (head ~= "HEAD" and head ~= "" and head) or nil
+  local current: string? = (head ~= "HEAD" and head ~= "" and head) or nil
 
-  local seen, branches = {}, {}
+  local seen: { [string]: boolean } = {}
+  local branches: { Branch } = {}
   for _, name in ipairs(M.lines(locals)) do
     seen[name] = true
     branches[#branches + 1] = {
@@ -179,10 +202,10 @@ end
 --- checkout with its branch, and the files-pane root picker jumps to one; both
 --- used to ask the daemon for their own copy of the branch list. One answer,
 --- one source.
-function M.to_targets(branches)
-  local targets = {}
+function M.to_targets(branches: { Branch }): { any }
+  local targets: { any } = {}
   for _, b in ipairs(branches) do
-    local hint
+    local hint: string?
     if b.is_current then
       hint = "current"
     elseif b.worktree_path then

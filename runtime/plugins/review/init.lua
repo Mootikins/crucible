@@ -1,3 +1,4 @@
+--!strict
 --- review — the attributed-diff review queue, as tools an agent can call.
 ---
 --- The daemon owns review; this plugin is the *tool* surface over it. Both it
@@ -37,7 +38,7 @@ local function truncate(s)
     return s:sub(1, MAX_CONTENT) .. "\n… (truncated; open the file to read the rest)"
 end
 
-local function project(hunk)
+local function project(hunk: { [string]: any }): { [string]: any }
     return {
         id = hunk.id,
         path = hunk.path,
@@ -58,8 +59,16 @@ local function project(hunk)
     }
 end
 
+--- What a tool handler answers with.
+---
+--- Either `{ error = "..." }` or the handler's own result shape, and the
+--- daemon reads `error` first. Both cross to JSON, so an open map is the
+--- honest type: a union of the two would have to be widened again at every
+--- `return` and states nothing more than this does.
+type ToolResult = { [string]: any }
+
 --- List the composed diff for a session.
-function M.list_hunks(args)
+function M.list_hunks(args: { [string]: any }): ToolResult
     if not args.session_id then
         return { error = "session_id is required" }
     end
@@ -68,8 +77,10 @@ function M.list_hunks(args)
     if err then
         return { error = err }
     end
+    -- `review_list_hunks` answers `({any}?, string?)`: no error means a list.
+    local hunks = hunks or {}
 
-    local out = {}
+    local out: { { [string]: any } } = {}
     local unreviewed = 0
     for _, hunk in ipairs(hunks) do
         local row = project(hunk)
@@ -82,7 +93,7 @@ function M.list_hunks(args)
 end
 
 --- Accept or reject one hunk.
-function M.set_state(args)
+function M.set_state(args: { [string]: any }): ToolResult
     if not args.session_id then
         return { error = "session_id is required" }
     end
@@ -102,7 +113,7 @@ function M.set_state(args)
 end
 
 --- Comment on a line range.
-function M.comment(args)
+function M.comment(args: { [string]: any }): ToolResult
     if not args.session_id then
         return { error = "session_id is required" }
     end
@@ -130,7 +141,7 @@ function M.comment(args)
 end
 
 --- Mark a comment answered.
-function M.resolve_comment(args)
+function M.resolve_comment(args: { [string]: any }): ToolResult
     if not args.session_id then
         return { error = "session_id is required" }
     end

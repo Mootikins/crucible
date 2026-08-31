@@ -1,3 +1,4 @@
+--!strict
 --- Worktree Plugin — the workspace axis.
 ---
 --- Answers *where do a session's files live?* by resolving a branch name to a
@@ -40,12 +41,12 @@ local config: Config = {}
 --- and a caller writing `local _, err = git_out(...)` would otherwise bind
 --- `err` to that count — which is `0`, and `0` is truthy in Lua. Every call
 --- would read as a failure.
-local function git_out(args)
+local function git_out(args: { string }): (string?, string?)
   local r = cru.shell.exec("git", args)
   if not r.success then
     return nil, ((r.stderr or ""):gsub("%s+$", ""))
   end
-  return ((r.stdout or ""):gsub("%s+$", ""))
+  return ((r.stdout or ""):gsub("%s+$", "")), nil
 end
 
 --- The workdir of the checkout containing `path`.
@@ -53,9 +54,11 @@ end
 --- `--show-toplevel` resolves to the *linked worktree's* workdir when run
 --- inside one, not the main checkout — which is what makes `is_current`
 --- correct for a session already working in a worktree.
-local function workdir(path)
+local function workdir(path: string?): string?
   if not path or path == "" then return nil end
-  return git_out({ "-C", path, "rev-parse", "--show-toplevel" })
+  -- `git_out` answers with a PAIR; parenthesised so the error half does not
+  -- ride along and turn one nil into two.
+  return (git_out({ "-C", path, "rev-parse", "--show-toplevel" }))
 end
 
 --- Everything the branch list needs, in one place.
@@ -63,11 +66,14 @@ end
 --- Returns `dir, porcelain, head, locals, remotes` or nil when `path` is not a
 --- repository — which is not an error: plenty of projects are not repos, and
 --- the chip simply offers nothing for them.
-local function survey(path)
+--- Five values, or five nils. Every early exit answers with the same ARITY:
+--- a caller writes `local dir, porcelain, head, locals, remotes = survey(p)`
+--- and a bare `return nil` left the other four unbound.
+local function survey(path: string?): (string?, string?, string?, string?, string?)
   local dir = workdir(path)
-  if not dir then return nil end
-  local porcelain = git_out({ "-C", dir, "worktree", "list", "--porcelain" })
-  if not porcelain then return nil end
+  if not dir then return nil, nil, nil, nil, nil end
+  local porcelain = git_out({ "-C", dir :: string, "worktree", "list", "--porcelain" })
+  if not porcelain then return nil, nil, nil, nil, nil end
   local head = git_out({ "-C", dir, "rev-parse", "--abbrev-ref", "HEAD" }) or ""
   local locals = git_out({ "-C", dir, "for-each-ref", "refs/heads", "--format=%(refname:short)" }) or ""
   local remotes = git_out({ "-C", dir, "for-each-ref", "refs/remotes", "--format=%(refname:short)" }) or ""

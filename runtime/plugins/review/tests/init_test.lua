@@ -1,3 +1,4 @@
+--!strict
 --- Tests for the review plugin.
 ---
 --- `crucible-daemon/tests/review_plugin.rs` asserts the SHAPE of this tool
@@ -17,9 +18,9 @@ local plugin = require("review")
 local SESSION = "chat-2026-08-13T1200-abc123"
 
 --- Records every call so a test can assert what crossed the boundary.
-local calls
+local calls: { { name: string, args: { any } } }
 
-local function stub(overrides)
+local function stub(overrides: { [string]: any }?)
     calls = {}
     cru.session = cru.session or mock({})
     local function record(name)
@@ -38,7 +39,7 @@ local function stub(overrides)
     cru.session.review_resolve_comment = record("review_resolve_comment")
 end
 
-local function hunk(over)
+local function hunk(over: { [string]: any }?)
     local h = {
         id = "h1",
         path = "src/main.rs",
@@ -261,7 +262,7 @@ describe("review", function()
     end)
 
     describe("review_comment", function()
-        local function args(over)
+        local function args(over: { [string]: any }?)
             local a = {
                 session_id = SESSION,
                 path = "src/main.rs",

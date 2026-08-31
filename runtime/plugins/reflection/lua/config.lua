@@ -1,3 +1,4 @@
+--!strict
 --- reflection configuration
 ---
 --- Resolution order, highest priority first (Lua beats TOML, the Neovim

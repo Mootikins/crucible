@@ -1,3 +1,4 @@
+--!strict
 -- Integration tests for the worktree plugin entry point.
 -- Run with: cru plugin test runtime/plugins/worktree
 --
@@ -73,14 +74,14 @@ local function a_repo()
 end
 
 --- The argv of the first logged `git worktree add`, or nil.
-local function worktree_add_argv()
+local function worktree_add_argv(): { string }?
   for _, call in ipairs(exec_log) do
     if subcommand(call.args) == "worktree add" then return call.args end
   end
   return nil
 end
 
-local function index_of(list, needle)
+local function index_of(list: { any }, needle: any): number?
   for i, v in ipairs(list) do
     if v == needle then return i end
   end
@@ -158,8 +159,11 @@ describe("worktree.resolve", function()
     local result = resolve({ workspace = "/repo", target = "zebra" })
     expect.equals("/repo/tree/zebra", result.path)
 
-    local argv = worktree_add_argv()
-    expect.truthy(argv)
+    -- `assert`, not `expect.truthy`: both fail the test when no `worktree add`
+
+    -- was logged, and only `assert` narrows away the nil for the lines below.
+
+    local argv = assert(worktree_add_argv())
     -- Checked out, not created: `-b` on an existing branch fails.
     expect.equals(nil, index_of(argv, "-b"))
     expect.equals("zebra", argv[#argv])
@@ -170,9 +174,10 @@ describe("worktree.resolve", function()
     local result = resolve({ workspace = "/repo", target = "brand-new" })
     expect.equals("/repo/tree/brand-new", result.path)
 
-    local argv = worktree_add_argv()
-    expect.truthy(index_of(argv, "-b"), "a branch that does not exist has to be created")
-    expect.equals("brand-new", argv[index_of(argv, "-b") + 1])
+    local argv = assert(worktree_add_argv())
+    local dash_b = index_of(argv, "-b")
+    expect.truthy(dash_b, "a branch that does not exist has to be created")
+    expect.equals("brand-new", argv[assert(dash_b) + 1])
   end)
 
   it("returns an existing destination without touching git", function()
@@ -223,7 +228,7 @@ describe("worktree.resolve", function()
     a_repo()
     responders["for-each-ref refs/heads"] = { success = true, stdout = "master\nfix; rm -rf /\n" }
     resolve({ workspace = "/repo", target = "fix; rm -rf /" })
-    local argv = worktree_add_argv()
+    local argv = assert(worktree_add_argv())
     expect.truthy(index_of(argv, "fix; rm -rf /"), "the name must survive as a single argv entry")
   end)
 
