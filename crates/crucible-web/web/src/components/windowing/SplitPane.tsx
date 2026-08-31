@@ -1,7 +1,10 @@
-import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Component, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Pane } from './Pane';
 import type { LayoutNode } from '@/types/windowTypes';
-import { isCollapsedLeaf, paneFlex } from '@/lib/pane-collapse';
+import { isCollapsedLeaf, splitFlex } from '@/lib/pane-collapse';
+import { subtreeHasTabs } from '@/lib/pane-content';
+import { findSplitInLayout } from '@/lib/pane-boundaries';
+import { windowStore } from '@/stores/windowStore';
 import { startSplitDrag } from '@/lib/split-drag';
 
 const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }> = (props) => {
@@ -21,10 +24,38 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
 
   const firstCollapsed = () => isCollapsedLeaf(split().first);
   const secondCollapsed = () => isCollapsedLeaf(split().second);
-  // `splitRatio` is NOT touched while a side is collapsed: it is what the pane
-  // opens back to. The splitter is therefore inert instead — a drag that moved
-  // an invisible ratio would silently rewrite the restore size.
-  const locked = () => firstCollapsed() || secondCollapsed();
+
+  // A side with no tabs yields its share to the side that has them.
+  //
+  // A 50% split against a void is not a layout, it is a hole: at 1280px the
+  // centre gave an empty pane 460px it could not use while the chat beside it
+  // squeezed a tool card into 459px. Only ONE side may yield, and only to a
+  // side that actually holds content — two empty panes keep their ratio,
+  // because neither has a better claim on the space than the other.
+  //
+  // Centre tiling only. A rail's panes are a fixed tool stack the user does
+  // not fill by opening a note, so an empty slot there is not the same state.
+  // (The ribbon follows either way — it MEASURES each pane's box rather than
+  // recomputing it from `splitRatio`.)
+  const inCenter = createMemo(() => findSplitInLayout(windowStore.layout, split().id) !== null);
+  const firstHasTabs = () => subtreeHasTabs(windowStore.tabGroups, split().first);
+  const secondHasTabs = () => subtreeHasTabs(windowStore.tabGroups, split().second);
+  const firstYields = () => inCenter() && !firstHasTabs() && secondHasTabs();
+  const secondYields = () => inCenter() && !secondHasTabs() && firstHasTabs();
+
+  // Both halves at once: the growing half's flex factor depends on whether the
+  // other half is pinned to a fixed basis.
+  const flex = () =>
+    splitFlex(split().first, split().second, effectiveRatio(), {
+      first: firstYields(),
+      second: secondYields(),
+    });
+
+  // `splitRatio` is NOT touched while a side is collapsed or yields: it is what
+  // the pane opens back to. The splitter is therefore inert instead — a drag
+  // that moved an invisible ratio would silently rewrite the restore size.
+  const locked = () =>
+    firstCollapsed() || secondCollapsed() || firstYields() || secondYields();
 
   onCleanup(() => {
     if (cleanupRef) {
@@ -64,7 +95,7 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
     >
       <div
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
-        style={{ flex: paneFlex(split().first, effectiveRatio()) }}
+        style={{ flex: flex().first }}
       >
         <SplitPane node={split().first} />
       </div>
@@ -96,7 +127,7 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
       />
       <div
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
-        style={{ flex: paneFlex(split().second, 1 - effectiveRatio()) }}
+        style={{ flex: flex().second }}
       >
         <SplitPane node={split().second} />
       </div>

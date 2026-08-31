@@ -68,9 +68,11 @@ const iconForProvider = (plugin: string) => PROVIDER_ICONS[plugin] ?? FlaskConic
  * (lazy creation); the created chat docks right per WS-220 and this tab
  * closes behind it, leaving the center as the editing surface.
  *
- * This used to double as the empty-pane splash. An empty pane now renders
- * nothing — starting a session is a deliberate act (the ribbon's New Session,
- * the command palette), not something a pane falls back into.
+ * This used to double as the empty-pane splash. An empty pane no longer falls
+ * back into it — starting a session is a deliberate act (the ribbon's New
+ * Session, the command palette). What an empty pane shows instead is
+ * `windowing/EmptyPane`: the state it is in and the keys that fill it, and
+ * nothing else.
  */
 export const CenterComposer: Component<{
   draftTabId?: string;

@@ -2,7 +2,10 @@ import { Component, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
+import { EmptyPane } from './EmptyPane';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { regionOfPane } from '@/stores/windowStoreInternals';
+import { hasTabsOutsidePane } from '@/lib/pane-content';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { reactiveMetadataProps } from '@/lib/panel-props';
 import { attachFileDropTarget } from '@/lib/file-dnd';
@@ -141,6 +144,13 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   // the user tucked the terminal away.
   const collapsed = () => windowActions.findPaneById(props.paneId)?.collapsed === true;
 
+  // The affordance belongs to the centre tiling only. A rail pane is one slot
+  // of a fixed tool stack; "open a note here" is not an instruction it can
+  // honour, and the ribbon already marks it.
+  const inCenter = createMemo(() => regionOfPane(windowStore, props.paneId) === 'center');
+  const solitary = () =>
+    !hasTabsOutsidePane(windowStore.tabGroups, windowStore.layout, props.paneId);
+
   const handleClick = () => {
     windowActions.setActivePane(props.paneId);
     // The bar IS the affordance: clicking anywhere on a collapsed pane opens
@@ -166,10 +176,12 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       }}
       onClick={handleClick}
     >
-      {/* A pane with no tabs is VOID — no splash, no hint. The session
-          composer lives in its own New Session tab; an empty pane is just
-          empty space (and still a drop target). */}
-      <Show when={tabs().length > 0}>
+      {/* A pane with no tabs holds no splash and no session composer — that
+          lives in its own New Session tab. It holds one quiet affordance that
+          names the state and the two keys that fill it, because a region that
+          draws nothing at all reads as a rendering failure. It is still a drop
+          target. */}
+      <Show when={tabs().length > 0} fallback={<Show when={inCenter()}><EmptyPane solitary={solitary()} /></Show>}>
         <TabBar
           groupId={tabGroupId()!}
           paneId={props.paneId}

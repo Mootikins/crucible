@@ -3,11 +3,13 @@ import { setupBasicMocks } from './helpers/mock-api';
 import { appReady, openNewSessionTab } from './helpers/nav';
 
 /**
- * E2E: Empty panes are VOID.
+ * E2E: What an empty center pane holds.
  *
  * Closing every center tab used to reveal a composer splash. The composer now
- * lives in its own New Session tab (ribbon → New session); a pane with no tabs
- * renders nothing at all — no splash, no tab strip, no hint.
+ * lives in its own New Session tab (ribbon → New session). A pane with no tabs
+ * holds no splash and no tab strip — one quiet affordance, naming the state
+ * and the keys that fill it. Drawing nothing at all read as a rendering
+ * failure: a third of a wide viewport went black.
  */
 
 /** Close every tab in every center-tiling group, through the real action. */
@@ -35,7 +37,7 @@ async function closeAllCenterTabs(page: import('@playwright/test').Page) {
   });
 }
 
-test('an emptied center pane renders nothing', async ({ page }) => {
+test('an emptied center pane holds its affordance and nothing else', async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
   await appReady(page);
@@ -51,11 +53,17 @@ test('an emptied center pane renders nothing', async ({ page }) => {
 
   await closeAllCenterTabs(page);
 
-  // No composer, no tab strip — void.
+  // No composer, no tab strip.
   await expect(page.getByTestId('composer-input')).toHaveCount(0);
   await expect(page.getByTestId('center-composer')).toHaveCount(0);
   // And no leftover "select a tab" style hint.
   await expect(page.getByText('Select a tab')).toHaveCount(0);
+
+  // What it DOES hold: the empty state, named, with the keys that fill it.
+  const affordance = page.getByTestId('empty-pane').first();
+  await expect(affordance).toBeVisible();
+  await expect(affordance).toContainText('Open a note');
+  await expect(affordance).toContainText('Ctrl+P');
 });
 
 test('the session composer is reachable from the ribbon, not from an empty pane', async ({ page }) => {
@@ -63,7 +71,7 @@ test('the session composer is reachable from the ribbon, not from an empty pane'
   await page.goto('/');
   await appReady(page);
 
-  // Nothing on a fresh center pane…
+  // No composer on a fresh center pane — the affordance is not one…
   await expect(page.getByTestId('composer-input')).toHaveCount(0);
 
   // …until New Session is opened deliberately.

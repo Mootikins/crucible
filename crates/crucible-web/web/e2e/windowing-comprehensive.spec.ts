@@ -3,6 +3,7 @@ import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 import { stableCenter } from './helpers/geometry';
+import { fillCenterPanes } from './helpers/panes';
 
 type LayoutNode = {
   type: 'pane' | 'split';
@@ -73,6 +74,10 @@ test.describe('Comprehensive windowing behavior', () => {
       const leaf = firstLeaf(windowStore.layout);
       if (leaf) windowActions.splitPane(leaf.id, 'vertical');
     });
+
+    // Row semantics live on the splitter's cursor, which an inert splitter
+    // drops. The new pane is born empty, so fill both sides first.
+    await fillCenterPanes(page);
 
     const rowSplitter = page.locator('[data-split-id].cursor-row-resize').first();
     await expect(rowSplitter).toBeVisible({ timeout: 3000 });
@@ -253,6 +258,10 @@ test.describe('Comprehensive windowing behavior', () => {
       }
     });
 
+    // An empty side yields its width and pins the splitter — this test is
+    // about the ratio a DRAG writes, so both sides need content.
+    await fillCenterPanes(page);
+
     const splitter = page.locator('[data-split-id]').first();
 
     // Settle first: the split has just been created and the right edge panel
@@ -279,6 +288,42 @@ test.describe('Comprehensive windowing behavior', () => {
 
     const ratio = await readRatio();
     expect(Math.abs(ratio - 0.5)).toBeGreaterThan(0.02);
+  });
+
+  test('a yielding pane leaves no gap — the split still fills its container', async ({ page }) => {
+    // Regression: the growing half carried its 0.5 ratio as its flex factor.
+    // Flexbox hands out free space in proportion to the grow factors and keeps
+    // the remainder when they sum to under 1, so beside a fixed-basis pane the
+    // centre ended 348px short of its own container — a hole that a jsdom test
+    // cannot see, because jsdom does not lay anything out.
+    await page.evaluate(() => {
+      const store = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
+      const actions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
+      const firstLeaf = (n: LayoutNodeShape): LayoutNodeShape | null =>
+        n.type === 'pane' ? n : (firstLeaf(n.first!) ?? firstLeaf(n.second!));
+      const leaf = firstLeaf(store.layout);
+      if (leaf) actions.splitPane(leaf.id, 'horizontal');
+    });
+
+    // The new pane is born empty, so exactly one side yields.
+    const affordance = page.getByTestId('empty-pane').first();
+    await expect(affordance).toBeVisible({ timeout: 3000 });
+
+    const geometry = await page.evaluate(() => {
+      const splitter = document.querySelector('[data-testid="resize-splitter"]') as HTMLElement;
+      const container = splitter.parentElement as HTMLElement;
+      const w = (n: Element) => n.getBoundingClientRect().width;
+      return {
+        container: w(container),
+        first: w(splitter.previousElementSibling!),
+        splitter: w(splitter),
+        second: w(splitter.nextElementSibling!),
+      };
+    });
+
+    const covered = geometry.first + geometry.splitter + geometry.second;
+    // Sub-pixel rounding only. Before the fix this was short by ~348px.
+    expect(Math.abs(covered - geometry.container)).toBeLessThan(2);
   });
 
   test('shows center empty state after all center tabs are removed', async ({ page }) => {

@@ -9,8 +9,9 @@ import { expect, type Page } from '@playwright/test';
  *  - Sessions and the file tree are separate panels on opposite rails. The
  *    left panel opens on Sessions, so `session-item-*` rows exist from the
  *    start — no scope to switch, unlike the Navigator this replaced.
- *  - An empty pane is void. The session composer is no longer an empty-center
- *    splash; it is the content of a New Session tab, opened from the ribbon.
+ *  - An empty pane holds only its own affordance. The session composer is no
+ *    longer an empty-center splash; it is the content of a New Session tab,
+ *    opened from the ribbon.
  */
 
 const READY_TIMEOUT = 15000;

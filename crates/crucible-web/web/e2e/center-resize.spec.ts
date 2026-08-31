@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { openSessionsList } from './helpers/nav';
 import { stableCenter } from './helpers/geometry';
+import { fillCenterPanes } from './helpers/panes';
 
 
 /**
@@ -26,6 +27,11 @@ test('center splitter resize updates pane width', async ({ page }) => {
       windowActions.splitPane(layout.id, 'horizontal');
     }
   });
+
+  // The split's new pane is born empty, and an empty pane yields its width
+  // rather than holding half the centre against nothing — which also makes
+  // the splitter inert. Fill both sides: this test is about the DRAG.
+  await fillCenterPanes(page);
 
   const splitter = page.locator('[data-split-id]').first();
   await splitter.waitFor({ state: 'visible', timeout: 3000 });

@@ -80,7 +80,13 @@ test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
   // palette button shares the palette title, so Inbox is the discriminator)
   // no longer exist anywhere.
   await expect(page.locator('button[title="Inbox"]')).toHaveCount(0);
-  await expect(page.locator('kbd:has-text("Ctrl+P")')).toHaveCount(0);
+  // One surface still prints that chord: the empty-pane affordance, which
+  // names the keys that fill the pane it sits in. Counting the two locators
+  // against each other says every Ctrl+P chip on screen belongs to that
+  // affordance — no header bar reintroduced one.
+  const paletteHints = page.locator('kbd:has-text("Ctrl+P")');
+  const affordanceHints = page.locator('[data-testid="empty-pane"] kbd:has-text("Ctrl+P")');
+  expect(await paletteHints.count()).toBe(await affordanceHints.count());
 });
 
 test('Center tiling area is visible and interactive', async ({ page }) => {

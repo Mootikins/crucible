@@ -278,8 +278,13 @@ describe('a collapsed pane takes its tab strip and no more', () => {
   it('sizes the collapsed pane to the strip and the sibling to the rest', async () => {
     const { container } = await renderMeasured();
     expect(paneSlot(container, 'right-term-pane').style.flex).toBe('0 0 36px');
-    // The tree keeps the rest, whatever the stored ratio says.
-    expect(paneSlot(container, 'right-pane').style.flex).toBe('0.65 1 0px');
+    // The tree keeps the rest, whatever the stored ratio says — and `1`, not
+    // the stored 0.65, is what makes that true. Flexbox hands out free space
+    // in proportion to the grow factors and KEEPS the remainder when they sum
+    // to under 1, so `0.65` beside a fixed 36px strip left 35% of the rail as
+    // a hole. This assertion used to spell the bug and the comment above it
+    // the intent.
+    expect(paneSlot(container, 'right-pane').style.flex).toBe('1 1 0px');
 
     fireEvent.click(marker(container, 'right-term-pane'));
     expect(paneSlot(container, 'right-term-pane').style.flex).toBe(

@@ -6,11 +6,13 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { Pane } from '../Pane';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
+import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
+import { shortcutLabel } from '@/lib/keyboard-shortcuts';
 
-// Renders Pane against the real windowStore. An empty pane is VOID — the
-// session composer moved into its own New Session tab, so a pane with no tabs
-// renders no splash, no hint, and no tab bar (it stays a drop target only).
+// Renders Pane against the real windowStore. An empty pane holds no splash and
+// no session composer — that moved into its own New Session tab. It holds one
+// quiet affordance: the state it is in, and the keys that fill it. Drawing
+// nothing at all read as a rendering failure on a wide screen.
 
 let paneId: string;
 let groupId: string;
@@ -34,8 +36,8 @@ beforeEach(() => {
 });
 
 describe('Pane — empty center', () => {
-  it('renders nothing but the drop surface when the pane has no tabs', () => {
-    const { queryByTestId, container } = render(() => (
+  it('renders the empty-pane affordance, not a composer, when the pane has no tabs', () => {
+    const { queryByTestId, getByTestId, container } = render(() => (
       <DragDropProvider>
         <Pane paneId={paneId} />
       </DragDropProvider>
@@ -45,7 +47,95 @@ describe('Pane — empty center', () => {
     expect(queryByTestId('composer-input')).toBeNull();
     // No tab strip either — nothing to strip.
     expect(container.querySelector('[data-tab-id]')).toBeNull();
-    expect(container.textContent?.trim()).toBe('');
+
+    // The pane says what it is and which keys fill it. Before this, a third of
+    // a 1280px viewport rendered nothing at all.
+    const affordance = getByTestId('empty-pane');
+    expect(affordance.textContent).toContain('Open a note');
+    expect(affordance.textContent).toContain('Command palette');
+  });
+
+  it('prints the chords the app actually listens for', () => {
+    const { getByTestId } = render(() => (
+      <DragDropProvider>
+        <Pane paneId={paneId} />
+      </DragDropProvider>
+    ));
+
+    const chords = Array.from(getByTestId('empty-pane').querySelectorAll('kbd')).map(
+      (k) => k.textContent,
+    );
+    // Derived from DEFAULT_SHORTCUTS, not written out here: a hint naming a
+    // key nothing is bound to is worse than no hint.
+    expect(chords).toEqual([
+      shortcutLabel('openNoteSwitcher'),
+      shortcutLabel('openCommandPalette'),
+    ]);
+  });
+
+  it('names the region empty when no other pane holds a tab', () => {
+    const { getByTestId } = render(() => (
+      <DragDropProvider>
+        <Pane paneId={paneId} />
+      </DragDropProvider>
+    ));
+
+    expect(getByTestId('empty-pane').getAttribute('data-empty-pane')).toBe('region');
+    expect(getByTestId('empty-pane').textContent).toContain('Nothing open');
+  });
+
+  it('names the pane empty when a sibling pane still holds work', () => {
+    const siblingPaneId = generateId();
+    const siblingGroupId = generateId();
+    setStore(
+      produce((s) => {
+        s.tabGroups[siblingGroupId] = {
+          id: siblingGroupId,
+          tabs: [{ id: 'sibling-tab', title: 'note.md', contentType: 'file' }],
+          activeTabId: 'sibling-tab',
+        };
+        s.layout = {
+          id: generateId(),
+          type: 'split',
+          direction: 'horizontal',
+          splitRatio: 0.5,
+          first: { id: paneId, type: 'pane', tabGroupId: groupId },
+          second: { id: siblingPaneId, type: 'pane', tabGroupId: siblingGroupId },
+        };
+      }),
+    );
+
+    const { getByTestId } = render(() => (
+      <DragDropProvider>
+        <Pane paneId={paneId} />
+      </DragDropProvider>
+    ));
+
+    expect(getByTestId('empty-pane').getAttribute('data-empty-pane')).toBe('pane');
+    expect(getByTestId('empty-pane').textContent).toContain('Empty pane');
+  });
+
+  it('leaves a rail pane alone — the affordance is the centre tiling only', () => {
+    const railPane = findFirstPane(windowStore.edgePanels.left.layout)!;
+    // Empty it, so the only reason it could render no affordance is its region.
+    setStore(
+      produce((s) => {
+        s.tabGroups[railPane.tabGroupId!] = {
+          id: railPane.tabGroupId!,
+          tabs: [],
+          activeTabId: null,
+        };
+      }),
+    );
+    const { queryByTestId } = render(() => (
+      <DragDropProvider>
+        <Pane paneId={railPane.id} />
+      </DragDropProvider>
+    ));
+
+    // A rail slot is a fixed tool stack; "open a note here" is not an
+    // instruction it can honour.
+    expect(queryByTestId('empty-pane')).toBeNull();
   });
 
   it('renders the tab bar once a tab is added', () => {

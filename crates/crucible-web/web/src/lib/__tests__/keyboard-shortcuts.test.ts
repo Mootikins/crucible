@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   matchShortcut,
+  shortcutLabel,
   DEFAULT_SHORTCUTS,
   ShortcutAction,
 } from '../keyboard-shortcuts';
@@ -234,5 +235,30 @@ describe('keyboard-shortcuts', () => {
       expect(actionSet.has('closeOverlay')).toBe(true);
       expect(actionSet.has('cycleMode')).toBe(true);
     });
+  });
+});
+
+describe('shortcutLabel', () => {
+  it('prints the chord bound to an action', () => {
+    expect(shortcutLabel('openNoteSwitcher')).toBe('Ctrl+O');
+    expect(shortcutLabel('openCommandPalette')).toBe('Ctrl+P');
+  });
+
+  it('prints modifiers in a fixed order, whatever order the entry declares', () => {
+    const shortcuts: ShortcutAction[] = [
+      { key: 'f', modifiers: ['shift', 'ctrl'], action: 'weird', description: '' },
+    ];
+    expect(shortcutLabel('weird', shortcuts)).toBe('Ctrl+Shift+F');
+  });
+
+  it('keeps a named key exact and uppercases a single character', () => {
+    expect(shortcutLabel('closeOverlay')).toBe('Escape');
+    expect(shortcutLabel('closeActiveTab')).toBe('Ctrl+W');
+  });
+
+  it('returns null for an action nothing is bound to', () => {
+    // A hint that names a key the app does not listen for is worse than no
+    // hint, so the caller drops the row rather than inventing a chord.
+    expect(shortcutLabel('noSuchAction')).toBeNull();
   });
 });
