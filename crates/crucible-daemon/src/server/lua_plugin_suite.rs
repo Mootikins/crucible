@@ -501,14 +501,20 @@ mod shipped_plugin_tests {
     /// the VM it actually runs on.
     ///
     /// `every_shipped_plugin_typechecks` above walks `runtime/plugins/` only,
-    /// which is what `just plugin-check` iterates too. Eleven shipped files sat
-    /// outside it and no machine had ever checked one — including
-    /// `plugin/templates/init.luau`, the scaffold `cru plugin new` copies, whose
-    /// `health.lua` did not pass `cru plugin check`.
+    /// which is what `just plugin-check` iterates too. The shipped files
+    /// outside it had never been checked by any machine — including
+    /// `plugin/templates/init.luau`, the scaffold `cru plugin new` copies,
+    /// whose `health.luau` did not pass `cru plugin check`.
+    ///
+    /// No count here. This paragraph said "eleven" for about a day, and then
+    /// the prelude's Lua half was deleted; a tally in prose that no test reads
+    /// drifts every time the set changes. `PROFILES` below is the real list,
+    /// and the unmapped-file assertion is what keeps it complete.
     ///
     /// The profile matters as much as the coverage. `runtime/defaults/init.lua`
-    /// runs on the SESSION VM and the themes run on the CONFIG VM; checked
-    /// against the daemon definitions they report type errors for working API,
+    /// runs on the SESSION VM and a theme on a BARE VM with no `cru` at all;
+    /// checked against the daemon definitions they report type errors for
+    /// working API,
     /// which is exactly the false failure that made a wider gate look
     /// impossible.
     ///

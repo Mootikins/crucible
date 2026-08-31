@@ -12,11 +12,21 @@
 //!
 //! ## One decision, one place
 //!
-//! Eleven sites across four crates used to decide "is this a Lua file" or
-//! "what does `require` try", each with its own literal `"lua"`. They now all
-//! call in here. That is what makes the extension a decision rather than a
-//! convention: adding `.luau` to ten of eleven sites produces a plugin that
-//! discovers but does not load, or loads but does not typecheck.
+//! Sites across three crates used to decide "is this a Lua file" or "what does
+//! `require` try", each with its own literal `"lua"`. The ones that RESOLVE a
+//! file now all call in here — module resolution, discovery, the checker, the
+//! plugin watcher, the boot config, the shipped defaults and `cru doctor`.
+//! That is what makes the extension a decision rather than a convention:
+//! teaching all but one of them about `.luau` produces a plugin that discovers
+//! but does not load, or loads but does not typecheck.
+//!
+//! Sites that CREATE a file are different. They pick one name, and
+//! [`PREFERRED_EXTENSION`] is that name; `cru plugin new` is the one that does.
+//!
+//! No count here. The first version of this paragraph said "eleven sites
+//! across four crates", which was wrong within a day and stayed wrong through
+//! two rounds of review — prose no test reads drifts every time the module
+//! gets used more. The load-bearing claim is "one place", not the tally.
 //!
 //! ## Ambiguity is refused, not resolved — everywhere
 //!
