@@ -24,6 +24,40 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const PORT = Number(process.env.CRUCIBLE_WEB_PORT ?? 5273);
 
+/**
+ * The theme every visual baseline was captured in.
+ *
+ * The committed screenshots under `e2e/__screenshots__/stories` are DARK. Until
+ * the app learned to read `prefers-color-scheme` it booted dark unconditionally,
+ * so that was true by accident and nothing pinned it. The moment the app started
+ * honouring the media query, Playwright's own default took over — `colorScheme`
+ * "Defaults to 'light'" (playwright-core types.d.ts) — and four story baselines
+ * failed with the right geometry in the wrong palette.
+ *
+ * Both halves below are load-bearing, and each pins a DIFFERENT input:
+ *
+ *  - `storageState` seeds the app's OWN preference key, which is the path a
+ *    real user's stored choice takes (`storedTheme()` in src/lib/theme.ts).
+ *    This is the authoritative pin: it wins over the media query by design.
+ *  - `colorScheme` pins the media query the app falls back to when no choice is
+ *    stored. A spec that clears storage, or a future surface that reads the
+ *    query directly, still lands on dark instead of on whatever the runner
+ *    happens to emulate.
+ *
+ * A theme test overrides both with `test.use({ … })` — see e2e/theme.spec.ts.
+ */
+export const PINNED_THEME = 'dark' as const;
+
+const PINNED_THEME_STATE = {
+  cookies: [],
+  origins: [
+    {
+      origin: `http://localhost:${PORT}`,
+      localStorage: [{ name: 'crucible:theme', value: PINNED_THEME }],
+    },
+  ],
+};
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -69,6 +103,12 @@ export default defineConfig({
     // element coordinates that must not move mid-drag, and screenshots stay
     // deterministic.
     contextOptions: { reducedMotion: 'reduce' },
+    // See PINNED_THEME above. Applied to EVERY project, not just `stories`:
+    // the chromium tier compares no screenshots today, but a suite whose
+    // palette is decided by a default nobody wrote down is one baseline away
+    // from the same failure.
+    colorScheme: PINNED_THEME,
+    storageState: PINNED_THEME_STATE,
   },
 
   projects: [

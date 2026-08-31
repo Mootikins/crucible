@@ -220,6 +220,22 @@
 }
 
 @layer base {
+  /* ── Native surfaces follow the theme ─────────────────────────────────
+   * Scrollbars, form widgets, the caret and the canvas the browser paints
+   * behind the document read `color-scheme`, NOT our tokens. Without this the
+   * app had no declaration at all, so every one of them stayed on the UA
+   * default — a light theme with dark scrollbars and a dark date picker.
+   *
+   * It tracks `data-theme`, which is the same attribute the palette tracks,
+   * so the two can never disagree. */
+  :root {
+    color-scheme: dark;
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+  }
+
   html, body, #root {
     height: 100%;
     margin: 0;

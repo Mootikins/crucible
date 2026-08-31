@@ -13,7 +13,7 @@ import '@fontsource/ibm-plex-mono/500.css';
 import 'katex/dist/katex.min.css';
 import './index.css';
 import { initializeHighlighter } from '@/lib/shiki';
-import { applyTheme, readTheme } from '@/lib/theme';
+import { initTheme } from '@/lib/theme';
 
 const root = document.getElementById('root');
 
@@ -58,7 +58,10 @@ if (import.meta.env.PROD) {
     });
 }
 
-// Before the first paint: a stored light theme must not flash dark.
-applyTheme(readTheme());
+// Before the first paint: a stored light theme must not flash dark, and a
+// light-set machine must not open on dark just because dark is the
+// attribute-absent default. The disposer is dropped on purpose — the OS
+// watcher lives as long as the document.
+initTheme();
 
 render(() => <App />, root);
