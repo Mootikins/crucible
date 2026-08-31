@@ -123,3 +123,9 @@ LAUNCH-CHECKLIST.md
 # Python bytecode from the repo scripts
 __pycache__/
 *.pyc
+
+# insta's pending snapshots. A review run writes these beside the real `.snap`
+# and deletes them once the snapshot is accepted or the test passes, so a
+# committed one is always stale — and it reads as a failing snapshot to anyone
+# who finds it.
+*.snap.new
