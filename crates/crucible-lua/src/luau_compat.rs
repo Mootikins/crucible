@@ -180,9 +180,11 @@ impl UserData for LuaFile {
             },
         );
 
-        // `write` answers with the file itself, as Lua's does: shipped
-        // plugins read it as `local wrote, err = handle:write(...)` and treat
-        // a nil first return as the failure.
+        // `write` answers with the file itself, as Lua's does, so a caller
+        // can test the return to tell a failed write from a good one. No
+        // shipped plugin does: all three that read `local wrote, err =
+        // handle:write(...)` had a dead error branch, because this method
+        // RAISES on failure rather than answering nil.
         methods.add_function(
             "write",
             |_, (this, values): (mlua::AnyUserData, MultiValue)| {
@@ -472,8 +474,9 @@ mod tests {
         assert_eq!(content, "# Tasks\n- [ ] ship it\n");
     }
 
-    /// `write` answers with the file, which is how a plugin tells a failed
-    /// write from a good one: `local wrote, err = handle:write(...)`.
+    /// `write` answers with the file, as Lua's does. Failure RAISES, so the
+    /// `local wrote, err = handle:write(...)` shape those three plugins used
+    /// could never see the error it named.
     #[test]
     fn write_answers_with_the_file() {
         let lua = vm();

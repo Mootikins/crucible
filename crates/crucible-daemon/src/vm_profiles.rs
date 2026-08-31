@@ -196,8 +196,9 @@ pub fn theme_vm() -> anyhow::Result<Lua> {
 ///
 /// The daemon profile is written by
 /// [`crate::daemon_plugins::DaemonPluginLoader::generate_stubs`], which also
-/// writes the editor index and the doc map for it. The other two profiles are
-/// checked, not authored against, so they need declarations only.
+/// writes the editor index and the doc map for it. The other four — session,
+/// config, statusline and theme — are checked, not authored against, so they
+/// need declarations only.
 pub fn write_other_definitions(output_dir: &std::path::Path) -> anyhow::Result<()> {
     for profile in VmProfile::all() {
         let lua = match profile {

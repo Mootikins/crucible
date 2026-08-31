@@ -356,7 +356,7 @@ impl ModuleRegistry {
         }
 
         for root in scopes {
-            if let Some(path) = module_file(&root.join("lua"), &relative) {
+            if let Some(path) = module_file(&root.join("lua"), &relative)? {
                 return Ok(Some(ModuleRequest {
                     name: name.to_string(),
                     path,
@@ -369,13 +369,13 @@ impl ModuleRegistry {
         }
 
         for (root, kind) in &roots {
-            let Some(path) = module_file(root, &relative) else {
+            let Some(path) = module_file(root, &relative)? else {
                 continue;
             };
             let is_entry = *kind == RootKind::Plugin && !name.contains('.');
             let shadows_plugin = *kind == RootKind::User
                 && roots.iter().any(|(other, other_kind)| {
-                    *other_kind == RootKind::Plugin && module_file(other, &relative).is_some()
+                    *other_kind == RootKind::Plugin && module_exists(other, &relative)
                 });
             return Ok(Some(ModuleRequest {
                 name: name.to_string(),
@@ -545,29 +545,51 @@ fn validate_name(name: &str) -> mlua::Result<PathBuf> {
 /// The order lives in [`crate::source_files::module_candidates`], which every
 /// other site that resolves a module name uses too.
 ///
-/// `None` when TWO extensions of one name are there. `init.luau` beside
-/// `init.lua` was already refused for a plugin's entry point; `helper.luau`
-/// beside `helper.lua` used to resolve silently in favour of `.luau`, so the
-/// same mistake by the same author had two different answers depending on
-/// whether the file happened to be an entry point. See
+/// An ERROR when TWO extensions of one name are there, naming both files.
+/// `init.luau` beside `init.lua` was already refused for a plugin's entry
+/// point; `helper.luau` beside `helper.lua` used to resolve silently in favour
+/// of `.luau`, so the same mistake by the same author had two different
+/// answers depending on whether the file happened to be an entry point. See
 /// [`crate::source_files::collides`].
-fn module_file(root: &Path, relative: &Path) -> Option<PathBuf> {
-    if crate::source_files::collides(root, relative).is_some() {
-        return None;
+///
+/// The refusal used to be a `None`, which the caller reports as "module
+/// 'helper' was not found under the host module roots" — about a file that is
+/// plainly there, with the second copy that caused it never mentioned.
+/// `cru plugin check` named the collision and `require` denied the file
+/// existed, so the two halves of the same rule disagreed at the moment an
+/// author needed them to agree.
+fn module_file(root: &Path, relative: &Path) -> mlua::Result<Option<PathBuf>> {
+    if let Some(ambiguous) = crate::source_files::collides(root, relative) {
+        return Err(mlua::Error::runtime(ambiguous.to_string()));
     }
-    let root_canonical = std::fs::canonicalize(root).ok()?;
+    let Ok(root_canonical) = std::fs::canonicalize(root) else {
+        return Ok(None);
+    };
     for candidate in crate::source_files::module_candidates(root, relative) {
         if !candidate.is_file() {
             continue;
         }
         // A symlink out of the tree is the traversal a name check cannot
         // catch, so containment is proved on the resolved path.
-        let canonical = std::fs::canonicalize(&candidate).ok()?;
+        let Ok(canonical) = std::fs::canonicalize(&candidate) else {
+            return Ok(None);
+        };
         if canonical.starts_with(&root_canonical) {
-            return Some(canonical);
+            return Ok(Some(canonical));
         }
     }
-    None
+    Ok(None)
+}
+
+/// Whether a root PROVIDES this module name, a collision included.
+///
+/// Used where the question is "does something else answer to this name", not
+/// "which file loads": a plugin root holding both `helper.lua` and
+/// `helper.luau` still shadows, and reading the collision as an absence would
+/// say the user's copy shadows nothing.
+fn module_exists(root: &Path, relative: &Path) -> bool {
+    crate::source_files::collides(root, relative).is_some()
+        || matches!(module_file(root, relative), Ok(Some(_)))
 }
 
 #[cfg(test)]
@@ -897,6 +919,38 @@ mod tests {
         assert!(request.shadows_plugin, "the shadow must be reported");
     }
 
+    /// `require` names the collision. It used to report the module MISSING.
+    ///
+    /// `cru plugin check` reported "two files answer to the same module name"
+    /// and `require` answered "module 'helper' was not found under the host
+    /// module roots" for the same pair — about a file plainly there, never
+    /// mentioning the second copy that caused it. The two halves of one rule
+    /// disagreed at the moment an author needed them to agree.
+    #[test]
+    fn an_ambiguous_require_names_both_files() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("plugins/helper.lua"), "return { n = 1 }");
+        write(&tmp.path().join("plugins/helper.luau"), "return { n = 2 }");
+        let (lua, registry) = vm();
+        registry
+            .set_roots(vec![(tmp.path().join("plugins"), RootKind::Plugin)])
+            .unwrap();
+
+        let raised = lua
+            .load("return require('helper')")
+            .eval::<Value>()
+            .expect_err("an ambiguous name must refuse")
+            .to_string();
+        assert!(
+            raised.contains("helper.lua") && raised.contains("helper.luau"),
+            "the refusal must name both files: {raised}"
+        );
+        assert!(
+            !raised.contains("was not found"),
+            "a file that is there must not be reported missing: {raised}"
+        );
+    }
+
     /// The hook decides how a plugin entry module runs. The boot needs this
     /// to stamp the plugin context around the file.
     #[test]
@@ -966,7 +1020,7 @@ mod extension_tests {
         );
         write(&root.join("demo/lua/helper.luau"), "return { value = 'luau' }");
 
-        let resolved = module_file(&root, Path::new("demo"));
+        let resolved = module_file(&root, Path::new("demo")).expect("no collision");
         assert_eq!(
             resolved,
             Some(std::fs::canonicalize(root.join("demo/init.luau")).unwrap()),
@@ -981,7 +1035,7 @@ mod extension_tests {
         let root = tmp.path().join("plugins");
         write(&root.join("demo/lua/helper.lua"), "return {}");
 
-        let resolved = module_file(&root, Path::new("demo/lua/helper"));
+        let resolved = module_file(&root, Path::new("demo/lua/helper")).expect("no collision");
         assert_eq!(
             resolved,
             Some(std::fs::canonicalize(root.join("demo/lua/helper.lua")).unwrap()),
@@ -997,32 +1051,35 @@ mod extension_tests {
     /// would predict, and the silent half is the one where an edit to the
     /// wrong file appears to do nothing.
     #[test]
-    fn two_extensions_of_one_name_resolve_to_nothing() {
+    fn two_extensions_of_one_name_are_refused_by_name() {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path().join("plugins");
         write(&root.join("helper.lua"), "return { which = 'lua' }");
         write(&root.join("helper.luau"), "return { which = 'luau' }");
+        let refused = module_file(&root, Path::new("helper"))
+            .expect_err("a collision must refuse, not pick the preferred extension")
+            .to_string();
         assert!(
-            module_file(&root, Path::new("helper")).is_none(),
-            "a collision must refuse, not pick the preferred extension"
+            refused.contains("helper.lua") && refused.contains("helper.luau"),
+            "the refusal must name BOTH files, not report the module missing: {refused}"
         );
 
         // The same rule one level down, where the name is a directory.
         write(&root.join("mod/init.lua"), "return {}");
         write(&root.join("mod/init.luau"), "return {}");
         assert!(
-            module_file(&root, Path::new("mod")).is_none(),
+            module_file(&root, Path::new("mod")).is_err(),
             "a directory entry point collides the same way"
         );
 
         // And the ordinary case still resolves: one of the two, not both.
         assert!(
-            module_file(&root, Path::new("alone")).is_none(),
+            matches!(module_file(&root, Path::new("alone")), Ok(None)),
             "nothing there resolves to nothing"
         );
         write(&root.join("alone.luau"), "return {}");
         assert!(
-            module_file(&root, Path::new("alone")).is_some(),
+            matches!(module_file(&root, Path::new("alone")), Ok(Some(_))),
             "one file of the pair still resolves"
         );
     }

@@ -16,17 +16,19 @@ Crucible's terminal UI is configured from Lua: colours, per-surface geometry, an
 statusline layout.
 
 > **Where this runs.** The Lua VM lives in the daemon, not in the `cru` process.
-> Your `init.lua` is evaluated once, daemon-side, and the result is delivered to
-> every attached client over the `ui.config` RPC as data. That is why styling is
-> declarative, and why statusline values are *pushed* rather than computed per
-> frame — see [[#Statusline]].
+> Your `init.luau` is evaluated once, daemon-side, and the result is delivered
+> to every attached client over the `ui.config` RPC as data. That is why styling
+> is declarative, and why statusline values are *pushed* rather than computed
+> per frame — see [[#Statusline]].
 >
-> An earlier version of this page documented `cru.popup`, `cru.ui` and
-> `cru.panel` modules for building interactive popups from scripts. Those were
-> never registered in a running daemon and have been removed. There is
-> currently **no script API for asking the user something from a handler** —
-> `cru.interaction` built request tables that nothing consumed, and asking an
-> LLM is likewise unimplemented (see [[Help/Extending/Script Agent Queries]]).
+> **This page is about styling, not about asking.** An earlier version
+> documented `cru.popup` and `cru.panel` modules for building interactive
+> popups; those were never registered in a running daemon and are gone.
+> `cru.ui` is not: it IS registered on the plugin VM, and it is how a handler
+> asks the user something. Its variants, and its `opts.timeout` — SECONDS,
+> default 300, where `0` means the default rather than "give up at once" — are
+> documented in [[Help/Plugins/Lua Runtime API]]. Asking an LLM is a separate
+> question and is unimplemented (see [[Help/Extending/Script Agent Queries]]).
 
 ## Three things, three names
 

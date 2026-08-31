@@ -89,10 +89,11 @@ pub fn check_plugin(plugin_dir: &Path, definitions: Option<&Path>) -> std::io::R
 /// A suite monkey-patches the host on purpose — `cru.log` becomes a plain
 /// function to capture warnings, `cru.plugin` becomes an empty table — and
 /// every one of those is a type error against declarations that describe the
-/// real host. So the typechecker sees the plugin's SHIPPED code by default,
-/// and the suite only when asked. Both halves still have to compile: a test
-/// file that does not parse is a test file that never ran, and that check is
-/// unconditional.
+/// real host — so `mock(...)` marks the deliberate patch and the rest of a
+/// test file stays checkable. The gates ask for the suite: excluding it hid
+/// 46 diagnostics in the shipped plugins. Both halves have to compile either
+/// way, because a test file that does not parse is a test file that never
+/// ran, and that check is unconditional.
 pub fn check_plugin_with(
     plugin_dir: &Path,
     definitions: Option<&Path>,
@@ -163,28 +164,26 @@ pub fn check_plugin_using(
         .collect();
     colliding.sort();
     for luau in colliding {
+        // The wording lives in `Ambiguous`, not here. A second copy of it is
+        // a second thing to keep in step with the rule it describes.
         findings.push(Finding::Load {
-            message: format!(
-                "two files answer to the same module name, so which one loads would \
-                 depend on the search order rather than on anything the author \
-                 wrote: {} and {}. Delete one.",
-                luau.display(),
-                luau.with_extension("lua").display()
-            ),
+            message: crate::source_files::Ambiguous(vec![
+                luau.clone(),
+                luau.with_extension("lua"),
+            ])
+            .to_string(),
         });
     }
 
     // Both extensions, and a directory holding both is refused rather than
     // resolved — see `source_files`.
-    let init = match crate::source_files::init_file(plugin_dir) {
-        Ok(found) => found,
-        Err(ambiguous) => {
-            findings.push(Finding::Load {
-                message: ambiguous.to_string(),
-            });
-            None
-        }
-    };
+    //
+    // The refusal is NOT reported here: `init.luau` beside `init.lua` is a
+    // `.luau` with a `.lua` sibling, so the sweep above already named that
+    // pair. Reporting it here too printed one mistake twice.
+    let init = crate::source_files::init_file(plugin_dir)
+        .ok()
+        .flatten();
     if let Some(init) = init {
         if let Err(e) = load_plugin_spec(&init) {
             let message = e.to_string();

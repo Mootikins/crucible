@@ -163,7 +163,7 @@ pub struct CheckArgs {
     /// The suite IS checked by default. It used to be excluded because a suite
     /// monkey-patches the host on purpose and every stub read as a type error —
     /// but excluding it hid 46 real diagnostics in the shipped suites, among
-    /// them eighteen calls that passed a multi-return expression as the last
+    /// them 45 calls that passed a multi-return expression as the last
     /// argument and silently filled the next parameter with a match position.
     ///
     /// `mock(...)` marks the monkey-patch instead, so the boundary is one

@@ -76,8 +76,14 @@ async fn the_session_profile_matches_a_real_session_vm() {
 /// the entire life of a default that was guarded behind
 /// `type(cru.on_session_start) == "function"` and therefore never ran.
 /// Those guards are gone — a shipped default that reaches for a missing API is
-/// now a load error, which is what makes this test meaningful. Keep the
-/// registrations here in sync with `get_or_create_session_state`; behavioural
+/// now a load error, which is what makes this test meaningful.
+///
+/// The VM here is deliberately a FLOOR, not a copy: it registers four of the
+/// eight things `session_vm.rs` registers, so a default that loads here loads
+/// in production too. The comment used to ask for the two to be kept in sync,
+/// which was never true and would only weaken the test. The CEILING — that
+/// the session profile describes the VM `AgentManager` really builds — is held
+/// by `the_session_profile_matches_a_real_session_vm` above. Behavioural
 /// coverage lives in `init_lua_defaults.rs`.
 #[test]
 fn init_lua_builtin_loads_against_the_session_vm_surface() {

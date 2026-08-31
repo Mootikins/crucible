@@ -45,7 +45,8 @@ pub async fn execute(
 
 mod migrate;
 
-/// The example `init.lua` that `cru config init` writes. Every line is a
+/// The example config that `cru config init` writes as `init.luau`, or into
+/// whichever of `init.luau` and `init.lua` is already there. Every line is a
 /// comment except the empty `cru.config.set` call, so the file evaluates to
 /// pure defaults until the user uncomments something.
 const EXAMPLE_INIT_LUA: &str = r#"-- Crucible configuration.
@@ -71,7 +72,7 @@ cru.config.set({
 -- require("reflection").setup({ min_turns = 4 })
 "#;
 
-/// Initialize a new config file: an example `init.lua`.
+/// Write a new config file: an example `init.luau`.
 async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
     let config_path = path.unwrap_or_else(|| {
         let toml_path = CliConfig::default_config_path();

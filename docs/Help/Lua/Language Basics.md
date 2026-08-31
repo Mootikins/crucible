@@ -293,8 +293,8 @@ end)
 **3. Parenthesise a multi-return call used as the last argument.**
 
 `string.find` answers `(start, stop)`. As the last argument it silently fills
-the NEXT parameter — eighteen assertions in the shipped suites were passing a
-match position as their failure message.
+the NEXT parameter — 45 assertions in the shipped suites were passing a match
+position as their failure message.
 
 ```lua
 expect.truthy((text:find("needle", 1, true)))
