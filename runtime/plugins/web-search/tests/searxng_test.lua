@@ -1,3 +1,4 @@
+--!strict
 --- The SearXNG provider, driven entirely off the recorded fixture and the
 --- stdlib HTTP mock. No test here touches the network.
 ---
@@ -17,7 +18,7 @@ local QUERY = "rust prompt caching"
 local URL = INSTANCE .. "/search?q=rust%20prompt%20caching&format=json"
 
 --- Install a single canned response and clear the recorded calls.
-local function respond(resp, url)
+local function respond(resp: { [string]: any }, url: string?): ()
     test_mocks.setup({ http = { responses = { [url or URL] = resp } } })
 end
 
@@ -25,7 +26,7 @@ local function json_ok(body)
     return { status = 200, ok = true, body = body, headers = { ["content-type"] = "application/json" } }
 end
 
-local function html(body, status)
+local function html(body: string, status: number?): { [string]: any }
     return {
         status = status or 403,
         ok = false,
@@ -78,7 +79,7 @@ describe("searxng provider", function()
             respond(json_ok('{"results":[]}'))
             searxng(QUERY, { url = INSTANCE })
             local ua = last_get()[2].headers["User-Agent"]
-            expect.truthy(ua:find("crucible", 1, true))
+            expect.truthy((ua:find("crucible", 1, true)))
             expect.falsy(ua:lower():find("mozilla", 1, true))
         end)
     end)
@@ -254,7 +255,7 @@ describe("searxng provider", function()
             local _, err = searxng(QUERY, {
                 url = "http://user:super-secret-token@localhost:8888",
             })
-            expect.falsy(encode_json(err):find("super%-secret%-token"))
+            expect.falsy((encode_json(err):find("super%-secret%-token")))
         end)
 
         it("redacts basic-auth credentials embedded in the instance URL", function()
@@ -269,8 +270,8 @@ describe("searxng provider", function()
 
             local _, err = searxng(QUERY, { url = creds })
             local encoded = encode_json(err)
-            expect.falsy(encoded:find("hunter2", 1, true))
-            expect.falsy(encoded:find("admin", 1, true))
+            expect.falsy((encoded:find("hunter2", 1, true)))
+            expect.falsy((encoded:find("admin", 1, true)))
             expect.equal("http://localhost:8888", err.instance)
         end)
     end)

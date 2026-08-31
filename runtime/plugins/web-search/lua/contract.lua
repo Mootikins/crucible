@@ -1,3 +1,4 @@
+--!strict
 --- web-search — the normalised result contract.
 ---
 --- Every provider adapter (searxng, ddg, exa, …) ends in `contract.normalise`,
@@ -86,14 +87,14 @@ local SNIPPET_KEYS = { "snippet", "content", "text", "description" }
 
 --- Collapse runs of whitespace and trim. HTML-scraped snippets arrive full of
 --- newlines and indentation, which costs tokens and reads badly in a prompt.
-local function squeeze(s)
+local function squeeze(s: any): string
     return (s:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 --- Truncate to `limit` bytes without splitting a UTF-8 codepoint. A split
 --- codepoint produces invalid UTF-8, which breaks JSON encoding downstream —
 --- so back off over continuation bytes (0x80–0xBF) before appending the marker.
-local function truncate(s, limit)
+local function truncate(s: any, limit: number): string
     if #s <= limit then return s end
     local cut = limit - 3
     while cut > 0 do
@@ -108,7 +109,7 @@ end
 --- it. Falls back to an estimate only where `cru.json` is absent (the
 --- spec-extraction sandbox stubs the `cru` namespace); rawget sees through
 --- neither a metatable nor a missing global.
-local function encoded_size(payload)
+local function encoded_size(payload: any): number
     local cru = rawget(_G, "cru")
     local json = type(cru) == "table" and rawget(cru, "json") or nil
     local encode = type(json) == "table" and rawget(json, "encode") or nil
@@ -132,7 +133,7 @@ local function encoded_size(payload)
 end
 
 --- Pull the snippet out of whichever key this provider used.
-local function snippet_of(row)
+local function snippet_of(row: { [string]: any }): string
     for _, key in ipairs(SNIPPET_KEYS) do
         local v = row[key]
         if type(v) == "string" and v ~= "" then return v end
@@ -144,7 +145,7 @@ end
 --- providers, when they report at all, use bare names. Both flatten to names:
 --- the reason is diagnostic detail the model cannot act on, and the field's
 --- job is to say "these did not answer, so coverage is partial".
-local function degraded_names(raw)
+local function degraded_names(raw: any): { string }
     local out = {}
     if type(raw) ~= "table" then return out end
     for _, entry in ipairs(raw) do
@@ -162,7 +163,7 @@ local function degraded_names(raw)
 end
 
 --- Keep only string entries, and only when there is at least one.
-local function engines_of(row)
+local function engines_of(row: { [string]: any }): { string }?
     if type(row.engines) ~= "table" then return nil end
     local out = {}
     for _, e in ipairs(row.engines) do
@@ -171,7 +172,7 @@ local function engines_of(row)
     return #out > 0 and out or nil
 end
 
-local function is_array(t)
+local function is_array(t: any): boolean
     if type(t) ~= "table" then return false end
     local n = 0
     for k in pairs(t) do
@@ -196,7 +197,7 @@ end
 ---
 --- Guarded: the spec-extraction sandbox and the bare Lua test harness have no
 --- `cru`, and there the marking is a no-op that only affects encoding.
-local function as_list(t)
+local function as_list(t: any): { any }
     local cru_ns = rawget(_G, "cru")
     local json = cru_ns and rawget(cru_ns, "json")
     local array = json and rawget(json, "array")
@@ -214,7 +215,7 @@ end
 --- taken from whichever alias the provider used.
 ---
 --- Returns `payload` or `nil, err`.
-function M.normalise(input)
+function M.normalise(input: any): ({ [string]: any }?, string?)
     if type(input) ~= "table" then
         return nil, "normalise expects a table"
     end
@@ -302,7 +303,7 @@ end
 ---
 --- Unknown keys are an error, not a warning: silent widening is exactly how a
 --- second provider drifts the shape, and this is the check that catches it.
-function M.validate(payload)
+function M.validate(payload: any): (boolean, string?)
     if type(payload) ~= "table" then
         return false, "payload must be a table"
     end

@@ -1,3 +1,4 @@
+--!strict
 --- web-search provider: Exa, over its JSON-RPC-on-HTTPS endpoint.
 ---
 --- `https://mcp.exa.ai/mcp` speaks JSON-RPC and answers `tools/call`
@@ -40,14 +41,14 @@ local VERSION = "0.1.0"
 --- Structured failure. `provider` is what the chain matches on; `error` is what
 --- a human or a model reads, and it repeats the provider name because the
 --- string is often all that survives to the surface.
-local function fail(reason)
+local function fail(reason: string): (nil, { [string]: any })
     return nil, { provider = NAME, error = NAME .. ": " .. reason }
 end
 
 --- Strip a configured key out of text before surfacing it. Nothing we build
 --- carries the key into a message, but an endpoint can echo it back in an error
 --- body, and error strings reach both the model's context and the daemon's log.
-local function scrub(text, key)
+local function scrub(text: any, key: any): string?
     if type(text) ~= "string" then return nil end
     if type(key) == "string" and #key >= 8 then
         text = text:gsub((key:gsub("%W", "%%%0")), "<redacted>")
@@ -58,7 +59,7 @@ end
 --- One line of at most 160 bytes, safe to embed in an error message. Response
 --- bodies can be an HTML error page; the first line of it is diagnostic, the
 --- rest is noise the model would pay for.
-local function brief(text, key)
+local function brief(text: any, key: any): string?
     local s = scrub(text, key)
     if not s or s == "" then return nil end
     s = s:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
@@ -73,7 +74,7 @@ end
 --- and which one you get depends on content negotiation. Decoding only the
 --- plain form would fail with "not JSON" against a server that is working
 --- perfectly, so unwrap the frames when they are there.
-local function decode_envelope(body)
+local function decode_envelope(body: any): ({ [string]: any }?, string?)
     if type(body) ~= "string" or body == "" then return nil end
 
     local function try(s)
@@ -99,7 +100,7 @@ end
 
 --- The text block of a JSON-RPC `tools/call` result. Exa returns its payload as
 --- a JSON *string* inside that block rather than as structured content.
-local function result_text(result)
+local function result_text(result: any): string?
     local content = type(result) == "table" and result.content or nil
     if type(content) ~= "table" then return nil end
     for _, block in ipairs(content) do
@@ -119,8 +120,10 @@ end
 ---   timeout      seconds, default 15
 ---   api_key      optional; Exa answers anonymously, a key buys rate limit
 ---   user_agent   overrides the default identification
-return function(query, opts)
-    opts = opts or {}
+return function(query: any, options: { [string]: any }?): ({ [string]: any }?, { [string]: any }?)
+    -- Annotate the LOCAL: `options or {}` widens to `T | {}` and a field read
+    -- fails against the empty half.
+    local opts: { [string]: any } = options or {}
 
     if type(query) ~= "string" or query:match("^%s*$") then
         return fail("query must be a non-empty string")
@@ -229,5 +232,5 @@ return function(query, opts)
     if not payload then
         return fail("could not normalise results: " .. tostring(norm_err))
     end
-    return payload
+    return payload, nil
 end

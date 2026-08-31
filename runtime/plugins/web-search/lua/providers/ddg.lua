@@ -1,3 +1,4 @@
+--!strict
 --- web-search provider: DuckDuckGo lite.
 ---
 ---     POST https://lite.duckduckgo.com/lite/   body: q=<urlencoded>
@@ -47,7 +48,7 @@ M.USER_AGENT = "crucible-web-search/0.1"
 --- Nothing that could carry a secret is ever interpolated: DDG lite is keyless,
 --- and the response *body* is attacker-controlled text bound for model context,
 --- so it is described (bytes, landmarks) and never quoted.
-local function fail(fmt, ...)
+local function fail(fmt: string, ...: any): (nil, { [string]: any })
     return nil, {
         provider = M.NAME,
         message = M.NAME .. ": " .. string.format(fmt, ...),
@@ -59,14 +60,14 @@ end
 -- ============================================================================
 
 --- application/x-www-form-urlencoded, where a space is `+` rather than `%20`.
-local function form_encode(s)
-    return (s:gsub("[^%w%-%.%_%~]", function(c)
+local function form_encode(s: string): string
+    return (s:gsub("[^%w%-%._~]", function(c: string): string
         if c == " " then return "+" end
         return string.format("%%%02X", c:byte())
     end))
 end
 
-local function percent_decode(s)
+local function percent_decode(s: string): string
     return (s:gsub("%%(%x%x)", function(hex)
         -- `tonumber` answers `number?`, and `string.char(nil)` raises. The
         -- `%x%x` capture makes that unreachable today; keeping the original
@@ -106,20 +107,24 @@ local ENTITIES = {
 --- outcome than an error escaping the adapter.
 local MAX_CODEPOINT = 0x10FFFF
 
-local function safe_char(n)
+local function safe_char(n: any): string?
     if type(n) ~= "number" or n < 0 or n > MAX_CODEPOINT then return nil end
     local ok, ch = pcall(utf8.char, n)
     if ok then return ch end
     return nil
 end
 
-local function decode_entities(s)
-    return (s:gsub("&(#?%w+);", function(name)
+local function decode_entities(s: string): string
+    return (s:gsub("&(#?%w+);", function(name: string): string
+        -- An unknown or out-of-range entity keeps its original text. `gsub`
+        -- does that for a nil replacement too, but only a returned string
+        -- states it in a type.
+        local literal = "&" .. name .. ";"
         local hex = name:match("^#[xX](%x+)$")
-        if hex then return safe_char(tonumber(hex, 16)) end
+        if hex then return safe_char(tonumber(hex, 16)) or literal end
         local dec = name:match("^#(%d+)$")
-        if dec then return safe_char(tonumber(dec, 10)) end
-        return ENTITIES[name]
+        if dec then return safe_char(tonumber(dec, 10)) or literal end
+        return ENTITIES[name] or literal
     end))
 end
 
@@ -134,7 +139,7 @@ end
 ---
 --- An unterminated `<` is not a tag, so it is kept, exactly as the pattern
 --- form kept it.
-local function strip_tags(s)
+local function strip_tags(s: string): string
     local out, pos = {}, 1
     while true do
         local open = s:find("<", pos, true)
@@ -154,7 +159,7 @@ end
 
 --- Tags first, entities second. The other order would turn an escaped
 --- `&lt;script&gt;` in the page text into a tag and then delete it.
-local function clean(s)
+local function clean(s: any): string
     return decode_entities(strip_tags(s))
 end
 
@@ -167,7 +172,7 @@ end
 --- security check reads as a live one.
 local DDG_SUFFIX = ".duckduckgo.com"
 
-local function unwrap_redirect(href)
+local function unwrap_redirect(href: string): string
     -- The href is read out of raw markup, so its query separators arrive as
     -- `&amp;`. Left alone they would be handed to the model, and to any later
     -- fetch, as part of the URL.
@@ -200,7 +205,7 @@ end
 --- The result anchor in one `<tr>`, matched attribute-order-independently.
 --- Pinning `href` before `class` (the order lite happens to emit today) is the
 --- kind of incidental coupling that breaks on a cosmetic template change.
-local function result_link(chunk)
+local function result_link(chunk: string): (string?, string?)
     for attrs, inner in chunk:gmatch("<a%s+([^>]*)>(.-)</a>") do
         if attrs:find("result%-link") then
             local href = attrs:match('href="([^"]*)"')
@@ -209,7 +214,7 @@ local function result_link(chunk)
             end
         end
     end
-    return nil
+    return nil, nil
 end
 
 --- Parse a lite result page into rows for `contract.normalise`.
@@ -266,7 +271,7 @@ local MAX_ROW_BYTES = 4 * 1024
 --- scan is O(n) regardless of what the body contains.
 --- Returns an iterator plus a `was_skipped` probe: the caller has to know a row
 --- vanished, because a dropped anchor row invalidates the pending pairing.
-local function rows_of(html)
+local function rows_of(html: string): (() -> string?, () -> boolean)
     local pos, count = 1, 0
     local skipped = false
     local function skipped_since_last_row()
@@ -274,8 +279,8 @@ local function rows_of(html)
         skipped = false
         return was
     end
-    local iter
-    iter = function()
+    local iter: () -> string?
+    iter = function(): string?
         -- `while`, so an oversize row is skipped and the scan continues to the
         -- next one instead of ending the page early.
         while count < MAX_ROWS do
@@ -304,7 +309,7 @@ local function rows_of(html)
     return iter, skipped_since_last_row
 end
 
-function M.parse(html)
+function M.parse(html: any): ({ any }?, string?, string?)
     if type(html) ~= "string" or html == "" then
         return nil, "empty response body"
     end
@@ -330,7 +335,9 @@ function M.parse(html)
         )
     end
 
-    local rows, pending, tr_count, sponsored = {}, nil, 0, 0
+    local rows: { { title: string?, url: string, snippet: string? } } = {}
+    local pending: { title: string?, url: string, snippet: string? }? = nil
+    local tr_count, sponsored = 0, 0
     local next_row, skipped_since_last_row = rows_of(html)
     for chunk in next_row do
         tr_count = tr_count + 1
@@ -349,8 +356,9 @@ function M.parse(html)
         else
             local href, title = result_link(chunk)
             if href then
-                pending = { title = title, url = unwrap_redirect(href) }
-                rows[#rows + 1] = pending
+                local row = { title = title, url = unwrap_redirect(href) }
+                pending = row
+                rows[#rows + 1] = row
             elseif pending then
                 -- Quote-agnostic: lite serves `class='result-snippet'` with
                 -- SINGLE quotes today, while the recorded fixture uses double.
@@ -399,7 +407,7 @@ function M.parse(html)
         return rows, nil, "no-anchors"
     end
 
-    return rows
+    return rows, nil, nil
 end
 
 -- ============================================================================
@@ -414,8 +422,8 @@ end
 --- Returns a payload in the `contract` shape, or `nil, { provider, message }`.
 --- Never a bare nil: a caller that only knows "ddg returned nothing" cannot
 --- tell the model what was tried, and the model retries blindly.
-function M.search(query, opts)
-    opts = opts or {}
+function M.search(query: any, options: { [string]: any }?): ({ [string]: any }?, { [string]: any }?)
+    local opts: { [string]: any } = options or {}
 
     if type(query) ~= "string" or query:match("^%s*$") then
         return fail("query must be a non-empty string")
@@ -476,7 +484,7 @@ function M.search(query, opts)
         )
     end
 
-    return payload
+    return payload, err
 end
 
 return M

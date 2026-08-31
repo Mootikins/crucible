@@ -1,3 +1,4 @@
+--!strict
 --- Recorded provider payloads, kept as raw files rather than Lua strings so
 --- they stay greppable, diffable and re-recordable with curl.
 ---
@@ -34,11 +35,11 @@ local cache = {}
 --- any suite, and that replaces the global `fs` with an in-memory mock whose
 --- `read` errors on every real path. `fs.read` here made the whole suite fail
 --- to load.
-function M.raw(name)
+function M.raw(name: string): string
     if not cache[name] then
         local path = M.dir .. "/" .. name
         local handle = assert(io.open(path, "rb"), "fixture not readable: " .. path)
-        cache[name] = handle:read("a")
+        cache[name] = assert(handle:read("a"), "fixture is empty: " .. path)
         handle:close()
     end
     return cache[name]
@@ -47,7 +48,7 @@ end
 --- A fixture decoded as JSON. `oq` is registered by the daemon's plugin
 --- runtime and is absent from the bare executor the test harness builds, so go
 --- through cru.json, which setup_globals always installs.
-function M.json(name)
+function M.json(name: string): any
     return cru.json.decode(M.raw(name))
 end
 

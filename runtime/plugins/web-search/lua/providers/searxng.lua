@@ -1,3 +1,4 @@
+--!strict
 --- web-search provider: SearXNG.
 ---
 --- `GET {url}/search?q=…&format=json` against an instance the user configured
@@ -50,25 +51,25 @@ local CHALLENGE_MARKERS = {
 --- A base URL may carry basic-auth credentials (`https://user:pass@host`), and
 --- transport errors quote the URL back verbatim. Strip the userinfo before any
 --- string derived from the URL leaves this module.
-local function redact(s)
+local function redact(s: any): any
     if type(s) ~= "string" then return s end
     return (s:gsub("://[^/@%s]*@", "://"))
 end
 
-local function trim(s)
+local function trim(s: string): string
     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 --- Percent-encode a query component. Encoding per byte is what UTF-8 queries
 --- need; `%w` under the C locale is ASCII-only, so multibyte characters fall
 --- through to the escape branch a byte at a time, which is correct.
-local function encode(s)
-    return (s:gsub("[^%w%-%._~]", function(c)
+local function encode(s: string): string
+    return (s:gsub("[^%w%-%._~]", function(c: string): string
         return string.format("%%%02X", string.byte(c))
     end))
 end
 
-local function fail(reason, message, extra)
+local function fail(reason: string, message: string, extra: { [string]: any }?): (nil, { [string]: any })
     local err = { provider = PROVIDER, reason = reason, message = message }
     for k, v in pairs(extra or {}) do
         err[k] = v
@@ -76,7 +77,7 @@ local function fail(reason, message, extra)
     return nil, err
 end
 
-local function header(headers, name)
+local function header(headers: any, name: string): any
     if type(headers) ~= "table" then return nil end
     for k, v in pairs(headers) do
         if type(k) == "string" and k:lower() == name then return v end
@@ -87,7 +88,7 @@ end
 --- HTML where JSON was asked for. SearXNG aborts with a 403 *HTML error page*
 --- when the requested format is not in `search.formats`, so the body, not the
 --- status, is what identifies this.
-local function is_html(body, headers)
+local function is_html(body: string, headers: any): boolean
     local ctype = header(headers, "content-type")
     if type(ctype) == "string" and ctype:lower():find("text/html", 1, true) then
         return true
@@ -96,7 +97,7 @@ local function is_html(body, headers)
     return head:find("<!doctype html", 1, true) ~= nil or head:find("<html", 1, true) ~= nil
 end
 
-local function is_challenge(body)
+local function is_challenge(body: string): boolean
     local head = body:sub(1, 4096):lower()
     for _, marker in ipairs(CHALLENGE_MARKERS) do
         if head:find(marker, 1, true) then return true end
@@ -104,7 +105,7 @@ local function is_challenge(body)
     return false
 end
 
-local function decode_json(body)
+local function decode_json(body: string): (any, string?)
     local ok, decoded = pcall(cru.json.decode, body)
     if ok and type(decoded) == "table" then return decoded end
     return nil
@@ -118,8 +119,10 @@ end
 ---
 --- `opts.url` is the instance base URL (required — there is no default).
 --- `opts.timeout` seconds and `opts.max_results` forwarded to the contract.
-return function(query, opts)
-    opts = opts or {}
+return function(query: any, options: { [string]: any }?): ({ [string]: any }?, { [string]: any }?)
+    -- Annotate the LOCAL: `options or {}` widens to `T | {}` and a field read
+    -- fails against the empty half.
+    local opts: { [string]: any } = options or {}
 
     if type(query) ~= "string" or trim(query) == "" then
         return fail("invalid_query", "searxng: query must be a non-empty string")
@@ -233,5 +236,5 @@ return function(query, opts)
     -- pathological hit can legitimately exceed the byte cap (normalise keeps one
     -- result rather than returning an empty list), and validate rejects that.
     -- Turning a usable answer into an error would be the worse failure.
-    return payload
+    return payload, nil
 end

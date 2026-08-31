@@ -1,3 +1,4 @@
+--!strict
 --- web-search — one `web_search` tool over a configurable provider chain.
 ---
 ---   [plugins.web-search]
@@ -57,7 +58,7 @@ local PROVIDERS = {
         -- Returns a reason, or nil when the provider is usable. The `nil` is
         -- explicit: a function that returns a value on one path and falls off
         -- the end on another reads as an oversight, and Luau says so.
-        needs = function(cfg)
+        needs = function(cfg: { [string]: any }): string?
             if not cfg.searxng_url then
                 return "no `searxng_url` is configured. Point it at an instance you "
                     .. "host; there is no default and no shipped public instance list, "
@@ -66,7 +67,7 @@ local PROVIDERS = {
             end
             return nil
         end,
-        opts = function(cfg, limit)
+        opts = function(cfg: { [string]: any }, limit: number): { [string]: any }
             return { url = cfg.searxng_url, timeout = cfg.timeout, max_results = limit }
         end,
     },
@@ -74,7 +75,7 @@ local PROVIDERS = {
     ddg = {
         module = "providers.ddg",
         needs = function() return nil end,
-        opts = function(cfg, limit)
+        opts = function(cfg: { [string]: any }, limit: number): { [string]: any }
             return { timeout = cfg.timeout, max_results = limit }
         end,
     },
@@ -86,7 +87,7 @@ local PROVIDERS = {
         -- being opt-in is about the third party seeing the raw query, not about
         -- whether a credential exists.
         needs = function() return nil end,
-        opts = function(cfg, limit)
+        opts = function(cfg: { [string]: any }, limit: number): { [string]: any }
             return { api_key = cfg.exa_api_key, timeout = cfg.timeout, max_results = limit }
         end,
     },
@@ -97,7 +98,7 @@ local PROVIDERS = {
 --- and a Lua function cannot carry fields). Rather than record the shape per
 --- provider — a field that would be wrong exactly once, silently — take
 --- whichever is there.
-local function callable(mod)
+local function callable(mod: any): ((string, { [string]: any }) -> ...any)?
     if type(mod) == "function" then return mod end
     if type(mod) == "table" and type(mod.search) == "function" then return mod.search end
     return nil
@@ -107,7 +108,7 @@ end
 --- `searxng` returns `{reason, message, …}`, `ddg` returns `{message}`, `exa`
 --- returns `{error}`; a caller that had to know which is which would be a
 --- fourth place to update when a provider is added.
-local function reason_of(err)
+local function reason_of(err: any): string
     if type(err) == "string" and err ~= "" then return err end
     if type(err) == "table" then
         for _, key in ipairs({ "message", "error", "reason" }) do
@@ -143,7 +144,7 @@ local CHAIN_BUDGET_SECONDS = 25
 local MIN_PROVIDER_SECONDS = 3
 
 --- Escape a literal string for use as a Lua pattern.
-local function escape_pattern(literal)
+local function escape_pattern(literal: string): string
     return (literal:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%1"))
 end
 
@@ -152,7 +153,7 @@ end
 --- Providers scrub the messages they construct, but a raise escaping an adapter
 --- after it has built an `Authorization` header is stringified generically, and
 --- that path had no scrubbing at all.
-local function scrub_secrets(text, cfg)
+local function scrub_secrets(text: string, cfg: { [string]: any }): string
     if type(text) ~= "string" then return tostring(text) end
     for _, key in ipairs({ "exa_api_key", "brave_api_key", "tavily_api_key" }) do
         local secret = cfg and cfg[key]
@@ -164,7 +165,14 @@ local function scrub_secrets(text, cfg)
     return text
 end
 
-local function attempt(name, entry, query, cfg, limit, seconds)
+local function attempt(
+    name: string,
+    entry: { [string]: any },
+    query: string,
+    cfg: { [string]: any },
+    limit: number,
+    seconds: number?
+): ({ [string]: any }?, string?)
     local loaded, mod = pcall(require, entry.module)
     if not loaded then
         return nil, "adapter " .. entry.module .. " failed to load: " .. tostring(mod)
@@ -212,7 +220,7 @@ local function attempt(name, entry, query, cfg, limit, seconds)
         return nil, "returned a payload the contract rejects: " .. tostring(why)
     end
 
-    return payload
+    return payload, nil
 end
 
 -- ============================================================================
@@ -226,7 +234,7 @@ end
 --- into a retry loop: it cannot tell that retrying is pointless because the one
 --- configured provider was never set up, and it cannot tell the user what to
 --- fix. The length is worth it — this is the rare error a human acts on.
-local function failure_text(query, attempts)
+local function failure_text(query: string, attempts: { any }): string
     local lines = {
         string.format('web_search found nothing for "%s": every provider failed.', query),
     }
@@ -255,7 +263,7 @@ local MAX_DEGRADED_SHOWN = 3
 ---
 --- Returns nil when `payload` is not a web_search result, so the hook can leave
 --- an unrecognised result alone rather than mislabelling it.
-function M.summarise(payload)
+function M.summarise(payload: any): string?
     if type(payload) ~= "table" then return nil end
 
     if type(payload.tried) == "table" and #payload.tried > 0 then
@@ -299,12 +307,12 @@ end
 --- rawget because the spec-extraction sandbox stubs `crucible` with a
 --- metatable whose __index answers every lookup with a function, and the plugin
 --- test runner has no `crucible` global at all.
-local function register_display_hook()
+local function register_display_hook(): boolean
     local crucible = rawget(_G, "crucible")
     local on = type(crucible) == "table" and rawget(crucible, "on") or nil
     if type(on) ~= "function" then return false end
 
-    on("tool:display_complete", function(_ctx, event)
+    on("tool:display_complete", function(_ctx, event): { [string]: any }?
         if type(event) ~= "table" or event.name ~= TOOL then return nil end
 
         -- `event.result` is the serialised tool result, or the error text when
@@ -326,13 +334,13 @@ end
 -- Tool
 -- ============================================================================
 
-local function trimmed(value)
+local function trimmed(value: any): string?
     if type(value) ~= "string" then return nil end
     local s = (value:gsub("^%s+", ""):gsub("%s+$", ""))
     return s ~= "" and s or nil
 end
 
-local function sorted_names(t)
+local function sorted_names(t: { [string]: any }): { string }
     local out = {}
     for name in pairs(t) do
         out[#out + 1] = name
@@ -348,7 +356,7 @@ end
 --- would make the config a suggestion rather than the policy — and the whole
 --- transparency claim rests on the config being readable as the complete list
 --- of who sees the query.
-local function resolve_chain(cfg, requested)
+local function resolve_chain(cfg: { [string]: any }, requested: string?): ({ string }?, string?)
     if #cfg.providers == 0 then
         return nil,
             "web search is disabled: `[plugins.web-search].providers` is empty. "
@@ -357,10 +365,10 @@ local function resolve_chain(cfg, requested)
                 .. ")."
     end
 
-    if not requested then return cfg.providers end
+    if not requested then return cfg.providers, nil end
 
     for _, name in ipairs(cfg.providers) do
-        if name == requested then return { name } end
+        if name == requested then return { name }, nil end
     end
 
     return nil,
@@ -379,8 +387,15 @@ end
 --- reaches the model with a stack traceback attached (`format_lua_error` keeps
 --- frames that mention a .lua file), and this message is long and load-bearing
 --- enough already. `tried` is the structured half the display hook reads.
-function M.web_search(args)
-    args = args or {}
+--- What a tool handler answers with: either `{ error = "..." }` or the
+--- handler's own result shape. Both cross to JSON, and the daemon reads
+--- `error` first.
+type ToolResult = { [string]: any }
+
+function M.web_search(args: { [string]: any }?): ToolResult
+    -- Annotate the LOCAL, not the expression: `args or {}` widens to
+    -- `T | {}` and a field read fails against the empty half.
+    local args: { [string]: any } = args or {}
 
     local query = trimmed(args.query)
     if not query then
@@ -393,10 +408,12 @@ function M.web_search(args)
     local cfg = config.snapshot()
     local chain, chain_err = resolve_chain(cfg, trimmed(args.provider))
     if not chain then
-        return { error = "web_search: " .. chain_err }
+        -- `resolve_chain` answers `(nil, message)` or `(chain, nil)`, so a nil
+        -- chain proves the message is there.
+        return { error = "web_search: " .. tostring(chain_err) }
     end
 
-    local attempts = {}
+    local attempts: { { provider: string, status: string, reason: string? } } = {}
     local started = os.time()
     for _, name in ipairs(chain) do
         local entry = PROVIDERS[name]

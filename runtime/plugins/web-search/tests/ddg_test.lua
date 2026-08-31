@@ -1,3 +1,4 @@
+--!strict
 --- DuckDuckGo lite provider, driven entirely off the recorded page.
 ---
 --- No network: `test_mocks.setup{ http = … }` swaps the global `http` for the
@@ -16,7 +17,7 @@ local fixtures = require("web-search.tests.fixtures")
 local LITE_PAGE = fixtures.raw("ddg_lite.html")
 
 --- Point the http mock at a canned response for the lite endpoint.
-local function serve(body, extra)
+local function serve(body: string, extra: { [string]: any }?)
     local response = { body = body }
     for k, v in pairs(extra or {}) do
         response[k] = v
@@ -149,7 +150,7 @@ describe("ddg provider", function()
         -- the skipped-row test below; what this one guards is the parse's
         -- COST at a maximal legal body — the O(body x row) blowup, which no
         -- assertion about the constants would catch.
-        local function hostile_body(row_bytes, total_bytes)
+        local function hostile_body(row_bytes: number, total_bytes: number): string
             local head = '<tr><td><a href="https://x.test/" class="result-link">'
             local tail = "</a></td></tr>"
             local filler = ("<"):rep(math.max(0, row_bytes - #head - #tail))

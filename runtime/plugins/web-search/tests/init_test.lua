@@ -1,3 +1,4 @@
+--!strict
 --- The plugin entry point: the chain, the config surface, and the display
 --- summary. Loads the REAL init.lua and drives it through the real provider
 --- adapters, with the stdlib HTTP mock standing in for the network — so a
@@ -22,19 +23,19 @@ local SEARXNG_URL = INSTANCE .. "/search?q=rust%20prompt%20caching&format=json"
 
 --- Start every test from a known state: no setup() layer, no canned responses,
 --- no recorded calls. Without the reset the suite would depend on file order.
-local function configure(cfg)
+local function configure(cfg: { [string]: any }?): ()
     test_mocks.setup()
     config.reset()
     config.init(cfg or {})
 end
 
-local function respond(url, resp)
+local function respond(url: string, resp: { [string]: any }): ()
     test_mocks.setup({ http = { responses = { [url] = resp } } })
 end
 
 --- Configure, then stub one URL. `test_mocks.setup` replaces the whole fixture
 --- set, so the order matters: responses must be installed last.
-local function configure_with(cfg, url, resp)
+local function configure_with(cfg: { [string]: any }?, url: string, resp: { [string]: any }): ()
     config.reset()
     config.init(cfg or {})
     respond(url, resp)

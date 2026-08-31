@@ -1,3 +1,4 @@
+--!strict
 --- Exa provider, against the recorded JSON-RPC envelope. No network: the
 --- harness's `test_mocks` http mock answers by URL, which also lets the request
 --- itself be asserted — the envelope Exa expects is as much a part of this
@@ -13,7 +14,7 @@ local URL = "https://mcp.exa.ai/mcp"
 
 --- Point the http mock at `resp` for the Exa endpoint. Also clears recorded
 --- calls, so `last_post()` always describes the request under test.
-local function responds(resp)
+local function responds(resp: { [string]: any }): ()
     test_mocks.setup({ http = { responses = { [URL] = resp } } })
 end
 
@@ -48,7 +49,7 @@ end
 
 --- The same envelope with a different inner payload, for cases the recording
 --- cannot express (empty results, tool-level error).
-local function envelope_of(inner, is_error)
+local function envelope_of(inner: any, is_error: boolean?): string
     return cru.json.encode({
         jsonrpc = "2.0",
         id = 1,
@@ -283,8 +284,9 @@ describe("exa provider", function()
             ok_body(envelope_of({
                 results = {
                     { title = "kept", url = "https://exa.test/a", text = "a" },
+                    -- Deliberately missing `url`: the point of the test.
                     { title = "no url", text = "b" },
-                },
+                } :: { { [string]: any } },
             }))
             local payload = exa("q")
             expect.equal(1, #payload.results)

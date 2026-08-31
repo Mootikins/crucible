@@ -1,3 +1,4 @@
+--!strict
 --- web-search configuration.
 ---
 --- Resolution order, highest priority first (Lua beats TOML, the Neovim
@@ -52,7 +53,7 @@ local SECRETS = { exa_api_key = true }
 local configured = {}
 
 --- Merge user config into the setup layer. Called by setup() in init.lua.
-function M.init(cfg)
+function M.init(cfg: { [string]: any }?): ()
     if type(cfg) ~= "table" then return end
     for k, v in pairs(cfg) do
         configured[k] = v
@@ -62,7 +63,7 @@ end
 --- Read `$CRUCIBLE_WEB_SEARCH_<KEY>`, for declared secrets only. Applying it to
 --- every key would let the environment silently redirect `searxng_url`, which
 --- is a network destination and belongs in config a user can read back.
-local function from_env(key)
+local function from_env(key: string): string?
     if not SECRETS[key] then return nil end
     local suffix = (key:upper():gsub("[^A-Z0-9]", "_"))
     local val = os.getenv(ENV_PREFIX .. suffix)
@@ -74,7 +75,7 @@ end
 --- `cru.plugin.config` is absent — the plugin test runner has no daemon behind
 --- it, and the spec-extraction sandbox stubs `crucible` with a metatable
 --- (hence rawget, which sees through neither).
-local function from_toml(key)
+local function from_toml(key: string): any
     local crucible = rawget(_G, "crucible")
     if type(crucible) ~= "table" then return nil end
     local cfg = rawget(crucible, "config")
@@ -86,7 +87,7 @@ local function from_toml(key)
     return nil
 end
 
-function M.get(key, fallback)
+function M.get(key: string, fallback: any?): any
     local env = from_env(key)
     if env ~= nil then return env end
     if configured[key] ~= nil then return configured[key] end
@@ -98,7 +99,7 @@ end
 
 --- Reset the setup layer. Tests only — the daemon never unconfigures a plugin,
 --- but a suite that could not clear setup() would have order-dependent tests.
-function M.reset()
+function M.reset(): ()
     configured = {}
 end
 
@@ -106,7 +107,7 @@ end
 -- Typed accessors
 -- ============================================================================
 
-local function trimmed(value)
+local function trimmed(value: any): string?
     if type(value) ~= "string" then return nil end
     local s = (value:gsub("^%s+", ""):gsub("%s+$", ""))
     return s ~= "" and s or nil
@@ -120,7 +121,7 @@ end
 ---
 --- An explicitly empty list is a real setting — it disables search — so this
 --- returns `{}` rather than falling back to the default.
-function M.providers()
+function M.providers(): { string }
     local raw = M.get("providers")
     if type(raw) == "string" then raw = { raw } end
     if type(raw) ~= "table" then return {} end
@@ -135,7 +136,7 @@ end
 
 --- Everything a provider adapter needs, resolved once per call so a search
 --- cannot see two different configurations halfway through the chain.
-function M.snapshot()
+function M.snapshot(): { [string]: any }
     local timeout = tonumber(M.get("timeout")) or defaults.timeout
     if timeout < 1 then timeout = defaults.timeout end
 

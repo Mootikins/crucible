@@ -1,3 +1,4 @@
+--!strict
 --- The one test that stops the tool's output shape drifting by provider.
 ---
 --- Each provider's *recorded* payload is turned into rows the way its adapter
@@ -36,16 +37,17 @@ local function exa_rows()
     return rows
 end
 
-local function unescape(s)
+local function unescape(s: string): string
     s = s:gsub("<[^>]->", "")
     s = s:gsub("&nbsp;", " "):gsub("&mdash;", "\u{2014}"):gsub("&middot;", "\u{00B7}")
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", '"')
     return s
 end
 
-local function ddg_rows()
+local function ddg_rows(): { { [string]: any } }
     local html = fixtures.raw("ddg_lite.html")
-    local rows, pending = {}, nil
+    local rows: { { [string]: any } } = {}
+    local pending: { [string]: any }? = nil
     for chunk in html:gmatch("<tr.->.-</tr>") do
         if chunk:find('class="result%-sponsored"') then
             pending = nil -- an ad and its snippet are never results
@@ -61,8 +63,9 @@ local function ddg_rows()
                         return string.char(assert(tonumber(h, 16)))
                     end)
                 end
-                pending = { title = unescape(title), url = href }
-                rows[#rows + 1] = pending
+                local row: { [string]: any } = { title = unescape(title), url = href }
+                pending = row
+                rows[#rows + 1] = row
             else
                 local snippet = chunk:match('class="result%-snippet"[^>]*>(.-)</td>')
                 if snippet and pending then
@@ -357,9 +360,10 @@ describe("web-search contract", function()
                 provider = "p",
                 results = {
                     { title = "keep", url = "https://x.test", snippet = "s" },
+                    -- Deliberately incomplete rows: the point of the test.
                     { title = "no url", snippet = "s" },
                     { url = "https://y.test", snippet = "s" },
-                },
+                } :: { { [string]: any } },
             })
             expect.equal(1, #payload.results)
             expect.equal("keep", payload.results[1].title)
@@ -385,7 +389,10 @@ describe("web-search contract", function()
     end)
 
     describe("validate", function()
-        local function base()
+        -- An open map: every test below adds or removes a key to prove the
+        -- validator refuses it, and an exact record type would refuse the
+        -- test rather than the payload.
+        local function base(): { [string]: any }
             return {
                 query = "q",
                 provider = "p",
