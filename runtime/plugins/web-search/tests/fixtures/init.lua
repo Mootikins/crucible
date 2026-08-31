@@ -39,7 +39,13 @@ function M.raw(name: string): string
     if not cache[name] then
         local path = M.dir .. "/" .. name
         local handle = assert(io.open(path, "rb"), "fixture not readable: " .. path)
-        cache[name] = assert(handle:read("a"), "fixture is empty: " .. path)
+        -- NOT `assert(handle:read("a"), ...)`: Crucible's `read("a")` always
+        -- answers a string — `""` for an empty file — so that assert could
+        -- never fire on the one condition its message named, and an empty
+        -- fixture was cached and handed to the tests.
+        local body = handle:read("a")
+        assert(body ~= nil and body ~= "", "fixture is empty: " .. path)
+        cache[name] = body
         handle:close()
     end
     return cache[name]

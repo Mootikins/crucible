@@ -366,6 +366,26 @@ export type PermissionDecision = {
 -- than to a table shape so that the bare items (`cru.statusline.mode`, which
 -- the walk renders as a value) stay assignable to it.
 export type StatusItem = any
+
+-- A live WebSocket, as `cru.ws.connect` answers with.
+--
+-- Named rather than `any`: `connect` returned an untyped handle, so every
+-- `ws:send`/`ws:receive`/`ws:close` in a plugin went unchecked and a
+-- misspelled method read as legal. See `crucible-lua/src/ws.rs`.
+--
+-- `receive` answers nil on TIMEOUT and a frame otherwise, and RAISES on a
+-- closed connection — the nil and the raise mean different things, and only
+-- the nil is in the type.
+-- One frame off the socket. A `close` frame carries no `data`, which is why
+-- the field is optional; `text` and `binary` always carry one.
+export type WebSocketFrame = { type: string, data: string? }
+
+export type WebSocket = {
+    send: (self: WebSocket, payload: string) -> (),
+    send_binary: (self: WebSocket, payload: string) -> (),
+    receive: (self: WebSocket, timeout_secs: number?) -> WebSocketFrame?,
+    close: (self: WebSocket) -> (),
+}
 "#;
 
 const FILE_TYPE: &str = r#"

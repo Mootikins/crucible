@@ -139,6 +139,12 @@ jobs:
           df -h
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-prereqs
+      # The type-check gates FAIL without a checker rather than skipping, and
+      # this job used to supply none: `every_shipped_lua_file_typechecks` and
+      # `every_profile_definitions_file_loads` both ran green here having
+      # checked nothing at all.
+      - name: Install the pinned Luau checker
+        run: just luau-lsp
       - name: Run tests with nextest
         run: just test ci
       # Oil's serde JSON contract (consumed by the web UI) and the Lua
@@ -157,6 +163,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-prereqs
+      - name: Install the pinned Luau checker
+        run: just luau-lsp
       - run: just test plugins
 
   test-gated:

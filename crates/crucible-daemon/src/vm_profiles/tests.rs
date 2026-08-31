@@ -51,5 +51,5 @@ fn every_profile_renders_to_its_own_file() {
             profile.name()
         );
     }
-    assert_eq!(seen.len(), 3);
+    assert_eq!(seen.len(), VmProfile::all().len());
 }

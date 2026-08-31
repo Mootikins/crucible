@@ -197,7 +197,7 @@ pub fn register_ws_module(lua: &Lua) -> Result<()> {
     // CONNECT only; `ws:receive` waits without one. It defaults to 30.
     ns.async_func(
         "connect",
-        "(url: string, options: { timeout: number? }?) -> any",
+        "(url: string, options: { timeout: number? }?) -> WebSocket",
         |lua, args: (String, Option<Table>)| async move {
             let (url, opts) = args;
 

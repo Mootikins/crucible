@@ -313,14 +313,20 @@ mod shipped_plugin_tests {
     /// Every shipped plugin passes `cru plugin check`: it parses, and every
     /// tool parameter's declared type is one the host can read.
     ///
-    /// The type check on top of that runs only where `luau-analyze` is
-    /// installed, and the report says which happened — a gate that reported a
-    /// skipped typecheck as a pass would be reporting the absence of evidence
-    /// as evidence. What is unconditional is the parse and the declarations,
-    /// and those are what turn a bad `type = "array<"` into a build failure
-    /// instead of a made-up JSON Schema an agent is handed.
+    /// The type check is NOT optional here. This test used to run it only
+    /// where a checker happened to be installed and pass otherwise, with a
+    /// comment arguing that was honest because "the report says which
+    /// happened". The report went nowhere: the test passed either way, and in
+    /// the CI `test` job — which sets no `CRUCIBLE_LUAU_ANALYZE` and installs
+    /// no `luau-lsp` — it passed having checked nothing.
     #[test]
     fn every_shipped_plugin_typechecks() {
+        // Fails when no checker exists, rather than skipping.
+        let checker = required_checker();
+        // SAFETY: tests in this module run under nextest, one process per
+        // test, so no other thread is reading the environment concurrently.
+        unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", &checker) };
+
         let stubs = tempfile::TempDir::new().expect("tempdir");
         let definitions = stubs.path().join("cru.d.luau");
         // The DAEMON's VM, not `StubGenerator::generate`, which builds the
@@ -348,6 +354,12 @@ mod shipped_plugin_tests {
             // so the rest of a test file stays checkable.
             let report = crucible_lua::check_plugin_with(&dir, Some(&definitions), true)
                 .expect("check");
+            assert_eq!(
+                report.typecheck,
+                crucible_lua::TypecheckStatus::Ran,
+                "{}: the typecheck did not run, so a pass here would prove nothing",
+                dir.display()
+            );
             if !report.passed() {
                 failures.push(format!(
                     "{}: {}",
@@ -367,6 +379,54 @@ mod shipped_plugin_tests {
             "shipped plugins failed `cru plugin check`:\n{}",
             failures.join("\n")
         );
+    }
+
+    /// The type checker, or a failure telling the caller how to get one.
+    ///
+    /// Every gate below RUNS a checker; a gate that skipped when none was
+    /// installed reported the absence of evidence as evidence, which is the
+    /// exact failure these gates exist to prevent. Two of them did that until
+    /// 2026-08-31: `just plugin-check` exports `CRUCIBLE_LUAU_ANALYZE`, but the
+    /// CI `test` job runs nextest with no such variable and no `luau-lsp`, so
+    /// both ran green having checked nothing at all.
+    ///
+    /// Three places, in order: the variable an operator set, the pinned binary
+    /// `just luau-lsp` writes, and the PATH. Absent from all three is a
+    /// failure, because the alternative is a tick that means nothing.
+    fn required_checker() -> PathBuf {
+        if let Some(configured) = std::env::var_os("CRUCIBLE_LUAU_ANALYZE") {
+            let path = PathBuf::from(configured);
+            assert!(
+                path.is_file(),
+                "CRUCIBLE_LUAU_ANALYZE names {}, which is not a file",
+                path.display()
+            );
+            return path;
+        }
+        let pinned = repo_root().join("target/tools/luau-lsp");
+        if pinned.is_file() {
+            return pinned;
+        }
+        if let Ok(found) = which_on_path("luau-lsp") {
+            return found;
+        }
+        panic!(
+            "no Luau type checker. These gates check types; without one they \
+             would pass having proved nothing. Run `just luau-lsp` to fetch the \
+             pinned build, or set CRUCIBLE_LUAU_ANALYZE to your own."
+        );
+    }
+
+    /// First `name` on PATH, executable.
+    fn which_on_path(name: &str) -> Result<PathBuf, ()> {
+        let path = std::env::var_os("PATH").ok_or(())?;
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+        Err(())
     }
 
     /// Every profile's definitions file must LOAD.
@@ -392,15 +452,7 @@ mod shipped_plugin_tests {
             .generate_stubs(stubs.path())
             .expect("generate declarations");
 
-        let Some(checker) = std::env::var_os("CRUCIBLE_LUAU_ANALYZE") else {
-            // Nothing to run. Say so rather than passing: a definitions file
-            // nobody loaded is a definitions file nobody proved loads.
-            eprintln!(
-                "every_profile_definitions_file_loads: CRUCIBLE_LUAU_ANALYZE is \
-                 unset, so nothing checked whether the definitions parse"
-            );
-            return;
-        };
+        let checker = required_checker();
 
         // A file that is syntactically fine but references an undefined type
         // still loads; the reference has to be USED. An empty Lua file is
@@ -473,9 +525,14 @@ mod shipped_plugin_tests {
         const PROFILES: &[(&str, VmProfile)] = &[
             // The shipped defaults and a workspace `init.lua`: session VM.
             ("runtime/defaults/", VmProfile::Session),
-            // Evaluated by the CLI's config read, which has no http/fs/shell.
-            ("runtime/statusline/", VmProfile::Config),
-            ("runtime/themes/", VmProfile::Config),
+            // A statusline layout evaluates on a VM with `cru.statusline` and
+            // NOTHING else; a theme evaluates on a bare VM with no `cru` at
+            // all. Both were mapped to the config profile, which is strictly
+            // more permissive than either — so the gate proved a property of a
+            // stand-in, and a theme calling `cru.hl.set` passed the check and
+            // raised "attempt to index nil with 'hl'" at load.
+            ("runtime/statusline/", VmProfile::Statusline),
+            ("runtime/themes/", VmProfile::Theme),
             // Ordinary plugins, and the scaffold for writing one.
             ("runtime/crucible-help/", VmProfile::Daemon),
             ("examples/plugins/", VmProfile::Daemon),
@@ -484,6 +541,10 @@ mod shipped_plugin_tests {
                 VmProfile::Daemon,
             ),
         ];
+
+        let checker = required_checker();
+        // SAFETY: as above — one process per test under nextest.
+        unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", &checker) };
 
         let root = repo_root();
         let stubs = tempfile::TempDir::new().expect("tempdir");
@@ -514,6 +575,11 @@ mod shipped_plugin_tests {
             // One file at a time: `check_plugin` takes a directory, and these
             // are loose files whose neighbours may run on a different VM.
             let report = crucible_lua::check_file(&file, Some(&definitions)).expect("check");
+            assert_eq!(
+                report.typecheck,
+                crucible_lua::TypecheckStatus::Ran,
+                "{relative}: the typecheck did not run, so a pass here would prove nothing"
+            );
             if !report.passed() {
                 failures.push(format!(
                     "{relative} (profile {}): {}",

@@ -23,9 +23,12 @@ local OP = {
 }
 
 -- State
---- The live socket, or nil between connections. `cru.ws.connect` answers a
---- handle whose type the declarations name; nil is the disconnected state.
-local ws: any = nil
+--- The live socket, or nil between connections.
+---
+--- Typed, not `any`: `cru.ws.connect` used to answer an untyped handle, so
+--- every `ws:send`/`ws:receive`/`ws:close` below went unchecked and a
+--- misspelled method read as legal. The host now names the shape.
+local ws: WebSocket? = nil
 local heartbeat_interval = nil
 local last_sequence = nil
 local session_id = nil
@@ -109,10 +112,12 @@ end
 -- Message processing
 -- ---------------------------------------------------------------------------
 
-local function handle_message(raw)
+local function handle_message(raw: WebSocketFrame?): boolean
     if not raw or raw.type ~= "text" then return true end
 
-    local ok, msg = pcall(cru.json.decode, raw.data)
+    -- A `text` frame always carries data; only a `close` frame omits it, and
+    -- the guard above already sent those back.
+    local ok, msg = pcall(cru.json.decode, raw.data :: string)
     if not ok then
         cru.log("warn", "Discord gateway: failed to decode message")
         return true
@@ -269,7 +274,12 @@ function M.connect_once()
                 recv_timeout = remaining
             end
 
-            local ok, msg = pcall(ws.receive, ws, recv_timeout)
+            -- The loop owns a socket by the time it runs; binding it once
+            -- narrows away the nil for the three uses below, and keeps them
+            -- reading the SAME socket even though `ws` is cleared on the
+            -- error paths.
+            local socket = assert(ws, "the receive loop runs with a live socket")
+            local ok, msg = pcall(socket.receive, socket, recv_timeout)
 
             if not ok then
                 -- ws:receive threw an error (connection closed, etc.)
@@ -281,7 +291,7 @@ function M.connect_once()
             if msg then
                 local hok, should_continue = pcall(handle_message, msg)
                 if not hok or not should_continue then
-                    pcall(function() ws:close() end)
+                    pcall(function() socket:close() end)
                     ws = nil
                     error({ retryable = true })
                 end

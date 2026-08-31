@@ -103,6 +103,7 @@ pub mod hl_lua;
 pub mod statusline_exprs;
 pub mod statusline_items;
 pub mod statusline_lua;
+pub use statusline_lua::register_statusline_items;
 pub mod theme;
 pub mod theme_wire;
 pub mod ui_geometry;

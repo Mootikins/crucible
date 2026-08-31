@@ -96,9 +96,15 @@ local function notes_dir(): string
 end
 
 local function date_string(timestamp: number?): string
-    -- `os.date` answers `any` because a `*t` format gives a table. This
-    -- format never does, so the result is always a string.
-    return os.date(config.date_format, timestamp) :: string
+    -- `os.date` answers a TABLE for a `*t` format, and `date_format` is user
+    -- config, so this cannot be cast — it has to be checked. A `*t` here would
+    -- otherwise reach `note_path` and concatenate a table into a file name.
+    local formatted = os.date(config.date_format, timestamp)
+    if type(formatted) ~= "string" then
+        error("daily-notes: date_format must produce a string, not a table. "
+            .. "Remove the `*t` or `!*t` from [plugins.daily-notes] date_format.")
+    end
+    return formatted
 end
 
 local function note_path(timestamp: number?): string

@@ -43,12 +43,22 @@ pub enum VmProfile {
     Session,
     /// The CLI's standalone config read.
     Config,
+    /// A statusline layout file.
+    Statusline,
+    /// A theme file.
+    Theme,
 }
 
 impl VmProfile {
     /// Every profile, for a caller that renders or checks all of them.
-    pub fn all() -> [VmProfile; 3] {
-        [VmProfile::Daemon, VmProfile::Session, VmProfile::Config]
+    pub fn all() -> [VmProfile; 5] {
+        [
+            VmProfile::Daemon,
+            VmProfile::Session,
+            VmProfile::Config,
+            VmProfile::Statusline,
+            VmProfile::Theme,
+        ]
     }
 
     /// The definitions file this profile renders to.
@@ -57,6 +67,8 @@ impl VmProfile {
             VmProfile::Daemon => "cru.d.luau",
             VmProfile::Session => "cru-session.d.luau",
             VmProfile::Config => "cru-config.d.luau",
+            VmProfile::Statusline => "cru-statusline.d.luau",
+            VmProfile::Theme => "cru-theme.d.luau",
         }
     }
 
@@ -66,6 +78,8 @@ impl VmProfile {
             VmProfile::Daemon => "daemon",
             VmProfile::Session => "session",
             VmProfile::Config => "config",
+            VmProfile::Statusline => "statusline",
+            VmProfile::Theme => "theme",
         }
     }
 }
@@ -147,6 +161,37 @@ pub fn config_vm() -> anyhow::Result<Lua> {
 #[cfg(test)]
 pub(crate) mod tests;
 
+/// Build a VM carrying the STATUSLINE profile's surface.
+///
+/// `statusline_lua::default_layout_from_lua` builds exactly this: a bare VM
+/// with `cru.statusline` and its item constructors, and nothing else. A
+/// statusline file used to be checked against the CONFIG profile, which has
+/// `cru.colorscheme`, `cru.hl`, `cru.syntax` and `cru.config` on it too — so
+/// the gate proved a property of a VM strictly more permissive than the one
+/// that runs the file, and a layout reaching for `cru.hl` would have passed
+/// the check and failed to load.
+pub fn statusline_vm() -> anyhow::Result<Lua> {
+    let lua = Lua::new();
+    let cru = lua.create_table()?;
+    let statusline = lua.create_table()?;
+    crucible_lua::register_statusline_items(&lua, &statusline)
+        .map_err(|e| anyhow::anyhow!("cru.statusline items: {e}"))?;
+    cru.set("statusline", statusline)?;
+    lua.globals().set("cru", cru)?;
+    Ok(lua)
+}
+
+/// Build a VM carrying the THEME profile's surface, which is NOTHING.
+///
+/// `theme::load_theme_from_lua` evaluates a theme with a bare `Lua::new()`.
+/// There is no `cru` table at all: a theme file returns a table of colours and
+/// calls nothing. Checking one against the config profile said `cru.hl.set`
+/// was available; it is not, and a theme using it raises
+/// "attempt to index nil with 'hl'" at load.
+pub fn theme_vm() -> anyhow::Result<Lua> {
+    Ok(Lua::new())
+}
+
 /// Write the definitions file for every profile OTHER than the daemon one.
 ///
 /// The daemon profile is written by
@@ -159,6 +204,8 @@ pub fn write_other_definitions(output_dir: &std::path::Path) -> anyhow::Result<(
             VmProfile::Daemon => continue,
             VmProfile::Session => session_vm()?,
             VmProfile::Config => config_vm()?,
+            VmProfile::Statusline => statusline_vm()?,
+            VmProfile::Theme => theme_vm()?,
         };
         crucible_lua::stubs::StubGenerator::write_declarations(
             &lua,

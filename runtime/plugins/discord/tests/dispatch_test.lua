@@ -85,9 +85,9 @@ describe("message dispatch", function()
         })
 
         local receives = 0
-        cru.ws = {
+        cru.ws = mock({
             connect = function()
-                return {
+                return mock({
                     send = function() return true end,
                     close = function() end,
                     receive = function()
@@ -98,9 +98,9 @@ describe("message dispatch", function()
                         gateway.disconnect()
                         error("dispatch_test: stopping the receive loop")
                     end,
-                }
+                })
             end,
-        }
+        })
 
         local _ok, _err = pcall(gateway.connect)
 

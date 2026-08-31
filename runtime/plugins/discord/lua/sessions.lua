@@ -465,12 +465,18 @@ end
 --- Which kind of key granted a tier, alongside the tier itself. The source is
 --- what decides whether an `ask` grant has a principal behind it: `user:` and
 --- `role:` name accounts, `guild:` and `default` name a room.
+--- The granted tier and the KIND of key that granted it.
+---
+--- The source is never nil: all four paths below name one, `default` included.
+--- Declaring it optional invited a `source or "default"` fallback that could
+--- not fire and would have forced `needs_approver` if it had, silently
+--- downgrading an `ask` grant to `read`.
 local function granted_tier(
     access: { [string]: any },
     guild_id: string?,
     author_id: string?,
     roles: { any }?
-): (string?, string?)
+): (any, string)
     local user_key = author_id and ("user:" .. tostring(author_id))
     if user_key and access[user_key] then return access[user_key], "user" end
 
@@ -531,12 +537,11 @@ function M.access_tier(guild_id: string?, author_id: string?, roles: { any }?): 
     -- shared one, so server mode needs a named approver whatever the grant's
     -- source; personal mode keeps the narrower rule, where only a key naming a
     -- ROOM (`guild:`, `default`) cannot answer for itself.
-    local key_kind: string = source or "default"
     local needs_approver = config.mode() == "server"
-        or key_kind == "guild" or key_kind == "default"
+        or source == "guild" or source == "default"
     if tier == "ask" and #M.approvers() == 0 and needs_approver then
         cru.log("info",
-            "Discord plugin: 'ask' from a " .. key_kind .. " key needs an approvers list; using read")
+            "Discord plugin: 'ask' from a " .. source .. " key needs an approvers list; using read")
         return "read"
     end
     return tier :: string

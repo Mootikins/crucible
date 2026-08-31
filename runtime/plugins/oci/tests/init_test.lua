@@ -99,6 +99,11 @@ end
 
 local function install_shell(): ()
   cru.shell = { exec = stub_exec, spawn = stub_spawn, which = stub_which }
+  -- The deviation here is the RETURN TYPE, not a missing field: the real
+  -- `cru.json.encode` answers a string and this one answers the table it was
+  -- given, so `handle_*` results come back inspectable. Nothing in this file
+  -- is evidence about real encoding, and a test asserting on `res.result` is
+  -- asserting on the table the plugin built, not on its JSON.
   cru.json = mock({ encode = function(t) return t end })
   ;(cru :: any).log = function() end
 end
