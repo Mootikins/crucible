@@ -33,7 +33,6 @@ local DM = frame({
 
 describe("message dispatch", function()
     it("hands the responder turn to cru.timer.spawn", function()
-        crucible = crucible or {}
         local cfg = {
             ["discord.allowed_users"] = { "u1" },
             ["discord.kiln"] = "notes",

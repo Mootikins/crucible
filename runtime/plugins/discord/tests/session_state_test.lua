@@ -64,7 +64,6 @@ end
 --- stub agreeing with itself.
 local function with_env(cfg, session_api, fn)
     ensure_state_root()
-    crucible = crucible or {}
     local had_config, had_sessions, had_paths = cru.plugin.config, cru.session, cru.paths
     cru.plugin.config = { get = function(key) return cfg[key] end }
     cru.session = session_api
@@ -244,7 +243,6 @@ describe("DM session persistence", function()
         cru.paths = nil
         local calls, api = recording_api("cold")
         local ok, err = pcall(function()
-            crucible = crucible or {}
             local had_config, had_sessions = cru.plugin.config, cru.session
             cru.plugin.config = { get = function(key) return configured()[key] end }
             cru.session = api

@@ -14,7 +14,6 @@ local sessions = require("sessions")
 --- `cru.session` is stubbed for the same reason: the plugin VM has the real
 --- bridge, the test VM has nothing.
 local function with_env(cfg, session_api, fn)
-    crucible = crucible or {}
     local had_config = cru.plugin.config
     local had_session = cru.session
     cru.plugin.config = { get = function(key) return cfg[key] end }

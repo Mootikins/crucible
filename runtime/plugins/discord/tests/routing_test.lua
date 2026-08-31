@@ -14,7 +14,6 @@ local routing = require("routing")
 -- key-prefixing and the default-on-missing behaviour stay under test. The test
 -- VM has no `cru.plugin.config`, hence the table is created and then restored.
 local function with_config(tbl, fn)
-    crucible = crucible or {}
     local had_config = cru.plugin.config
     cru.plugin.config = { get = function(key) return tbl[key] end }
     local ok, err = pcall(fn)

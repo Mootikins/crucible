@@ -11,7 +11,6 @@ end
 local function default_fixtures()
     return {
         kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
-        graph = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
         http = { responses = {} },
         fs = { files = {}, dirs = {} },
         session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
@@ -75,23 +74,6 @@ local function create_kiln_mock(fixtures)
         outlinks = link_lookup("kiln", f, "outlinks"),
         backlinks = link_lookup("kiln", f, "backlinks"),
         neighbors = link_lookup("kiln", f, "neighbors"),
-    }
-end
-
-local function create_graph_mock(fixtures)
-    local f = fixtures.graph
-    return {
-        get_note = function(path)
-            record_call("graph", "get_note", path)
-            for _, note in ipairs(f.notes or {}) do
-                if note.path == path then return deep_copy(note) end
-            end
-            return nil
-        end,
-        get_outlinks = link_lookup("graph", f, "outlinks"),
-        get_backlinks = link_lookup("graph", f, "backlinks"),
-        get_neighbors = link_lookup("graph", f, "neighbors"),
-        search_semantic = note_search("graph", f, "search_semantic", 0.9),
     }
 end
 
@@ -190,21 +172,18 @@ function test_mocks.setup(overrides)
         end
     end
     _calls = {}
-    cru = cru or {}
+    -- No `cru = cru or {}`: the harness only ever loads into a VM that has
+    -- already registered `cru`, so the fallback never fired, and assigning to
+    -- the global shadowed a declared built-in.
     cru.kiln = create_kiln_mock(_fixtures)
-    cru.graph = create_graph_mock(_fixtures)
     cru.http = create_http_mock(_fixtures)
     cru.fs = create_fs_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
-    http = cru.http
-    fs = cru.fs
-    if crucible then
-        crucible.kiln = cru.kiln
-        crucible.graph = cru.graph
-        crucible.http = cru.http
-        crucible.fs = cru.fs
-        crucible.session = cru.session
-    end
+    -- The bare `http`/`fs` globals and the whole `crucible` table used to be
+    -- mirrored here. Nothing reads any of them: no plugin or suite refers to
+    -- `crucible.*`, and the two bare aliases appear only inside an error
+    -- message's text. `crucible` is not registered by the host at all, so the
+    -- mirror also made every checker report an unknown global.
 end
 
 function test_mocks.reset()

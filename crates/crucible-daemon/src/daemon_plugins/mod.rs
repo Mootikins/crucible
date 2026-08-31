@@ -197,7 +197,7 @@ impl DaemonPluginLoader {
     /// - `cru.shell` — Shell execution (with default policy)
     /// - `oq` — JSON/YAML/TOML query
     /// - `paths` — Standard path helpers
-    /// - `cru.kiln` / `cru.graph` — Kiln and graph stubs (upgraded with storage later)
+    /// - `cru.kiln` — Kiln stub (upgraded with storage later)
     /// - `cru.schedule` — Interval-based scheduled callbacks
     ///
     /// `cru.oil` comes with `LuaExecutor::new()`, and statusline expressions

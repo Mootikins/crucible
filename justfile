@@ -576,6 +576,15 @@ plugin-check: luau-lsp
             failed=1
         fi
     done
+    # The loop above walks `runtime/plugins/` only. Crucible ships eleven more
+    # Lua files — the shipped defaults, the themes, the statusline, the prelude
+    # and the `cru plugin new` scaffold — and they do not all run on the same
+    # VM, so each needs the definitions for ITS profile. That mapping, and the
+    # assertion that it covers every `.lua` in the repository, live in
+    # `every_shipped_lua_file_typechecks`.
+    if ! cargo test -q -p crucible-daemon --lib every_shipped_lua_file_typechecks; then
+        failed=1
+    fi
     exit $failed
 
 # === Daemon & tooling ===

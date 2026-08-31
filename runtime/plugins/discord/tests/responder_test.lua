@@ -19,7 +19,6 @@ local api = require("api")
 --- stubbed by replacing fields on the module table, because `responder`
 --- captured that table at load and it is what the stub has to reach.
 local function with_env(cfg, env, fn)
-    crucible = crucible or {}
     local had_config = cru.plugin.config
     local had_sessions = cru.session
     local had_timer = cru.timer

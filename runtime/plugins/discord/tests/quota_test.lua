@@ -17,7 +17,6 @@ local quota = require("quota")
 -- and the test VM has no `cru.plugin.config` at all — so the table is created and
 -- then restored, exactly as `routing_test.lua` does.
 local function with_config(tbl, fn)
-    crucible = crucible or {}
     local had_config = cru.plugin.config
     cru.plugin.config = { get = function(key) return tbl[key] end }
     local ok, err = pcall(fn)

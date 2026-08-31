@@ -11,7 +11,6 @@ local publications = {}
 local completions = {}
 local next_answer = { "  A perfectly good title  " }
 
-crucible = crucible or {}
 cru.plugin.publish = function(key, value) publications[key] = value end
 
 cru = cru or {}

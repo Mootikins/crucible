@@ -364,6 +364,142 @@ mod shipped_plugin_tests {
         );
     }
 
+    /// Every OTHER `.lua` file Crucible ships, checked against the profile of
+    /// the VM it actually runs on.
+    ///
+    /// `every_shipped_plugin_typechecks` above walks `runtime/plugins/` only,
+    /// which is what `just plugin-check` iterates too. Eleven shipped files sat
+    /// outside it and no machine had ever checked one — including
+    /// `plugin/templates/init.lua`, the scaffold `cru plugin new` copies, whose
+    /// `health.lua` did not pass `cru plugin check`.
+    ///
+    /// The profile matters as much as the coverage. `runtime/defaults/init.lua`
+    /// runs on the SESSION VM and the themes run on the CONFIG VM; checked
+    /// against the daemon definitions they report type errors for working API,
+    /// which is exactly the false failure that made a wider gate look
+    /// impossible.
+    ///
+    /// The mapping is exhaustive by assertion: a new `.lua` anywhere in the
+    /// repository fails this test until someone says which VM runs it. That is
+    /// the property `just plugin-check`'s glob never had.
+    #[test]
+    fn every_shipped_lua_file_typechecks() {
+        use crate::vm_profiles::VmProfile;
+
+        // (path prefix relative to the repo root, the VM that runs it).
+        // Ordered longest-prefix-first is unnecessary: no prefix here contains
+        // another.
+        const PROFILES: &[(&str, VmProfile)] = &[
+            // The shipped defaults and a workspace `init.lua`: session VM.
+            ("runtime/defaults/", VmProfile::Session),
+            // Evaluated by the CLI's config read, which has no http/fs/shell.
+            ("runtime/statusline/", VmProfile::Config),
+            ("runtime/themes/", VmProfile::Config),
+            // Ordinary plugins, and the scaffold for writing one.
+            ("runtime/crucible-help/", VmProfile::Daemon),
+            ("examples/plugins/", VmProfile::Daemon),
+            (
+                "crates/crucible-cli/src/commands/plugin/templates/",
+                VmProfile::Daemon,
+            ),
+            // The prelude's pure-Lua half and the test harness it installs.
+            ("crates/crucible-lua/lib/", VmProfile::Daemon),
+        ];
+
+        let root = repo_root();
+        let stubs = tempfile::TempDir::new().expect("tempdir");
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("loader");
+        loader
+            .generate_stubs(stubs.path())
+            .expect("generate declarations");
+
+        let mut unmapped: Vec<String> = Vec::new();
+        let mut failures: Vec<String> = Vec::new();
+
+        for file in lua_files_outside_plugins(&root) {
+            let relative = file
+                .strip_prefix(&root)
+                .expect("under the repo root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let Some((_, profile)) = PROFILES
+                .iter()
+                .find(|(prefix, _)| relative.starts_with(prefix))
+            else {
+                unmapped.push(relative);
+                continue;
+            };
+            let definitions = stubs.path().join(profile.definitions_file());
+            // One file at a time: `check_plugin` takes a directory, and these
+            // are loose files whose neighbours may run on a different VM.
+            let report = crucible_lua::check_file(&file, Some(&definitions)).expect("check");
+            if !report.passed() {
+                failures.push(format!(
+                    "{relative} (profile {}): {}",
+                    profile.name(),
+                    report
+                        .findings
+                        .iter()
+                        .map(|f| f.to_string())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+        }
+
+        assert!(
+            unmapped.is_empty(),
+            "these shipped .lua files name no VM profile, so nothing knows which \
+             definitions to check them against. Add each to PROFILES:\n{}",
+            unmapped.join("\n")
+        );
+        assert!(
+            failures.is_empty(),
+            "shipped Lua outside runtime/plugins/ failed its typecheck:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+            .canonicalize()
+            .expect("repo root")
+    }
+
+    /// Every `.lua` under the repository except the plugins the test above
+    /// already walks, and except build output.
+    fn lua_files_outside_plugins(root: &std::path::Path) -> Vec<PathBuf> {
+        fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if path.is_dir() {
+                    // `target` is build output, `.git` is history, and
+                    // `runtime/plugins` has its own gate.
+                    if name == "target" || name == ".git" || name == "node_modules" {
+                        continue;
+                    }
+                    if path.ends_with("runtime/plugins") {
+                        continue;
+                    }
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|e| e == "lua" || e == "luau") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, &mut out);
+        out.sort();
+        out
+    }
+
     /// setup that lets `require("config")` resolve a plugin's lua/ submodule.
     //
     // Arms are listed explicitly so that a plugin can sit in `runtime/plugins/`

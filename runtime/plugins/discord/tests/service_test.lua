@@ -22,7 +22,6 @@ local service_fn = plugin.services.gateway.fn
 --- DISCORD_BOT_TOKEN, and a developer who has one exported must not turn the
 --- no-token case green.
 local function dialed_with(cfg)
-    crucible = crucible or {}
     local had_config = cru.plugin.config
     local had_ws = cru.ws
     local had_getenv = os.getenv

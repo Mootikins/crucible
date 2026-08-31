@@ -188,6 +188,81 @@ pub fn check_plugin_with(
     })
 }
 
+/// Check ONE Lua file that is not part of a plugin directory.
+///
+/// Crucible ships Lua that is not a plugin: the shipped defaults, the themes,
+/// the statusline, the prelude's pure-Lua half. [`check_plugin`] takes a
+/// directory and reads an `init.lua` spec out of it, and neither fits a loose
+/// file whose neighbours may run on a different VM — `runtime/themes/` and
+/// `runtime/defaults/` sit two directories apart and use two different
+/// `cru.*` surfaces.
+///
+/// Same two checks as a plugin, minus the spec: the file compiles, and it
+/// typechecks against `definitions`. A file that does not exist is a finding,
+/// not a silent pass.
+pub fn check_file(file: &Path, definitions: Option<&Path>) -> std::io::Result<CheckReport> {
+    let file = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let definitions =
+        definitions.map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
+    let definitions = definitions.as_deref();
+    let parent = file.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let mut findings = Vec::new();
+
+    if !file.is_file() {
+        findings.push(Finding::Load {
+            message: format!("{} is not a file", file.display()),
+        });
+        return Ok(CheckReport {
+            plugin_dir: parent,
+            files_checked: 0,
+            typecheck: TypecheckStatus::Skipped,
+            findings,
+        });
+    }
+
+    let source = std::fs::read_to_string(&file)?;
+    let lua = mlua::Lua::new();
+    if let Err(e) = lua
+        .load(&source)
+        .set_name(format!("@{}", file.display()))
+        .into_function()
+    {
+        findings.push(Finding::Syntax {
+            file: file.clone(),
+            message: e.to_string(),
+        });
+    }
+
+    // Same reasoning as `check_plugin_with`: a checker an operator NAMED and
+    // that is not there is a failure, not a skip.
+    if let Some(configured) = std::env::var_os("CRUCIBLE_LUAU_ANALYZE") {
+        let path = PathBuf::from(&configured);
+        if !path.is_file() {
+            findings.push(Finding::Type {
+                message: format!(
+                    "CRUCIBLE_LUAU_ANALYZE names {}, which is not a file",
+                    path.display()
+                ),
+            });
+        }
+    }
+
+    let typecheck = match analyze(&parent, std::slice::from_ref(&file), definitions) {
+        Some(diagnostics) => {
+            findings.extend(diagnostics);
+            TypecheckStatus::Ran
+        }
+        None => TypecheckStatus::Skipped,
+    };
+
+    Ok(CheckReport {
+        plugin_dir: parent,
+        files_checked: 1,
+        typecheck,
+        findings,
+    })
+}
+
 /// Which checker is in use. They are not interchangeable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Analyzer {

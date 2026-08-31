@@ -11,7 +11,6 @@ cru.plugin = cru.plugin or {}
 local publications = {}
 local declared_options
 
-crucible = crucible or {}
 cru.plugin.publish = function(key, value) publications[key] = value end
 cru.plugin.options = function(tree) declared_options = tree end
 

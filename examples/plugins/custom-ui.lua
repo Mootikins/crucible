@@ -142,15 +142,8 @@ end
 -- PATTERN: Tool call display with status and result
 -- Demonstrates: oil.when() for conditional rendering, oil.spinner(), nested layouts
 local function tool_call_display(name, status, result)
-    local status_colors = {
-        pending = "yellow",
-        running = "cyan",
-        complete = "green",
-        error = "red"
-    }
-    
-    local color = status_colors[status] or "white"
-    
+    -- `status_badge` below owns the colour for each status; the table that
+    -- used to sit here was a second, unread copy of the same mapping.
     return oil.col({ border = "rounded", padding = 1, gap = 1 },
         oil.row({ gap = 2 },
             oil.text("🔧", { bold = true }),
