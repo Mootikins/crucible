@@ -47,6 +47,12 @@ vi.mock('@/lib/file-actions', () => ({
   openFileInEditor: (...a: unknown[]) => openFileInEditor(...a),
 }));
 
+// Rejecting rewrites a file; the toast is how the user learns it happened.
+const addNotification = vi.fn();
+vi.mock('@/stores/notificationStore', () => ({
+  notificationActions: { addNotification: (...a: unknown[]) => addNotification(...a) },
+}));
+
 const { ChangesPanel } = await import('../ChangesPanel');
 const { __resetReviewStore, pendingReveal } = await import('@/lib/review-store');
 
@@ -173,6 +179,7 @@ describe('ChangesPanel — the queue', () => {
   });
 
   it('reject is a state, not a separate verb — the daemon reverts on the same call', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     answer([hunk({ id: 'h1' })]);
     setCurrentSession(session());
     render(() => <ChangesPanel />);
@@ -180,6 +187,70 @@ describe('ChangesPanel — the queue', () => {
 
     fireEvent.click(screen.getByTestId('reject-h1'));
     await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
+    confirm.mockRestore();
+  });
+
+  // The gradient: deleting a session — which loses nothing on disk — already
+  // confirmed, while this, which rewrites a file the daemon cannot restore,
+  // was one unguarded click on a 22px glyph.
+  it('asks before reverting, and names the lines it is about to rewrite', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-h1'));
+    await waitFor(() => expect(setHunkState).toHaveBeenCalledOnce());
+
+    const prompt = confirm.mock.calls[0][0] as string;
+    expect(prompt).toContain('src/a.rs');
+    expect(prompt).toContain('L4');
+    expect(prompt).toContain('cannot be undone');
+    confirm.mockRestore();
+  });
+
+  it('touches no disk when the user backs out of the confirm', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-h1'));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(setHunkState).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  // Accept is the cheap, recoverable half of the pair. Confirming it too would
+  // be the fatigue the `re-applied` flag exists to make visible.
+  it('accept stays one click', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('accept-h1'));
+    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'accepted'));
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('leaves a receipt naming what it reverted', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-h1'));
+    await waitFor(() => expect(addNotification).toHaveBeenCalled());
+    const [type, message] = addNotification.mock.calls.at(-1) as [string, string];
+    expect(type).toBe('info');
+    expect(message).toContain('src/a.rs');
+    confirm.mockRestore();
   });
 
   it('a hunk in flight refuses a second click', async () => {

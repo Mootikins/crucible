@@ -19,7 +19,8 @@ import { DiffViewer } from './DiffViewer';
 import { openFileInEditor } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { reviewActions, reviewStore, toolCallLabel, useReviewSession } from '@/lib/review-store';
-import { hunkPath, isExternal, type ComposedHunk } from '@/lib/review-types';
+import { announceReject, confirmReject } from '@/lib/review-confirm';
+import { hunkPath, hunkRangeLabel, isExternal, type ComposedHunk } from '@/lib/review-types';
 import { Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
 
 /** Files, in composed-diff order, with their hunks. */
@@ -65,12 +66,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
   const [busy, setBusy] = createSignal(false);
 
   const external = () => isExternal(props.hunk);
-  const range = () => {
-    const r = props.hunk.current_range;
-    // Half-open, so `end` is one past the last line; an empty range is a pure
-    // deletion and has no line to name.
-    return r.end > r.start + 1 ? `${r.start}–${r.end - 1}` : `${r.start}`;
-  };
+  const range = () => hunkRangeLabel(props.hunk);
 
   // A refused mutation means the disk did not change — an unknown or stale
   // hunk, or an external one. Silence would read as a dropped click.
@@ -110,7 +106,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
           <ChevronRight
             class={`w-3 h-3 shrink-0 text-muted-dark transition-transform ${open() ? 'rotate-90' : ''}`}
           />
-          <span class="text-[11px] font-mono text-muted shrink-0">L{range()}</span>
+          <span class="text-[11px] font-mono text-muted shrink-0">{range()}</span>
           <span
             class={`text-[10px] px-1 py-px rounded border shrink-0 ${STATE_CLASS[props.hunk.state]}`}
           >
@@ -168,7 +164,13 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             title="Reject — reverts the change on disk and tells the agent"
             data-testid={`reject-${props.hunk.id}`}
             disabled={busy()}
-            onClick={() => act(() => reviewActions.reject(props.sessionId, props.hunk.id))}
+            onClick={() => {
+              if (!confirmReject(props.hunk)) return;
+              act(async () => {
+                await reviewActions.reject(props.sessionId, props.hunk.id);
+                announceReject(props.hunk);
+              });
+            }}
             class="shrink-0 rounded p-1 text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50"
           >
             <Undo2 class="w-3.5 h-3.5" />

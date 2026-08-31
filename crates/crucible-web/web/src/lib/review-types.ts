@@ -113,3 +113,14 @@ export function isExternal(hunk: ComposedHunk): boolean {
 export function hunkPath(hunk: ComposedHunk): string {
   return `${hunk.root.replace(/\/$/, '')}/${hunk.path}`;
 }
+
+/**
+ * The hunk's lines as a human reads them: `L4–5`, or `L4` for one line.
+ *
+ * `current_range` is half-open, so `end` is one PAST the last line and an
+ * empty range is a pure deletion with no line left to name.
+ */
+export function hunkRangeLabel(hunk: ComposedHunk): string {
+  const r = hunk.current_range;
+  return r.end > r.start + 1 ? `L${r.start}–${r.end - 1}` : `L${r.start}`;
+}

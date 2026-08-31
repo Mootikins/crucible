@@ -175,11 +175,26 @@ describe('ToolCard — accept / reject', () => {
   });
 
   it('rejecting from the card reverts the composed hunk', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     await seed([hunk({ id: 'h1' })]);
     render(() => <ToolCard toolCall={editCall()} />);
     expand();
     fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
     await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
+    confirm.mockRestore();
+  });
+
+  // The transcript is the SECOND doorway to the same daemon revert. A gate on
+  // one of two doors is not a gate.
+  it('the transcript chip asks before reverting, exactly as the panel does', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await seed([hunk({ id: 'h1' })]);
+    render(() => <ToolCard toolCall={editCall()} />);
+    expand();
+    fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(setHunkState).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 
   it('an accepted hunk keeps its reject, loses its accept', async () => {

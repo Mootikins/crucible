@@ -17,6 +17,7 @@ import {
   revealedToolCall,
 } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
+import { announceReject, confirmReject } from '@/lib/review-confirm';
 import {
   Check,
   ChevronRight,
@@ -417,11 +418,21 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                             <Check class="w-3 h-3" />
                           </button>
                         </Show>
+                        {/* Same gate as the Changes panel: this is the same
+                            daemon call rewriting the same bytes, and a second
+                            unguarded doorway to it would be no gate at all. */}
                         <button
                           type="button"
                           title="Reject — reverts it on disk and tells the agent"
                           data-testid={`tool-reject-${hunk.id}`}
-                          onClick={() => review(reviewActions.reject(sessionId()!, hunk.id))}
+                          onClick={() => {
+                            if (!confirmReject(hunk)) return;
+                            review(
+                              reviewActions
+                                .reject(sessionId()!, hunk.id)
+                                .then(() => announceReject(hunk)),
+                            );
+                          }}
                           class="rounded p-0.5 text-muted-dark hover:text-error hover:bg-hover-wash"
                         >
                           <Undo2 class="w-3 h-3" />
