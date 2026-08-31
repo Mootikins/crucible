@@ -69,7 +69,16 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
     let config_dir = dirs::config_dir()
         .ok_or_else(|| "no config directory".to_string())?
         .join("crucible");
-    let path = config_dir.join("themes").join(format!("{name}.lua"));
+    // Either extension. `list_available_themes` was routed through
+    // `source_files` and this was not, so the two disagreed: the shipped
+    // themes are `.luau`, `cru setup` copies them verbatim, and the error path
+    // listed "default, opencode" while neither would load.
+    let themes_dir = config_dir.join("themes");
+    let path = crucible_lua::source_files::SOURCE_EXTENSIONS
+        .iter()
+        .map(|ext| themes_dir.join(format!("{name}.{ext}")))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| themes_dir.join(format!("{name}.luau")));
 
     let source = std::fs::read_to_string(&path).map_err(|e| {
         let available = crucible_lua::list_available_themes(&config_dir);

@@ -225,16 +225,22 @@ pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
         );
     }
 
-    // Find health.lua in the plugin directory
-    let health_path = if plugin_path.file_name().and_then(|n| n.to_str()) == Some("health.lua") {
+    // The health file, under either extension. This looked for `health.lua`
+    // alone and answered `healthy: true, "No health.lua found"` otherwise — so
+    // a plugin scaffolded by `cru plugin new`, which writes `health.luau`, was
+    // reported healthy without its health check ever running.
+    let named_health = plugin_path
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .is_some_and(|stem| stem == "health")
+        && crucible_lua::source_files::is_lua_source(&plugin_path);
+    let health_path = if named_health {
         Some(plugin_path.clone())
     } else {
-        let hp = plugin_path.join("health.lua");
-        if hp.exists() {
-            Some(hp)
-        } else {
-            None
-        }
+        crucible_lua::source_files::SOURCE_EXTENSIONS
+            .iter()
+            .map(|ext| plugin_path.join(format!("health.{ext}")))
+            .find(|candidate| candidate.exists())
     };
 
     let Some(health_path) = health_path else {

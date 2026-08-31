@@ -497,7 +497,28 @@ pub fn render_declarations_with(
     // stubs were rendered from (no kiln is active), and a function bound to
     // the loading plugin at load time (`cru.plugin.publish`). Both are the
     // API; the walk simply cannot observe them from an idle VM.
+    //
+    // Only where the VM HAS the namespace. These were merged into every
+    // profile unconditionally, so `cru-statusline.d.luau` advertised
+    // `cru.json`, `cru.kiln` and `cru.on` on a VM carrying `cru.statusline`
+    // and nothing else — the same "describes a stand-in" defect the profiles
+    // exist to prevent, surviving inside the renderer that builds them.
+    //
+    // The namespace is the segment after `cru`: `cru.kiln.active` rides in on
+    // `cru.kiln` being there, which is the case it was written for.
+    let present: std::collections::BTreeSet<&str> = paths
+        .iter()
+        .chain(values.iter().map(|value| &value.path))
+        .filter_map(|path| path.strip_prefix("cru."))
+        .map(|rest| rest.split('.').next().unwrap_or(rest))
+        .collect();
     for (path, ty) in declared_signatures() {
+        let namespace = path
+            .strip_prefix("cru.")
+            .map(|rest| rest.split('.').next().unwrap_or(rest));
+        if !namespace.is_some_and(|ns| present.contains(ns)) {
+            continue;
+        }
         let member = if is_function_type(&ty) {
             Member::Function
         } else {

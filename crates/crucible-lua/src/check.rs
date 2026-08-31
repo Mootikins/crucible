@@ -364,12 +364,27 @@ fn analyze(
         .chain(errors.lines())
         .map(str::trim_end)
         .filter(|line| !line.trim().is_empty())
-        // `luau-lsp` narrates what it loaded on stdout; only diagnostics are
-        // findings.
-        .filter(|line| !line.starts_with("[INFO]"))
-        // Without definitions every `cru` is an unknown global. Reporting
-        // that against correct code trains an author to ignore the tool.
-        .filter(|line| kind == Analyzer::LuauLsp || !line.contains("Unknown global 'cru'"))
+        // `luau-lsp` narrates what it loaded and what it is missing; only
+        // DIAGNOSTICS are findings. Its two narration lines when no
+        // definitions file is given —
+        //   WARNING: --platform is set to 'roblox' but no definitions ...
+        //   [WARN] No definitions file provided by client
+        // — were reported as type errors against correct code, so
+        // `cru plugin check` on a well-formed plugin failed with 8 findings
+        // wherever a checker was installed.
+        .filter(|line| {
+            !line.starts_with("[INFO]")
+                && !line.starts_with("[WARN]")
+                && !line.starts_with("WARNING:")
+        })
+        // Without a definitions file every `cru` is an unknown global.
+        // Reporting that against correct code trains an author to ignore the
+        // tool. WITH one it means the definitions failed to load, which is the
+        // one thing that must never be swallowed — so the test is on the
+        // definitions, not on which analyzer ran. It used to read
+        // `kind == LuauLsp || ...`, which kept the noise for the analyzer that
+        // produces it and filtered it for the one that does not.
+        .filter(|line| definitions.is_some() || !line.contains("Unknown global 'cru'"))
         .map(|line| Finding::Type {
             message: line.to_string(),
         })
@@ -506,6 +521,42 @@ mod tests {
         let report = check_plugin(tmp.path(), None).expect("check runs");
         assert!(report.passed(), "{:?}", report.findings);
         assert_eq!(report.files_checked, 1);
+
+        // And it must pass WITH a checker, which is the only configuration
+        // where this test proves anything. It used to pass only without one:
+        // `luau-lsp` narrates two WARNING lines when no definitions file is
+        // given, both became findings, and a well-formed plugin failed with
+        // eight of them on any machine that had the checker installed.
+        if let Some(checker) = installed_checker() {
+            let restore = std::env::var_os("CRUCIBLE_LUAU_ANALYZE");
+            // SAFETY: `env_lock()` above serialises every test in this module
+            // that touches this variable.
+            unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", &checker) };
+            let checked = check_plugin(tmp.path(), None).expect("check runs");
+            match restore {
+                Some(v) => unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", v) },
+                None => unsafe { std::env::remove_var("CRUCIBLE_LUAU_ANALYZE") },
+            }
+            assert_eq!(
+                checked.typecheck,
+                TypecheckStatus::Ran,
+                "the checker was named, so it must have run"
+            );
+            assert!(
+                checked.passed(),
+                "a well-formed plugin must pass WITH a checker too: {:?}",
+                checked.findings
+            );
+        }
+    }
+
+    /// The pinned checker, when this working tree has one.
+    fn installed_checker() -> Option<PathBuf> {
+        let pinned = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/tools/luau-lsp"
+        ));
+        pinned.is_file().then_some(pinned)
     }
 
     #[test]

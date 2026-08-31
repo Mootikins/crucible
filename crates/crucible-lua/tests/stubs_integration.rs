@@ -15,12 +15,24 @@ fn generates_emmylua_stubs_with_core_and_ui_modules() {
         stubs.contains("---@note UI-only: requires TUI context, not available in daemon plugins")
     );
 
+    // The doc entry used to be the literal "Lua API function <path>", so this
+    // asserted the path appeared in its own documentation — which told a
+    // reader nothing the key had not already. It is now the prose written at
+    // the registration, else the DECLARED TYPE, so what is worth asserting is
+    // that it says something ABOUT the function.
     let docs_raw = std::fs::read_to_string(dir.path().join("cru-docs.json")).unwrap();
     let docs: Value = serde_json::from_str(&docs_raw).unwrap();
-    assert!(docs["cru.kiln.search"]["documentation"]
+    let documentation = docs["cru.kiln.search"]["documentation"]
         .as_str()
-        .unwrap()
-        .contains("cru.kiln.search"));
+        .expect("cru.kiln.search is documented");
+    assert!(
+        documentation.contains("->"),
+        "a doc entry must carry the declared signature or prose, got: {documentation}"
+    );
+    assert!(
+        !documentation.contains("Lua API function"),
+        "the placeholder is gone: {documentation}"
+    );
 }
 
 #[test]

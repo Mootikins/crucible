@@ -394,16 +394,44 @@ async fn the_luau_declarations_cover_the_vm_namespaces() {
 /// It fails in both directions. An unlisted, unsigned function fails it, and
 /// so does a listed path the VM no longer has — otherwise the list would rot
 /// behind a rename and quietly stop covering anything.
+/// Every PROFILE, not just the daemon one.
+///
+/// This built `DaemonPluginLoader` alone, so a function registered only on the
+/// session VM — `cru.permissions.on_request` and its neighbours — could go
+/// undeclared with nothing to say so, and `cru-session.d.luau` would render it
+/// `(...any) -> any` while the header still counted it as unsigned. That is
+/// the same false green the profiles were built to end, one VM short of the
+/// end.
 #[tokio::test]
 async fn every_function_is_signed_or_listed() {
+    use crucible_daemon::vm_profiles::VmProfile;
+
     let loader =
         crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
             .expect("loader");
-    let registered: std::collections::BTreeSet<String> =
-        crucible_lua::stubs::function_paths(&loader.executor().lua().clone())
-            .expect("walk the plugin VM")
-            .into_iter()
-            .collect();
+
+    // Each profile's VM, and the signatures IT recorded. A path is described
+    // if any profile that has it declares it — a function on two VMs is
+    // declared once.
+    let mut registered: std::collections::BTreeSet<String> = Default::default();
+    let mut per_vm_signed: std::collections::BTreeSet<String> = Default::default();
+    for profile in VmProfile::all() {
+        let lua = match profile {
+            VmProfile::Daemon => loader.executor().lua().clone(),
+            VmProfile::Session => crucible_daemon::vm_profiles::session_vm().expect("session vm"),
+            VmProfile::Config => crucible_daemon::vm_profiles::config_vm().expect("config vm"),
+            VmProfile::Statusline => {
+                crucible_daemon::vm_profiles::statusline_vm().expect("statusline vm")
+            }
+            // No `cru` at all, so nothing to walk.
+            VmProfile::Theme => continue,
+        };
+        registered.extend(
+            crucible_lua::stubs::function_paths(&lua)
+                .unwrap_or_else(|e| panic!("walk the {} VM: {e}", profile.name())),
+        );
+        per_vm_signed.extend(crucible_lua::HostSignatures::of(&lua).paths());
+    }
     // Signed either way: beside its registration (`host_registry::Ns`, the
     // form that is checked against the Rust types) or in the static table
     // that has not moved yet.
@@ -412,11 +440,7 @@ async fn every_function_is_signed_or_listed() {
             .keys()
             .map(|path| path.to_string())
             .collect();
-    signed.extend(
-        crucible_lua::HostSignatures::of(&loader.executor().lua().clone())
-            .paths()
-            .into_iter(),
-    );
+    signed.extend(per_vm_signed);
     let listed: std::collections::BTreeSet<&str> =
         crucible_lua::host_api::UNSIGNED.iter().copied().collect();
 

@@ -21,11 +21,14 @@ pub fn is_first_run(config_path: &Path) -> bool {
     if config_path.exists() {
         return false;
     }
-    let init_lua = config_path
-        .parent()
-        .map(|dir| dir.join("init.lua"))
-        .unwrap_or_else(|| std::path::PathBuf::from("init.lua"));
-    !init_lua.exists()
+    // Either name counts as "already configured". Looking for `init.lua` alone
+    // ran the first-run wizard again for anyone whose config is `init.luau`,
+    // and the wizard would then write a second config beside the first.
+    let dir = config_path.parent().unwrap_or(std::path::Path::new("."));
+    crucible_lua::source_files::init_file(dir)
+        .ok()
+        .flatten()
+        .is_none()
 }
 
 /// Interactive first-run wizard. Writes `init.lua`, routes the provider

@@ -1,6 +1,6 @@
 //! Where the shipped `runtime/` tree lives, relative to the running binary.
 //!
-//! Four subsystems look for it — plugins, `defaults/init.lua`, bundled skills,
+//! Four subsystems look for it — plugins, `defaults/init.luau`, bundled skills,
 //! and `cru setup`'s copy source — and each used to open-code the candidate
 //! list. They drifted: skills discovery tried only the dev layout, so an
 //! installed `cru` silently loaded no bundled help skills at all. One list,
@@ -21,7 +21,7 @@
 //!
 //! Rather than teach each packaging route to carry 144K of Lua, the tree
 //! travels inside the binary and materialises on demand. Three of its files
-//! (`defaults/init.lua`, `themes/default.lua`, `statusline/default.lua`) were
+//! (`defaults/init.luau`, `themes/default.luau`, `statusline/default.luau`) were
 //! already `include_str!`'d one at a time for exactly this reason; this is that
 //! answer generalised to the other nineteen.
 
@@ -56,7 +56,7 @@ struct BundledRuntime;
 /// if it does exist, is not Crucible's.
 ///
 /// Neither is checked for existence here; callers filter, because what counts
-/// as present differs (a `plugins/` subdir, a `defaults/init.lua`, any
+/// as present differs (a `plugins/` subdir, a `defaults/init.luau`, any
 /// `*/skills`).
 pub fn exe_relative(exe_dir: &Path) -> [PathBuf; 2] {
     [
@@ -307,18 +307,18 @@ mod tests {
         write_bundled_runtime(tmp.path()).expect("extract");
 
         for needed in [
-            "defaults/init.lua",
-            "themes/default.lua",
-            "themes/opencode.lua",
-            "statusline/default.lua",
-            "plugins/auto-title/init.lua",
-            "plugins/auto-title/lua/auto_title.lua",
+            "defaults/init.luau",
+            "themes/default.luau",
+            "themes/opencode.luau",
+            "statusline/default.luau",
+            "plugins/auto-title/init.luau",
+            "plugins/auto-title/lua/auto_title.luau",
             "plugins/reflection/plugin.yaml",
-            "plugins/reflection/lua/config.lua",
-            "plugins/oci/init.lua",
+            "plugins/reflection/lua/config.luau",
+            "plugins/oci/init.luau",
             "plugins/reflection/plugin.yaml",
-            "plugins/worktree/init.lua",
-            "plugins/worktree/lua/git.lua",
+            "plugins/worktree/init.luau",
+            "plugins/worktree/lua/git.luau",
             "crucible-help/skills/crucible-help/SKILL.md",
         ] {
             assert!(
@@ -341,7 +341,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         write_bundled_runtime(tmp.path()).expect("extract");
 
-        let extracted = std::fs::read_to_string(tmp.path().join("defaults/init.lua"))
+        let extracted = std::fs::read_to_string(tmp.path().join("defaults/init.luau"))
             .expect("read extracted init.lua");
         assert_eq!(
             extracted,
@@ -369,11 +369,11 @@ mod tests {
         );
 
         for required in [
-            "plugins/oci/init.lua",
+            "plugins/oci/init.luau",
             "plugins/oci/plugin.yaml",
-            "plugins/oci/lua/container.lua",
-            "plugins/web-search/lua/providers/ddg.lua",
-            "defaults/init.lua",
+            "plugins/oci/lua/container.luau",
+            "plugins/web-search/lua/providers/ddg.luau",
+            "defaults/init.luau",
         ] {
             assert!(
                 embedded.iter().any(|p| p == required),
@@ -389,7 +389,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         sync_bundled_runtime(tmp.path()).expect("first extract");
 
-        let init = tmp.path().join("defaults/init.lua");
+        let init = tmp.path().join("defaults/init.luau");
         std::fs::write(&init, "-- stale").expect("corrupt the copy");
 
         sync_bundled_runtime(tmp.path()).expect("second extract");
@@ -457,7 +457,7 @@ mod tests {
         assert!(target
             .join("plugins")
             .join("oci")
-            .join("init.lua")
+            .join("init.luau")
             .is_file());
     }
 

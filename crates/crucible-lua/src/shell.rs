@@ -674,7 +674,7 @@ mod tests {
 
         for bad in ["-1", "0/0", "1/0"] {
             let err = lua
-                .load(&format!(
+                .load(format!(
                     r#"return cru.shell.exec("true", {{}}, {{ timeout = {bad} }})"#
                 ))
                 .exec_async()

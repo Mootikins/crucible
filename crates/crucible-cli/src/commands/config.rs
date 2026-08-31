@@ -75,10 +75,20 @@ cru.config.set({
 async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
     let config_path = path.unwrap_or_else(|| {
         let toml_path = CliConfig::default_config_path();
-        toml_path
-            .parent()
-            .map(|dir| dir.join("init.lua"))
-            .unwrap_or_else(|| PathBuf::from("init.lua"))
+        let dir = toml_path.parent().unwrap_or(std::path::Path::new("."));
+        // The config that is already THERE, under either name, so an existing
+        // `init.luau` is recognised rather than written beside. Creating the
+        // second one would leave the boot resolver refusing both as ambiguous
+        // — a first-run command breaking a working install.
+        crucible_lua::source_files::init_file(dir)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                dir.join(format!(
+                    "init.{}",
+                    crucible_lua::source_files::PREFERRED_EXTENSION
+                ))
+            })
     });
 
     // Check if file already exists

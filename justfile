@@ -369,16 +369,27 @@ test tier="quick" *args:
             # over that is the process boundary: `cru plugin test` -> RPC ->
             # daemon. Worth running by hand when you touch that path.
             #
-            # `.fnl` as well as `.lua`: the runner compiles Fennel suites, and a
-            # Fennel-only plugin (graph-view) was silently skipped by a
-            # Lua-only glob.
+            # Both extensions. This globbed `*.lua` and `*.fnl` — Fennel has
+            # been gone for months, and renaming the suites to `.luau` left the
+            # glob matching NOTHING, so the recipe printed no output and exited
+            # 0 with nine suites unrun.
+            #
+            # Hence the count: a selector that matches nothing must fail, not
+            # report a clean run of no tests.
+            ran=0
             for dir in runtime/plugins/*/; do
-                if compgen -G "${dir}tests/*.lua" > /dev/null \
-                    || compgen -G "${dir}tests/*.fnl" > /dev/null; then
+                if compgen -G "${dir}tests/*.luau" > /dev/null \
+                    || compgen -G "${dir}tests/*.lua" > /dev/null; then
                     echo "== ${dir}"
                     just test plugin "${dir%/}"
+                    ran=$((ran + 1))
                 fi
             done
+            if [ "$ran" -eq 0 ]; then
+                echo "no plugin suites matched — the glob is stale" >&2
+                exit 1
+            fi
+            echo "ran $ran plugin suites"
             ;;
         -p|-p=*|--package|--package=*) cargo nextest run "$tier" "$@" ;;
         -*) cargo nextest run $scope "$tier" "$@" ;;

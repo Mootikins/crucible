@@ -794,8 +794,14 @@ mod tests {
 
     #[test]
     fn model_picker_status_rows_cannot_be_selected() {
-        let mut app = OilChatApp::default();
-        app.model_list_state = ModelListState::Loading;
+        // Set in the initializer rather than assigned after: clippy's
+        // `field_reassign_with_default` is denied by `just lint clippy`, and
+        // this was the one occurrence keeping that gate red. Pre-dates the
+        // Luau work.
+        let mut app = OilChatApp {
+            model_list_state: ModelListState::Loading,
+            ..Default::default()
+        };
         app.set_input(":model ");
         app.check_autocomplete_trigger();
 
