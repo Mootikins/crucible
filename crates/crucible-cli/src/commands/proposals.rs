@@ -6,9 +6,10 @@
 //! commands are the human disposition surface: list, show, accept, reject.
 //!
 //! Accepting moves the file into the kiln (stripping provenance frontmatter)
-//! so the daemon's file watcher indexes it. Rejecting deletes it. Neither
-//! needs daemon RPC — the staging area is plain files under the kiln the CLI
-//! already knows.
+//! so the daemon's file watcher indexes it. Rejecting moves it into the
+//! `rejected/` directory, so the reflection reviewer does not propose the
+//! same note again. Neither needs daemon RPC — the staging area is plain
+//! files under the kiln the CLI already knows.
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -22,6 +23,11 @@ use crate::formatting::OutputFormat;
 /// which only directs placement). All are dropped when a proposal is accepted
 /// so the promoted note is clean.
 const PROVENANCE_KEYS: &[&str] = &["source", "status", "session", "created", "target"];
+
+/// Where rejected proposals are kept. The reflection reviewer lists this
+/// directory so it does not propose the same note twice. A human who moves a
+/// file here by hand has rejected it just as well.
+const REJECTED_DIR: &str = "rejected";
 
 #[derive(Debug, Serialize)]
 struct ProposalSummary {
@@ -66,7 +72,7 @@ fn collect_proposals(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .with_context(|| format!("reading proposals dir {}", dir.display()))?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|p| crucible_core::is_note_file(p))
+        .filter(|p| p.is_file() && crucible_core::is_note_file(p))
         .collect();
     files.sort();
     Ok(files)
@@ -231,8 +237,13 @@ fn resolve_target_within_kiln(kiln: &Path, target_rel: &str) -> Result<PathBuf> 
 
 fn reject(config: &CliConfig, id: &str) -> Result<()> {
     let path = proposal_path(config, id)?;
-    std::fs::remove_file(&path).with_context(|| format!("removing proposal {}", path.display()))?;
-    println!("Rejected proposal '{id}'.");
+    let rejected_dir = proposals_dir(config).join(REJECTED_DIR);
+    std::fs::create_dir_all(&rejected_dir)
+        .with_context(|| format!("creating {}", rejected_dir.display()))?;
+    let dest = rejected_dir.join(format!("{id}.md"));
+    std::fs::rename(&path, &dest)
+        .with_context(|| format!("moving proposal {} to {}", path.display(), dest.display()))?;
+    println!("Rejected proposal '{id}' (kept in {})", dest.display());
     Ok(())
 }
 
@@ -424,18 +435,48 @@ mod tests {
     }
 
     #[test]
-    fn reject_deletes_proposal() {
+    fn reject_moves_the_proposal_into_rejected() {
         let tmp = tempfile::tempdir().unwrap();
-        let kiln = tmp.path();
-        let config = test_config(kiln);
+        let config = test_config(tmp.path());
         write_proposal(
             &proposals_dir(&config),
-            "junk",
-            "---\nstatus: proposed\n---\nnope\n",
+            "dup-1",
+            "---\nsource: reflection\nstatus: proposed\ntitle: Socket path rules\n---\nBody\n",
         );
 
-        reject(&config, "junk").unwrap();
-        assert!(!proposals_dir(&config).join("junk.md").exists());
+        reject(&config, "dup-1").unwrap();
+
+        assert!(!proposals_dir(&config).join("dup-1.md").exists());
+        let kept = proposals_dir(&config).join("rejected").join("dup-1.md");
+        assert!(kept.is_file(), "a rejected proposal is kept, not deleted");
+        let text = std::fs::read_to_string(kept).unwrap();
+        assert!(
+            text.contains("title: Socket path rules"),
+            "content is untouched"
+        );
+    }
+
+    #[test]
+    fn list_ignores_the_rejected_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "pending",
+            "---\ntitle: P\n---\nB\n",
+        );
+        write_proposal(
+            &proposals_dir(&config).join("rejected"),
+            "old",
+            "---\ntitle: Old\n---\nB\n",
+        );
+
+        let files = collect_proposals(&proposals_dir(&config)).unwrap();
+        let names: Vec<String> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["pending.md"]);
     }
 
     #[test]
