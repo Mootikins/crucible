@@ -929,7 +929,7 @@ pub struct Proposal { id: ProposalId, kiln: KilnName, staged_path: PathBuf, targ
 ```
 
 Lifecycle: `Staged` in `KILN/.crucible/proposals/`, outside the index →
-`Accepted` (moved into the kiln, provenance removed) or `Rejected` (deleted).
+`Accepted` (moved into the kiln, provenance removed) or `Rejected` (moved into `KILN/.crucible/proposals/rejected/`, so the reviewer does not propose it again).
 
 Owner: **ProposalStore** inside Knowledge.
 
