@@ -48,11 +48,12 @@ const USAGE: &str = "(session_id: string) -> \
 /// `true` on success, not a value: compaction runs on the next agent turn.
 const COMPACT: &str = "(session_id: string) -> (boolean?, string?)";
 /// `opts` reaches Rust as a plain `Value`, so omitting it is legal and its
-/// `nil` takes the "no filter" branch. The body reads `role` and `limit` and
-/// nothing else. The messages themselves are opaque JSON on the way through,
-/// so `{ any }` is as far as this code can narrow them.
-const MESSAGES: &str = "(session_id: string, opts: { role: string?, limit: number? }?) -> \
-     ({ any }?, string?)";
+/// `nil` takes the "no filter" branch. The body reads `role`, `limit` and
+/// `tools` and nothing else; `tools = true` adds the `tool_call` and
+/// `tool_result` rows. The messages themselves are opaque JSON on the way
+/// through, so `{ any }` is as far as this code can narrow them.
+const MESSAGES: &str = "(session_id: string, \
+     opts: { role: string?, limit: number?, tools: boolean? }?) -> ({ any }?, string?)";
 /// `range` is NOT narrowed to a record, for one reason: the `indices` shape
 /// has an `end` field, and `end` is a Luau keyword that a record type cannot
 /// name. The three shapes the daemon accepts are in the comment on the
@@ -555,7 +556,7 @@ mod tests {
             _: String,
             role_filter: Option<String>,
             limit: Option<usize>,
-            _include_tools: bool,
+            include_tools: bool,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
             Box::pin(async move {
                 let mut msgs = vec![
@@ -563,6 +564,13 @@ mod tests {
                     serde_json::json!({ "role": "user", "content": "hi" }),
                     serde_json::json!({ "role": "assistant", "content": "hello" }),
                 ];
+                // The tool row appears only when the alias passed the flag, so
+                // the Lua test reads the row count to see that `tools` arrived.
+                if include_tools {
+                    msgs.push(serde_json::json!({
+                        "role": "tool_call", "id": "c1", "name": "bash", "args": { "command": "ls" },
+                    }));
+                }
                 if let Some(role) = role_filter {
                     msgs.retain(|m| m.get("role").and_then(|r| r.as_str()) == Some(role.as_str()));
                 }
@@ -741,6 +749,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn messages_includes_tool_rows_when_asked() {
+        let lua = Lua::new();
+        let api: Arc<dyn DaemonSessionApi> = Arc::new(StubApi);
+        register_context_module(&lua, api).unwrap();
+
+        let last_role: String = lua
+            .load(
+                r#"
+                local msgs, err = cru.context.messages("test-session", { tools = true })
+                assert(err == nil, "unexpected error: " .. tostring(err))
+                assert(#msgs == 4, "expected 4 rows, got " .. #msgs)
+                return msgs[#msgs].role
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(last_role, "tool_call");
     }
 
     #[test]
