@@ -575,7 +575,7 @@ export const CenterComposer: Component<{
                       />
                     </span>
                   </div>
-                  <p class="mt-1 text-[11px] leading-snug text-muted-dark">
+                  <p class="mt-1 text-floor leading-snug text-muted-dark">
                     Reach this machine's sessions and terminal from other devices.
                     Configure via <code class="text-muted">[web] remote_shell</code> in
                     config.toml.
@@ -629,9 +629,13 @@ export const CenterComposer: Component<{
                 aria-label="Start session"
                 title="Start session (Enter)"
                 classList={{
-                  'px-2.5 flex items-center justify-center transition-colors': true,
+                  // Same geometry and same disabled treatment as the
+                  // in-session send (ChatInput's SEND_BASE). The two are the
+                  // same affordance on two surfaces and a user should not
+                  // have to learn it twice.
+                  'focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors': true,
                   'bg-primary text-on-primary hover:bg-primary-hover': !!message().trim(),
-                  'bg-transparent text-muted-dark cursor-not-allowed': !message().trim(),
+                  'bg-control text-muted-dark cursor-not-allowed': !message().trim(),
                 }}
                 data-testid="composer-send"
               >

@@ -7,7 +7,12 @@ interface AutocompletePopupProps {
   items: AutocompleteItem[];
   selectedIndex: number;
   onSelect: (index: number) => void;
-  /** Element the list aligns to — normally the composer textarea. */
+  /**
+   * Element the list aligns to and takes its width from — the composer CARD,
+   * not the textarea inside it. `placePopup` defaults the panel width to the
+   * anchor's, so anchoring to the card is what makes the list dock at exactly
+   * the field's width and flush with its edges.
+   */
   anchor?: HTMLElement;
 }
 
@@ -22,10 +27,12 @@ export const AutocompletePopup: Component<AutocompletePopupProps> = (props) => {
       return;
     }
     setPlacement(
-      placePopup(anchor.getBoundingClientRect(), {
-        width: window.innerWidth,
-        height: window.innerHeight,
-      }),
+      placePopup(
+        anchor.getBoundingClientRect(),
+        { width: window.innerWidth, height: window.innerHeight },
+        // The list is a separate surface from the field, not a drawer of it.
+        { gap: 8 },
+      ),
     );
   };
 

@@ -12,6 +12,17 @@ import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import { ArrowUp, X } from '@/lib/icons';
 import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
+
+/**
+ * The commit button's geometry, shared by send and cancel.
+ *
+ * They are the same control in two states, so they must not differ by a pixel
+ * — a cancel that is wider than the send it replaces makes the whole trailing
+ * cluster jump the moment a turn starts.
+ */
+const SEND_BASE =
+  'focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors';
+
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, connectionStatus, retryConnection, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
@@ -111,9 +122,18 @@ export const ChatInput: Component = () => {
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      class="border-t border-hairline p-3"
+      // NO `border-t`. A rule here boxed the composer in and cut the
+      // conversation off at a hard line; the transcript now fades into this
+      // strip instead (see `.transcript-fade`), which carries the same
+      // "there is more above" meaning without drawing an edge.
+      //
+      // `px-4` OUTSIDE the measure, exactly as MessageList has it. Putting
+      // the padding inside instead made the composer 32px narrower than the
+      // transcript above it, so the two column edges did not line up.
+      class="px-4 pb-3 pt-1"
       data-testid="chat-input-form"
     >
+      <div class="mx-auto w-full max-w-[var(--chat-measure)]">
       {/* A dropped stream and a daemon-side failure are different faults, so
           they get different affordances. The stream is skippable-waitable, so
           it gets the same banner (and the same retry) the terminal has; the
@@ -139,6 +159,14 @@ export const ChatInput: Component = () => {
       {/* No "no active session" notice here — MessageList already renders
           the full empty state above; repeating it in the input strip read
           as two stacked prompts. */}
+
+      {/* Whatever the session's plugins have to say about it, rendered
+          generically from their keyed slots — ABOVE the field, because a chip
+          that says the agent is parked waiting on your review is a thing to
+          read BEFORE you type, not a footnote under the send button. It
+          renders nothing at all when no plugin published a slot, so an empty
+          strip costs no space. */}
+      <SessionStatusChips />
 
       <ComposerCard
         value={input}
@@ -178,10 +206,16 @@ export const ChatInput: Component = () => {
                 type="submit"
                 disabled={!canSend()}
                 aria-label="Send message"
+                title="Send (Enter)"
                 classList={{
-                  'px-2.5 flex items-center justify-center transition-colors': true,
+                  // A DISABLED send still has to be visible. It was
+                  // `bg-transparent`, which read as "there is no send button
+                  // here" rather than "you have not typed anything" — the
+                  // control vanished exactly when a new user needed to find
+                  // it. It keeps its fill and loses its colour instead.
+                  [SEND_BASE]: true,
                   'bg-primary text-on-primary hover:bg-primary-hover': !!canSend(),
-                  'bg-transparent text-muted-dark cursor-not-allowed': !canSend(),
+                  'bg-control text-muted-dark cursor-not-allowed': !canSend(),
                 }}
                 data-testid="send-button"
               >
@@ -193,7 +227,8 @@ export const ChatInput: Component = () => {
               type="button"
               onClick={handleCancel}
               aria-label="Cancel response"
-              class="px-2.5 flex items-center justify-center bg-error text-white hover:bg-error-dark transition-colors"
+              title="Stop the response"
+              class={`${SEND_BASE} bg-error text-white hover:bg-error-dark`}
               data-testid="cancel-button"
             >
               <X class="w-4 h-4" />
@@ -202,15 +237,16 @@ export const ChatInput: Component = () => {
         }
       />
 
-      {/* Session scope BELOW the box (launchpad layout): the kilns the
-          session knows and the workspace it acts in — attach/detach
-          mid-session (Crucible Shell design 4a/5a). */}
-      <SessionScopeChips />
+      {/* Session scope directly BELOW the field: the kilns the session knows
+          and the workspace it acts in — attach/detach mid-session (Crucible
+          Shell design 4a/5a).
 
-      {/* Whatever the session's plugins have to say about it, rendered
-          generically from their keyed slots. */}
-      <div class="mt-1">
-        <SessionStatusChips />
+          Deliberately borderless and unfilled. It is the quietest thing in
+          the strip so the field stays the loudest, which is the whole reason
+          the reference surfaces leave their branch and machine chips bare. */}
+      <div class="mt-1.5">
+        <SessionScopeChips />
+      </div>
       </div>
     </form>
   );

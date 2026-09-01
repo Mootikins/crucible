@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createMemo } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Message } from './Message';
 import { AssistantTurn, type TurnPartSpec } from './AssistantTurn';
 import { InteractionHandler } from './interactions';
@@ -48,12 +48,29 @@ export const MessageList: Component = () => {
   // into view.
   let pinned = true;
 
-  const handleScroll = () => {
+  /**
+   * Whether the transcript continues below the fold.
+   *
+   * This drives the bottom fade, which is the ONLY thing separating the
+   * transcript from the composer now that the rule between them is gone. It
+   * is a signal rather than the plain `pinned` flag because it paints: a soft
+   * bottom edge means "there is more down there", and it must disappear the
+   * moment you reach the end, or it reads as a permanent decoration and stops
+   * carrying any information at all.
+   */
+  const [hasMoreBelow, setHasMoreBelow] = createSignal(false);
+
+  const measure = () => {
     if (!containerRef) return;
     const distance =
       containerRef.scrollHeight - containerRef.scrollTop - containerRef.clientHeight;
     pinned = distance < 40;
+    // A wider threshold than `pinned` uses: the fade is 3rem tall, so it has
+    // to be gone before the last line slides under it, not exactly at zero.
+    setHasMoreBelow(distance > 8);
   };
+
+  const handleScroll = () => measure();
 
   const scrollToBottom = () => {
     if (pinned) bottomRef?.scrollIntoView({ behavior: 'instant', block: 'end' });
@@ -63,7 +80,12 @@ export const MessageList: Component = () => {
     const msgs = messages();
     if (msgs[msgs.length - 1]?.role === 'user') pinned = true;
     pendingInteraction();
-    queueMicrotask(scrollToBottom);
+    queueMicrotask(() => {
+      scrollToBottom();
+      // Streaming grows the transcript without ever firing a scroll event, so
+      // the fade would otherwise stay stale for a whole turn.
+      measure();
+    });
   });
 
   const session = () => currentSession();
@@ -138,9 +160,18 @@ export const MessageList: Component = () => {
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      class="flex-1 overflow-y-auto px-4 py-4"
+      // The SCROLLER is full width so its scrollbar stays on the pane edge;
+      // the content inside it centres on `--chat-measure`. Centring the
+      // scroller instead pulls the bar inward and reads as a second panel.
+      //
+      // `.transcript-fade` is conditional on purpose — see `hasMoreBelow`.
+      classList={{
+        'flex-1 overflow-y-auto px-4 pt-4 pb-2': true,
+        'transcript-fade': hasMoreBelow(),
+      }}
       data-testid="message-list"
     >
+      <div class="mx-auto w-full max-w-[var(--chat-measure)]">
       <For each={rows()}>
         {(row) => {
           if (row.kind === 'turn') {
@@ -186,7 +217,7 @@ export const MessageList: Component = () => {
             fallback={
               <>
                 <ChatBubbleMark ring="bg-surface-elevated" glyph="text-muted-dark" />
-                <p class="text-muted-dark text-center">
+                <p class="max-w-[22rem] text-balance px-4 text-center text-muted-dark">
                   Select or create a session to start chatting
                 </p>
               </>
@@ -194,7 +225,10 @@ export const MessageList: Component = () => {
           >
             <>
               <ChatBubbleMark ring="bg-primary/15" glyph="text-primary" />
-              <p class="text-muted text-center">
+              {/* `max-w` + `text-balance`: this line used to wrap to one word
+                  per line in a narrow pane, which is the worst setting of the
+                  first sentence a new user reads. */}
+              <p class="max-w-[22rem] text-balance px-4 text-center text-muted">
                 Start a conversation by typing a message or using voice input
               </p>
               <Show when={session()?.agent_model}>
@@ -206,6 +240,7 @@ export const MessageList: Component = () => {
           </Show>
         </div>
       </Show>
+      </div>
     </div>
   );
 };

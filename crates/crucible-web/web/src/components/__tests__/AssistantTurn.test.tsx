@@ -229,8 +229,16 @@ describe('AssistantTurn — in-flight indicators', () => {
     const { container } = render(() => (
       <AssistantTurn parts={[textPart('a1')]} isLast={true} />
     ));
-    // The caret is the animated ember block appended after the prose.
-    expect(container.querySelector('span.bg-primary.animate-pulse')).not.toBeNull();
+    // Addressed by testid, not by its class list. This assertion used to read
+    // `span.bg-primary.animate-pulse` — it pinned Tailwind's pulse utility, so
+    // authoring a proper caret cadence broke a test that was meant to check
+    // the caret EXISTS. What must stay true is that a streaming turn shows a
+    // caret, and that the caret runs on the shared wait cadence rather than on
+    // an effect of its own.
+    const caret = container.querySelector('[data-testid="stream-caret"]');
+    expect(caret).not.toBeNull();
+    expect(caret!.classList).toContain('cru-caret');
+    expect(caret!.classList).toContain('bg-primary');
   });
 
   it('renders NO meta row while the turn is in flight', () => {

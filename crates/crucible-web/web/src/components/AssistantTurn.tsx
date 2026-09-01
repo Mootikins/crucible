@@ -41,9 +41,12 @@ function formatTokenUsage(usage: TokenUsage): string {
 // implementation so the draft handoff and in-turn states can't drift apart.
 export const WorkingDots: Component = () => (
   <span class="inline-flex items-center gap-1 py-1" data-testid="working-indicator">
-    <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
-    <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '75ms' }} />
-    <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '150ms' }} />
+    {/* 160ms apart on a 1400ms cycle — a ninth of the period, which is the
+        point a stagger stops being a rounding error and starts reading as a
+        wave travelling left to right. See `cru-think` in index.css. */}
+    <span class="cru-think-dot h-1.5 w-1.5 rounded-full bg-muted" />
+    <span class="cru-think-dot h-1.5 w-1.5 rounded-full bg-muted" style={{ 'animation-delay': '160ms' }} />
+    <span class="cru-think-dot h-1.5 w-1.5 rounded-full bg-muted" style={{ 'animation-delay': '320ms' }} />
   </span>
 );
 
@@ -108,7 +111,13 @@ const TextSegment: Component<{
         <div class={proseClass()} onClick={props.onMarkdownClick} innerHTML={renderedContent()} />
       </Show>
       <Show when={props.showCaret && content() !== ''}>
-        <span class="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
+        {/* Sized to the reading text it trails, not to a fixed 16px: the caret
+            has to sit on the same baseline as the last glyph the agent wrote,
+            and the reading size is a token that can move. */}
+        <span
+          class="cru-caret ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] bg-primary"
+          data-testid="stream-caret"
+        />
       </Show>
     </div>
   );
@@ -252,7 +261,7 @@ export const AssistantTurn: Component<{
       {/* ONE meta row for the whole response — never per segment. Tiny and
           muted, out of the reading flow: usage · time, hairline-quiet. */}
       <Show when={!turnInFlight() && usage()}>
-        <div class="mt-2 flex items-center gap-1.5 text-[11px] leading-none text-muted-dark">
+        <div class="mt-2 flex items-center gap-1.5 text-floor leading-none text-muted-dark">
           <span>{formatTokenUsage(usage()!)}</span>
         </div>
       </Show>
@@ -282,7 +291,7 @@ export const AssistantTurn: Component<{
           </Show>
           <Show when={firstMessage()?.timestamp}>
             <span
-              class="ml-1 text-[11px] leading-none text-muted-dark"
+              class="ml-1 text-floor leading-none text-muted-dark"
               title={new Date(firstMessage()!.timestamp).toLocaleString()}
             >
               {formatAbsoluteTime(firstMessage()!.timestamp)}

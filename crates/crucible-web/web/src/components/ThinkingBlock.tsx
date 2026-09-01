@@ -46,15 +46,17 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
         <span>{headerLabel()}</span>
 
         <Show when={props.isStreaming}>
-          <span class="inline-flex items-center gap-0.5 ml-1">
-            <span class="w-1 h-1 bg-muted rounded-full animate-pulse" />
+          {/* The same wave as WorkingDots, at the same cadence — thinking and
+              answering are one wait, so they must not run on two rhythms. */}
+          <span class="ml-1 inline-flex items-center gap-0.5">
+            <span class="cru-think-dot h-1 w-1 rounded-full bg-muted" />
             <span
-              class="w-1 h-1 bg-muted rounded-full animate-pulse"
-              style={{ 'animation-delay': '150ms' }}
+              class="cru-think-dot h-1 w-1 rounded-full bg-muted"
+              style={{ 'animation-delay': '160ms' }}
             />
             <span
-              class="w-1 h-1 bg-muted rounded-full animate-pulse"
-              style={{ 'animation-delay': '300ms' }}
+              class="cru-think-dot h-1 w-1 rounded-full bg-muted"
+              style={{ 'animation-delay': '320ms' }}
             />
           </span>
         </Show>

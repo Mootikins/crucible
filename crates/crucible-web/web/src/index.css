@@ -401,6 +401,14 @@
  * the outline for a pointer focus and draws the ring only for `:focus-visible`,
  * which is the same rule a browser applies to its own default ring.
  *
+ * ONE documented exception: a control whose focus is drawn by its CONTAINER.
+ * The composer textarea is the only such control — the card around it takes
+ * `focus-within:border-primary`, so the textarea drawing its own offset ring
+ * put two ember treatments on one control, 2px apart. That textarea writes
+ * `outline-none` WITH the card's border as its replacement, which is the
+ * condition this rule actually cares about. A bare `outline-none` with no
+ * replacement is still the defect.
+ *
  * `outline` rather than a ring built from `box-shadow`: an outline follows the
  * border shape, costs no layout, and survives inside a clipping ancestor that
  * would crop a shadow. The 2px offset keeps the ring off a solid ember fill,
@@ -522,13 +530,118 @@
     background: var(--color-surface-elevated);
     padding: 0.4rem 0.7rem 0.4rem 0.7rem;
     color: var(--color-shell-ink);
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: var(--text-reading);
+    line-height: var(--leading-reading);
   }
 
   /* Assistant turns render as plain full-width text (AssistantTurn) — the
      marked user block carries the visual distinction, so agent output needs
      no callout of its own. */
+
+  /* ── The transcript's bottom edge ───────────────────────────────────
+     There is NO rule between the transcript and the composer. A border
+     there draws a box around the composer and cuts the conversation off
+     at a hard line; the reference surfaces (Cursor) draw none.
+
+     What replaces it is a fade, and it is INFORMATION rather than
+     decoration: it appears only while content continues below the fold,
+     so a soft bottom edge means "there is more down there" and a crisp
+     one means "you are at the end". Scrolling back to the bottom removes
+     it. `mask-image` rather than an overlaid gradient because the
+     composer sits on the same canvas — a painted gradient would need to
+     know the canvas colour, and it would be wrong in one of the themes.
+
+     The `-webkit-` half is not redundant: Safari still ships the masked
+     property unprefixed-but-unaliased for `mask-image` on scrollers. */
+  .transcript-fade {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 3rem), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 3rem), transparent);
+  }
+
+  /* ── Native selects ─────────────────────────────────────────────────
+     A `<select>` with `appearance: auto` is drawn by the PLATFORM, not by
+     this stylesheet. Chromium on Linux honours the computed background in
+     the cascade and then paints its own widget over it — measured at
+     rgb(20,19,24) computed, rendered near-white — so the settings dialog
+     showed light OS dropdowns on a near-black panel, and nothing in the
+     token system could reach them.
+
+     `appearance: none` takes the drawing back. The caret is then ours to
+     supply, and it is the same 5px mitred mark `ui/Caret.tsx` draws on a
+     chip trigger, so every disclosure in the app is one shape. It rides as
+     a background image because a `<select>` cannot carry a pseudo-element;
+     that means the stroke colour is baked per theme rather than read from
+     a token, which is the one place this file repeats a value on purpose.
+
+     The OPTION LIST is still the platform's popup and cannot be styled.
+     `color-scheme` (set on :root) is what makes that popup dark, and it is
+     the only lever there is. */
+  .cru-select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 1.6rem;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none'><path d='M2.5 4 5 6.5 7.5 4' stroke='%238d8990' stroke-width='1.1' stroke-linecap='square'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.45rem center;
+    background-size: 10px 10px;
+  }
+  :root[data-theme='light'] .cru-select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none'><path d='M2.5 4 5 6.5 7.5 4' stroke='%2366656e' stroke-width='1.1' stroke-linecap='square'/></svg>");
+  }
+
+  /* ── A tab title under its trailing control ─────────────────────────
+     The close button overlays the tab's trailing edge rather than taking
+     a column of its own. A truncated title would run straight into the
+     glyph, so the title's last few pixels fade instead — the same idiom
+     `.fade-scroll` uses on an overflowing row, and the reason neither
+     needs an ellipsis fighting an icon for the same space. */
+  .tab-title-fade {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
+  }
+
+  /* ── The composer surface ───────────────────────────────────────────
+     One quiet field that firms up as you approach it: hairline at rest,
+     hairline-strong under the pointer, ember once the caret is in it.
+     Three steps on ONE property, so the control never changes size or
+     position as its state changes.
+
+     No shadow. It sits flush at the bottom of a panel with nothing
+     behind it to float above, and index.css's own elevation note says
+     the border does the separating. */
+  /* ── The composer's ends ────────────────────────────────────────────
+     A single-line prompt is a PILL — both ends are true semicircles, so
+     the field reads as one continuous control rather than as a box with
+     things parked in it. `9999px` and not a measured value: the radius
+     has to stay exactly half the height as the field's padding or the
+     reading size changes, and a hardcoded 22px stops being a semicircle
+     the moment either moves.
+
+     Past one line a pill is wrong — the arcs grow with the height and
+     start eating the first and last characters of the middle rows — so
+     the ends square off to the shell's own corner radius. The transition
+     is on `border-radius` alone, so the morph costs no layout and the
+     text never moves.
+
+     `data-multiline` rather than a class, because the state is a fact
+     about the field that the DOM should be able to state plainly. */
+  .composer-surface {
+    border-radius: 9999px;
+    border: 1px solid var(--color-hairline);
+    background: var(--color-surface-base);
+    transition:
+      border-color 140ms ease,
+      border-radius 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .composer-surface[data-multiline='true'] {
+    border-radius: var(--radius-2xl);
+  }
+  .composer-surface:hover {
+    border-color: var(--color-hairline-strong);
+  }
+  .composer-surface:focus-within {
+    border-color: var(--color-primary);
+  }
 }
 
 /* ── Motion primitives ──────────────────────────────────────────────
@@ -556,6 +669,51 @@
 .cru-anim-pop { animation: cru-pop-in 150ms ease-out; }
 .cru-anim-rise { animation: cru-rise-in 150ms ease-out; }
 .cru-anim-fade { animation: cru-fade-in 200ms ease-out; }
+
+/* ── The wait ───────────────────────────────────────────────────────
+ * The ONE authored moment in the chat surface. Everything else here
+ * enters and stops; this is the only thing that runs, and it runs only
+ * while the agent owes you an answer.
+ *
+ * It is one system, not two effects. The dots and the caret share a
+ * cadence family and a single easing, so a turn in flight reads as one
+ * machine working rather than as three unrelated blinkers.
+ *
+ * What it replaces: `animate-pulse` on both. Tailwind's pulse is a 2s
+ * symmetric opacity ramp, and the dots staggered it by 75ms and 150ms —
+ * under 8% of the cycle, which is far below the threshold at which an eye
+ * reads a wave. Three dots "staggered" that way blink in unison. The caret
+ * was worse: a 2s ease-in-out fade, where a real caret is a ~1s hard
+ * switch, so it read as a glowing block rather than as a cursor.
+ *
+ * `scale` and not `transform: scale()`, for the reason the mount keyframes
+ * above give: it composes with Tailwind's transform utilities instead of
+ * overwriting them.
+ *
+ * `prefers-reduced-motion` zeroes both, app-wide, at the end of this file.
+ * The dots stay visible at their resting opacity, so the indicator still
+ * says "working" without moving. */
+@keyframes cru-think {
+  0%, 68%, 100% { opacity: 0.28; scale: 0.78; }
+  34% { opacity: 1; scale: 1; }
+}
+
+/* `steps(1, end)`: a caret is on or off. An interpolated caret is a glow. */
+@keyframes cru-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* The long tail of the ease is what makes the wave read as a travelling
+ * pulse rather than as three independent blinks: each dot is still coming
+ * down as the next one goes up. */
+.cru-think-dot {
+  animation: cru-think 1400ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.cru-caret {
+  animation: cru-caret 1060ms steps(1, end) infinite;
+}
 
 /* Rendered [[wikilinks]] (chat + previews). Mirrors the editor's .cm-wikilink
    ember pill so a knowledge link reads as one identity across every surface. */

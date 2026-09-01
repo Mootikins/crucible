@@ -95,20 +95,20 @@ export const MicButton: Component<MicButtonProps> = (props) => {
     setState('idle');
   };
 
-   const stateStyles = () => {
-     switch (state()) {
-       case 'recording':
-         return 'bg-shell-ink'; // Inverted: ink bg, black icon
-       case 'processing':
-         return 'bg-primary-hover';
-       case 'error':
-         return 'bg-error-dark';
-       default:
-         return whisperStatus() === 'loading'
-           ? 'bg-primary'
-           : 'bg-transparent hover:bg-hover-wash';
-     }
-   };
+  const stateStyles = () => {
+    switch (state()) {
+      case 'recording':
+        return 'bg-shell-ink'; // Inverted: ink bg, black icon
+      case 'processing':
+        return 'bg-primary-hover';
+      case 'error':
+        return 'bg-error-dark';
+      default:
+        return whisperStatus() === 'loading'
+          ? 'bg-primary'
+          : 'bg-transparent hover:bg-hover-wash';
+    }
+  };
 
   const iconColor = () => {
     if (state() === 'recording') return 'text-shell-bg';
@@ -144,7 +144,11 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       onTouchStart={handleMouseDown}
       onTouchEnd={handleMouseUp}
       disabled={props.disabled || whisperStatus() === 'loading'}
-      class={`relative px-2.5 py-1.5 flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${stateStyles()}`}
+      // Its own shape now. It used to inherit one from a `rounded-full
+      // overflow-hidden` pill it shared with the send button, which welded an
+      // input method to a commit action and left send as a 28px sliver of a
+      // capsule. The two are separate controls and they look it.
+      class={`focus-ring relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${stateStyles()}`}
       data-testid="mic-button"
       data-state={state()}
       title={getTitle()}
@@ -155,7 +159,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
           fill="currentColor"
-          class={`w-5 h-5 ${iconColor()}`}
+          class={`w-4 h-4 ${iconColor()}`}
         >
           <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
         </svg>
@@ -166,7 +170,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
           fill="none"
-          class={`w-5 h-5 ${iconColor()} animate-spin`}
+          class={`w-4 h-4 ${iconColor()} animate-spin`}
         >
           <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-opacity="0.25" />
           <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />

@@ -181,16 +181,44 @@ describe('ChatInput', () => {
     expect(chatModeControl).toBeInTheDocument();
   });
 
-  it('has correct form structure with border and padding', () => {
+  // These two replace a pair of assertions that named the exact class list
+  // the markup happened to carry ('border-t border-hairline p-3'). That kind
+  // of gate re-states the implementation instead of constraining it: it fails
+  // on any restyle, passes on any restyle that keeps the string, and tells a
+  // reader nothing about what must stay true. Both now name a DECISION.
+
+  it('draws no rule between the transcript and the composer', () => {
     render(() => <ChatInput />);
     const form = screen.getByTestId('chat-input-form');
-    expect(form).toHaveClass('border-t', 'border-hairline', 'p-3');
+    // The transcript fades into this strip (`.transcript-fade`); a border
+    // here would box the composer in and re-draw the hard edge that fade
+    // exists to remove.
+    for (const cls of Array.from(form.classList)) {
+      expect(cls.startsWith('border-t')).toBe(false);
+    }
   });
 
-  it('renders textarea with correct classes', () => {
+  it('holds the composer to the same measure as the transcript', () => {
+    render(() => <ChatInput />);
+    const form = screen.getByTestId('chat-input-form');
+    // The form is full-bleed; an inner wrapper centres on --chat-measure, the
+    // SAME token MessageList uses. If the two ever stop agreeing, the
+    // composer's edges stop lining up under the transcript's.
+    const measured = form.querySelector('.max-w-\\[var\\(--chat-measure\\)\\]');
+    expect(measured).not.toBeNull();
+    expect(measured!.classList).toContain('mx-auto');
+  });
+
+  it('gives the prompt no surface of its own', () => {
     render(() => <ChatInput />);
     const textarea = screen.getByTestId('chat-input');
-    expect(textarea).toHaveClass('w-full', 'bg-transparent', 'text-shell-ink');
+    // The card is the field; the textarea is a hole in it. A background or a
+    // border here would draw a second box inside the first.
+    expect(textarea.classList).toContain('bg-transparent');
+    // And it must NOT draw its own focus ring — the card does, and two ember
+    // treatments 2px apart is the defect index.css's focus note records.
+    expect(textarea.classList).not.toContain('focus-ring');
+    expect(textarea.classList).toContain('outline-none');
   });
 });
 
