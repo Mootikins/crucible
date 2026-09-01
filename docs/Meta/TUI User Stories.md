@@ -162,6 +162,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** `auto` (default) anchors inline popups at the trigger column with labels aligned to the completed word; `panel` forces the strip everywhere; `minimal` forces anchored boxes everywhere; minimal popups float on the themed `popup_bg`/`popup_selected_bg` surface, panel popups share the prompt's mode bg.
 **Tests:** T1 knob classification in `commands/set.rs`; T1 anchored rendering in `tests/popup_tests.rs` (`popup_anchored_renders_content_width_at_anchor_column`); T2 composited-frame behavior in `tests/popup_tests.rs::completion_style_behavior` (default minimal + panel override).
 
+### US-505: The completion popup never moves the prompt
+**As a user**, a completion popup draws over the rows above the prompt — the transcript, or blank space — and the prompt stays exactly where it was, whether the popup is open, closed, or taller than the conversation so far.
+**Acceptance:** the frame reserves the tallest popup plus the prompt region every frame, so opening a popup changes no row position and closing one gives the covered transcript rows back; the reserve is measured against the popup that actually renders (`popup_max_visible` + `popup_offset_from_bottom`), never a constant; a reserve larger than the screen is clamped to it.
+**Tests:** T1 reserve/pad/clamp in `crucible-oil/src/output.rs` (`a_frame_shorter_than_the_reserve_is_padded_up_to_it`, `an_overlay_taller_than_the_content_does_not_grow_a_reserved_frame`, `the_reserve_never_exceeds_the_screen`); T2 frame behaviour in `user_story_tests/completion_frame_tests.rs` — RED-verify by passing `0` to `set_min_viewport_rows`, which is the shape the bug had.
+
 ### US-502: Command palette
 **As a user**, F1 opens a palette of commands; typing filters; Enter executes the selection.
 **Acceptance:** F1 again / Esc closes; selecting a `/` or `:` entry executes it. **GAP:** the palette's entry list is a hardcoded 4-item stub (`semantic_search`, `create_note`, `/mode`, `/help`), not the full slash + REPL registry; selecting a tool entry only sets status text, it does not run the tool. (`:pick commands` lists the real registry.)

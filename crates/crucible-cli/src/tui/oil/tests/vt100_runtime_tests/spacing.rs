@@ -72,17 +72,7 @@ fn vt100_multi_frame_graduation_spacing() {
     let screen = vt.screen_contents();
 
     // Verify no triple-blank lines (which would indicate phantom spacing)
-    let lines: Vec<&str> = screen.lines().collect();
-    for (i, window) in lines.windows(3).enumerate() {
-        let all_blank = window.iter().all(|l| l.trim().is_empty());
-        assert!(
-            !all_blank,
-            "Triple blank at lines {}-{} in vt100 screen.\nScreen:\n{}",
-            i,
-            i + 2,
-            screen
-        );
-    }
+    assert_no_triple_blanks(&screen, "vt100 screen");
 }
 
 /// Cleanup moves cursor below viewport so post-exit prints don't overlap.

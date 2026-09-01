@@ -39,18 +39,7 @@ fn check_no_duplicate_thought_lines(screen: &str, context: &str) {
 
 /// Check that there are no triple-blank-line sequences (always a spacing bug).
 fn check_no_triple_blanks(screen: &str, context: &str) {
-    let lines: Vec<&str> = screen.lines().collect();
-    for (i, window) in lines.windows(3).enumerate() {
-        if window.iter().all(|l| l.trim().is_empty()) {
-            panic!(
-                "{}: triple blank at lines {}-{}.\nScreen:\n{}",
-                context,
-                i,
-                i + 2,
-                screen
-            );
-        }
-    }
+    super::helpers::assert_no_triple_blanks(screen, context);
 }
 
 /// Check that between consecutive content sections (user msg, tool, text),

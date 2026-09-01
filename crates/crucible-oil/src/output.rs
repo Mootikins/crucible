@@ -45,6 +45,14 @@ pub struct OutputBuffer<W: Write = Stdout> {
     /// window, and reprinting more rows than the terminal retains is wasted
     /// work. Values follow the documented scrollback depth of each terminal.
     max_transcript_rows: usize,
+    /// Rows the frame occupies even when its content is shorter.
+    ///
+    /// A bottom-anchored overlay draws over the rows above the prompt. If the
+    /// frame is shorter than the overlay, compositing has to grow it, and the
+    /// prompt jumps down the screen each time the overlay opens. The caller
+    /// reserves the tallest overlay here, so the frame keeps one height and
+    /// the overlay draws over rows that are already there.
+    min_frame_rows: usize,
 }
 
 impl Default for OutputBuffer<Stdout> {
@@ -71,12 +79,18 @@ impl<W: Write> OutputBuffer<W> {
             terminal_height: height,
             force_next_redraw: false,
             max_transcript_rows: detect_max_transcript_rows(),
+            min_frame_rows: 0,
         }
     }
 
     /// Override the reprint cap. Tests use this to reach the bound cheaply.
     pub fn set_max_transcript_rows(&mut self, rows: usize) {
         self.max_transcript_rows = rows;
+    }
+
+    /// Reserve `rows` for the frame. See [`Self::min_frame_rows`].
+    pub fn set_min_frame_rows(&mut self, rows: usize) {
+        self.min_frame_rows = rows;
     }
 
     /// Get a mutable reference to the underlying writer.
@@ -102,6 +116,9 @@ impl<W: Write> OutputBuffer<W> {
         overlays: &[RenderedOverlay],
     ) -> io::Result<bool> {
         let mut all_lines: Vec<String> = collapse_blank_lines(content);
+        // The reserve goes on before the overlays, so an overlay finds the
+        // rows it needs and composites over them instead of growing the frame.
+        self.pad_to_min_frame_rows(&mut all_lines);
         // Overlays anchor to the screen, not to the transcript, so composite
         // them onto the tail the terminal actually shows.
         self.composite_visible_overlays(&mut all_lines, overlays);
@@ -230,6 +247,24 @@ impl<W: Write> OutputBuffer<W> {
             }
         }
         0
+    }
+
+    /// Prepend blank rows until the frame reaches [`Self::min_frame_rows`].
+    ///
+    /// The reserve never exceeds the screen: rows beyond it would scroll the
+    /// transcript away to hold space the overlay cannot use.
+    fn pad_to_min_frame_rows(&self, lines: &mut Vec<String>) {
+        let min = self.min_frame_rows.min(self.terminal_height);
+        let rows: usize = lines
+            .iter()
+            .map(|line| visual_rows(line, self.terminal_width))
+            .sum();
+        if rows >= min {
+            return;
+        }
+        let mut padded = vec![String::new(); min - rows];
+        padded.append(lines);
+        *lines = padded;
     }
 
     /// Composite overlays onto the tail the terminal shows, so scrolled rows
@@ -442,6 +477,85 @@ mod tests {
             retained.total_visual_rows >= 24,
             "kept {} rows, screen holds 24",
             retained.total_visual_rows
+        );
+    }
+
+    #[test]
+    fn a_frame_shorter_than_the_reserve_is_padded_up_to_it() {
+        let mut buffer = OutputBuffer::with_writer(Vec::new(), 80, 24);
+        buffer.set_min_frame_rows(10);
+
+        buffer.render_with_overlays("a\nb\nc", &[]).unwrap();
+
+        let frame = buffer.previous.as_ref().expect("a frame was recorded");
+        assert_eq!(frame.total_visual_rows, 10, "the reserve was not filled");
+        assert_eq!(
+            frame
+                .lines
+                .iter()
+                .rev()
+                .take(3)
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec!["a", "b", "c"],
+            "the content must stay at the bottom of the reserve"
+        );
+        assert!(
+            frame.lines[..7].iter().all(|line| line.trim().is_empty()),
+            "the reserve is blank rows: {:?}",
+            frame.lines
+        );
+    }
+
+    /// The reason the reserve exists: a bottom-anchored overlay draws over the
+    /// rows above the prompt instead of pushing the prompt down the screen.
+    #[test]
+    fn an_overlay_taller_than_the_content_does_not_grow_a_reserved_frame() {
+        let overlay = [RenderedOverlay {
+            lines: (0..6).map(|i| format!("item{i}")).collect(),
+            anchor: crate::overlay::OverlayAnchor::FromBottom(2),
+        }];
+
+        let mut bare = OutputBuffer::with_writer(Vec::new(), 80, 24);
+        bare.render_with_overlays("a\nb\nc", &overlay).unwrap();
+        let grown = bare.previous.as_ref().expect("a frame").total_visual_rows;
+
+        let mut reserved = OutputBuffer::with_writer(Vec::new(), 80, 24);
+        reserved.set_min_frame_rows(10);
+        reserved.render_with_overlays("a\nb\nc", &[]).unwrap();
+        let closed = reserved
+            .previous
+            .as_ref()
+            .expect("a frame")
+            .total_visual_rows;
+        reserved.render_with_overlays("a\nb\nc", &overlay).unwrap();
+        let open = reserved.previous.as_ref().expect("a frame");
+
+        assert!(grown > 3, "without a reserve the overlay grows the frame");
+        assert_eq!(
+            open.total_visual_rows, closed,
+            "the frame must keep one height whether the overlay is open or not"
+        );
+        assert!(
+            open.lines.iter().any(|line| line.contains("item5")),
+            "the overlay must still draw: {:?}",
+            open.lines
+        );
+    }
+
+    #[test]
+    fn the_reserve_never_exceeds_the_screen() {
+        let mut buffer = OutputBuffer::with_writer(Vec::new(), 80, 6);
+        buffer.set_min_frame_rows(40);
+
+        buffer.render_with_overlays("a", &[]).unwrap();
+
+        let frame = buffer.previous.as_ref().expect("a frame was recorded");
+        assert_eq!(
+            frame.total_visual_rows, 6,
+            "reserving more rows than the screen holds would scroll the \
+             transcript away for space the overlay cannot use"
         );
     }
 

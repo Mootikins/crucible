@@ -28,6 +28,11 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
     let terminal_size = renderer.size();
     let ctx = ViewContext::with_terminal_size(focus, theme::active(), terminal_size);
 
+    // Reserve the popup's rows before the frame is measured. The popup draws
+    // over the rows above the prompt, so without the reserve a short
+    // transcript makes the frame grow the moment a completion opens.
+    renderer.set_min_viewport_rows(app.min_viewport_rows(&ctx));
+
     // A tool that has outrun the split threshold leaves the transcript before
     // the frame is built, so no node in the tree can still mutate.
     app.split_slow_tools();

@@ -116,3 +116,27 @@ pub fn vt_render_sized(app: &mut OilChatApp, width: u16, height: u16) -> String 
     vt.render_frame(app);
     strip_ansi(&vt.screen_contents())
 }
+
+/// Assert no triple-blank-line run *between content* (always a spacing bug).
+///
+/// The leading run is skipped: the frame reserves the tallest completion
+/// popup, and those rows are blank until something draws over them (US-505).
+/// A guard that counted them would report the reserve as a spacing bug on
+/// every short transcript.
+pub fn assert_no_triple_blanks(screen: &str, context: &str) {
+    let lines: Vec<&str> = screen.lines().collect();
+    let first_content = lines
+        .iter()
+        .position(|line| !line.trim().is_empty())
+        .unwrap_or(lines.len());
+    for (i, window) in lines[first_content..].windows(3).enumerate() {
+        assert!(
+            !window.iter().all(|line| line.trim().is_empty()),
+            "{}: triple blank at lines {}-{}.\nScreen:\n{}",
+            context,
+            first_content + i,
+            first_content + i + 2,
+            screen
+        );
+    }
+}

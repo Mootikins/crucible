@@ -172,6 +172,27 @@ impl StoryRuntime {
         vt.screen_contents()
     }
 
+    /// The last frame's bottom-anchored overlay, as (rows, offset from the
+    /// bottom). Read from the rendered frame, so an assertion about the space
+    /// the popup needs comes from the popup that actually drew.
+    pub(crate) fn overlay_extent(&self) -> Option<(usize, usize)> {
+        let snapshot = self.vt.inner().last_snapshot()?;
+        let overlay = snapshot.plan.overlays.first()?;
+        let crucible_oil::OverlayAnchor::FromBottom(offset) = overlay.anchor;
+        Some((overlay.lines.len(), offset))
+    }
+
+    /// The rows the app asks the frame to reserve at this terminal size.
+    pub(crate) fn min_viewport_rows(&self) -> u16 {
+        let focus = crucible_oil::focus::FocusContext::new();
+        let ctx = crate::tui::oil::app::ViewContext::with_terminal_size(
+            &focus,
+            crate::tui::oil::theme::active(),
+            (self.width, self.height),
+        );
+        self.app.min_viewport_rows(&ctx)
+    }
+
     /// The full captured frame sequence, joined with blank-line separators.
     pub(crate) fn sequence(&self) -> String {
         self.frames.join("\n\n")

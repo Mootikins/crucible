@@ -87,6 +87,11 @@ impl OilChatRunner {
 
         let terminal_size = self.terminal.size();
         let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
+        // Reserve the popup's rows for this frame too — `render` here does not
+        // go through `render_frame`, and a first frame at another height would
+        // move the prompt as soon as the second one lands.
+        self.terminal
+            .set_min_viewport_rows(app.min_viewport_rows(&ctx));
         let tree = app.view(&ctx);
         self.terminal.render(&tree, "")?;
 

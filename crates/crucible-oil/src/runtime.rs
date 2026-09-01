@@ -6,6 +6,13 @@ use crate::terminal::Terminal;
 /// Shared interface for rendering a frame. Implemented by Terminal<W> for all
 /// writers, giving tests the exact same render path as the real TUI.
 pub trait FrameRenderer {
+    /// Reserve `rows` for every frame from now on.
+    ///
+    /// A bottom-anchored overlay draws over the rows above the prompt. Without
+    /// a reserve, a frame shorter than the overlay grows when the overlay
+    /// opens and the prompt jumps. The caller reserves the tallest overlay.
+    fn set_min_viewport_rows(&mut self, rows: u16);
+
     /// Render a Node tree to the viewport, writing any graduated content first.
     fn render_frame(&mut self, tree: &Node, graduation: Option<&Graduation>);
 
@@ -100,6 +107,10 @@ impl TestRuntime {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl FrameRenderer for TestRuntime {
+    fn set_min_viewport_rows(&mut self, rows: u16) {
+        FrameRenderer::set_min_viewport_rows(&mut self.terminal, rows);
+    }
+
     fn render_frame(&mut self, tree: &Node, graduation: Option<&Graduation>) {
         self.render_with_graduation(tree, graduation);
     }

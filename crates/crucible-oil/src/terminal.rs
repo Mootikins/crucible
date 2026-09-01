@@ -185,6 +185,12 @@ impl<W: Write> Terminal<W> {
         (self.width, self.height)
     }
 
+    /// Reserve `rows` for every frame, so a bottom-anchored overlay draws
+    /// over rows that are already on screen instead of growing the frame.
+    pub fn set_min_viewport_rows(&mut self, rows: u16) {
+        self.output.set_min_frame_rows(rows as usize);
+    }
+
     pub fn render(&mut self, tree: &Node, stdout_delta: &str) -> io::Result<()> {
         // Legacy API: accepts a pre-rendered stdout string. Used by tests.
         let mut snapshot = self.planner.plan_frame(tree, None);
@@ -316,6 +322,10 @@ impl<W: Write> Terminal<W> {
 }
 
 impl<W: Write> crate::runtime::FrameRenderer for Terminal<W> {
+    fn set_min_viewport_rows(&mut self, rows: u16) {
+        Terminal::set_min_viewport_rows(self, rows);
+    }
+
     fn render_frame(&mut self, tree: &Node, graduation: Option<&crate::planning::Graduation>) {
         let snapshot = self.planner.plan_frame(tree, graduation.cloned());
         let _ = self.apply(&snapshot);

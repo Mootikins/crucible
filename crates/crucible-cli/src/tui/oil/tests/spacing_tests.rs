@@ -7,24 +7,8 @@
 //! Uses `vt_render` (real terminal path) and counts blank lines between
 //! content patterns.
 
-use super::helpers::vt_render;
+use super::helpers::{assert_no_triple_blanks, vt_render};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-
-/// Assert no triple-blank lines anywhere in the output (always a bug).
-fn assert_no_triple_blanks(screen: &str, context: &str) {
-    let lines: Vec<&str> = screen.lines().collect();
-    for (i, window) in lines.windows(3).enumerate() {
-        let all_blank = window.iter().all(|l| l.trim().is_empty());
-        assert!(
-            !all_blank,
-            "{}: triple blank at lines {}-{}.\nScreen:\n{}",
-            context,
-            i,
-            i + 2,
-            screen
-        );
-    }
-}
 
 #[test]
 fn adjacent_tools_no_gap() {

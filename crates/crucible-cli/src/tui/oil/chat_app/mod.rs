@@ -377,7 +377,7 @@ impl OilChatApp {
         let input = InputComponent::new(self.input.content(), self.input.cursor(), term_width)
             .mode(input_mode)
             .focused(is_focused)
-            .show_popup(self.popup.show);
+            .show_popup(self.panel_popup_is_open());
 
         CommandPanel {
             turn_indicator: indicator,
@@ -462,6 +462,75 @@ impl OilChatApp {
         "auto"
     }
 
+    /// Rows the completion popup shows before it scrolls.
+    ///
+    /// `cru.geometry.setup{ popup = { max_visible = N } }` overrides the
+    /// built-in. The popup renders this many rows whatever the item count, so
+    /// it is also the height the frame must reserve for it.
+    fn popup_max_visible(&self) -> usize {
+        crate::tui::oil::theme::geometry::active()
+            .popup
+            .max_visible
+            .map_or(POPUP_HEIGHT, usize::from)
+    }
+
+    /// Rows the popup must clear: the input itself, plus whatever the author
+    /// put under it, plus the bottom region.
+    ///
+    /// This used to be a hardcoded constant that happened to equal the footer
+    /// height back when the footer was always one bar. Now that a region is a
+    /// list the author controls, the only correct source is the layout.
+    fn popup_offset_from_bottom(&self, ctx: &ViewContext<'_>) -> usize {
+        use crate::tui::oil::components::InputMode as ComponentInputMode;
+
+        let layout = crate::tui::oil::theme::bars::active();
+        let input_height = InputComponent::new(
+            self.input.content(),
+            self.input.cursor(),
+            ctx.terminal_size.0 as usize,
+        )
+        .mode(ComponentInputMode::from_content(self.input.content()))
+        .height();
+        input_height + layout.rows_below_input() + layout.bottom.len()
+    }
+
+    /// Whether the popup floats (nvim-pmenu style) rather than extending the
+    /// prompt as a panel.
+    ///
+    /// Inline triggers complete a word inside the message being written;
+    /// command triggers (`:` and `/`) change the message type and complete a
+    /// whole entry line.
+    fn popup_is_minimal(&self) -> bool {
+        let inline_trigger = matches!(
+            self.popup.kind,
+            state::AutocompleteKind::File | state::AutocompleteKind::Note
+        );
+        match self.completion_style() {
+            "panel" => false,
+            "minimal" => true,
+            _ => inline_trigger,
+        }
+    }
+
+    /// Whether the panel popup is on screen right now.
+    ///
+    /// The prompt draws a solid top edge under it, so the two read as one
+    /// surface instead of a panel with a half-lit row under it.
+    pub(crate) fn panel_popup_is_open(&self) -> bool {
+        self.popup.show && !self.popup_is_minimal() && !self.get_popup_items().is_empty()
+    }
+
+    /// Rows the frame reserves so the popup never moves the prompt.
+    ///
+    /// The popup draws over the rows above the prompt. A frame shorter than
+    /// the popup would have to grow to hold it, which moves the prompt down
+    /// the moment a completion opens. Reserving the tallest popup keeps one
+    /// height whether the popup is open or not.
+    pub(crate) fn min_viewport_rows(&self, ctx: &ViewContext<'_>) -> u16 {
+        let rows = self.popup_max_visible() + self.popup_offset_from_bottom(ctx);
+        u16::try_from(rows).unwrap_or(u16::MAX)
+    }
+
     fn popup_overlay_view(&self, ctx: &ViewContext<'_>) -> Node {
         if !self.popup.show {
             return Node::Empty;
@@ -473,44 +542,12 @@ impl OilChatApp {
         }
 
         use crate::tui::oil::components::{InputMode as ComponentInputMode, PopupOverlay};
-        use state::AutocompleteKind;
 
-        // Inline triggers complete a word inside the message being written;
-        // command triggers (`:` and `/`) change the message type and complete
-        // a whole entry line.
-        let inline_trigger = matches!(
-            self.popup.kind,
-            AutocompleteKind::File | AutocompleteKind::Note
-        );
-        let minimal = match self.completion_style() {
-            "panel" => false,
-            "minimal" => true,
-            _ => inline_trigger,
-        };
+        let minimal = self.popup_is_minimal();
 
         let mode = ComponentInputMode::from_content(self.input.content());
-        // `cru.geometry.setup{ popup = { max_visible = N } }` overrides how many
-        // rows show before scrolling; unset keeps the built-in.
-        let max_visible = crate::tui::oil::theme::geometry::active()
-            .popup
-            .max_visible
-            .map_or(POPUP_HEIGHT, usize::from);
-        // Lines the popup must clear: the input itself, plus whatever the
-        // author put under it, plus the bottom region.
-        //
-        // This used to be a hardcoded constant that happened to equal the
-        // footer height back when the footer was always one bar. Now that a
-        // region is a list the author controls, the only correct source is the
-        // layout.
-        let layout = crate::tui::oil::theme::bars::active();
-        let input_height = InputComponent::new(
-            self.input.content(),
-            self.input.cursor(),
-            ctx.terminal_size.0 as usize,
-        )
-        .mode(mode)
-        .height();
-        let offset_from_bottom = input_height + layout.rows_below_input() + layout.bottom.len();
+        let max_visible = self.popup_max_visible();
+        let offset_from_bottom = self.popup_offset_from_bottom(ctx);
 
         let overlay = PopupOverlay::new(items)
             .selected(self.popup.selected)

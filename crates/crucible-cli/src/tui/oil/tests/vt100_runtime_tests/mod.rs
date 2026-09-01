@@ -22,21 +22,7 @@ fn blank_lines_between(screen: &str, before: &str, after: &str) -> Option<usize>
     Some(blanks)
 }
 
-/// Assert no triple-blank lines (always a bug).
-fn assert_no_triple_blanks(screen: &str, context: &str) {
-    let lines: Vec<&str> = screen.lines().collect();
-    for (i, window) in lines.windows(3).enumerate() {
-        let all_blank = window.iter().all(|l| l.trim().is_empty());
-        assert!(
-            !all_blank,
-            "{}: triple blank at lines {}-{}.\nScreen:\n{}",
-            context,
-            i,
-            i + 2,
-            screen
-        );
-    }
-}
+use super::helpers::assert_no_triple_blanks;
 
 fn think(app: &mut OilChatApp, content: &str) {
     app.on_message(ChatAppMsg::ThinkingDelta(content.into()));
