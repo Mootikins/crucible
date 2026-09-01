@@ -34,7 +34,7 @@ mod shell;
 pub mod state;
 
 pub use messages::ChatAppMsg;
-pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
+pub use model_state::{KilnSummary, McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
 use state::MessageQueueState;
 pub use state::{mode_label, mode_style, next_mode, DEFAULT_MODE, DEFAULT_MODES};
@@ -712,6 +712,40 @@ impl OilChatApp {
     fn submit_user_message(&mut self, content: String) {
         self.add_user_message(content);
         self.container_list.mark_turn_active();
+    }
+
+    /// Name the kilns the session draws knowledge from, in the transcript.
+    ///
+    /// The first thing on screen says what the session is attached to, so a
+    /// wrong or empty attachment is visible before the first turn.
+    pub(crate) fn announce_kilns(&mut self, kilns: &[KilnSummary]) {
+        if kilns.is_empty() {
+            self.add_system_message(
+                "No kiln is attached. Notes, search and knowledge tools have nothing to read."
+                    .to_string(),
+            );
+            return;
+        }
+
+        let width = kilns
+            .iter()
+            .map(|k| k.name.chars().count())
+            .max()
+            .unwrap_or(0);
+        let mut text = format!(
+            "{} kiln{} attached",
+            kilns.len(),
+            if kilns.len() == 1 { "" } else { "s" }
+        );
+        for kiln in kilns {
+            text.push_str(&format!(
+                "\n     {:width$}  {}",
+                kiln.name,
+                kiln.path,
+                width = width
+            ));
+        }
+        self.add_system_message(text);
     }
 
     pub(crate) fn add_system_message(&mut self, content: String) {

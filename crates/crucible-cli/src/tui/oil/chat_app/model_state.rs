@@ -15,6 +15,16 @@ pub struct McpServerDisplay {
     pub connected: bool,
 }
 
+/// One kiln the session draws knowledge from, as the startup banner shows it.
+///
+/// A session attaches a flat set of kilns, so the banner names every one of
+/// them. The daemon owns the set; this is the projection the TUI prints.
+#[derive(Debug, Clone)]
+pub struct KilnSummary {
+    pub name: String,
+    pub path: String,
+}
+
 /// The TUI renders a tool count only. The projection collapses the tool list
 /// at the boundary, so the rest of the TUI never sees the tool names. The
 /// background MCP gateway task refreshes the connected state and the count

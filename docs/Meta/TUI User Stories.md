@@ -2,7 +2,7 @@
 title: TUI User Stories
 description: Complete user stories for every implemented TUI feature, with acceptance criteria and test-tier mapping
 tags: [meta, ux, tui, user-stories, testing]
-updated: 2026-08-14
+updated: 2026-09-01
 ---
 
 # TUI User Stories
@@ -202,6 +202,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **As a user**, I review graduated history through the terminal's own scrollback, and in-app scroll regions (the shell modal) hold position while new content arrives.
 **Acceptance:** in scroll regions, manual scroll disables auto-follow and jump-to-bottom resumes following. **GAP:** the main chat viewport binds no scroll keys and captures no mouse — PageUp/PageDn and wheel scrolling there are the terminal's, not the app's; an in-app "new content" indicator does not exist.
 **Tests:** T1 scroll state via the shell modal's scroll region (auto-follow off on manual scroll, jump-to-top/bottom) in `user_story_tests/scroll_tests.rs` + `components/shell_modal.rs`. The **main chat viewport graduates to the terminal's own scrollback (no app-held scroll state)**, so its scroll/auto-follow is T4-only. T4 (real terminal scroll region).
+
+### US-803: The session opens saying what it is attached to
+**As a user**, the first thing in the transcript names the kilns this session draws knowledge from, so a wrong or empty attachment is visible before I spend a turn on it.
+**Acceptance:** the banner names every attached kiln and its path, with the names aligned; one kiln reads "1 kiln attached"; no kiln says so in as many words rather than printing an empty list; the daemon owns the set (`kiln.list`) and a listing failure drops the banner instead of failing the session; a replay gets no banner, because it attaches nothing.
+**Tests:** T1 banner text (plural, singular, empty) in `chat_app/tests.rs`; T2 the banner in a rendered frame in `user_story_tests/completion_frame_tests.rs`.
 
 ### US-802: Stable rendering across widths
 **As a user**, the TUI renders correctly at narrow (50), normal (80), and wide (120) widths without flicker or duplication.

@@ -78,6 +78,13 @@ impl OilChatRunner {
             app.set_plugin_commands(std::mem::take(&mut self.plugin_commands));
         }
 
+        // The banner goes in before the first frame, so the session opens
+        // saying what knowledge it is attached to. A replay attaches nothing
+        // and answers nothing, so it gets no banner.
+        if self.replay_path.is_none() {
+            app.announce_kilns(&std::mem::take(&mut self.connected_kilns));
+        }
+
         let terminal_size = self.terminal.size();
         let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
         let tree = app.view(&ctx);

@@ -315,3 +315,68 @@ fn an_empty_precognition_result_adds_nothing() {
     });
     assert_eq!(app.container_list().nodes().len(), before);
 }
+
+/// Render the last transcript node as plain text.
+fn last_node_text(app: &OilChatApp, width: usize) -> String {
+    let nodes = app.container_list().nodes();
+    let last = nodes.last().expect("a node was added");
+    let focus = crucible_oil::focus::FocusContext::default();
+    let ctx = crate::tui::oil::ViewContext::new(&focus);
+    crucible_oil::render::render_to_plain_text(&last.render(None, &ctx), width)
+}
+
+#[test]
+fn the_startup_banner_names_every_attached_kiln_and_its_path() {
+    let mut app = OilChatApp::default();
+    app.announce_kilns(&[
+        KilnSummary {
+            name: "crucible".into(),
+            path: "/home/u/crucible".into(),
+        },
+        KilnSummary {
+            name: "notes".into(),
+            path: "/home/u/notes".into(),
+        },
+    ]);
+
+    let rendered = last_node_text(&app, 120);
+    assert!(
+        rendered.contains("2 kilns attached"),
+        "count line missing: {rendered}"
+    );
+    assert!(
+        rendered.contains("crucible  /home/u/crucible"),
+        "first kiln missing: {rendered}"
+    );
+    assert!(
+        rendered.contains("notes     /home/u/notes"),
+        "second kiln missing, or the names are not aligned: {rendered}"
+    );
+}
+
+#[test]
+fn a_session_with_no_kiln_is_told_so() {
+    let mut app = OilChatApp::default();
+    app.announce_kilns(&[]);
+
+    let rendered = last_node_text(&app, 120);
+    assert!(
+        rendered.contains("No kiln is attached"),
+        "an empty attachment must say so: {rendered}"
+    );
+}
+
+#[test]
+fn one_kiln_reads_as_one() {
+    let mut app = OilChatApp::default();
+    app.announce_kilns(&[KilnSummary {
+        name: "crucible".into(),
+        path: "/home/u/crucible".into(),
+    }]);
+
+    let rendered = last_node_text(&app, 120);
+    assert!(
+        rendered.contains("1 kiln attached"),
+        "singular missing: {rendered}"
+    );
+}

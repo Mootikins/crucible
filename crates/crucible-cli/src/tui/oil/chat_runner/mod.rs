@@ -1,6 +1,8 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
-use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry};
+use crate::tui::oil::chat_app::{
+    ChatAppMsg, KilnSummary, McpServerDisplay, OilChatApp, PluginStatusEntry,
+};
 use crate::tui::oil::event::Event;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_oil::focus::FocusContext;
@@ -84,6 +86,7 @@ pub struct OilChatRunner {
     pub(super) resume_session_id: Option<String>,
     pub(super) resume_history: Option<Vec<serde_json::Value>>,
     pub(super) mcp_servers: Vec<McpServerDisplay>,
+    pub(super) connected_kilns: Vec<KilnSummary>,
     pub(super) plugin_status: Vec<PluginStatusEntry>,
     pub(super) show_thinking: bool,
     pub(super) show_diffs: bool,
@@ -136,6 +139,7 @@ impl OilChatRunner {
             resume_session_id: None,
             resume_history: None,
             mcp_servers: Vec::new(),
+            connected_kilns: Vec::new(),
             plugin_status: Vec::new(),
             show_thinking: false,
             show_diffs: true,
@@ -201,6 +205,12 @@ impl OilChatRunner {
     /// surfaced in slash autocomplete alongside the built-ins.
     pub fn with_plugin_commands(mut self, commands: Vec<(String, String)>) -> Self {
         self.plugin_commands = commands;
+        self
+    }
+
+    /// The kilns the startup banner names. Empty says so in as many words.
+    pub fn with_connected_kilns(mut self, kilns: Vec<KilnSummary>) -> Self {
+        self.connected_kilns = kilns;
         self
     }
 

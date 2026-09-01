@@ -355,6 +355,38 @@ fn build_initial_sets(
 /// without duplicating one of them.
 ///
 /// A directory that matches no project is the ordinary case and not an error.
+/// The kilns the daemon has open, as the startup banner names them.
+///
+/// The daemon owns the set. A listing failure is not an error here: the banner
+/// is information, and a session with no banner is better than a session that
+/// refuses to start over one.
+async fn attached_kilns(client: &DaemonClient) -> Vec<crate::tui::oil::KilnSummary> {
+    let rows = match client.kiln_list().await {
+        Ok(rows) => rows,
+        Err(e) => {
+            debug!("kiln.list failed; the startup banner is skipped: {e}");
+            return Vec::new();
+        }
+    };
+
+    rows.iter()
+        .filter_map(|row| {
+            let path = row["path"].as_str()?;
+            let name = match row["name"].as_str().unwrap_or_default() {
+                "" => std::path::Path::new(path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.to_string()),
+                name => name.to_string(),
+            };
+            Some(crate::tui::oil::KilnSummary {
+                name,
+                path: path.to_string(),
+            })
+        })
+        .collect()
+}
+
 async fn open_project_kilns_if_matched(existing_client: Option<&DaemonClient>) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
@@ -513,6 +545,11 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         if let Err(e) = open_project_kilns_if_matched(Some(client)).await {
             debug!("Project kiln auto-open skipped: {}", e);
         }
+    }
+
+    // After the project kilns open, so the banner names them too.
+    if let Some(client) = lua_client.as_ref() {
+        runner = runner.with_connected_kilns(attached_kilns(client).await);
     }
 
     // Pull the Lua-defined theme before the first frame. Strictly an upgrade:
