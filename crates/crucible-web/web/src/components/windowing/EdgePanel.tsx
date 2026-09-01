@@ -563,6 +563,19 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
   // while `translate` runs on the compositor, and under load the two
   // desync — the panel visibly tears against its own clip edge.
   const TWEEN_MS = 200;
+
+  /**
+   * Whether the viewer asked for less motion.
+   *
+   * `matchMedia` and not a CSS variable: this tween runs in JavaScript, so the
+   * media query has to be read rather than cascaded. Guarded because jsdom
+   * (and any environment without `matchMedia`) must fall through to animating
+   * rather than throw at panel construction.
+   */
+  const prefersReducedMotion = () =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const [progress, setProgress] = createSignal(isCollapsed() ? 0 : 1);
   let tweenRaf: number | undefined;
 
@@ -577,7 +590,17 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
         // A layout RESTORE snaps: it's initialization, not an interaction —
         // tweening on page load looks wrong and slides the center layout
         // under anything that just measured it (stale-coordinate drags).
-        if (isRestoringLayout()) {
+        //
+        // So does a REDUCED-MOTION preference. index.css zeroes every
+        // animation and transition under `prefers-reduced-motion`, and this is
+        // the one animation in the app deliberately moved OUT of CSS — which
+        // silently opted it out of that promise. A user who asked for no motion
+        // still got a 200ms slide across a third of the window, which is the
+        // largest moving thing the shell draws.
+        //
+        // Queried here rather than cached at module load so a preference
+        // changed mid-session takes effect on the next toggle.
+        if (isRestoringLayout() || prefersReducedMotion()) {
           setProgress(target);
           return;
         }

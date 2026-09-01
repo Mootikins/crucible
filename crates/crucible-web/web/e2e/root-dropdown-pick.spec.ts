@@ -63,9 +63,20 @@ test('picking a non-workspace project from the root dropdown browses it', async 
   await expect(page.locator('[data-testid="root-dropdown"]')).toBeVisible();
 
   // Open the Files panel's root dropdown and pick the non-workspace project.
-  // The trigger chevron animates on mount; force past the stability check —
-  // the assertion is about the pick's effect, not the click's precision.
-  await page.click('[data-testid="root-dropdown"]', { force: true });
+  //
+  // NOT `force`. The comment that used to justify it blamed the trigger's own
+  // chevron, which never animated — it computes to `animation: none`. The
+  // motion is the PANEL: the right edge opens with a 200ms rAF tween
+  // (EdgePanel.tsx) that `disableAnimations` cannot reach, because that helper
+  // only zeroes CSS durations and the tween is deliberately JS.
+  //
+  // `toBeVisible` above goes true on the tween's first frame, and for roughly
+  // seven more frames a click at the trigger's own centre lands on the centre
+  // pane instead. Playwright's stability and hit-target checks wait exactly
+  // that out — and `force` is the flag that turns both of them off. It did not
+  // force past the animation; it stepped into it, which is why this spec failed
+  // about one run in ten even at `--workers=1`.
+  await page.click('[data-testid="root-dropdown"]');
   await page.click('[role="listbox"] :text-is("other-repo")');
 
   // The tree must show the picked project's contents. Named WITHOUT the
@@ -86,7 +97,7 @@ test('picking a non-workspace project from the root dropdown browses it', async 
 
   // Reopening lists it as browse-only — this session works in a different
   // project, so browsing it never let the agent read it.
-  await page.click('[data-testid="root-dropdown"]', { force: true });
+  await page.click('[data-testid="root-dropdown"]');
   await expect(
     page.locator('[role="option"]:has-text("other-repo")'),
   ).toContainText('browse only');
