@@ -14,6 +14,7 @@ import { markLayoutRestore } from '@/lib/layout-restore';
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
   collapseEmptyNodes,
+  createInitialState,
   collectLeafGroupIds,
   expandedPanes,
   findFirstPane,
@@ -45,6 +46,8 @@ export interface LayoutActions {
   commitSplitRatio(splitId: string, ratio: number): void;
   exportLayout(): SerializedLayout;
   importLayout(json: SerializedLayout): void;
+  /** Throw the local pane layout away and start from the shipped default. */
+  resetLayoutToDefaults(): void;
 }
 
 export function createLayoutActions(context: WindowStoreContext): LayoutActions {
@@ -299,7 +302,39 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     ));
   };
 
+  /**
+   * Throw the local pane layout away and start from the shipped default.
+   *
+   * In-place rather than a page reload: a reload would also drop every open
+   * session's live SSE stream and the editor's unsaved buffers, which a
+   * request to rearrange PANES never asked for. `createInitialState` is the
+   * same function that builds the layout on a first run, so "reset" and
+   * "never opened this app before" land on exactly one shape.
+   *
+   * Deleting the SERVER's copy is the caller's job (`resetLayout()` in
+   * lib/api) — this store does not know the persistence layer exists, and the
+   * auto-save that follows this write would otherwise put the default straight
+   * back on disk under a new version anyway.
+   */
+  const resetLayoutToDefaults = () => {
+    const fresh = createInitialState();
+    markLayoutRestore(() =>
+      setStore(
+        produce((s) => {
+          s.layout = fresh.layout;
+          s.tabGroups = fresh.tabGroups;
+          s.edgePanels = fresh.edgePanels;
+          s.floatingWindows = [];
+          s.activePaneId = fresh.activePaneId;
+          s.focusedRegion = 'center';
+          s.nextZIndex = 100;
+        }),
+      ),
+    );
+  };
+
   return {
+    resetLayoutToDefaults,
     setActivePane,
     toggleEdgePanel,
     swapSidePanels,

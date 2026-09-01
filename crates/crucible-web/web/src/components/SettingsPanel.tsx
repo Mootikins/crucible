@@ -1,9 +1,10 @@
 // src/components/SettingsPanel.tsx
 import { Component, Show, For, ErrorBoundary, createSignal, onMount, onCleanup } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { AlertTriangle, Brain, Key, Link2, Mic, Package, Palette, Pencil, Terminal } from '@/lib/icons';
 
 import { createDebounce, SectionHeader, SettingRow, SettingsSectionState } from './settings/primitives';
-import { AdvancedSessionSettingsSection } from './settings/AdvancedSessionSettings';
+import { settingsSections } from './settings/sections';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
@@ -25,7 +26,7 @@ import {
   getMcpStatus,
 } from '@/lib/api';
 
-const ModelSettingsSection: Component = () => {
+export const ModelSettingsSection: Component = () => {
   const session = useSessionSafe();
 
   const [thinkingBudget, setThinkingBudget] = createSignal<number | null>(null);
@@ -250,7 +251,7 @@ const ModelSettingsSection: Component = () => {
 // Plugins Section
 // =============================================================================
 
-const PluginsSection: Component = () => {
+export const PluginsSection: Component = () => {
   const [plugins, setPlugins] = createSignal<PluginInfo[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -331,7 +332,7 @@ const PluginsSection: Component = () => {
 // MCP Status Section
 // =============================================================================
 
-const McpStatusSection: Component = () => {
+export const McpStatusSection: Component = () => {
   const [status, setStatus] = createSignal<Record<string, unknown> | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -388,7 +389,7 @@ const McpStatusSection: Component = () => {
  * `~/.config/crucible/api_key` on the machine running `cru web`.
  */
 /** Editor preferences (persisted locally, applied to open editors live). */
-const EditorSettingsSection: Component = () => {
+export const EditorSettingsSection: Component = () => {
   const { settings, updateSetting } = useSettings();
   return (
     <>
@@ -459,7 +460,7 @@ const EditorSettingsSection: Component = () => {
               e.currentTarget.value as 'reading' | 'live' | 'source',
             )
           }
-          class="rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
+          class="cru-select rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
           data-testid="settings-editor-hover-mode"
         >
           <option value="reading">Reading view</option>
@@ -508,12 +509,12 @@ const EditorSettingsSection: Component = () => {
 };
 
 const SANS_PRESETS: { label: string; value: string }[] = [
-  { label: 'IBM Plex Sans (default)', value: '' },
+  { label: 'Geist (default)', value: '' },
   { label: 'System UI', value: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
   { label: 'Serif', value: 'Georgia, Cambria, "Times New Roman", serif' },
 ];
 const MONO_PRESETS: { label: string; value: string }[] = [
-  { label: 'IBM Plex Mono (default)', value: '' },
+  { label: 'Geist Mono (default)', value: '' },
   { label: 'System Mono', value: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
 ];
 const CUSTOM_FONT = '__custom__';
@@ -545,7 +546,7 @@ const FontControl: Component<{
             updateSetting(section() as 'appearance', props.field as 'fontSans', v);
           }
         }}
-        class="rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
+        class="cru-select rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
         data-testid={props.testid}
       >
         <For each={props.presets}>{(p) => <option value={p.value}>{p.label}</option>}</For>
@@ -568,7 +569,7 @@ const FontControl: Component<{
 };
 
 /** Typography: choose the UI + code fonts (applied live via CSS vars). */
-const AppearanceSettingsSection: Component = () => (
+export const AppearanceSettingsSection: Component = () => (
   <>
     <SectionHeader title="Appearance" icon={Palette} />
     <SettingRow label="UI font" description="Font for the interface and prose. Applies instantly.">
@@ -586,7 +587,7 @@ const TERMINAL_FONT_PRESETS: { label: string; value: string }[] = [
 ];
 
 /** Terminal panel typography (applies live to a running terminal). */
-const TerminalSettingsSection: Component = () => {
+export const TerminalSettingsSection: Component = () => {
   const { settings, updateSetting } = useSettings();
   return (
     <>
@@ -623,7 +624,7 @@ const TerminalSettingsSection: Component = () => {
   );
 };
 
-const ApiAccessSection: Component = () => {
+export const ApiAccessSection: Component = () => {
   const [draft, setDraft] = createSignal('');
   const [rejected, setRejected] = createSignal(false);
 
@@ -676,7 +677,15 @@ const ApiAccessSection: Component = () => {
   );
 };
 
-const SettingsPanelContent: Component = () => {
+/**
+ * Voice input, as a section like every other.
+ *
+ * These rows used to live loose in the panel's own body, which meant the
+ * settings surface had eight addressable sections and one that existed only as
+ * markup inside the container. A left-hand section list cannot name that one,
+ * so it became a component like the rest.
+ */
+export const TranscriptionSettingsSection: Component = () => {
   const { settings, updateSetting } = useSettings();
 
   const handleProviderChange = (e: Event) => {
@@ -699,104 +708,99 @@ const SettingsPanelContent: Component = () => {
     updateSetting('transcription', 'language', value);
   };
 
-  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
-  const selectClass = `${inputClass} cursor-pointer`;
+  const inputClass =
+    'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
+  const selectClass = `cru-select ${inputClass} cursor-pointer`;
   const labelClass = 'text-shell-body text-sm';
 
   return (
-    <div class="h-full bg-shell-bg p-4 overflow-auto">
-      <table class="w-full">
-        <tbody>
-          {/* Transcription Settings */}
-          <SectionHeader title="Transcription" icon={Mic} />
+    <>
+      <SectionHeader title="Transcription" icon={Mic} />
 
-          <tr class="border-b border-hairline">
-            <td class={`py-3 ${labelClass}`}>Provider</td>
-            <td class="py-3 text-right">
-              <select
-                value={settings.transcription.provider}
-                onChange={handleProviderChange}
-                class={selectClass}
-              >
-                <option value="local">Local (WebGPU)</option>
-                <option value="server">Server</option>
-              </select>
-            </td>
-          </tr>
+      <tr class="border-b border-hairline">
+        <td class={`py-3 ${labelClass}`}>Provider</td>
+        <td class="py-3 text-right">
+          <select
+            value={settings.transcription.provider}
+            onChange={handleProviderChange}
+            class={selectClass}
+          >
+            <option value="local">Local (WebGPU)</option>
+            <option value="server">Server</option>
+          </select>
+        </td>
+      </tr>
 
-          <Show when={settings.transcription.provider === 'server'}>
-            <tr class="border-b border-hairline">
-              <td class={`py-3 ${labelClass}`}>Whisper URL</td>
-              <td class="py-3 text-right">
-                <input
-                  type="text"
-                  value={settings.transcription.serverUrl}
-                  onInput={handleUrlChange}
-                  class={`${inputClass} w-64`}
-                  placeholder="https://whisper.example.com"
-                />
-              </td>
-            </tr>
+      <Show when={settings.transcription.provider === 'server'}>
+        <tr class="border-b border-hairline">
+          <td class={`py-3 ${labelClass}`}>Whisper URL</td>
+          <td class="py-3 text-right">
+            <input
+              type="text"
+              value={settings.transcription.serverUrl}
+              onInput={handleUrlChange}
+              class={`${inputClass} w-64`}
+              placeholder="https://whisper.example.com"
+            />
+          </td>
+        </tr>
 
-            <tr class="border-b border-hairline">
-              <td class={`py-3 ${labelClass}`}>Whisper Model</td>
-              <td class="py-3 text-right">
-                <input
-                  type="text"
-                  value={settings.transcription.model}
-                  onInput={handleModelChange}
-                  class={`${inputClass} w-48`}
-                  placeholder="whisper-large-v3-turbo"
-                />
-              </td>
-            </tr>
+        <tr class="border-b border-hairline">
+          <td class={`py-3 ${labelClass}`}>Whisper Model</td>
+          <td class="py-3 text-right">
+            <input
+              type="text"
+              value={settings.transcription.model}
+              onInput={handleModelChange}
+              class={`${inputClass} w-48`}
+              placeholder="whisper-large-v3-turbo"
+            />
+          </td>
+        </tr>
 
-            <tr class="border-b border-hairline">
-              <td class={`py-3 ${labelClass}`}>Language</td>
-              <td class="py-3 text-right">
-                <select
-                  value={settings.transcription.language}
-                  onChange={handleLanguageChange}
-                  class={selectClass}
-                >
-                  <option value="auto">Auto-detect</option>
-                  <option value="en">English</option>
-                  <option value="es">Spanish</option>
-                  <option value="fr">French</option>
-                  <option value="de">German</option>
-                  <option value="zh">Chinese</option>
-                  <option value="ja">Japanese</option>
-                </select>
-              </td>
-            </tr>
-          </Show>
-
-          {/* Editor Section */}
-          <EditorSettingsSection />
-
-          {/* Appearance Section */}
-          <AppearanceSettingsSection />
-
-          {/* Terminal Section */}
-          <TerminalSettingsSection />
-
-          {/* API Access Section */}
-          <ApiAccessSection />
-
-          {/* Model Settings Section */}
-          <ModelSettingsSection />
-          <AdvancedSessionSettingsSection />
-
-          {/* Plugins Section */}
-          <PluginsSection />
-
-          {/* MCP Status Section */}
-          <McpStatusSection />
-        </tbody>
-      </table>
-    </div>
+        <tr class="border-b border-hairline">
+          <td class={`py-3 ${labelClass}`}>Language</td>
+          <td class="py-3 text-right">
+            <select
+              value={settings.transcription.language}
+              onChange={handleLanguageChange}
+              class={selectClass}
+            >
+              <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+            </select>
+          </td>
+        </tr>
+      </Show>
+    </>
   );
 };
+
+/**
+ * Every section, stacked — the settings TAB's body.
+ *
+ * It reads `SETTINGS_SECTIONS`, the same table the modal renders one entry of
+ * at a time. The tab used to hand-list its nine sections in JSX, so adding one
+ * meant editing two files and the two surfaces could silently disagree about
+ * which settings exist. Now a section is declared once.
+ *
+ * The tab survives because a saved layout may already hold one, and a
+ * `contentType` the registry cannot resolve is worse than a scroll.
+ */
+const SettingsPanelStack: Component = () => (
+  <div class="h-full overflow-auto bg-shell-bg p-4">
+    <table class="w-full">
+      <tbody>
+        <For each={settingsSections()}>{(section) => <Dynamic component={section.render} />}</For>
+      </tbody>
+    </table>
+  </div>
+);
 
 /**
  * Wrapper component that safely renders SettingsPanel with error handling.
@@ -814,7 +818,7 @@ export const SettingsPanel: Component = () => {
         </div>
       </div>
     )}>
-      <SettingsPanelContent />
+      <SettingsPanelStack />
     </ErrorBoundary>
   );
 };

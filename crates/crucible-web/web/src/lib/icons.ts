@@ -37,6 +37,8 @@ export {
   RefreshCw,
   Plus,
   Package,
+  Cpu,
+  Plug,
   Target,
   FileText,
   FileCode,

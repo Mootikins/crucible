@@ -8,7 +8,7 @@
 // made that a module cycle. Solid components are plain functions, so the cycle
 // would probably have resolved at render time; "probably" is not a reason to
 // keep one.
-import { Component, Show, type JSX } from 'solid-js';
+import { Component, Show, createContext, useContext, type JSX } from 'solid-js';
 
 export type IconComponent = Component<{ class?: string }>;
 
@@ -16,7 +16,28 @@ export type IconComponent = Component<{ class?: string }>;
 // Section Header
 // =============================================================================
 
-export const SectionHeader: Component<{ title: string; icon: IconComponent }> = (props) => (
+/**
+ * Whether a section should draw its own heading.
+ *
+ * The stacked TAB needs one per section — it is the only thing separating nine
+ * sections in one scroll. The MODAL does not: its own header already names the
+ * section the left list has selected, and drawing it twice put "Appearance"
+ * directly above "APPEARANCE".
+ *
+ * A context rather than a prop, because the sections are rendered from a
+ * registry through `<Dynamic>` — threading a prop would mean every section
+ * component growing one it does not otherwise use.
+ */
+const SectionChrome = createContext(true);
+
+/** Suppress section headings for everything rendered inside. */
+export const WithoutSectionHeaders: Component<{ children: JSX.Element }> = (props) => (
+  <SectionChrome.Provider value={false}>{props.children}</SectionChrome.Provider>
+);
+
+export const SectionHeader: Component<{ title: string; icon: IconComponent }> = (props) => {
+  if (!useContext(SectionChrome)) return null;
+  return (
   <tr>
     <td
       colSpan={2}
@@ -28,7 +49,8 @@ export const SectionHeader: Component<{ title: string; icon: IconComponent }> = 
       </span>
     </td>
   </tr>
-);
+  );
+};
 
 // =============================================================================
 // Reusable Setting Row Primitives

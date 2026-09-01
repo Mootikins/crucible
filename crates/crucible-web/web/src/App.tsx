@@ -22,6 +22,7 @@ import { attentionActions } from '@/stores/attentionStore';
 import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
+import { SettingsModal } from '@/components/settings/SettingsModal';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
 
 function focusChatInput(): void {
@@ -34,11 +35,13 @@ function focusChatInput(): void {
 
 /** Content types that only make sense with a target (a specific file or
  * session) — they get no generic "Open …" palette command. */
-const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft']);
+// 'settings' joins them: it is a DIALOG now, not a pane, so a generic
+// "Open the settings tab" row would open a second, stacked settings UI beside
+// the one the gear opens. It gets an explicit command below instead.
+const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft', 'settings']);
 
 /** Panel-specific palette descriptions; anything unlisted gets a generic one. */
 const PANEL_COMMAND_DESCRIPTIONS: Record<string, string> = {
-  settings: 'Open the settings tab.',
   files: 'Browse workspace files and kiln notes.',
   plugins: 'Manage installed plugins.',
   skills: 'Browse and search agent skills.',
@@ -79,6 +82,7 @@ const App: Component = () => {
     setIsCommandPaletteOpen(true);
   };
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
+  const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
   const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
 
   const paletteCommands: PaletteCommand[] = [
@@ -126,7 +130,15 @@ const App: Component = () => {
       keywords: ['export', 'session', 'markdown'],
       action: () => setIsExportDialogOpen(true),
     },
+
     {
+      id: 'open-settings',
+      label: 'Settings',
+      description: 'Appearance, editor, model, plugins and workspace.',
+      category: 'Settings',
+      keywords: ['settings', 'preferences', 'options', 'config', 'theme', 'font'],
+      action: () => setIsSettingsOpen(true),
+    },    {
       id: 'files-toggle-hidden',
       label: 'Toggle Hidden Files',
       description: 'Show or hide dotfiles in the file tree.',
@@ -266,6 +278,9 @@ const App: Component = () => {
 
     // Listen for export-session custom event (dispatched from command palette or other sources)
     const onExportSession = () => setIsExportDialogOpen(true);
+    const onOpenSettings = () => setIsSettingsOpen(true);
+    window.addEventListener('crucible:open-settings', onOpenSettings);
+    onCleanup(() => window.removeEventListener('crucible:open-settings', onOpenSettings));
     window.addEventListener('crucible:export-session', onExportSession);
     // Every new-session entry point (ribbon, Home, palette, empty states)
     // opens the draft surface; the session is created lazily on first send.
@@ -317,6 +332,7 @@ const App: Component = () => {
           {/* WikilinkHoverPreview mounts inside WindowManager's DnD provider
               so hover cards can drag file tabs into panes/panels. */}
           <AuthTokenPrompt />
+          <SettingsModal open={isSettingsOpen()} onClose={() => setIsSettingsOpen(false)} />
           <ExportDialog
             open={isExportDialogOpen()}
             sessionId={statusBarStore.activeSessionId()}

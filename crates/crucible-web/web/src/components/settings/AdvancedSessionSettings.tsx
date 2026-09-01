@@ -287,7 +287,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
               fail('context strategy')(err);
             }
           }}
-          class={`${inputClass} w-32`}
+          class={`cru-select ${inputClass} w-32`}
         >
           {options(CONTEXT_STRATEGIES, contextStrategy()).map((name) => (
             <option value={name}>{name}</option>
