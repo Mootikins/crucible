@@ -195,6 +195,28 @@ describe("reflection", function()
       expect.equal(staging, mkdirs[1] and mkdirs[1][1])
     end)
 
+    it("configures the reviewer with the declared max_iterations", function()
+      plugin.run({ id = "chat-1" })
+
+      -- The mock records the config table `M.run` hands to the daemon. The
+      -- assertion reads the declared key, so a read of a stale name fails.
+      local configured = test_mocks.get_calls("session", "configure_agent")
+      expect.equal(1, #configured)
+      expect.equal(12, configured[1][2].max_iterations)
+    end)
+
+    it("hands a raised max_iterations to the reviewer", function()
+      plugin.setup({ max_iterations = 20 })
+      plugin.run({ id = "chat-1" })
+
+      -- `config.init` merges keys, so put the default back before the
+      -- assertion. A failed assertion then does not leak 20 into later tests.
+      plugin.setup({ max_iterations = 12 })
+
+      local configured = test_mocks.get_calls("session", "configure_agent")
+      expect.equal(20, configured[1][2].max_iterations)
+    end)
+
     it("writes the proposal file into the staging directory", function()
       local staged = plugin.stage_proposals("notes", "chat-1", {
         { title = "T", body = "B" },
