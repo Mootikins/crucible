@@ -416,7 +416,7 @@ Examples:
     /// Review reflection-pass proposals (list, show, accept, reject)
     #[command(
         subcommand,
-        long_about = "Review notes proposed by the reflection pass.\n\nAfter a session ends, the reflection plugin stages proposed notes in the kiln's .crucible/proposals/ directory (outside the index). These commands let you review and dispose of them.\n\nExamples:\n  # List pending proposals\n  cru proposals list\n\n  # Show a proposal's content\n  cru proposals show insight-20260702-1a2b\n\n  # Accept (promote into the kiln, then indexed)\n  cru proposals accept insight-20260702-1a2b\n\n  # Reject (delete)\n  cru proposals reject insight-20260702-1a2b"
+        long_about = "Review notes proposed by the reflection pass.\n\nAfter a session ends, the reflection plugin stages proposed notes in the kiln's .crucible/proposals/ directory (outside the index). These commands let you review and dispose of them.\n\nExamples:\n  # List pending proposals\n  cru proposals list\n\n  # Show a proposal's content\n  cru proposals show insight-20260702-1a2b\n\n  # Accept (promote into the kiln, then indexed)\n  cru proposals accept insight-20260702-1a2b\n\n  # Reject (keep the file in .crucible/proposals/rejected/, so the reviewer does not repeat it)\n  cru proposals reject insight-20260702-1a2b"
     )]
     Proposals(ProposalsCommands),
 
