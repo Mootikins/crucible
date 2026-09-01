@@ -99,13 +99,23 @@ impl Component for InputComponent<'_> {
         let bg = self.mode.bg_color();
 
         let t = crate::tui::oil::theme::active();
-        let top_edge = styled(
-            t.decorations
-                .half_block_bottom
-                .to_string()
-                .repeat(self.width),
-            Style::new().fg(bg),
-        );
+        // The half block lights the lower half of its row, so the upper half
+        // keeps the surface behind it. That reads as a rounded edge against
+        // the transcript, and as an unpainted seam against the completion
+        // panel, which owns the row above and carries this same bg. Under an
+        // open panel the edge is a filled row instead, and the panel and the
+        // prompt read as one surface.
+        let top_edge = if self.show_popup {
+            styled(" ".repeat(self.width), Style::new().bg(bg))
+        } else {
+            styled(
+                t.decorations
+                    .half_block_bottom
+                    .to_string()
+                    .repeat(self.width),
+                Style::new().fg(bg),
+            )
+        };
         let bottom_edge = styled(
             t.decorations.half_block_top.to_string().repeat(self.width),
             Style::new().fg(bg),
@@ -238,6 +248,35 @@ mod tests {
         assert!(
             !has_input_node(&node),
             "unfocused input should not contain InputNode"
+        );
+    }
+
+    /// The half block lights half its row, so it reads as a seam when the
+    /// completion panel owns the row above it.
+    #[test]
+    fn an_open_panel_popup_gives_the_prompt_a_filled_top_edge() {
+        let edge = crate::tui::oil::theme::active()
+            .decorations
+            .half_block_bottom;
+        let h = ComponentHarness::new(40, 10);
+
+        let closed = InputComponent::new("hi", 2, 40).show_popup(false);
+        let closed = render_to_plain_text(&closed.view(&ViewContext::new(h.focus())), 40);
+        assert!(
+            closed.contains(edge),
+            "with no popup the prompt keeps its half-block edge: {closed:?}"
+        );
+
+        let open = InputComponent::new("hi", 2, 40).show_popup(true);
+        let open = render_to_plain_text(&open.view(&ViewContext::new(h.focus())), 40);
+        assert!(
+            !open.contains(edge),
+            "under an open panel the edge must be filled, not half lit: {open:?}"
+        );
+        assert_eq!(
+            open.lines().count(),
+            closed.lines().count(),
+            "the filled edge occupies the same row the half block did"
         );
     }
 

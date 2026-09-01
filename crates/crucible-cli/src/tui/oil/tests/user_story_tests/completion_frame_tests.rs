@@ -110,3 +110,33 @@ fn the_reserve_holds_the_whole_popup() {
          reserves only {reserved} — the frame has to grow to hold it"
     );
 }
+
+/// The prompt's top edge is a half block, which lights half its row. Under an
+/// open panel popup that reads as an unpainted seam between the two.
+#[test]
+fn no_half_lit_row_sits_between_the_popup_and_the_prompt() {
+    let edge = crate::tui::oil::theme::active()
+        .decorations
+        .half_block_bottom;
+    let mut story = short_session();
+
+    let before = story.screen();
+    assert!(
+        before.lines().any(|line| line.starts_with(edge)),
+        "the prompt draws a half-block edge when no popup is open:\n{before}"
+    );
+
+    story.text("/");
+    let after = story.screen();
+    let lines: Vec<&str> = after.lines().collect();
+    let prompt_at = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with('>'))
+        .expect("a prompt row");
+    let seam = lines[prompt_at - 1];
+
+    assert!(
+        !seam.starts_with(edge),
+        "the row between the popup and the prompt is still half lit: {seam:?}"
+    );
+}
