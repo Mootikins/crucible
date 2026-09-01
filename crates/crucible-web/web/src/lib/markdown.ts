@@ -623,18 +623,25 @@ export async function renderMarkdownChatAsync(content: string): Promise<string> 
  * {@link proseClass}.
  */
 export const PROSE_CLASS = [
-  // IDE-native reading scale: 13px body at 1.6 leading, em-based headings so
-  // the whole scale tracks the root size. Tight vertical rhythm — no dead
-  // bands around headings/rules/lists — reads dense but calm on the near-black
-  // panel, matching a code editor's own text density.
-  'prose max-w-none text-[13px] leading-[1.6]',
+  // IDE-native reading scale: `--text-reading` (12px) at `--leading-reading`
+  // (1.6), em-based headings so the whole scale tracks the root size. Tight
+  // vertical rhythm — no dead bands around headings/rules/lists — reads dense
+  // but calm on the near-black panel, matching a code editor's own density.
+  //
+  // The size is a TOKEN, not a literal. It used to be `text-[13px]` here and
+  // `13px` again in `.user-quote`, and the two were the same number by
+  // coincidence — a reading-size change had to find both. Both now read
+  // `--text-reading` from the `@theme` block in index.css.
+  'prose max-w-none text-reading leading-reading',
   'prose-headings:text-shell-ink prose-headings:font-semibold prose-headings:mt-3.5 prose-headings:mb-1.5',
   'prose-h1:text-[1.45em] prose-h2:text-[1.25em] prose-h3:text-[1.1em] prose-h4:text-[1em]',
   'prose-p:my-2 prose-p:leading-[1.6]',
   'prose-hr:my-4 prose-hr:border-hairline',
   'prose-a:text-primary prose-a:no-underline hover:prose-a:underline',
   // pre bg is enforced in index.css (.prose pre) — shiki inlines its own.
-  'prose-pre:bg-surface-elevated prose-pre:rounded-md prose-pre:p-3 prose-pre:text-[12px] prose-pre:leading-[1.5]',
+  // A fenced block sits at the reading size too: it is the same 12px, and a
+  // code block that shrinks away from the prose around it reads as an aside.
+  'prose-pre:bg-surface-elevated prose-pre:rounded-md prose-pre:p-3 prose-pre:text-reading prose-pre:leading-[1.5]',
   'prose-code:bg-surface-elevated prose-code:px-1 prose-code:rounded prose-code:text-[0.9em] prose-code:before:content-none prose-code:after:content-none',
   'prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:leading-[1.6]',
   'prose-blockquote:border-l-2 prose-blockquote:border-hairline prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-muted',

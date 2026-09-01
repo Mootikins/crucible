@@ -74,7 +74,7 @@ export const ProjectMenu: Component = () => {
               )}
             </For>
             <Show when={projects().length === 0}>
-              <p class="px-3 py-4 text-center text-[11px] text-muted-dark">No projects registered</p>
+              <p class="px-3 py-4 text-center text-floor text-muted-dark">No projects registered</p>
             </Show>
 
             <Show when={projects().length > 0}>

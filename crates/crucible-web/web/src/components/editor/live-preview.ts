@@ -999,12 +999,12 @@ const livePreviewPlugin = ViewPlugin.fromClass(
 /** Prose-first typography; syntax colors still come from the highlighter.
  * PARITY CONTRACT: these values mirror PROSE_CLASS (lib/markdown.ts) — the
  * reading view is canonical, and toggling Edit ↔ Preview must not reflow
- * the document's scale. Body 13px/1.6, em-based headings 1.45/1.25/1.1/1 at
+ * the document's scale. Body `--text-reading`/1.6, em-based headings at
  * weight 600, tokened code/table/blockquote surfaces. */
 const livePreviewTheme = EditorView.baseTheme({
   '&.cm-lp .cm-content': {
-    fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
-    fontSize: '13px',
+    fontFamily: 'var(--font-sans)',
+    fontSize: 'var(--text-reading)',
     lineHeight: '1.6',
   },
   // Ink headings, not oneDark's coral markdown-heading color — the reading
@@ -1023,7 +1023,7 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-em': { fontStyle: 'italic' },
   '.cm-lp-strike': { textDecoration: 'line-through', opacity: '0.75' },
   '.cm-lp-code': {
-    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: '0.9em',
     background: 'var(--color-surface-elevated, #1c1b22)',
     borderRadius: '3px',
@@ -1031,7 +1031,7 @@ const livePreviewTheme = EditorView.baseTheme({
   },
   '.cm-lp-link': { color: 'var(--color-primary, #e0653a)' },
   '.cm-lp-codeblock': {
-    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: '12px',
     lineHeight: '1.5',
     position: 'relative',
@@ -1069,7 +1069,7 @@ const livePreviewTheme = EditorView.baseTheme({
       'linear-gradient(var(--color-hairline-strong, #2a2830), var(--color-hairline-strong, #2a2830)) no-repeat center / 100% 1px',
   },
   '.cm-lp-frontmatter': {
-    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: '0.85em',
     background: 'rgba(255, 255, 255, 0.03)',
   },
@@ -1080,7 +1080,7 @@ const livePreviewTheme = EditorView.baseTheme({
   // background tint) over the full overflowing row — otherwise the bg stops
   // at the readable-column cap while the text keeps going.
   '.cm-lp-tablesrc': {
-    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: '0.85em',
     background: 'rgba(255, 255, 255, 0.03)',
     whiteSpace: 'pre',
@@ -1124,7 +1124,7 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-mermaid svg': { maxWidth: '100%', height: 'auto' },
   '.cm-lp-mermaid-error': {
     display: 'block',
-    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: '12px',
     whiteSpace: 'pre-wrap',
     color: 'var(--color-muted, #928d99)',

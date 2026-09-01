@@ -111,10 +111,10 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
       <div class="flex items-center gap-1.5 min-w-0">
         <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
         <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
-        <span class="text-[11px] text-muted-dark shrink-0">:{props.hit.line}</span>
-        <span class="text-[11px] text-muted-dark truncate ml-auto pl-2">{props.hit.relPath}</span>
+        <span class="text-floor text-muted-dark shrink-0">:{props.hit.line}</span>
+        <span class="text-floor text-muted-dark truncate ml-auto pl-2">{props.hit.relPath}</span>
       </div>
-      <div class="mt-0.5 pl-5 text-[11px] font-mono leading-snug text-muted whitespace-pre-wrap break-all line-clamp-2">
+      <div class="mt-0.5 pl-5 text-floor font-mono leading-snug text-muted whitespace-pre-wrap break-all line-clamp-2">
         {parts()[0]}
         <mark class="bg-primary/25 text-shell-ink rounded-sm">{parts()[1]}</mark>
         {parts()[2]}
@@ -134,9 +134,9 @@ const SemanticRow: Component<{ hit: SemanticHit; onOpen: () => void }> = (props)
   >
     <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
     <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
-    <span class="text-[11px] text-muted-dark truncate min-w-0">{props.hit.relPath}</span>
+    <span class="text-floor text-muted-dark truncate min-w-0">{props.hit.relPath}</span>
     <span
-      class="ml-auto shrink-0 text-[11px] font-mono tabular-nums text-primary/90 bg-primary/10 rounded px-1"
+      class="ml-auto shrink-0 text-floor font-mono tabular-nums text-primary/90 bg-primary/10 rounded px-1"
       title="similarity"
     >
       {Math.round(props.hit.score * 100)}%
@@ -313,7 +313,7 @@ export const SearchPanel: Component = () => {
 
         {/* Scope picker — prefilled to context; narrows/broadens the search. */}
         {/* No `relative` — the menu is portaled and viewport-positioned. */}
-        <div class="flex items-center gap-1.5 text-[11px]" data-search-scope>
+        <div class="flex items-center gap-1.5 text-floor" data-search-scope>
           <span class="text-muted-dark">in</span>
           <button
             ref={scopeChipRef}
@@ -364,10 +364,10 @@ export const SearchPanel: Component = () => {
         {/* Empty state: contextual operator hints for the chosen scope. */}
         <Show when={!debounced()}>
           <div class="px-3 py-2">
-            <div class="py-1 text-[11px] font-semibold text-muted-dark">{optionsHeader(scope().kind)}</div>
+            <div class="py-1 text-floor font-semibold text-muted-dark">{optionsHeader(scope().kind)}</div>
             <For each={opsFor(scope().kind)}>
               {([op, d]) => (
-                <div class="py-1 text-[12px] flex gap-2"><span class="font-semibold font-mono text-shell-ink">{op}</span><span class="text-muted-dark">{d}</span></div>
+                <div class="py-1 text-reading flex gap-2"><span class="font-semibold font-mono text-shell-ink">{op}</span><span class="text-muted-dark">{d}</span></div>
               )}
             </For>
           </div>
@@ -408,7 +408,7 @@ export const SearchPanel: Component = () => {
                 <ClipboardList class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
                 <span class="text-xs text-shell-body truncate">{s.title ?? 'Untitled session'}</span>
                 <Show when={s.started_at}>
-                  <span class="text-[11px] text-muted-dark shrink-0 ml-auto pl-2">{relativeTime(s.started_at!)}</span>
+                  <span class="text-floor text-muted-dark shrink-0 ml-auto pl-2">{relativeTime(s.started_at!)}</span>
                 </Show>
               </button>
             )}
@@ -475,7 +475,7 @@ const ScopeMenu: Component<{
     const I = scopeIcon(r.s.kind);
     return (
       <button type="button" onClick={() => props.onPick(r.s)}
-        class="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-shell-body hover:bg-hover-wash"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-reading text-shell-body hover:bg-hover-wash"
         data-testid={`search-scope-${r.s.kind}${'path' in r.s && r.s.path ? '-' + pathBasename(r.s.path) : ''}`}>
         <I class="w-3.5 h-3.5 shrink-0 text-muted-dark" /><span class="truncate">{r.s.name}</span>
         <Show when={isSel(r.s)}><Check class="w-3.5 h-3.5 text-primary ml-auto" /></Show>
@@ -500,11 +500,11 @@ const ScopeMenu: Component<{
       >
         <For each={props.options.filter((s) => s.kind === 'everywhere' || s.kind === 'sessions')}>{(s) => <Row s={s} />}</For>
         <Show when={props.options.some((s) => s.kind === 'kiln')}>
-          <div class="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
+          <div class="px-3 pt-1.5 pb-1 text-floor font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
           <For each={props.options.filter((s) => s.kind === 'kiln')}>{(s) => <Row s={s} />}</For>
         </Show>
         <Show when={props.options.some((s) => s.kind === 'project')}>
-          <div class="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
+          <div class="px-3 pt-1.5 pb-1 text-floor font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
           <For each={props.options.filter((s) => s.kind === 'project')}>{(s) => <Row s={s} />}</For>
         </Show>
       </div>

@@ -38,7 +38,7 @@ export const SettingsProvider: ParentComponent = (props) => {
 
   // Apply the chosen fonts by overriding the --font-sans/--font-mono CSS vars
   // (defined in index.css @theme). Empty setting = remove the override so the
-  // built-in IBM Plex default applies. Reactive: re-runs when the setting changes.
+  // built-in Geist default applies. Reactive: re-runs when the setting changes.
   createEffect(() => {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;

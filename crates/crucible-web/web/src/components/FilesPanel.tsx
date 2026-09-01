@@ -610,7 +610,7 @@ export const FilesPanel: Component = () => {
                 data-testid="root-attach"
                 title={`Let this session query ${root.name}`}
                 onClick={() => attachRoot(root)}
-                class="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] text-muted hover:text-shell-ink hover:bg-hover-wash whitespace-nowrap transition-colors"
+                class="flex items-center gap-1 px-1.5 py-1 rounded text-floor text-muted hover:text-shell-ink hover:bg-hover-wash whitespace-nowrap transition-colors"
               >
                 <Link2 class="w-3 h-3" /> Attach
               </button>
@@ -643,7 +643,7 @@ export const FilesPanel: Component = () => {
             aria-pressed={hideExts()}
             onClick={toggleHideExts}
             onContextMenu={(e) => { e.preventDefault(); editHiddenExts(); }}
-            classList={{ 'p-1 rounded hover:bg-hover-wash text-[11px] font-mono leading-none w-6 h-6 flex items-center justify-center': true, 'text-primary': hideExts(), 'text-muted': !hideExts() }}
+            classList={{ 'p-1 rounded hover:bg-hover-wash text-floor font-mono leading-none w-6 h-6 flex items-center justify-center': true, 'text-primary': hideExts(), 'text-muted': !hideExts() }}
           >
             .ext
           </button>

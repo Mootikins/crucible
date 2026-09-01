@@ -4,7 +4,7 @@ import { DEFAULT_GRAPH_SETTINGS, type GraphSettings } from '@/lib/graph/types';
 
 const Section: Component<{ title: string; children: JSX.Element }> = (props) => (
   <div class="flex flex-col gap-1.5">
-    <div class="text-[11px] uppercase tracking-wider text-muted-dark">{props.title}</div>
+    <div class="text-floor uppercase tracking-wider text-muted-dark">{props.title}</div>
     {props.children}
   </div>
 );

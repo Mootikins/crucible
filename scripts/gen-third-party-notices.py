@@ -2,7 +2,7 @@
 """Generate THIRD-PARTY-NOTICES.md from the dependency graph that actually ships.
 
 The released `cru` binary embeds `crates/crucible-web/web/dist` wholesale via
-rust-embed, which means it redistributes 69 IBM Plex font files (OFL-1.1), the
+rust-embed, which means it redistributes 11 Geist font files (OFL-1.1), the
 KaTeX fonts, and Lucide's icon paths — all of which condition redistribution on
 carrying their notice. None of that is visible in the source tree, because
 `dist/` is gitignored and built during release, so the gap was invisible.
@@ -146,8 +146,8 @@ def read_text(path: Path) -> str | None:
 
 # Assets the binary redistributes verbatim, whose notices must travel with them.
 VERBATIM = [
-    ("IBM Plex Sans", "OFL-1.1", WEB / "node_modules/@fontsource/ibm-plex-sans/LICENSE"),
-    ("IBM Plex Mono", "OFL-1.1", WEB / "node_modules/@fontsource/ibm-plex-mono/LICENSE"),
+    ("Geist", "OFL-1.1", WEB / "node_modules/@fontsource-variable/geist/LICENSE"),
+    ("Geist Mono", "OFL-1.1", WEB / "node_modules/@fontsource-variable/geist-mono/LICENSE"),
     ("KaTeX (including its fonts)", "MIT", WEB / "node_modules/katex/LICENSE"),
     ("Lucide icons", "ISC", WEB / "node_modules/lucide-solid/LICENSE"),
     ("JSON Canvas sample", "MIT", ROOT / "crates/crucible-core/tests/fixtures/canvas/LICENSE"),

@@ -190,7 +190,7 @@ export const BacklinksPanel: Component = () => {
           }
         >
           {/* Linked mentions — incoming wikilink edges */}
-          <div class="mb-1 px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">
+          <div class="mb-1 px-2 pt-1 text-floor font-semibold uppercase tracking-wide text-muted-dark">
             Linked mentions ({backlinks()?.linked.length ?? 0})
           </div>
           <Show
@@ -228,12 +228,12 @@ export const BacklinksPanel: Component = () => {
                     <span class="block truncate text-sm text-shell-ink">
                       {entry.title || entry.name}
                     </span>
-                    <span class="block truncate text-[11px] text-muted-dark">{entry.path}</span>
+                    <span class="block truncate text-floor text-muted-dark">{entry.path}</span>
                     <Show when={block()}>
                       {(b) => (
                         <span
                           data-testid="backlinks-snippet"
-                          class="mt-1 block border-l-2 border-hairline-strong pl-2 text-[11px] leading-snug text-muted line-clamp-2"
+                          class="mt-1 block border-l-2 border-hairline-strong pl-2 text-floor leading-snug text-muted line-clamp-2"
                         >
                           {b().snippet}
                         </span>
@@ -246,7 +246,7 @@ export const BacklinksPanel: Component = () => {
           </Show>
 
           {/* Unlinked mentions — plain-text references in this note */}
-          <div class="mb-1 mt-3 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">
+          <div class="mb-1 mt-3 px-2 text-floor font-semibold uppercase tracking-wide text-muted-dark">
             Unlinked mentions in this note ({visibleUnlinked().length})
           </div>
           <Show
@@ -265,7 +265,7 @@ export const BacklinksPanel: Component = () => {
                 >
                   <div class="min-w-0">
                     <span class="block truncate text-sm text-shell-body">“{s.mention}”</span>
-                    <span class="block truncate text-[11px] text-muted-dark" data-note={s.target}>
+                    <span class="block truncate text-floor text-muted-dark" data-note={s.target}>
                       → {s.target}
                     </span>
                   </div>

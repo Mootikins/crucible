@@ -22,10 +22,10 @@ The released binary embeds the built web UI, which carries these files as-is.
 Their notices are reproduced in full below because their licences require the
 notice to travel with the files.
 
-### IBM Plex Sans — OFL-1.1
+### Geist — OFL-1.1
 
 ```
-Copyright 2019 IBM Corp. All rights reserved. IBMPlexSans-Italic[wdth,wght].ttf: Copyright 2019 IBM Corp. All rights reserved.
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font) Geist-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
@@ -120,10 +120,10 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-### IBM Plex Mono — OFL-1.1
+### Geist Mono — OFL-1.1
 
 ```
-Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-ThinItalic.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-ExtraLight.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-ExtraLightItalic.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-Light.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-LightItalic.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-Regular.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-Italic.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-Medium.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-MediumItalic.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-SemiBold.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-SemiBoldItalic.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-Bold.ttf: Copyright 2017 IBM Corp. All rights reserved. IBMPlexMono-BoldItalic.ttf: Copyright 2017 IBM Corp. All rights reserved.
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git) GeistMono-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
@@ -705,8 +705,8 @@ Linked into the released binary.
 | `minimal-lexical` | 0.2.1 | MIT/Apache-2.0 |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | `mio` | 1.2.1 | MIT |
-| `mlua` | 0.12.0 | MIT |
-| `mlua-sys` | 0.11.0 | MIT |
+| `mlua` | 0.12.1 | MIT |
+| `mlua-sys` | 0.12.0 | MIT |
 | `monostate` | 0.1.18 | MIT OR Apache-2.0 |
 | `monostate-impl` | 0.1.18 | MIT OR Apache-2.0 |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 |
@@ -1138,8 +1138,8 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `@floating-ui/core` | 1.7.5 | MIT |
 | `@floating-ui/dom` | 1.7.6 | MIT |
 | `@floating-ui/utils` | 0.2.11 | MIT |
-| `@fontsource/ibm-plex-mono` | 5.2.7 | OFL-1.1 |
-| `@fontsource/ibm-plex-sans` | 5.2.8 | OFL-1.1 |
+| `@fontsource-variable/geist` | 5.3.0 | OFL-1.1 |
+| `@fontsource-variable/geist-mono` | 5.3.0 | OFL-1.1 |
 | `@huggingface/jinja` | 0.5.6 | MIT |
 | `@huggingface/tokenizers` | 0.1.3 | Apache-2.0 |
 | `@huggingface/transformers` | 4.0.1 | Apache-2.0 |

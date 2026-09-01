@@ -411,7 +411,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           on this file (openFileWithDiff). Accept/reject per hunk lives in the
           editor gutter; this bar frames it and offers a one-click Dismiss. */}
       <Show when={pendingDiff()}>
-        <div class="mx-3 mt-2 px-3 py-1.5 rounded-md border border-attention/50 bg-attention/[0.06] flex items-center gap-2 text-[12px]">
+        <div class="mx-3 mt-2 px-3 py-1.5 rounded-md border border-attention/50 bg-attention/[0.06] flex items-center gap-2 text-reading">
           <Pencil class="w-3.5 h-3.5 text-attention shrink-0" />
           <Show
             when={!blockedByUnsavedEdits()}

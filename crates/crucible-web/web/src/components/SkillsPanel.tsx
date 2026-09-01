@@ -140,7 +140,7 @@ export const SkillsPanel: Component = () => {
               <For each={groupedSkills()}>
                 {([scope, items]) => (
                   <div class="mb-2">
-                    <div class="px-3 py-1 text-[11px] uppercase tracking-wider text-muted-dark bg-surface-elevated">
+                    <div class="px-3 py-1 text-floor uppercase tracking-wider text-muted-dark bg-surface-elevated">
                       {scope}
                     </div>
                     <For each={items}>
@@ -157,7 +157,7 @@ export const SkillsPanel: Component = () => {
                             </span>
                             <Show when={skill.shadowed_count > 0}>
                               <span
-                                class="text-[11px] px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50"
+                                class="text-floor px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50"
                                 title={`Shadows ${skill.shadowed_count} other skill(s) with the same name`}
                               >
                                 +{skill.shadowed_count}
@@ -194,7 +194,7 @@ export const SkillsPanel: Component = () => {
                 ← Back
               </button>
               <span class="flex-1 text-sm font-mono text-shell-ink truncate">{s().name}</span>
-              <span class="text-[11px] uppercase tracking-wider text-muted-dark">
+              <span class="text-floor uppercase tracking-wider text-muted-dark">
                 {s().scope}
               </span>
             </div>

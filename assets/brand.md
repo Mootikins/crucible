@@ -5,7 +5,7 @@
 > `docs-site/src/styles/tokens.css` for the docs site. This file does not repeat
 > them. It states what both must obey.
 
-Reviewed 2026-08-29.
+Reviewed 2026-08-31.
 
 ## Wordmark
 
@@ -16,11 +16,58 @@ differently on every platform, it carries a colour we do not control, and it
 made the product name look like a chat message.
 
 **Bodoni Moda is display type for the docs site only.** The web app does not
-load it, and it must not. The app sets every surface in IBM Plex Sans, because
-the app is a tool and a Didone is fragile at UI sizes. Read the `opsz` note in
-`tokens.css` before you set Bodoni anywhere.
+load it, and it must not. The app is a tool, and a Didone is fragile at UI
+sizes. Read the `opsz` note in `tokens.css` before you set Bodoni anywhere.
 
-Body and code are IBM Plex Sans and IBM Plex Mono on every surface.
+## Typefaces
+
+**The app sets every surface in Geist, with Geist Mono for code.** Both are
+OFL. Both ship as VARIABLE builds through `@fontsource-variable`, so the whole
+`wght` axis (100-900) comes out of one file per family.
+
+The two are one family. They share a skeleton and they share figure widths, so
+a token count that streams upward does not change width, and a timestamp does
+not twitch as it ticks. Never pair one of them with a mono from another family.
+
+The docs site keeps IBM Plex Sans and IBM Plex Mono for now. That is a
+divergence, and it is recorded rather than hidden: the docs site is a reading
+surface with a Didone display face, and Plex is the better body companion for
+it. The app is a dense tool at an 11px floor, which is the argument below.
+
+### Why Geist replaced IBM Plex
+
+IBM Plex Sans set the app until 2026-08. It is a good humanist face and it was
+not wrong. It lost on three measurements, all of them about density:
+
+1. **It runs wide.** A narrow chat panel paid about one extra line per
+   paragraph at the reading size.
+2. **It shipped static.** Four Sans weights and two Mono weights, six files
+   before subsetting and 69 after — and no weight between them. Hierarchy that
+   wanted 450 or 550 had to move on SIZE instead, which is what pushed the old
+   scale to four steps.
+3. **Its mono belongs to its sans.** That is a virtue until the sans changes.
+
+Geist answers all three: it sets shorter, its variable axis lets hierarchy move
+on weight instead of size, and its mono was drawn beside it.
+
+## Type scale
+
+Three sizes, and the app owes a reason for a fourth. The tokens live in the
+`@theme` block of `crates/crucible-web/web/src/index.css`.
+
+| Token | Value | Carries |
+|-------|-------|---------|
+| `--text-reading` | 12px | Transcript prose, note prose, the user quote, tool rows, chips, code blocks, tree rows, palette rows |
+| `--text-floor` | 11px | Timestamps, token counts, kiln names, tool arguments, badge counts |
+| `--leading-reading` | 1.6 | Every block of running text |
+
+**11px is a floor, not a step.** Nothing functional goes below it. Text at 10px
+and 8px survived in five files until 2026-08; all of it now reads the floor,
+and the notification badge grew to hold its own count.
+
+**Above the reading size, hierarchy moves on weight.** 500 for a tool name, 600
+for a heading. It does not move on size, because a fourth size is a fourth
+thing for a reader to learn.
 
 ## Favicon
 

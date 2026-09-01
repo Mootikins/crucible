@@ -107,7 +107,7 @@ export const SessionStatusChips: Component = () => {
             loudest tone, and it names what it is waiting on. */}
         <Show when={blocked()}>
           <span
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] border-attention/40 bg-attention/10 text-attention"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-floor border-attention/40 bg-attention/10 text-attention"
             data-testid="session-review-gate"
             title={`${gate()!.tool} is held until ${gate()!.path ?? 'the file it writes'} has no unreviewed changes.`}
           >
@@ -121,7 +121,7 @@ export const SessionStatusChips: Component = () => {
 
         <Show when={policyTone()}>
           <span
-            class={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] ${policyTone()}`}
+            class={`inline-flex items-center px-2 py-0.5 rounded-md border text-floor ${policyTone()}`}
             data-testid="session-review-policy"
             title="The review policy in force for this session, after any degradation the agent forces."
           >
@@ -132,7 +132,7 @@ export const SessionStatusChips: Component = () => {
         <For each={slots()}>
           {(slot) => (
             <span
-              class={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] ${
+              class={`inline-flex items-center px-2 py-0.5 rounded-md border text-floor ${
                 TONES[slot.level] ?? DEFAULT_TONE
               }`}
               title={`${slot.text} — ${slot.plugin}`}

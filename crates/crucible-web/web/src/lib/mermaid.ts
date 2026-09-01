@@ -22,7 +22,7 @@ async function getMermaid(): Promise<MermaidModule> {
         startOnLoad: false,
         theme: 'dark',
         securityLevel: 'strict',
-        fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+        fontFamily: "'Geist Variable', system-ui, sans-serif",
         flowchart: { htmlLabels: false },
       });
       return mod;

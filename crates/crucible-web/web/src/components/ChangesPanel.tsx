@@ -106,9 +106,9 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
           <ChevronRight
             class={`w-3 h-3 shrink-0 text-muted-dark transition-transform ${open() ? 'rotate-90' : ''}`}
           />
-          <span class="text-[11px] font-mono text-muted shrink-0">{range()}</span>
+          <span class="text-floor font-mono text-muted shrink-0">{range()}</span>
           <span
-            class={`text-[10px] px-1 py-px rounded border shrink-0 ${STATE_CLASS[props.hunk.state]}`}
+            class={`text-floor px-1 py-px rounded border shrink-0 ${STATE_CLASS[props.hunk.state]}`}
           >
             {props.hunk.state}
           </span>
@@ -117,7 +117,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
               first-time work — and gets accepted out of fatigue. */}
           <Show when={props.hunk.reapplied}>
             <span
-              class="text-[10px] px-1 py-px rounded border border-attention/50 bg-attention/10 text-attention shrink-0"
+              class="text-floor px-1 py-px rounded border border-attention/50 bg-attention/10 text-attention shrink-0"
               title="You rejected this exact change before and the agent applied it again."
               data-testid={`hunk-reapplied-${props.hunk.id}`}
             >
@@ -128,7 +128,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             when={!external()}
             fallback={
               <span
-                class="text-[10px] px-1 py-px rounded border border-hairline text-muted-dark shrink-0"
+                class="text-floor px-1 py-px rounded border border-hairline text-muted-dark shrink-0"
                 title="Changed outside any tool call — your own editor, a formatter, or a plugin. Shown for context; not the agent's to undo."
                 data-testid="hunk-external"
               >
@@ -136,7 +136,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
               </span>
             }
           >
-            <span class="text-[10px] text-muted-dark truncate font-mono">
+            <span class="text-floor text-muted-dark truncate font-mono">
               {props.hunk.tool_call_ids.map(toolCallLabel).join(', ')}
             </span>
           </Show>
@@ -195,14 +195,14 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             data-testid={`comment-body-${props.hunk.id}`}
             onInput={(e) => setBody(e.currentTarget.value)}
             placeholder="Change this…"
-            class="flex-1 rounded border border-hairline bg-surface-base px-2 py-1 text-[11px] text-shell-ink"
+            class="flex-1 rounded border border-hairline bg-surface-base px-2 py-1 text-floor text-shell-ink"
           />
           <button
             type="button"
             disabled={busy() || !body().trim()}
             onClick={submitComment}
             data-testid={`comment-submit-${props.hunk.id}`}
-            class="self-end rounded border border-hairline px-2 py-1 text-[11px] text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+            class="self-end rounded border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
           >
             Post
           </button>
@@ -265,10 +265,10 @@ export const ChangesPanel: Component = () => {
     <PanelShell>
       <PanelHeader title="Changes" class="shrink-0">
         <div class="mt-1.5 flex items-center gap-2">
-          <span class="text-[11px] text-muted-dark" data-testid="changes-count">
+          <span class="text-floor text-muted-dark" data-testid="changes-count">
             {unreviewed()} unreviewed · {state().hunks.length} total
           </span>
-          <label class="ml-auto flex items-center gap-1 text-[11px] text-muted-dark cursor-pointer">
+          <label class="ml-auto flex items-center gap-1 text-floor text-muted-dark cursor-pointer">
             <input
               type="checkbox"
               checked={unreviewedOnly()}
@@ -321,7 +321,7 @@ export const ChangesPanel: Component = () => {
               <ul class="mt-1 space-y-0.5">
                 <For each={degradedReasons()}>
                   {(reason) => (
-                    <li class="text-[11px] text-muted-dark font-mono break-words">{reason}</li>
+                    <li class="text-floor text-muted-dark font-mono break-words">{reason}</li>
                   )}
                 </For>
               </ul>
@@ -338,7 +338,7 @@ export const ChangesPanel: Component = () => {
                     .catch((e: Error) => notificationActions.addNotification('error', e.message))
                     .finally(() => setRebasing(false));
                 }}
-                class="mt-2 rounded border border-hairline px-2 py-1 text-[11px] text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+                class="mt-2 rounded border border-hairline px-2 py-1 text-floor text-shell-ink hover:bg-hover-wash disabled:opacity-50"
               >
                 Accept the worktree as the new base
               </button>
@@ -367,7 +367,7 @@ export const ChangesPanel: Component = () => {
             {(root) => (
               <div>
                 <div
-                  class="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-dark bg-surface-base border-b border-hairline truncate"
+                  class="px-3 py-1 text-floor uppercase tracking-wider text-muted-dark bg-surface-base border-b border-hairline truncate"
                   title={root.root}
                 >
                   {root.root.split('/').filter(Boolean).pop() ?? root.root}
@@ -387,7 +387,7 @@ export const ChangesPanel: Component = () => {
                         <span class="flex-1 min-w-0 truncate text-xs font-mono text-shell-ink">
                           {file.path}
                         </span>
-                        <span class="shrink-0 text-[11px] text-muted-dark">
+                        <span class="shrink-0 text-floor text-muted-dark">
                           {file.hunks.length}
                         </span>
                       </button>
@@ -403,7 +403,7 @@ export const ChangesPanel: Component = () => {
 
           <Show when={openComments().length > 0}>
             <div class="border-t border-hairline mt-2">
-              <div class="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-dark">
+              <div class="px-3 py-1 text-floor uppercase tracking-wider text-muted-dark">
                 Comments
               </div>
               <For each={openComments()}>
@@ -413,7 +413,7 @@ export const ChangesPanel: Component = () => {
                     data-testid={`comment-${comment.id}`}
                   >
                     <div class="flex-1 min-w-0">
-                      <div class="text-[10px] text-muted-dark font-mono truncate">
+                      <div class="text-floor text-muted-dark font-mono truncate">
                         {comment.path}:{comment.line_range.start} · {comment.author}
                       </div>
                       <div class="text-xs text-shell-body break-words">{comment.body}</div>

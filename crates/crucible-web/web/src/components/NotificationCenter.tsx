@@ -92,12 +92,12 @@ const NotificationItem: Component<{ notification: Notification }> = (props) => {
               props.notification.action!.run();
               notificationActions.dismiss(props.notification.id);
             }}
-            class="mt-1 px-2 py-0.5 rounded border border-hairline-strong bg-control text-shell-ink text-[11px] font-medium hover:bg-hover-wash transition-colors"
+            class="mt-1 px-2 py-0.5 rounded border border-hairline-strong bg-control text-shell-ink text-floor font-medium hover:bg-hover-wash transition-colors"
           >
             {props.notification.action!.label}
           </button>
         </Show>
-        <span class="text-[11px] text-muted-dark mt-0.5 block">
+        <span class="text-floor text-muted-dark mt-0.5 block">
           {formatTime(props.notification.timestamp)}
         </span>
       </div>
@@ -240,7 +240,7 @@ export const NotificationCenter: Component<{
             <div class="flex items-center gap-2">
               <span class="text-sm font-medium text-shell-ink">Notifications</span>
               <Show when={allNotifications().length > 0}>
-                <span class="text-[11px] px-1.5 py-0.5 rounded-full bg-surface-elevated text-muted tabular-nums">
+                <span class="text-floor px-1.5 py-0.5 rounded-full bg-surface-elevated text-muted tabular-nums">
                   {allNotifications().length}
                 </span>
               </Show>
@@ -250,7 +250,7 @@ export const NotificationCenter: Component<{
                 <button
                   type="button"
                   onClick={handleClearAll}
-                  class="text-[11px] px-2 py-1 rounded text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
+                  class="text-floor px-2 py-1 rounded text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
                 >
                   Clear All
                 </button>
@@ -284,7 +284,7 @@ export const NotificationCenter: Component<{
                   {(group) => (
                     <div class="mb-1">
                       <div class="px-4 py-1.5">
-                        <span class="text-[11px] font-semibold uppercase tracking-widest text-muted-dark">
+                        <span class="text-floor font-semibold uppercase tracking-widest text-muted-dark">
                           {group.label}
                         </span>
                       </div>

@@ -184,18 +184,18 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
                   class="focus-ring group flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-shell-body aria-selected:bg-primary/15 aria-selected:text-shell-ink aria-selected:outline aria-selected:outline-1 aria-selected:-outline-offset-1 aria-selected:outline-primary/70 data-[selected=true]:bg-primary/15 data-[selected=true]:text-shell-ink data-[selected=true]:outline data-[selected=true]:outline-1 data-[selected=true]:-outline-offset-1 data-[selected=true]:outline-primary/70"
                 >
                   <span
-                    class={`font-mono text-[11px] font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
+                    class={`font-mono text-floor font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
                   >
                     {item.kind}
                   </span>
                   <div class="min-w-0 flex-1">
-                    <div class="text-[13px] leading-5 truncate">{item.label}</div>
+                    <div class="text-reading leading-5 truncate">{item.label}</div>
                     <Show when={item.description}>
                       <div class="text-xs text-muted-dark truncate">{item.description}</div>
                     </Show>
                   </div>
                   <Show when={item.shortcut}>
-                    <kbd class="rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-[11px] text-muted">
+                    <kbd class="rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-floor text-muted">
                       {item.shortcut}
                     </kbd>
                   </Show>

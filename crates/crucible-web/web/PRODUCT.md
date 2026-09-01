@@ -82,7 +82,7 @@ session panels, diff and review, file tree, search, backlinks, inbox,
 notifications, settings, skills, plugins, and a command palette.
 
 **Rendering:** markdown-it with DOMPurify, KaTeX for math, Shiki for code, and
-Mermaid for diagrams. IBM Plex Sans and IBM Plex Mono ship as web fonts.
+Mermaid for diagrams. Geist and Geist Mono ship as variable web fonts.
 
 **Themes:** a dark theme and a light theme both ship (`lib/theme.ts`,
 `components/editor/editor-theme.ts`, `index.css`).
@@ -107,7 +107,7 @@ breaks the product:
 - The wordmark is "Crucible". It carries no glyph prefix, no emoji and no icon
   lockup. The alembic text logo is retired.
 - **Bodoni Moda is docs-site display type only.** The web app must not load it.
-  Every app surface uses IBM Plex Sans, with IBM Plex Mono for code.
+  Every app surface uses Geist, with Geist Mono for code.
 - The favicon source is `assets/favicon.svg`. It deploys byte-identical to
   `crates/crucible-web/web/public/favicon.svg` and `docs-site/public/favicon.svg`.
 - **Ember is the one loud colour.** The canonical primary is `#E0653A`. On a
@@ -194,8 +194,9 @@ files, which is a signal, not a result.
   1.21:1 against the surface behind it — under the 3:1 a state indicator owes.
   An ember outline now rides along with that tint, so the state is carried by
   something that clears the floor.
-- `text-[10px]` survives in `ToolCard.tsx`, `ChangesPanel.tsx`, `EmptyPane.tsx`
-  and `EdgePanel.tsx` (8px there).
+- ~~`text-[10px]` survives in `ToolCard.tsx`, `ChangesPanel.tsx`, `EmptyPane.tsx`
+  and `EdgePanel.tsx` (8px there).~~ Closed 2026-08-31: all of it now reads
+  `--text-floor`, and the notification badge was resized to hold its count.
 
 Two more facts, unchanged:
 

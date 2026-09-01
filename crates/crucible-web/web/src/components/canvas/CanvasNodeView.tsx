@@ -100,7 +100,7 @@ const QuarantinedNode: Component<{ reason: string }> = (props) => (
   >
     <ShieldAlert class="h-4 w-4 text-error" />
     <span class="text-xs font-medium text-error">Reference blocked</span>
-    <span class="text-[11px] leading-tight text-muted-dark">{props.reason}</span>
+    <span class="text-floor leading-tight text-muted-dark">{props.reason}</span>
   </div>
 );
 
@@ -222,7 +222,7 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
             class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2 opacity-0 transition-opacity group-hover:opacity-100"
             data-testid="canvas-link-hint"
           >
-            <span class="rounded-full border border-hairline bg-surface-elevated/90 px-2 py-0.5 text-[11px] text-muted backdrop-blur-sm">
+            <span class="rounded-full border border-hairline bg-surface-elevated/90 px-2 py-0.5 text-floor text-muted backdrop-blur-sm">
               Click to interact
             </span>
           </div>
@@ -280,7 +280,7 @@ const FileCard: Component<{
           <span class="text-xs text-muted">{name()}</span>
           <button
             type="button"
-            class="text-[11px] text-primary hover:underline"
+            class="text-floor text-primary hover:underline"
             onClick={() => props.onOpenFile?.(path())}
           >
             Open canvas

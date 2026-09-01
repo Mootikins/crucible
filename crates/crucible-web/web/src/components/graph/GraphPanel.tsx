@@ -417,7 +417,7 @@ export const GraphPanel: Component = () => {
       }
     }
 
-    ctx.font = `${11 / view.k}px 'IBM Plex Sans', system-ui, sans-serif`;
+    ctx.font = `${11 / view.k}px 'Geist Variable', system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
@@ -694,7 +694,7 @@ export const GraphPanel: Component = () => {
       <Show when={controlsOpen()}>
         <GraphControls settings={settings} onChange={setSettings} />
       </Show>
-      <div class="absolute bottom-2 left-3 text-[11px] text-muted-dark pointer-events-none select-none">
+      <div class="absolute bottom-2 left-3 text-floor text-muted-dark pointer-events-none select-none">
         {stats().notes} notes · {stats().links} links
       </div>
     </PanelShell>

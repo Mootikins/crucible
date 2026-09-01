@@ -81,7 +81,7 @@ export const Message: Component<MessageProps> = (props) => {
         class={
           isUser()
             ? 'user-quote'
-            : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-[12px] italic text-muted'
+            : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading italic text-muted'
         }
       >
         <Show when={!isEditing()} fallback={
@@ -145,7 +145,7 @@ export const Message: Component<MessageProps> = (props) => {
             timestamps under every bubble were noise. */}
         <Show when={isUser() && props.message.timestamp}>
           <div
-            class="absolute left-0 -bottom-5 text-[11px] leading-none text-muted-dark opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150"
+            class="absolute left-0 -bottom-5 text-floor leading-none text-muted-dark opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150"
             title={new Date(props.message.timestamp).toLocaleString()}
           >
             {formatAbsoluteTime(props.message.timestamp)}

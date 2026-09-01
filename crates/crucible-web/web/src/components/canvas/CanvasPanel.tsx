@@ -1457,7 +1457,7 @@ const EdgeLayer: Component<{
                 y={item.mid.y}
                 text-anchor="middle"
                 dominant-baseline="middle"
-                class="canvas-edge-label-halo text-[11px]"
+                class="canvas-edge-label-halo text-floor"
                 data-testid="canvas-edge-label"
               >
                 {item.edge.label}
@@ -1467,7 +1467,7 @@ const EdgeLayer: Component<{
                 y={item.mid.y}
                 text-anchor="middle"
                 dominant-baseline="middle"
-                class="fill-current text-[11px]"
+                class="fill-current text-floor"
               >
                 {item.edge.label}
               </text>

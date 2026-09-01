@@ -54,7 +54,7 @@ const AUTO_EXPAND_MS = 700;
 /** Shared row skin: full-height flex so indent guides run edge-to-edge.
  * `group` drives the fade-scroll marquee on the name when the row is hovered. */
 const ROW =
-  'group flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-[13px]';
+  'group flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-reading';
 /** Fixed icon column — the chevron (folders) and filetype icon (files) share
  * it, so names align at a level regardless of node kind. */
 const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';

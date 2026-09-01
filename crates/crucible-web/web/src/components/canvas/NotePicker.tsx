@@ -135,7 +135,7 @@ export const NotePicker: Component<{
                 >
                   <FileText class="h-3 w-3 shrink-0 text-muted" />
                   <span class="truncate">{note.title}</span>
-                  <span class="ml-auto truncate text-[11px] text-muted-dark">{note.rel}</span>
+                  <span class="ml-auto truncate text-floor text-muted-dark">{note.rel}</span>
                 </button>
               )}
             </For>

@@ -139,12 +139,12 @@ export const PermissionInteraction: Component<Props> = (props) => {
     <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-hairline">
       <div class="flex items-center gap-2 mb-3">
         <span
-          class={`px-2 py-0.5 text-[11px] font-medium rounded-md ${actionInfo().chip} ${isNamedTool() ? 'font-mono' : ''}`}
+          class={`px-2 py-0.5 text-floor font-medium rounded-md ${actionInfo().chip} ${isNamedTool() ? 'font-mono' : ''}`}
           data-testid="perm-action-chip"
         >
           {chipLabel()}
         </span>
-        <span class="text-[11px] uppercase tracking-wider text-muted-dark font-semibold">
+        <span class="text-floor uppercase tracking-wider text-muted-dark font-semibold">
           Permission Required
         </span>
       </div>
@@ -254,7 +254,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
               <button
                 onClick={() => setScope(s)}
                 classList={{
-                  'px-2.5 py-1 text-[11px] rounded-md border transition-colors font-medium': true,
+                  'px-2.5 py-1 text-floor rounded-md border transition-colors font-medium': true,
                   'bg-primary/15 text-primary border-primary/40': scope() === s,
                   'bg-surface-elevated text-shell-body border-hairline hover:bg-hover-wash': scope() !== s,
                 }}

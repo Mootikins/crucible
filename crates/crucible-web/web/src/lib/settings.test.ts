@@ -33,7 +33,7 @@ describe('settings', () => {
       expect(defaultSettings.transcription.language).toBe('auto');
     });
 
-    it('defaults appearance fonts to empty (use built-in IBM Plex)', () => {
+    it('defaults appearance fonts to empty (use built-in Geist)', () => {
       expect(defaultSettings.appearance.fontSans).toBe('');
       expect(defaultSettings.appearance.fontMono).toBe('');
     });

@@ -88,16 +88,16 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5">
             <span class="text-xs font-medium text-shell-body truncate">{label()}</span>
-            <span class={`text-[11px] ${statusColor()}`}>{statusLabel()}</span>
+            <span class={`text-floor ${statusColor()}`}>{statusLabel()}</span>
           </div>
-          <div class="text-[11px] text-muted-dark truncate mt-0.5">{promptPreview()}</div>
+          <div class="text-floor text-muted-dark truncate mt-0.5">{promptPreview()}</div>
         </div>
 
         {/* Status icon */}
         <span class={`flex-shrink-0 ${statusColor()}`}>{statusIcon()}</span>
 
         {/* Expand chevron */}
-        <span class="text-muted-dark text-[11px] group-hover:text-shell-body transition-colors">
+        <span class="text-muted-dark text-floor group-hover:text-shell-body transition-colors">
           {expanded() ? '▼' : '▶'}
         </span>
       </button>
@@ -108,7 +108,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
           {/* Prompt */}
           <Show when={props.event.prompt}>
             <div class="px-3 py-2 bg-surface-base">
-              <div class="text-[11px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Prompt</div>
+              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">Prompt</div>
               <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-relaxed">
                 {props.event.prompt}
               </p>
@@ -118,7 +118,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
           {/* Summary (completed) */}
           <Show when={props.event.status === 'completed' && props.event.summary}>
             <div class={`px-3 py-2 bg-surface-base ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
-              <div class="text-[11px] uppercase tracking-wider text-ok/70 mb-1 font-semibold">Result</div>
+              <div class="text-floor uppercase tracking-wider text-ok/70 mb-1 font-semibold">Result</div>
               <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-56 overflow-y-auto leading-relaxed">
                 {props.event.summary}
               </p>
@@ -128,7 +128,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
           {/* Error (failed) */}
           <Show when={props.event.status === 'failed' && props.event.error}>
             <div class={`px-3 py-2 bg-error/10 ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
-              <div class="text-[11px] uppercase tracking-wider text-error/70 mb-1 font-semibold">Error</div>
+              <div class="text-floor uppercase tracking-wider text-error/70 mb-1 font-semibold">Error</div>
               <pre class="text-xs text-error font-mono whitespace-pre-wrap break-all max-h-56 overflow-y-auto">
                 {props.event.error}
               </pre>
@@ -146,7 +146,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
           </Show>
 
           {/* ID footer */}
-          <div class="px-3 py-1 text-[11px] text-muted-dark border-t border-hairline font-mono">
+          <div class="px-3 py-1 text-floor text-muted-dark border-t border-hairline font-mono">
             {props.event.id}
           </div>
         </div>
@@ -162,7 +162,7 @@ const TaskSummary: Component<{ events: SubagentEvent[] }> = (props) => {
   const failed = () => props.events.filter((e) => e.status === 'failed').length;
 
   return (
-    <div class="flex items-center gap-3 px-3 py-2 border-b border-hairline text-[11px]">
+    <div class="flex items-center gap-3 px-3 py-2 border-b border-hairline text-floor">
       <Show when={active() > 0}>
         <span class="flex items-center gap-1 text-precog">
           <span class="w-1.5 h-1.5 bg-precog rounded-full animate-pulse" />

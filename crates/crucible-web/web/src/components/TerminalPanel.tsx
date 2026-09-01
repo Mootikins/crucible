@@ -108,7 +108,7 @@ export const TerminalPanel: Component = () => {
   const termFontFamily = () =>
     settings.terminal.fontFamily.trim() ||
     settings.appearance.fontMono.trim() ||
-    "'IBM Plex Mono', ui-monospace, monospace";
+    "'Geist Mono Variable', ui-monospace, monospace";
   const termFontSize = () => Math.max(8, settings.terminal.fontSize || 13);
   // The PTY endpoint is gated server-side to localhost (a PTY is full shell
   // access) unless the server opted into authenticated remote access — the

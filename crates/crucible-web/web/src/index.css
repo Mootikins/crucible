@@ -1,7 +1,7 @@
-/* Crucible shell identity: near-black surfaces + ember accent + IBM Plex
+/* Crucible shell identity: near-black surfaces + ember accent + Geist
  * (docs/Meta/Web UI Feature Spec.md §2.3; "Crucible Shell Options" design).
  *
- * IBM Plex is imported from index.tsx as JS imports, NOT CSS @imports here:
+ * Geist is imported from index.tsx as JS imports, NOT CSS @imports here:
  * tailwind v4 inlines CSS @imports WITHOUT rebasing their url(./files/...)
  * references, so the woff2 assets were never emitted into dist and every
  * font request 404'd in production (silent system-ui fallback). JS imports
@@ -10,8 +10,54 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* ── Faces ────────────────────────────────────────────────────────────
+   * Geist and Geist Mono, both VARIABLE (`wght` 100-900). The suffix is part
+   * of the family name fontsource declares — 'Geist' alone matches nothing
+   * and falls through to system-ui silently.
+   *
+   * One family, two halves, drawn together. They share a skeleton and, more
+   * usefully here, they share figure widths: a token count that streams up
+   * from 900 to 1,000 does not change width, and neither does a timestamp
+   * that ticks. The previous pair (IBM Plex Sans with IBM Plex Mono) was
+   * also one family, but a humanist one — it set wide, which cost a narrow
+   * chat panel about a line per paragraph at the reading size. */
+  --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── Type scale ───────────────────────────────────────────────────────
+   * THREE sizes, and the app owes a reason for any fourth.
+   *
+   *   text    12px — reading text: transcript prose, note prose, the user
+   *                  quote, tool rows, chips, code blocks. Body and chrome
+   *                  deliberately land on ONE size; the old scale split them
+   *                  13/12 for no reason a reader could see.
+   *   small   11px — the functional floor: timestamps, token counts, kiln
+   *                  names, tool arguments, counts. Never lower. Fifty
+   *                  `text-[10px]` labels were lifted to this floor and it
+   *                  does not move back down.
+   *   lead    1.6  — one leading for every block of running text.
+   *
+   * Hierarchy above `text` moves on WEIGHT, not on size — which is what the
+   * variable `wght` axis bought. Headings still scale in `em` off the prose
+   * root (see PROSE_CLASS in lib/markdown.ts). */
+  --text-reading: 12px;
+  --text-floor: 11px;
+  --leading-reading: 1.6;
+
+  /* ── The chat column's measure ────────────────────────────────────────
+   * A session is width-controlled and centred: the transcript, the composer
+   * and the scope row all stop at the same edge, and the pane's leftover
+   * width becomes gutter rather than line length.
+   *
+   * 46rem is ~736px, which is ~95 characters at the reading size — wider
+   * than the 65-75ch prose ideal on purpose, because a transcript is not
+   * an essay: it carries code blocks, tables and tool rows that a 65ch
+   * column would force to scroll. Prose still wraps well short of the edge.
+   *
+   * The SCROLLER stays full width. Centring the scroll container instead
+   * would pull the scrollbar in off the pane edge, which reads as a second
+   * inner panel. */
+  --chat-measure: 46rem;
 
   --color-primary: #e0653a;
   --color-primary-hover: #f08a5e;
@@ -662,7 +708,7 @@ details.callout[open] > summary.callout-title::after {
    LINE keeps its own explicit size (inherit here would resurrect the 15px
    prose size); only descendants inherit. */
 .cm-lp-tablesrc {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace !important;
+  font-family: var(--font-mono) !important;
   font-weight: normal !important;
   font-style: normal !important;
   font-size: 0.85em !important;

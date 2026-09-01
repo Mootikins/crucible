@@ -104,7 +104,7 @@ export const LinkPrompt: Component<{
         />
         <Show when={invalid()}>
           <div
-            class="border-t border-hairline px-3 py-1.5 text-[11px] text-error"
+            class="border-t border-hairline px-3 py-1.5 text-floor text-error"
             data-testid="canvas-link-prompt-error"
           >
             Enter an http or https address.

@@ -74,9 +74,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </span>
         );
       case 'complete':
-        return <span class="text-ok text-[11px] font-semibold" title="Complete">✓</span>;
+        return <span class="text-ok text-floor font-semibold" title="Complete">✓</span>;
       case 'error':
-        return <span class="text-error text-[11px] font-semibold" title="Error">✗</span>;
+        return <span class="text-error text-floor font-semibold" title="Error">✗</span>;
     }
   };
 
@@ -296,12 +296,12 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         <span class="flex-shrink-0 max-w-[45%] text-xs font-medium text-shell-ink truncate font-mono">
           {props.toolCall.name}
         </span>
-        <span class="flex-1 min-w-0 text-[11px] text-muted-dark truncate font-mono">
+        <span class="flex-1 min-w-0 text-floor text-muted-dark truncate font-mono">
           {argSummary() ?? ''}
         </span>
         <Show when={props.toolCall.autoApproved}>
           <span
-            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-precog/15 text-precog border border-precog/50 font-semibold"
+            class="flex-shrink-0 text-floor uppercase tracking-wider px-1.5 py-0.5 rounded bg-precog/15 text-precog border border-precog/50 font-semibold"
             data-testid="tool-auto-approved"
             title={`Permission granted without asking (${props.toolCall.autoApproved}).`}
           >
@@ -313,7 +313,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             offering the action would be offering a no-op. */}
         <Show when={superseded()}>
           <span
-            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
+            class="flex-shrink-0 text-floor uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
             data-testid="tool-superseded"
             title="A later edit replaced everything this call wrote — there is nothing left to review."
           >
@@ -322,7 +322,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         </Show>
         <Show when={props.toolCall.terminate}>
           <span
-            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
+            class="flex-shrink-0 text-floor uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
             title="This tool ended the agent turn early."
           >
             Terminated
@@ -340,7 +340,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               marker, real newlines, no JSON envelope. */}
           <Show when={bashCommand()}>
             <div class="px-3 py-2 bg-surface-base">
-              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
+              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Command
               </div>
               <div class="flex gap-2">
@@ -361,7 +361,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               shows the file path and the diff body shows the old/new content. */}
           <Show when={formattedArgs() && !diff()}>
             <div class={`px-3 py-2 bg-surface-base ${bashCommand() ? 'border-t border-hairline' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Arguments</div>
+              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">Arguments</div>
               <pre
                 data-testid="tool-args"
                 class="text-xs text-shell-body font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-48 overflow-y-auto"
@@ -377,7 +377,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               pretty-printing as successful results. */}
           <Show when={props.toolCall.result && props.toolCall.status === 'error'}>
             <div class={`px-3 py-2 ${formattedArgs() && !diff() ? 'border-t border-hairline' : ''} bg-surface-base`}>
-              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
+              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Error
               </div>
               <pre class="text-xs font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-64 overflow-y-auto text-error">
@@ -402,7 +402,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                         class="inline-flex items-center gap-1 rounded-md border border-hairline px-1.5 py-0.5"
                         data-testid={`tool-hunk-${hunk.id}`}
                       >
-                        <span class="text-[10px] font-mono text-muted-dark">
+                        <span class="text-floor font-mono text-muted-dark">
                           L{hunk.current_range.start}
                         </span>
                         <Show when={hunk.state !== 'accepted'}>
@@ -446,7 +446,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                     onClick={openInEditor}
                     disabled={opening()}
                     data-testid="tool-open-in-editor"
-                    class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-[11px] text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+                    class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
                     title="Open the file in the editor with this change shown as an inline diff"
                   >
                     <FileOutput class="w-3.5 h-3.5" /> Open in editor
@@ -474,7 +474,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           {/* Plain-text result section (kept for non-diff tools on success). */}
           <Show when={props.toolCall.result && !diff() && props.toolCall.status !== 'error'}>
             <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-hairline' : ''} bg-surface-base`}>
-              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
+              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Result
               </div>
               <pre class="text-xs font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-64 overflow-y-auto text-shell-body">
@@ -494,7 +494,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </Show>
 
           {/* ID for debugging */}
-          <div class="px-3 py-1.5 text-[10px] text-muted-dark border-t border-hairline">
+          <div class="px-3 py-1.5 text-floor text-muted-dark border-t border-hairline">
             ID: {props.toolCall.callId ?? props.toolCall.id}
           </div>
         </div>

@@ -8,7 +8,7 @@
 
 /** Uppercase section/group header (popout groups, tree group labels). */
 export const treeSectionHeader =
-  'px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark';
+  'px-3 pt-2 pb-1 text-floor font-semibold uppercase tracking-wide text-muted-dark';
 
 /** Collapsible group header row (chevron + name), one step quieter than rows. */
 export const treeGroupRow =

@@ -1,14 +1,16 @@
 /* @refresh reload */
 import { render } from 'solid-js/web';
 import App from './App';
-// IBM Plex before index.css (see the note there: CSS @imports of fontsource
+// Geist before index.css (see the note there: CSS @imports of fontsource
 // under tailwind v4 lose their font assets; JS imports emit them correctly).
-import '@fontsource/ibm-plex-sans/400.css';
-import '@fontsource/ibm-plex-sans/500.css';
-import '@fontsource/ibm-plex-sans/600.css';
-import '@fontsource/ibm-plex-sans/700.css';
-import '@fontsource/ibm-plex-mono/400.css';
-import '@fontsource/ibm-plex-mono/500.css';
+//
+// ONE file per family, not one per weight: these are VARIABLE builds with a
+// `wght` axis of 100-900, so every weight the app asks for comes out of the
+// same woff2. The four static Plex Sans weights plus two Plex Mono weights
+// became two requests, and the in-between weights the static set could not
+// reach (450, 550) are now available.
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
 // KaTeX math styling; Vite bundles the woff2 fonts its url()s reference.
 import 'katex/dist/katex.min.css';
 import './index.css';

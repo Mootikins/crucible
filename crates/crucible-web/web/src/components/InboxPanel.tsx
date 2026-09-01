@@ -171,7 +171,7 @@ const InboxPanel: Component = () => {
           <span class="block text-[12.5px] font-semibold truncate">
             {sessionDisplayTitle(session)}
           </span>
-          <span class="block text-[11px] text-muted-dark truncate">
+          <span class="block text-floor text-muted-dark truncate">
             {relativeTime(session.last_activity ?? session.started_at)}
             {session.agent_model ? ` · ${session.agent_model}` : ''}
             {session.event_count ? ` · ${session.event_count} events` : ''}
@@ -180,14 +180,14 @@ const InboxPanel: Component = () => {
         <Show
           when={rowProps.archivedRow}
           fallback={
-            <span class={`font-mono text-[11px] font-medium flex-none ${status().color}`}>
+            <span class={`font-mono text-floor font-medium flex-none ${status().color}`}>
               {status().label}
             </span>
           }
         >
           <button
             type="button"
-            class="font-mono text-[11px] text-muted-dark hover:text-ok cursor-pointer flex-none opacity-0 group-hover:opacity-100 transition-opacity"
+            class="font-mono text-floor text-muted-dark hover:text-ok cursor-pointer flex-none opacity-0 group-hover:opacity-100 transition-opacity"
             title="Restore to recent sessions"
             onClick={() => void restoreSession(session.id)}
           >
@@ -195,7 +195,7 @@ const InboxPanel: Component = () => {
           </button>
           <button
             type="button"
-            class={`font-mono text-[11px] cursor-pointer flex-none transition-opacity ${
+            class={`font-mono text-floor cursor-pointer flex-none transition-opacity ${
               pendingDelete() === session.id
                 ? 'text-error opacity-100'
                 : 'text-muted-dark hover:text-error opacity-0 group-hover:opacity-100'
@@ -228,7 +228,7 @@ const InboxPanel: Component = () => {
                 <span class="flex-1" />
                 <button
                   type="button"
-                  class="text-muted-dark text-[11px] hover:text-muted cursor-pointer"
+                  class="text-muted-dark text-floor hover:text-muted cursor-pointer"
                   onClick={() => openSession(entry.sessionId)}
                 >
                   open session →
@@ -249,7 +249,7 @@ const InboxPanel: Component = () => {
         </Show>
 
         <Show when={resolved()}>
-          <div class="border border-ok/30 bg-ok/5 rounded-lg px-3 py-2 mb-2.5 text-[11px] text-ok">
+          <div class="border border-ok/30 bg-ok/5 rounded-lg px-3 py-2 mb-2.5 text-floor text-ok">
             {resolved()}
           </div>
         </Show>
@@ -269,7 +269,7 @@ const InboxPanel: Component = () => {
             {(session) => <SessionRow session={session} archivedRow={false} />}
           </For>
           <Show when={recentSessions().length > RECENT_CAP}>
-            <div class="text-muted-dark font-mono text-[11px] px-1 pb-2">
+            <div class="text-muted-dark font-mono text-floor px-1 pb-2">
               showing {RECENT_CAP} of {recentSessions().length}
             </div>
           </Show>
@@ -287,7 +287,7 @@ const InboxPanel: Component = () => {
             <span>({archived()!.length})</span>
           </Show>
           <span class="flex-1" />
-          <span class="font-normal normal-case tracking-normal text-[11px]">
+          <span class="font-normal normal-case tracking-normal text-floor">
             idle sessions are archived automatically after 3 days
           </span>
         </button>
@@ -302,7 +302,7 @@ const InboxPanel: Component = () => {
                 <button
                   type="button"
                   data-testid="clear-archived"
-                  class={`font-mono text-[11px] border rounded-md px-2.5 py-1 cursor-pointer transition-colors ${
+                  class={`font-mono text-floor border rounded-md px-2.5 py-1 cursor-pointer transition-colors ${
                     clearArmed()
                       ? 'border-error text-error'
                       : 'border-hairline text-muted-dark hover:text-error hover:border-error/50'
@@ -315,7 +315,7 @@ const InboxPanel: Component = () => {
                     : 'CLEAR HISTORY…'}
                 </button>
                 <Show when={clearProgress()}>
-                  <span class="font-mono text-[11px] text-muted-dark">{clearProgress()}</span>
+                  <span class="font-mono text-floor text-muted-dark">{clearProgress()}</span>
                 </Show>
               </div>
               <For each={archived()}>

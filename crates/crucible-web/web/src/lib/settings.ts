@@ -37,9 +37,9 @@ interface EditorSettings {
 
 /** Appearance / typography settings */
 interface AppearanceSettings {
-  /** CSS font-family for UI + prose text. Empty = built-in default (IBM Plex Sans). */
+  /** CSS font-family for UI + prose text. Empty = built-in default (Geist). */
   fontSans: string;
-  /** CSS font-family for code / monospace. Empty = built-in default (IBM Plex Mono). */
+  /** CSS font-family for code / monospace. Empty = built-in default (Geist Mono). */
   fontMono: string;
 }
 
@@ -78,7 +78,7 @@ export const defaultSettings: AppSettings = {
     renderMath: true,
     renderDiagrams: true,
   },
-  // Empty = use the built-in @theme defaults (IBM Plex) from index.css.
+  // Empty = use the built-in @theme defaults (Geist) from index.css.
   appearance: {
     fontSans: '',
     fontMono: '',

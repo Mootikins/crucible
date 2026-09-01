@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 /**
- * Force every declared web font (IBM Plex Sans/Mono, all weights) to finish
+ * Force every declared web font (Geist Variable / Geist Mono Variable) to finish
  * downloading before a visual baseline is captured.
  *
  * `document.fonts.ready` alone is insufficient: webfonts load lazily (a weight

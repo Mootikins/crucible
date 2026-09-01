@@ -21,7 +21,7 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
     >
       <button
         type="button"
-        class="flex items-center gap-1.5 text-[11px] text-muted hover:text-shell-ink"
+        class="flex items-center gap-1.5 text-floor text-muted hover:text-shell-ink"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded()}
         title="Click to show injected notes"
@@ -44,7 +44,7 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
         >
           <For each={props.notes}>
             {(note) => (
-              <li class="flex items-center gap-2 text-[11px] font-mono text-muted">
+              <li class="flex items-center gap-2 text-floor font-mono text-muted">
                 <span class="text-shell-ink truncate">{note.name}</span>
                 <span class="text-muted-dark">{note.relevance.toFixed(2)}</span>
               </li>

@@ -57,18 +57,18 @@ export const SessionRow: Component<{
       data-session-id={props.session.id}
     >
       <SessionStatusDot status={sessionStatus(props.session)} />
-      <span class="text-[13px] flex-1 min-w-0 truncate">{sessionDisplayTitle(props.session)}</span>
+      <span class="text-reading flex-1 min-w-0 truncate">{sessionDisplayTitle(props.session)}</span>
 
       {/* Only when it says something the group row does not. */}
       <Show when={props.showKiln && props.kilnLabel} keyed>
         {(k) => (
-          <span class="shrink-0 truncate max-w-[80px] text-[11px] text-muted-dark">{k}</span>
+          <span class="shrink-0 truncate max-w-[80px] text-floor text-muted-dark">{k}</span>
         )}
       </Show>
       <Show when={props.branch} keyed>
         {(b) => (
           <span
-            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-[11px] text-muted-dark"
+            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-floor text-muted-dark"
             title={`branch · ${b}`}
           >
             <GitBranch class="w-2.5 h-2.5 shrink-0" />
@@ -79,7 +79,7 @@ export const SessionRow: Component<{
 
       {/* The age column keeps its width whether or not the action shows, so a
           hover does not shove the row's own contents sideways. */}
-      <span class="w-8 shrink-0 text-right text-[11px] text-muted-dark group-hover:invisible group-focus-within:invisible">
+      <span class="w-8 shrink-0 text-right text-floor text-muted-dark group-hover:invisible group-focus-within:invisible">
         {age() ?? ''}
       </span>
 
