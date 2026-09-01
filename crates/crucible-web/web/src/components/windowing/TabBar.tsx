@@ -80,7 +80,12 @@ const TabItem: Component<TabItemProps> = (props) => {
         // Obsidian's tab language: the active tab is a raised chip (bg lift),
         // no accent underline. Focus of the containing region reads through
         // ink weight + a hairline outline, never a colored bar.
-        'group relative flex items-center gap-1 px-2.5 py-1 my-1 mx-0.5 rounded-md cursor-pointer transition-all duration-100':
+        // `pr-5` reserves the trailing slot's width in the tab's own box, so a
+        // SHORT title is never covered — the overlay only reaches text on a
+        // title long enough to be truncated anyway, which is where the fade
+        // takes over. The slot itself is absolute and costs no layout, so this
+        // padding is the only space the close affordance spends.
+        'group relative flex items-center gap-1 pl-2.5 pr-5 py-1 my-1 mx-0.5 rounded-md cursor-pointer transition-all duration-100':
           true,
         'opacity-40 bg-surface-elevated': draggable.isActiveDraggable,
         'bg-surface-elevated text-shell-ink outline outline-1 -outline-offset-1 outline-hairline-strong':
@@ -102,25 +107,50 @@ const TabItem: Component<TabItemProps> = (props) => {
           </>
         </Show>
       </div>
-      <span class="text-xs font-medium truncate max-w-[120px]">
-        {props.tab.title}
-      </span>
-      {props.tab.isModified && (
-        <span class="w-1.5 h-1.5 rounded-full bg-attention flex-shrink-0" />
-      )}
-      <button
-        aria-label="Close tab"
-        onClick={(e) => {
-          e.stopPropagation();
-          props.onClose(e);
-        }}
+      {/* The title fades out under the trailing slot rather than being cut by
+          it. The mask only applies while something is IN that slot, so a plain
+          resting tab shows its title to the last pixel. */}
+      <span
         classList={{
-          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-hover-wash hover:text-shell-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary': true,
-          'opacity-0 group-hover:opacity-100': !props.isActive,
+          'text-xs font-medium truncate max-w-[120px] transition-[mask-image]': true,
+          'tab-title-fade': props.isActive || props.tab.isModified,
+          'group-hover:tab-title-fade': true,
         }}
       >
-        <IconClose class="w-3 h-3" />
-      </button>
+        {props.tab.title}
+      </span>
+
+      {/* ONE trailing slot, out of the flow.
+          The close button used to be a flex child, so every tab reserved ~20px
+          for a glyph that is invisible on a resting tab — the title lost that
+          width permanently, and tabs jumped as the active one changed. It now
+          sits OVER the tab's trailing edge and takes no layout at all.
+
+          The slot also carries the modified dot, and the two swap the way an
+          editor's do: the dot marks unsaved work at rest, and hovering turns
+          it into the control that discards it. Two separate marks would mean a
+          dirty tab is the one tab you cannot close without aiming. */}
+      <span class="pointer-events-none absolute right-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center">
+        <Show when={props.tab.isModified}>
+          <span
+            class="h-1.5 w-1.5 rounded-full bg-attention transition-opacity group-hover:opacity-0"
+            data-testid="tab-modified-dot"
+          />
+        </Show>
+        <button
+          aria-label="Close tab"
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onClose(e);
+          }}
+          classList={{
+            'pointer-events-auto absolute inset-0 flex items-center justify-center rounded-sm transition-opacity hover:bg-hover-wash hover:text-shell-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary': true,
+            'opacity-0 group-hover:opacity-100': !props.isActive || props.tab.isModified,
+          }}
+        >
+          <IconClose class="w-3 h-3" />
+        </button>
+      </span>
     </div>
   );
 };

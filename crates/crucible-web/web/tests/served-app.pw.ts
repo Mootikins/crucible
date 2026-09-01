@@ -59,7 +59,12 @@ async function cspViolations(page: Page): Promise<Violation[]> {
 async function openApp(page: Page): Promise<void> {
   await armCspRecorder(page);
   await page.goto(state.baseURL!);
-  await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible({ timeout: 20_000 });
+  // The rail's own toggle: the one element every ribbon renders
+  // unconditionally, at every position. This used to wait on the ribbon's
+  // command-palette bolt — an incidental choice that tied the served tier's
+  // boot check to one optional command button, and broke all three of its
+  // specs the day that button was retired.
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible({ timeout: 20_000 });
 }
 
 /**
@@ -107,7 +112,12 @@ test.describe('the served app (real cru web, built bundle)', () => {
 
     // …and the app boots under that policy. A CSP is only correct if the
     // product still works: script, styles, fonts and workers all had to load.
-    await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible({ timeout: 20_000 });
+    // The rail's own toggle: the one element every ribbon renders
+  // unconditionally, at every position. This used to wait on the ribbon's
+  // command-palette bolt — an incidental choice that tied the served tier's
+  // boot check to one optional command button, and broke all three of its
+  // specs the day that button was retired.
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible({ timeout: 20_000 });
     expect(await cspViolations(page)).toEqual([]);
   });
 

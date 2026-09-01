@@ -1,6 +1,7 @@
 import { Component, For, JSX, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { ChevronDown, ChevronRight, Check } from '@/lib/icons';
+import { ChevronRight, Check } from '@/lib/icons';
+import { Caret } from '@/components/ui/Caret';
 import { placeFlyout, placePopup, type FlyoutPlacement } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
 
@@ -415,7 +416,7 @@ export const ChipSelect: Component<{
         onClick={() => (open() ? close() : openPopout())}
         classList={{
           [props.triggerClass ??
-          'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]']: true,
+          'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]']: true,
           'text-shell-body hover:bg-hover-wash': !props.triggerClass && !open(),
           'bg-hover-wash text-shell-ink': !props.triggerClass && open(),
           'opacity-50 cursor-not-allowed': props.disabled,
@@ -425,7 +426,16 @@ export const ChipSelect: Component<{
           {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
         </Show>
         <span class="truncate">{display()}</span>
-        <ChevronDown class="w-3 h-3 flex-shrink-0 text-muted-dark" />
+        {/* Quiet at rest, full strength once the pointer or the popout is on
+            it. The chip is a control, so the caret has to be findable — but a
+            composer row carries several of these at once, and at full contrast
+            they read as a row of marks competing with the labels. */}
+        <Caret
+          classList={{
+            'flex-shrink-0 -mr-0.5 opacity-60 transition-opacity': true,
+            'opacity-100': open(),
+          }}
+        />
       </button>
 
       <Show when={open()}>

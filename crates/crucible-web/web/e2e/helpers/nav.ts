@@ -16,9 +16,17 @@ import { expect, type Page } from '@playwright/test';
 
 const READY_TIMEOUT = 15000;
 
-/** Resolves once the app shell has painted (ribbon is up). */
+/**
+ * Resolves once the app shell has painted (ribbon is up).
+ *
+ * Gated on the rail's own TOGGLE, which is the one element every ribbon
+ * renders unconditionally and at every position. It used to wait on the
+ * ribbon's new-session button — an incidental choice that made every spec in
+ * the suite depend on one optional command button, and broke all of them the
+ * day that button was retired.
+ */
 export async function appReady(page: Page): Promise<void> {
-  await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible({
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible({
     timeout: READY_TIMEOUT,
   });
 }
@@ -117,10 +125,16 @@ export async function seedLeftTabs(
   }
 }
 
-/** Open a New Session tab from the ribbon and wait for its composer. */
+/**
+ * Open a New Session tab and wait for its composer.
+ *
+ * Ctrl+Shift+N, which is the project-agnostic doorway the app actually ships:
+ * the palette lists it, and the ribbon's plus that used to be a third route to
+ * the same event is gone.
+ */
 export async function openNewSessionTab(page: Page): Promise<void> {
   await appReady(page);
-  await page.getByTestId('ribbon-cmd-new-session').click();
+  await page.keyboard.press('Control+Shift+N');
   await expect(page.getByTestId('composer-input')).toBeVisible({
     timeout: READY_TIMEOUT,
   });

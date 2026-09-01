@@ -2,7 +2,6 @@ import { Component, Show, createEffect, createSignal, on, onCleanup } from 'soli
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { useProjectSafe } from '@/contexts/ProjectContext';
 import { ProjectMenu } from '@/components/shell/ProjectMenu';
 import { applyTheme, theme } from '@/lib/theme';
 import {
@@ -11,7 +10,6 @@ import {
   primaryEdgeGroupId,
 } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
-import { openPanelTab } from '@/lib/panel-actions';
 import { isRestoringLayout } from '@/lib/layout-restore';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
@@ -25,13 +23,12 @@ import {
   IconPanelRightClose,
   IconPanelBottom,
   IconPanelBottomClose,
-  IconZap,
   IconSettings,
   IconMoon,
   IconSun,
   IconBell,
 } from './icons';
-import { ArrowLeftRight, Plus } from '@/lib/icons';
+import { ArrowLeftRight } from '@/lib/icons';
 import { notificationStore } from '@/stores/notificationStore';
 import { NotificationCenter } from '@/components/NotificationCenter';
 
@@ -214,7 +211,15 @@ const ribbonBtn =
  * `data-testid="corner-bell"` from its previous home so existing locators
  * resolve.
  */
-const RibbonBell: Component = () => {
+const RibbonBell: Component<{
+  /**
+   * Claim the rail's free space.
+   *
+   * False when a trailing tab cluster above already claims it — two `mt-auto`
+   * siblings split the gap between them and both end up mid-rail.
+   */
+  pinBottom: boolean;
+}> = (props) => {
   const [open, setOpen] = createSignal(false);
   const unreadCount = () => notificationStore.notificationCount();
   let bellRef: HTMLButtonElement | undefined;
@@ -225,16 +230,22 @@ const RibbonBell: Component = () => {
         type="button"
         ref={bellRef}
         data-testid="corner-bell"
-        data-ribbon-floor
-        class={`${ribbonBtn} relative z-20 bg-shell-bg w-10 h-9 flex-none mt-auto`}
-        classList={{ 'text-shell-body': open() }}
+        data-ribbon-floor={props.pinBottom ? '' : undefined}
+        class={`${ribbonBtn} relative z-20 bg-shell-bg w-10 h-9 flex-none`}
+        classList={{ 'text-shell-body': open(), 'mt-auto': props.pinBottom }}
         title="Notifications"
         aria-label="Toggle notifications"
         onClick={() => setOpen(!open())}
       >
         <IconBell class="w-4 h-4" />
         <Show when={unreadCount() > 0}>
-          <span class="absolute top-1 right-1.5 px-0.5 min-w-[12px] text-center rounded-full bg-error text-white text-[8px] font-bold leading-[12px]">
+          {/* The count was 8px — three steps under the app's 11px floor, and
+              unreadable at a glance, which is the badge's only job. It reads
+              the floor now, and the badge grew to hold it: a 15px pill that
+              still clears the 16px icon it sits on. `tabular-nums` keeps 1 and
+              9 the same width, so the badge does not twitch as the count
+              climbs. */}
+          <span class="absolute -top-0.5 -right-0.5 px-1 min-w-[15px] text-center rounded-full bg-error text-white text-floor font-semibold leading-[15px] tabular-nums">
             {unreadCount() > 99 ? '99+' : unreadCount()}
           </span>
         </Show>
@@ -272,7 +283,6 @@ const RibbonCommand: Component<{
  * panels grow out of it, so the toggles never move or disappear. The top
  * (or leading, for the bottom bar) button expands/collapses the panel. */
 const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
-  const { currentProject } = useProjectSafe();
   // The box the pane markers are positioned inside. They are placed from the
   // PANEL's measured geometry, so they need this element's own top to convert
   // a viewport coordinate into an offset.
@@ -299,6 +309,28 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
     }
     return entries;
   };
+
+  /**
+   * The pane ids in the panel's TRAILING branch — the bottom half of a
+   * vertical rail, the right half of a horizontal one.
+   *
+   * A ribbon button opens a pane, so it belongs on the same half of the rail
+   * as the pane it opens. Every leaf button used to render in one run from the
+   * top, so the terminal — which lives in the bottom pane of the right panel —
+   * sat at the top of the rail, as far from its own pane as the rail allows.
+   * You had to cross the whole edge to reach the thing beside you.
+   *
+   * Only the ROOT split is consulted. Deeper nesting is a rare shape, and
+   * mapping every nesting level onto rail thirds would produce clusters the
+   * user cannot predict; "top half or bottom half" is a rule you can see.
+   */
+  const trailingPaneIds = () => {
+    const root = panel().layout;
+    if (root.type !== 'split') return new Set<string>();
+    return new Set(collectPanes(root.second).map((p) => p.id));
+  };
+  const leadingEntries = () => leafEntries().filter((e) => !trailingPaneIds().has(e.paneId));
+  const trailingEntries = () => leafEntries().filter((e) => trailingPaneIds().has(e.paneId));
 
   // Per-PANE markers only earn their space once a rail holds more than one
   // pane. With a single pane the rail's own toggle already is that control,
@@ -378,53 +410,21 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
       >
         {toggleIcon()}
       </button>
-      <Show when={props.position === 'left'}>
-        <RibbonCommand
-          title="Command palette (Ctrl+P)"
-          testId="ribbon-cmd-palette"
-          onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
-        >
-          <IconZap class="w-4 h-4" />
-        </RibbonCommand>
-        <RibbonCommand
-          title="New session"
-          testId="ribbon-cmd-new-session"
-          // Seeded with the PINNED project, which the titlebar already names.
-          // Without it the visible path cost three clicks (open the composer,
-          // open its project chip, pick) against one for the tree's hover
-          // button — the affordance a user can see was the slower one.
-          //
-          // Always an explicit value, '' included: the ABSENT field means
-          // "leave an open draft aimed where it is", which made this button
-          // silently inherit the tree's last pick.
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent('crucible:new-session', {
-                detail: { workspace: currentProject()?.path ?? '' },
-              }),
-            )
-          }
-        >
-          <Plus class="w-4 h-4" />
-        </RibbonCommand>
-        {/* Same action as Ctrl+Shift+\ and the palette entry — one command,
-            three doorways, never three behaviours. */}
-        <RibbonCommand
-          title="Swap side panels (Ctrl+Shift+\)"
-          testId="ribbon-cmd-swap-sides"
-          onClick={() => windowActions.swapSidePanels()}
-        >
-          <ArrowLeftRight class="w-4 h-4" />
-        </RibbonCommand>
-        <div class="mx-2 my-1 h-px flex-none bg-hairline" />
-      </Show>
+      {/* The top of the left rail used to carry a command-palette bolt and a
+          new-session plus. Both are gone. Neither was the fastest route to its
+          own action — the palette is Ctrl+P and is itself a list of every
+          command, and a new session is one hover-click in the session tree,
+          seeded correctly — so each was a third doorway competing for the most
+          reachable pixels on the rail with the tab buttons that have no other
+          doorway at all. Swapping sides moved to the bottom cluster below,
+          beside the other two shell-wide toggles. */}
       {/* Keyed by group id + tab id: solid-dnd draggable data is a
           registration-time snapshot, so a layout restore (or a tab moving
           between leaf groups) must remount the row — otherwise every drag
           would carry a dead sourceGroupId and moveTab would silently no-op.
           Keying also survives updateTab replacing tab objects on every write
           (same trap as TabStrip). */}
-      <Key each={leafEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
+      <Key each={leadingEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
         {(entry) => (
           <RibbonTabButton
             position={props.position}
@@ -451,14 +451,44 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           <ProjectMenu />
         </div>
       </Show>
+      {/* Everything from here down is pinned to the rail's far end.
+          EXACTLY ONE element in this run may carry `mt-auto` — it is what
+          absorbs the free space — and it must be the FIRST of them, or the
+          space splits between claimants and the cluster floats mid-rail.
+          `data-ribbon-floor` marks that same element for RibbonPaneStrip,
+          which bounds its overlay between the ceiling and the floor. */}
+      <Show when={trailingEntries().length > 0}>
+        <div class="mt-auto flex flex-none flex-col" data-ribbon-floor>
+          <Key each={trailingEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
+            {(entry) => (
+              <RibbonTabButton
+                position={props.position}
+                tab={entry().tab}
+                groupId={entry().groupId}
+                paneId={entry().paneId}
+                isActive={entry().isActive}
+                isVertical={isVertical()}
+              />
+            )}
+          </Key>
+        </div>
+      </Show>
       <Show when={props.position === 'left'}>
-        {/* Appearance and settings, pinned at the ribbon's bottom-left like
-            Obsidian's gear. `bottom` on the FIRST of the pair: it carries the
-            `mt-auto` that pushes both down, so only one may claim it. */}
+        {/* Swapping sides, the theme and settings: three shell-wide toggles,
+            together at the bottom-left like Obsidian's gear. Swap joined them
+            from the rail's top, where it sat among per-panel controls while
+            acting on the whole shell. */}
+        <RibbonCommand
+          title="Swap side panels (Ctrl+Shift+\)"
+          testId="ribbon-cmd-swap-sides"
+          bottom={trailingEntries().length === 0}
+          onClick={() => windowActions.swapSidePanels()}
+        >
+          <ArrowLeftRight class="w-4 h-4" />
+        </RibbonCommand>
         <RibbonCommand
           title={theme() === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
           testId="ribbon-cmd-theme"
-          bottom
           onClick={() => {
             applyTheme(theme() === 'light' ? 'dark' : 'light');
           }}
@@ -468,9 +498,11 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           </Show>
         </RibbonCommand>
         <RibbonCommand
-          title="Open Settings"
+          title="Settings"
           testId="ribbon-cmd-settings"
-          onClick={() => openPanelTab('settings')}
+          // A dialog, not a tab. Changing a setting is a detour you return
+          // from; it never wanted a pane, a split or a place in the layout.
+          onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-settings'))}
         >
           <IconSettings class="w-4 h-4" />
         </RibbonCommand>
@@ -481,7 +513,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           transient chip cluster. The rail is rendered outside the slide clip
           frame, so this survives collapsing the panel. */}
       <Show when={props.position === 'right'}>
-        <RibbonBell />
+        <RibbonBell pinBottom={trailingEntries().length === 0} />
       </Show>
     </div>
   );

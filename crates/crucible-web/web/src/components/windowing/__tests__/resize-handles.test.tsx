@@ -126,16 +126,48 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     expect(svg!.getAttribute('class') ?? '').toContain('w-4');
   });
 
-  it('the left ribbon hosts command buttons (palette, new session, settings)', () => {
+  it('the left ribbon carries the shell-wide toggles, and only those', () => {
     const { container } = render(() => (
       <DragDropProvider>
         <EdgePanel position="left" />
       </DragDropProvider>
     ));
 
-    expect(container.querySelector('[data-testid="ribbon-cmd-palette"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="ribbon-cmd-new-session"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="ribbon-cmd-settings"]')).toBeTruthy();
+    // What the rail keeps: the three toggles that act on the WHOLE shell and
+    // have nowhere else to live.
+    for (const id of ['ribbon-cmd-swap-sides', 'ribbon-cmd-theme', 'ribbon-cmd-settings']) {
+      expect(container.querySelector(`[data-testid="${id}"]`), id).toBeTruthy();
+    }
+
+    // What it dropped, and must not grow back: a command-palette bolt and a
+    // new-session plus. Neither was the fastest route to its own action
+    // (Ctrl+P; the session tree's hover button), and each spent the rail's
+    // most reachable pixels on a third doorway.
+    for (const id of ['ribbon-cmd-palette', 'ribbon-cmd-new-session']) {
+      expect(container.querySelector(`[data-testid="${id}"]`), id).toBeNull();
+    }
+  });
+
+  it('claims the ribbon floor exactly once', () => {
+    // The bottom cluster is held down by a single `mt-auto`. A second claimant
+    // splits the free space and the whole cluster floats mid-rail, so this is
+    // an invariant, not a style detail. `data-ribbon-floor` marks the
+    // claimant, and RibbonPaneStrip reads the first one to bound its overlay —
+    // two of them and the overlay is bounded by the wrong element.
+    for (const position of ['left', 'right'] as const) {
+      const { container, unmount } = render(() => (
+        <DragDropProvider>
+          <EdgePanel position={position} />
+        </DragDropProvider>
+      ));
+      const floors = container.querySelectorAll('[data-ribbon-floor]');
+      expect(floors.length, `${position} ribbon floor claimants`).toBe(1);
+      expect(
+        (floors[0].getAttribute('class') ?? '').includes('mt-auto'),
+        `${position} floor claimant carries mt-auto`,
+      ).toBe(true);
+      unmount();
+    }
   });
 
   it('every edge position renders its own ribbon toggle', () => {
@@ -166,8 +198,17 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
       ));
       seen[position] = container.querySelector<HTMLElement>('[data-testid="corner-bell"]');
       // Read before unmount — the node is detached afterwards.
+      //
+      // The bell is LAST in the bottom cluster, but it is not always what
+      // holds that cluster down: when the panel has a trailing pane, the
+      // cluster of ribbon buttons for that pane claims the space instead, and
+      // a second `mt-auto` here would split it. So the assertion is position,
+      // not class — the previous one pinned `mt-auto` on the bell itself and
+      // broke the moment anything else could legitimately claim the floor.
       if (seen[position]) {
-        expect(seen[position]!.getAttribute('class') ?? '').toContain('mt-auto');
+        const ribbon = seen[position]!.closest('[data-testid^="edge-ribbon"]') ?? container;
+        const buttons = Array.from(ribbon.querySelectorAll('button'));
+        expect(buttons[buttons.length - 1], `${position} bell is last`).toBe(seen[position]);
       }
       unmount();
     }

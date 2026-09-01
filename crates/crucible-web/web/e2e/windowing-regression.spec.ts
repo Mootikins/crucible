@@ -37,8 +37,9 @@ test('WindowManager renders with all layout regions', async ({ page }) => {
   const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
   await expect(rootContainer).toBeVisible();
 
-  // Ribbon with the command palette button (no header bar).
-  await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible();
+  // Ribbon is up (no header bar). Gated on the rail's own toggle, the one
+  // element every ribbon renders unconditionally.
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
 
   // Main content area between the ribbons (nested wrappers share the class
   // combo — the outermost is the center column).
@@ -65,10 +66,15 @@ test('Left edge panel toggles open and closed via its ribbon', async ({ page }) 
 test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
   await page.goto('/');
 
-  // Left ribbon: palette, new session, settings gear.
-  await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible();
-  await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible();
+  // Left ribbon's bottom cluster: the three toggles that act on the whole
+  // shell. The palette bolt and the new-session plus are deliberately gone —
+  // each was a third doorway to an action with a shorter one (Ctrl+P,
+  // Ctrl+Shift+N), spending the rail's most reachable pixels.
+  await expect(page.getByTestId('ribbon-cmd-swap-sides')).toBeVisible();
+  await expect(page.getByTestId('ribbon-cmd-theme')).toBeVisible();
   await expect(page.getByTestId('ribbon-cmd-settings')).toBeVisible();
+  await expect(page.getByTestId('ribbon-cmd-palette')).toHaveCount(0);
+  await expect(page.getByTestId('ribbon-cmd-new-session')).toHaveCount(0);
 
   // Both edges expose their own toggle. There is no third: the bottom dock is
   // gone, and the terminal it held is a pane under the file tree.
@@ -118,15 +124,14 @@ test('Layout structure remains stable after interaction', async ({ page }) => {
   await expect(rootContainer).toBeVisible();
 
   // Ribbon should still be visible
-  const ribbonPalette = page.getByTestId('ribbon-cmd-palette');
-  await expect(ribbonPalette).toBeVisible();
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
 
   // Expand the left panel again
   await toggleButton.click();
 
   // Everything should still be visible
   await expect(rootContainer).toBeVisible();
-  await expect(ribbonPalette).toBeVisible();
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
 });
 
 test('No critical console errors on initial load', async ({ page }) => {

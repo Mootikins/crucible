@@ -54,9 +54,11 @@ test.describe('New Session lives on the project row', () => {
     await page.goto('/');
     await openSessionsList(page);
 
-    // The one that could not name its project is gone; the ribbon still has a
-    // project-agnostic entry point for when you have no project in mind.
+    // The one that could not name its project is gone. The project-agnostic
+    // entry point is Ctrl+Shift+N (and its palette row) — the ribbon's plus
+    // was a third doorway to the same event and has been retired.
     await expect(page.getByTestId('new-session-button')).toHaveCount(0);
-    await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible();
+    await page.keyboard.press('Control+Shift+N');
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15000 });
   });
 });

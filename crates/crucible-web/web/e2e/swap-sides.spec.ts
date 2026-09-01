@@ -17,7 +17,7 @@ async function boot(page: Page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
   await page.goto('/');
-  await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible({ timeout: 15000 });
 }
 
 /** Content types on one side, in strip order. */

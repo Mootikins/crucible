@@ -329,3 +329,79 @@ describe('the collapsed pane is its own affordance', () => {
     expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
   });
 });
+
+/**
+ * A ribbon button opens a pane, so it renders on the same half of the rail as
+ * the pane it opens.
+ *
+ * The terminal is the case that surfaced this: it lives in the BOTTOM pane of
+ * the right panel, and its rail button rendered in one run from the top with
+ * every other leaf button. The control sat as far from its own pane as the
+ * rail allows.
+ */
+describe('a ribbon button sits on the same half as its pane', () => {
+  beforeEach(() => {
+    const fresh = createInitialState();
+    setStore(
+      produce((s) => {
+        s.layout = fresh.layout;
+        s.tabGroups = fresh.tabGroups;
+        s.edgePanels = fresh.edgePanels;
+        s.floatingWindows = [];
+        s.activePaneId = fresh.activePaneId;
+        s.focusedRegion = 'center';
+        s.nextZIndex = 100;
+      }),
+    );
+  });
+
+  it('renders a trailing pane’s button inside the floor cluster', () => {
+    setStore(
+      produce((s) => {
+        s.tabGroups['top-group'] = {
+          id: 'top-group',
+          tabs: [{ id: 'files-tab', title: 'Files', contentType: 'files' }],
+          activeTabId: 'files-tab',
+        };
+        s.tabGroups['bottom-group'] = {
+          id: 'bottom-group',
+          tabs: [{ id: 'term-tab', title: 'Terminal', contentType: 'terminal' }],
+          activeTabId: 'term-tab',
+        };
+        s.edgePanels.right.layout = {
+          id: 'right-root',
+          type: 'split',
+          direction: 'vertical',
+          splitRatio: 0.6,
+          first: { id: 'right-top', type: 'pane', tabGroupId: 'top-group' },
+          second: { id: 'right-bottom', type: 'pane', tabGroupId: 'bottom-group' },
+        };
+        s.edgePanels.right.isCollapsed = false;
+      }),
+    );
+
+    const { container, unmount } = render(() => (
+      <DragDropProvider>
+        <EdgePanel position="right" />
+      </DragDropProvider>
+    ));
+
+    const floor = container.querySelector('[data-ribbon-floor]');
+    expect(floor, 'the ribbon claims a floor').toBeTruthy();
+
+    const term = container.querySelector('[data-testid="ribbon-tab-term-tab"]')
+      ?? Array.from(container.querySelectorAll('button')).find(
+        (b) => (b.getAttribute('title') ?? '').includes('Terminal'),
+      );
+    expect(term, 'the terminal has a ribbon button').toBeTruthy();
+    expect(floor!.contains(term!), 'terminal button is in the floor cluster').toBe(true);
+
+    // And the top pane's button is NOT — it stays in the leading run.
+    const files = Array.from(container.querySelectorAll('button')).find(
+      (b) => (b.getAttribute('title') ?? '').includes('Files'),
+    );
+    if (files) expect(floor!.contains(files)).toBe(false);
+
+    unmount();
+  });
+});
