@@ -40,6 +40,10 @@ config:
       type: number
       description: Upper bound on the reviewer's tool-loop turns
       default: 12
+    rejection_memory:
+      type: number
+      description: How many recent rejections the reviewer is told about
+      default: 20
 
 exports:
   auto_discover: true

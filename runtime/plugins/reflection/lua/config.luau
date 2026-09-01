@@ -39,6 +39,9 @@ local defaults = {
     -- before it proposes, so it needs more than three turns. 12 is the low
     -- end of what the WikiSkill proposer used.
     max_iterations = 12,
+    -- How many recent rejections the reviewer is told about, so it does not
+    -- propose a note a human already refused.
+    rejection_memory = 20,
 }
 
 -- setup() values. Kept in their own table so the order above stays

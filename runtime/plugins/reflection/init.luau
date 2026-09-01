@@ -181,6 +181,61 @@ function M.render_proposal(proposal, session_id, stamp)
     return table.concat(lines, "\n")
 end
 
+--- The `title:` of each rejected proposal, newest first, at most `n`.
+--- A proposal id starts with a UTC stamp, so a descending sort of the file
+--- names is a sort by time. `files` maps file name to file content, so the
+--- function needs no disk.
+function M.rejected_titles(files: { [string]: string }?, n: number): { string }
+    local out = {}
+    if not files then return out end
+    local names = {}
+    for name, _ in pairs(files) do
+        if name:match("%.md$") then names[#names + 1] = name end
+    end
+    table.sort(names, function(a, b) return a > b end)
+    for _, name in ipairs(names) do
+        if #out >= n then break end
+        local text = files[name]
+        local title = text:match("\ntitle:%s*\"(.-)\"%s*\n")
+            or text:match("\ntitle:%s*(.-)%s*\n")
+        if title and title ~= "" then out[#out + 1] = title end
+    end
+    return out
+end
+
+--- Read every file in the kiln's rejected/ directory into a name -> content
+--- map. An absent directory is an empty map. A human who moves a file into
+--- this directory by hand has rejected it just as well as the CLI.
+function M.read_rejected(kiln: string): { [string]: string }
+    local dir = cru.kiln.path(kiln, ".crucible/proposals/rejected")
+    local files = {}
+    if not cru.fs.is_dir(dir) then return files end
+    for _, name in ipairs(cru.fs.list(dir)) do
+        local handle = io.open(dir .. "/" .. name, "r")
+        if handle then
+            local text = handle:read("a")
+            if text then files[name] = text end
+            handle:close()
+        end
+    end
+    return files
+end
+
+--- Compose the reviewer's user message from its parts. Every part is optional
+--- except the transcript, so the tests can exercise one block at a time.
+function M.build_prompt(parts: { transcript: string, rejected: { string }? }): string
+    local sections = {}
+    if parts.rejected and #parts.rejected > 0 then
+        local lines = { "A human rejected these proposals recently; do not propose them again:" }
+        for _, title in ipairs(parts.rejected) do
+            lines[#lines + 1] = "- " .. title
+        end
+        sections[#sections + 1] = table.concat(lines, "\n")
+    end
+    sections[#sections + 1] = "Review this finished session and propose durable notes.\n\n" .. parts.transcript
+    return table.concat(sections, "\n\n")
+end
+
 -- ============================================================================
 -- Orchestration (daemon-facing)
 -- ============================================================================
@@ -320,7 +375,8 @@ function M.run(session: any): ()
     cru.session.configure_agent(aux.id, agent_cfg)
 
     local transcript = M.build_transcript(messages)
-    local prompt = "Review this finished session and propose durable notes.\n\n" .. transcript
+    local rejected = M.rejected_titles(M.read_rejected(kiln), config.get("rejection_memory", 20))
+    local prompt = M.build_prompt({ transcript = transcript, rejected = rejected })
 
     local iter, send_err = cru.session.send_and_collect(
         aux.id, prompt, { timeout = config.get("timeout", 120) })
@@ -380,6 +436,9 @@ local plugin = {
     count_user_turns = M.count_user_turns,
     build_transcript = M.build_transcript,
     parse_proposals = M.parse_proposals,
+    rejected_titles = M.rejected_titles,
+    read_rejected = M.read_rejected,
+    build_prompt = M.build_prompt,
     render_proposal = M.render_proposal,
     proposal_id = M.proposal_id,
     stage_proposals = M.stage_proposals,

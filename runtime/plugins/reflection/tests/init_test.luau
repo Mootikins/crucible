@@ -189,11 +189,15 @@ describe("reflection", function()
     it("resolves the staging directory from the kiln the session names", function()
       plugin.run({ id = "chat-1" })
 
-      -- The plugin asks for the directory by NAME. It never spells one.
+      -- The plugin asks for each directory by NAME. It never spells one.
+      -- The rejected directory comes first: the reviewer reads it before
+      -- it proposes. The staging directory comes when the proposals land.
       local asks = test_mocks.get_calls("kiln", "path")
-      expect.equal(1, #asks)
+      expect.equal(2, #asks)
       expect.equal("notes", asks[1][1])
-      expect.equal(".crucible/proposals", asks[1][2])
+      expect.equal(".crucible/proposals/rejected", asks[1][2])
+      expect.equal("notes", asks[2][1])
+      expect.equal(".crucible/proposals", asks[2][2])
 
       local staging = kiln_root .. "/.crucible/proposals"
       local mkdirs = test_mocks.get_calls("fs", "mkdir")
@@ -288,6 +292,42 @@ describe("reflection", function()
       config.init({ max_iterations = 20 })
       config.reset()
       expect.equal(12, config.get("max_iterations"))
+    end)
+  end)
+
+  describe("rejected_titles", function()
+    it("returns the newest titles first, capped at n", function()
+      local files = {
+        ["reflection-20260901-100000-1-a.md"] = "---\ntitle: Socket rules\n---\nB",
+        ["reflection-20260901-100200-1-c.md"] = "---\ntitle: \"Daemon flags\"\n---\nB",
+        ["reflection-20260901-100300-1-d.md"] = "---\ntitle: Old one\n---\nB",
+        ["notes.txt"] = "not a proposal",
+      }
+      local got = plugin.rejected_titles(files, 2)
+      expect.equal(2, #got)
+      expect.equal("Old one", got[1])
+      expect.equal("Daemon flags", got[2])
+    end)
+
+    it("returns an empty list when there is nothing", function()
+      expect.equal(0, #plugin.rejected_titles({}, 5))
+      expect.equal(0, #plugin.rejected_titles(nil, 5))
+    end)
+  end)
+
+  describe("build_prompt", function()
+    it("names rejected titles the reviewer must not repeat", function()
+      local p = plugin.build_prompt({
+        transcript = "## user\nhi",
+        rejected = { "Socket rules" },
+      })
+      expect.truthy(p:find("Socket rules", 1, true))
+      expect.truthy(p:find("do not propose", 1, true))
+    end)
+
+    it("omits the rejection block when nothing was rejected", function()
+      local p = plugin.build_prompt({ transcript = "t", rejected = {} })
+      expect.is_nil(p:find("do not propose", 1, true))
     end)
   end)
 end)
