@@ -42,6 +42,12 @@
 //!   writes one accessor at the top and every leaf works. `false` breaks
 //!   inheritance for a node that means it.
 
+pub mod admit;
+pub mod control;
+pub mod validate;
+
+pub use control::Control;
+
 use mlua::{Function, Lua, LuaSerdeExt, Result as LuaResult, Table, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -147,9 +153,12 @@ impl OptionsRegistry {
         ui: &str,
     ) -> Result<(), String> {
         let (lua, root) = self.tree(plugin).ok_or("no such plugin")?;
-        resolve(&root, path)?;
-        let setter = inherited(&root, path, "set")?.ok_or("option is read-only (no `set`)")?;
+        let node = resolve(&root, path)?;
         let info = info_table(&lua, plugin, path, ui)?;
+        // Before the setter, and before `inherited` — a disabled or non-leaf
+        // node must refuse identically whether or not it happens to have one.
+        admit::admit_value(&node, &info, &value)?;
+        let setter = inherited(&root, path, "set")?.ok_or("option is read-only (no `set`)")?;
         let lua_value = json_to_lua(&lua, &value)?;
         setter
             .call::<()>((info, lua_value))
@@ -383,14 +392,14 @@ pub fn register_options_module(
     plugin: String,
 ) -> LuaResult<()> {
     let options = lua.create_function(move |lua, tree: Table| {
-        // `matches!`, not `is_err()`: mlua answers a MISSING key with
-        // `Ok(Value::Nil)`, so the error below could never fire and a root with
-        // no `args` at all was accepted and registered.
-        if !matches!(tree.get::<Value>("args"), Ok(Value::Table(_))) {
-            return Err(mlua::Error::runtime(
-                "cru.plugin.options: the root must be a group with an `args` table",
-            ));
-        }
+        // Refused here, which means refused at `setup()` — the call propagates
+        // out through `call_plugin_setup` and the plugin ends inert with its
+        // tree released, rather than registering a tree the frontends cannot
+        // draw. (The `args` check this replaced used `matches!` rather than
+        // `is_err()` for a reason worth keeping in mind: mlua answers a MISSING
+        // key with `Ok(Value::Nil)`, so an `is_err()` guard could never fire.)
+        validate::validate_tree(&tree)
+            .map_err(|e| mlua::Error::runtime(format!("cru.plugin.options: {e}")))?;
         registry.set_tree(&plugin, lua.clone(), tree);
         Ok(())
     })?;
@@ -638,5 +647,303 @@ mod tests {
         reg.release_plugin("oci");
         assert!(reg.plugins().is_empty());
         assert!(reg.describe("oci", "web").is_none());
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    /// Registers a tree, returning the refusal message when the load is
+    /// refused. `exec` propagates the error out of `cru.plugin.options`, which
+    /// is exactly what happens to a real plugin inside `setup()`.
+    fn try_register(src: &str) -> Result<(Lua, OptionsRegistry), String> {
+        let lua = Lua::new();
+        let reg = OptionsRegistry::new();
+        register_options_module(&lua, reg.clone(), "p".to_string()).unwrap();
+        match lua.load(src).exec() {
+            Ok(()) => Ok((lua, reg)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn register(src: &str) -> (Lua, OptionsRegistry) {
+        try_register(src).expect("tree should register")
+    }
+
+    const GOOD: &str = r#"
+        state = { image = "alpine", verbose = false, jobs = 4, runtime = "podman" }
+        cru.plugin.options{
+          type = "group", name = "P",
+          get = function(i) return state[i.option] end,
+          set = function(i, v) state[i.option] = v end,
+          args = {
+            image   = { type = "input",  name = "Image" },
+            verbose = { type = "toggle", name = "Verbose" },
+            jobs    = { type = "range",  name = "Jobs", min = 1, max = 8, step = 1 },
+            runtime = { type = "select", name = "Runtime", values = {"podman", "docker"} },
+          },
+        }
+    "#;
+
+    // ── Declaration ─────────────────────────────────────────────────────
+
+    #[test]
+    fn a_tree_declaring_an_unknown_control_is_refused_at_load() {
+        // The defect this whole table exists for. Before the closed set this
+        // registered, stored, and rendered as a text box.
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 shade = { type = "colour-wheel", name = "Shade" } } }"#,
+        )
+        .expect_err("an unknown type must refuse the load");
+        assert!(
+            err.contains("colour-wheel"),
+            "message must name the type: {err}"
+        );
+        assert!(err.contains("shade"), "message must name the path: {err}");
+        assert!(
+            err.contains("toggle"),
+            "message must list the valid types: {err}"
+        );
+    }
+
+    #[test]
+    fn a_typo_is_refused_rather_than_downgraded_to_text() {
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 verbose = { type = "toggel", name = "Verbose" } } }"#,
+        )
+        .expect_err("a typo must not become a text field");
+        assert!(err.contains("toggel"), "{err}");
+    }
+
+    #[test]
+    fn a_select_without_choices_is_refused() {
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 runtime = { type = "select", name = "Runtime" } } }"#,
+        )
+        .expect_err("a select with no values cannot be rendered");
+        assert!(err.contains("values"), "{err}");
+    }
+
+    #[test]
+    fn a_values_function_satisfies_a_select() {
+        // The choices are a property of the box; a function is the whole reason
+        // fields may be functions, so it must not be refused as "missing".
+        register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 runtime = { type = "select", name = "R",
+                             values = function() return {"podman"} end } } }"#,
+        );
+    }
+
+    #[test]
+    fn an_inverted_range_is_refused() {
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 jobs = { type = "range", min = 8, max = 1 } } }"#,
+        )
+        .expect_err("min above max can never admit a value");
+        assert!(err.contains("min") && err.contains("max"), "{err}");
+    }
+
+    #[test]
+    fn a_non_positive_step_is_refused() {
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 jobs = { type = "range", min = 1, max = 8, step = 0 } } }"#,
+        )
+        .expect_err("a zero step divides nothing");
+        assert!(err.contains("step"), "{err}");
+    }
+
+    #[test]
+    fn an_execute_without_a_func_is_refused() {
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 go = { type = "execute", name = "Go" } } }"#,
+        )
+        .expect_err("a button with nothing to press is not a button");
+        assert!(err.contains("func"), "{err}");
+    }
+
+    #[test]
+    fn only_a_group_may_carry_children() {
+        let err = try_register(
+            r#"cru.plugin.options{ type = "group", args = {
+                 image = { type = "input", args = { nested = { type = "input" } } } } }"#,
+        )
+        .expect_err("a leaf with children renders as neither");
+        assert!(err.contains("args"), "{err}");
+    }
+
+    #[test]
+    fn a_tree_nested_past_the_limit_is_refused() {
+        // Depth is the cost of every settings read: `describe_node` walks the
+        // whole tree and evaluates every function-valued field.
+        let mut src = String::from("cru.plugin.options{ type = \"group\", args = { ");
+        let depth = 8;
+        for i in 0..depth {
+            src.push_str(&format!("g{i} = {{ type = \"group\", args = {{ "));
+        }
+        src.push_str("leaf = { type = \"input\" } ");
+        for _ in 0..depth {
+            src.push_str("} } ");
+        }
+        src.push_str("} }");
+        let err = try_register(&src).expect_err("a deep tree must be refused");
+        assert!(err.contains("deeper"), "{err}");
+    }
+
+    #[test]
+    fn every_control_the_enum_knows_is_declarable() {
+        // Derived from the enum itself, so a variant added without a way to
+        // declare it fails here rather than at some plugin author's desk.
+        for control in Control::ALL {
+            let extra = match control {
+                Control::Group => ", args = { x = { type = \"input\" } }",
+                Control::Select | Control::MultiSelect => ", values = {\"a\"}",
+                Control::Execute => ", func = function() end",
+                _ => "",
+            };
+            let src = format!(
+                r#"cru.plugin.options{{ type = "group", args = {{
+                     probe = {{ type = "{}"{extra} }} }} }}"#,
+                control.as_str()
+            );
+            try_register(&src).unwrap_or_else(|e| panic!("{:?} must be declarable: {e}", control));
+        }
+    }
+
+    // ── Writes ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_toggle_refuses_a_string() {
+        let (_lua, reg) = register(GOOD);
+        let err = reg
+            .set("p", &["verbose".into()], serde_json::json!("yes"), "web")
+            .expect_err("a toggle is not a text field");
+        assert!(err.contains("boolean"), "{err}");
+        // And the plugin's own state was never touched.
+        assert_eq!(
+            reg.get("p", &["verbose".into()], "web").unwrap(),
+            serde_json::json!(false)
+        );
+    }
+
+    #[test]
+    fn a_range_refuses_a_value_outside_its_declared_bounds() {
+        let (_lua, reg) = register(GOOD);
+        // The exact shape that made an oci image pull hang: a declared floor of
+        // 60 accepting 0.
+        let err = reg
+            .set("p", &["jobs".into()], serde_json::json!(0), "web")
+            .expect_err("below min");
+        assert!(err.contains("minimum"), "{err}");
+        assert!(reg
+            .set("p", &["jobs".into()], serde_json::json!(99), "web")
+            .is_err());
+        // A value inside the bounds still writes.
+        reg.set("p", &["jobs".into()], serde_json::json!(6), "web")
+            .expect("6 is admissible");
+    }
+
+    #[test]
+    fn a_range_refuses_a_value_off_the_declared_step() {
+        let (_lua, reg) = register(GOOD);
+        assert!(reg
+            .set("p", &["jobs".into()], serde_json::json!(2.5), "web")
+            .is_err());
+    }
+
+    #[test]
+    fn a_select_refuses_a_choice_its_values_never_offered() {
+        let (_lua, reg) = register(GOOD);
+        let err = reg
+            .set(
+                "p",
+                &["runtime".into()],
+                serde_json::json!("containerd"),
+                "web",
+            )
+            .expect_err("not an offered choice");
+        assert!(err.contains("containerd"), "{err}");
+        reg.set("p", &["runtime".into()], serde_json::json!("docker"), "web")
+            .expect("docker is offered");
+    }
+
+    #[test]
+    fn membership_is_checked_against_the_choices_this_box_offers_now() {
+        // The reason `values` may be a function at all. A runtime that has been
+        // uninstalled must stop being SELECTABLE, not merely stop being listed.
+        let (lua, reg) = register(
+            r#"
+            installed = { "podman", "docker" }
+            state = { runtime = "podman" }
+            cru.plugin.options{
+              type = "group",
+              get = function(i) return state[i.option] end,
+              set = function(i, v) state[i.option] = v end,
+              args = { runtime = { type = "select",
+                                   values = function() return installed end } },
+            }
+        "#,
+        );
+        reg.set("p", &["runtime".into()], serde_json::json!("docker"), "web")
+            .expect("docker is installed");
+        lua.load("installed = { \"podman\" }").exec().unwrap();
+        assert!(
+            reg.set("p", &["runtime".into()], serde_json::json!("docker"), "web")
+                .is_err(),
+            "docker is gone and must no longer be selectable"
+        );
+    }
+
+    #[test]
+    fn a_disabled_option_refuses_a_write() {
+        let (_lua, reg) = register(
+            r#"
+            state = { image = "alpine" }
+            cru.plugin.options{
+              type = "group",
+              get = function(i) return state[i.option] end,
+              set = function(i, v) state[i.option] = v end,
+              args = { image = { type = "input", disabled = true } },
+            }
+        "#,
+        );
+        let err = reg
+            .set("p", &["image".into()], serde_json::json!("busybox"), "web")
+            .expect_err("a disabled option is not writable");
+        assert!(err.contains("disabled"), "{err}");
+    }
+
+    #[test]
+    fn a_group_refuses_a_write() {
+        let (_lua, reg) = register(GOOD);
+        assert!(reg
+            .set("p", &[], serde_json::json!("anything"), "web")
+            .is_err());
+    }
+
+    #[test]
+    fn an_admissible_write_still_reaches_the_plugin() {
+        // The gate must not be a wall. Every type that shipped before it still
+        // writes.
+        let (_lua, reg) = register(GOOD);
+        reg.set("p", &["image".into()], serde_json::json!("busybox"), "web")
+            .unwrap();
+        reg.set("p", &["verbose".into()], serde_json::json!(true), "web")
+            .unwrap();
+        assert_eq!(
+            reg.get("p", &["image".into()], "web").unwrap(),
+            serde_json::json!("busybox")
+        );
+        assert_eq!(
+            reg.get("p", &["verbose".into()], "web").unwrap(),
+            serde_json::json!(true)
+        );
     }
 }

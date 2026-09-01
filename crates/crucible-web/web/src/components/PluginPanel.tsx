@@ -189,7 +189,7 @@ export const PluginPanel: Component = () => {
               void refetch();
               void refetchOptions();
             }}
-            class="text-[11px] text-muted hover:text-shell-ink"
+            class="text-floor text-muted hover:text-shell-ink"
             data-testid="plugins-refresh"
           >
             Refresh
@@ -242,16 +242,16 @@ export const PluginPanel: Component = () => {
                   </div>
                   <div class="mt-1 flex items-center gap-1.5">
                     <span
-                      class={`text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceColor(plugin.source)}`}
+                      class={`text-floor uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceColor(plugin.source)}`}
                     >
                       {plugin.source}
                     </span>
                     <span
-                      class={`text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${stateColor(plugin.state)}`}
+                      class={`text-floor uppercase tracking-wider px-1.5 py-0.5 rounded border ${stateColor(plugin.state)}`}
                     >
                       {plugin.state}
                     </span>
-                    <span class="text-[11px] text-muted-dark" title="Tools · Commands · Handlers · Services">
+                    <span class="text-floor text-muted-dark" title="Tools · Commands · Handlers · Services">
                       {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S
                     </span>
                   </div>
@@ -259,7 +259,7 @@ export const PluginPanel: Component = () => {
                       "Error" with no reason anywhere a user looks. */}
                   <Show when={plugin.last_error}>
                     <div
-                      class="mt-1 text-[11px] text-error break-words"
+                      class="mt-1 text-floor text-error break-words"
                       data-testid={`plugin-error-${plugin.name}`}
                     >
                       {plugin.last_error}
@@ -276,7 +276,7 @@ export const PluginPanel: Component = () => {
                       <div class="mt-1">
                         <button
                           type="button"
-                          class="text-[11px] text-muted hover:text-shell-ink"
+                          class="text-floor text-muted hover:text-shell-ink"
                           onClick={() =>
                             setExpanded(expanded() === plugin.name ? null : plugin.name)
                           }
@@ -285,6 +285,11 @@ export const PluginPanel: Component = () => {
                           {expanded() === plugin.name ? '▾' : '▸'} Settings
                         </button>
                         <Show when={expanded() === plugin.name}>
+                          {/* PluginSettings emits table ROWS, so both callers
+                              supply the table — the settings modal has one for
+                              every section, and this is its counterpart. */}
+                          <table class="w-full" data-testid={`plugin-settings-${plugin.name}`}>
+                          <tbody>
                           <PluginSettings
                             plugin={plugin.name}
                             tree={tree()}
@@ -297,6 +302,8 @@ export const PluginPanel: Component = () => {
                               await refetchOptions();
                             }}
                           />
+                          </tbody>
+                          </table>
                         </Show>
                       </div>
                     )}

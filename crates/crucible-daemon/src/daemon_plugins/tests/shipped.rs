@@ -155,3 +155,71 @@ fn every_shipped_manifest_declares_the_same_identifying_fields() {
         "shipped manifests are missing identifying fields: {missing:#?}"
     );
 }
+
+/// Every control the shipped plugins declare is one the closed set knows.
+///
+/// Derived from a REAL loader over `runtime/plugins/`, not from a grep of
+/// source text. That distinction is the whole point: the previous generation of
+/// gates in this repo read their own sources and were satisfiable without the
+/// entry they were meant to require. Here the expectation comes from the tree
+/// the daemon actually registered, so a plugin whose options never registered
+/// cannot pass by having the right words in its file.
+///
+/// It is also the safety net under `validate_tree`. That refusal fires inside
+/// `setup()`, so a shipped plugin declaring an unknown control would end
+/// `Error` and inert — which `every_shipped_plugin_executes` above already
+/// catches. This test says the *stronger* thing: the trees that DID register
+/// contain only kinds the frontends can draw.
+#[tokio::test]
+async fn shipped_plugin_trees_declare_only_known_controls() {
+    use crucible_lua::options::Control;
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .await
+        .expect("load shipped plugins");
+
+    let options = loader.options();
+    let plugins = options.plugins();
+    assert!(
+        !plugins.is_empty(),
+        "no shipped plugin registered an options tree — this gate would pass vacuously",
+    );
+
+    /// Walk a described tree, collecting every `type` it carries.
+    fn collect(node: &serde_json::Value, into: &mut Vec<(String, String)>, path: &str) {
+        if let Some(ty) = node["type"].as_str() {
+            into.push((path.to_string(), ty.to_string()));
+        }
+        for child in node["args"].as_array().into_iter().flatten() {
+            let key = child["key"].as_str().unwrap_or("?");
+            let child_path = if path.is_empty() {
+                key.to_string()
+            } else {
+                format!("{path}.{key}")
+            };
+            collect(child, into, &child_path);
+        }
+    }
+
+    let mut checked = 0usize;
+    for plugin in &plugins {
+        let tree = options
+            .describe(plugin, "web")
+            .unwrap_or_else(|| panic!("'{plugin}' has a tree but would not describe itself"));
+        let mut found = Vec::new();
+        collect(&tree, &mut found, "");
+        for (path, declared) in found {
+            assert!(
+                Control::parse(&declared).is_some(),
+                "plugin '{plugin}' declares unknown control '{declared}' at '{path}'",
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 0,
+        "walked no option nodes — the gate proved nothing"
+    );
+}

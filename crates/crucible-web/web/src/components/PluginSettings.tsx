@@ -22,9 +22,11 @@ import { notificationActions } from '@/stores/notificationStore';
  * that is nonetheless in effect.
  */
 
+// Sized to the control column, not to the row: these now live in a settings
+// table's right-hand cell beside every other section's controls.
 const inputClass =
-  'w-full px-2 py-1 rounded border border-hairline bg-surface text-shell-body ' +
-  'text-xs focus:outline-none focus:border-primary disabled:opacity-50';
+  'w-56 max-w-full px-2 py-1 rounded border border-hairline bg-control text-shell-ink ' +
+  'text-sm focus:outline-none focus:border-primary disabled:opacity-50';
 
 /**
  * A leaf's value, fetched on mount and re-fetched when the tree reloads.
@@ -86,19 +88,29 @@ const OptionRow: Component<{
     }
   };
 
+  // A `<tr>`, not a `<div>`. Every settings section in the modal renders rows
+  // into one shared table, so a plugin's pane sits on the same label column and
+  // the same control column as Appearance or Model. Rendered as a block it read
+  // as a foreign panel embedded in the settings dialog, which is exactly what
+  // it was.
   return (
-    <div class="py-1.5" data-testid={`plugin-option-${props.path.join('-')}`}>
-      <Show when={props.node.type !== 'execute'}>
-        <label class="block text-xs text-shell-body mb-1">
-          {props.node.name ?? props.path.at(-1)}
-          <Show when={props.node.writable === false}>
-            <span class="ml-1 text-[11px] text-muted" title="This setting is read-only">
-              (read-only)
-            </span>
-          </Show>
-        </label>
-      </Show>
-
+    <tr class="border-b border-hairline align-top" data-testid={`plugin-option-${props.path.join('-')}`}>
+      <td class="py-3 pr-4">
+        <Show when={props.node.type !== 'execute'}>
+          <div class="text-sm text-shell-body">
+            {props.node.name ?? props.path.at(-1)}
+            <Show when={props.node.writable === false}>
+              <span class="ml-1 text-floor text-muted" title="This setting is read-only">
+                (read-only)
+              </span>
+            </Show>
+          </div>
+        </Show>
+        <Show when={props.node.desc}>
+          <p class="mt-0.5 max-w-[34rem] text-floor leading-4 text-muted-dark">{props.node.desc}</p>
+        </Show>
+      </td>
+      <td class="py-3 text-right">
       <Show when={props.node.type === 'toggle'}>
         <input
           type="checkbox"
@@ -111,7 +123,7 @@ const OptionRow: Component<{
 
       <Show when={props.node.type === 'select'}>
         <select
-          class={inputClass}
+          class={`cru-select ${inputClass}`}
           disabled={!editable()}
           value={String(value() ?? '')}
           onChange={(e) => void commit(e.currentTarget.value)}
@@ -169,10 +181,8 @@ const OptionRow: Component<{
         />
       </Show>
 
-      <Show when={props.node.desc}>
-        <p class="mt-1 text-[11px] text-muted leading-snug">{props.node.desc}</p>
-      </Show>
-    </div>
+      </td>
+    </tr>
   );
 };
 
@@ -190,9 +200,17 @@ const OptionGroup: Component<{
   node: PluginOptionNode;
   onChanged: () => void | Promise<unknown>;
 }> = (props) => (
-  <div class={props.path.length > 0 ? 'mt-2 pl-2 border-l border-hairline' : ''}>
+  <>
+    {/* A nested group is a sub-heading in the same table — the same `<tr>` the
+        app's own sections use, so a plugin's subsection and Crucible's own read
+        identically. The ROOT group draws nothing: the left list already names
+        the plugin. */}
     <Show when={props.path.length > 0 && props.node.name}>
-      <h4 class="text-xs font-medium text-shell-body">{props.node.name}</h4>
+      <tr>
+        <td colSpan={2} class="pt-5 pb-2 text-floor font-semibold uppercase tracking-wider text-muted-dark">
+          {props.node.name}
+        </td>
+      </tr>
     </Show>
     <Index each={props.node.args ?? []}>
       {(child) => {
@@ -221,9 +239,16 @@ const OptionGroup: Component<{
         );
       }}
     </Index>
-  </div>
+  </>
 );
 
+/**
+ * A plugin's settings as table ROWS.
+ *
+ * The caller owns the `<table>`, because both callers already have one: the
+ * settings modal renders every section into a single shared table, and
+ * `PluginPanel` wraps its own. One markup, one layout, no drift.
+ */
 export const PluginSettings: Component<{
   plugin: string;
   tree: PluginOptionNode;
@@ -232,10 +257,14 @@ export const PluginSettings: Component<{
 }> = (props) => (
   <Show
     when={(props.tree.args ?? []).length > 0}
-    fallback={<p class="text-xs text-muted">This plugin declares no settings.</p>}
+    fallback={
+      <tr>
+        <td colSpan={2} class="py-3 text-sm text-muted">
+          This plugin declares no settings.
+        </td>
+      </tr>
+    }
   >
-    <div data-testid={`plugin-settings-${props.plugin}`}>
-      <OptionGroup plugin={props.plugin} path={[]} node={props.tree} onChanged={props.onChanged} />
-    </div>
+    <OptionGroup plugin={props.plugin} path={[]} node={props.tree} onChanged={props.onChanged} />
   </Show>
 );
