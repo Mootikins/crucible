@@ -47,7 +47,7 @@ KILN/.crucible/proposals/<id>.md   ← staged, unindexed, provenance frontmatter
 cru proposals list / show <id>     ← human review
    │
    ├── accept <id> → note moves into the kiln (provenance stripped) → indexed
-   └── reject <id> → file deleted
+   └── reject <id> → file moves to `rejected/` (kept, not indexed)
 ```
 
 Each staged proposal carries provenance frontmatter:
