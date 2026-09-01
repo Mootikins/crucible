@@ -150,20 +150,15 @@ describe("reflection", function()
   describe("run", function()
     local kiln_root
 
-    before_each(function()
-      -- The real bridge shape: `get_session` sends kiln NAMES in a `kilns`
-      -- array, never a `kiln` path (session_bridge.rs).
-      --
-      -- `kiln_root` is a REAL directory: the plugin writes with `io.open`, so
-      -- the staging directory has to exist. `real_dirs` makes the `mkdir` mock
-      -- create it instead of only recording the call.
-      kiln_root = os.tmpname()
-      os.remove(kiln_root)
+    --- Install the daemon mocks for one ended session that names the
+    --- `notes` kiln. `fs` is the fixture for the `cru.fs` mock; a test that
+    --- needs a file on the listing passes its own.
+    local function mock_daemon(fs: any)
       test_mocks.setup({
         -- `cru.kiln.path` answers from this table, the way the daemon answers
         -- from the kiln registry.
         kiln = { roots = { notes = kiln_root } },
-        fs = { real_dirs = true },
+        fs = fs,
         sessions = {
           info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "notes" } },
           messages = {
@@ -175,6 +170,18 @@ describe("reflection", function()
           },
         },
       })
+    end
+
+    before_each(function()
+      -- The real bridge shape: `get_session` sends kiln NAMES in a `kilns`
+      -- array, never a `kiln` path (session_bridge.rs).
+      --
+      -- `kiln_root` is a REAL directory: the plugin writes with `io.open`, so
+      -- the staging directory has to exist. `real_dirs` makes the `mkdir` mock
+      -- create it instead of only recording the call.
+      kiln_root = os.tmpname()
+      os.remove(kiln_root)
+      mock_daemon({ real_dirs = true })
       -- Start from the defaults: `config.init` merges keys and cannot unset
       -- one, so a value from an earlier test would leak into this one.
       config.reset()
@@ -202,6 +209,41 @@ describe("reflection", function()
       local staging = kiln_root .. "/.crucible/proposals"
       local mkdirs = test_mocks.get_calls("fs", "mkdir")
       expect.equal(staging, mkdirs[1] and mkdirs[1][1])
+    end)
+
+    it("tells the reviewer the title of a proposal a human rejected", function()
+      local rejected_dir = kiln_root .. "/.crucible/proposals/rejected"
+      local rejected_file = rejected_dir .. "/reflection-20260901-100000-1-socket.md"
+
+      -- The plugin finds the file through the `cru.fs` mocks, so the fixture
+      -- registers the directory and the file name. The mock content is a
+      -- decoy: the plugin must read the title from the disk with `io.open`.
+      mock_daemon({
+        real_dirs = true,
+        dirs = { [rejected_dir] = true },
+        files = { [rejected_file] = "decoy: the plugin must not read the mock" },
+      })
+      cru.fs.mkdir(rejected_dir)
+      local handle = assert(io.open(rejected_file, "w"))
+      handle:write("---\ntitle: Socket rules\nstatus: rejected\n---\nBody")
+      handle:close()
+
+      plugin.run({ id = "chat-1" })
+
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      local prompt = sent[1][2]
+      expect.truthy(prompt:find("do not propose", 1, true))
+      expect.truthy(prompt:find("- Socket rules", 1, true))
+      expect.is_nil(prompt:find("decoy", 1, true))
+    end)
+
+    it("sends a prompt with no rejection block when nothing was rejected", function()
+      plugin.run({ id = "chat-1" })
+
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      expect.is_nil(sent[1][2]:find("do not propose", 1, true))
     end)
 
     it("configures the reviewer with the declared max_iterations", function()
