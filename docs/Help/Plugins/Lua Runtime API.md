@@ -791,7 +791,23 @@ Compact the session's context. Returns `(true, nil)` on success.
 
 ### cru.context.messages(session_id, opts?)
 
-Load conversation messages. `opts`: `{ role = "user"|"assistant"|"system", limit = N }`. A thin alias over the same daemon call as `cru.session.messages` — identical semantics, kept here so context-manipulating code can stay inside one namespace.
+Load conversation messages. `opts`: `{ role = "user"|"assistant"|"system", limit = N, tools = true }`. A thin alias over the same daemon call as `cru.session.messages` — identical semantics, kept here so context-manipulating code can stay inside one namespace.
+
+Each row is `{ role, content, timestamp }`. `tools = true` adds two more row shapes:
+
+- `{ role = "tool_call", id, name, args, timestamp }` — `args` is the argument table the agent sent.
+- `{ role = "tool_result", id, content, truncated, error?, timestamp }` — `id` matches the `tool_call` row. `error` is present only when the tool failed.
+
+A `role` filter names a text role, so it excludes the tool rows even when `tools = true`.
+
+```lua
+local rows = cru.session.messages(session_id, { tools = true })
+for _, row in ipairs(rows) do
+  if row.role == "tool_result" and row.error then
+    print("ERROR: " .. row.error)
+  end
+end
+```
 
 ### cru.context.remove(session_id, range)
 

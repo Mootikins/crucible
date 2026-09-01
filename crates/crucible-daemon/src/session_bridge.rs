@@ -224,14 +224,21 @@ pub(crate) fn message_rows(
                     truncated,
                     error,
                     ..
-                } if tools_wanted => Some(serde_json::json!({
-                    "role": "tool_result",
-                    "id": id,
-                    "content": result,
-                    "truncated": truncated,
-                    "error": error,
-                    "timestamp": ts,
-                })),
+                } if tools_wanted => {
+                    let mut row = serde_json::json!({
+                        "role": "tool_result",
+                        "id": id,
+                        "content": result,
+                        "truncated": truncated,
+                        "timestamp": ts,
+                    });
+                    // mlua maps a JSON `null` to a truthy `null` userdata, so
+                    // a good result carries no `error` key at all.
+                    if let Some(error) = error {
+                        row["error"] = serde_json::Value::String(error.clone());
+                    }
+                    Some(row)
+                }
                 _ => None,
             }
         })

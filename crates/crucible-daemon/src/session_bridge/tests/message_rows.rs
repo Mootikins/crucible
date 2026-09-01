@@ -52,3 +52,37 @@ fn a_role_filter_still_excludes_tool_rows() {
     let rows = message_rows(&events(), Some("user"), true);
     assert_eq!(rows.len(), 1);
 }
+
+/// mlua turns a JSON `null` into a truthy `null` userdata. A Lua caller who
+/// writes `if row.error then` must see no `error` key on a good result.
+#[test]
+fn a_tool_result_row_carries_error_only_when_the_tool_failed() {
+    let events = vec![
+        LogEvent::ToolResult {
+            ts: Utc::now(),
+            id: "c1".into(),
+            result: "".into(),
+            truncated: true,
+            full_size: Some(4096),
+            error: Some("exit status 1".into()),
+        },
+        LogEvent::ToolResult {
+            ts: Utc::now(),
+            id: "c2".into(),
+            result: "ok".into(),
+            truncated: false,
+            full_size: None,
+            error: None,
+        },
+    ];
+    let rows = message_rows(&events, None, true);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["error"], "exit status 1");
+    assert_eq!(rows[0]["truncated"], true);
+    assert!(
+        rows[1].get("error").is_none(),
+        "a good result must not carry an error key: {}",
+        rows[1]
+    );
+    assert_eq!(rows[1]["truncated"], false);
+}

@@ -238,7 +238,8 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// the session event log. `role_filter` restricts to a single text role
     /// (e.g. `"user"`). `limit` returns only the last N messages.
     /// `include_tools` adds `tool_call` and `tool_result` rows
-    /// (`{ role, id, name, args }` and `{ role, id, content, truncated, error }`).
+    /// (`{ role, id, name, args }` and `{ role, id, content, truncated, error? }`).
+    /// A `tool_result` row carries `error` only when the tool failed.
     fn load_messages(
         &self,
         session_id: String,
