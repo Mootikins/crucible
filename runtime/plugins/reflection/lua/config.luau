@@ -36,8 +36,8 @@ local defaults = {
     -- Seconds to wait for the reflection subagent to respond.
     timeout = 120,
     -- Upper bound on the reviewer's tool loop. The reviewer reads the kiln
-    -- before it proposes, so it needs more than a handful of turns. 12 is the
-    -- low end of what the WikiSkill proposer used.
+    -- before it proposes, so it needs more than three turns. 12 is the low
+    -- end of what the WikiSkill proposer used.
     max_iterations = 12,
 }
 
@@ -77,6 +77,12 @@ function M.get(key, fallback)
     if val ~= nil then return val end
     if defaults[key] ~= nil then return defaults[key] end
     return fallback
+end
+
+--- Clear the setup layer. Tests only: the daemon never unconfigures a
+--- plugin, but a suite that cannot clear setup() has order-dependent tests.
+function M.reset()
+    configured = {}
 end
 
 return M

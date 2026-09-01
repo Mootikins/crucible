@@ -1,6 +1,7 @@
 --!strict
 describe("reflection", function()
   local plugin = require("reflection")
+  local config = require("config")
 
   describe("count_user_turns", function()
     it("counts only user messages", function()
@@ -174,11 +175,15 @@ describe("reflection", function()
           },
         },
       })
+      -- Start from the defaults: `config.init` merges keys and cannot unset
+      -- one, so a value from an earlier test would leak into this one.
+      config.reset()
       plugin.setup({ model = "test-model", min_turns = 1 })
     end)
 
     after_each(function()
       test_mocks.reset()
+      config.reset()
     end)
 
     it("resolves the staging directory from the kiln the session names", function()
@@ -208,10 +213,6 @@ describe("reflection", function()
     it("hands a raised max_iterations to the reviewer", function()
       plugin.setup({ max_iterations = 20 })
       plugin.run({ id = "chat-1" })
-
-      -- `config.init` merges keys, so put the default back before the
-      -- assertion. A failed assertion then does not leak 20 into later tests.
-      plugin.setup({ max_iterations = 12 })
 
       local configured = test_mocks.get_calls("session", "configure_agent")
       expect.equal(20, configured[1][2].max_iterations)
@@ -263,10 +264,17 @@ describe("reflection", function()
   end)
 
   describe("config", function()
-    local config = require("config")
+    -- Every test here reads the `defaults` layer, so clear the setup layer
+    -- on both sides. A value an earlier test wrote must not stand in for
+    -- the default.
+    before_each(function()
+      config.reset()
+    end)
 
-    -- The default assertion comes first: `config.init` merges keys and
-    -- cannot unset one, so the setup assertion below leaves 20 behind.
+    after_each(function()
+      config.reset()
+    end)
+
     it("declares max_iterations with a default of 12", function()
       expect.equal(12, config.get("max_iterations"))
     end)
@@ -274,7 +282,12 @@ describe("reflection", function()
     it("lets setup() raise max_iterations", function()
       config.init({ max_iterations = 20 })
       expect.equal(20, config.get("max_iterations"))
-      config.init({ max_iterations = nil })
+    end)
+
+    it("returns to the default after reset()", function()
+      config.init({ max_iterations = 20 })
+      config.reset()
+      expect.equal(12, config.get("max_iterations"))
     end)
   end)
 end)
