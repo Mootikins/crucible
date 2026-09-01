@@ -44,6 +44,14 @@ config:
       type: number
       description: How many recent rejections the reviewer is told about
       default: 20
+    tool_result_chars:
+      type: number
+      description: Characters kept from each tool result in the transcript
+      default: 2000
+    transcript_chars:
+      type: number
+      description: Characters kept from the whole transcript, cut from the front
+      default: 60000
 
 exports:
   auto_discover: true

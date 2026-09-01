@@ -49,6 +49,10 @@ Capture ONLY durable, reusable knowledge, such as:
 - A reusable technique, workflow, or decision with lasting rationale.
 - A relationship between concepts worth linking in the graph.
 
+Read what the agent actually did, not only what it said. The transcript
+includes tool calls and their results. A durable note explains WHY a command
+sequence worked or failed, and gives the exact form that worked.
+
 DO NOT capture (these pollute the knowledge base):
 - Environment-dependent failures: missing binaries, unconfigured credentials,
   wrong working directory, machine-specific paths.
@@ -100,14 +104,53 @@ function M.count_user_turns(messages)
 end
 
 --- Render the message list as a plain-text transcript for the reviewer.
-function M.build_transcript(messages)
+--- Tool rows come from `cru.session.messages(id, { tools = true })`. Each
+--- result is cut at `tool_result_chars`, and the whole transcript is cut at
+--- `transcript_chars` from the front, so the reviewer sees how the session
+--- ended. The WikiSkill maintainer caps each trace the same way.
+export type TranscriptRow = {
+    role: string?,
+    content: string?,
+    id: string?,
+    name: string?,
+    args: any,
+    error: string?,
+}
+
+export type TranscriptOpts = {
+    tool_result_chars: number?,
+    transcript_chars: number?,
+}
+
+function M.build_transcript(messages: { TranscriptRow }?, opts: TranscriptOpts?): string
+    local caps: TranscriptOpts = opts or {}
+    local result_cap: number = caps.tool_result_chars or config.get("tool_result_chars", 2000)
+    local total_cap: number = caps.transcript_chars or config.get("transcript_chars", 60000)
     local parts = {}
     for _, msg in ipairs(messages or {}) do
         local role = msg.role or "unknown"
-        local content = msg.content or ""
-        parts[#parts + 1] = string.format("## %s\n%s", role, content)
+        if role == "tool_call" then
+            local args = msg.args
+            if type(args) == "table" then args = cru.json.encode(args) end
+            parts[#parts + 1] = string.format("## tool_call %s\n%s", tostring(msg.name), tostring(args or ""))
+        elseif role == "tool_result" then
+            local content = tostring(msg.content or "")
+            if #content > result_cap then
+                content = content:sub(1, result_cap) .. string.format("\n[truncated %d chars]", #content - result_cap)
+            end
+            if msg.error and msg.error ~= "" then
+                content = "ERROR: " .. tostring(msg.error) .. "\n" .. content
+            end
+            parts[#parts + 1] = "## tool_result\n" .. content
+        else
+            parts[#parts + 1] = string.format("## %s\n%s", role, tostring(msg.content or ""))
+        end
     end
-    return table.concat(parts, "\n\n")
+    local text = table.concat(parts, "\n\n")
+    if #text > total_cap then
+        text = "[earlier turns cut]\n\n" .. text:sub(#text - total_cap + 1)
+    end
+    return text
 end
 
 --- Parse the reviewer's output into a proposal array. Tolerates surrounding
@@ -336,7 +379,7 @@ function M.run(session: any): ()
         return
     end
 
-    local messages = cru.session.messages(session_id, {})
+    local messages = cru.session.messages(session_id, { tools = true })
     if not messages then return end
 
     local turns = M.count_user_turns(messages)

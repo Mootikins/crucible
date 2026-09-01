@@ -42,6 +42,11 @@ local defaults = {
     -- How many recent rejections the reviewer is told about, so it does not
     -- propose a note a human already refused.
     rejection_memory = 20,
+    -- Cut each tool result in the transcript at this many characters.
+    tool_result_chars = 2000,
+    -- Cut the whole transcript at this many characters. The cut removes
+    -- the front, so the reviewer sees how the session ended.
+    transcript_chars = 60000,
 }
 
 -- setup() values. Kept in their own table so the order above stays

@@ -33,6 +33,48 @@ describe("reflection", function()
     end)
   end)
 
+  describe("build_transcript with tools", function()
+    it("renders a tool call with its arguments and its result", function()
+      -- The rows have different shapes, so the list is typed `any`.
+      local msgs: { any } = {
+        { role = "user", content = "run the tests" },
+        { role = "tool_call", id = "c1", name = "bash", args = { command = "cargo test" } },
+        { role = "tool_result", id = "c1", content = "ok" },
+      }
+      local t = plugin.build_transcript(msgs)
+      expect.truthy(t:find("## tool_call bash", 1, true))
+      expect.truthy(t:find("cargo test", 1, true))
+      expect.truthy(t:find("## tool_result", 1, true))
+      expect.truthy(t:find("ok", 1, true))
+    end)
+
+    it("marks a failed tool result", function()
+      local t = plugin.build_transcript({
+        { role = "tool_result", id = "c1", content = "", error = "exit 1" },
+      })
+      expect.truthy(t:find("ERROR: exit 1", 1, true))
+    end)
+
+    it("truncates a long tool result to tool_result_chars", function()
+      local t = plugin.build_transcript({
+        { role = "tool_result", id = "c1", content = string.rep("x", 5000) },
+      }, { tool_result_chars = 100 })
+      expect.truthy(#t < 400)
+      expect.truthy(t:find("[truncated", 1, true))
+    end)
+
+    it("caps the whole transcript at transcript_chars, keeping the tail", function()
+      local msgs = {}
+      for i = 1, 50 do
+        msgs[#msgs + 1] = { role = "user", content = "turn " .. i .. " " .. string.rep("y", 200) }
+      end
+      local t = plugin.build_transcript(msgs, { transcript_chars = 1000 })
+      expect.truthy(#t <= 1100)
+      expect.truthy(t:find("turn 50", 1, true))
+      expect.is_nil(t:find("turn 1 ", 1, true))
+    end)
+  end)
+
   describe("parse_proposals", function()
     it("parses a JSON array", function()
       local p = plugin.parse_proposals('[{"title":"T","body":"B"}]')
@@ -238,6 +280,15 @@ describe("reflection", function()
       expect.is_nil(prompt:find("decoy", 1, true))
     end)
 
+    it("asks the daemon for the tool rows of the session", function()
+      plugin.run({ id = "chat-1" })
+
+      local asked = test_mocks.get_calls("session", "messages")
+      expect.equal(1, #asked)
+      expect.equal("chat-1", asked[1][1])
+      expect.equal(true, asked[1][2].tools)
+    end)
+
     it("sends a prompt with no rejection block when nothing was rejected", function()
       plugin.run({ id = "chat-1" })
 
@@ -323,6 +374,11 @@ describe("reflection", function()
 
     it("declares max_iterations with a default of 12", function()
       expect.equal(12, config.get("max_iterations"))
+    end)
+
+    it("declares the two transcript caps", function()
+      expect.equal(2000, config.get("tool_result_chars"))
+      expect.equal(60000, config.get("transcript_chars"))
     end)
 
     it("lets setup() raise max_iterations", function()
