@@ -36,6 +36,10 @@ config:
       type: number
       description: Seconds to wait for the reflection subagent
       default: 120
+    max_iterations:
+      type: number
+      description: Upper bound on the reviewer's tool-loop turns
+      default: 12
 
 exports:
   auto_discover: true

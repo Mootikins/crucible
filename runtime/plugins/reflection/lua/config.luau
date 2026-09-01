@@ -35,6 +35,10 @@ local defaults = {
     max_proposals = 5,
     -- Seconds to wait for the reflection subagent to respond.
     timeout = 120,
+    -- Upper bound on the reviewer's tool loop. The reviewer reads the kiln
+    -- before it proposes, so it needs more than a handful of turns. 12 is the
+    -- low end of what the WikiSkill proposer used.
+    max_iterations = 12,
 }
 
 -- setup() values. Kept in their own table so the order above stays

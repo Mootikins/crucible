@@ -239,4 +239,20 @@ describe("reflection", function()
       expect.truthy(true)
     end)
   end)
+
+  describe("config", function()
+    local config = require("config")
+
+    -- The default assertion comes first: `config.init` merges keys and
+    -- cannot unset one, so the setup assertion below leaves 20 behind.
+    it("declares max_iterations with a default of 12", function()
+      expect.equal(12, config.get("max_iterations"))
+    end)
+
+    it("lets setup() raise max_iterations", function()
+      config.init({ max_iterations = 20 })
+      expect.equal(20, config.get("max_iterations"))
+      config.init({ max_iterations = nil })
+    end)
+  end)
 end)

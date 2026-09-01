@@ -309,7 +309,7 @@ function M.run(session: any): ()
         -- skipped by the recursion guard.
         system_prompt = M.REFLECTION_MARKER .. "\n\n" .. M.SYSTEM_PROMPT,
         -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
-        max_iterations = config.get("max_iterations_cap", 3),
+        max_iterations = config.get("max_iterations", 12),
         -- No external tool servers for an unattended reviewer. NOTE: built-in
         -- tools are still attached — fully disabling tools needs a core knob
         -- (follow-up); low max_iterations + the propose-only prompt bound it.
