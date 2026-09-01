@@ -13,6 +13,7 @@ import {
 import { markLayoutRestore } from '@/lib/layout-restore';
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
+  collapseEmptyNodes,
   collectLeafGroupIds,
   expandedPanes,
   findFirstPane,
@@ -258,6 +259,28 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
 
   const importLayout = (json: SerializedLayout) => {
     const restored = deserializeLayout(json);
+    /**
+     * A restored layout has to satisfy the same invariant every mutation
+     * maintains: no pane may point at a tab group that does not exist.
+     *
+     * It did not. `collapseEmptyNodes` ran on tab close and on window
+     * operations, but never on RESTORE — so a saved layout carrying a pane
+     * whose `tabGroupId` is dangling brought that pane back on every load,
+     * drawing EmptyPane beside the real work. Nothing the user could do
+     * reached it: opening a session or a file adds a tab to some OTHER pane,
+     * and none of those paths collapse anything. The pane was unremovable by
+     * construction, and it came back after a reload even if it was collapsed
+     * away in a previous run.
+     *
+     * Sanitising here rather than at the serializer, or on the server, on
+     * purpose: this is the one place a layout the store did not build enters
+     * the store, so it is the boundary that owes the check. Layouts already
+     * on disk repair themselves on the next load.
+     *
+     * A layout where EVERY pane dangles collapses to a single empty pane
+     * rather than to nothing, which is the legitimate "Nothing open" state.
+     */
+    restored.layout = collapseEmptyNodes(restored.layout, restored.tabGroups);
     // Snap-not-tween marker: effects reacting to this store swap (edge-panel
     // collapse states) must apply instantly — see lib/layout-restore.
     markLayoutRestore(() =>
