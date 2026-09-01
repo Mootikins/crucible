@@ -182,6 +182,62 @@ macro_rules! bridge_async {
     }};
 }
 
+/// The transcript rows a Lua caller sees for a session's event log.
+///
+/// `include_tools` adds `tool_call` and `tool_result` rows. They are off by
+/// default because most callers want conversation text. The reflection
+/// reviewer wants what the agent did, which is these rows. A role filter
+/// names a text role, so it excludes the tool rows.
+pub(crate) fn message_rows(
+    events: &[crate::observe::LogEvent],
+    role_filter: Option<&str>,
+    include_tools: bool,
+) -> Vec<serde_json::Value> {
+    use crate::observe::LogEvent;
+    let tools_wanted = include_tools && role_filter.is_none();
+    events
+        .iter()
+        .filter_map(|event| {
+            let ts = event.timestamp().to_rfc3339();
+            let text_row = |role: &str, content: &str| {
+                if role_filter.is_some_and(|r| r != role) {
+                    return None;
+                }
+                Some(serde_json::json!({ "role": role, "content": content, "timestamp": ts }))
+            };
+            match event {
+                LogEvent::User { content, .. } => text_row("user", content),
+                LogEvent::Assistant { content, .. } => text_row("assistant", content),
+                LogEvent::System { content, .. } => text_row("system", content),
+                LogEvent::ToolCall { id, name, args, .. } if tools_wanted => {
+                    Some(serde_json::json!({
+                        "role": "tool_call",
+                        "id": id,
+                        "name": name,
+                        "args": args,
+                        "timestamp": ts,
+                    }))
+                }
+                LogEvent::ToolResult {
+                    id,
+                    result,
+                    truncated,
+                    error,
+                    ..
+                } if tools_wanted => Some(serde_json::json!({
+                    "role": "tool_result",
+                    "id": id,
+                    "content": result,
+                    "truncated": truncated,
+                    "error": error,
+                    "timestamp": ts,
+                })),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 impl DaemonSessionApi for DaemonSessionBridge {
     /// A plugin create is the same create an RPC client gets.
     ///
@@ -454,6 +510,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         session_id: String,
         role_filter: Option<String>,
         limit: Option<usize>,
+        include_tools: bool,
     ) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(self.session_manager, |sm| async move {
             if let Some(ref role) = role_filter {
@@ -475,42 +532,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let mut messages: Vec<serde_json::Value> = events
-                .iter()
-                .filter_map(|event| match event {
-                    crate::observe::LogEvent::User { content, .. } => {
-                        if role_filter.as_deref().is_some_and(|r| r != "user") {
-                            return None;
-                        }
-                        Some(serde_json::json!({
-                            "role": "user",
-                            "content": content,
-                            "timestamp": event.timestamp().to_rfc3339(),
-                        }))
-                    }
-                    crate::observe::LogEvent::Assistant { content, .. } => {
-                        if role_filter.as_deref().is_some_and(|r| r != "assistant") {
-                            return None;
-                        }
-                        Some(serde_json::json!({
-                            "role": "assistant",
-                            "content": content,
-                            "timestamp": event.timestamp().to_rfc3339(),
-                        }))
-                    }
-                    crate::observe::LogEvent::System { content, .. } => {
-                        if role_filter.as_deref().is_some_and(|r| r != "system") {
-                            return None;
-                        }
-                        Some(serde_json::json!({
-                            "role": "system",
-                            "content": content,
-                            "timestamp": event.timestamp().to_rfc3339(),
-                        }))
-                    }
-                    _ => None,
-                })
-                .collect();
+            let mut messages = message_rows(&events, role_filter.as_deref(), include_tools);
 
             if let Some(n) = limit {
                 let start = messages.len().saturating_sub(n);

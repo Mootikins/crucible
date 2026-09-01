@@ -63,3 +63,27 @@ async fn sessions_messages_respects_limit() {
 
     assert_eq!(result.len().unwrap(), 1);
 }
+
+#[tokio::test]
+async fn sessions_messages_passes_the_tools_flag_to_the_daemon() {
+    let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let result: Table = lua
+        .load(
+            r#"
+            local msgs, err = cru.session.messages("test-session", { tools = true })
+            assert(err == nil, "unexpected error: " .. tostring(err))
+            return msgs
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    // The mock adds one `tool_call` row only when it received `include_tools`.
+    assert_eq!(result.len().unwrap(), 4);
+    let last: Table = result.get(4).unwrap();
+    assert_eq!(last.get::<String>("role").unwrap(), "tool_call");
+    assert_eq!(last.get::<String>("name").unwrap(), "bash");
+}

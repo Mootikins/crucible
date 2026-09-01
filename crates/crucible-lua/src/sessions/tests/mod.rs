@@ -377,6 +377,7 @@ impl DaemonSessionApi for MockDaemonApi {
         _session_id: String,
         role_filter: Option<String>,
         limit: Option<usize>,
+        include_tools: bool,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
         Box::pin(async move {
             let mut msgs = vec![
@@ -384,6 +385,14 @@ impl DaemonSessionApi for MockDaemonApi {
                 serde_json::json!({ "role": "user", "content": "Hello", "timestamp": "2025-01-01T00:00:01Z" }),
                 serde_json::json!({ "role": "assistant", "content": "Hi there!", "timestamp": "2025-01-01T00:00:02Z" }),
             ];
+            // The tool row appears only when the binding passed the flag, so a
+            // Lua test can tell from the row count whether `tools = true` arrived.
+            if include_tools {
+                msgs.push(serde_json::json!({
+                    "role": "tool_call", "id": "c1", "name": "bash",
+                    "args": { "command": "ls" }, "timestamp": "2025-01-01T00:00:03Z",
+                }));
+            }
             if let Some(role) = role_filter {
                 msgs.retain(|m| m.get("role").and_then(|r| r.as_str()) == Some(role.as_str()));
             }

@@ -7,6 +7,7 @@ use crate::test_support::temp_session_manager;
 mod create;
 mod delegate;
 mod lifecycle;
+mod message_rows;
 mod review;
 
 use crucible_core::config::{BackendType, LlmConfig};

@@ -262,6 +262,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         _: String,
         _: Option<String>,
         _: Option<usize>,
+        _include_tools: bool,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
         Box::pin(async { Ok(vec![]) })
     }

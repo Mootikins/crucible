@@ -146,13 +146,18 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
         move |lua, (session_id, opts): (String, Value)| {
             let a = Arc::clone(&a);
             async move {
-                let (role_filter, limit) = match opts {
-                    Value::Table(ref t) => {
-                        (t.get::<String>("role").ok(), t.get::<usize>("limit").ok())
-                    }
-                    _ => (None, None),
+                let (role_filter, limit, include_tools) = match opts {
+                    Value::Table(ref t) => (
+                        t.get::<String>("role").ok(),
+                        t.get::<usize>("limit").ok(),
+                        t.get::<bool>("tools").unwrap_or(false),
+                    ),
+                    _ => (None, None, false),
                 };
-                match a.load_messages(session_id, role_filter, limit).await {
+                match a
+                    .load_messages(session_id, role_filter, limit, include_tools)
+                    .await
+                {
                     Ok(msgs) => {
                         let table = lua.create_table()?;
                         for (i, msg) in msgs.iter().enumerate() {
@@ -550,6 +555,7 @@ mod tests {
             _: String,
             role_filter: Option<String>,
             limit: Option<usize>,
+            _include_tools: bool,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
             Box::pin(async move {
                 let mut msgs = vec![

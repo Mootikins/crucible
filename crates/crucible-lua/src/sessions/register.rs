@@ -86,7 +86,7 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
     ),
     (
         "messages",
-        "(session_id: string, options: { role: string?, limit: number? }?) \
+        "(session_id: string, options: { role: string?, limit: number?, tools: boolean? }?) \
          -> ({ any }?, string?)",
     ),
     (
@@ -493,18 +493,26 @@ pub(crate) async fn send_and_collect_op(
 }
 
 /// messages(session_id, opts?) -> (messages_table, nil) or (nil, err)
-/// opts: { role = "user"|"assistant"|"system", limit = N }
+/// opts: { role = "user"|"assistant"|"system", limit = N, tools = true }
+/// `tools` adds the `tool_call` and `tool_result` rows; it is off by default.
 pub(crate) async fn messages_op(
     lua: &Lua,
     api: &Arc<dyn DaemonSessionApi>,
     sid: &str,
     opts: Value,
 ) -> mlua::Result<(Value, Value)> {
-    let (role_filter, limit) = match opts {
-        Value::Table(ref t) => (t.get::<String>("role").ok(), t.get::<usize>("limit").ok()),
-        _ => (None, None),
+    let (role_filter, limit, include_tools) = match opts {
+        Value::Table(ref t) => (
+            t.get::<String>("role").ok(),
+            t.get::<usize>("limit").ok(),
+            t.get::<bool>("tools").unwrap_or(false),
+        ),
+        _ => (None, None, false),
     };
-    match api.load_messages(sid.to_string(), role_filter, limit).await {
+    match api
+        .load_messages(sid.to_string(), role_filter, limit, include_tools)
+        .await
+    {
         Ok(messages) => {
             let table = lua.create_table()?;
             for (i, msg) in messages.iter().enumerate() {

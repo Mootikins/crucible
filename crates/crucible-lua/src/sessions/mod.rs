@@ -235,14 +235,16 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// Load conversation messages for a session.
     ///
     /// Returns an array of `{ role, content, timestamp }` objects filtered from
-    /// the session event log. Only User, Assistant, and System events are included.
-    /// `role_filter` restricts to a single role (e.g. `"user"`).
-    /// `limit` returns only the last N messages.
+    /// the session event log. `role_filter` restricts to a single text role
+    /// (e.g. `"user"`). `limit` returns only the last N messages.
+    /// `include_tools` adds `tool_call` and `tool_result` rows
+    /// (`{ role, id, name, args }` and `{ role, id, content, truncated, error }`).
     fn load_messages(
         &self,
         session_id: String,
         role_filter: Option<String>,
         limit: Option<usize>,
+        include_tools: bool,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
     /// Inject a message into the session context without triggering LLM completion.
