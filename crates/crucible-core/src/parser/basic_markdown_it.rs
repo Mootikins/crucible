@@ -97,7 +97,7 @@ impl BasicMarkdownItExtension {
         };
 
         // Convert AST to extract markdown structures
-        match AstConverter::convert(&ast) {
+        match AstConverter::convert(&ast, content) {
             Ok(converted) => {
                 // Merge extracted content from the AST conversion
                 doc_content.blocks.extend(converted.blocks);
@@ -405,5 +405,65 @@ mod tests {
             texts[3]
         );
         assert!(texts[4].contains("quoted text here"));
+    }
+
+    #[test]
+    fn a_block_hashes_its_own_source_bytes() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = "# Title\n\nAlpha has enough words here.\n";
+
+        ext.parse(source, &mut content);
+
+        for block in &content.blocks {
+            let bytes = &source.as_bytes()[block.start_offset..block.end_offset];
+            let expected = crate::parser::BlockHash::new(*blake3::hash(bytes).as_bytes());
+            assert_eq!(
+                block.content_hash, expected,
+                "block {:?} must hash the source it spans, not its stripped text",
+                block.kind
+            );
+        }
+    }
+
+    #[test]
+    fn two_identical_blocks_share_a_hash_but_not_a_position() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        // The same sentence twice. The hash is a reuse key, so it collides on
+        // purpose; identity has to come from the span.
+        let source = "Alpha has enough words here.\n\nAlpha has enough words here.\n";
+
+        ext.parse(source, &mut content);
+
+        assert_eq!(content.blocks.len(), 2);
+        assert_eq!(
+            content.blocks[0].content_hash, content.blocks[1].content_hash,
+            "identical source must reuse one embedding"
+        );
+        assert_ne!(
+            content.blocks[0].start_offset, content.blocks[1].start_offset,
+            "the span is what tells the two apart"
+        );
+    }
+
+    #[test]
+    fn a_display_formula_is_its_own_kind() {
+        use crate::parser::types::BlockKind;
+
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = "$$\nE = mc^2\n$$\n\n```mermaid\ngraph TD;\nA-->B;\n```\n";
+
+        ext.parse(source, &mut content);
+
+        assert_eq!(content.blocks[0].kind, BlockKind::Latex);
+        assert_eq!(
+            content.blocks[1].kind,
+            BlockKind::Code {
+                language: Some("mermaid".to_string())
+            },
+            "a mermaid fence stays a code block, named by its info string"
+        );
     }
 }

@@ -1,5 +1,6 @@
 //! Block types: tables, blockquotes, and horizontal rules
 
+use super::BlockHash;
 use serde::{Deserialize, Serialize};
 
 /// A markdown table
@@ -121,6 +122,8 @@ pub enum BlockKind {
     },
     /// A block quote.
     Blockquote,
+    /// A display formula, `$$ ... $$` on its own lines.
+    Latex,
     /// A table.
     Table,
     /// A thematic break.
@@ -145,16 +148,35 @@ pub struct Block {
 
     /// Byte offset one past the block's last byte, relative to the body.
     pub end_offset: usize,
+
+    /// BLAKE3 of the block's source bytes, `body[start_offset..end_offset]`.
+    ///
+    /// This is a **reuse** key, not an identity. Two identical blocks hash
+    /// alike on purpose, so one embedding serves both, in this note and in
+    /// every other. Identity is the span: no two top-level blocks of a note
+    /// begin at the same byte.
+    pub content_hash: BlockHash,
 }
 
 impl Block {
-    /// Create a block.
-    pub fn new(kind: BlockKind, text: String, start_offset: usize, end_offset: usize) -> Self {
+    /// Create a block, hashing the source it spans.
+    pub fn new(
+        kind: BlockKind,
+        text: String,
+        start_offset: usize,
+        end_offset: usize,
+        source: &str,
+    ) -> Self {
+        let bytes = source
+            .as_bytes()
+            .get(start_offset..end_offset)
+            .unwrap_or_default();
         Self {
             kind,
             text,
             start_offset,
             end_offset,
+            content_hash: BlockHash::new(*blake3::hash(bytes).as_bytes()),
         }
     }
 

@@ -547,4 +547,30 @@ mod tests {
         assert_eq!(doc.metadata.paragraph_count, 2);
         assert_eq!(doc.metadata.list_count, 1);
     }
+
+    #[tokio::test]
+    async fn the_structure_counts_come_from_the_ordered_block_list() {
+        // Two headings, two paragraphs, one list, one fence. The counts must
+        // match the blocks the parser emits, not a per-kind side list.
+        let content = concat!(
+            "# Title\n\n",
+            "Alpha has enough words here.\n\n",
+            "## Section\n\n",
+            "- item one\n- item two\n\n",
+            "```rust\nlet x = 42;\n```\n\n",
+            "Beta has enough words here.\n"
+        );
+        let parser = CrucibleParser::new();
+
+        let doc = parser
+            .parse_content(content, &PathBuf::from("counts.md"))
+            .await
+            .unwrap();
+
+        assert_eq!(doc.content.blocks.len(), 6);
+        assert_eq!(doc.metadata.heading_count, 2);
+        assert_eq!(doc.metadata.paragraph_count, 2);
+        assert_eq!(doc.metadata.list_count, 1);
+        assert_eq!(doc.metadata.code_block_count, 1);
+    }
 }

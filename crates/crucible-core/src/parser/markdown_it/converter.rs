@@ -18,7 +18,7 @@ pub struct AstConverter;
 
 impl AstConverter {
     /// Convert a markdown-it AST to NoteContent
-    pub fn convert(root: &Node) -> ParserResult<NoteContent> {
+    pub fn convert(root: &Node, source: &str) -> ParserResult<NoteContent> {
         let mut content = NoteContent::new();
 
         // Walk the AST and extract content
@@ -27,7 +27,7 @@ impl AstConverter {
         // The ordered view. One pass over the root's direct children, which
         // are the document's top-level blocks in order, each carrying its own
         // source-map span.
-        content.blocks = Self::top_level_blocks(root);
+        content.blocks = Self::top_level_blocks(root, source);
 
         // Calculate word and character counts
         content.word_count = Self::calculate_word_count(&content);
@@ -157,15 +157,33 @@ impl AstConverter {
     /// ends of its span, so nothing here measures a block by arithmetic over
     /// stripped text. A node whose kind is not one of the seven is skipped
     /// rather than guessed at.
-    fn top_level_blocks(root: &Node) -> Vec<Block> {
+    fn top_level_blocks(root: &Node, source: &str) -> Vec<Block> {
         root.children
             .iter()
             .filter_map(|node| {
-                let (kind, text) = Self::classify(node)?;
+                let (mut kind, text) = Self::classify(node)?;
                 let (start_offset, end_offset) = node.srcmap?.get_byte_offsets();
-                Some(Block::new(kind, text, start_offset, end_offset))
+
+                // A display formula reaches markdown-it as a paragraph, so the
+                // source decides, not the stripped text.
+                if kind == BlockKind::Paragraph
+                    && Self::is_display_formula(source, start_offset, end_offset)
+                {
+                    kind = BlockKind::Latex;
+                }
+
+                Some(Block::new(kind, text, start_offset, end_offset, source))
             })
             .collect()
+    }
+
+    /// True when the span is a `$$ ... $$` display formula.
+    fn is_display_formula(source: &str, start_offset: usize, end_offset: usize) -> bool {
+        let Some(span) = source.get(start_offset..end_offset) else {
+            return false;
+        };
+        let span = span.trim();
+        span.len() > 4 && span.starts_with("$$") && span.ends_with("$$")
     }
 
     /// Classify one top-level node and take its text, or `None` when it is
@@ -363,9 +381,10 @@ mod tests {
     #[test]
     fn test_convert_simple_content() {
         let md = setup_parser();
-        let ast = md.parse("# Heading\n\nParagraph text.");
+        let source = "# Heading\n\nParagraph text.";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.headings.len(), 1);
         assert_eq!(content.headings[0].text, "Heading");
@@ -375,9 +394,10 @@ mod tests {
     #[test]
     fn test_word_count() {
         let md = setup_parser();
-        let ast = md.parse("# Title\n\nThis is a test paragraph.");
+        let source = "# Title\n\nThis is a test paragraph.";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         // "Title" + "This is a test paragraph" = 6 words
         assert!(content.word_count >= 6);
@@ -386,9 +406,10 @@ mod tests {
     #[test]
     fn parse_pending_checkbox() {
         let md = setup_parser();
-        let ast = md.parse("- [ ] task");
+        let source = "- [ ] task";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.lists.len(), 1);
         assert_eq!(content.lists[0].items.len(), 1);
@@ -401,9 +422,10 @@ mod tests {
     #[test]
     fn parse_done_checkbox() {
         let md = setup_parser();
-        let ast = md.parse("- [x] task");
+        let source = "- [x] task";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.lists.len(), 1);
         assert_eq!(content.lists[0].items.len(), 1);
@@ -416,9 +438,10 @@ mod tests {
     #[test]
     fn parse_in_progress_checkbox() {
         let md = setup_parser();
-        let ast = md.parse("- [/] task");
+        let source = "- [/] task";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.lists.len(), 1);
         assert_eq!(content.lists[0].items.len(), 1);
@@ -431,9 +454,10 @@ mod tests {
     #[test]
     fn parse_cancelled_checkbox() {
         let md = setup_parser();
-        let ast = md.parse("- [-] task");
+        let source = "- [-] task";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.lists.len(), 1);
         assert_eq!(content.lists[0].items.len(), 1);
@@ -446,9 +470,10 @@ mod tests {
     #[test]
     fn parse_blocked_checkbox() {
         let md = setup_parser();
-        let ast = md.parse("- [!] task");
+        let source = "- [!] task";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.lists.len(), 1);
         assert_eq!(content.lists[0].items.len(), 1);
@@ -461,9 +486,10 @@ mod tests {
     #[test]
     fn parse_uppercase_x_as_done() {
         let md = setup_parser();
-        let ast = md.parse("- [X] task");
+        let source = "- [X] task";
+        let ast = md.parse(source);
 
-        let content = AstConverter::convert(&ast).unwrap();
+        let content = AstConverter::convert(&ast, source).unwrap();
 
         assert_eq!(content.lists.len(), 1);
         assert_eq!(content.lists[0].items.len(), 1);

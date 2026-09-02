@@ -8,7 +8,19 @@ use super::types::{BlockEmbedding, EnrichmentMetadata};
 use anyhow::Result;
 use crucible_core::enrichment::{EmbeddingProvider, EnrichedNote};
 use crucible_core::parser::types::BlockKind;
+use crucible_core::parser::BlockHash;
 use crucible_core::ParsedNote;
+
+/// One block queued for embedding.
+struct EmbedCandidate {
+    /// The block's rank in the note, as `block_<n>`.
+    block_id: String,
+    /// The text that reaches the model, heading trail included.
+    text: String,
+    /// BLAKE3 of the block's source bytes. The reuse key: an identical block
+    /// anywhere yields this same hash, so one vector can serve them all.
+    content_hash: BlockHash,
+}
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -141,16 +153,21 @@ impl Enricher {
                 chunk.len()
             );
 
-            let texts: Vec<&str> = chunk.iter().map(|(_, text)| text.as_str()).collect();
-            let block_ids: Vec<&String> = chunk.iter().map(|(id, _)| id).collect();
+            let texts: Vec<&str> = chunk.iter().map(|c| c.text.as_str()).collect();
 
             let vectors = provider.embed_batch(&texts).await?;
 
-            let batch_embeddings: Vec<BlockEmbedding> = block_ids
+            let batch_embeddings: Vec<BlockEmbedding> = chunk
                 .iter()
                 .zip(vectors)
-                .map(|(block_id, vector)| {
-                    BlockEmbedding::new((*block_id).clone(), vector, model_name.to_string())
+                .map(|(candidate, vector)| {
+                    BlockEmbedding::with_content_hash(
+                        candidate.block_id.clone(),
+                        vector,
+                        model_name.to_string(),
+                        None,
+                        candidate.content_hash.to_hex(),
+                    )
                 })
                 .collect();
 
@@ -175,7 +192,7 @@ impl Enricher {
         &self,
         parsed: &ParsedNote,
         changed_blocks: &[String],
-    ) -> Vec<(String, String)> {
+    ) -> Vec<EmbedCandidate> {
         // Embed everything when the caller names no blocks, or when the ids
         // are section-style (from the pipeline's diff layer) rather than
         // concrete block ids.
@@ -218,7 +235,11 @@ impl Enricher {
                 breadcrumb.push_str(" > ");
                 breadcrumb.push_str(heading);
             }
-            blocks.push((block_id, format!("[{}] {}", breadcrumb, block.text)));
+            blocks.push(EmbedCandidate {
+                block_id,
+                text: format!("[{}] {}", breadcrumb, block.text),
+                content_hash: block.content_hash,
+            });
         }
 
         blocks
@@ -311,25 +332,32 @@ mod tests {
         ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build()
     }
 
+    /// Build a block that spans real bytes: `start_offset` filler, then the
+    /// text. The hash is then BLAKE3 of the text, as it is in production.
+    fn block(
+        kind: crucible_core::parser::types::BlockKind,
+        text: &str,
+        start_offset: usize,
+    ) -> crucible_core::parser::types::Block {
+        use crucible_core::parser::types::Block;
+        let source = " ".repeat(start_offset) + text;
+        let end_offset = source.len();
+        Block::new(kind, text.to_string(), start_offset, end_offset, &source)
+    }
+
     fn para(text: &str, start_offset: usize) -> crucible_core::parser::types::Block {
-        use crucible_core::parser::types::{Block, BlockKind};
-        let end_offset = start_offset + text.len();
-        Block::new(
-            BlockKind::Paragraph,
-            text.to_string(),
+        block(
+            crucible_core::parser::types::BlockKind::Paragraph,
+            text,
             start_offset,
-            end_offset,
         )
     }
 
     fn heading(level: u8, text: &str, start_offset: usize) -> crucible_core::parser::types::Block {
-        use crucible_core::parser::types::{Block, BlockKind};
-        let end_offset = start_offset + text.len();
-        Block::new(
-            BlockKind::Heading { level },
-            text.to_string(),
+        block(
+            crucible_core::parser::types::BlockKind::Heading { level },
+            text,
             start_offset,
-            end_offset,
         )
     }
 
@@ -463,13 +491,13 @@ mod tests {
 
         assert_eq!(blocks.len(), 1, "the two-word block is skipped");
         assert_eq!(
-            blocks[0].0, "block_1",
+            blocks[0].block_id, "block_1",
             "the id stays the block's rank in the document, so the skip leaves a hole"
         );
     }
 
     fn create_test_note_with_all_extractable_block_types() -> ParsedNote {
-        use crucible_core::parser::types::{Block, BlockKind};
+        use crucible_core::parser::types::BlockKind;
         use crucible_core::parser::ParsedNoteBuilder;
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/enrichment.md")).build();
@@ -481,28 +509,32 @@ mod tests {
                 "Paragraph content carries enough words for extraction checks",
                 120,
             ),
-            Block::new(
+            block(
                 BlockKind::Code {
                     language: Some("rust".to_string()),
                 },
-                "fn demo_example() { let answer = 42; println!(\"{}\", answer); }".to_string(),
+                "fn demo_example() { let answer = 42; println!(\"{}\", answer); }",
                 160,
-                222,
             ),
-            Block::new(
+            block(
                 BlockKind::List { ordered: false },
-                "First list item carries context Second list item keeps meaning".to_string(),
+                "First list item carries context Second list item keeps meaning",
                 230,
-                292,
             ),
-            Block::new(
+            block(
                 BlockKind::Blockquote,
-                "Blockquote words stay visible with context".to_string(),
+                "Blockquote words stay visible with context",
                 300,
-                342,
             ),
         ];
         note
+    }
+
+    fn pairs(candidates: &[EmbedCandidate]) -> Vec<(String, String)> {
+        candidates
+            .iter()
+            .map(|c| (c.block_id.clone(), c.text.clone()))
+            .collect()
     }
 
     /// The seven ids and texts every block-level test below expects, in
@@ -548,7 +580,7 @@ mod tests {
 
         let blocks = service.extract_block_texts(&note, &[]);
 
-        assert_eq!(blocks, expected_all_block_types());
+        assert_eq!(pairs(&blocks), expected_all_block_types());
     }
 
     #[test]
@@ -559,38 +591,36 @@ mod tests {
 
         let blocks = service.extract_block_texts(&note, &changed);
 
-        assert_eq!(blocks, expected_all_block_types()[2..].to_vec());
+        assert_eq!(pairs(&blocks), expected_all_block_types()[2..].to_vec());
     }
 
     #[test]
     fn a_block_carries_the_breadcrumb_of_the_section_it_sits_in() {
-        use crucible_core::parser::types::{Block, BlockKind};
+        use crucible_core::parser::types::BlockKind;
         use crucible_core::parser::ParsedNoteBuilder;
 
         let enricher = Enricher::without_embeddings();
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/guide.md")).build();
         note.content.blocks = vec![
-            Block::new(BlockKind::Heading { level: 1 }, "Guide".into(), 0, 8),
-            Block::new(BlockKind::Heading { level: 2 }, "Setup".into(), 8, 17),
-            Block::new(
+            block(BlockKind::Heading { level: 1 }, "Guide", 0),
+            block(BlockKind::Heading { level: 2 }, "Setup", 8),
+            block(
                 BlockKind::Paragraph,
-                "install the toolchain before anything else".into(),
+                "install the toolchain before anything else",
                 17,
-                60,
             ),
-            Block::new(BlockKind::Heading { level: 2 }, "Usage".into(), 60, 69),
-            Block::new(
+            block(BlockKind::Heading { level: 2 }, "Usage", 60),
+            block(
                 BlockKind::Paragraph,
-                "run the command with the flag you need".into(),
+                "run the command with the flag you need",
                 69,
-                110,
             ),
         ];
 
         let blocks = enricher.extract_block_texts(&note, &[]);
         let by_id: std::collections::HashMap<&str, &str> = blocks
             .iter()
-            .map(|(id, text)| (id.as_str(), text.as_str()))
+            .map(|c| (c.block_id.as_str(), c.text.as_str()))
             .collect();
 
         assert_eq!(
@@ -602,5 +632,29 @@ mod tests {
             Some("[guide > Guide > Usage] run the command with the flag you need"),
             "a block under the second H2 must not inherit the first H2"
         );
+    }
+
+    #[tokio::test]
+    async fn each_block_embedding_carries_its_blocks_content_hash() {
+        use crucible_core::parser::ParsedNoteBuilder;
+
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let enricher = Enricher::new(provider);
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
+        note.content.blocks = vec![
+            para("Alpha has enough words here for embedding", 0),
+            para("Beta has enough words here for embedding", 100),
+        ];
+
+        let embeddings = enricher.generate_embeddings(&note, &[]).await.unwrap();
+
+        assert_eq!(embeddings.len(), 2);
+        for (embedding, block) in embeddings.iter().zip(&note.content.blocks) {
+            assert_eq!(
+                embedding.content_hash.as_deref(),
+                Some(block.content_hash.to_hex().as_str()),
+                "the reuse key must reach the embedding"
+            );
+        }
     }
 }
