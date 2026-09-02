@@ -175,7 +175,7 @@ Because policy lives in Lua, both plugins are fully shadowable — the reviewer 
 ## Known limits
 
 - An `update` to a skill keeps the frontmatter as the parser returns it. CRLF line endings and blank lines at the edge of the frontmatter are normalised in the written file.
-- The plugin's `validate_proposal` refuses the same targets the CLI refuses, but its check of the staging path is laxer for paths with `./` or `//` segments. The CLI refuses those at accept, so the effect is a staged file that cannot land, never a write into the staging area.
+- The plugin does not check where a target may land; `cru proposals accept` does. A proposal with a bad target is staged, and accept refuses it with a clear message.
 
 ## Related
 

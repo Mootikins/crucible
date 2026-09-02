@@ -270,33 +270,12 @@ describe("reflection", function()
     it("requires target on an update", function()
       expect.truthy(plugin.validate_proposal({ kind = "update", title = "T", body = "B" }))
     end)
-    it("accepts an update that targets a skill", function()
+    it("leaves the target to the CLI, which refuses a bad one at accept", function()
+      -- One rule, in one language: `cru proposals accept` checks where a
+      -- target may land. The plugin stages the file and the CLI decides.
       expect.is_nil(plugin.validate_proposal({ kind = "update", target = ".crucible/skills/x/SKILL.md", title = "x", body = "B" }))
-      expect.is_nil(plugin.validate_proposal({ kind = "update", target = "Notes/SKILL.md", title = "x", body = "B" }))
-    end)
-    it("still refuses an update that targets the staging area", function()
-      local reason = "update may not target the staging area"
-      expect.equal(reason, plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/y.md", title = "y", body = "B" }))
-      expect.equal(reason, plugin.validate_proposal({ kind = "update", target = "./.crucible/proposals/y.md", title = "y", body = "B" }))
-      -- A SKILL.md inside the staging area passes the `.crucible` rule, so
-      -- only the staging rule refuses it.
-      expect.equal(reason, plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/x/SKILL.md", title = "x", body = "B" }))
-    end)
-    it("refuses an update to the rest of the .crucible directory, as the CLI does", function()
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/kiln.toml", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = "Notes/.crucible/x.md", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = "./.crucible/x.md", title = "T", body = "B" }))
-    end)
-    it("refuses a create on a skill path in every position, as the CLI does", function()
-      -- `cru proposals accept` checks every path component, not only the first.
-      expect.truthy(plugin.validate_proposal({ target = "Notes/.crucible/x.md", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ target = "./.crucible/x.md", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ target = "Notes/SKILL.md", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ target = "SKILL.md", title = "T", body = "B" }))
-      -- A file that only contains the name is a plain note.
-      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/my.crucible.md" }))
-      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/NOT-SKILL.md" }))
+      expect.is_nil(plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/y.md", title = "y", body = "B" }))
+      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/SKILL.md" }))
     end)
     it("refuses a skill description that spans lines", function()
       -- The CLI refuses it at accept time: the frontmatter splitter cuts at

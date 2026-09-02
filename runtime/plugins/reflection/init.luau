@@ -216,49 +216,19 @@ function M.proposal_id(proposal, index, stamp)
     return string.format("reflection-%s-%d-%s", stamp, index, slugify(proposal.title or proposal.name))
 end
 
---- True when the target is a skill entry point.
-local function is_skill_file(target: string): boolean
-    return target:match("^SKILL%.md$") ~= nil or target:match("/SKILL%.md$") ~= nil
-end
-
---- True for a path a `create` may never touch. This mirrors `is_skill_path`
---- in `cru proposals`: any path component named `.crucible` (not only the
---- first one), or a file named `SKILL.md`. A proposal that fails here is
---- refused at accept time, so it is not worth a stage.
-local function is_skill_path(target: string): boolean
-    for component in target:gmatch("[^/]+") do
-        if component == ".crucible" then return true end
-    end
-    return is_skill_file(target)
-end
-
---- True under `.crucible/proposals/`: the staging area, which no proposal
---- may write through `accept`. A leading `./` does not hide it.
-local function is_staging_path(target: string): boolean
-    return target:match("^%.?/?%.crucible/proposals/") ~= nil
-end
-
 --- Return nil when a proposal is well formed, else a reason string. The
---- three kinds mirror `cru proposals`: a `create` lands a new note, an
---- `update` replaces the body of an existing note or skill, a `skill` lands
---- a new SKILL.md. A create never lands on a skill path. An update never
---- lands in the staging area, and under `.crucible/` it may name only a
---- SKILL.md.
+--- checks shape the staged file: the kind, the title, and for a skill the
+--- name and the one-line description. Where a target may land is the
+--- CLI's rule alone: `cru proposals accept` refuses a bad target, and the
+--- staged file stays with a clear message.
 function M.validate_proposal(p: any): string?
     if type(p) ~= "table" then return "not a table" end
     if type(p.body) ~= "string" or p.body == "" then return "missing body" end
     local kind = p.kind or "create"
     if kind == "create" then
         if type(p.title) ~= "string" or p.title == "" then return "missing title" end
-        if type(p.target) == "string" and is_skill_path(p.target) then
-            return "create may not target the .crucible directory or a SKILL.md"
-        end
     elseif kind == "update" then
         if type(p.target) ~= "string" or p.target == "" then return "update needs a target" end
-        if is_staging_path(p.target) then return "update may not target the staging area" end
-        if is_skill_path(p.target) and not is_skill_file(p.target) then
-            return "update may not target the .crucible directory"
-        end
         if type(p.title) ~= "string" or p.title == "" then return "missing title" end
     elseif kind == "skill" then
         -- agentskills.io: 1 to 64 characters, a-z, 0-9 and single hyphens,
