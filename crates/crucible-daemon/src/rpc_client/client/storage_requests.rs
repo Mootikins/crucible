@@ -193,6 +193,22 @@ fn default_search_limit() -> usize {
     20
 }
 
+/// One row of a `search_vectors` reply.
+///
+/// The daemon answers from the block-first search, the same path the search
+/// tool and precognition read. `block` says which passage answered; it is
+/// absent when the kiln has note vectors only. `snippet` is the block's own
+/// text, so a client can quote the passage without a second round trip.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VectorHit {
+    pub document_id: String,
+    pub score: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<crucible_core::types::database::BlockRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+}
+
 /// Request for `search_text`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchTextRequest {

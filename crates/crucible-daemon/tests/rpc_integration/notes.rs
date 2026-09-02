@@ -391,3 +391,137 @@ async fn test_get_note_by_name_not_found() {
 
     server.shutdown().await;
 }
+
+// =============================================================================
+// Block-first search on the wire
+// =============================================================================
+
+/// A kiln whose one note has an embedded block row.
+///
+/// The rows are written before the daemon opens the kiln, the same way
+/// `create_seeded_kiln` seeds notes. A 3-dimension vector keeps the cosine
+/// arithmetic readable.
+async fn create_block_indexed_kiln() -> TempDir {
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{BlockRecord, NoteRecord};
+    use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
+
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let db_dir = kiln_dir.path().join(".crucible");
+    std::fs::create_dir_all(&db_dir).expect("Failed to create .crucible dir");
+    let db_path = db_dir.join("crucible-sqlite.db");
+
+    let client = create_sqlite_client(SqliteConfig::new(&db_path))
+        .await
+        .expect("Failed to create SQLite client");
+
+    let note = NoteRecord::new("notes/kilns.md", BlockHash::zero())
+        .with_title("Kilns")
+        .with_embedding(vec![0.0, 1.0, 0.0]);
+    client
+        .as_note_store()
+        .upsert(note)
+        .await
+        .expect("Failed to insert note");
+
+    let block = BlockRecord {
+        note_path: "notes/kilns.md".to_string(),
+        span_start: 42,
+        span_end: 91,
+        kind: "paragraph".to_string(),
+        content_hash: BlockHash::zero(),
+        text: "A kiln is where accrued knowledge goes.".to_string(),
+        embedding: Some(vec![1.0, 0.0, 0.0]),
+        embedding_model: Some("test".to_string()),
+        embedding_dimensions: Some(3),
+    };
+    client
+        .as_block_store()
+        .replace_note_blocks("notes/kilns.md", vec![block])
+        .await
+        .expect("Failed to insert block");
+
+    drop(client);
+    kiln_dir
+}
+
+/// `cru search` and `cru eval precognition` read the RPC. The RPC must name
+/// the block that answered, as the search tool and precognition already do.
+#[tokio::test]
+async fn search_vectors_rpc_names_the_block_that_answered() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = create_block_indexed_kiln().await;
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    let hits = client
+        .search_vectors(kiln_dir.path(), &[1.0, 0.0, 0.0], 10, None)
+        .await
+        .expect("search_vectors RPC failed");
+
+    assert_eq!(hits.len(), 1, "one block row, one hit: {hits:?}");
+    let hit = &hits[0];
+    assert_eq!(hit.document_id, "notes/kilns.md");
+    let block = hit.block.as_ref().expect("the hit names its block");
+    assert_eq!(block.span_start, 42);
+    assert_eq!(block.span_end, 91);
+    assert_eq!(block.kind, "paragraph");
+    assert_eq!(
+        hit.snippet.as_deref(),
+        Some("A kiln is where accrued knowledge goes.")
+    );
+
+    server.shutdown().await;
+}
+
+/// A kiln indexed before the block store existed has note vectors only. The
+/// RPC still answers, at note level, with no block.
+#[tokio::test]
+async fn search_vectors_rpc_answers_at_note_level_when_a_kiln_has_no_blocks() {
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::NoteRecord;
+    use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
+
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let db_dir = kiln_dir.path().join(".crucible");
+    std::fs::create_dir_all(&db_dir).expect("Failed to create .crucible dir");
+    {
+        let sqlite = create_sqlite_client(SqliteConfig::new(db_dir.join("crucible-sqlite.db")))
+            .await
+            .expect("Failed to create SQLite client");
+        let note = NoteRecord::new("notes/old.md", BlockHash::zero())
+            .with_title("Old")
+            .with_embedding(vec![1.0, 0.0, 0.0]);
+        sqlite
+            .as_note_store()
+            .upsert(note)
+            .await
+            .expect("Failed to insert note");
+    }
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    let hits = client
+        .search_vectors(kiln_dir.path(), &[1.0, 0.0, 0.0], 10, None)
+        .await
+        .expect("search_vectors RPC failed");
+
+    assert_eq!(hits.len(), 1, "the note fallback answers: {hits:?}");
+    assert_eq!(hits[0].document_id, "notes/old.md");
+    assert!(hits[0].block.is_none(), "a note hit names no block");
+
+    server.shutdown().await;
+}

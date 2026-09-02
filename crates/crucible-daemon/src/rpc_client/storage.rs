@@ -209,14 +209,14 @@ impl KnowledgeRepository for DaemonStorageClient {
 
         Ok(results
             .into_iter()
-            .filter(|(_, score)| *score >= 0.5)
-            .map(|(doc_id, score)| KnowledgeSearchResult {
-                document_id: DocumentId(doc_id),
-                score,
+            .filter(|hit| hit.score >= 0.5)
+            .map(|hit| KnowledgeSearchResult {
+                document_id: DocumentId(hit.document_id),
+                score: hit.score,
                 highlights: None,
-                snippet: None,
+                snippet: hit.snippet,
                 kiln: None,
-                block: None,
+                block: hit.block,
             })
             .collect())
     }
@@ -403,11 +403,11 @@ impl NoteStore for DaemonNoteStore {
             crucible_core::storage::Scope::workspace_unchecked(self.client.kiln_path())
         });
         let mut hits = Vec::with_capacity(results.len());
-        for (doc_id, score) in results {
-            if let Ok(Some(note)) = self.get(&doc_id, &hydration_authority).await {
+        for hit in results {
+            if let Ok(Some(note)) = self.get(&hit.document_id, &hydration_authority).await {
                 hits.push(StorageSearchResult {
                     note,
-                    score: score as f32,
+                    score: hit.score as f32,
                 });
             }
         }

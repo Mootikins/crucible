@@ -484,31 +484,41 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let kiln_path = params.kiln.as_str();
+    let kiln_path = std::path::PathBuf::from(params.kiln);
     let vector = params.vector;
     let limit = params.limit;
 
-    let scope = request_scope(Path::new(kiln_path));
-
-    // Get or open connection to the kiln
-    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+    let handle = match km.get_or_open(&kiln_path).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    // Execute vector search; scope filters at the SQL layer.
-    match handle.search_vectors(vector, limit, &scope).await {
+    // One search path. `cru search` and `cru eval precognition` read this
+    // reply, so it comes from the same block-first search the search tool
+    // and precognition use. The repository scopes note reads to the kiln
+    // itself. No name: the request carries a directory, not a registry
+    // entry, and a hit must not disclose the directory as a name.
+    let source = crate::multi_kiln_search::KilnSearchSource {
+        knowledge_repo: handle.as_knowledge_repository(),
+        kiln_path,
+        kiln_name: None,
+    };
+    match crate::multi_kiln_search::search_across_kilns(&[source], vector, limit, None, None).await
+    {
         Ok(results) => {
-            let json_results: Vec<_> = results
+            let hits: Vec<crate::rpc_client::VectorHit> = results
                 .into_iter()
-                .map(|(doc_id, score)| {
-                    serde_json::json!({
-                        "document_id": doc_id,
-                        "score": score
-                    })
+                .map(|hit| crate::rpc_client::VectorHit {
+                    document_id: hit.document_id.0,
+                    score: hit.score,
+                    block: hit.block,
+                    snippet: hit.snippet,
                 })
                 .collect();
-            Response::success(req.id, json_results)
+            match serde_json::to_value(hits) {
+                Ok(v) => Response::success(req.id, v),
+                Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+            }
         }
         Err(e) => internal_error(req.id, e),
     }

@@ -17,6 +17,15 @@ pub struct SearchResultWithScore {
     pub title: String,
     pub content: String,
     pub score: f64,
+    /// The block that answered, when semantic search reached block
+    /// granularity. A text hit and a note-level hit carry `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<crucible_core::types::database::BlockRef>,
+}
+
+/// `paragraph 42..91`: the block's kind and its byte span in the note body.
+fn block_span_label(block: &crucible_core::types::database::BlockRef) -> String {
+    format!("{} {}..{}", block.kind, block.span_start, block.span_end)
 }
 
 /// Detect if stdout is connected to an interactive terminal.
@@ -65,6 +74,10 @@ fn format_as_plain(
 
         output.push_str(&format!("   Path: {}\n", result.id.dimmed()));
 
+        if let Some(block) = &result.block {
+            output.push_str(&format!("   Block: {}\n", block_span_label(block).dimmed()));
+        }
+
         if show_content {
             let preview = result
                 .content
@@ -105,10 +118,16 @@ fn format_as_table(
 
     // Rows
     for (idx, result) in results.iter().enumerate() {
+        // The span shares the Path cell: a second line under the note, so
+        // note hits do not carry an empty column.
+        let path_cell = match &result.block {
+            Some(block) => format!("{}\n{}", result.id, block_span_label(block)),
+            None => result.id.clone(),
+        };
         let mut row = vec![
             Cell::new(idx + 1),
             Cell::new(&result.title).fg(Color::Cyan),
-            Cell::new(&result.id).fg(Color::DarkGrey),
+            Cell::new(path_cell).fg(Color::DarkGrey),
         ];
 
         if show_scores {
@@ -213,12 +232,14 @@ mod tests {
                 title: "Test Note 1".to_string(),
                 content: "This is test content".to_string(),
                 score: 0.95,
+                block: None,
             },
             SearchResultWithScore {
                 id: "test2.md".to_string(),
                 title: "Test Note 2".to_string(),
                 content: "Another test content".to_string(),
                 score: 0.85,
+                block: None,
             },
         ]
     }
@@ -290,6 +311,7 @@ mod tests {
             title: "Long Content".to_string(),
             content: "a".repeat(200), // Very long content
             score: 0.9,
+            block: None,
         }];
 
         let output = format_search_results(&results, OutputFormat::Table, false, true).unwrap();
@@ -311,6 +333,7 @@ mod tests {
             title: "CJK".to_string(),
             content: format!("x{}", "\u{65E5}".repeat(70)),
             score: 0.9,
+            block: None,
         }];
 
         let output = format_search_results(&results, OutputFormat::Table, false, true).unwrap();
@@ -333,6 +356,7 @@ mod tests {
             title: "Emoji".to_string(),
             content: format!("ab{}", "\u{1F525}".repeat(70)),
             score: 0.9,
+            block: None,
         }];
 
         let output = format_search_results(&results, OutputFormat::Table, false, true).unwrap();
@@ -353,6 +377,7 @@ mod tests {
             title: "Long".to_string(),
             content: "\u{65E5}".repeat(4000),
             score: 0.9,
+            block: None,
         }];
 
         let output = format_search_results(&results, OutputFormat::Plain, false, true).unwrap();

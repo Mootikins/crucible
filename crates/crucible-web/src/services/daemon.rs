@@ -317,7 +317,7 @@ impl ReconnectingDaemon {
         kiln_path: &Path,
         vector: &[f32],
         limit: usize,
-    ) -> anyhow::Result<Vec<(String, f64)>> {
+    ) -> anyhow::Result<Vec<crucible_daemon::VectorHit>> {
         let kiln_path = kiln_path.to_path_buf();
         let vector = vector.to_vec();
         self.call_with_reconnect("search_vectors", move |daemon| {

@@ -102,6 +102,7 @@ pub async fn execute(
                     title: hit.title,
                     content,
                     score,
+                    block: None,
                 });
             }
         }
@@ -112,23 +113,33 @@ pub async fn execute(
         for kiln in &all_kilns {
             match run_semantic_search(&client, kiln, query, limit).await {
                 Ok(semantic_hits) => {
-                    for (doc_id, score) in semantic_hits {
-                        // De-duplicate against text results
-                        if !results.iter().any(|r| r.id == doc_id) {
-                            let title = doc_id
-                                .split('/')
-                                .next_back()
-                                .unwrap_or(&doc_id)
-                                .trim_end_matches(".md")
-                                .to_string();
-                            let content = extract_snippet(kiln, &doc_id, 200);
-                            results.push(SearchResultWithScore {
-                                id: doc_id,
-                                title,
-                                content,
-                                score,
-                            });
+                    // Hits arrive best first, so the first block of a note
+                    // is its best block. One row per note; the row names
+                    // that block.
+                    for hit in semantic_hits {
+                        let doc_id = hit.document_id;
+                        if results.iter().any(|r| r.id == doc_id) {
+                            continue;
                         }
+                        let title = doc_id
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&doc_id)
+                            .trim_end_matches(".md")
+                            .to_string();
+                        // A block hit quotes the passage that answered. A
+                        // note hit has no passage, so the file's head stands in.
+                        let content = hit
+                            .snippet
+                            .filter(|_| hit.block.is_some())
+                            .unwrap_or_else(|| extract_snippet(kiln, &doc_id, 200));
+                        results.push(SearchResultWithScore {
+                            id: doc_id,
+                            title,
+                            content,
+                            score: hit.score,
+                            block: hit.block,
+                        });
                     }
                 }
                 Err(e) => {
@@ -228,7 +239,7 @@ async fn run_semantic_search(
     kiln_path: &std::path::Path,
     query: &str,
     limit: usize,
-) -> Result<Vec<(String, f64)>> {
+) -> Result<Vec<crucible_daemon::VectorHit>> {
     let query_embedding = client
         .embed_query(kiln_path, query)
         .await
@@ -258,12 +269,14 @@ mod tests {
                 title: "Wikilinks".into(),
                 content: "Wikilinks connect notes together".into(),
                 score: 0.92,
+                block: None,
             },
             SearchResultWithScore {
                 id: "Help/Tags.md".into(),
                 title: "Tags".into(),
                 content: "Tags categorize notes".into(),
                 score: 0.78,
+                block: None,
             },
         ]
     }
@@ -305,6 +318,43 @@ mod tests {
             output::format_search_results(&results, OutputFormat::Json, true, false).unwrap();
         let parsed: Vec<SearchResultWithScore> = serde_json::from_str(&json).unwrap();
         assert!(parsed.is_empty());
+    }
+
+    fn block_hit() -> Vec<SearchResultWithScore> {
+        vec![SearchResultWithScore {
+            id: "Help/Kilns.md".into(),
+            title: "Kilns".into(),
+            content: "A kiln is where accrued knowledge goes.".into(),
+            score: 0.88,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start: 42,
+                span_end: 91,
+                kind: "paragraph".into(),
+            }),
+        }]
+    }
+
+    /// A block hit points somewhere in the note. Plain, table and JSON output
+    /// all say where; a note hit says nothing extra.
+    #[test]
+    fn search_command_format_prints_the_block_span_when_present() {
+        let hits = block_hit();
+        let plain = output::format_search_results(&hits, OutputFormat::Plain, true, false).unwrap();
+        assert!(plain.contains("paragraph 42..91"), "plain:\n{plain}");
+        let table = output::format_search_results(&hits, OutputFormat::Table, true, false).unwrap();
+        assert!(table.contains("paragraph 42..91"), "table:\n{table}");
+        let json = output::format_search_results(&hits, OutputFormat::Json, true, false).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed[0]["block"]["span_start"], 42);
+        assert_eq!(parsed[0]["block"]["kind"], "paragraph");
+
+        let notes = sample_results();
+        let plain =
+            output::format_search_results(&notes, OutputFormat::Plain, true, false).unwrap();
+        assert!(!plain.contains(".."), "a note hit has no span:\n{plain}");
+        let json = output::format_search_results(&notes, OutputFormat::Json, true, false).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed[0].get("block").is_none(), "json:\n{json}");
     }
 
     #[test]

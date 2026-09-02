@@ -465,10 +465,11 @@ async fn search_vectors(
 
     let results_json: Vec<serde_json::Value> = results
         .into_iter()
-        .map(|(doc_id, score)| {
+        .map(|hit| {
             serde_json::json!({
-                "document_id": doc_id,
-                "score": score,
+                "document_id": hit.document_id,
+                "score": hit.score,
+                "block": hit.block,
             })
         })
         .collect();
@@ -514,12 +515,13 @@ async fn search_semantic(
 
     let results_json: Vec<serde_json::Value> = results
         .into_iter()
-        .map(|(doc_id, score)| {
+        .map(|hit| {
             serde_json::json!({
-                "document_id": doc_id,
-                "rel_path": doc_id,
-                "path": absolute_note_path(&req.kiln, &doc_id),
-                "score": score,
+                "document_id": hit.document_id,
+                "rel_path": hit.document_id,
+                "path": absolute_note_path(&req.kiln, &hit.document_id),
+                "score": hit.score,
+                "block": hit.block,
             })
         })
         .collect();

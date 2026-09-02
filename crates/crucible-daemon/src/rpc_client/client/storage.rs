@@ -191,42 +191,29 @@ impl DaemonClient {
         .await
     }
 
-    /// Semantic vector search.
+    /// Semantic vector search, block first.
     ///
-    /// Passes the caller's authority to the daemon so cross-scope hits are
-    /// filtered out before they cross the RPC boundary. `scope = None`
-    /// means "server default" (workspace scope derived from kiln).
+    /// The daemon answers from the same block-first search the search tool
+    /// and precognition use, so a hit names the passage when the kiln has
+    /// block rows. `scope` is accepted for older callers; the daemon derives
+    /// authority from `kiln_path` alone.
     pub async fn search_vectors(
         &self,
         kiln_path: &Path,
         vector: &[f32],
         limit: usize,
         scope: Option<crucible_core::storage::Scope>,
-    ) -> Result<Vec<(String, f64)>> {
-        let result: serde_json::Value = self
-            .typed_call(
-                "search_vectors",
-                SearchVectorsRequest {
-                    kiln: kiln_path.to_string_lossy().to_string(),
-                    vector: vector.to_vec(),
-                    limit,
-                    scope,
-                },
-            )
-            .await?;
-
-        let results: Vec<(String, f64)> = result
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|item| {
-                let doc_id = item.get("document_id")?.as_str()?.to_string();
-                let score = item.get("score")?.as_f64()?;
-                Some((doc_id, score))
-            })
-            .collect();
-
-        Ok(results)
+    ) -> Result<Vec<VectorHit>> {
+        self.typed_call(
+            "search_vectors",
+            SearchVectorsRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                vector: vector.to_vec(),
+                limit,
+                scope,
+            },
+        )
+        .await
     }
 
     /// Ripgrep-style content search over `root` (which must be inside a

@@ -56,9 +56,10 @@ async fn run_eval_named(
             .search_vectors(kiln_path, &vector, golden.top_k, None)
             .await
             .with_context(|| format!("search failed for: {}", q.question))?;
-        // The daemon returns (document_id, score); matching is by stem so
-        // directory layout in the corpus does not have to match the fixture.
-        let titles: Vec<String> = hits.iter().map(|(doc_id, _)| doc_id.clone()).collect();
+        // Several blocks of one note are several hits, and each names the
+        // note. `rank_of` matches by stem, so the corpus layout does not have
+        // to match the fixture.
+        let titles: Vec<String> = hits.into_iter().map(|hit| hit.document_id).collect();
         let rank = rank_of(&titles, &q.expect_note);
         results.push(QueryResult {
             class: class.to_string(),

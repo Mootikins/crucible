@@ -130,7 +130,7 @@ pub use rpc_client::{
     LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
     LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
-    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionEvent,
+    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionEvent, VectorHit,
     VersionCheck,
 };
 pub use scm::ScmCloneResponse;
