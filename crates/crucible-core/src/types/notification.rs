@@ -4,8 +4,10 @@
 //! across different interfaces (TUI, web, etc.). They are designed to be
 //! serializable for RPC transport between daemon and clients.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 
 /// A notification message with metadata.
 ///
@@ -16,6 +18,40 @@ pub struct Notification {
     pub id: String,
     pub kind: NotificationKind,
     pub message: String,
+    /// Who may see it. The default is global: everyone.
+    pub scope: NotificationScope,
+    /// When the daemon stored it. `None` for a notification a client made
+    /// for itself.
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+/// Who may see a notification. Empty means everyone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationScope {
+    /// The canonical workspace path, when the notification belongs to one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<PathBuf>,
+    /// The kilns it belongs to, when any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kilns: Vec<crate::config::KilnName>,
+}
+
+impl NotificationScope {
+    /// True when no workspace and no kiln limit who sees the notification.
+    pub fn is_global(&self) -> bool {
+        self.workspace.is_none() && self.kilns.is_empty()
+    }
+
+    /// True when a session with `workspace` and `kilns` may see it. The
+    /// daemon canonicalizes both sides before it stores or compares a path.
+    pub fn matches(&self, workspace: Option<&Path>, kilns: &[crate::config::KilnName]) -> bool {
+        if self.is_global() {
+            return true;
+        }
+        let by_workspace = matches!((&self.workspace, workspace), (Some(a), Some(b)) if a == b);
+        let by_kiln = self.kilns.iter().any(|k| kilns.contains(k));
+        by_workspace || by_kiln
+    }
 }
 
 impl Serialize for Notification {
@@ -24,10 +60,18 @@ impl Serialize for Notification {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Notification", 3)?;
+        let field_count =
+            3 + usize::from(!self.scope.is_global()) + usize::from(self.created_at.is_some());
+        let mut state = serializer.serialize_struct("Notification", field_count)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("kind", &self.kind)?;
         state.serialize_field("message", &self.message)?;
+        if !self.scope.is_global() {
+            state.serialize_field("scope", &self.scope)?;
+        }
+        if let Some(created_at) = &self.created_at {
+            state.serialize_field("created_at", created_at)?;
+        }
         state.end()
     }
 }
@@ -42,6 +86,10 @@ impl<'de> Deserialize<'de> for Notification {
             id: String,
             kind: NotificationKind,
             message: String,
+            #[serde(default)]
+            scope: NotificationScope,
+            #[serde(default)]
+            created_at: Option<DateTime<Utc>>,
         }
 
         let data = NotificationData::deserialize(deserializer)?;
@@ -49,6 +97,8 @@ impl<'de> Deserialize<'de> for Notification {
             id: data.id,
             kind: data.kind,
             message: data.message,
+            scope: data.scope,
+            created_at: data.created_at,
         })
     }
 }
@@ -60,7 +110,21 @@ impl Notification {
             id: generate_notification_id(),
             kind,
             message: message.into(),
+            scope: NotificationScope::default(),
+            created_at: None,
         }
+    }
+
+    /// Limit who may see the notification.
+    pub fn with_scope(mut self, scope: NotificationScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// Stamp the notification with the current time.
+    pub fn with_created_now(mut self) -> Self {
+        self.created_at = Some(Utc::now());
+        self
     }
 
     /// Create a toast notification (auto-dismiss).
@@ -274,6 +338,49 @@ mod tests {
         let warning = Notification::warning("Warning message");
         assert_eq!(warning.kind, NotificationKind::Warning);
         assert_eq!(warning.message, "Warning message");
+    }
+
+    #[test]
+    fn a_notification_without_scope_still_deserializes() {
+        let n: Notification =
+            serde_json::from_str(r#"{"id":"n1","kind":"toast","message":"hi"}"#).unwrap();
+        assert_eq!(n.scope, NotificationScope::default());
+        assert!(n.scope.is_global());
+        assert_eq!(n.created_at, None);
+    }
+
+    #[test]
+    fn scope_round_trips_and_matches_by_workspace_or_kiln() {
+        let scope = NotificationScope {
+            workspace: Some(std::path::PathBuf::from("/w/a")),
+            kilns: vec!["notes".parse().unwrap()],
+        };
+        let n = Notification::toast("hi").with_scope(scope.clone());
+        let back: Notification = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();
+        assert_eq!(back.scope, scope);
+
+        let notes: crate::config::KilnName = "notes".parse().unwrap();
+        let other: crate::config::KilnName = "other".parse().unwrap();
+        assert!(scope.matches(Some(std::path::Path::new("/w/a")), &[]));
+        assert!(scope.matches(None, &[notes]));
+        assert!(!scope.matches(Some(std::path::Path::new("/w/b")), &[other]));
+        assert!(
+            NotificationScope::default().matches(None, &[]),
+            "global matches everything"
+        );
+    }
+
+    #[test]
+    fn a_global_notification_serializes_without_a_scope_or_a_time() {
+        let json = serde_json::to_string(&Notification::toast("hi")).unwrap();
+        assert!(!json.contains("scope"), "{json}");
+        assert!(!json.contains("created_at"), "{json}");
+
+        let stamped = Notification::toast("hi").with_created_now();
+        let json = serde_json::to_string(&stamped).unwrap();
+        assert!(json.contains("created_at"), "{json}");
+        let back: Notification = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.created_at, stamped.created_at);
     }
 
     #[test]

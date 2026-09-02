@@ -56,7 +56,9 @@ pub use crate::types::popup::PopupEntry;
 pub use crate::types::undo::UndoSummary;
 
 // Re-export notification types
-pub use crate::types::notification::{Notification, NotificationKind, NotificationQueue};
+pub use crate::types::notification::{
+    Notification, NotificationKind, NotificationQueue, NotificationScope,
+};
 
 // Re-export provider info (used by daemon RPC and session-setup events)
 pub use crate::types::provider_info::ProviderInfo;

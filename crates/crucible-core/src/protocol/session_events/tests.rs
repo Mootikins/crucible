@@ -85,6 +85,38 @@ fn a_known_name_with_a_broken_payload_is_malformed_not_unknown() {
 /// The trap adjacent tagging sets: a unit variant omits `data`, so `to_wire`
 /// reports `null` where today's producers emit `{}`.
 #[test]
+fn notification_added_carries_the_body_when_present_and_tolerates_its_absence() {
+    let old: NotificationPayload = serde_json::from_value(serde_json::json!({
+        "event": "notification_added", "data": { "notification_id": "n1" }
+    }))
+    .unwrap();
+    assert!(matches!(
+        old,
+        NotificationPayload::NotificationAdded {
+            notification: None,
+            ..
+        }
+    ));
+
+    let new: NotificationPayload = serde_json::from_value(serde_json::json!({
+        "event": "notification_added",
+        "data": {
+            "notification_id": "n1",
+            "notification": { "id": "n1", "kind": "toast", "message": "hi" }
+        }
+    }))
+    .unwrap();
+    let NotificationPayload::NotificationAdded {
+        notification: Some(n),
+        ..
+    } = new
+    else {
+        panic!("the body was present on the wire");
+    };
+    assert_eq!(n.message, "hi");
+}
+
+#[test]
 fn payloadless_workflow_events_keep_an_empty_object_not_null() {
     for payload in [
         WorkflowPayload::WorkflowCompleted {},

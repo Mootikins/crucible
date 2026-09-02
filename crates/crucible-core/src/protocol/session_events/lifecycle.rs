@@ -148,15 +148,19 @@ pub enum ReviewPayload {
     },
 }
 
-/// Session notification list changes. Both carry only the id — the list itself
-/// is fetched, so the event says "re-read" rather than shipping a projection
-/// that can go stale.
+/// Session notification list changes. `NotificationAdded` carries the body,
+/// so a client can show it without a round trip. `NotificationDismissed`
+/// carries only the id: the list itself is fetched, so the event says
+/// "re-read" rather than shipping a projection that can go stale.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum NotificationPayload {
     NotificationAdded {
         #[serde(default)]
         notification_id: String,
+        /// The body. Absent on frames older than this field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notification: Option<crate::types::Notification>,
     },
     NotificationDismissed {
         #[serde(default)]
