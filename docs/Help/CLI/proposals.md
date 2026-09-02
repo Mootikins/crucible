@@ -89,13 +89,15 @@ The reviewer reads the titles in `rejected/` before it proposes, and is told not
 
 ## The notification at session end
 
-When a reflection pass stages at least one proposal, the user gets a toast in the TUI or the web client:
+When a reflection pass stages at least one proposal, the plugin calls `cru.log.notify` with this message:
 
 ```
 reflection: 2 proposal(s) staged. Review with `cru proposals list`.
 ```
 
-The consolidation pass sends the same toast with `consolidation:` as its prefix. A daemon with no client attached logs the count instead.
+The consolidation pass sends the same message with `consolidation:` as its prefix. Each pass also writes the count to the daemon log, on every path that stages a file.
+
+The daemon does not yet deliver a `cru.log.notify` message to a client. The message stays in the plugin VM, so no TUI or web client shows it. This is a known gap (`docs/Meta/Architecture/Gaps.md`, G122). To see what a pass staged, read the daemon log, or run `cru proposals list`.
 
 ## The by-hand path
 
