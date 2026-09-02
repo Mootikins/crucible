@@ -630,41 +630,6 @@ describe("reflection", function()
       expect.truthy((body:find("B")))
     end)
 
-    it("tells the user how many proposals it staged and how to review them", function()
-      local staged = plugin.stage_proposals("notes", "chat-1", {
-        { title = "T", body = "B" },
-        { title = "U", body = "C" },
-      })
-
-      expect.equal(2, #staged)
-      local notified = test_mocks.get_calls("log", "notify")
-      expect.equal(1, #notified)
-      local message = notified[1][1] :: string
-      expect.truthy(message:find("2 proposal", 1, true) ~= nil)
-      expect.truthy(message:find("cru proposals list", 1, true) ~= nil)
-    end)
-
-    it("names the caller's source in the toast", function()
-      local staged = plugin.stage_proposals("notes", nil, {
-        { title = "T", body = "B" },
-      }, { source = "consolidation" })
-
-      expect.equal(1, #staged)
-      local notified = test_mocks.get_calls("log", "notify")
-      expect.equal(1, #notified)
-      local message = notified[1][1] :: string
-      expect.truthy(message:find("^consolidation: 1 proposal") ~= nil)
-    end)
-
-    it("says nothing to the user when it staged nothing", function()
-      local staged = plugin.stage_proposals("notes", "chat-1", {
-        { kind = "update", title = "T", body = "B" },
-      })
-
-      expect.equal(0, #staged)
-      expect.equal(0, #test_mocks.get_calls("log", "notify"))
-    end)
-
     it("writes the source the caller names and no session line without a session", function()
       local staged = plugin.stage_proposals("notes", nil, {
         { title = "T", body = "B" },

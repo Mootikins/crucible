@@ -87,17 +87,9 @@ cru proposals reject reflection-20260702-143210-1-socket-path
 
 The reviewer reads the titles in `rejected/` before it proposes, and is told not to propose them again. `rejection_memory` (default 20) sets how many of the newest titles it is told.
 
-## The notification at session end
+## How you learn that proposals wait
 
-When a reflection pass stages at least one proposal, the plugin calls `cru.log.notify` with this message:
-
-```
-reflection: 2 proposal(s) staged. Review with `cru proposals list`.
-```
-
-The consolidation pass sends the same message with `consolidation:` as its prefix. Each pass also writes the count to the daemon log, on every path that stages a file.
-
-The daemon does not yet deliver a `cru.log.notify` message to a client. The message stays in the plugin VM, so no TUI or web client shows it. This is a known gap (`docs/Meta/Architecture/Gaps.md`, G122). When a session opens, the startup banner says how many proposals are pending in the attached kilns. To see what a pass staged, read the daemon log, or run `cru proposals list`.
+When a session opens, the startup banner says how many proposals are pending in the kiln the CLI reads, and names this command. Each pass also writes the count to the daemon log when it stages a file.
 
 ## The by-hand path
 

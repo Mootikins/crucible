@@ -304,21 +304,6 @@ local function create_session_mock(fixtures)
     }
 end
 
---- `cru.log.notify` and `cru.log.notify_once` — the two toast calls. The
---- mock records each call and shows nothing: a plugin test asserts what the
---- user was told, and the runner VM has no client to show a toast to. The
---- callable half of `cru.log` and `cru.log.levels` stay the host's.
-local function install_notify_mock()
-    local log = cru.log
-    if type(log) ~= "table" then return end
-    log.notify = function(message, level, opts)
-        record_call("log", "notify", message, level, opts)
-    end
-    log.notify_once = function(message, level, opts)
-        record_call("log", "notify_once", message, level, opts)
-    end
-end
-
 --- `cru.tools.set_active` and `cru.tools.get_active` — the active tool
 --- set of a session. The mock records the patterns and narrows nothing:
 --- the runner VM dispatches no tool. A plugin test asserts what a session
@@ -357,7 +342,6 @@ function test_mocks.setup(overrides)
     cru.session = create_session_mock(_fixtures)
     -- The deprecated plural alias, mirroring the real module's forwarding.
     cru.sessions = cru.session
-    install_notify_mock()
     install_tools_mock()
 end
 
