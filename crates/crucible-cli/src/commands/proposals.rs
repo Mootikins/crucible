@@ -86,8 +86,9 @@ pub async fn execute(config: CliConfig, command: ProposalsCommands) -> Result<()
     }
 }
 
-/// `KILN/.crucible/proposals/`
-fn proposals_dir(config: &CliConfig) -> PathBuf {
+/// `KILN/.crucible/proposals/`. The startup banner counts this directory
+/// too, so its number matches `cru proposals list`.
+pub(crate) fn proposals_dir(config: &CliConfig) -> PathBuf {
     config.kiln_path.join(".crucible").join("proposals")
 }
 

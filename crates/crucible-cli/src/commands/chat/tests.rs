@@ -280,18 +280,26 @@ fn oneshot_applies_plan_mode_only_when_the_flag_is_given() {
 }
 
 #[test]
-fn pending_proposals_counts_staged_files_and_ignores_rejected() {
-    let a = tempfile::tempdir().unwrap();
-    let b = tempfile::tempdir().unwrap();
-    let staging = a.path().join(".crucible/proposals");
-    std::fs::create_dir_all(staging.join("rejected")).unwrap();
-    std::fs::write(staging.join("p1.md"), "---\ntitle: P\n---\nb\n").unwrap();
-    std::fs::write(staging.join("p2.md"), "---\ntitle: Q\n---\nb\n").unwrap();
-    std::fs::write(staging.join("rejected/old.md"), "---\ntitle: O\n---\nb\n").unwrap();
-    let summary = |name: &str, path: &std::path::Path| crate::tui::oil::KilnSummary {
-        name: name.to_string(),
-        path: path.display().to_string(),
+fn pending_proposals_counts_the_kiln_the_cli_reads_and_ignores_rejected() {
+    // `cru proposals list` reads one kiln: `config.kiln_path`. The banner
+    // names that command, so its count must come from the same directory.
+    // A proposal in another kiln is not counted, and a rejected one is not.
+    let stage = |root: &std::path::Path, names: &[&str]| {
+        let staging = root.join(".crucible/proposals");
+        std::fs::create_dir_all(staging.join("rejected")).unwrap();
+        for name in names {
+            std::fs::write(staging.join(format!("{name}.md")), "---\ntitle: P\n---\nb\n")
+                .unwrap();
+        }
+        std::fs::write(staging.join("rejected/old.md"), "---\ntitle: O\n---\nb\n").unwrap();
     };
-    let kilns = vec![summary("a", a.path()), summary("b", b.path())];
-    assert_eq!(pending_proposals(&kilns), 2);
+    let cli_kiln = tempfile::tempdir().unwrap();
+    let other_kiln = tempfile::tempdir().unwrap();
+    stage(cli_kiln.path(), &["p1", "p2"]);
+    stage(other_kiln.path(), &["q1"]);
+    let config = crate::config::CliConfigBuilder::new()
+        .kiln_path(cli_kiln.path())
+        .build()
+        .unwrap();
+    assert_eq!(pending_proposals(&config), 2);
 }
