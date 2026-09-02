@@ -73,6 +73,48 @@ describe("reflection", function()
       expect.truthy(t:find("turn 50", 1, true))
       expect.is_nil(t:find("turn 1 ", 1, true))
     end)
+
+    it("keeps every glyph whole when it cuts a tool result", function()
+      -- Each `─` is three bytes. A byte cut at 10 lands inside a glyph.
+      local t = plugin.build_transcript({
+        { role = "tool_result", id = "c1", content = string.rep("─", 50) },
+      }, { tool_result_chars = 10 })
+      expect.truthy(utf8.len(t) ~= nil)
+      expect.truthy(t:find("[truncated 40 chars]", 1, true))
+    end)
+
+    it("keeps every glyph whole when it cuts the transcript tail", function()
+      -- The tail cut starts at a byte offset that splits a glyph.
+      local t = plugin.build_transcript({
+        { role = "user", content = string.rep("─", 100) },
+      }, { transcript_chars = 100 })
+      expect.truthy(utf8.len(t) ~= nil)
+      expect.truthy(t:find("[earlier turns cut]", 1, true))
+      expect.truthy(utf8.len(t) <= 100 + #"[earlier turns cut]\n\n")
+    end)
+  end)
+
+  describe("build_transcript reads the caps from config", function()
+    after_each(function()
+      config.reset()
+    end)
+
+    it("cuts a tool result at the configured tool_result_chars", function()
+      config.init({ tool_result_chars = 10 })
+      local t = plugin.build_transcript({
+        { role = "tool_result", id = "c1", content = string.rep("x", 50) },
+      })
+      expect.truthy(t:find("[truncated 40 chars]", 1, true))
+    end)
+
+    it("cuts the transcript at the configured transcript_chars", function()
+      config.init({ transcript_chars = 50 })
+      local t = plugin.build_transcript({
+        { role = "user", content = string.rep("y", 200) },
+      })
+      expect.truthy(t:find("[earlier turns cut]", 1, true))
+      expect.truthy(#t <= 50 + #"[earlier turns cut]\n\n")
+    end)
   end)
 
   describe("parse_proposals", function()

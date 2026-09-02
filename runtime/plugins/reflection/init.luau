@@ -103,11 +103,36 @@ function M.count_user_turns(messages)
     return n
 end
 
+--- The length of `text` in characters. Falls back to bytes when the text
+--- is not valid UTF-8.
+local function char_len(text: string): number
+    return utf8.len(text) or #text
+end
+
+--- The first `n` characters of `text`. The cut lands on a glyph boundary:
+--- a cut inside a multibyte glyph leaves bytes the daemon rejects as a
+--- `String`, and the error would escape `M.run` before it ends the aux
+--- session.
+local function head(text: string, n: number): string
+    local stop = utf8.offset(text, n + 1)
+    if stop == nil then return text end
+    return text:sub(1, stop - 1)
+end
+
+--- The last `n` characters of `text`. The cut lands on a glyph boundary,
+--- for the same reason as `head`.
+local function tail(text: string, n: number): string
+    local start = utf8.offset(text, -n)
+    if start == nil then return text end
+    return text:sub(start)
+end
+
 --- Render the message list as a plain-text transcript for the reviewer.
 --- Tool rows come from `cru.session.messages(id, { tools = true })`. Each
 --- result is cut at `tool_result_chars`, and the whole transcript is cut at
 --- `transcript_chars` from the front, so the reviewer sees how the session
---- ended. The WikiSkill maintainer caps each trace the same way.
+--- ended. The WikiSkill maintainer caps each trace the same way. Both caps
+--- count characters, not bytes.
 export type TranscriptRow = {
     role: string?,
     content: string?,
@@ -135,8 +160,10 @@ function M.build_transcript(messages: { TranscriptRow }?, opts: TranscriptOpts?)
             parts[#parts + 1] = string.format("## tool_call %s\n%s", tostring(msg.name), tostring(args or ""))
         elseif role == "tool_result" then
             local content = tostring(msg.content or "")
-            if #content > result_cap then
-                content = content:sub(1, result_cap) .. string.format("\n[truncated %d chars]", #content - result_cap)
+            local content_len = char_len(content)
+            if content_len > result_cap then
+                content = head(content, result_cap)
+                    .. string.format("\n[truncated %d chars]", content_len - result_cap)
             end
             if msg.error and msg.error ~= "" then
                 content = "ERROR: " .. tostring(msg.error) .. "\n" .. content
@@ -147,8 +174,8 @@ function M.build_transcript(messages: { TranscriptRow }?, opts: TranscriptOpts?)
         end
     end
     local text = table.concat(parts, "\n\n")
-    if #text > total_cap then
-        text = "[earlier turns cut]\n\n" .. text:sub(#text - total_cap + 1)
+    if char_len(text) > total_cap then
+        text = "[earlier turns cut]\n\n" .. tail(text, total_cap)
     end
     return text
 end
