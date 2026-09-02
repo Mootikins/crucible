@@ -45,7 +45,9 @@ end
 
 --- The sessions that ended and started after `cursor`, oldest first. A
 --- reflection aux session is dropped when the reflection plugin can tell
---- one apart. `state` is the Display form of SessionState in crucible-core.
+--- one apart. The daemon's list rows carry no `system_prompt`, so there the
+--- `min_turns` gate in `run` is the guard that holds. `state` is the Display
+--- form of SessionState in crucible-core.
 function M.since_cursor(sessions: { any }?, cursor: string?): { any }
     local out = {}
     local ref = reflection()
