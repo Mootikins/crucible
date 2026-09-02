@@ -87,3 +87,43 @@ async fn an_unconnected_handle_method_reports_it() {
         "expected a not-connected error, got: {err}"
     );
 }
+
+/// A handle from `get` has no live RPC behind it, so `model` must read the
+/// daemon's record. Without this the reflection plugin, which reads
+/// `cru.session.get(id).model` on the session that ended, raised
+/// "Session not connected" and staged no proposal.
+#[tokio::test]
+async fn model_on_a_get_handle_reads_the_record() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let model: String = lua
+        .load(
+            r#"
+            local s = cru.session.get("exists-123")
+            return s.model
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert_eq!(model, "claude-haiku-4-5-20251001");
+}
+
+/// A record with no model reads as nil, the same answer a bound handle
+/// gives when the daemon has no model for the session.
+#[tokio::test]
+async fn model_on_a_get_handle_is_nil_when_the_record_has_none() {
+    let lua = TestLuaBuilder::new().build();
+
+    let bare = crate::session_api::Session::new("s1".to_string())
+        .with_record(serde_json::json!({ "id": "s1", "model": null }));
+    lua.globals()
+        .set("bare_session", lua.create_userdata(bare).unwrap())
+        .unwrap();
+
+    let is_nil: bool = lua.load("return bare_session.model == nil").eval().unwrap();
+    assert!(is_nil);
+}

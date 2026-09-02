@@ -390,6 +390,34 @@ describe("reflection", function()
       expect.truthy((body:find("B")))
     end)
 
+    it("records the model of the session that ended in the staged file", function()
+      test_mocks.setup({
+        kiln = { roots = { notes = kiln_root } },
+        fs = { real_dirs = true },
+        sessions = {
+          info = {
+            id = "chat-1", session_type = "chat", state = "ended",
+            kilns = { "notes" }, model = "claude-haiku-4-5-20251001",
+          },
+          messages = {
+            { role = "user", content = "question" },
+            { role = "assistant", content = "answer" },
+          },
+          response_parts = {
+            { type = "text", content = '[{"title":"T","body":"B"}]' },
+          },
+        },
+      })
+
+      local staged = plugin.run({ id = "chat-1" })
+
+      expect.equal(1, #staged)
+      local handle = assert(io.open(staged[1], "r"))
+      local body = assert(handle:read("a"))
+      handle:close()
+      expect.truthy((body:find('model: "claude-haiku-4-5-20251001"', 1, true)))
+    end)
+
     it("raises when the session names a kiln that is not registered", function()
       test_mocks.setup({
         kiln = { roots = {} },

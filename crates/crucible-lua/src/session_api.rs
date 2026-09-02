@@ -286,6 +286,24 @@ impl Session {
         self.id.clone()
     }
 
+    /// The session's model: the live value when an RPC is bound, else the
+    /// `model` field of the daemon record the handle was built from.
+    fn model(&self) -> mlua::Result<Option<String>> {
+        let rpc = self
+            .rpc
+            .lock()
+            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+        Ok(match rpc.as_ref() {
+            Some(rpc) => rpc.get_model(),
+            None => self
+                .record
+                .as_ref()
+                .and_then(|record| record.get("model"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        })
+    }
+
     fn with_rpc<F, T>(&self, f: F) -> mlua::Result<T>
     where
         F: FnOnce(&dyn SessionConfigRpc) -> Result<T, String>,
@@ -380,7 +398,10 @@ impl UserData for Session {
                 "thinking_budget" => this
                     .with_rpc(|r| Ok(r.get_thinking_budget()))
                     .map(|v| v.map(Value::Integer).unwrap_or(Value::Nil)),
-                "model" => this.with_rpc(|r| Ok(r.get_model())).and_then(|v| match v {
+                // A handle from `get`/`list` binds no RPC, so the daemon's
+                // record is the only place the model can come from. A bound
+                // handle still answers with the live value.
+                "model" => this.model().and_then(|v| match v {
                     Some(s) => lua.create_string(&s).map(Value::String),
                     None => Ok(Value::Nil),
                 }),

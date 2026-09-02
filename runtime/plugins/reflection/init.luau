@@ -376,11 +376,12 @@ function M.stage_proposals(kiln, session_id, proposals, extra)
 end
 
 --- The on_session_end handler. Reviews the finished session and stages
---- proposals. Best-effort: any failure is logged, never raised (a reflection
---- error must not disrupt session teardown).
-function M.run(session: any): ()
-    if not config.get("enabled", true) then return end
-    if not session or not session.id then return end
+--- proposals. Answers with the paths it wrote; an empty list when it skipped
+--- the session or the reviewer proposed nothing. Best-effort: any failure is
+--- logged, never raised (a reflection error must not disrupt session teardown).
+function M.run(session: any): { string }
+    if not config.get("enabled", true) then return {} end
+    if not session or not session.id then return {} end
     local session_id = session.id
 
     -- Recursion guard: ending our own aux session fires on_session_end again.
@@ -391,7 +392,7 @@ function M.run(session: any): ()
     -- which module-level Lua state cannot be — each session has its own VM.
     if M.is_reflection_session(session) then
         cru.log("debug", "reflection: skipping reflection-created aux session")
-        return
+        return {}
     end
 
     -- Resolve the aux model first: without it there is nothing to do, so bail
@@ -399,7 +400,7 @@ function M.run(session: any): ()
     local model = config.get("model", nil)
     if not model then
         cru.log("warn", "reflection: no aux model configured; skipping (set plugins.reflection.model)")
-        return
+        return {}
     end
 
     -- The bridge sends kiln NAMES in a `kilns` array (session_bridge.rs).
@@ -409,18 +410,18 @@ function M.run(session: any): ()
     local kiln = kilns and kilns[1]
     if not kiln then
         cru.log("debug", "reflection: session has no kiln; skipping")
-        return
+        return {}
     end
 
     local messages = cru.session.messages(session_id, { tools = true })
-    if not messages then return end
+    if not messages then return {} end
 
     local turns = M.count_user_turns(messages)
     local min_turns = config.get("min_turns", 3)
     if turns < min_turns then
         cru.log("debug", string.format(
             "reflection: %d turns < min_turns %d; skipping", turns, min_turns))
-        return
+        return {}
     end
 
     -- Fork a separate session for the review so it never touches the source
@@ -431,7 +432,7 @@ function M.run(session: any): ()
     local aux, err = cru.session.create({ type = "chat" })
     if err or not aux then
         cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
-        return
+        return {}
     end
 
     local agent_cfg = {
@@ -459,7 +460,7 @@ function M.run(session: any): ()
     if send_err then
         cru.log("warn", "reflection: review failed: " .. tostring(send_err))
         cru.session.end_session(aux.id)
-        return
+        return {}
     end
 
     local output = collect_text(iter)
@@ -468,17 +469,18 @@ function M.run(session: any): ()
     local proposals = M.parse_proposals(output)
     if proposals == nil then
         cru.log("warn", "reflection: could not parse reviewer output as JSON")
-        return
+        return {}
     end
     if #proposals == 0 then
         cru.log("info", "reflection: nothing worth proposing")
-        return
+        return {}
     end
 
     local written = M.stage_proposals(kiln, session_id, proposals, { model = info and info.model })
     cru.log("info", string.format(
         "reflection: staged %d proposal(s) in the '%s' kiln's .crucible/proposals/",
         #written, kiln))
+    return written
 end
 
 -- ============================================================================
@@ -486,10 +488,9 @@ end
 -- ============================================================================
 
 cru.on_session_end(function(session)
-    -- `M.run` answers with nothing, and Luau types `pcall` as
-    -- `(boolean, R...)`, so with an empty `R...` there is no second slot for
-    -- `err` to bind — even though at run time `pcall` always puts the error
-    -- there. The inner function returns nil to give that slot a type.
+    -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
+    -- what the function returns. The inner function drops the path list and
+    -- returns nil, which gives `err` a slot the error message fits.
     local ok, err = pcall(function()
         M.run(session)
         return nil
