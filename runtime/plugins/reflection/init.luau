@@ -427,9 +427,57 @@ function M.forget_injected(session_id: string)
     pcall(store.delete, session_id, INJECTED_KEY)
 end
 
+--- The evidence the daemon has about the result of a session. No score exists:
+--- the reviewer reads the counts and decides where a lesson is.
+export type Outcome = {
+    user_turns: number,
+    tool_calls: number,
+    tool_errors: number,
+    hunks_accepted: number,
+    hunks_rejected: number,
+}
+
+--- Count the turns, the tool calls, the tool errors and the review decisions.
+--- Tool rows come from `cru.session.messages(id, { tools = true })`; hunks
+--- come from `cru.session.review_list_hunks(id)`, whose `state` is one of
+--- `unreviewed`, `accepted` or `rejected` (ReviewState in crucible-core).
+function M.build_outcome(messages: { TranscriptRow }?, hunks: { any }?): Outcome
+    local o: Outcome = { user_turns = 0, tool_calls = 0, tool_errors = 0, hunks_accepted = 0, hunks_rejected = 0 }
+    for _, m in ipairs(messages or {}) do
+        if m.role == "user" then
+            o.user_turns += 1
+        elseif m.role == "tool_call" then
+            o.tool_calls += 1
+        elseif m.role == "tool_result" and m.error and m.error ~= "" then
+            o.tool_errors += 1
+        end
+    end
+    for _, h in ipairs(hunks or {}) do
+        if h.state == "accepted" then
+            o.hunks_accepted += 1
+        elseif h.state == "rejected" then
+            o.hunks_rejected += 1
+        end
+    end
+    return o
+end
+
+--- Render the outcome as a short block the prompt carries before the transcript.
+function M.render_outcome(o: Outcome): string
+    return table.concat({
+        "Session outcome evidence:",
+        "- user turns: " .. o.user_turns,
+        "- tool calls: " .. o.tool_calls,
+        "- tool errors: " .. o.tool_errors,
+        "- edits accepted by the user: " .. o.hunks_accepted,
+        "- edits rejected: " .. o.hunks_rejected,
+        "A rejected edit or a tool error is where a durable lesson usually is.",
+    }, "\n")
+end
+
 --- Compose the reviewer's user message from its parts. Every part is optional
 --- except the transcript, so the tests can exercise one block at a time.
-function M.build_prompt(parts: { transcript: string, rejected: { string }?, injected: { string }? }): string
+function M.build_prompt(parts: { transcript: string, rejected: { string }?, injected: { string }?, outcome: string? }): string
     local sections = {}
     if parts.rejected and #parts.rejected > 0 then
         local lines = { "A human rejected these proposals recently; do not propose them again:" }
@@ -444,6 +492,9 @@ function M.build_prompt(parts: { transcript: string, rejected: { string }?, inje
             lines[#lines + 1] = "- " .. title
         end
         sections[#sections + 1] = table.concat(lines, "\n")
+    end
+    if parts.outcome and parts.outcome ~= "" then
+        sections[#sections + 1] = parts.outcome
     end
     sections[#sections + 1] = "Review this finished session and propose durable notes.\n\n" .. parts.transcript
     return table.concat(sections, "\n\n")
@@ -574,7 +625,24 @@ function M.run(session: any): { string }
     -- handler's `pcall` only logs.
     local transcript = M.build_transcript(messages)
     local rejected = M.rejected_titles(M.read_rejected(kiln), config.get("rejection_memory", 20))
-    local prompt = M.build_prompt({ transcript = transcript, rejected = rejected, injected = injected })
+    -- A session with no review ledger raises here; the outcome then counts
+    -- no edits, and the review still runs.
+    local listed, hunks = pcall(function()
+        local list, err = cru.session.review_list_hunks(session_id)
+        if err then error(err) end
+        return list
+    end)
+    if not listed then
+        cru.log("debug", "reflection: no review hunks for " .. session_id .. ": " .. tostring(hunks))
+        hunks = nil
+    end
+    local outcome = M.render_outcome(M.build_outcome(messages, hunks))
+    local prompt = M.build_prompt({
+        transcript = transcript,
+        rejected = rejected,
+        injected = injected,
+        outcome = outcome,
+    })
 
     local agent_cfg = {
         model = model,
@@ -681,6 +749,8 @@ local plugin = {
     rejected_titles = M.rejected_titles,
     read_rejected = M.read_rejected,
     build_prompt = M.build_prompt,
+    build_outcome = M.build_outcome,
+    render_outcome = M.render_outcome,
     injected_titles = M.injected_titles,
     record_injected = M.record_injected,
     read_injected = M.read_injected,

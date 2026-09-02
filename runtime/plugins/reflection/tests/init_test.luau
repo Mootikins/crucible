@@ -533,6 +533,34 @@ describe("reflection", function()
       expect.equal("mock-session-1", ended[1][1])
     end)
 
+    it("gives the reviewer the session's outcome evidence", function()
+      -- The mock has no review ledger; a test that wants hunks supplies them.
+      (cru.session :: any).review_list_hunks = function(id)
+        return { { state = "accepted" }, { state = "rejected" } }, nil
+      end
+
+      plugin.run({ id = "chat-1" })
+
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      local prompt = sent[1][2] :: string
+      expect.truthy(prompt:find("user turns: 1", 1, true) ~= nil)
+      expect.truthy(prompt:find("edits rejected: 1", 1, true) ~= nil)
+    end)
+
+    it("still reviews a session that has no review ledger", function()
+      (cru.session :: any).review_list_hunks = function(id)
+        error("no ledger")
+      end
+
+      plugin.run({ id = "chat-1" })
+
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      local prompt = sent[1][2] :: string
+      expect.truthy(prompt:find("edits rejected: 0", 1, true) ~= nil)
+    end)
+
     it("skips a proposal that fails validation", function()
       -- The two proposals have different shapes, so the list is typed `any`.
       local proposals: { any } = {
@@ -743,6 +771,50 @@ describe("reflection", function()
     it("omits the block when precognition injected nothing", function()
       local p = plugin.build_prompt({ transcript = "t", injected = {} })
       expect.is_nil(p:find("already given", 1, true))
+    end)
+  end)
+
+  describe("build_outcome", function()
+    it("counts turns, tool calls, tool errors and review decisions", function()
+      -- The rows have different shapes, so the list is typed `any`.
+      local messages: { any } = {
+        { role = "user", content = "a" },
+        { role = "tool_call", name = "bash" },
+        { role = "tool_result", content = "", error = "exit 1" },
+        { role = "tool_call", name = "bash" },
+        { role = "tool_result", content = "ok" },
+        { role = "user", content = "b" },
+      }
+      local o = plugin.build_outcome(messages, {
+        { state = "accepted" }, { state = "rejected" }, { state = "rejected" },
+      })
+      expect.equal(2, o.user_turns)
+      expect.equal(2, o.tool_calls)
+      expect.equal(1, o.tool_errors)
+      expect.equal(1, o.hunks_accepted)
+      expect.equal(2, o.hunks_rejected)
+    end)
+
+    it("renders as a short block the prompt can carry", function()
+      local text = plugin.render_outcome({ user_turns = 3, tool_calls = 4, tool_errors = 1, hunks_accepted = 0, hunks_rejected = 2 })
+      expect.truthy(text:find("tool errors: 1", 1, true))
+      expect.truthy(text:find("edits rejected: 2", 1, true))
+    end)
+  end)
+
+  describe("build_prompt with an outcome block", function()
+    it("places the outcome before the transcript", function()
+      local p = plugin.build_prompt({ transcript = "## user\nhi", outcome = "Session outcome evidence:\n- tool errors: 1" })
+      local outcome_at = p:find("Session outcome evidence:", 1, true)
+      local transcript_at = p:find("## user", 1, true)
+      expect.truthy(outcome_at)
+      expect.truthy(transcript_at)
+      expect.truthy(outcome_at < transcript_at)
+    end)
+
+    it("omits the block when no outcome is given", function()
+      local p = plugin.build_prompt({ transcript = "t" })
+      expect.is_nil(p:find("Session outcome evidence:", 1, true))
     end)
   end)
 end)
