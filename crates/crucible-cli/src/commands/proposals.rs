@@ -214,6 +214,14 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
             let target_rel = fm
                 .and_then(|f| f.get_string("target"))
                 .unwrap_or_else(|| format!("{id}.md"));
+            // A note never lands under `.crucible/` or as a `SKILL.md`. That
+            // path would let a plain note bypass `render_skill` and put an
+            // unchecked file where skill discovery reads.
+            if is_skill_path(&target_rel) {
+                bail!(
+                    "a note may not target the .crucible directory or a SKILL.md: {target_rel} (use kind: skill)"
+                );
+            }
             let dest = resolve_target_within_kiln(kiln, &target_rel)?;
             if occupied(&dest) {
                 bail!(
@@ -320,6 +328,12 @@ fn render_skill(fm: &crucible_core::parser::Frontmatter, body: &str) -> Result<S
         .ok_or_else(|| {
             anyhow::anyhow!("a skill proposal needs a description of 1 to 1024 characters")
         })?;
+    // The frontmatter splitter cuts at any line that starts with `---`, so a
+    // description that spans lines can produce a file the daemon's parser
+    // refuses after the proposal is already consumed. One line, always.
+    if description.contains(['\n', '\r']) {
+        bail!("a skill description must be one line");
+    }
     let mut out = String::from("---\n");
     out.push_str(&format!("name: {name}\n"));
     out.push_str(&format!("description: {}\n", yaml_string(&description)));
@@ -334,14 +348,21 @@ fn render_skill(fm: &crucible_core::parser::Frontmatter, body: &str) -> Result<S
     Ok(out)
 }
 
-/// Quote a scalar for one YAML line.
+/// Quote a scalar for one YAML line. A line break becomes the escape
+/// sequence, so the value can never open a second YAML line.
 fn yaml_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r");
+    format!("\"{escaped}\"")
 }
 
-/// True for a path an `update` proposal may never touch: anything under
-/// `.crucible/` (skills and staging live there) and any `SKILL.md`. This
-/// loop never edits an installed skill.
+/// True for a path a `create` or `update` proposal may never touch: anything
+/// under `.crucible/` (skills and staging live there) and any `SKILL.md`.
+/// Only `kind: skill` writes there, through `render_skill`. This loop never
+/// edits an installed skill.
 ///
 /// `Path::components` keeps a leading `.` as `CurDir`, so the check looks at
 /// every component and not only the first one.
@@ -993,5 +1014,61 @@ mod tests {
         let err = accept(&config, "s4").unwrap_err();
         assert!(err.to_string().contains("exists"), "got: {err}");
         assert!(!outside.exists(), "must not write through the symlink");
+    }
+
+    #[test]
+    fn accept_create_never_targets_the_crucible_dir_or_a_skill_file() {
+        for target in [
+            ".crucible/skills/raw/SKILL.md",
+            ".crucible/proposals/x.md",
+            "Notes/SKILL.md",
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            let kiln = tmp.path();
+            let config = test_config(kiln);
+            write_proposal(
+                &proposals_dir(&config),
+                "raw",
+                &format!(
+                    "---\ntitle: Raw\ntarget: {target}\nname: raw\ndescription: d\n---\nmine\n"
+                ),
+            );
+
+            let err = accept(&config, "raw").unwrap_err();
+            assert!(
+                err.to_string().contains("may not target"),
+                "{target}: {err}"
+            );
+            assert!(!kiln.join(target).exists(), "{target} must not be written");
+            assert!(
+                proposals_dir(&config).join("raw.md").is_file(),
+                "a refused proposal stays staged"
+            );
+        }
+    }
+
+    #[test]
+    fn accept_skill_refuses_a_description_that_spans_lines() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "ml",
+            "---\nkind: skill\nname: marker\ndescription: |\n  first\n  ---\n  name: evil\n---\nbody\n",
+        );
+
+        let err = accept(&config, "ml").unwrap_err();
+        assert!(err.to_string().contains("one line"), "got: {err}");
+        assert!(!kiln.join(".crucible/skills/marker/SKILL.md").exists());
+        assert!(
+            proposals_dir(&config).join("ml.md").is_file(),
+            "a refused proposal stays staged"
+        );
+    }
+
+    #[test]
+    fn yaml_string_escapes_line_breaks() {
+        assert_eq!(yaml_string("a\nb\r"), "\"a\\nb\\r\"");
     }
 }
