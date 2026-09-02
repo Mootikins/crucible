@@ -126,6 +126,12 @@ describe("reflection", function()
   end)
 
   describe("build_transcript reads the caps from config", function()
+    -- Reset on both sides: a cap an earlier suite set must not reach a
+    -- case here, and a cap set here must not leak out.
+    before_each(function()
+      config.reset()
+    end)
+
     after_each(function()
       config.reset()
     end)
@@ -435,6 +441,10 @@ describe("reflection", function()
     end)
 
     after_each(function()
+      -- Take the real directory away before `reset()` swaps the mock for
+      -- one that no longer reaches the disk. A case that staged nothing
+      -- made no directory, and the pcall absorbs that.
+      pcall(cru.fs.remove_all, kiln_root)
       test_mocks.reset()
       config.reset()
     end)

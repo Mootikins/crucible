@@ -27,7 +27,7 @@ The governing principle is **propose, do not dispose.** Proposals are staged out
 - **Reads before it proposes:** the reviewer searches the kiln with `semantic_search` and reads the closest note with `read_note`. When a note already covers the idea, it proposes an update of that note, not a duplicate.
 - **Output:** proposals of three kinds — `create`, `update` and `skill` — staged in `KILN/.crucible/proposals/`, *outside* the indexed kiln.
 - **Disposition:** `cru proposals {list,show,accept,reject}`. A human decides. A rejected proposal is kept in `rejected/`, and the reviewer is told not to propose it again.
-- **Notification:** when at least one proposal lands, the plugin calls `cru.log.notify` with `reflection: N proposal(s) staged. Review with cru proposals list.`, and writes the count to the daemon log. The daemon does not yet deliver that message to a client, so no TUI or web client shows it (Gaps G122).
+- **Notification:** when at least one proposal lands, the plugin calls `cru.log.notify` with `reflection: N proposal(s) staged. Review with cru proposals list.`, and writes the count to the daemon log. The daemon does not yet deliver that message to a client, so no TUI or web client shows it (Gaps G122). When a session opens, the startup banner says how many proposals are pending in the attached kilns.
 
 ## Why staging lives outside the index
 

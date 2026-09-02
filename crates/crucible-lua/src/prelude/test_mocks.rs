@@ -10,6 +10,9 @@ local _fixtures = {}
 --- `local real = cru.fs.mkdir` captures the mock. This chunk runs earlier, at
 --- `install_test_harness()`, while the table is still the real one.
 local _host_mkdir = cru and cru.fs and cru.fs.mkdir
+--- The host's real `cru.fs.remove_all`, captured for the same reason. A
+--- suite that made a real directory takes it away in `after_each` with it.
+local _host_remove_all = cru and cru.fs and cru.fs.remove_all
 
 local function record_call(module, method, ...)
     if not _calls[module] then _calls[module] = {} end
@@ -177,6 +180,23 @@ local function create_fs_mock(fixtures)
             dirs[path] = true
             if fixtures.fs.real_dirs and _host_mkdir then
                 _host_mkdir(path)
+            end
+        end,
+        -- The inverse of `mkdir`: it forgets the tree in memory, and with
+        -- `real_dirs` it deletes the tree on the disk, so a suite can clean
+        -- up what its plugin wrote.
+        remove_all = function(path)
+            record_call("fs", "remove_all", path)
+            local prefix = path
+            if prefix:sub(-1) ~= "/" then prefix = prefix .. "/" end
+            for k in pairs(files) do
+                if k == path or k:sub(1, #prefix) == prefix then files[k] = nil end
+            end
+            for k in pairs(dirs) do
+                if k == path or k:sub(1, #prefix) == prefix then dirs[k] = nil end
+            end
+            if fixtures.fs.real_dirs and _host_remove_all then
+                _host_remove_all(path)
             end
         end,
         list = function(path)
