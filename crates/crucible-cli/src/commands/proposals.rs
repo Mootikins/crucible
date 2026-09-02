@@ -5,11 +5,17 @@
 //! unreviewed suggestions never surface in search or precognition. These
 //! commands are the human disposition surface: list, show, accept, reject.
 //!
-//! Accepting moves the file into the kiln (stripping provenance frontmatter)
-//! so the daemon's file watcher indexes it. Rejecting moves it into the
-//! `rejected/` directory, so the reflection reviewer does not propose the
-//! same note again. Neither needs daemon RPC — the staging area is plain
-//! files under the kiln the CLI already knows.
+//! A proposal has a `kind`: `create` (the default) moves the file into the
+//! kiln, `update` replaces the full body of an existing note, and `skill`
+//! lands a `SKILL.md` under `.crucible/skills/`. Accepting strips the
+//! provenance frontmatter so the daemon's file watcher indexes a clean note.
+//! Rejecting moves the file into the `rejected/` directory, so the reflection
+//! reviewer does not propose the same note again. Neither needs daemon RPC:
+//! the staging area is plain files under the kiln the CLI already knows.
+//!
+//! This loop never edits an installed skill. An `update` may not target
+//! anything under `.crucible/` or any file named `SKILL.md`, and a `skill`
+//! proposal whose name is taken is refused.
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -19,10 +25,38 @@ use crate::cli::ProposalsCommands;
 use crate::config::CliConfig;
 use crate::formatting::OutputFormat;
 
-/// Frontmatter keys the reflection pass adds for provenance (and `target`,
-/// which only directs placement). All are dropped when a proposal is accepted
-/// so the promoted note is clean.
-const PROVENANCE_KEYS: &[&str] = &["source", "status", "session", "created", "target"];
+/// Frontmatter keys the reflection pass adds for provenance (and `target` and
+/// `kind`, which only direct placement). All are dropped when a proposal is
+/// accepted so the promoted note is clean.
+const PROVENANCE_KEYS: &[&str] = &[
+    "source", "status", "session", "created", "model", "kind", "target",
+];
+
+/// Where accepted skills land, relative to the kiln. The daemon's discovery
+/// searches this directory (see `skills/discovery.rs`).
+const KILN_SKILLS_DIR: &str = ".crucible/skills";
+
+/// What a proposal does when a human accepts it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProposalKind {
+    /// Move the file into the kiln as a new note.
+    Create,
+    /// Replace the full body of an existing note named by `target`.
+    Update,
+    /// Land a `SKILL.md` under `.crucible/skills/<name>/`.
+    Skill,
+}
+
+impl ProposalKind {
+    fn from_frontmatter(fm: Option<&crucible_core::parser::Frontmatter>) -> Result<Self> {
+        match fm.and_then(|f| f.get_string("kind")).as_deref() {
+            None | Some("create") => Ok(Self::Create),
+            Some("update") => Ok(Self::Update),
+            Some("skill") => Ok(Self::Skill),
+            Some(other) => bail!("unknown proposal kind: {other}"),
+        }
+    }
+}
 
 /// Where rejected proposals are kept. The reflection reviewer lists this
 /// directory so it does not propose the same note twice. A human who moves a
@@ -169,30 +203,121 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
 
     let result = crucible_core::parser::extract_frontmatter(&content)
         .with_context(|| format!("parsing proposal {id}"))?;
+    let fm = result.frontmatter.as_ref();
+    let kiln = &config.kiln_path;
 
-    // Where the promoted note lands: an explicit `target` (relative to the
-    // kiln) or the kiln root under the proposal id.
-    let target_rel = result
-        .frontmatter
-        .as_ref()
-        .and_then(|f| f.get_string("target"))
-        .unwrap_or_else(|| format!("{id}.md"));
-    let dest = resolve_target_within_kiln(&config.kiln_path, &target_rel)?;
-    if dest.exists() {
-        bail!(
-            "refusing to overwrite existing note: {} (edit the proposal's `target` or move the note aside)",
-            dest.display()
-        );
-    }
+    let (dest, text) = match ProposalKind::from_frontmatter(fm)? {
+        ProposalKind::Create => {
+            // Where the promoted note lands: an explicit `target` (relative to
+            // the kiln) or the kiln root under the proposal id.
+            let target_rel = fm
+                .and_then(|f| f.get_string("target"))
+                .unwrap_or_else(|| format!("{id}.md"));
+            let dest = resolve_target_within_kiln(kiln, &target_rel)?;
+            if dest.exists() {
+                bail!(
+                    "refusing to overwrite existing note: {} (edit the proposal's `target` or move the note aside)",
+                    dest.display()
+                );
+            }
+            (dest, strip_provenance(fm, &result.body))
+        }
+        ProposalKind::Update => {
+            let target_rel = fm
+                .and_then(|f| f.get_string("target"))
+                .ok_or_else(|| anyhow::anyhow!("an update proposal needs a target"))?;
+            if is_skill_path(&target_rel) {
+                bail!("an update may not target a skill: {target_rel}");
+            }
+            let dest = resolve_target_within_kiln(kiln, &target_rel)?;
+            if !dest.is_file() {
+                bail!("update target does not exist: {}", dest.display());
+            }
+            (dest, strip_provenance(fm, &result.body))
+        }
+        ProposalKind::Skill => {
+            let fm = fm.ok_or_else(|| anyhow::anyhow!("a skill proposal needs frontmatter"))?;
+            let text = render_skill(fm, &result.body)?;
+            // `render_skill` validated the name, so it cannot leave the skills dir.
+            let name = fm.get_string("name").unwrap_or_default();
+            let dest =
+                resolve_target_within_kiln(kiln, &format!("{KILN_SKILLS_DIR}/{name}/SKILL.md"))?;
+            if dest.exists() {
+                bail!("a skill named {name} already exists; pick a new name or edit it by hand");
+            }
+            (dest, text)
+        }
+    };
 
-    let promoted = strip_provenance(result.frontmatter.as_ref(), &result.body);
-
-    std::fs::write(&dest, promoted).with_context(|| format!("writing {}", dest.display()))?;
+    std::fs::write(&dest, text).with_context(|| format!("writing {}", dest.display()))?;
     std::fs::remove_file(&path).with_context(|| format!("removing proposal {}", path.display()))?;
 
     println!("Accepted proposal '{id}' -> {}", dest.display());
     println!("The daemon will index it on its next scan.");
     Ok(())
+}
+
+/// The spec's `name` rule: 1-64 chars, `a-z`, `0-9` and `-`, no leading or
+/// trailing hyphen, no `--`. The directory takes the same name, so this rule
+/// also keeps the path inside `.crucible/skills/`.
+fn valid_skill_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+}
+
+/// Render a spec-shaped `SKILL.md`. This is a whitelist, not a strip list:
+/// only the six agentskills.io fields are written. Provenance goes under
+/// `metadata`, the map the spec reserves for client data, with a `crucible-`
+/// prefix so it cannot collide with another tool's key.
+fn render_skill(fm: &crucible_core::parser::Frontmatter, body: &str) -> Result<String> {
+    let name = fm
+        .get_string("name")
+        .ok_or_else(|| anyhow::anyhow!("a skill proposal needs a name"))?;
+    if !valid_skill_name(&name) {
+        bail!(
+            "invalid skill name: {name} (1-64 chars, a-z 0-9 and single hyphens, none at either end)"
+        );
+    }
+    let description = fm
+        .get_string("description")
+        .filter(|d| !d.is_empty() && d.len() <= 1024)
+        .ok_or_else(|| {
+            anyhow::anyhow!("a skill proposal needs a description of 1 to 1024 characters")
+        })?;
+    let mut out = String::from("---\n");
+    out.push_str(&format!("name: {name}\n"));
+    out.push_str(&format!("description: {}\n", yaml_string(&description)));
+    for key in ["license", "compatibility", "allowed-tools"] {
+        if let Some(v) = fm.get_string(key) {
+            out.push_str(&format!("{key}: {}\n", yaml_string(&v)));
+        }
+    }
+    out.push_str("metadata:\n  crucible-source: reflection\n");
+    out.push_str("---\n");
+    out.push_str(body.trim_start_matches('\n'));
+    Ok(out)
+}
+
+/// Quote a scalar for one YAML line.
+fn yaml_string(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// True for a path an `update` proposal may never touch: anything under
+/// `.crucible/` (skills and staging live there) and any `SKILL.md`. This
+/// loop never edits an installed skill.
+fn is_skill_path(target_rel: &str) -> bool {
+    let p = Path::new(target_rel);
+    p.components()
+        .next()
+        .is_some_and(|c| c.as_os_str() == ".crucible")
+        || p.file_name().is_some_and(|n| n == "SKILL.md")
 }
 
 /// Resolve a proposal's `target` to an absolute destination guaranteed to live
@@ -247,14 +372,23 @@ fn reject(config: &CliConfig, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Re-render a note without the reflection provenance keys, preserving the
-/// user's remaining frontmatter verbatim (order and formatting intact). Works
-/// line-wise on the raw YAML: a top-level provenance key drops its line and any
-/// indented continuation lines belonging to it. If no frontmatter remains, the
-/// body is returned alone.
+/// Re-render a note without the reflection provenance keys.
 fn strip_provenance(
     frontmatter: Option<&crucible_core::parser::Frontmatter>,
     body: &str,
+) -> String {
+    strip_keys(frontmatter, body, PROVENANCE_KEYS)
+}
+
+/// Re-render a note without the given top-level keys, preserving the user's
+/// remaining frontmatter verbatim (order and formatting intact). Works
+/// line-wise on the raw YAML: a listed key drops its line and any indented
+/// continuation lines belonging to it. If no frontmatter remains, the body is
+/// returned alone.
+fn strip_keys(
+    frontmatter: Option<&crucible_core::parser::Frontmatter>,
+    body: &str,
+    keys: &[&str],
 ) -> String {
     let Some(fm) = frontmatter else {
         return body.to_string();
@@ -271,7 +405,7 @@ fn strip_provenance(
 
         if is_top_level_key {
             let key = line.split(':').next().unwrap_or("").trim();
-            skipping = PROVENANCE_KEYS.contains(&key);
+            skipping = keys.contains(&key);
         } else if skipping {
             // Indented/continuation line under a provenance key: keep skipping.
             // A blank line ends the skipped block.
@@ -498,5 +632,191 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = test_config(tmp.path());
         list(&config, OutputFormat::Table).unwrap();
+    }
+
+    #[test]
+    fn accept_update_replaces_the_target_note() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        std::fs::create_dir_all(kiln.join("Notes")).unwrap();
+        std::fs::write(
+            kiln.join("Notes/sock.md"),
+            "---\ntitle: Sock\n---\nold body\n",
+        )
+        .unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "u1",
+            "---\nsource: reflection\nstatus: proposed\nkind: update\ntarget: Notes/sock.md\ntitle: Sock\n---\nnew body\n",
+        );
+
+        accept(&config, "u1").unwrap();
+
+        let now = std::fs::read_to_string(kiln.join("Notes/sock.md")).unwrap();
+        assert!(now.contains("new body"));
+        assert!(!now.contains("old body"));
+        assert!(!now.contains("kind:"), "kind is provenance: {now}");
+        assert!(
+            !proposals_dir(&config).join("u1.md").exists(),
+            "the proposal is removed after accept"
+        );
+    }
+
+    #[test]
+    fn accept_update_refuses_a_missing_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "u2",
+            "---\nkind: update\ntarget: Notes/none.md\n---\nbody\n",
+        );
+        let err = accept(&config, "u2").unwrap_err();
+        assert!(err.to_string().contains("does not exist"), "got: {err}");
+    }
+
+    #[test]
+    fn accept_skill_lands_a_skill_md_and_keeps_provenance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "s1",
+            "---\nsource: reflection\nstatus: proposed\nkind: skill\nname: fix-flaky-nextest\ndescription: How to isolate a flaky daemon test\nmodel: m1\nsession: \"[[chat-1]]\"\ncreated: 2026-09-01\n---\n# Steps\n\nRun with `-p`.\n",
+        );
+
+        accept(&config, "s1").unwrap();
+
+        let dest = kiln.join(".crucible/skills/fix-flaky-nextest/SKILL.md");
+        let text = std::fs::read_to_string(&dest).unwrap();
+        assert!(text.contains("name: fix-flaky-nextest"));
+        assert!(text.contains("description: \"How to isolate"));
+        assert!(
+            text.contains("  crucible-source: reflection"),
+            "provenance lives under metadata: {text}"
+        );
+        for key in [
+            "source:", "model:", "session:", "status:", "kind:", "created:", "target:", "title:",
+        ] {
+            assert!(
+                !text.lines().any(|l| l.starts_with(key)),
+                "{key} is not a spec field: {text}"
+            );
+        }
+        assert!(text.contains("# Steps"));
+
+        // The file must load through the daemon's own parser, or discovery
+        // would refuse the skill the user just accepted.
+        let parsed = crucible_daemon::skills::SkillParser::new()
+            .parse(
+                &text,
+                crucible_daemon::skills::SkillSource {
+                    agent: None,
+                    scope: crucible_daemon::skills::SkillScope::Kiln,
+                    path: dest.clone(),
+                    content_hash: String::new(),
+                },
+            )
+            .expect("accepted skill parses");
+        assert_eq!(parsed.name, "fix-flaky-nextest");
+        // The daemon flattens every non-spec key into `metadata`, so the
+        // spec's own `metadata` map sits one level down.
+        assert_eq!(
+            parsed
+                .metadata
+                .get("metadata")
+                .and_then(|m| m.get("crucible-source"))
+                .and_then(|v| v.as_str()),
+            Some("reflection")
+        );
+    }
+
+    #[test]
+    fn accept_skill_rejects_spec_invalid_names() {
+        let long = "x".repeat(65);
+        for bad in [
+            "-lead",
+            "trail-",
+            "two--hyphens",
+            "Upper",
+            "has space",
+            long.as_str(),
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            let config = test_config(tmp.path());
+            write_proposal(
+                &proposals_dir(&config),
+                "bad",
+                &format!("---\nkind: skill\nname: {bad}\ndescription: d\n---\nb\n"),
+            );
+            let err = accept(&config, "bad").unwrap_err();
+            assert!(err.to_string().contains("skill name"), "{bad:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn accept_update_never_touches_a_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        let skill_dir = kiln.join(".crucible/skills/vendored");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: vendored\ndescription: d\n---\ntheirs\n",
+        )
+        .unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "u4",
+            "---\nkind: update\ntarget: .crucible/skills/vendored/SKILL.md\ntitle: T\n---\nmine\n",
+        );
+
+        let err = accept(&config, "u4").unwrap_err();
+        assert!(
+            err.to_string().contains("may not target a skill"),
+            "got: {err}"
+        );
+        let text = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        assert!(text.contains("theirs"), "the installed skill is untouched");
+    }
+
+    #[test]
+    fn accept_skill_refuses_an_existing_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        let skill_dir = kiln.join(".crucible/skills/taken");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: taken\ndescription: d\n---\ntheirs\n",
+        )
+        .unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "s3",
+            "---\nkind: skill\nname: taken\ndescription: d2\n---\nmine\n",
+        );
+
+        let err = accept(&config, "s3").unwrap_err();
+        assert!(err.to_string().contains("exists"), "got: {err}");
+        let text = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        assert!(text.contains("theirs"));
+    }
+
+    #[test]
+    fn accept_skill_rejects_a_bad_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "s2",
+            "---\nkind: skill\nname: ../Evil\ndescription: d\n---\nb\n",
+        );
+        let err = accept(&config, "s2").unwrap_err();
+        assert!(err.to_string().contains("skill name"), "got: {err}");
     }
 }

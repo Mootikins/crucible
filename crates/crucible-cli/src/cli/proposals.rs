@@ -22,7 +22,7 @@ pub enum ProposalsCommands {
         /// Proposal id (the file name without extension)
         id: String,
     },
-    /// Accept a proposal: move it into the kiln and drop provenance frontmatter
+    /// Accept a proposal: a note moves into the kiln, an update replaces its target, a skill lands under .crucible/skills
     Accept {
         /// Proposal id (the file name without extension)
         id: String,
