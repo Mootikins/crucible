@@ -30,6 +30,10 @@ use crate::subscription::WILDCARD_SESSION;
 pub const NOTIFICATIONS_FILE: &str = "notifications.json";
 /// How many notifications the ring keeps. The newest wins.
 pub const RING: usize = 200;
+/// How many `cru.log.notify` calls may wait for the drain. A full queue
+/// makes the next call raise in Lua, so the daemon never grows without a
+/// limit.
+pub const NOTIFY_QUEUE: usize = 1024;
 const FILE_VERSION: u32 = 1;
 
 /// The ring on disk. Newest first, so `truncate` drops the oldest.
@@ -54,15 +58,15 @@ pub struct NotificationHub {
     sessions: Arc<SessionManager>,
     projects: Arc<ProjectManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
-    tx: mpsc::UnboundedSender<NotifyRequest>,
+    tx: mpsc::Sender<NotifyRequest>,
     /// Taken once by `spawn_drain`.
-    rx: Mutex<Option<mpsc::UnboundedReceiver<NotifyRequest>>>,
+    rx: Mutex<Option<mpsc::Receiver<NotifyRequest>>>,
 }
 
 /// What a VM holds: the channel into the hub, and the session the VM
 /// belongs to when it is a session VM.
 struct HubSink {
-    tx: mpsc::UnboundedSender<NotifyRequest>,
+    tx: mpsc::Sender<NotifyRequest>,
     session_id: Option<String>,
 }
 
@@ -71,9 +75,10 @@ impl NotificationSink for HubSink {
         if self.session_id.is_some() {
             request.session_id = self.session_id.clone();
         }
-        self.tx
-            .send(request)
-            .map_err(|_| "the notification hub is gone".to_string())
+        self.tx.try_send(request).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => "notification queue full".to_string(),
+            mpsc::error::TrySendError::Closed(_) => "the notification hub is gone".to_string(),
+        })
     }
 }
 
@@ -84,7 +89,7 @@ impl NotificationHub {
         projects: Arc<ProjectManager>,
         event_tx: broadcast::Sender<SessionEventMessage>,
     ) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(NOTIFY_QUEUE);
         Self {
             store: RegistryStore::new(data_home.join(NOTIFICATIONS_FILE)),
             sessions,
@@ -295,6 +300,7 @@ mod tests {
     use crucible_lua::NotifyRequest;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
     use tokio::sync::broadcast;
 
     struct Fixture {
@@ -399,6 +405,23 @@ mod tests {
         assert_eq!(listed[0].scope.kilns, vec![kiln_name("notes")]);
         assert!(listed[0].created_at.is_some());
         let _ = &f.session_b;
+    }
+
+    #[tokio::test]
+    async fn fan_out_skips_ended_and_archived_sessions() {
+        let mut f = fixture();
+        let mut ended = Session::new(SessionType::Chat, vec![kiln_name("notes")]);
+        ended.end();
+        let mut archived = Session::new(SessionType::Chat, vec![kiln_name("notes")]);
+        archived.archived = true;
+        f.sessions.register_transient(ended);
+        f.sessions.register_transient(archived);
+
+        f.hub.add(request("p", None, None, Some("notes"))).unwrap();
+
+        let events = drain(&mut f.events);
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0].session_id, f.session_a);
     }
 
     #[tokio::test]
@@ -562,5 +585,35 @@ mod tests {
             .unwrap();
         assert_eq!(event.session_id, f.session_a);
         assert_eq!(event.data["notification"]["scope"]["kilns"][0], "notes");
+    }
+
+    #[tokio::test]
+    async fn notify_refuses_a_full_queue_and_the_drain_empties_it() {
+        let f = fixture();
+        let sink = f.hub.sink(None);
+        for i in 0..NOTIFY_QUEUE {
+            NotificationSink::notify(&*sink, request(&format!("m{i}"), None, None, None)).unwrap();
+        }
+
+        let err =
+            NotificationSink::notify(&*sink, request("overflow", None, None, None)).unwrap_err();
+        assert_eq!(err, "notification queue full");
+
+        f.hub.spawn_drain();
+        let last = format!("m{}", NOTIFY_QUEUE - 1);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let listed = f.hub.list(None, &[], true);
+            if listed.first().is_some_and(|n| n.message == last) {
+                assert_eq!(listed.len(), RING);
+                assert!(listed.iter().all(|n| n.message != "overflow"));
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the drain did not empty the queue"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 }

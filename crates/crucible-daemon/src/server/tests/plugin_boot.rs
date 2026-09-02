@@ -10,21 +10,32 @@ use super::*;
 use crate::subscription::WILDCARD_SESSION;
 use std::time::Duration;
 
-/// The next `notification_added` on `event_rx`, or a panic after two seconds.
-async fn next_notification_added(
+/// The `notification_added` on `event_rx` that carries `message`, or a
+/// panic after two seconds. The boot also loads the developer's own plugins
+/// from `user_plugins_dir()` and `CRUCIBLE_PLUGIN_PATH`, and one of them can
+/// notify first, so the first event of that type is not enough.
+async fn notification_added_with_message(
     event_rx: &mut broadcast::Receiver<SessionEventMessage>,
+    message: &str,
 ) -> SessionEventMessage {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             match event_rx.recv().await {
-                Ok(event) if event.event == "notification_added" => return event,
+                Ok(event)
+                    if event.event == "notification_added"
+                        && event.data["notification"]["message"] == message =>
+                {
+                    return event
+                }
                 Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(err) => panic!("event channel closed: {err}"),
             }
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("timed out: no notification_added after the plugin boot"))
+    .unwrap_or_else(|_| {
+        panic!("timed out: no notification_added {message:?} after the plugin boot")
+    })
 }
 
 /// After `boot_plugins`, the agent manager holds the hub, and a
@@ -57,10 +68,6 @@ async fn the_plugin_boot_binds_the_notification_hub_to_the_agent_manager_and_the
         .await
         .expect("cru.log.notify must run on the booted plugin VM");
 
-    let event = next_notification_added(&mut event_rx).await;
+    let event = notification_added_with_message(&mut event_rx, "from the plugin boot").await;
     assert_eq!(event.session_id, WILDCARD_SESSION);
-    assert_eq!(
-        event.data["notification"]["message"],
-        "from the plugin boot"
-    );
 }
