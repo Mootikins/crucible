@@ -82,7 +82,10 @@ impl OilChatRunner {
         // saying what knowledge it is attached to. A replay attaches nothing
         // and answers nothing, so it gets no banner.
         if self.replay_path.is_none() {
-            app.announce_kilns(&std::mem::take(&mut self.connected_kilns));
+            app.announce_kilns(
+                &std::mem::take(&mut self.connected_kilns),
+                self.pending_proposals,
+            );
         }
 
         let terminal_size = self.terminal.size();

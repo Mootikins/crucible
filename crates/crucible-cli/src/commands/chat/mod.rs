@@ -387,6 +387,23 @@ async fn attached_kilns(client: &DaemonClient) -> Vec<crate::tui::oil::KilnSumma
         .collect()
 }
 
+/// How many proposals wait in the attached kilns, for the startup banner.
+///
+/// The CLI reads each kiln's staging directory directly, as `cru proposals
+/// list` does. A directory the CLI cannot read counts zero: the banner is
+/// information, and it must not fail the session.
+fn pending_proposals(kilns: &[crate::tui::oil::KilnSummary]) -> usize {
+    kilns
+        .iter()
+        .map(|kiln| {
+            let staging = std::path::Path::new(&kiln.path).join(".crucible/proposals");
+            crate::commands::proposals::collect_proposals(&staging)
+                .map(|files| files.len())
+                .unwrap_or(0)
+        })
+        .sum()
+}
+
 async fn open_project_kilns_if_matched(existing_client: Option<&DaemonClient>) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
@@ -549,7 +566,11 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
 
     // After the project kilns open, so the banner names them too.
     if let Some(client) = lua_client.as_ref() {
-        runner = runner.with_connected_kilns(attached_kilns(client).await);
+        let kilns = attached_kilns(client).await;
+        let pending = pending_proposals(&kilns);
+        runner = runner
+            .with_connected_kilns(kilns)
+            .with_pending_proposals(pending);
     }
 
     // Pull the Lua-defined theme before the first frame. Strictly an upgrade:

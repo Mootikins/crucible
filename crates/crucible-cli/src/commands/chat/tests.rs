@@ -278,3 +278,20 @@ fn oneshot_applies_plan_mode_only_when_the_flag_is_given() {
     assert_eq!(oneshot_mode_override(true), Some("plan"));
     assert_eq!(oneshot_mode_override(false), None);
 }
+
+#[test]
+fn pending_proposals_counts_staged_files_and_ignores_rejected() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let staging = a.path().join(".crucible/proposals");
+    std::fs::create_dir_all(staging.join("rejected")).unwrap();
+    std::fs::write(staging.join("p1.md"), "---\ntitle: P\n---\nb\n").unwrap();
+    std::fs::write(staging.join("p2.md"), "---\ntitle: Q\n---\nb\n").unwrap();
+    std::fs::write(staging.join("rejected/old.md"), "---\ntitle: O\n---\nb\n").unwrap();
+    let summary = |name: &str, path: &std::path::Path| crate::tui::oil::KilnSummary {
+        name: name.to_string(),
+        path: path.display().to_string(),
+    };
+    let kilns = vec![summary("a", a.path()), summary("b", b.path())];
+    assert_eq!(pending_proposals(&kilns), 2);
+}

@@ -213,6 +213,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** the banner names every attached kiln and its path, with the names aligned; one kiln reads "1 kiln attached"; no kiln says so in as many words rather than printing an empty list; the daemon owns the set (`kiln.list`) and a listing failure drops the banner instead of failing the session; a replay gets no banner, because it attaches nothing.
 **Tests:** T1 banner text (plural, singular, empty) in `chat_app/tests.rs`; T2 the banner in a rendered frame in `user_story_tests/completion_frame_tests.rs`.
 
+### US-804: The session opens saying that proposals are waiting
+**As a user**, the startup banner tells me when the reflection or consolidation pass has staged proposals in an attached kiln, and how to review them, so a proposal is never discovered by accident.
+**Acceptance:** with N pending proposals across the attached kilns the banner ends with "N proposal(s) pending. Review with `cru proposals list`." (singular for one); with none, nothing is added; the count reads `KILN/.crucible/proposals/` directly and ignores `rejected/`; a kiln whose staging directory cannot be read counts zero rather than failing the session; a replay gets no line, because it attaches nothing.
+**Tests:** T1 banner text (one, many, none) in `chat_app/tests.rs`; T2 the line in a rendered frame in `user_story_tests/completion_frame_tests.rs`; the count in `commands/chat/mod.rs`.
+
 ### US-802: Stable rendering across widths
 **As a user**, the TUI renders correctly at narrow (50), normal (80), and wide (120) widths without flicker or duplication.
 **Acceptance:** no torn frames (synchronized updates); no duplicate graduation; spacing via gap() consistent.

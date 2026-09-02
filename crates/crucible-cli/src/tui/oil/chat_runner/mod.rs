@@ -87,6 +87,7 @@ pub struct OilChatRunner {
     pub(super) resume_history: Option<Vec<serde_json::Value>>,
     pub(super) mcp_servers: Vec<McpServerDisplay>,
     pub(super) connected_kilns: Vec<KilnSummary>,
+    pub(super) pending_proposals: usize,
     pub(super) plugin_status: Vec<PluginStatusEntry>,
     pub(super) show_thinking: bool,
     pub(super) show_diffs: bool,
@@ -140,6 +141,7 @@ impl OilChatRunner {
             resume_history: None,
             mcp_servers: Vec::new(),
             connected_kilns: Vec::new(),
+            pending_proposals: 0,
             plugin_status: Vec::new(),
             show_thinking: false,
             show_diffs: true,
@@ -211,6 +213,13 @@ impl OilChatRunner {
     /// The kilns the startup banner names. Empty says so in as many words.
     pub fn with_connected_kilns(mut self, kilns: Vec<KilnSummary>) -> Self {
         self.connected_kilns = kilns;
+        self
+    }
+
+    /// How many proposals wait in the attached kilns. The banner ends with
+    /// the count when it is above zero.
+    pub fn with_pending_proposals(mut self, pending: usize) -> Self {
+        self.pending_proposals = pending;
         self
     }
 

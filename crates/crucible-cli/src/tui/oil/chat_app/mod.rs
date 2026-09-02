@@ -755,7 +755,11 @@ impl OilChatApp {
     ///
     /// The first thing on screen says what the session is attached to, so a
     /// wrong or empty attachment is visible before the first turn.
-    pub(crate) fn announce_kilns(&mut self, kilns: &[KilnSummary]) {
+    ///
+    /// `pending` is how many proposals wait in those kilns. A proposal that
+    /// nobody knows about is never reviewed, so the banner ends by saying how
+    /// many wait and how to review them. Zero adds nothing.
+    pub(crate) fn announce_kilns(&mut self, kilns: &[KilnSummary], pending: usize) {
         if kilns.is_empty() {
             self.add_system_message(
                 "No kiln is attached. Notes, search and knowledge tools have nothing to read."
@@ -780,6 +784,12 @@ impl OilChatApp {
                 kiln.name,
                 kiln.path,
                 width = width
+            ));
+        }
+        if pending > 0 {
+            text.push_str(&format!(
+                "\n{pending} proposal{} pending. Review with `cru proposals list`.",
+                if pending == 1 { "" } else { "s" }
             ));
         }
         self.add_system_message(text);

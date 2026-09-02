@@ -14,10 +14,13 @@ use crossterm::event::KeyCode;
 /// popup is taller than the transcript, which is where the frame used to grow.
 fn short_session() -> StoryRuntime {
     let mut story = StoryRuntime::new(80, 24);
-    story.app().announce_kilns(&[KilnSummary {
-        name: "crucible".into(),
-        path: "/home/u/crucible".into(),
-    }]);
+    story.app().announce_kilns(
+        &[KilnSummary {
+            name: "crucible".into(),
+            path: "/home/u/crucible".into(),
+        }],
+        0,
+    );
     story
         .send(ChatAppMsg::UserMessage("question".into()))
         .send(ChatAppMsg::TextDelta("answer".into()))
@@ -90,6 +93,40 @@ fn the_popup_draws_over_the_transcript() {
     assert!(
         closed.contains("answer"),
         "the transcript must come back when the popup closes:\n{closed}"
+    );
+}
+
+/// US-804: the banner ends by saying how many proposals wait, and how to
+/// review them.
+#[test]
+fn the_banner_says_how_many_proposals_are_pending() {
+    let mut story = StoryRuntime::new(80, 24);
+    story.app().announce_kilns(
+        &[KilnSummary {
+            name: "crucible".into(),
+            path: "/home/u/crucible".into(),
+        }],
+        3,
+    );
+
+    let screen = story.screen();
+    let lines: Vec<&str> = screen.lines().collect();
+    let kiln_at = lines
+        .iter()
+        .position(|line| line.contains("crucible  /home/u/crucible"))
+        .unwrap_or_else(|| panic!("no kiln row in:\n{screen}"));
+    let pending_at = lines
+        .iter()
+        .position(|line| line.contains("3 proposals pending"))
+        .unwrap_or_else(|| panic!("no pending line in:\n{screen}"));
+    assert_eq!(
+        pending_at,
+        kiln_at + 1,
+        "the pending line must end the banner:\n{screen}"
+    );
+    assert!(
+        lines[pending_at].contains("cru proposals list"),
+        "the review command is missing:\n{screen}"
     );
 }
 

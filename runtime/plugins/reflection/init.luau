@@ -586,8 +586,10 @@ end
 --- `session_id` may be nil for a pass that has no session (consolidation).
 --- `extra` is what `render_proposal` reads: `source` and `model`.
 ---
---- When at least one file lands, the user gets a toast that says how many
---- and how to review them. A proposal nobody knows about is never accepted.
+--- When at least one file lands, a notify says how many and how to review
+--- them. The notify is queued; no client drains it yet (G122). The
+--- session-open banner is what the user sees. A proposal nobody knows about
+--- is never accepted.
 function M.stage_proposals(kiln, session_id, proposals, extra: ProposalExtra?)
     local dir = cru.kiln.path(kiln, ".crucible/proposals")
     cru.fs.mkdir(dir)
@@ -613,7 +615,9 @@ function M.stage_proposals(kiln, session_id, proposals, extra: ProposalExtra?)
         end
     end
     if #written > 0 then
-        -- A toast needs a client; a daemon with none must not fail the stage.
+        -- The notify is queued; no client drains it yet (G122). The
+        -- session-open banner is what the user sees. A daemon with no client
+        -- must not fail the stage.
         local source = (extra and extra.source) or "reflection"
         pcall(cru.log.notify, string.format(
             "%s: %d proposal(s) staged. Review with `cru proposals list`.", source, #written),

@@ -105,7 +105,7 @@ fn proposal_path(config: &CliConfig, id: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn collect_proposals(dir: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn collect_proposals(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
