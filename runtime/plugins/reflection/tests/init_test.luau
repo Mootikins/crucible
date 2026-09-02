@@ -187,6 +187,14 @@ describe("reflection", function()
       expect.falsy(out:find("model:", 1, true))
     end)
 
+    it("escapes a double quote after the backslash, so a quoted value closes once", function()
+      -- Title holds a backslash and a quote: a\"b. The backslash must be
+      -- escaped first, or the quote escape gets a second backslash and the
+      -- YAML string closes early.
+      local out = plugin.render_proposal({ title = 'a\\"b', body = "B" }, "s", "t")
+      expect.truthy(out:find('title: "a\\\\\\"b"', 1, true))
+    end)
+
     it("escapes a line break and a backslash in every scalar, as the CLI does", function()
       local out = plugin.render_proposal(
         { title = "a\n---\nb", body = "B", target = "dir\\x.md", tags = { "t\r" } },
