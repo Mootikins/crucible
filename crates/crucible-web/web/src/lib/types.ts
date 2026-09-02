@@ -42,7 +42,7 @@ export interface Message {
 // =============================================================================
 
 export type SessionState = 'active' | 'paused' | 'compacting' | 'ended';
-export type SessionType = 'chat' | 'agent' | 'workflow';
+export type SessionType = 'chat' | 'agent' | 'workflow' | 'plugin';
 
 export interface Session {
   id: string;

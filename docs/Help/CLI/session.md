@@ -34,7 +34,7 @@ Creates a new daemon session.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-t, --session-type <type>` | `chat` | `chat`, `agent`, or `workflow` (`mcp` is deprecated and maps to `chat` with a warning) |
+| `-t, --session-type <type>` | `chat` | `chat`, `agent`, `workflow`, or `plugin` (`mcp` is deprecated and maps to `chat` with a warning) |
 | `-a, --agent <card>` | — | Agent card to configure: the prompt, model, and tool policy of an internal agent (`cru agents list`) |
 | `--acp <profile>` | — | ACP profile instead: an external agent subprocess (`claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or `[acp.agents.*]`) |
 | `--recording-mode <mode>` | — | `granular` or `coarse` |
@@ -89,7 +89,7 @@ Lists daemon sessions in a table (ID, type, state, started).
 | Option | Default | Description |
 |--------|---------|-------------|
 | `-n, --limit <n>` | `20` | Maximum sessions to show |
-| `-t, --session-type <type>` | — | Filter: `chat`, `agent`, `workflow` |
+| `-t, --session-type <type>` | — | Filter: `chat`, `agent`, `workflow`, `plugin` |
 | `--state <state>` | — | Filter by daemon state: `active`, `paused`, `ended` |
 | `--all` | off | Also list persisted sessions from storage, in a second section |
 | `--include-children` | off | Include delegated child sessions (hidden by default) |

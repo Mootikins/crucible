@@ -28,7 +28,7 @@ pub(super) fn warn_deprecated(old: &str, new: &str) {
 /// The set of session-type strings clap accepts on the command line. Kept as
 /// a single source of truth so the clap `value_parser` list and the
 /// canonicalization step below can't drift.
-pub const ACCEPTED_SESSION_TYPES: &[&str] = &["chat", "agent", "workflow", "mcp"];
+pub const ACCEPTED_SESSION_TYPES: &[&str] = &["chat", "agent", "workflow", "plugin", "mcp"];
 
 /// clap `value_parser` used for `cru session create -t` and `cru session
 /// list -t`. Validates the input against [`ACCEPTED_SESSION_TYPES`] and
@@ -71,4 +71,26 @@ pub(super) fn resolve_send_inputs(
     }
 
     (session_id_pos, message, false)
+}
+
+#[cfg(test)]
+mod session_type_arg_tests {
+    use super::*;
+
+    #[test]
+    fn every_daemon_session_type_is_accepted_on_the_command_line() {
+        // The daemon's enum is the source of truth. This list is hand-kept,
+        // so the test derives its expectation from the enum's spellings.
+        for kind in ["chat", "agent", "workflow", "plugin"] {
+            kind.parse::<crucible_core::session::SessionType>()
+                .unwrap_or_else(|e| panic!("{kind}: {e}"));
+            assert_eq!(parse_session_type_arg(kind).as_deref(), Ok(kind), "{kind}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_session_type_is_refused_and_names_the_choices() {
+        let err = parse_session_type_arg("bogus").unwrap_err();
+        assert!(err.contains("plugin"), "{err}");
+    }
 }

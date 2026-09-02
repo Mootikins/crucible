@@ -150,9 +150,9 @@ describe("consolidation", function()
   describe("run", function()
     local config = require("config")
 
-    --- Two ended sessions: `short` has one user turn, the way a reviewer's
-    --- aux session does; `long` has three. The daemon's list rows carry no
-    --- `system_prompt`, so the turn count is the gate the daemon can apply.
+    --- Two ended sessions: `short` has one user turn; `long` has three.
+    --- `min_turns` is a quality gate on the sample. A plugin's own aux
+    --- session is kept out by its `session_type`, not by its turn count.
     local messages_by_id: { [string]: { any } } = {
       short = {
         { role = "user", content = "review this" },
