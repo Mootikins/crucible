@@ -54,6 +54,7 @@ pub mod mcp;
 pub mod mcp_host;
 pub mod mcp_server;
 pub mod multi_kiln_search;
+pub mod notifications;
 pub mod observe;
 pub mod permission_bridge;
 pub mod pipeline;

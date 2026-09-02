@@ -641,7 +641,12 @@ impl AgentManager {
                 SessionEventMessage::new(
                     session_id,
                     "notification_added",
-                    serde_json::json!({ "notification_id": notification.id }),
+                    // The body rides along, so a client shows it without a
+                    // second round trip.
+                    serde_json::json!({
+                        "notification_id": notification.id,
+                        "notification": notification,
+                    }),
                 ),
             ) {
                 tracing::debug!("Failed to emit notification_added event (no subscribers)");

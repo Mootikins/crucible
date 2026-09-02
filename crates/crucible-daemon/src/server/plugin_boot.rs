@@ -23,6 +23,14 @@ impl Server {
             // `delegate = true` from a session's own Lua and from the plugin
             // VM reach one enforcement path.
             self.agent_manager.set_session_api(session_api);
+            // `cru.log.notify` on the plugin VM goes to the hub unstamped;
+            // the hub reads `opts.workspace` / `opts.kiln` or goes global.
+            // Session VMs get their own stamped sink when they are built.
+            let notifications = self.rpc_context.notifications.clone();
+            if let Err(e) = loader.upgrade_with_notify_sink(notifications.sink(None)) {
+                warn!("Failed to upgrade the Lua notify sink: {}", e);
+            }
+            self.agent_manager.set_notification_hub(notifications);
 
             // Hand the validator registry + plugin Lua handle to the
             // agent manager so the stream loop can dispatch

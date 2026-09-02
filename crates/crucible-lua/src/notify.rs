@@ -21,6 +21,12 @@
 //!
 //! -- Show only once per message
 //! cru.log.notify_once("Deprecated API", cru.log.levels.WARN)
+//!
+//! -- Limit who sees it: one workspace, or one kiln. Without either, a
+//! -- session VM's call takes its own session's scope; the plugin VM's
+//! -- call goes to everyone.
+//! cru.log.notify("Index rebuilt", cru.log.levels.INFO, { kiln = "notes" })
+//! cru.log.notify("Review ready", cru.log.levels.INFO, { workspace = "/w/a" })
 //! ```
 
 use crucible_core::types::{Notification, NotificationKind};
@@ -198,12 +204,14 @@ fn register_notify_once_function(lua: &Lua, log: &Table) -> LuaResult<()> {
                 return Ok(false);
             }
 
-            notified.set(msg.as_str(), true)?;
-            globals.set(NOTIFIED_ONCE_KEY, notified)?;
-
             let (level, opts) = level_and_opts(&level, &opts);
             let notification = build_notification(&msg, level, opts.as_ref())?;
             deliver_notification(lua, notification, opts.as_ref())?;
+
+            // Marked only after delivery: a sink that refused must not
+            // silence this message for the life of the VM.
+            notified.set(msg.as_str(), true)?;
+            globals.set(NOTIFIED_ONCE_KEY, notified)?;
 
             Ok(true)
         },
@@ -273,20 +281,23 @@ fn deliver_notification(
     notification: Notification,
     opts: Option<&Table>,
 ) -> LuaResult<()> {
-    let Some(installed) = lua.app_data_ref::<InstalledSink>() else {
+    // Cloned out, so the app-data borrow is gone before the sink runs: a
+    // sink that reads app data itself would otherwise hit a borrow panic.
+    let installed = lua
+        .app_data_ref::<InstalledSink>()
+        .map(|installed| (installed.sink.clone(), installed.session_id.clone()));
+    let Some((sink, session_id)) = installed else {
         return queue_notification(lua, notification);
     };
     let workspace: Option<String> = opts.and_then(|o| o.get("workspace").ok());
     let kiln: Option<String> = opts.and_then(|o| o.get("kiln").ok());
     let request = NotifyRequest {
         notification,
-        session_id: installed.session_id.clone(),
+        session_id,
         workspace: workspace.map(PathBuf::from),
         kiln,
     };
-    installed
-        .sink
-        .notify(request)
+    sink.notify(request)
         .map_err(|e| mlua::Error::external(format!("notify: {e}")))
 }
 
@@ -592,6 +603,47 @@ mod tests {
 
         let err = lua.load(r#"cru.log.notify("saved")"#).exec().unwrap_err();
         assert!(err.to_string().contains("hub is gone"), "{err}");
+    }
+
+    /// Refuses the first request, records every later one.
+    #[derive(Default)]
+    struct RefusesOnce {
+        calls: std::sync::Mutex<usize>,
+        sent: std::sync::Mutex<Vec<NotifyRequest>>,
+    }
+
+    impl NotificationSink for RefusesOnce {
+        fn notify(&self, request: NotifyRequest) -> Result<(), String> {
+            let mut calls = self.calls.lock().unwrap();
+            *calls += 1;
+            if *calls == 1 {
+                return Err("hub is busy".to_string());
+            }
+            self.sent.lock().unwrap().push(request);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn notify_once_marks_a_message_shown_only_after_the_sink_took_it() {
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
+        let sink = Arc::new(RefusesOnce::default());
+        upgrade_with_notify_sink(&lua, sink.clone(), None).unwrap();
+
+        let err = lua
+            .load(r#"return cru.log.notify_once("Only once")"#)
+            .eval::<bool>()
+            .unwrap_err();
+        assert!(err.to_string().contains("hub is busy"), "{err}");
+
+        let second: bool = lua
+            .load(r#"return cru.log.notify_once("Only once")"#)
+            .eval()
+            .unwrap();
+        assert!(second, "the refused message is not marked as shown");
+        let sent = sink.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].notification.message, "Only once");
     }
 
     #[test]

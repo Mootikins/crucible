@@ -195,6 +195,14 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
+        "NotificationListRequest",
+        "crates/crucible-daemon/src/server/notifications.rs",
+    ),
+    (
+        "NotificationDismissRequest",
+        "crates/crucible-daemon/src/server/notifications.rs",
+    ),
+    (
         "SessionIdRequest",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),

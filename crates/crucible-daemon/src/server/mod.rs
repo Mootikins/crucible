@@ -64,6 +64,7 @@ pub mod llm;
 pub mod lua;
 pub mod lua_plugin_suite;
 pub mod note_refactor;
+pub mod notifications;
 pub mod observe;
 pub mod platform;
 pub mod plugin_install;
@@ -437,6 +438,16 @@ impl Server {
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new_with_gateway(mcp_gateway.clone()));
 
+        // One hub for both VMs. The drain runs for the daemon's life; a VM
+        // only ever holds the channel into it.
+        let notifications = Arc::new(crate::notifications::NotificationHub::new(
+            &data_home,
+            session_manager.clone(),
+            project_manager.clone(),
+            event_tx.clone(),
+        ));
+        notifications.spawn_drain();
+
         let ctx = Arc::new(RpcContext::new(RpcContextParams {
             kiln: kiln_manager.clone(),
             sessions: session_manager.clone(),
@@ -504,6 +515,7 @@ impl Server {
                 .and_then(|c| c.get("default_kiln"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string),
+            notifications,
         }));
         // Same instance for both paths: delegated children fire plugin start
         // hooks and get their own isolation claim, and the once-only teardown

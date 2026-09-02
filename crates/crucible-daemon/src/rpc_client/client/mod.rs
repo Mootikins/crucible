@@ -39,6 +39,7 @@ fn validate_socket_path(path: &Path) -> Result<()> {
 // retries) lives here in `mod.rs`.
 pub mod agent;
 pub mod lua;
+pub mod notifications;
 pub mod plugin_requests;
 pub mod review;
 pub mod session;
@@ -67,6 +68,7 @@ pub use agent::{
     ListAllModelsRequest, ListProvidersRequest, SessionConfigureAgentRequest,
     SessionSwitchModelRequest,
 };
+pub use notifications::{NotificationDismissRequest, NotificationListRequest};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
     PluginRemoveRequest, PluginRunCommandRequest,

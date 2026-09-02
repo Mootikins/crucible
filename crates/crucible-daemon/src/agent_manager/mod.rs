@@ -392,6 +392,10 @@ pub struct AgentManager {
     /// not get the module — the pre-existing behaviour, not a half-registered
     /// one.
     session_api: std::sync::OnceLock<Arc<dyn crucible_lua::DaemonSessionApi>>,
+    /// Where a session VM's `cru.log.notify` goes. Bound once at boot beside
+    /// `session_api`; `None` in tests and boots that never wired it, where
+    /// the VM queues the call instead.
+    notification_hub: std::sync::OnceLock<Arc<crate::notifications::NotificationHub>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     card_roots: crate::agent_cards::CardRoots,
     llm_config: crate::llm_state::LiveLlmConfig,
@@ -525,6 +529,7 @@ impl AgentManager {
             background_manager: params.background_manager,
             delegation_service,
             session_api: std::sync::OnceLock::new(),
+            notification_hub: std::sync::OnceLock::new(),
             mcp_gateway: params.mcp_gateway,
             llm_config: crate::llm_state::LiveLlmConfig::new(params.llm_config),
             acp_config: params.acp_config,
@@ -1209,6 +1214,16 @@ impl AgentManager {
 
     fn session_api(&self) -> Option<&Arc<dyn crucible_lua::DaemonSessionApi>> {
         self.session_api.get()
+    }
+
+    /// Bind the notification hub session VMs send `cru.log.notify` to.
+    /// Idempotent; first binder wins.
+    pub fn set_notification_hub(&self, hub: Arc<crate::notifications::NotificationHub>) {
+        let _ = self.notification_hub.set(hub);
+    }
+
+    pub fn notification_hub(&self) -> Option<&Arc<crate::notifications::NotificationHub>> {
+        self.notification_hub.get()
     }
 
     /// The provider table as it stands.

@@ -135,6 +135,9 @@ pub struct RpcContext {
     /// delegation service — one instance, so the once-only teardown claim
     /// covers RPC-ended and delegation-ended sessions alike.
     pub session_lifecycle: Arc<SessionLifecycle>,
+    /// The daemon's notification ring and its fan-out. Every VM's
+    /// `cru.log.notify` lands here; `notification.list` reads it.
+    pub notifications: Arc<crate::notifications::NotificationHub>,
 }
 
 /// Everything `RpcContext::new` needs from its caller. A struct, not a
@@ -162,6 +165,7 @@ pub struct RpcContextParams {
     pub config_default_kiln: Option<String>,
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
     pub config_projects: Vec<crate::project_manager::ProjectLayerEntry>,
+    pub notifications: Arc<crate::notifications::NotificationHub>,
 }
 
 impl RpcContext {
@@ -188,6 +192,7 @@ impl RpcContext {
             config_default_kiln,
             llm_state,
             config_projects,
+            notifications,
         } = params;
         // Taken from the agent manager, never built here: one provider table,
         // shared, so a provider added at runtime is visible to both.
@@ -219,6 +224,7 @@ impl RpcContext {
             llm_state,
             config_projects,
             session_lifecycle,
+            notifications,
         }
     }
 
@@ -270,6 +276,12 @@ impl RpcContext {
     ) -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
         let registry = sessions.kiln_registry().clone();
+        let notifications = Arc::new(crate::notifications::NotificationHub::new(
+            &data_home,
+            sessions.clone(),
+            project_manager.clone(),
+            event_tx.clone(),
+        ));
         Self::new(RpcContextParams {
             kiln,
             sessions,
@@ -298,6 +310,7 @@ impl RpcContext {
             // A test whose fixture disagreed with itself that way would pass or
             // fail for reasons unrelated to the code under test.
             kiln_registry: registry,
+            notifications,
         })
     }
 }

@@ -672,6 +672,17 @@ impl DaemonPluginLoader {
         Ok(())
     }
 
+    /// Point the plugin VM's `cru.log.notify` at the daemon's hub. Until
+    /// this runs the calls queue in the VM, which is what the stub
+    /// generator and the unit tests read.
+    pub fn upgrade_with_notify_sink(
+        &self,
+        sink: Arc<dyn crucible_lua::NotificationSink>,
+    ) -> anyhow::Result<()> {
+        crucible_lua::upgrade_with_notify_sink(self.executor.lua(), sink, None)
+            .map_err(|e| anyhow::anyhow!("notify sink upgrade: {e}"))
+    }
+
     /// The daemon-backed session API `upgrade_with_sessions` registered with,
     /// for late-created runtimes that want the same module against the same
     /// bridge. `None` before the upgrade has run.

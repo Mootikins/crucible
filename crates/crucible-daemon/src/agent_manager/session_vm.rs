@@ -195,6 +195,24 @@ impl AgentManager {
             }
         }
 
+        // `cru.log.notify` from this VM is stamped with this session, so the
+        // hub can scope it to the session's workspace and kilns. Without a
+        // hub the call queues in the VM, as it always did.
+        match self.notification_hub() {
+            Some(hub) => {
+                if let Err(e) = crucible_lua::upgrade_with_notify_sink(
+                    &lua,
+                    hub.sink(Some(session_id)),
+                    Some(session_id.to_string()),
+                ) {
+                    error!(session_id = %session_id, error = %e, "Failed to install the notify sink");
+                }
+            }
+            None => {
+                debug!(session_id = %session_id, "no notification hub bound; cru.log.notify queues in the VM");
+            }
+        }
+
         if let Ok(cru) = lua.globals().get::<mlua::Table>("cru") {
             if let Err(e) =
                 crucible_lua::register_statusline_exprs(&lua, &cru, self.statusline_exprs())

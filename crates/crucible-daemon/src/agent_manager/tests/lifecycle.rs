@@ -18,6 +18,26 @@ async fn test_configure_agent() {
 }
 
 #[tokio::test]
+async fn a_session_notification_event_carries_the_body() {
+    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let agent_manager = create_test_agent_manager(session_manager);
+    let (event_tx, mut events) = broadcast::channel(16);
+
+    let notification = crucible_core::types::Notification::toast("saved");
+    agent_manager
+        .add_notification(&session.id, notification.clone(), Some(&event_tx))
+        .await
+        .unwrap();
+
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.session_id, session.id.to_string());
+    assert_eq!(event.event, "notification_added");
+    assert_eq!(event.data["notification_id"], notification.id);
+    assert_eq!(event.data["notification"]["message"], "saved");
+    assert_eq!(event.data["notification"]["kind"], "toast");
+}
+
+#[tokio::test]
 async fn test_configure_agent_not_found() {
     let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);

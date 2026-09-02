@@ -136,6 +136,8 @@ rpc_methods! {
     SessionAddNotification = "session.add_notification",
     SessionListNotifications = "session.list_notifications",
     SessionDismissNotification = "session.dismiss_notification",
+    NotificationList = "notification.list",
+    NotificationDismiss = "notification.dismiss",
     SessionInteractionRespond = "session.interaction_respond",
     SessionPendingInteractions = "session.pending_interactions",
     SessionSetTemperature = "session.set_temperature",
@@ -825,6 +827,20 @@ impl RpcDispatcher {
                     )
                 )
             }
+            RpcMethod::NotificationList => forward!(
+                id,
+                crate::server::notifications::handle_notification_list(
+                    req.clone(),
+                    &self.ctx.notifications
+                )
+            ),
+            RpcMethod::NotificationDismiss => forward!(
+                id,
+                crate::server::notifications::handle_notification_dismiss(
+                    req.clone(),
+                    &self.ctx.notifications
+                )
+            ),
             RpcMethod::SessionTestInteraction => {
                 forward!(
                     id,
@@ -2953,6 +2969,13 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             card_roots: Default::default(),
         }));
 
+        let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
+        let notifications = Arc::new(crate::notifications::NotificationHub::new(
+            data_home,
+            session_manager.clone(),
+            project_manager.clone(),
+            event_tx.clone(),
+        ));
         Arc::new(RpcContext::new(RpcContextParams {
             kiln: kiln_manager,
             sessions: session_manager,
@@ -2960,7 +2983,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             subscriptions: Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
-            project_manager: Arc::new(ProjectManager::new(data_home.join("projects.json"))),
+            project_manager,
             lua_sessions: Arc::new(DashMap::new()),
             plugin_loader: Arc::new(tokio::sync::Mutex::new(None)),
             mcp_server_manager: Arc::new(McpServerManager::new()),
@@ -2977,6 +3000,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             effective_config: None,
             boot_hash: None,
             config_default_kiln: None,
+            notifications,
         }))
     }
 

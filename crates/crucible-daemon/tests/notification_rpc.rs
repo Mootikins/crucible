@@ -7,6 +7,8 @@
 //! - `session.add_notification` - Add notification to session queue
 //! - `session.list_notifications` - Get all notifications for session
 //! - `session.dismiss_notification` - Remove notification by ID
+//! - `notification.list` - The daemon's own ring, as a client may see it
+//! - `notification.dismiss` - Drop one entry of that ring
 
 mod common;
 
@@ -345,6 +347,37 @@ async fn test_session_not_found_error() {
             .unwrap()
             .contains("not found"),
         "Error should mention session not found"
+    );
+
+    daemon.stop().await.expect("Failed to stop daemon");
+}
+
+#[tokio::test]
+async fn test_daemon_notification_list_and_dismiss_contract() {
+    let (mut daemon, mut conn) = setup_daemon().await;
+
+    let response = conn
+        .call_method("notification.list", json!({ "all": true }), 1)
+        .await;
+    assert_eq!(response["jsonrpc"], "2.0");
+    assert_eq!(response["id"], 1);
+    assert_eq!(
+        response["result"]["notifications"],
+        json!([]),
+        "a fresh daemon has an empty ring: {response}"
+    );
+
+    let response = conn
+        .call_method("notification.dismiss", json!({ "id": "notif-nonexist" }), 2)
+        .await;
+    assert_eq!(response["result"]["dismissed"], json!(false), "{response}");
+
+    let response = conn
+        .call_method("notification.list", json!({ "kilns": ["not a kiln!"] }), 3)
+        .await;
+    assert!(
+        response["error"].is_object(),
+        "a bad kiln name is refused, not ignored: {response}"
     );
 
     daemon.stop().await.expect("Failed to stop daemon");
