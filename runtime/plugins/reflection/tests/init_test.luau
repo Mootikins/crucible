@@ -174,6 +174,18 @@ describe("reflection", function()
       local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t")
       expect.falsy(out:find("tags:"))
     end)
+
+    it("records the model that wrote the proposal", function()
+      local out = plugin.render_proposal(
+        { title = "T", body = "B" }, "chat-1", "2026-09-01T00:00:00Z",
+        { model = "claude-haiku-4-5-20251001" })
+      expect.truthy(out:find('model: "claude-haiku-4-5-20251001"', 1, true))
+    end)
+
+    it("omits the model line when the session has none", function()
+      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", {})
+      expect.falsy(out:find("model:", 1, true))
+    end)
   end)
 
   describe("proposal_id", function()

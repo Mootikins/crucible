@@ -9,6 +9,7 @@ mod delegate;
 mod lifecycle;
 mod message_rows;
 mod review;
+mod session_json;
 
 use crucible_core::config::{BackendType, LlmConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};

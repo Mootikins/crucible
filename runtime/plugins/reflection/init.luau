@@ -225,8 +225,10 @@ end
 
 --- Build a staged proposal file: provenance frontmatter + body. The
 --- frontmatter carries `source`, `status`, `session`, `created` (stripped on
---- accept) plus the user-facing `title`/`tags`/`target`.
-function M.render_proposal(proposal, session_id, stamp)
+--- accept) plus the user-facing `title`/`tags`/`target`. `extra.model` names
+--- the model that wrote the session; `cru proposals accept` keeps that line,
+--- so a reader can tell one model's habits from another's in the kiln too.
+function M.render_proposal(proposal, session_id, stamp, extra)
     stamp = stamp or os.date("!%Y-%m-%dT%H:%M:%SZ")
     local lines = {
         "---",
@@ -234,8 +236,12 @@ function M.render_proposal(proposal, session_id, stamp)
         "status: proposed",
         "session: " .. yaml_scalar("[[" .. tostring(session_id) .. "]]"),
         "created: " .. yaml_scalar(stamp),
-        "title: " .. yaml_scalar(proposal.title or "Untitled"),
     }
+    local model = type(extra) == "table" and extra.model or nil
+    if type(model) == "string" and model ~= "" then
+        lines[#lines + 1] = "model: " .. yaml_scalar(model)
+    end
+    lines[#lines + 1] = "title: " .. yaml_scalar(proposal.title or "Untitled")
     if proposal.target and proposal.target ~= "" then
         lines[#lines + 1] = "target: " .. yaml_scalar(proposal.target)
     end
@@ -345,7 +351,7 @@ end
 --- does not go through `cru.fs.write`, which is being removed. `mkdir` stays
 --- on `cru.fs` because Lua has no directory call, and `os.execute("mkdir -p")`
 --- would interpolate a path into a command line.
-function M.stage_proposals(kiln, session_id, proposals)
+function M.stage_proposals(kiln, session_id, proposals, extra)
     local dir = cru.kiln.path(kiln, ".crucible/proposals")
     cru.fs.mkdir(dir)
     local written = {}
@@ -360,7 +366,7 @@ function M.stage_proposals(kiln, session_id, proposals)
                 if not handle then
                     error("reflection: cannot write " .. path .. ": " .. tostring(open_err))
                 end
-                handle:write(M.render_proposal(proposal, session_id, nil))
+                handle:write(M.render_proposal(proposal, session_id, nil, extra))
                 handle:close()
                 written[#written + 1] = path
             end
@@ -469,7 +475,7 @@ function M.run(session: any): ()
         return
     end
 
-    local written = M.stage_proposals(kiln, session_id, proposals)
+    local written = M.stage_proposals(kiln, session_id, proposals, { model = info and info.model })
     cru.log("info", string.format(
         "reflection: staged %d proposal(s) in the '%s' kiln's .crucible/proposals/",
         #written, kiln))

@@ -294,33 +294,15 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     fn get_session(&self, session_id: String) -> BoxFut<Option<serde_json::Value>> {
         bridge_async!(self.session_manager, |sm| async move {
-            Ok(sm.get_session(&session_id).map(|s| {
-                serde_json::json!({
-                    "id": s.id,
-                    "session_type": s.session_type.as_prefix(),
-                    "kilns": s.kilns,
-                    "state": format!("{}", s.state),
-                    "title": s.title,
-                })
-            }))
+            Ok(sm
+                .get_session(&session_id)
+                .map(|s| session_json(&crucible_core::session::SessionSummary::from(&s))))
         })
     }
 
     fn list_sessions(&self) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(self.session_manager, |sm| async move {
-            Ok(sm
-                .list_sessions()
-                .into_iter()
-                .map(|s| {
-                    serde_json::json!({
-                        "id": s.id,
-                        "session_type": s.session_type.as_prefix(),
-                        "kilns": s.kilns,
-                        "state": format!("{}", s.state),
-                        "title": s.title,
-                    })
-                })
-                .collect())
+            Ok(sm.list_sessions().iter().map(session_json).collect())
         })
     }
 
@@ -1046,6 +1028,21 @@ fn parse_comment_spec(
 fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {
     val.map(|v| crucible_core::text::truncate_chars(&v.to_string(), max_len, true))
         .unwrap_or_default()
+}
+
+/// The JSON a Lua caller sees for one session. `get` and `list` share it,
+/// so the two cannot disagree on the shape. `list` already hands out
+/// summaries, and a summary carries the agent model, so `get` converts.
+pub(crate) fn session_json(s: &crucible_core::session::SessionSummary) -> serde_json::Value {
+    serde_json::json!({
+        "id": s.id,
+        "session_type": s.session_type.as_prefix(),
+        "kilns": s.kilns,
+        "state": format!("{}", s.state),
+        "title": s.title,
+        "model": s.agent_model,
+        "started_at": s.started_at.to_rfc3339(),
+    })
 }
 
 #[cfg(test)]
