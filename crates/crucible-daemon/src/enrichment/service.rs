@@ -69,12 +69,44 @@ impl Enricher {
             changed_blocks.len()
         );
 
-        let (embeddings, metadata) = tokio::join!(
+        let (embeddings, note_embedding, metadata) = tokio::join!(
             self.generate_embeddings(&parsed, &changed_blocks),
+            self.generate_note_embedding(&parsed),
             self.extract_metadata(&parsed),
         );
 
-        Ok(EnrichedNote::new(parsed, embeddings?, metadata?))
+        Ok(EnrichedNote::new(
+            parsed,
+            embeddings?,
+            note_embedding?,
+            metadata?,
+        ))
+    }
+
+    /// Embed the note body once, for `notes.embedding`.
+    ///
+    /// The note gets its own forward pass rather than a mean of its block
+    /// vectors: a mean sits at the centroid of a note's topics, which is a
+    /// point the note may never make, and it dilutes as the note grows.
+    async fn generate_note_embedding(&self, parsed: &ParsedNote) -> Result<Option<BlockEmbedding>> {
+        let Some(provider) = &self.embedding_provider else {
+            return Ok(None);
+        };
+
+        let body = parsed.content.plain_text.trim();
+        if body.is_empty() {
+            return Ok(None);
+        }
+
+        // The title leads the text. It is often the most specific statement of
+        // what the note is about, and a query frequently names it.
+        let text = format!("{}\n\n{}", parsed.title(), body);
+        let vector = provider.embed(&text).await?;
+        Ok(Some(BlockEmbedding::new(
+            "note".to_string(),
+            vector,
+            provider.model_name().to_string(),
+        )))
     }
 
     /// Generate embeddings for changed blocks only.

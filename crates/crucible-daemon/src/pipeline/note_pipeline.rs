@@ -220,7 +220,12 @@ impl NotePipeline {
 
             // Create minimal enriched note without embeddings
             use crucible_core::enrichment::{EnrichedNote, EnrichmentMetadata};
-            EnrichedNote::new(parsed.clone(), Vec::new(), EnrichmentMetadata::default())
+            EnrichedNote::new(
+                parsed.clone(),
+                Vec::new(),
+                None,
+                EnrichmentMetadata::default(),
+            )
         };
 
         let embeddings_generated = !enriched.embeddings.is_empty();
@@ -503,37 +508,16 @@ impl NotePipeline {
         let content_hash =
             BlockHash::from_hex(&parsed.content_hash).unwrap_or_else(|_| BlockHash::zero());
 
-        // Get embedding: use first block embedding or average if multiple
-        let (embedding, embedding_model, embedding_dimensions) = if enriched.embeddings.is_empty() {
-            (None, None, None)
-        } else if enriched.embeddings.len() == 1 {
-            let emb = &enriched.embeddings[0];
-            (
-                Some(emb.vector.clone()),
-                Some(emb.model.clone()),
-                Some(emb.dimensions as u32),
-            )
-        } else {
-            // Average all embeddings for document-level vector
-            let first = &enriched.embeddings[0];
-            let dim = first.vector.len();
-            let mut avg = vec![0.0f32; dim];
-            for emb in &enriched.embeddings {
-                for (i, v) in emb.vector.iter().enumerate() {
-                    if i < dim {
-                        avg[i] += v;
-                    }
-                }
-            }
-            let count = enriched.embeddings.len() as f32;
-            for v in &mut avg {
-                *v /= count;
-            }
-            (
-                Some(avg),
-                Some(first.model.clone()),
-                Some(first.dimensions as u32),
-            )
+        // `notes.embedding` is the note's own vector, not a pool of its
+        // blocks'. Mean-pooling used to stand in for this and cost recall:
+        // the centroid of a note's topics is a point the note may never make.
+        let (embedding, embedding_model, embedding_dimensions) = match &enriched.note_embedding {
+            Some(note) => (
+                Some(note.vector.clone()),
+                Some(note.model.clone()),
+                Some(note.dimensions as u32),
+            ),
+            None => (None, None, None),
         };
 
         // Extract links from wikilinks
@@ -1111,5 +1095,55 @@ mod tests {
             }
             other => panic!("expected success result, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_note_vector_is_the_notes_own_embedding_not_a_pool_of_its_blocks() {
+        use crucible_core::enrichment::{BlockEmbedding, EnrichedNote, EnrichmentMetadata};
+        use crucible_core::parser::ParsedNoteBuilder;
+
+        let pipeline = create_pipeline(passing_enricher(), Arc::new(MockNoteStore::new()));
+        let parsed = ParsedNoteBuilder::new(std::path::PathBuf::from("/k/note.md")).build();
+
+        // Three block vectors whose component-wise mean is [1/3, 1/3, 1/3].
+        let blocks = vec![
+            BlockEmbedding::new("paragraph_0".into(), vec![1.0, 0.0, 0.0], "m".into()),
+            BlockEmbedding::new("paragraph_1".into(), vec![0.0, 1.0, 0.0], "m".into()),
+            BlockEmbedding::new("paragraph_2".into(), vec![0.0, 0.0, 1.0], "m".into()),
+        ];
+        let note = BlockEmbedding::new("note".into(), vec![0.2, 0.4, 0.6], "m".into());
+
+        let enriched = EnrichedNote::new(parsed, blocks, Some(note), EnrichmentMetadata::default());
+
+        let record = pipeline.enriched_to_record(&enriched, "note.md").unwrap();
+
+        assert_eq!(record.embedding, Some(vec![0.2, 0.4, 0.6]));
+        assert_eq!(record.embedding_dimensions, Some(3));
+    }
+
+    #[test]
+    fn a_note_with_no_provider_stores_no_vector() {
+        use crucible_core::enrichment::{BlockEmbedding, EnrichedNote, EnrichmentMetadata};
+        use crucible_core::parser::ParsedNoteBuilder;
+
+        let pipeline = create_pipeline(passing_enricher(), Arc::new(MockNoteStore::new()));
+        let parsed = ParsedNoteBuilder::new(std::path::PathBuf::from("/k/note.md")).build();
+
+        // Block vectors alone must not become the note's vector.
+        let enriched = EnrichedNote::new(
+            parsed,
+            vec![BlockEmbedding::new(
+                "paragraph_0".into(),
+                vec![1.0, 0.0, 0.0],
+                "m".into(),
+            )],
+            None,
+            EnrichmentMetadata::default(),
+        );
+
+        let record = pipeline.enriched_to_record(&enriched, "note.md").unwrap();
+
+        assert_eq!(record.embedding, None);
+        assert_eq!(record.embedding_model, None);
     }
 }

@@ -6,6 +6,7 @@ use markdown_it::plugins::cmark::block::fence::CodeFence;
 use markdown_it::plugins::cmark::block::heading::ATXHeading;
 use markdown_it::plugins::cmark::block::hr::ThematicBreak;
 use markdown_it::plugins::cmark::block::list::{BulletList, ListItem as MdListItem, OrderedList};
+use markdown_it::plugins::cmark::block::paragraph::Paragraph as MdParagraph;
 use markdown_it::plugins::extra::tables::{Table as MdTable, TableCell, TableHead, TableRow};
 use markdown_it::Node;
 
@@ -122,12 +123,15 @@ impl AstConverter {
                 .push(Table::new(raw_content, headers, columns, rows, offset));
         }
 
-        // Extract text for paragraphs (very simplified) - skip headings
-        if node.cast::<ATXHeading>().is_none() {
+        // 7. Paragraphs. Gate on markdown-it's own paragraph node: the walk
+        // recurses into children, so a type test that any container satisfies
+        // emits the document root and every nesting level as its own
+        // paragraph, each repeating the text below it.
+        if node.is::<MdParagraph>() {
             let text = Self::extract_text(node);
-            if !text.trim().is_empty() && text.len() > 10 {
-                // Rough heuristic for paragraph detection
-                content.paragraphs.push(Paragraph::new(text, 0));
+            if !text.trim().is_empty() {
+                let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+                content.paragraphs.push(Paragraph::new(text, offset));
             }
         }
 

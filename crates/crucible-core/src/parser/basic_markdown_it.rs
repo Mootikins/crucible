@@ -221,7 +221,7 @@ mod tests {
         );
 
         assert!(errors.is_empty());
-        assert!(content.paragraphs.len() >= 2);
+        assert_eq!(content.paragraphs.len(), 2);
     }
 
     #[test]
@@ -242,5 +242,91 @@ mod tests {
         let truncated = truncate_line(&line, 60);
 
         assert_eq!(truncated, format!("x{}...", "\u{65E5}".repeat(59)));
+    }
+
+    #[test]
+    fn each_paragraph_is_emitted_once() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+
+        let errors = ext.parse(
+            "# Title\n\nAlpha has enough words here.\n\nBeta has enough words here.\n\nGamma has enough words here.",
+            &mut content,
+        );
+
+        assert!(errors.is_empty());
+        let texts: Vec<&str> = content
+            .paragraphs
+            .iter()
+            .map(|p| p.content.as_str())
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                "Alpha has enough words here.",
+                "Beta has enough words here.",
+                "Gamma has enough words here.",
+            ]
+        );
+    }
+
+    #[test]
+    fn paragraph_offsets_point_at_the_source_bytes() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = "Alpha has enough words here.\n\nBeta has enough words here.";
+
+        let errors = ext.parse(source, &mut content);
+
+        assert!(errors.is_empty());
+        assert_eq!(content.paragraphs.len(), 2);
+        assert_eq!(content.paragraphs[0].offset, 0);
+        assert_eq!(content.paragraphs[1].offset, 30);
+        assert!(source[content.paragraphs[1].offset..].starts_with("Beta"));
+    }
+
+    #[test]
+    fn a_container_is_not_re_emitted_as_a_paragraph() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+
+        let errors = ext.parse(
+            "- item one has several words\n- item two has several words\n\n> quoted text with several words\n\n```rust\nlet x = 42;\n```",
+            &mut content,
+        );
+
+        assert!(errors.is_empty());
+        let texts: Vec<&str> = content
+            .paragraphs
+            .iter()
+            .map(|p| p.content.as_str())
+            .collect();
+        // A tight list item holds no paragraph node, and `content.lists`
+        // already carries the items. A code fence holds no paragraph either.
+        // Only the blockquote wraps one.
+        assert_eq!(texts, vec!["quoted text with several words"]);
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 2);
+        assert_eq!(content.code_blocks.len(), 1);
+    }
+
+    #[test]
+    fn the_document_root_is_not_a_paragraph() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+
+        let errors = ext.parse(
+            "Alpha has enough words here.\n\nBeta has enough words here.",
+            &mut content,
+        );
+
+        assert!(errors.is_empty());
+        assert!(
+            !content
+                .paragraphs
+                .iter()
+                .any(|p| p.content.contains("Alpha") && p.content.contains("Beta")),
+            "no paragraph spans the whole document"
+        );
     }
 }

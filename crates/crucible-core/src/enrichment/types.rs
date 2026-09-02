@@ -19,6 +19,14 @@ pub struct EnrichedNote {
     /// Vector embeddings for blocks (only changed blocks)
     pub embeddings: Vec<BlockEmbedding>,
 
+    /// The note's own vector, from one embedding of the whole body.
+    ///
+    /// `notes.embedding` is taken from here. A mean of the block vectors
+    /// answers a different question than the note does, so the note gets its
+    /// own forward pass rather than a pooled one. `None` when no embedding
+    /// provider is configured.
+    pub note_embedding: Option<BlockEmbedding>,
+
     /// Extracted and computed metadata
     pub metadata: EnrichmentMetadata,
 }
@@ -28,11 +36,13 @@ impl EnrichedNote {
     pub fn new(
         parsed: crate::parser::ParsedNote,
         embeddings: Vec<BlockEmbedding>,
+        note_embedding: Option<BlockEmbedding>,
         metadata: EnrichmentMetadata,
     ) -> Self {
         Self {
             parsed,
             embeddings,
+            note_embedding,
             metadata,
         }
     }

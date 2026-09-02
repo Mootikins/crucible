@@ -982,4 +982,17 @@ Content 2."#;
             duration
         );
     }
+
+    #[tokio::test]
+    async fn the_paragraph_count_counts_each_paragraph_once() {
+        let content =
+            "# Title\n\nAlpha has enough words here.\n\n- item one\n- item two\n\nBeta has enough words here.";
+        let path = PathBuf::from("test.md");
+        let parser = CrucibleParser::new();
+
+        let doc = parser.parse_content(content, &path).await.unwrap();
+
+        assert_eq!(doc.metadata.paragraph_count, 2);
+        assert_eq!(doc.metadata.list_count, 1);
+    }
 }
