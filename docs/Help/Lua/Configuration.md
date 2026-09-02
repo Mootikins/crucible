@@ -99,18 +99,28 @@ require("consolidation").setup({
   enabled = true,
   kiln = "notes",
   model = "llama3.2",
-  interval = 21600,   -- seconds between passes; read once, at load
-  max_problem = 5,    -- sessions with tool errors or rejected edits per pass
-  max_clean = 3,      -- clean sessions per pass
-  min_turns = 2,
-  session_chars = 15000,
-  timeout = 240,
-  max_iterations = 12,
-  rejection_memory = 20,
 })
 ```
 
-See [[Help/Concepts/Reflection Pass]] for what each pass does with these.
+| Key | Default | What it sets |
+|-----|---------|--------------|
+| `enabled` | `false` | The master switch, read at each tick |
+| `kiln` | none | The kiln the pass reads and stages proposals in |
+| `model` | none | The auxiliary model the reviewer runs on |
+| `provider` | none | A provider override for the auxiliary model |
+| `interval` | `21600` | Seconds between passes; read once, at load |
+| `max_problem` | `5` | The most sessions with a tool error or a rejected edit in one pass |
+| `max_clean` | `3` | The most clean sessions in one pass |
+| `min_turns` | `2` | The fewest user turns a session needs before the pass reads it |
+| `session_chars` | `15000` | Characters kept from each session's transcript |
+| `timeout` | `240` | Seconds to wait for the reviewer |
+| `max_iterations` | `12` | The cap on the reviewer's tool-loop turns |
+| `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
+
+These two tables are the one place the keys are documented. The plugin
+manifests (`runtime/plugins/*/plugin.yaml`) declare the same keys and
+defaults; [[Help/Concepts/Reflection Pass]] says what each pass does with
+them.
 
 Plugin configuration has two working forms, and each plugin uses **one**:
 

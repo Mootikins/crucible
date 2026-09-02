@@ -19,38 +19,22 @@ local PLUGIN = "consolidation"
 
 local M = {}
 
+-- The keys and what each one sets are documented once, in
+-- docs/Help/Lua/Configuration.md ("Configuring Plugins"). `kiln` and
+-- `model` have no default, and `enabled` is off: a pass spends model calls
+-- with no user present.
 local defaults = {
-    -- Master switch. A pass spends model calls with no user present,
-    -- so a user must turn it on.
     enabled = false,
-    -- The kiln the pass reads and stages proposals in. The pass has no
-    -- session of its own, so nothing else names a kiln for it.
     kiln = nil,
-    -- Auxiliary model the consolidation reviewer runs on. Keep this cheap:
-    -- it reads several transcripts at once.
     model = nil,
-    -- Optional provider override (e.g. "anthropic", "openai"). When nil the
-    -- daemon resolves the provider from the model / global config.
     provider = nil,
-    -- Seconds between passes. Six hours.
     interval = 21600,
-    -- Most sessions with tool errors or rejected edits in one pass.
     max_problem = 5,
-    -- Most clean sessions in one pass.
     max_clean = 3,
-    -- Fewest user turns a session needs. The reflection reviewer's own aux
-    -- sessions have one user turn, so this keeps them out of the sample.
     min_turns = 2,
-    -- Cut each session's transcript at this many characters, from the front.
     session_chars = 15000,
-    -- Seconds to wait for the consolidation reviewer. It reads more than the
-    -- reflection reviewer does, so it gets more time.
     timeout = 240,
-    -- Upper bound on the reviewer's tool loop. The reviewer searches the
-    -- kiln before it proposes, so it needs more than three turns.
     max_iterations = 12,
-    -- How many recent rejections the reviewer is told about, so it does not
-    -- propose a note a human already refused.
     rejection_memory = 20,
 }
 

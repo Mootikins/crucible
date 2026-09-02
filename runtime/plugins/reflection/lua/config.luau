@@ -19,33 +19,19 @@ local PLUGIN = "reflection"
 
 local M = {}
 
+-- The keys and what each one sets are documented once, in
+-- docs/Help/Lua/Configuration.md ("Configuring Plugins"). `model` has no
+-- default: without one the plugin skips every session.
 local defaults = {
-    -- Master switch. Reflection only runs when true.
     enabled = true,
-    -- Auxiliary model the reflection subagent runs on. Keep this cheap — it
-    -- reviews the whole transcript and should never burden the main session.
     model = nil,
-    -- Optional provider override (e.g. "anthropic", "openai"). When nil the
-    -- daemon resolves the provider from the model / global config.
     provider = nil,
-    -- Skip reflection on trivial sessions: require at least this many user
-    -- turns before a pass is worthwhile.
     min_turns = 3,
-    -- Cap how many proposals a single session may stage.
     max_proposals = 5,
-    -- Seconds to wait for the reflection subagent to respond.
     timeout = 120,
-    -- Upper bound on the reviewer's tool loop. The reviewer reads the kiln
-    -- before it proposes, so it needs more than three turns. 12 is the low
-    -- end of what the WikiSkill proposer used.
     max_iterations = 12,
-    -- How many recent rejections the reviewer is told about, so it does not
-    -- propose a note a human already refused.
     rejection_memory = 20,
-    -- Cut each tool result in the transcript at this many characters.
     tool_result_chars = 2000,
-    -- Cut the whole transcript at this many characters. The cut removes
-    -- the front, so the reviewer sees how the session ended.
     transcript_chars = 60000,
 }
 

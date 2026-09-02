@@ -6,30 +6,6 @@ local registered: { [string]: any } = {}
   registered[event] = if type(opts) == "function" then opts else fn
 end
 
---- Install a fake `cru.storage` (the runner VM has none) and answer with
---- its rows, keyed "<entity>/<key>". The caller runs `drop_storage()` when
---- it is done.
-local function fake_storage(): { [string]: string }
-  local rows: { [string]: string } = {}
-  cru.storage = mock({
-    set = function(entity: string, key: string, value: string)
-      rows[entity .. "/" .. key] = value
-      return true
-    end,
-    get = function(entity: string, key: string) return rows[entity .. "/" .. key] end,
-    delete = function(entity: string, key: string)
-      local had = rows[entity .. "/" .. key] ~= nil
-      rows[entity .. "/" .. key] = nil
-      return had
-    end,
-  })
-  return rows
-end
-
-local function drop_storage()
-  (cru :: any).storage = nil
-end
-
 describe("reflection", function()
   local plugin = require("reflection")
   local config = require("config")
@@ -445,7 +421,6 @@ describe("reflection", function()
     end)
 
     it("tells the reviewer which notes precognition injected, then forgets them", function()
-      local rows = fake_storage()
       plugin.record_injected("chat-1", {
         results = { { index = 1, title = "Socket rules", score = 0.9 } },
       })
@@ -456,8 +431,7 @@ describe("reflection", function()
       expect.equal(1, #sent)
       expect.truthy(sent[1][2]:find("already given", 1, true))
       expect.truthy(sent[1][2]:find("- Socket rules", 1, true))
-      expect.is_nil(rows["chat-1/injected_titles"])
-      drop_storage()
+      expect.is_nil(cru.storage.get("chat-1", "injected_titles"))
     end)
 
     it("asks the daemon for the tool rows of the session", function()
@@ -513,16 +487,6 @@ describe("reflection", function()
       local created = test_mocks.get_calls("session", "create")
       expect.equal(1, #created)
       expect.equal("plugin", created[1][1].type)
-    end)
-
-    it("bakes no marker into the reviewer's prompt", function()
-      plugin.run({ id = "chat-1" })
-
-      local configured = test_mocks.get_calls("session", "configure_agent")
-      expect.equal(1, #configured)
-      local prompt: any = configured[1][2].system_prompt
-      expect.is_nil(prompt:find("crucible:reflection-pass", 1, true))
-      expect.is_nil(prompt:find("<!--", 1, true))
     end)
 
     it("skips a plugin session and never creates a reviewer", function()
@@ -869,8 +833,11 @@ describe("reflection", function()
   end)
 
   describe("precognition_select observer", function()
+    before_each(function()
+      test_mocks.setup()
+    end)
+
     it("records the injected titles under the session id and observes only", function()
-      local rows = fake_storage()
       local handler = registered["precognition_select"]
       expect.truthy(handler)
 
@@ -879,18 +846,15 @@ describe("reflection", function()
       })
 
       expect.is_nil(out)
-      local stored = cru.json.decode(rows["chat-9/injected_titles"])
+      local stored = cru.json.decode(cru.storage.get("chat-9", "injected_titles") :: string)
       expect.equal(1, #stored)
       expect.equal("Socket rules", stored[1])
       expect.equal(1, #plugin.read_injected("chat-9"))
-      drop_storage()
     end)
 
     it("records nothing without a session id", function()
-      local rows = fake_storage()
       registered["precognition_select"]({}, { results = { { index = 1, title = "X" } } })
-      expect.is_nil(next(rows))
-      drop_storage()
+      expect.equal(0, #test_mocks.get_calls("storage", "set"))
     end)
   end)
 

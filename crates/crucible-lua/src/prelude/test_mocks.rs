@@ -304,6 +304,53 @@ local function create_session_mock(fixtures)
     }
 end
 
+--- `cru.storage` — the per-plugin property store, mocked to the shape of
+--- `storage_api.rs`. The daemon registers it at boot and never leaves it
+--- nil, so a plugin carries no nil branch for it; the bare executor the
+--- plugin test runner builds has none, so the mock supplies it. Rows live
+--- in memory, keyed "<entity>/<key>", and `setup()` starts each test from
+--- an empty store. A test reads back with `cru.storage.get`.
+local function create_storage_mock()
+    local rows = {}
+    return {
+        set = function(entity, key, value)
+            record_call("storage", "set", entity, key, value)
+            rows[entity .. "/" .. key] = value
+            return true
+        end,
+        get = function(entity, key)
+            record_call("storage", "get", entity, key)
+            return rows[entity .. "/" .. key]
+        end,
+        list = function(entity)
+            record_call("storage", "list", entity)
+            local prefix = entity .. "/"
+            local props = {}
+            for k, v in pairs(rows) do
+                if k:sub(1, #prefix) == prefix then props[k:sub(#prefix + 1)] = v end
+            end
+            return props
+        end,
+        find = function(key, value)
+            record_call("storage", "find", key, value)
+            local suffix = "/" .. key
+            local found = {}
+            for k, v in pairs(rows) do
+                if v == value and k:sub(-#suffix) == suffix then
+                    table.insert(found, k:sub(1, #k - #suffix))
+                end
+            end
+            return found
+        end,
+        delete = function(entity, key)
+            record_call("storage", "delete", entity, key)
+            local had = rows[entity .. "/" .. key] ~= nil
+            rows[entity .. "/" .. key] = nil
+            return had
+        end,
+    }
+end
+
 --- `cru.tools.set_active` and `cru.tools.get_active` — the active tool
 --- set of a session. The mock records the patterns and narrows nothing:
 --- the runner VM dispatches no tool. A plugin test asserts what a session
@@ -342,6 +389,7 @@ function test_mocks.setup(overrides)
     cru.session = create_session_mock(_fixtures)
     -- The deprecated plural alias, mirroring the real module's forwarding.
     cru.sessions = cru.session
+    cru.storage = create_storage_mock()
     install_tools_mock()
 end
 

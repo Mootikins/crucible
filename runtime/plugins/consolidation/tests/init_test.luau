@@ -64,31 +64,6 @@ package.loaded["reflection"] = {
   end,
 }
 
---- Install a fake `cru.storage` (the runner VM has none) and answer with
---- its rows, keyed "<entity>/<key>". The caller runs `drop_storage()` when
---- it is done. Without it `run` never reads or writes the cursor, and a
---- pass that reviews the same sessions again and again passes the suite.
-local function fake_storage(): { [string]: string }
-  local rows: { [string]: string } = {}
-  cru.storage = mock({
-    set = function(entity: string, key: string, value: string)
-      rows[entity .. "/" .. key] = value
-      return true
-    end,
-    get = function(entity: string, key: string) return rows[entity .. "/" .. key] end,
-    delete = function(entity: string, key: string)
-      local had = rows[entity .. "/" .. key] ~= nil
-      rows[entity .. "/" .. key] = nil
-      return had
-    end,
-  })
-  return rows
-end
-
-local function drop_storage()
-  (cru :: any).storage = nil
-end
-
 describe("consolidation", function()
   local plugin = require("consolidation")
 
@@ -190,11 +165,7 @@ describe("consolidation", function()
       },
     }
 
-    --- The rows of the fake store, fresh for each test.
-    local rows: { [string]: string } = {}
-
     before_each(function()
-      rows = fake_storage()
       staged_calls = {}
       review_calls = {}
       review_text = "[]"
@@ -213,7 +184,6 @@ describe("consolidation", function()
     end)
 
     after_each(function()
-      drop_storage()
       test_mocks.reset()
       config.reset()
     end)
@@ -254,7 +224,7 @@ describe("consolidation", function()
     it("stores the newest started_at as the cursor after a pass", function()
       plugin.run(nil)
 
-      expect.equal("2026-09-01T11:00:00Z", rows["consolidation/last_run"])
+      expect.equal("2026-09-01T11:00:00Z", cru.storage.get("consolidation", "last_run"))
     end)
 
     it("moves the cursor only past the sessions the reviewer saw", function()
@@ -283,7 +253,7 @@ describe("consolidation", function()
       local first: any = review_calls[1].prompt
       expect.truthy(first:find("### session a", 1, true))
       expect.is_nil(first:find("### session b", 1, true))
-      expect.equal("2026-09-01T10:00:00Z", rows["consolidation/last_run"])
+      expect.equal("2026-09-01T10:00:00Z", cru.storage.get("consolidation", "last_run"))
 
       plugin.run(nil)
 
@@ -292,7 +262,7 @@ describe("consolidation", function()
       expect.truthy(second:find("### session b", 1, true))
       expect.truthy(second:find("### session c", 1, true))
       expect.is_nil(second:find("### session a", 1, true))
-      expect.equal("2026-09-01T12:00:00Z", rows["consolidation/last_run"])
+      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
     end)
 
     it("moves the cursor past a short session that follows the sample", function()
@@ -309,7 +279,7 @@ describe("consolidation", function()
       plugin.run(nil)
 
       expect.equal(1, #review_calls)
-      expect.equal("2026-09-01T11:00:00Z", rows["consolidation/last_run"])
+      expect.equal("2026-09-01T11:00:00Z", cru.storage.get("consolidation", "last_run"))
     end)
 
     it("sends nothing on a second run when no session ended since the cursor", function()
@@ -321,7 +291,7 @@ describe("consolidation", function()
 
     it("starts after the cursor a previous pass stored", function()
       plugin.setup({ min_turns = 1 })
-      rows["consolidation/last_run"] = "2026-09-01T10:30:00Z"
+      cru.storage.set("consolidation", "last_run", "2026-09-01T10:30:00Z")
       plugin.run(nil)
 
       expect.equal(1, #review_calls)
@@ -348,10 +318,10 @@ describe("consolidation", function()
     end)
 
     it("keeps the cursor where it was when a pass sees no session", function()
-      rows["consolidation/last_run"] = "2026-09-01T12:00:00Z"
+      cru.storage.set("consolidation", "last_run", "2026-09-01T12:00:00Z")
       plugin.run(nil)
 
-      expect.equal("2026-09-01T12:00:00Z", rows["consolidation/last_run"])
+      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
       expect.equal(0, #review_calls)
     end)
   end)

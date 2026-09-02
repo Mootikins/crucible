@@ -125,50 +125,14 @@ The `consolidation` plugin is the periodic half of the loop. Where reflection re
 
 ## Configuration
 
-Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model: `model` has no default, and without one the plugin bails with a warning (`reflection: no aux model configured`) at every session end. Configure it in `init.lua`:
+Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model: `model` has no default, and without one the plugin bails with a warning (`reflection: no aux model configured`) at every session end. Consolidation is off until `enabled` is set, and it also needs `kiln`. Configure both in `init.lua`:
 
 ```lua
-require("reflection").setup({
-  model = "claude-haiku-4-5-20251001",  -- required: cheap auxiliary model
-  provider = "anthropic",  -- optional: provider override for the aux model
-  enabled = true,
-  min_turns = 3,      -- skip trivial sessions
-  max_proposals = 5,  -- cap staged notes per session
-  timeout = 120,
-  max_iterations = 12,  -- cap the reviewer's tool-loop turns
-  rejection_memory = 20,  -- how many recent rejections the reviewer is told about
-  tool_result_chars = 2000,  -- characters kept from each tool result
-  transcript_chars = 60000,  -- characters kept from the whole transcript, cut from the front
-})
-
-require("consolidation").setup({
-  enabled = true,  -- off by default: a pass spends model calls unattended
-  kiln = "notes",  -- the kiln the pass reads and stages proposals in
-  model = "claude-haiku-4-5-20251001",
-  interval = 21600,  -- seconds between passes (read once, at load)
-  max_problem = 5,   -- sessions with tool errors or rejected edits per pass
-  max_clean = 3,     -- clean sessions per pass
-  min_turns = 2,
-  session_chars = 15000,  -- transcript cap per session
-  timeout = 240,
-  max_iterations = 12,
-  rejection_memory = 20,
-})
+require("reflection").setup({ model = "claude-haiku-4-5-20251001" })
+require("consolidation").setup({ enabled = true, kiln = "notes", model = "claude-haiku-4-5-20251001" })
 ```
 
-Or via TOML:
-
-```toml
-[plugins.reflection]
-model = "claude-haiku-4-5-20251001"
-provider = "anthropic"  # optional
-enabled = true
-
-[plugins.consolidation]
-enabled = true
-kiln = "notes"
-model = "claude-haiku-4-5-20251001"
-```
+Every other key, with its default, is documented once in [[Help/Lua/Configuration#Configuring Plugins]].
 
 Because policy lives in Lua, both plugins are fully shadowable — the reviewer prompt, capture criteria, and trigger are all user-editable. The Rust runtime provides only the missing primitives: a turn-capped blocking subagent, tool rows from `cru.session.messages(id, { tools = true })`, and the review ledger.
 

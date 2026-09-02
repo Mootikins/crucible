@@ -17,6 +17,8 @@
 ---   kiln = "notes"
 ---   model = "claude-haiku-4-5-20251001"
 ---
+--- Every key is documented in docs/Help/Lua/Configuration.md.
+---
 --- The timer is `cru.schedule`. A durable scheduler can replace it later
 --- without a change to the logic below.
 
@@ -131,11 +133,9 @@ end
 -- Orchestration (daemon-facing)
 -- ============================================================================
 
---- The cursor the last pass stored, or nil. A VM with no store answers nil.
+--- The cursor the last pass stored, or nil.
 local function read_cursor(): string?
-    local store = cru.storage
-    if store == nil then return nil end
-    local ok, raw = pcall(store.get, M.CURSOR_ENTITY, M.CURSOR_KEY)
+    local ok, raw = pcall(cru.storage.get, M.CURSOR_ENTITY, M.CURSOR_KEY)
     if ok and type(raw) == "string" and raw ~= "" then return raw end
     return nil
 end
@@ -143,9 +143,7 @@ end
 --- Store `stamp` as the cursor. A failed write is logged: the next pass then
 --- reads the same sessions again, which costs model calls but loses nothing.
 local function write_cursor(stamp: string)
-    local store = cru.storage
-    if store == nil then return end
-    local ok, err = pcall(store.set, M.CURSOR_ENTITY, M.CURSOR_KEY, stamp)
+    local ok, err = pcall(cru.storage.set, M.CURSOR_ENTITY, M.CURSOR_KEY, stamp)
     if not ok then
         cru.log("warn", "consolidation: could not store the cursor: " .. tostring(err))
     end

@@ -8,20 +8,11 @@
 --- indexed kiln — so a human disposes of them (`cru proposals ...`). Nothing is
 --- ever auto-merged into the live graph. Propose, don't dispose.
 ---
---- Configure in init.lua:
+--- Configure in init.lua; `model` is the one key with no default:
 ---
----   require("reflection").setup({
----     model = "claude-haiku-4-5-20251001",  -- cheap aux model
----     min_turns = 3,                         -- skip trivial sessions
----     max_proposals = 5,
----     timeout = 120,
----   })
+---   require("reflection").setup({ model = "claude-haiku-4-5-20251001" })
 ---
---- Or via TOML:
----
----   [plugins.reflection]
----   model = "claude-haiku-4-5-20251001"
----   enabled = true
+--- Every key is documented in docs/Help/Lua/Configuration.md.
 
 local config = require("config")
 
@@ -383,23 +374,18 @@ end
 local INJECTED_KEY = "injected_titles"
 
 --- Record the titles precognition injected into a session, so `run` can
---- tell the reviewer not to propose them again. A VM with no `cru.storage`
---- (the test harness) records nothing.
+--- tell the reviewer not to propose them again.
 function M.record_injected(session_id: string, event: any)
-    local store = cru.storage
-    if store == nil then return end
-    local ok, err = pcall(store.set, session_id, INJECTED_KEY, cru.json.encode(M.injected_titles(event)))
+    local ok, err = pcall(cru.storage.set, session_id, INJECTED_KEY, cru.json.encode(M.injected_titles(event)))
     if not ok then
         cru.log("debug", "reflection: could not record injected notes: " .. tostring(err))
     end
 end
 
 --- The titles `record_injected` stored for a session; an empty list when
---- there is no row, or no store.
+--- there is no row.
 function M.read_injected(session_id: string): { string }
-    local store = cru.storage
-    if store == nil then return {} end
-    local ok, raw = pcall(store.get, session_id, INJECTED_KEY)
+    local ok, raw = pcall(cru.storage.get, session_id, INJECTED_KEY)
     if not ok or type(raw) ~= "string" then return {} end
     local decoded, list = pcall(cru.json.decode, raw)
     if not decoded or type(list) ~= "table" then return {} end
@@ -413,9 +399,7 @@ end
 --- Drop the row for a session. `run` calls this once it read the row: a
 --- session ends once, so nothing reads the row again.
 function M.forget_injected(session_id: string)
-    local store = cru.storage
-    if store == nil then return end
-    pcall(store.delete, session_id, INJECTED_KEY)
+    pcall(cru.storage.delete, session_id, INJECTED_KEY)
 end
 
 --- The evidence the daemon has about the result of a session. No score exists:

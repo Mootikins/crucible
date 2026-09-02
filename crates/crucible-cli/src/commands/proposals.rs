@@ -584,23 +584,14 @@ fn reject(config: &CliConfig, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Re-render a note without the reflection provenance keys.
+/// Re-render a note without the reflection provenance keys, preserving the
+/// user's remaining frontmatter verbatim (order and formatting intact). Works
+/// line-wise on the raw YAML: a provenance key drops its line and any indented
+/// continuation lines belonging to it. If no frontmatter remains, the body is
+/// returned alone.
 fn strip_provenance(
     frontmatter: Option<&crucible_core::parser::Frontmatter>,
     body: &str,
-) -> String {
-    strip_keys(frontmatter, body, PROVENANCE_KEYS)
-}
-
-/// Re-render a note without the given top-level keys, preserving the user's
-/// remaining frontmatter verbatim (order and formatting intact). Works
-/// line-wise on the raw YAML: a listed key drops its line and any indented
-/// continuation lines belonging to it. If no frontmatter remains, the body is
-/// returned alone.
-fn strip_keys(
-    frontmatter: Option<&crucible_core::parser::Frontmatter>,
-    body: &str,
-    keys: &[&str],
 ) -> String {
     let Some(fm) = frontmatter else {
         return body.to_string();
@@ -617,7 +608,7 @@ fn strip_keys(
 
         if is_top_level_key {
             let key = line.split(':').next().unwrap_or("").trim();
-            skipping = keys.contains(&key);
+            skipping = PROVENANCE_KEYS.contains(&key);
         } else if skipping {
             // Indented/continuation line under a provenance key: keep skipping.
             // A blank line ends the skipped block.
