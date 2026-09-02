@@ -17,7 +17,7 @@ pub enum ProposalsCommands {
         #[arg(short = 'f', long)]
         format: Option<OutputFormat>,
     },
-    /// Show a proposal's full content
+    /// Show a proposal: the file and what accept will do, with a diff for an update
     Show {
         /// Proposal id (the file name without extension)
         id: String,

@@ -13,9 +13,11 @@
 //! reviewer does not propose the same note again. Neither needs daemon RPC:
 //! the staging area is plain files under the kiln the CLI already knows.
 //!
-//! This loop never edits an installed skill. An `update` may not target
-//! anything under `.crucible/` or any file named `SKILL.md`, and a `skill`
-//! proposal whose name is taken is refused.
+//! A `create` never lands under `.crucible/` or as a `SKILL.md`: a new skill
+//! goes through `render_skill`. An `update` may name a `SKILL.md`; the skill
+//! keeps its frontmatter and only its body changes, and `show` prints the
+//! diff a human accepts. Nothing may write into `.crucible/proposals/`, and
+//! a `skill` proposal whose name is taken is refused.
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -67,6 +69,10 @@ const REJECTED_DIR: &str = "rejected";
 struct ProposalSummary {
     id: String,
     title: String,
+    /// `create`, `update` or `skill`; the file's `kind`, or `create`.
+    kind: String,
+    /// The note an `update` replaces, or where a `create` lands.
+    target: Option<String>,
     created: Option<String>,
     session: Option<String>,
 }
@@ -126,12 +132,19 @@ fn summarize(path: &Path) -> ProposalSummary {
         .as_ref()
         .and_then(|f| f.get_string("title"))
         .unwrap_or_else(|| id.clone());
+    let kind = fm
+        .as_ref()
+        .and_then(|f| f.get_string("kind"))
+        .unwrap_or_else(|| "create".to_string());
+    let target = fm.as_ref().and_then(|f| f.get_string("target"));
     let created = fm.as_ref().and_then(|f| f.get_string("created"));
     let session = fm.as_ref().and_then(|f| f.get_string("session"));
 
     ProposalSummary {
         id,
         title,
+        kind,
+        target,
         created,
         session,
     }
@@ -158,7 +171,9 @@ fn list(config: &CliConfig, format: OutputFormat) -> Result<()> {
                 .map(|s| {
                     vec![
                         s.id.clone(),
+                        s.kind.clone(),
                         s.title.clone(),
+                        s.target.clone().unwrap_or_default(),
                         s.created.clone().unwrap_or_default(),
                         s.session.clone().unwrap_or_default(),
                     ]
@@ -166,14 +181,20 @@ fn list(config: &CliConfig, format: OutputFormat) -> Result<()> {
                 .collect();
             println!(
                 "{}",
-                crate::output::records_table(&["ID", "Title", "Created", "Session"], &rows)
+                crate::output::records_table(
+                    &["ID", "Kind", "Title", "Target", "Created", "Session"],
+                    &rows
+                )
             );
             println!("\nReview with `cru proposals show <id>`, then accept or reject.");
         }
         OutputFormat::Plain => {
             println!("{} pending proposal(s):\n", summaries.len());
             for s in summaries {
-                println!("  {} — {}", s.id, s.title);
+                println!("  {} — {} ({})", s.id, s.title, s.kind);
+                if let Some(target) = s.target {
+                    println!("    target: {target}");
+                }
                 if let Some(created) = s.created {
                     println!("    created: {created}");
                 }
@@ -189,11 +210,71 @@ fn list(config: &CliConfig, format: OutputFormat) -> Result<()> {
 }
 
 fn show(config: &CliConfig, id: &str) -> Result<()> {
+    println!("{}", render_show(config, id)?);
+    Ok(())
+}
+
+/// What `accept` will do with a proposal, then the two commands that
+/// dispose of it. A create shows the staged file and where it lands. An
+/// update shows the staged file and the diff against the note or skill it
+/// replaces. A skill shows only the `SKILL.md` that would land: the staged
+/// file is that body under staging keys that never reach the skill.
+///
+/// The update text and the skill text come from the functions `accept`
+/// calls, so what a human reads here is what `accept` writes.
+fn render_show(config: &CliConfig, id: &str) -> Result<String> {
     let path = proposal_path(config, id)?;
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("reading proposal {}", path.display()))?;
-    println!("{content}");
-    Ok(())
+    let result = crucible_core::parser::extract_frontmatter(&content)
+        .with_context(|| format!("parsing proposal {id}"))?;
+    let fm = result.frontmatter.as_ref();
+    let kiln = &config.kiln_path;
+
+    let mut out = String::new();
+    fn push_block(out: &mut String, text: &str) {
+        out.push_str(text);
+        if !text.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+    match ProposalKind::from_frontmatter(fm)? {
+        ProposalKind::Create => {
+            push_block(&mut out, &content);
+            let target_rel = fm
+                .and_then(|f| f.get_string("target"))
+                .unwrap_or_else(|| format!("{id}.md"));
+            out.push_str(&format!("Accept will write {target_rel} in the kiln.\n"));
+        }
+        ProposalKind::Update => {
+            push_block(&mut out, &content);
+            let target_rel = fm.and_then(|f| f.get_string("target")).unwrap_or_default();
+            let (dest, new) = update_text(kiln, fm, &result.body)?;
+            let old = std::fs::read_to_string(&dest)
+                .with_context(|| format!("reading {}", dest.display()))?;
+            out.push_str(&format!("Accept will replace {target_rel}:\n"));
+            out.push_str(
+                &similar::TextDiff::from_lines(&old, &new)
+                    .unified_diff()
+                    .header(&target_rel, "proposed")
+                    .to_string(),
+            );
+        }
+        ProposalKind::Skill => {
+            let fm = fm.ok_or_else(|| anyhow::anyhow!("a skill proposal needs frontmatter"))?;
+            let text = render_skill(fm, &result.body)?;
+            let name = fm.get_string("name").unwrap_or_default();
+            out.push_str(&format!(
+                "Proposal {id} is a skill. Accept will write {KILN_SKILLS_DIR}/{name}/SKILL.md:\n"
+            ));
+            push_block(&mut out, &text);
+        }
+    }
+    out.push_str(&format!(
+        "\nAccept with `cru proposals accept {id}`, or reject with `cru proposals reject {id}`.\n"
+    ));
+    Ok(out)
 }
 
 fn accept(config: &CliConfig, id: &str) -> Result<()> {
@@ -232,23 +313,8 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
             (dest, strip_provenance(fm, &result.body), false)
         }
         ProposalKind::Update => {
-            let target_rel = fm
-                .and_then(|f| f.get_string("target"))
-                .ok_or_else(|| anyhow::anyhow!("an update proposal needs a target"))?;
-            if is_skill_path(&target_rel) {
-                bail!("an update may not target a skill: {target_rel}");
-            }
-            let dest = resolve_target_within_kiln(kiln, &target_rel)?;
-            if !dest.is_file() {
-                bail!("update target does not exist: {}", dest.display());
-            }
-            // The lexical check above cannot see a symlink. `fs::write` follows
-            // one, so resolve the real file and apply both guards again.
-            let real_rel = real_path_within_kiln(kiln, &dest, &target_rel)?;
-            if is_skill_path(&real_rel) {
-                bail!("an update may not target a skill: {target_rel} resolves to {real_rel}");
-            }
-            (dest, strip_provenance(fm, &result.body), true)
+            let (dest, text) = update_text(kiln, fm, &result.body)?;
+            (dest, text, true)
         }
         ProposalKind::Skill => {
             let fm = fm.ok_or_else(|| anyhow::anyhow!("a skill proposal needs frontmatter"))?;
@@ -359,10 +425,9 @@ fn yaml_string(s: &str) -> String {
     format!("\"{escaped}\"")
 }
 
-/// True for a path a `create` or `update` proposal may never touch: anything
-/// under `.crucible/` (skills and staging live there) and any `SKILL.md`.
-/// Only `kind: skill` writes there, through `render_skill`. This loop never
-/// edits an installed skill.
+/// True for a path a `create` proposal may never touch: anything under
+/// `.crucible/` (skills and staging live there) and any `SKILL.md`. A new
+/// skill goes through `render_skill`; a raw note never lands there.
 ///
 /// `Path::components` keeps a leading `.` as `CurDir`, so the check looks at
 /// every component and not only the first one.
@@ -370,6 +435,73 @@ fn is_skill_path(target_rel: &str) -> bool {
     let p = Path::new(target_rel);
     p.components().any(|c| c.as_os_str() == ".crucible")
         || p.file_name().is_some_and(|n| n == "SKILL.md")
+}
+
+/// True under `.crucible/proposals/`: the staging area itself. No proposal
+/// of any kind may write there through `accept`.
+fn is_staging_path(target_rel: &str) -> bool {
+    let mut parts = Path::new(target_rel)
+        .components()
+        .filter(|c| c.as_os_str() != ".");
+    parts.next().is_some_and(|c| c.as_os_str() == ".crucible")
+        && parts.next().is_some_and(|c| c.as_os_str() == "proposals")
+}
+
+/// True when the target is a skill entry point.
+fn is_skill_file(target_rel: &str) -> bool {
+    Path::new(target_rel)
+        .file_name()
+        .is_some_and(|n| n == "SKILL.md")
+}
+
+/// Refuse a target an update may not write. The staging area is closed to
+/// every kind. The rest of `.crucible/` is closed too, except a `SKILL.md`:
+/// an update may replace a skill's body, because a human accepts it first.
+fn check_update_target(target_rel: &str, shown: &str) -> Result<()> {
+    if is_staging_path(target_rel) {
+        bail!("an update may not target the staging area: {shown}");
+    }
+    if is_skill_path(target_rel) && !is_skill_file(target_rel) {
+        bail!("an update may not target the .crucible directory: {shown}");
+    }
+    Ok(())
+}
+
+/// What `accept` writes for an update: the destination and its new text.
+/// `show` renders the same text into a diff, so the two cannot disagree.
+///
+/// A skill keeps its frontmatter: the spec fields and the provenance under
+/// `metadata` stay, and only the body is replaced. A note keeps the user's
+/// frontmatter from the proposal, minus the staging keys.
+fn update_text(
+    kiln: &Path,
+    fm: Option<&crucible_core::parser::Frontmatter>,
+    body: &str,
+) -> Result<(PathBuf, String)> {
+    let target_rel = fm
+        .and_then(|f| f.get_string("target"))
+        .ok_or_else(|| anyhow::anyhow!("an update proposal needs a target"))?;
+    check_update_target(&target_rel, &target_rel)?;
+    let dest = resolve_target_within_kiln(kiln, &target_rel)?;
+    if !dest.is_file() {
+        bail!("update target does not exist: {}", dest.display());
+    }
+    // The lexical check above cannot see a symlink. `fs::write` follows
+    // one, so resolve the real file and apply the guard again.
+    let real_rel = real_path_within_kiln(kiln, &dest, &target_rel)?;
+    check_update_target(&real_rel, &format!("{target_rel} resolves to {real_rel}"))?;
+
+    if !is_skill_file(&real_rel) {
+        return Ok((dest, strip_provenance(fm, body)));
+    }
+    let existing =
+        std::fs::read_to_string(&dest).with_context(|| format!("reading {}", dest.display()))?;
+    let head = crucible_core::parser::extract_frontmatter(&existing)
+        .with_context(|| format!("parsing {}", dest.display()))?
+        .frontmatter
+        .ok_or_else(|| anyhow::anyhow!("skill has no frontmatter to keep: {}", dest.display()))?;
+    let text = format!("---\n{}\n---\n{}", head.raw, body.trim_start_matches('\n'));
+    Ok((dest, text))
 }
 
 /// Canonicalize an existing `dest` and return its path relative to the
@@ -824,30 +956,50 @@ mod tests {
     }
 
     #[test]
-    fn accept_update_never_touches_a_skill() {
+    fn accept_update_replaces_a_skill_body_and_keeps_its_frontmatter() {
         let tmp = tempfile::tempdir().unwrap();
         let kiln = tmp.path();
         let config = test_config(kiln);
-        let skill_dir = kiln.join(".crucible/skills/vendored");
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        std::fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: vendored\ndescription: d\n---\ntheirs\n",
-        )
-        .unwrap();
+        let dir = kiln.join(".crucible/skills/mine");
+        std::fs::create_dir_all(&dir).unwrap();
+        let before = "---\nname: mine\ndescription: \"d\"\nmetadata:\n  crucible-source: reflection\n---\nold steps\n";
+        std::fs::write(dir.join("SKILL.md"), before).unwrap();
         write_proposal(
             &proposals_dir(&config),
-            "u4",
-            "---\nkind: update\ntarget: .crucible/skills/vendored/SKILL.md\ntitle: T\n---\nmine\n",
+            "us1",
+            "---\nkind: update\ntarget: .crucible/skills/mine/SKILL.md\ntitle: mine\nmodel: m\n---\nnew steps\n",
         );
 
-        let err = accept(&config, "u4").unwrap_err();
+        accept(&config, "us1").unwrap();
+
+        let after = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+        let (fm_before, _) = before.split_once("\n---\n").unwrap();
         assert!(
-            err.to_string().contains("may not target a skill"),
-            "got: {err}"
+            after.starts_with(fm_before),
+            "frontmatter preserved byte for byte: {after}"
         );
-        let text = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
-        assert!(text.contains("theirs"), "the installed skill is untouched");
+        assert!(after.ends_with("new steps\n"), "{after}");
+        assert!(!after.contains("old steps"));
+        assert!(
+            !after.contains("model:"),
+            "staging keys never reach a skill"
+        );
+    }
+
+    #[test]
+    fn accept_update_still_refuses_the_staging_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(&proposals_dir(&config), "victim", "---\ntitle: V\n---\nv\n");
+        write_proposal(
+            &proposals_dir(&config),
+            "us2",
+            "---\nkind: update\ntarget: .crucible/proposals/victim.md\ntitle: V\n---\nhijack\n",
+        );
+        let err = accept(&config, "us2").unwrap_err();
+        assert!(err.to_string().contains("staging"), "got: {err}");
+        let text = std::fs::read_to_string(proposals_dir(&config).join("victim.md")).unwrap();
+        assert!(text.contains("v\n"), "the staged proposal is untouched");
     }
 
     #[test]
@@ -902,7 +1054,8 @@ mod tests {
 
         let err = accept(&config, "u5").unwrap_err();
         assert!(
-            err.to_string().contains("may not target a skill"),
+            err.to_string()
+                .contains("may not target the .crucible directory"),
             "got: {err}"
         );
         let text = std::fs::read_to_string(kiln.join(".crucible/kiln.toml")).unwrap();
@@ -919,7 +1072,36 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn accept_update_refuses_a_symlink_into_a_skill() {
+    fn accept_update_refuses_a_symlink_into_the_staging_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "victim",
+            "---\ntitle: V\n---\ntheirs\n",
+        );
+        std::fs::create_dir_all(kiln.join("Notes")).unwrap();
+        std::os::unix::fs::symlink(
+            proposals_dir(&config).join("victim.md"),
+            kiln.join("Notes/link.md"),
+        )
+        .unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "u6",
+            "---\nkind: update\ntarget: Notes/link.md\n---\nmine\n",
+        );
+
+        let err = accept(&config, "u6").unwrap_err();
+        assert!(err.to_string().contains("staging"), "got: {err}");
+        let text = std::fs::read_to_string(proposals_dir(&config).join("victim.md")).unwrap();
+        assert!(text.contains("theirs"), "the staged proposal is untouched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_update_through_a_symlink_keeps_the_skill_frontmatter() {
         let tmp = tempfile::tempdir().unwrap();
         let kiln = tmp.path();
         let config = test_config(kiln);
@@ -934,17 +1116,16 @@ mod tests {
         std::os::unix::fs::symlink(skill_dir.join("SKILL.md"), kiln.join("Notes/link.md")).unwrap();
         write_proposal(
             &proposals_dir(&config),
-            "u6",
-            "---\nkind: update\ntarget: Notes/link.md\n---\nmine\n",
+            "u8",
+            "---\nkind: update\ntarget: Notes/link.md\ntitle: T\n---\nmine\n",
         );
 
-        let err = accept(&config, "u6").unwrap_err();
-        assert!(
-            err.to_string().contains("may not target a skill"),
-            "got: {err}"
-        );
+        accept(&config, "u8").unwrap();
+
+        // The real file is a skill, so the skill rule applies: the proposal's
+        // `title` never reaches it and the spec fields stay.
         let text = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
-        assert!(text.contains("theirs"), "the installed skill is untouched");
+        assert_eq!(text, "---\nname: vendored\ndescription: d\n---\nmine\n");
     }
 
     #[cfg(unix)]
@@ -1065,6 +1246,58 @@ mod tests {
             proposals_dir(&config).join("ml.md").is_file(),
             "a refused proposal stays staged"
         );
+    }
+
+    #[test]
+    fn show_renders_a_diff_for_an_update() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        std::fs::write(kiln.join("a.md"), "one\ntwo\n").unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "u3",
+            "---\nkind: update\ntarget: a.md\ntitle: A\n---\none\nthree\n",
+        );
+        let text = render_show(&config, "u3").unwrap();
+        assert!(text.contains("-two"), "{text}");
+        assert!(text.contains("+three"), "{text}");
+        assert!(
+            text.contains("cru proposals accept u3"),
+            "the next step is printed: {text}"
+        );
+    }
+
+    #[test]
+    fn show_renders_the_skill_file_that_accept_would_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "s5",
+            "---\nkind: skill\nname: s5\ndescription: d\nmodel: m\n---\nbody\n",
+        );
+        let text = render_show(&config, "s5").unwrap();
+        assert!(
+            text.contains("will write .crucible/skills/s5/SKILL.md"),
+            "{text}"
+        );
+        assert!(text.contains("crucible-source: reflection"), "{text}");
+        assert!(!text.lines().any(|l| l.starts_with("model:")), "{text}");
+    }
+
+    #[test]
+    fn list_shows_kind_and_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "k1",
+            "---\nkind: update\ntarget: Notes/a.md\ntitle: A\n---\nb\n",
+        );
+        let s = summarize(&proposals_dir(&config).join("k1.md"));
+        assert_eq!(s.kind, "update");
+        assert_eq!(s.target.as_deref(), Some("Notes/a.md"));
     }
 
     #[test]
