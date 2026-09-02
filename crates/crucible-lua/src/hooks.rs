@@ -275,6 +275,31 @@ pub fn get_session_end_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
     get_hooks_by_name(lua, "on_session_end")
 }
 
+/// Which plugin registered each end hook, by index; `None` for a hook the
+/// user's own `init.lua` registered.
+///
+/// Parallel to [`get_session_end_hooks`]. The fire path enters this plugin's
+/// context around the call, so `cru.storage` resolves the namespace the
+/// plugin wrote to during the session.
+pub fn get_session_end_owners(lua: &Lua) -> LuaResult<Vec<Option<String>>> {
+    let globals = lua.globals();
+    let Ok(hooks_table) = globals.get::<Table>("__crucible_hooks__") else {
+        return Ok(Vec::new());
+    };
+    let Ok(owners) = hooks_table.get::<Table>("on_session_end_owners") else {
+        return Ok(Vec::new());
+    };
+    let len = owners.raw_len();
+    let mut out = Vec::with_capacity(len);
+    for i in 1..=len {
+        out.push(match owners.raw_get::<mlua::Value>(i)? {
+            mlua::Value::String(s) => Some(s.to_str()?.to_string()),
+            _ => None,
+        });
+    }
+    Ok(out)
+}
+
 fn get_hooks_by_name(lua: &Lua, name: &str) -> LuaResult<Vec<mlua::RegistryKey>> {
     let globals = lua.globals();
     let hooks_table: Table = match globals.get("__crucible_hooks__") {

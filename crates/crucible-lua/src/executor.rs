@@ -31,6 +31,9 @@ pub struct LuaExecutor {
     /// the session on failure via `{ required = true }`.
     on_session_start_required: Vec<bool>,
     on_session_end_hooks: Vec<RegistryKey>,
+    /// Parallel to `on_session_end_hooks`: the plugin that registered each
+    /// hook, or `None` for the user's own `init.lua`.
+    on_session_end_owners: Vec<Option<String>>,
 }
 
 impl LuaExecutor {
@@ -55,6 +58,7 @@ impl LuaExecutor {
             on_session_start_hooks: Vec::new(),
             on_session_start_required: Vec::new(),
             on_session_end_hooks: Vec::new(),
+            on_session_end_owners: Vec::new(),
         })
     }
 
@@ -164,9 +168,9 @@ impl LuaExecutor {
 
     /// Sync session end hooks from Lua environment
     pub fn sync_session_end_hooks(&mut self) -> Result<(), LuaError> {
-        use crate::hooks::get_session_end_hooks;
-        let hooks = get_session_end_hooks(&self.lua)?;
-        self.on_session_end_hooks = hooks;
+        use crate::hooks::{get_session_end_hooks, get_session_end_owners};
+        self.on_session_end_hooks = get_session_end_hooks(&self.lua)?;
+        self.on_session_end_owners = get_session_end_owners(&self.lua)?;
         Ok(())
     }
 
@@ -177,14 +181,30 @@ impl LuaExecutor {
     /// matters more here: teardown hooks stop containers and release resources
     /// via async `cru.shell.exec`, so a synchronous call leaks whatever the
     /// start hook acquired.
+    ///
+    /// Each hook runs under the plugin that registered it, as a runtime
+    /// handler does. `cru.storage` refuses a call with no plugin context, so
+    /// without this a plugin cannot read at session end what it stored
+    /// during the session. An absent owner (the user's `init.lua`) runs with
+    /// no context. The hook may not intercept: the session is over, and the
+    /// grant is for `pre_tool_call` only.
     pub async fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
-        for key in &self.on_session_end_hooks {
+        for (i, key) in self.on_session_end_hooks.iter().enumerate() {
+            let owner = self.on_session_end_owners.get(i).cloned().flatten();
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    if let Err(e) = self
+                    let context = owner.map(|name| crate::plugin_context::PluginContext {
+                        name,
+                        may_intercept: false,
+                    });
+                    let previous = crate::plugin_context::set_plugin_context(&self.lua, context);
+                    let result = self
                         .call_lifecycle_hook(&func, session, "session_end")
-                        .await
-                    {
+                        .await;
+                    // Restore on every path: a context left behind attributes
+                    // whatever runs next to the wrong plugin.
+                    crate::plugin_context::set_plugin_context(&self.lua, previous);
+                    if let Err(e) = result {
                         tracing::error!("Session end hook failed: {}", e);
                     }
                 }
@@ -569,6 +589,64 @@ mod tests {
             .eval()
             .unwrap();
         assert!(called);
+    }
+
+    /// A session-end hook runs under the plugin that registered it, so
+    /// `cru.storage` resolves that plugin's namespace. Without the context
+    /// the store refuses the call, and a hook that reads what the plugin
+    /// stored during the session gets nothing.
+    #[tokio::test]
+    async fn session_end_hook_runs_in_the_context_of_its_plugin() {
+        use crate::session_api::Session;
+        use crate::test_support::MemoryPropertyStore;
+        use crucible_core::storage::PropertyStore;
+        use std::sync::Arc;
+
+        let mut executor = LuaExecutor::new().unwrap();
+        let store = Arc::new(MemoryPropertyStore::new());
+        crate::register_storage_module(executor.lua()).unwrap();
+        crate::register_storage_module_with_store(
+            executor.lua(),
+            Arc::clone(&store) as Arc<dyn PropertyStore>,
+        )
+        .unwrap();
+
+        // Register the hook as the `reflection` plugin does: inside its load.
+        let previous = crate::plugin_context::enter_plugin(executor.lua(), "reflection", false);
+        executor
+            .lua()
+            .load(
+                r#"
+            cru.on_session_end(function(s)
+                end_hook_read = cru.storage.get(s.id, "injected_titles")
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        crate::plugin_context::set_plugin_context(executor.lua(), previous);
+        executor.sync_session_end_hooks().unwrap();
+
+        store
+            .property_set(
+                "test",
+                "plugin:reflection",
+                "injected_titles",
+                "[\"Kilns\"]",
+            )
+            .await
+            .unwrap();
+
+        let session = Session::new("test".to_string());
+        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        executor.fire_session_end_hooks(&session).await.unwrap();
+
+        let read: Option<String> = executor.lua().load("return end_hook_read").eval().unwrap();
+        assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
+        assert!(
+            crate::plugin_context::current_plugin_context(executor.lua()).is_none(),
+            "the fire path must restore the previous (absent) context"
+        );
     }
 
     /// The `pretty` option is the replacement for `oq.json_pretty`, so it

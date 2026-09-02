@@ -3,9 +3,11 @@
 //! Provides a builder pattern for constructing Lua test environments
 //! with specific module registrations.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use crucible_core::storage::{NoteStore, PropertyStore};
+use async_trait::async_trait;
+use crucible_core::storage::{NoteStore, PropertyStore, StorageResult};
 use mlua::{Lua, Table};
 
 use crate::notify::register_notify_module;
@@ -206,5 +208,105 @@ impl TestLuaBuilder {
         self.ensure_cru_table();
         let mgr = register_session_module(&self.lua).unwrap();
         (self.lua, mgr)
+    }
+}
+
+/// An in-memory `PropertyStore` for tests.
+pub struct MemoryPropertyStore {
+    data: Mutex<HashMap<(String, String, String), String>>,
+}
+
+impl MemoryPropertyStore {
+    pub fn new() -> Self {
+        Self {
+            data: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl PropertyStore for MemoryPropertyStore {
+    async fn property_set(
+        &self,
+        entity_id: &str,
+        namespace: &str,
+        key: &str,
+        value: &str,
+    ) -> StorageResult<()> {
+        let mut data = self.data.lock().unwrap();
+        data.insert(
+            (
+                entity_id.to_string(),
+                namespace.to_string(),
+                key.to_string(),
+            ),
+            value.to_string(),
+        );
+        Ok(())
+    }
+
+    async fn property_get(
+        &self,
+        entity_id: &str,
+        namespace: &str,
+        key: &str,
+    ) -> StorageResult<Option<String>> {
+        let data = self.data.lock().unwrap();
+        Ok(data
+            .get(&(
+                entity_id.to_string(),
+                namespace.to_string(),
+                key.to_string(),
+            ))
+            .cloned())
+    }
+
+    async fn property_list(
+        &self,
+        entity_id: &str,
+        namespace: &str,
+    ) -> StorageResult<Vec<(String, String)>> {
+        let data = self.data.lock().unwrap();
+        let mut result = Vec::new();
+        for ((eid, ns, key), value) in data.iter() {
+            if eid == entity_id && ns == namespace {
+                result.push((key.clone(), value.clone()));
+            }
+        }
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(result)
+    }
+
+    async fn property_find(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: &str,
+    ) -> StorageResult<Vec<String>> {
+        let data = self.data.lock().unwrap();
+        let mut result: Vec<String> = data
+            .iter()
+            .filter(|((_, ns, k), v)| ns == namespace && k == key && v.as_str() == value)
+            .map(|((eid, _, _), _)| eid.clone())
+            .collect();
+        result.sort();
+        result.dedup();
+        Ok(result)
+    }
+
+    async fn property_delete(
+        &self,
+        entity_id: &str,
+        namespace: &str,
+        key: &str,
+    ) -> StorageResult<bool> {
+        let mut data = self.data.lock().unwrap();
+        Ok(data
+            .remove(&(
+                entity_id.to_string(),
+                namespace.to_string(),
+                key.to_string(),
+            ))
+            .is_some())
     }
 }

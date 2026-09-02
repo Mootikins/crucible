@@ -265,114 +265,10 @@ mod tests {
 #[cfg(test)]
 mod store_tests {
     use super::*;
-    use crate::test_support::TestLuaBuilder;
-    use async_trait::async_trait;
-    use crucible_core::storage::StorageResult;
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
-    /// Mock PropertyStore for testing
-    struct MockPropertyStore {
-        data: Mutex<HashMap<(String, String, String), String>>,
-    }
-
-    impl MockPropertyStore {
-        fn new() -> Self {
-            Self {
-                data: Mutex::new(HashMap::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl PropertyStore for MockPropertyStore {
-        async fn property_set(
-            &self,
-            entity_id: &str,
-            namespace: &str,
-            key: &str,
-            value: &str,
-        ) -> StorageResult<()> {
-            let mut data = self.data.lock().unwrap();
-            data.insert(
-                (
-                    entity_id.to_string(),
-                    namespace.to_string(),
-                    key.to_string(),
-                ),
-                value.to_string(),
-            );
-            Ok(())
-        }
-
-        async fn property_get(
-            &self,
-            entity_id: &str,
-            namespace: &str,
-            key: &str,
-        ) -> StorageResult<Option<String>> {
-            let data = self.data.lock().unwrap();
-            Ok(data
-                .get(&(
-                    entity_id.to_string(),
-                    namespace.to_string(),
-                    key.to_string(),
-                ))
-                .cloned())
-        }
-
-        async fn property_list(
-            &self,
-            entity_id: &str,
-            namespace: &str,
-        ) -> StorageResult<Vec<(String, String)>> {
-            let data = self.data.lock().unwrap();
-            let mut result = Vec::new();
-            for ((eid, ns, key), value) in data.iter() {
-                if eid == entity_id && ns == namespace {
-                    result.push((key.clone(), value.clone()));
-                }
-            }
-            result.sort_by(|a, b| a.0.cmp(&b.0));
-            Ok(result)
-        }
-
-        async fn property_find(
-            &self,
-            namespace: &str,
-            key: &str,
-            value: &str,
-        ) -> StorageResult<Vec<String>> {
-            let data = self.data.lock().unwrap();
-            let mut result: Vec<String> = data
-                .iter()
-                .filter(|((_, ns, k), v)| ns == namespace && k == key && v.as_str() == value)
-                .map(|((eid, _, _), _)| eid.clone())
-                .collect();
-            result.sort();
-            result.dedup();
-            Ok(result)
-        }
-
-        async fn property_delete(
-            &self,
-            entity_id: &str,
-            namespace: &str,
-            key: &str,
-        ) -> StorageResult<bool> {
-            let mut data = self.data.lock().unwrap();
-            Ok(data
-                .remove(&(
-                    entity_id.to_string(),
-                    namespace.to_string(),
-                    key.to_string(),
-                ))
-                .is_some())
-        }
-    }
+    use crate::test_support::{MemoryPropertyStore, TestLuaBuilder};
 
     fn setup_lua_with_store() -> mlua::Lua {
-        let store: Arc<dyn PropertyStore> = Arc::new(MockPropertyStore::new());
+        let store: Arc<dyn PropertyStore> = Arc::new(MemoryPropertyStore::new());
         let lua = TestLuaBuilder::new().with_storage_store(store).build();
         // Set the plugin context so namespace resolution works. Lua cannot do
         // this: the context is Rust-side app data, which is the point.
@@ -486,7 +382,7 @@ mod store_tests {
 
     #[tokio::test]
     async fn no_plugin_context_gives_error() {
-        let store: Arc<dyn PropertyStore> = Arc::new(MockPropertyStore::new());
+        let store: Arc<dyn PropertyStore> = Arc::new(MemoryPropertyStore::new());
         let lua = TestLuaBuilder::new().with_storage_store(store).build();
         // Deliberately NOT setting a plugin context
 
@@ -511,7 +407,7 @@ mod store_tests {
     /// Lua global nothing reads.
     #[tokio::test]
     async fn a_plugin_cannot_forge_another_plugins_storage_namespace() {
-        let store: Arc<dyn PropertyStore> = Arc::new(MockPropertyStore::new());
+        let store: Arc<dyn PropertyStore> = Arc::new(MemoryPropertyStore::new());
         let lua = TestLuaBuilder::new()
             .with_storage_store(Arc::clone(&store))
             .build();
