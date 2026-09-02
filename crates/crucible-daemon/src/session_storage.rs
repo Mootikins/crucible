@@ -460,6 +460,7 @@ impl SessionStorage for FileSessionStorage {
                 crucible_core::session::SessionType::Chat => "Chat",
                 crucible_core::session::SessionType::Agent => "Agent",
                 crucible_core::session::SessionType::Workflow => "Workflow",
+                crucible_core::session::SessionType::Plugin => "Plugin",
             };
 
             let kilns = session

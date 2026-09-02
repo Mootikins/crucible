@@ -188,6 +188,86 @@ async fn test_session_list_rpc_returns_shape_and_accepts_invalid_filters() {
     server.shutdown().await;
 }
 
+/// A plugin session is a real session type end to end: `session.create`
+/// mints the `plugin-` prefix, `session.get` reports it, and the `type`
+/// filter of `session.list` selects on it in both directions.
+#[tokio::test]
+async fn session_create_with_type_plugin_yields_a_plugin_session_that_list_filters_on() {
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let chat_id = create_chat_session(&mut client, TestServer::KILN, 30).await;
+
+    let created = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "session.create",
+            "params": { "type": "plugin", "kilns": [TestServer::KILN] }
+        }),
+    )
+    .await;
+    assert!(
+        created["error"].is_null(),
+        "session.create refused type plugin: {created:?}"
+    );
+    let plugin_id = extract_session_id(&created);
+    assert!(
+        plugin_id.starts_with("plugin-"),
+        "a plugin session id must carry the plugin prefix: {plugin_id}"
+    );
+
+    let got = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 32,
+            "method": "session.get",
+            "params": { "session_id": plugin_id }
+        }),
+    )
+    .await;
+    assert_eq!(got["result"]["type"], "plugin", "{got:?}");
+
+    let listed_ids = |response: &Value| -> Vec<String> {
+        response["result"]["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["session_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let plugins = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 33,
+            "method": "session.list",
+            "params": { "type": "plugin" }
+        }),
+    )
+    .await;
+    let ids = listed_ids(&plugins);
+    assert!(ids.contains(&plugin_id), "{ids:?}");
+    assert!(!ids.contains(&chat_id), "{ids:?}");
+
+    let chats = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 34,
+            "method": "session.list",
+            "params": { "type": "chat" }
+        }),
+    )
+    .await;
+    let ids = listed_ids(&chats);
+    assert!(ids.contains(&chat_id), "{ids:?}");
+    assert!(!ids.contains(&plugin_id), "{ids:?}");
+
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_method_not_found() {
     let server = TestServer::start().await;

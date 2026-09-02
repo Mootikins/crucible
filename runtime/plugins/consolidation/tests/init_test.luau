@@ -9,8 +9,7 @@ end
 
 --- The reflection plugin is not loaded in the runner VM. The plugin reads
 --- its table from `package.loaded`, so a stub there stands in for it. The
---- stub marks a session as aux when the row carries `aux = true`, and it
---- counts user turns the way `build_outcome` does.
+--- stub counts user turns the way `build_outcome` does.
 local function count_user_turns(messages: { any }): number
   local n = 0
   for _, m in ipairs(messages) do
@@ -24,10 +23,6 @@ end
 local staged_calls: { any } = {}
 
 package.loaded["reflection"] = {
-  reflection_marker = "<!-- test:reflection-marker -->",
-  is_reflection_session = function(s: any): boolean
-    return type(s) == "table" and s.aux == true
-  end,
   build_outcome = function(messages: { any }, hunks: any): any
     return { user_turns = count_user_turns(messages), tool_errors = 0, hunks_rejected = 0 }
   end,
@@ -112,12 +107,14 @@ describe("consolidation", function()
   end)
 
   describe("since_cursor", function()
-    it("keeps only sessions that ended after the cursor and are not aux sessions", function()
+    it("keeps only sessions that ended after the cursor and are not plugin sessions", function()
+      -- The daemon's list rows carry `session_type`. A reviewer's own
+      -- session is a plugin session, and the sample must leave it out.
       local list = {
-        { id = "a", state = "ended", started_at = "2026-09-01T10:00:00Z" },
-        { id = "b", state = "ended", started_at = "2026-09-01T12:00:00Z" },
-        { id = "c", state = "active", started_at = "2026-09-01T13:00:00Z" },
-        { id = "aux", state = "ended", started_at = "2026-09-01T12:30:00Z", aux = true },
+        { id = "a", state = "ended", started_at = "2026-09-01T10:00:00Z", session_type = "chat" },
+        { id = "b", state = "ended", started_at = "2026-09-01T12:00:00Z", session_type = "chat" },
+        { id = "c", state = "active", started_at = "2026-09-01T13:00:00Z", session_type = "chat" },
+        { id = "aux", state = "ended", started_at = "2026-09-01T12:30:00Z", session_type = "plugin" },
       }
       local got = plugin.since_cursor(list, "2026-09-01T11:00:00Z")
       expect.equal(1, #got)
@@ -220,6 +217,23 @@ describe("consolidation", function()
       local prompt: any = sent[1][2]
       expect.truthy(prompt:find("### session short", 1, true))
       expect.truthy(prompt:find("### session long", 1, true))
+    end)
+
+    it("creates the reviewer as a plugin session", function()
+      plugin.run(nil)
+
+      local created = test_mocks.get_calls("session", "create")
+      expect.equal(1, #created)
+      expect.equal("plugin", created[1][1].type)
+    end)
+
+    it("bakes no marker into the reviewer's prompt", function()
+      plugin.run(nil)
+
+      local configured = test_mocks.get_calls("session", "configure_agent")
+      expect.equal(1, #configured)
+      local prompt: any = configured[1][2].system_prompt
+      expect.is_nil(prompt:find("<!--", 1, true))
     end)
 
     it("stores the newest started_at as the cursor after a pass", function()

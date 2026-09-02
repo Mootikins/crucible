@@ -241,7 +241,12 @@ mod tests {
 
     #[test]
     fn a_minted_id_is_a_valid_id() {
-        for session_type in [SessionType::Chat, SessionType::Agent, SessionType::Workflow] {
+        for session_type in [
+            SessionType::Chat,
+            SessionType::Agent,
+            SessionType::Workflow,
+            SessionType::Plugin,
+        ] {
             let id = SessionId::generate(session_type);
             assert_eq!(
                 SessionId::parse(id.as_str()).as_ref(),
@@ -253,7 +258,12 @@ mod tests {
 
     #[test]
     fn an_id_reports_the_type_its_prefix_names_and_nothing_more() {
-        for session_type in [SessionType::Chat, SessionType::Agent, SessionType::Workflow] {
+        for session_type in [
+            SessionType::Chat,
+            SessionType::Agent,
+            SessionType::Workflow,
+            SessionType::Plugin,
+        ] {
             assert_eq!(
                 SessionId::generate(session_type).session_type(),
                 Some(session_type)

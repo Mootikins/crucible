@@ -44,6 +44,10 @@ pub enum SessionType {
     Agent,
     /// Programmatic workflow execution
     Workflow,
+    /// A session a plugin started for its own work: a reflection review, a
+    /// consolidation pass. Never a user's conversation. Reflection does not
+    /// run on it, and the consolidation sample leaves it out.
+    Plugin,
 }
 
 impl SessionType {
@@ -53,6 +57,7 @@ impl SessionType {
             SessionType::Chat => "chat",
             SessionType::Agent => "agent",
             SessionType::Workflow => "workflow",
+            SessionType::Plugin => "plugin",
         }
     }
 }
@@ -71,6 +76,7 @@ impl FromStr for SessionType {
             "chat" => Ok(SessionType::Chat),
             "agent" => Ok(SessionType::Agent),
             "workflow" => Ok(SessionType::Workflow),
+            "plugin" => Ok(SessionType::Plugin),
             other => Err(format!("unknown session type: {other}")),
         }
     }
@@ -99,5 +105,24 @@ impl std::fmt::Display for SessionState {
             SessionState::Compacting => write!(f, "compacting"),
             SessionState::Ended => write!(f, "ended"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plugin session has one spelling: the id prefix, the `FromStr`
+    /// input, the `Display` output and the serde form all agree.
+    #[test]
+    fn session_type_plugin_has_one_spelling_everywhere() {
+        assert_eq!("plugin".parse::<SessionType>(), Ok(SessionType::Plugin));
+        assert_eq!(SessionType::Plugin.as_prefix(), "plugin");
+        assert_eq!(SessionType::Plugin.to_string(), "plugin");
+
+        let json = serde_json::to_string(&SessionType::Plugin).unwrap();
+        assert_eq!(json, "\"plugin\"");
+        let back: SessionType = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, SessionType::Plugin);
     }
 }

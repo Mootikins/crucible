@@ -23,7 +23,7 @@ The governing principle is **propose, do not dispose.** Proposals are staged out
 
 - **Trigger:** `on_session_end`. Every finished session is a candidate; a session with fewer than `min_turns` user turns is skipped.
 - **Requires configuration:** the plugin is **inert until you configure an auxiliary model**. Without `plugins.reflection.model` it logs a warning and skips every session.
-- **Execution:** a forked auxiliary-model session, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache.
+- **Execution:** a forked auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. When the reviewer's own session ends, the plugin reads its type from the daemon and skips it, so a review never reviews itself.
 - **Reads before it proposes:** the reviewer searches the kiln with `semantic_search` and reads the closest note with `read_note`. When a note already covers the idea, it proposes an update of that note, not a duplicate.
 - **Output:** proposals of three kinds — `create`, `update` and `skill` — staged in `KILN/.crucible/proposals/`, *outside* the indexed kiln.
 - **Disposition:** `cru proposals {list,show,accept,reject}`. A human decides. A rejected proposal is kept in `rejected/`, and the reviewer is told not to propose it again.
@@ -116,7 +116,7 @@ The framing is conservative and propose-only: emitting nothing ("nothing to save
 The `consolidation` plugin is the periodic half of the loop. Where reflection reads one session when it ends, consolidation runs on a timer, reads several finished sessions at once, and proposes **pattern notes**: one note per problem that recurs, or per strategy that worked more than once. Each pattern note carries a one-sentence description in the form "problem; root cause; fix", because that sentence is what retrieval sees, and an `Evidence: N sessions` line.
 
 - It is **off by default** (`[plugins.consolidation] enabled = true` turns it on), because a pass spends model calls with no user present. It also needs `kiln` and `model`.
-- It samples sessions that ended since its last pass: the sessions with a tool error or a rejected edit first (at most `max_problem`), then clean ones (at most `max_clean`). A session with fewer than `min_turns` user turns is skipped.
+- It samples sessions that ended since its last pass: the sessions with a tool error or a rejected edit first (at most `max_problem`), then clean ones (at most `max_clean`). A session with fewer than `min_turns` user turns is skipped. A `plugin` session is never in the sample, and the reviewer itself runs in one.
 - It stages through the reflection plugin, so its proposals land in the same directory, carry `source: consolidation`, and go through the same `cru proposals` commands. It reads the same `rejected/` directory.
 - It stores a cursor in `cru.storage`, so the next pass starts after the newest session the last one saw.
 

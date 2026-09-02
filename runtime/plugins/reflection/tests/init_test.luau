@@ -357,35 +357,6 @@ describe("reflection", function()
     end)
   end)
 
-  describe("is_reflection_session", function()
-    it("detects the marker in the system prompt", function()
-      local session = { system_prompt = plugin.reflection_marker .. "\n\nreview stuff" }
-      expect.truthy(plugin.is_reflection_session(session))
-    end)
-
-    it("returns false for an ordinary session", function()
-      expect.falsy(plugin.is_reflection_session({ system_prompt = "You are a helpful assistant" }))
-    end)
-
-    it("returns false when system_prompt is absent", function()
-      expect.falsy(plugin.is_reflection_session({ id = "chat-1" }))
-    end)
-
-    it("returns false for nil", function()
-      expect.falsy(plugin.is_reflection_session(nil))
-    end)
-  end)
-
-  describe("run recursion guard", function()
-    it("skips a session carrying the reflection marker without touching the daemon", function()
-      -- The guard is the first thing run() checks, before any cru.session
-      -- call, so a marked session short-circuits cleanly.
-      local marked = { id = "aux-1", system_prompt = plugin.reflection_marker .. "\n\nx" }
-      local ok = pcall(plugin.run, marked)
-      expect.truthy(ok)
-    end)
-  end)
-
   describe("safe_filename", function()
     it("accepts a plain slug", function()
       expect.truthy(plugin.safe_filename("hello-world-1.md"))
@@ -553,6 +524,49 @@ describe("reflection", function()
       local created = test_mocks.get_calls("session", "create")
       expect.equal(1, #created)
       expect.equal("notes", created[1][1].kilns[1])
+    end)
+
+    it("creates the reviewer as a plugin session", function()
+      plugin.run({ id = "chat-1" })
+
+      -- The daemon knows the type. That is what the recursion guard reads,
+      -- so the create call is the one place the type is set.
+      local created = test_mocks.get_calls("session", "create")
+      expect.equal(1, #created)
+      expect.equal("plugin", created[1][1].type)
+    end)
+
+    it("bakes no marker into the reviewer's prompt", function()
+      plugin.run({ id = "chat-1" })
+
+      local configured = test_mocks.get_calls("session", "configure_agent")
+      expect.equal(1, #configured)
+      local prompt: any = configured[1][2].system_prompt
+      expect.is_nil(prompt:find("crucible:reflection-pass", 1, true))
+      expect.is_nil(prompt:find("<!--", 1, true))
+    end)
+
+    it("skips a plugin session and never creates a reviewer", function()
+      -- The aux session ends too, and its end fires on_session_end again.
+      -- The guard reads the type the daemon reports, not a prompt marker.
+      test_mocks.setup({
+        kiln = { roots = { notes = kiln_root } },
+        fs = { real_dirs = true },
+        sessions = {
+          info = { id = "plugin-1", session_type = "plugin", state = "ended", kilns = { "notes" } },
+          messages = {
+            { role = "user", content = "review this" },
+            { role = "assistant", content = "[]" },
+          },
+          response_parts = { { type = "text", content = "[]" } },
+        },
+      })
+
+      local written = plugin.run({ id = "plugin-1" })
+
+      expect.equal(0, #written)
+      expect.equal(0, #test_mocks.get_calls("session", "create"))
+      expect.equal(0, #test_mocks.get_calls("session", "send_and_collect"))
     end)
 
     it("ends the aux session when the review raises", function()

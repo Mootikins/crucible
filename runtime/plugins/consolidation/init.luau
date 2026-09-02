@@ -44,17 +44,15 @@ end
 -- ============================================================================
 
 --- The sessions that ended and started after `cursor`, oldest first. A
---- reflection aux session is dropped when the reflection plugin can tell
---- one apart. The daemon's list rows carry no `system_prompt`, so there the
---- `min_turns` gate in `run` is the gate the daemon can apply. `state` is
---- the Display form of SessionState in crucible-core.
+--- plugin session is dropped: it is a reviewer's own session, never a
+--- user's conversation. `session_type` and `state` are the prefix and the
+--- Display forms of SessionType and SessionState in crucible-core.
 function M.since_cursor(sessions: { any }?, cursor: string?): { any }
     local out = {}
-    local ref = reflection()
     for _, s in ipairs(sessions or {}) do
         local ended = s.state == "ended"
         local after = (cursor == nil) or (tostring(s.started_at) > cursor)
-        local aux = ref ~= nil and ref.is_reflection_session(s)
+        local aux = s.session_type == "plugin"
         if ended and after and not aux then
             out[#out + 1] = s
         end
@@ -239,16 +237,16 @@ function M.run(kiln: string?): { string }
 
     local agent_cfg = {
         model = model,
-        -- The reflection marker tags the aux session, so the reflection
-        -- plugin skips it when it ends.
-        system_prompt = ref.reflection_marker .. "\n\n" .. M.SYSTEM_PROMPT,
+        system_prompt = M.SYSTEM_PROMPT,
         max_iterations = config.get("max_iterations", 12),
         mcp_servers = {},
     }
     local provider = config.get("provider", nil)
     if provider then agent_cfg.provider = provider end
 
-    local aux, create_err = cru.session.create({ type = "chat", kilns = { target } })
+    -- A plugin session: the reflection plugin skips it when it ends, and
+    -- the next pass leaves it out of the sample.
+    local aux, create_err = cru.session.create({ type = "plugin", kilns = { target } })
     if create_err or not aux then
         cru.log("warn", "consolidation: failed to create aux session: " .. tostring(create_err))
         return {}

@@ -33,6 +33,7 @@ mod tests {
         assert_eq!(SessionType::Chat.to_string(), "chat");
         assert_eq!(SessionType::Workflow.to_string(), "workflow");
         assert_eq!(SessionType::Agent.to_string(), "agent");
+        assert_eq!(SessionType::Plugin.to_string(), "plugin");
     }
 
     #[test]
@@ -43,6 +44,10 @@ mod tests {
             SessionType::Workflow
         );
         assert_eq!("agent".parse::<SessionType>().unwrap(), SessionType::Agent);
+        assert_eq!(
+            "plugin".parse::<SessionType>().unwrap(),
+            SessionType::Plugin
+        );
         assert!("unknown".parse::<SessionType>().is_err());
     }
 }

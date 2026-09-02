@@ -83,24 +83,9 @@ why. A human accepts or rejects every update.
 If nothing is worth saving, emit exactly: []
 ]==]
 
--- Sentinel baked into a reflection subagent's system prompt so the handler can
--- recognise (and skip) reflection-created sessions when they end. An HTML
--- comment so it is inert if the model echoes it.
-M.REFLECTION_MARKER = "<!-- crucible:reflection-pass -->"
-
 -- ============================================================================
 -- Pure helpers (unit-testable without a daemon)
 -- ============================================================================
-
---- True when a session's agent carries the reflection marker in its system
---- prompt — i.e. it is a reflection-created aux session. Reads `system_prompt`
---- defensively (the session object may not expose it in every context).
-function M.is_reflection_session(session)
-    if not session then return false end
-    local ok, prompt = pcall(function() return session.system_prompt end)
-    return ok and type(prompt) == "string"
-        and prompt:find(M.REFLECTION_MARKER, 1, true) ~= nil
-end
 
 --- Count user turns in a message list. Trivial sessions (few turns) are
 --- skipped, so this drives the min_turns gate.
@@ -640,17 +625,6 @@ function M.run(session: any): { string }
     local injected = M.read_injected(session_id)
     M.forget_injected(session_id)
 
-    -- Recursion guard: ending our own aux session fires on_session_end again.
-    -- min_turns alone is not a guarantee (a user may set min_turns = 1), so we
-    -- positively identify reflection-created sessions by the marker baked into
-    -- their system prompt and skip them regardless of turn count. This is a
-    -- cross-session-visible tag (the aux session's config lives daemon-side),
-    -- which module-level Lua state cannot be — each session has its own VM.
-    if M.is_reflection_session(session) then
-        cru.log("debug", "reflection: skipping reflection-created aux session")
-        return {}
-    end
-
     -- Resolve the aux model first: without it there is nothing to do, so bail
     -- before spending any RPC round-trips on the session's kiln and messages.
     local model = config.get("model", nil)
@@ -659,9 +633,20 @@ function M.run(session: any): { string }
         return {}
     end
 
+    local info = cru.session.get(session_id)
+
+    -- Recursion guard: the end of our own aux session fires on_session_end
+    -- again. The daemon records the type a plugin asked for at create, so
+    -- the guard reads that and not a turn count or a prompt marker. The
+    -- type is visible across sessions, which module-level Lua state cannot
+    -- be: each session has its own VM.
+    if info and info.session_type == "plugin" then
+        cru.log("debug", "reflection: skipping a plugin session")
+        return {}
+    end
+
     -- The bridge sends kiln NAMES in a `kilns` array (session_bridge.rs).
     -- The first name is our staging target; cru.kiln.path resolves it.
-    local info = cru.session.get(session_id)
     local kilns = info and info.kilns
     local kiln = kilns and kilns[1]
     if not kiln then
@@ -708,9 +693,7 @@ function M.run(session: any): { string }
 
     local agent_cfg = {
         model = model,
-        -- The marker tags this as a reflection session so its own teardown is
-        -- skipped by the recursion guard.
-        system_prompt = M.REFLECTION_MARKER .. "\n\n" .. M.SYSTEM_PROMPT,
+        system_prompt = M.SYSTEM_PROMPT,
         -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
         max_iterations = config.get("max_iterations", 12),
         -- No external tool servers for an unattended reviewer. NOTE: built-in
@@ -723,10 +706,10 @@ function M.run(session: any): { string }
 
     -- Fork a separate session for the review so it never touches the source
     -- session's prompt cache. The same kiln is attached, so the reviewer can
-    -- call `semantic_search` and `read_note` before it proposes. The
-    -- marker-based recursion guard above is what stops it reflecting on
-    -- itself.
-    local aux, err = cru.session.create({ type = "chat", kilns = { kiln } })
+    -- call `semantic_search` and `read_note` before it proposes. The type is
+    -- `plugin`, which is what the recursion guard above reads when this
+    -- session ends.
+    local aux, err = cru.session.create({ type = "plugin", kilns = { kiln } })
     if err or not aux then
         cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
         return {}
@@ -803,8 +786,6 @@ local plugin = {
 
     -- Exposed for unit tests and manual invocation.
     run = M.run,
-    is_reflection_session = M.is_reflection_session,
-    reflection_marker = M.REFLECTION_MARKER,
     count_user_turns = M.count_user_turns,
     build_transcript = M.build_transcript,
     parse_proposals = M.parse_proposals,

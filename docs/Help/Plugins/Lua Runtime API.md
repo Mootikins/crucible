@@ -395,6 +395,11 @@ local session, err = cru.session.create({
 })
 ```
 
+`type` is one of `chat`, `agent`, `workflow` and `plugin`. A `plugin` session
+is one a plugin starts for its own work, such as a reflection review or a
+consolidation pass. It is never a user's conversation: the reflection plugin
+does not review it, and the consolidation sample leaves it out.
+
 The options table is passed through to the daemon's `session.create` whole, so
 every field that RPC accepts is available here — `isolation`, `recording_mode`,
 `provider`/`model`/`endpoint` overrides, and `agent_card`. Naming any agent
