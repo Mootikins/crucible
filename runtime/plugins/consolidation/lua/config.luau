@@ -20,7 +20,7 @@ local PLUGIN = "consolidation"
 local M = {}
 
 local defaults = {
-    -- Master switch. A pass spends model calls with nobody at the keyboard,
+    -- Master switch. A pass spends model calls with no user present,
     -- so a user must turn it on.
     enabled = false,
     -- The kiln the pass reads and stages proposals in. The pass has no

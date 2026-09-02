@@ -218,6 +218,20 @@ describe("reflection", function()
       expect.falsy(out:find("model:", 1, true))
     end)
 
+    it("names the source the caller gives, and reflection by default", function()
+      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", { source = "consolidation" })
+      expect.truthy(out:find("source: consolidation", 1, true))
+      expect.falsy(out:find("source: reflection", 1, true))
+      local default = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", {})
+      expect.truthy(default:find("source: reflection", 1, true))
+    end)
+
+    it("omits the session line when there is no session", function()
+      local out = plugin.render_proposal({ title = "T", body = "B" }, nil, "t", { source = "consolidation" })
+      expect.falsy(out:find("session:", 1, true))
+      expect.truthy(out:find("status: proposed", 1, true))
+    end)
+
     it("escapes a double quote after the backslash, so a quoted value closes once", function()
       -- Title holds a backslash and a quote: a\"b. The backslash must be
       -- escaped first, or the quote escape gets a second backslash and the
@@ -250,19 +264,26 @@ describe("reflection", function()
     it("requires target on an update", function()
       expect.truthy(plugin.validate_proposal({ kind = "update", title = "T", body = "B" }))
     end)
-    it("refuses an update that targets a skill", function()
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = "Notes/SKILL.md", title = "T", body = "B" }))
+    it("accepts an update that targets a skill", function()
+      expect.is_nil(plugin.validate_proposal({ kind = "update", target = ".crucible/skills/x/SKILL.md", title = "x", body = "B" }))
+      expect.is_nil(plugin.validate_proposal({ kind = "update", target = "Notes/SKILL.md", title = "x", body = "B" }))
     end)
-    it("refuses a skill path in every position, as the CLI does", function()
+    it("still refuses an update that targets the staging area", function()
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/y.md", title = "y", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = "./.crucible/proposals/y.md", title = "y", body = "B" }))
+    end)
+    it("refuses an update to the rest of the .crucible directory, as the CLI does", function()
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/kiln.toml", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = "Notes/.crucible/x.md", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = "./.crucible/x.md", title = "T", body = "B" }))
+    end)
+    it("refuses a create on a skill path in every position, as the CLI does", function()
       -- `cru proposals accept` checks every path component, not only the first.
-      for _, kind in ipairs({ "create", "update" }) do
-        expect.truthy(plugin.validate_proposal({ kind = kind, target = "Notes/.crucible/x.md", title = "T", body = "B" }))
-        expect.truthy(plugin.validate_proposal({ kind = kind, target = "./.crucible/x.md", title = "T", body = "B" }))
-        expect.truthy(plugin.validate_proposal({ kind = kind, target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
-        expect.truthy(plugin.validate_proposal({ kind = kind, target = "Notes/SKILL.md", title = "T", body = "B" }))
-        expect.truthy(plugin.validate_proposal({ kind = kind, target = "SKILL.md", title = "T", body = "B" }))
-      end
+      expect.truthy(plugin.validate_proposal({ target = "Notes/.crucible/x.md", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ target = "./.crucible/x.md", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ target = "Notes/SKILL.md", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ target = "SKILL.md", title = "T", body = "B" }))
       -- A file that only contains the name is a plain note.
       expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/my.crucible.md" }))
       expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/NOT-SKILL.md" }))
@@ -548,7 +569,7 @@ describe("reflection", function()
       expect.truthy(prompt:find("edits rejected: 1", 1, true) ~= nil)
     end)
 
-    it("still reviews a session that has no review ledger", function()
+    it("still reviews a session when review_list_hunks fails", function()
       (cru.session :: any).review_list_hunks = function(id)
         error("no ledger")
       end
@@ -592,6 +613,42 @@ describe("reflection", function()
       handle:close()
       expect.truthy((body:find("source: reflection")))
       expect.truthy((body:find("B")))
+    end)
+
+    it("tells the user how many proposals it staged and how to review them", function()
+      local staged = plugin.stage_proposals("notes", "chat-1", {
+        { title = "T", body = "B" },
+        { title = "U", body = "C" },
+      })
+
+      expect.equal(2, #staged)
+      local notified = test_mocks.get_calls("log", "notify")
+      expect.equal(1, #notified)
+      local message = notified[1][1] :: string
+      expect.truthy(message:find("2 proposal", 1, true) ~= nil)
+      expect.truthy(message:find("cru proposals list", 1, true) ~= nil)
+    end)
+
+    it("says nothing to the user when it staged nothing", function()
+      local staged = plugin.stage_proposals("notes", "chat-1", {
+        { kind = "update", title = "T", body = "B" },
+      })
+
+      expect.equal(0, #staged)
+      expect.equal(0, #test_mocks.get_calls("log", "notify"))
+    end)
+
+    it("writes the source the caller names and no session line without a session", function()
+      local staged = plugin.stage_proposals("notes", nil, {
+        { title = "T", body = "B" },
+      }, { source = "consolidation" })
+
+      expect.equal(1, #staged)
+      local handle = assert(io.open(staged[1], "r"))
+      local body = assert(handle:read("a")) :: string
+      handle:close()
+      expect.truthy(body:find("source: consolidation", 1, true) ~= nil)
+      expect.truthy(body:find("session:", 1, true) == nil)
     end)
 
     it("records the model of the session that ended in the staged file", function()
@@ -795,10 +852,20 @@ describe("reflection", function()
       expect.equal(2, o.hunks_rejected)
     end)
 
+    it("counts the edits nobody reviewed yet", function()
+      -- `unreviewed` is the serde default of ReviewState, so a hunk with no
+      -- state counts there too.
+      local hunks: { any } = { { state = "unreviewed" }, {}, { state = "accepted" } }
+      local o = plugin.build_outcome({}, hunks)
+      expect.equal(2, o.hunks_unreviewed)
+      expect.equal(1, o.hunks_accepted)
+    end)
+
     it("renders as a short block the prompt can carry", function()
-      local text = plugin.render_outcome({ user_turns = 3, tool_calls = 4, tool_errors = 1, hunks_accepted = 0, hunks_rejected = 2 })
+      local text = plugin.render_outcome({ user_turns = 3, tool_calls = 4, tool_errors = 1, hunks_accepted = 0, hunks_rejected = 2, hunks_unreviewed = 3 })
       expect.truthy(text:find("tool errors: 1", 1, true))
       expect.truthy(text:find("edits rejected: 2", 1, true))
+      expect.truthy(text:find("edits not yet reviewed: 3", 1, true))
     end)
   end)
 

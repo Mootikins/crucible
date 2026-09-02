@@ -19,6 +19,10 @@ local function count_user_turns(messages: { any }): number
   return n
 end
 
+--- Every `stage_proposals` call the stub saw, so a test can check what the
+--- pass hands to the reflection plugin.
+local staged_calls: { any } = {}
+
 package.loaded["reflection"] = {
   reflection_marker = "<!-- test:reflection-marker -->",
   is_reflection_session = function(s: any): boolean
@@ -32,9 +36,14 @@ package.loaded["reflection"] = {
   end,
   read_rejected = function(kiln: string): { any } return {} end,
   rejected_titles = function(rejected: { any }, limit: number): { string } return {} end,
-  parse_proposals = function(text: string): { any }? return {} end,
-  stage_proposals = function(kiln: string, source: string, proposals: { any }, opts: any): { string }
-    return {}
+  parse_proposals = function(text: string): { any }?
+    local ok, parsed = pcall(cru.json.decode, text)
+    if ok and type(parsed) == "table" then return parsed end
+    return nil
+  end,
+  stage_proposals = function(kiln: string, session: string?, proposals: { any }, opts: any): { string }
+    staged_calls[#staged_calls + 1] = { kiln = kiln, session = session, proposals = proposals, opts = opts }
+    return { "/mock/staged.md" }
   end,
 }
 
@@ -146,7 +155,7 @@ describe("consolidation", function()
 
     --- Two ended sessions: `short` has one user turn, the way a reviewer's
     --- aux session does; `long` has three. The daemon's list rows carry no
-    --- `system_prompt`, so the turn count is the guard that holds there.
+    --- `system_prompt`, so the turn count is the gate the daemon can apply.
     local messages_by_id: { [string]: { any } } = {
       short = {
         { role = "user", content = "review this" },
@@ -167,6 +176,7 @@ describe("consolidation", function()
 
     before_each(function()
       rows = fake_storage()
+      staged_calls = {}
       test_mocks.setup({
         sessions = {
           response_parts = { { type = "text", content = "[]" } },
@@ -236,6 +246,30 @@ describe("consolidation", function()
       local prompt: any = sent[1][2]
       expect.truthy(prompt:find("### session long", 1, true))
       expect.is_nil(prompt:find("### session short", 1, true))
+    end)
+
+    it("stages what the reviewer proposes as consolidation, with no session", function()
+      test_mocks.setup({
+        sessions = {
+          response_parts = { { type = "text", content = '[{"title":"Pattern","body":"B","tags":["pattern"]}]' } },
+        },
+      })
+      cru.session.list = function()
+        return { { id = "long", state = "ended", started_at = "2026-09-01T11:00:00Z" } }, nil
+      end
+      cru.session.messages = function(id: string, opts: any)
+        return messages_by_id[id]
+      end
+
+      local written = plugin.run(nil)
+
+      expect.equal(1, #written)
+      expect.equal(1, #staged_calls)
+      expect.equal("notes", staged_calls[1].kiln)
+      expect.is_nil(staged_calls[1].session)
+      expect.equal("Pattern", staged_calls[1].proposals[1].title)
+      expect.equal("consolidation", staged_calls[1].opts.source)
+      expect.equal("test-model", staged_calls[1].opts.model)
     end)
 
     it("keeps the cursor where it was when a pass sees no session", function()
