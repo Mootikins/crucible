@@ -288,8 +288,11 @@ fn pending_proposals_counts_the_kiln_the_cli_reads_and_ignores_rejected() {
         let staging = root.join(".crucible/proposals");
         std::fs::create_dir_all(staging.join("rejected")).unwrap();
         for name in names {
-            std::fs::write(staging.join(format!("{name}.md")), "---\ntitle: P\n---\nb\n")
-                .unwrap();
+            std::fs::write(
+                staging.join(format!("{name}.md")),
+                "---\ntitle: P\n---\nb\n",
+            )
+            .unwrap();
         }
         std::fs::write(staging.join("rejected/old.md"), "---\ntitle: O\n---\nb\n").unwrap();
     };
