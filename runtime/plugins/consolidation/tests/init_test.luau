@@ -279,6 +279,48 @@ describe("consolidation", function()
       expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
     end)
 
+    it("stops the cursor before a session whose transcript did not load", function()
+      -- `cru.session.messages` answers `(nil, err)` when the RPC fails. The
+      -- pass must review what it read before `b`, and the cursor must stop
+      -- before `b`: a cursor at the newest candidate would drop `b` and `c`
+      -- for good on one transient error.
+      plugin.setup({ min_turns = 1 })
+      messages_by_id.a = messages_by_id.short
+      messages_by_id.b = messages_by_id.short
+      messages_by_id.c = messages_by_id.short
+      cru.session.list = function()
+        return {
+          { id = "a", state = "ended", started_at = "2026-09-01T10:00:00Z" },
+          { id = "b", state = "ended", started_at = "2026-09-01T11:00:00Z" },
+          { id = "c", state = "ended", started_at = "2026-09-01T12:00:00Z" },
+        }, nil
+      end
+      local fail_b = true
+      cru.session.messages = function(id: string, opts: any)
+        if fail_b and id == "b" then return nil, "rpc: connection reset" end
+        return messages_by_id[id], nil
+      end
+
+      plugin.run(nil)
+
+      expect.equal(1, #review_calls)
+      local first: any = review_calls[1].prompt
+      expect.truthy(first:find("### session a", 1, true))
+      expect.is_nil(first:find("### session b", 1, true))
+      expect.is_nil(first:find("### session c", 1, true))
+      expect.equal("2026-09-01T10:00:00Z", cru.storage.get("consolidation", "last_run"))
+
+      fail_b = false
+      plugin.run(nil)
+
+      expect.equal(2, #review_calls)
+      local second: any = review_calls[2].prompt
+      expect.truthy(second:find("### session b", 1, true))
+      expect.truthy(second:find("### session c", 1, true))
+      expect.is_nil(second:find("### session a", 1, true))
+      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
+    end)
+
     it("reviews the problem sessions when max_clean is 0", function()
       -- `max_clean = 0` asks for problem sessions only. The oldest candidate
       -- is clean. The pass must walk past it, review `bad`, and move the

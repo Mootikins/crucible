@@ -186,18 +186,25 @@ function M.run(kiln: string?): { string }
 
     -- Read each candidate's outcome before the sample is drawn: the sample
     -- puts the sessions with problems first, and only a transcript says
-    -- where the problems were.
+    -- where the problems were. A transcript that does not load stops the
+    -- read: `walked` is the length of the prefix that loaded, and the
+    -- cursor never moves past it, so the session is a candidate again.
     local min_turns = config.get("min_turns", 2)
     local scored = {}
+    local walked = 0
     for _, s in ipairs(candidates) do
-        local messages = cru.session.messages(s.id, { tools = true })
-        if messages then
-            local outcome = ref.build_outcome(messages, ref.load_hunks(s.id))
-            if outcome.user_turns >= min_turns then
-                scored[#scored + 1] = {
-                    id = s.id, started_at = s.started_at, messages = messages, outcome = outcome,
-                }
-            end
+        local messages, messages_err = cru.session.messages(s.id, { tools = true })
+        if messages == nil then
+            cru.log("warn", string.format(
+                "consolidation: could not read session %s: %s", tostring(s.id), tostring(messages_err)))
+            break
+        end
+        walked += 1
+        local outcome = ref.build_outcome(messages, ref.load_hunks(s.id))
+        if outcome.user_turns >= min_turns then
+            scored[#scored + 1] = {
+                id = s.id, started_at = s.started_at, messages = messages, outcome = outcome,
+            }
         end
     end
     local samples, taken = M.stratify(scored, {
@@ -206,12 +213,13 @@ function M.run(kiln: string?): { string }
     })
 
     -- The cursor moves past what this pass saw and no further. When every
-    -- session that qualified was taken, it moves past the newest candidate:
-    -- a short session needs no review. When a cap stopped the walk, it
-    -- stops at the last session taken, and the rest are candidates again.
+    -- session that qualified was taken, it moves past the newest candidate
+    -- that loaded: a short session needs no review. When a cap stopped the
+    -- walk, it stops at the last session taken, and the rest are candidates
+    -- again.
     local newest: string? = nil
     if taken == #scored then
-        newest = tostring(candidates[#candidates].started_at)
+        if walked > 0 then newest = tostring(candidates[walked].started_at) end
     elseif taken > 0 then
         newest = tostring(scored[taken].started_at)
     end
