@@ -676,8 +676,12 @@ function M.run(session: any): { string }
         return {}
     end
 
-    local messages = cru.session.messages(session_id, { tools = true })
-    if not messages then return {} end
+    local messages, messages_err = cru.session.messages(session_id, { tools = true })
+    if not messages then
+        cru.log("warn", string.format(
+            "reflection: transcript of %s did not load: %s", tostring(session_id), tostring(messages_err)))
+        return {}
+    end
 
     local turns = M.count_user_turns(messages)
     local min_turns = config.get("min_turns", 3)

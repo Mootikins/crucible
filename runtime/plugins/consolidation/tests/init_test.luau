@@ -279,11 +279,11 @@ describe("consolidation", function()
       expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
     end)
 
-    it("stops the cursor before a session whose transcript did not load", function()
-      -- `cru.session.messages` answers `(nil, err)` when the RPC fails. The
-      -- pass must review what it read before `b`, and the cursor must stop
-      -- before `b`: a cursor at the newest candidate would drop `b` and `c`
-      -- for good on one transient error.
+    it("skips a session whose transcript did not load and moves the cursor past it", function()
+      -- `cru.session.messages` answers `(nil, err)` when the read fails. The
+      -- pass reviews the sessions that loaded, and the cursor moves past the
+      -- one that did not: a transcript that never loads must not stop every
+      -- later pass at the same session.
       plugin.setup({ min_turns = 1 })
       messages_by_id.a = messages_by_id.short
       messages_by_id.b = messages_by_id.short
@@ -307,18 +307,15 @@ describe("consolidation", function()
       local first: any = review_calls[1].prompt
       expect.truthy(first:find("### session a", 1, true))
       expect.is_nil(first:find("### session b", 1, true))
-      expect.is_nil(first:find("### session c", 1, true))
-      expect.equal("2026-09-01T10:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.truthy(first:find("### session c", 1, true))
+      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
 
       fail_b = false
       plugin.run(nil)
 
-      expect.equal(2, #review_calls)
-      local second: any = review_calls[2].prompt
-      expect.truthy(second:find("### session b", 1, true))
-      expect.truthy(second:find("### session c", 1, true))
-      expect.is_nil(second:find("### session a", 1, true))
-      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
+      -- Nothing newer than the cursor: no second review, and `b` is not
+      -- read again.
+      expect.equal(1, #review_calls)
     end)
 
     it("reviews the problem sessions when max_clean is 0", function()

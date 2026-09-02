@@ -186,20 +186,21 @@ function M.run(kiln: string?): { string }
 
     -- Read each candidate's outcome before the sample is drawn: the sample
     -- puts the sessions with problems first, and only a transcript says
-    -- where the problems were. A transcript that does not load stops the
-    -- read: `walked` is the length of the prefix that loaded, and the
-    -- cursor never moves past it, so the session is a candidate again.
+    -- where the problems were. A transcript that does not load is skipped
+    -- with a warning. The cursor still moves past it: a session that never
+    -- loads (a bad byte, a permission) must not stop every later pass.
     local min_turns = config.get("min_turns", 2)
     local scored = {}
     local walked = 0
     for _, s in ipairs(candidates) do
+        walked += 1
         local messages, messages_err = cru.session.messages(s.id, { tools = true })
         if messages == nil then
             cru.log("warn", string.format(
-                "consolidation: could not read session %s: %s", tostring(s.id), tostring(messages_err)))
-            break
+                "consolidation: skipping session %s, its transcript did not load: %s",
+                tostring(s.id), tostring(messages_err)))
+            continue
         end
-        walked += 1
         local outcome = ref.build_outcome(messages, ref.load_hunks(s.id))
         if outcome.user_turns >= min_turns then
             scored[#scored + 1] = {
