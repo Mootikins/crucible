@@ -373,13 +373,74 @@ function M.read_rejected(kiln: string): { [string]: string }
     return files
 end
 
+--- The titles of the notes a `precognition_select` event carries.
+function M.injected_titles(event: any): { string }
+    local out = {}
+    local results = type(event) == "table" and event.results or nil
+    for _, note in ipairs(results or {}) do
+        if type(note) == "table" and type(note.title) == "string" then
+            out[#out + 1] = note.title
+        end
+    end
+    return out
+end
+
+-- The `cru.storage` key that holds the injected titles of one session. The
+-- entity is the session id. `cru.storage` is namespaced by plugin name, and
+-- the `precognition_select` handler and `on_session_end` run in the same
+-- plugin VM, so `run` reads the row this handler wrote.
+local INJECTED_KEY = "injected_titles"
+
+--- Record the titles precognition injected into a session, so `run` can
+--- tell the reviewer not to propose them again. A VM with no `cru.storage`
+--- (the test harness) records nothing.
+function M.record_injected(session_id: string, event: any)
+    local store = cru.storage
+    if store == nil then return end
+    local ok, err = pcall(store.set, session_id, INJECTED_KEY, cru.json.encode(M.injected_titles(event)))
+    if not ok then
+        cru.log("debug", "reflection: could not record injected notes: " .. tostring(err))
+    end
+end
+
+--- The titles `record_injected` stored for a session; an empty list when
+--- there is no row, or no store.
+function M.read_injected(session_id: string): { string }
+    local store = cru.storage
+    if store == nil then return {} end
+    local ok, raw = pcall(store.get, session_id, INJECTED_KEY)
+    if not ok or type(raw) ~= "string" then return {} end
+    local decoded, list = pcall(cru.json.decode, raw)
+    if not decoded or type(list) ~= "table" then return {} end
+    local out = {}
+    for _, title in ipairs(list) do
+        if type(title) == "string" then out[#out + 1] = title end
+    end
+    return out
+end
+
+--- Drop the row for a session. `run` calls this once it read the row: a
+--- session ends once, so nothing reads the row again.
+function M.forget_injected(session_id: string)
+    local store = cru.storage
+    if store == nil then return end
+    pcall(store.delete, session_id, INJECTED_KEY)
+end
+
 --- Compose the reviewer's user message from its parts. Every part is optional
 --- except the transcript, so the tests can exercise one block at a time.
-function M.build_prompt(parts: { transcript: string, rejected: { string }? }): string
+function M.build_prompt(parts: { transcript: string, rejected: { string }?, injected: { string }? }): string
     local sections = {}
     if parts.rejected and #parts.rejected > 0 then
         local lines = { "A human rejected these proposals recently; do not propose them again:" }
         for _, title in ipairs(parts.rejected) do
+            lines[#lines + 1] = "- " .. title
+        end
+        sections[#sections + 1] = table.concat(lines, "\n")
+    end
+    if parts.injected and #parts.injected > 0 then
+        local lines = { "These notes were already given to the agent at the start; do not propose them or restate them:" }
+        for _, title in ipairs(parts.injected) do
             lines[#lines + 1] = "- " .. title
         end
         sections[#sections + 1] = table.concat(lines, "\n")
@@ -463,6 +524,11 @@ function M.run(session: any): { string }
     if not session or not session.id then return {} end
     local session_id = session.id
 
+    -- Take the injected titles first, before any gate returns: a session
+    -- ends once, so the row must not outlive it on any path.
+    local injected = M.read_injected(session_id)
+    M.forget_injected(session_id)
+
     -- Recursion guard: ending our own aux session fires on_session_end again.
     -- min_turns alone is not a guarantee (a user may set min_turns = 1), so we
     -- positively identify reflection-created sessions by the marker baked into
@@ -508,7 +574,7 @@ function M.run(session: any): { string }
     -- handler's `pcall` only logs.
     local transcript = M.build_transcript(messages)
     local rejected = M.rejected_titles(M.read_rejected(kiln), config.get("rejection_memory", 20))
-    local prompt = M.build_prompt({ transcript = transcript, rejected = rejected })
+    local prompt = M.build_prompt({ transcript = transcript, rejected = rejected, injected = injected })
 
     local agent_cfg = {
         model = model,
@@ -576,6 +642,16 @@ end
 -- Plugin Spec
 -- ============================================================================
 
+-- Observe only. A nil return leaves the selection to the next handler: the
+-- precognition hooks take the first Transform and stop, and this is not one.
+cru.on("precognition_select", { priority = 100 }, function(ctx, event)
+    local sid = type(ctx) == "table" and ctx.session_id or nil
+    if type(sid) == "string" then
+        M.record_injected(sid, event)
+    end
+    return nil
+end)
+
 cru.on_session_end(function(session)
     -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
     -- what the function returns. The inner function drops the path list and
@@ -605,6 +681,10 @@ local plugin = {
     rejected_titles = M.rejected_titles,
     read_rejected = M.read_rejected,
     build_prompt = M.build_prompt,
+    injected_titles = M.injected_titles,
+    record_injected = M.record_injected,
+    read_injected = M.read_injected,
+    forget_injected = M.forget_injected,
     render_proposal = M.render_proposal,
     validate_proposal = M.validate_proposal,
     proposal_id = M.proposal_id,

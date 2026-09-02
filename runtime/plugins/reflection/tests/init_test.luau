@@ -1,4 +1,35 @@
 --!strict
+-- The runner VM has no `cru.on` (the daemon registers it), so the stub
+-- records each registration. A test fires the handler it recorded.
+local registered: { [string]: any } = {}
+;(cru :: any).on = function(event: string, opts: any, fn: any)
+  registered[event] = if type(opts) == "function" then opts else fn
+end
+
+--- Install a fake `cru.storage` (the runner VM has none) and answer with
+--- its rows, keyed "<entity>/<key>". The caller runs `drop_storage()` when
+--- it is done.
+local function fake_storage(): { [string]: string }
+  local rows: { [string]: string } = {}
+  cru.storage = mock({
+    set = function(entity: string, key: string, value: string)
+      rows[entity .. "/" .. key] = value
+      return true
+    end,
+    get = function(entity: string, key: string) return rows[entity .. "/" .. key] end,
+    delete = function(entity: string, key: string)
+      local had = rows[entity .. "/" .. key] ~= nil
+      rows[entity .. "/" .. key] = nil
+      return had
+    end,
+  })
+  return rows
+end
+
+local function drop_storage()
+  (cru :: any).storage = nil
+end
+
 describe("reflection", function()
   local plugin = require("reflection")
   local config = require("config")
@@ -428,6 +459,22 @@ describe("reflection", function()
       expect.is_nil(prompt:find("decoy", 1, true))
     end)
 
+    it("tells the reviewer which notes precognition injected, then forgets them", function()
+      local rows = fake_storage()
+      plugin.record_injected("chat-1", {
+        results = { { index = 1, title = "Socket rules", score = 0.9 } },
+      })
+
+      plugin.run({ id = "chat-1" })
+
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      expect.truthy(sent[1][2]:find("already given", 1, true))
+      expect.truthy(sent[1][2]:find("- Socket rules", 1, true))
+      expect.is_nil(rows["chat-1/injected_titles"])
+      drop_storage()
+    end)
+
     it("asks the daemon for the tool rows of the session", function()
       plugin.run({ id = "chat-1" })
 
@@ -637,6 +684,65 @@ describe("reflection", function()
     it("omits the rejection block when nothing was rejected", function()
       local p = plugin.build_prompt({ transcript = "t", rejected = {} })
       expect.is_nil(p:find("do not propose", 1, true))
+    end)
+  end)
+
+  describe("injected_titles", function()
+    it("collects titles from a precognition_select event", function()
+      local got = plugin.injected_titles({
+        results = {
+          { index = 1, title = "Socket rules", score = 0.9 },
+          { index = 2, title = "Kilns", score = 0.8 },
+        },
+      })
+      expect.equal(2, #got)
+      expect.equal("Socket rules", got[1])
+      expect.equal("Kilns", got[2])
+    end)
+
+    it("returns an empty list for a missing or malformed event", function()
+      expect.equal(0, #plugin.injected_titles(nil))
+      expect.equal(0, #plugin.injected_titles({}))
+      expect.equal(0, #plugin.injected_titles({ results = { { index = 1, score = 0.5 } } }))
+    end)
+  end)
+
+  describe("precognition_select observer", function()
+    it("records the injected titles under the session id and observes only", function()
+      local rows = fake_storage()
+      local handler = registered["precognition_select"]
+      expect.truthy(handler)
+
+      local out = handler({ session_id = "chat-9" }, {
+        results = { { index = 1, title = "Socket rules", score = 0.9 } },
+      })
+
+      expect.is_nil(out)
+      local stored = cru.json.decode(rows["chat-9/injected_titles"])
+      expect.equal(1, #stored)
+      expect.equal("Socket rules", stored[1])
+      expect.equal(1, #plugin.read_injected("chat-9"))
+      drop_storage()
+    end)
+
+    it("records nothing without a session id", function()
+      local rows = fake_storage()
+      registered["precognition_select"]({}, { results = { { index = 1, title = "X" } } })
+      expect.is_nil(next(rows))
+      drop_storage()
+    end)
+  end)
+
+  describe("build_prompt with injected notes", function()
+    it("names notes the agent was already given", function()
+      local p = plugin.build_prompt({ transcript = "t", injected = { "Socket rules" } })
+      expect.truthy(p:find("already given", 1, true))
+      expect.truthy(p:find("- Socket rules", 1, true))
+    end)
+
+    it("omits the block when precognition injected nothing", function()
+      local p = plugin.build_prompt({ transcript = "t", injected = {} })
+      expect.is_nil(p:find("already given", 1, true))
     end)
   end)
 end)
