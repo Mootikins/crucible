@@ -119,7 +119,7 @@ The `consolidation` plugin is the periodic half of the loop. Where reflection re
 - It is **off by default** (`[plugins.consolidation] enabled = true` turns it on), because a pass spends model calls with no user present. It also needs `kiln` and `model`.
 - It samples sessions that ended since its last pass: the sessions with a tool error or a rejected edit first (at most `max_problem`), then clean ones (at most `max_clean`). A session with fewer than `min_turns` user turns is skipped. A `plugin` session is never in the sample, and the reviewer itself runs in one.
 - It stages through the reflection plugin, so its proposals land in the same directory, carry `source: consolidation`, and go through the same `cru proposals` commands. It reads the same `rejected/` directory.
-- It stores a cursor in `cru.storage`, so the next pass starts after the newest session the last one saw.
+- It stores a cursor in `cru.storage`, so the next pass starts after the newest session the last one saw. The sample is a prefix of the candidates, oldest first, that stops at the first session its cap refuses; the cursor stops there too, so a session the caps left out is a candidate again.
 
 **Known gap.** `cru.session.list()` answers from the daemon's resident session map. A session that ended before a daemon restart is not in that map, so the pass does not see it. The planned **Durable Scheduled Jobs** item in [[Meta/Product#Self-Improvement Avenues|the product map]] is the fix: a run with a persistent store can list sessions from disk.
 

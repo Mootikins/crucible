@@ -9,11 +9,19 @@ end
 
 --- The reflection plugin is not loaded in the runner VM. The plugin reads
 --- its table from `package.loaded`, so a stub there stands in for it. The
---- stub counts user turns the way `build_outcome` does.
+--- stub counts user turns and tool errors the way `build_outcome` does.
 local function count_user_turns(messages: { any }): number
   local n = 0
   for _, m in ipairs(messages) do
     if m.role == "user" then n += 1 end
+  end
+  return n
+end
+
+local function count_tool_errors(messages: { any }): number
+  local n = 0
+  for _, m in ipairs(messages) do
+    if m.role == "tool_result" and m.error then n += 1 end
   end
   return n
 end
@@ -34,7 +42,11 @@ package.loaded["reflection"] = {
   end,
   load_hunks = function(session_id: string): { any }? return nil end,
   build_outcome = function(messages: { any }, hunks: any): any
-    return { user_turns = count_user_turns(messages), tool_errors = 0, hunks_rejected = 0 }
+    return {
+      user_turns = count_user_turns(messages),
+      tool_errors = count_tool_errors(messages),
+      hunks_rejected = 0,
+    }
   end,
   build_transcript = function(messages: { any }, opts: any): string
     return "transcript"
@@ -242,6 +254,61 @@ describe("consolidation", function()
     it("stores the newest started_at as the cursor after a pass", function()
       plugin.run(nil)
 
+      expect.equal("2026-09-01T11:00:00Z", rows["consolidation/last_run"])
+    end)
+
+    it("moves the cursor only past the sessions the reviewer saw", function()
+      -- Three sessions after the cursor, oldest first: two clean, then one
+      -- with a tool error. `max_clean = 1` stops the sample at `b`. The
+      -- cursor must stop there too, so `b` and `c` are candidates again;
+      -- a cursor at the newest candidate would drop `b` for good.
+      plugin.setup({ min_turns = 1, max_clean = 1 })
+      messages_by_id.a = messages_by_id.short
+      messages_by_id.b = messages_by_id.short
+      messages_by_id.c = {
+        { role = "user", content = "run it" },
+        { role = "tool_result", content = "", error = "exit 1" },
+      }
+      cru.session.list = function()
+        return {
+          { id = "a", state = "ended", started_at = "2026-09-01T10:00:00Z" },
+          { id = "b", state = "ended", started_at = "2026-09-01T11:00:00Z" },
+          { id = "c", state = "ended", started_at = "2026-09-01T12:00:00Z" },
+        }, nil
+      end
+
+      plugin.run(nil)
+
+      expect.equal(1, #review_calls)
+      local first: any = review_calls[1].prompt
+      expect.truthy(first:find("### session a", 1, true))
+      expect.is_nil(first:find("### session b", 1, true))
+      expect.equal("2026-09-01T10:00:00Z", rows["consolidation/last_run"])
+
+      plugin.run(nil)
+
+      expect.equal(2, #review_calls)
+      local second: any = review_calls[2].prompt
+      expect.truthy(second:find("### session b", 1, true))
+      expect.truthy(second:find("### session c", 1, true))
+      expect.is_nil(second:find("### session a", 1, true))
+      expect.equal("2026-09-01T12:00:00Z", rows["consolidation/last_run"])
+    end)
+
+    it("moves the cursor past a short session that follows the sample", function()
+      -- `short` has one user turn and `min_turns` is 2, so it never
+      -- qualifies. When every session that qualifies was taken, the cursor
+      -- moves past the newest candidate, so no pass reads `short` again.
+      cru.session.list = function()
+        return {
+          { id = "long", state = "ended", started_at = "2026-09-01T10:00:00Z" },
+          { id = "short", state = "ended", started_at = "2026-09-01T11:00:00Z" },
+        }, nil
+      end
+
+      plugin.run(nil)
+
+      expect.equal(1, #review_calls)
       expect.equal("2026-09-01T11:00:00Z", rows["consolidation/last_run"])
     end)
 

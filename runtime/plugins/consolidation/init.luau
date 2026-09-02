@@ -63,21 +63,26 @@ end
 
 --- Split the sessions into the ones with a tool error or a rejected edit and
 --- the clean ones. The problem group comes first, and each group keeps at
---- most its cap, in the order the caller gave.
-function M.stratify(sessions: { any }, caps: { max_problem: number, max_clean: number }): { any }
+--- most its cap. The walk goes in the order the caller gave (oldest first)
+--- and stops at the first session that does not fit its group, so the
+--- sample is a prefix of `sessions`. The second answer is the length of
+--- that prefix: the cursor may move past it and no session is skipped.
+function M.stratify(sessions: { any }, caps: { max_problem: number, max_clean: number }): ({ any }, number)
     local problem, clean = {}, {}
+    local taken = 0
     for _, s in ipairs(sessions) do
         local o = s.outcome or {}
-        if (o.tool_errors or 0) > 0 or (o.hunks_rejected or 0) > 0 then
-            problem[#problem + 1] = s
-        else
-            clean[#clean + 1] = s
-        end
+        local bad = (o.tool_errors or 0) > 0 or (o.hunks_rejected or 0) > 0
+        local group = if bad then problem else clean
+        local cap = if bad then caps.max_problem else caps.max_clean
+        if #group >= cap then break end
+        group[#group + 1] = s
+        taken += 1
     end
     local out = {}
-    for i = 1, math.min(#problem, caps.max_problem) do out[#out + 1] = problem[i] end
-    for i = 1, math.min(#clean, caps.max_clean) do out[#out + 1] = clean[i] end
-    return out
+    for _, s in ipairs(problem) do out[#out + 1] = s end
+    for _, s in ipairs(clean) do out[#out + 1] = s end
+    return out, taken
 end
 
 M.SYSTEM_PROMPT = [==[
@@ -176,7 +181,6 @@ function M.run(kiln: string?): { string }
         cru.log("debug", "consolidation: no session ended since the last pass")
         return {}
     end
-    local newest = tostring(candidates[#candidates].started_at)
 
     -- Read each candidate's outcome before the sample is drawn: the sample
     -- puts the sessions with problems first, and only a transcript says
@@ -188,17 +192,31 @@ function M.run(kiln: string?): { string }
         if messages then
             local outcome = ref.build_outcome(messages, ref.load_hunks(s.id))
             if outcome.user_turns >= min_turns then
-                scored[#scored + 1] = { id = s.id, messages = messages, outcome = outcome }
+                scored[#scored + 1] = {
+                    id = s.id, started_at = s.started_at, messages = messages, outcome = outcome,
+                }
             end
         end
     end
-    local samples = M.stratify(scored, {
+    local samples, taken = M.stratify(scored, {
         max_problem = config.get("max_problem", 5),
         max_clean = config.get("max_clean", 3),
     })
+
+    -- The cursor moves past what this pass saw and no further. When every
+    -- session that qualified was taken, it moves past the newest candidate:
+    -- a short session needs no review. When a cap stopped the walk, it
+    -- stops at the last session taken, and the rest are candidates again.
+    local newest: string? = nil
+    if taken == #scored then
+        newest = tostring(candidates[#candidates].started_at)
+    elseif taken > 0 then
+        newest = tostring(scored[taken].started_at)
+    end
+
     if #samples == 0 then
         cru.log("debug", "consolidation: no session passed the gates")
-        write_cursor(newest)
+        if newest then write_cursor(newest) end
         return {}
     end
 
@@ -244,7 +262,7 @@ function M.run(kiln: string?): { string }
             #written, target))
     end
     -- The reviewer saw these sessions, so the next pass starts after them.
-    write_cursor(newest)
+    if newest then write_cursor(newest) end
     return written
 end
 
