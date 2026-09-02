@@ -76,6 +76,9 @@ pub struct NotePipeline {
 
     /// Kiln root path for normalizing stored paths to kiln-relative form
     kiln_root: Option<std::path::PathBuf>,
+
+    /// Block-granularity vector store. `None` in tests that don't exercise it.
+    block_store: Option<Arc<dyn crucible_core::storage::BlockStore>>,
 }
 
 impl NotePipeline {
@@ -94,6 +97,7 @@ impl NotePipeline {
             text_index: None,
             config,
             kiln_root: None,
+            block_store: None,
         }
     }
 
@@ -101,6 +105,14 @@ impl NotePipeline {
     /// body here after the SQLite metadata upsert succeeds.
     pub fn with_text_index(mut self, text: Arc<crate::storage::sqlite::FtsIndex>) -> Self {
         self.text_index = Some(text);
+        self
+    }
+
+    /// Attach the block store. The pipeline rewrites a note's block rows
+    /// after the metadata upsert succeeds, the same order the text index
+    /// follows: nothing points at a note the `notes` table does not have.
+    pub fn with_block_store(mut self, blocks: Arc<dyn crucible_core::storage::BlockStore>) -> Self {
+        self.block_store = Some(blocks);
         self
     }
 
@@ -251,6 +263,20 @@ impl NotePipeline {
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
             .with_context(|| format!("Phase 4: Failed to store note for '{}'", path.display()))?;
+
+        // Rewrite this note's block rows. After the upsert, because the rows
+        // reference `notes(path)`. A failure here costs block-granularity
+        // retrieval for one note, not the indexing pass.
+        if let Some(blocks) = self.block_store.as_ref() {
+            let records = Self::block_records(&enriched, &path_str);
+            if let Err(e) = blocks.replace_note_blocks(&path_str, records).await {
+                tracing::error!(
+                    path = %path_str,
+                    ?e,
+                    "block rows not written; precognition will fall back to whole notes for this one"
+                );
+            }
+        }
 
         // Mirror the note into the FTS5 index. The full file body goes in,
         // not `content.plain_text` — that is capped at 1000 characters for
@@ -495,6 +521,49 @@ impl NotePipeline {
     ///
     /// This bridges the enrichment domain model to the storage domain model,
     /// extracting the key fields needed for indexing and search.
+    /// Pair each parsed block with the vector enrichment produced for it.
+    ///
+    /// The pairing is by block id, the one contract `enrichment::block_id`
+    /// defines. A block under the word floor has no embedding and is stored
+    /// anyway: the row is what lets a later pass find it, and a `NULL`
+    /// embedding simply never wins a search.
+    fn block_records(
+        enriched: &crucible_core::enrichment::EnrichedNote,
+        storage_path: &str,
+    ) -> Vec<crucible_core::storage::BlockRecord> {
+        use std::collections::HashMap;
+
+        let by_id: HashMap<&str, &crucible_core::enrichment::BlockEmbedding> = enriched
+            .embeddings
+            .iter()
+            .map(|e| (e.block_id.as_str(), e))
+            .collect();
+
+        enriched
+            .parsed
+            .content
+            .blocks
+            .iter()
+            .enumerate()
+            .map(|(index, block)| {
+                let embedding = by_id
+                    .get(crate::enrichment::block_id(index).as_str())
+                    .copied();
+                crucible_core::storage::BlockRecord {
+                    note_path: storage_path.to_string(),
+                    span_start: block.start_offset,
+                    span_end: block.end_offset,
+                    kind: block.kind.as_str().to_string(),
+                    content_hash: block.content_hash,
+                    text: block.text.clone(),
+                    embedding: embedding.map(|e| e.vector.clone()),
+                    embedding_model: embedding.map(|e| e.model.clone()),
+                    embedding_dimensions: embedding.map(|e| e.dimensions as u32),
+                }
+            })
+            .collect()
+    }
+
     fn enriched_to_record(
         &self,
         enriched: &crucible_core::enrichment::EnrichedNote,
@@ -1145,5 +1214,107 @@ mod tests {
 
         assert_eq!(record.embedding, None);
         assert_eq!(record.embedding_model, None);
+    }
+
+    /// A pipeline over a real SQLite kiln, so the block rows are written
+    /// through the same store production uses.
+    async fn sqlite_pipeline() -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
+        use crate::storage::sqlite::{SqliteBlockStore, SqliteNoteStore, SqlitePool};
+
+        let pool = SqlitePool::memory().unwrap();
+        let notes: Arc<dyn NoteStore> = Arc::new(SqliteNoteStore::new(pool.clone()));
+        let blocks: Arc<dyn crucible_core::storage::BlockStore> =
+            Arc::new(SqliteBlockStore::new(pool));
+        let enricher = Arc::new(
+            Enricher::new(Arc::new(crate::test_support::MockEmbeddingProvider::new()))
+                .with_block_cache(blocks.clone()),
+        );
+        let config = NotePipelineConfig {
+            skip_enrichment: false,
+            force_reprocess: true,
+        };
+        let pipeline =
+            NotePipeline::with_config(enricher, notes, config).with_block_store(blocks.clone());
+        (pipeline, blocks)
+    }
+
+    #[tokio::test]
+    async fn indexing_a_note_stores_one_row_per_block() {
+        let (pipeline, blocks) = sqlite_pipeline().await;
+        let file = write_temp_note(
+            "# Title\n\nAlpha has enough words here for embedding.\n\n## Section\n\nBeta has enough words here for embedding.\n",
+        );
+
+        pipeline.process(file.path()).await.unwrap();
+
+        let path = file.path().to_string_lossy().to_string();
+        let stored = blocks.blocks_for_note(&path).await.unwrap();
+
+        let kinds: Vec<&str> = stored.iter().map(|b| b.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["heading", "paragraph", "heading", "paragraph"]);
+        // Spans ascend and point back into the file.
+        assert!(stored.windows(2).all(|w| w[0].span_start < w[1].span_start));
+        // The two prose blocks clear the word floor; the headings do not.
+        assert!(stored[1].embedding.is_some());
+        assert!(stored[3].embedding.is_some());
+        assert!(stored[0].embedding.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_stored_block_can_be_retrieved_by_vector() {
+        let (pipeline, blocks) = sqlite_pipeline().await;
+        let file = write_temp_note(
+            "# Title\n\nAlpha has enough words here for embedding.\n\nBeta has enough words here for embedding.\n",
+        );
+        pipeline.process(file.path()).await.unwrap();
+
+        let path = file.path().to_string_lossy().to_string();
+        let stored = blocks.blocks_for_note(&path).await.unwrap();
+        let target = stored[1].embedding.clone().unwrap();
+
+        let hits = blocks.search_blocks(&target, 10).await.unwrap();
+
+        // The mock returns one vector for every text, so this cannot test
+        // ranking — `block_store::tests::search_returns_the_nearest_block_not_the_note`
+        // does that. What it proves is granularity: a hit names a span and
+        // carries the passage, rather than naming the file it sat in.
+        assert_eq!(hits.len(), 2, "both embedded blocks are reachable");
+        assert!(hits.iter().all(|h| h.block.note_path == path));
+        assert!(hits.iter().any(|h| h.block.text.contains("Alpha")));
+        assert!(hits.iter().any(|h| h.block.text.contains("Beta")));
+        assert!(hits.iter().all(|h| h.block.span_end > h.block.span_start));
+    }
+
+    #[tokio::test]
+    async fn re_indexing_unchanged_text_pays_for_no_new_vectors() {
+        use crate::storage::sqlite::{SqliteBlockStore, SqliteNoteStore, SqlitePool};
+        use crate::test_support::MockEmbeddingProvider;
+
+        let pool = SqlitePool::memory().unwrap();
+        let notes: Arc<dyn NoteStore> = Arc::new(SqliteNoteStore::new(pool.clone()));
+        let blocks: Arc<dyn crucible_core::storage::BlockStore> =
+            Arc::new(SqliteBlockStore::new(pool));
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let enricher = Arc::new(Enricher::new(provider.clone()).with_block_cache(blocks.clone()));
+        let config = NotePipelineConfig {
+            skip_enrichment: false,
+            force_reprocess: true,
+        };
+        let pipeline =
+            NotePipeline::with_config(enricher, notes, config).with_block_store(blocks.clone());
+
+        let file = write_temp_note("Alpha has enough words here for embedding.\n");
+        pipeline.process(file.path()).await.unwrap();
+        let after_first = provider.batch_calls();
+
+        // Same bytes, indexed again. The note vector is still recomputed; the
+        // block vectors come back out of the store.
+        pipeline.process(file.path()).await.unwrap();
+
+        assert_eq!(
+            provider.batch_calls(),
+            after_first,
+            "unchanged block text must not reach the provider a second time"
+        );
     }
 }

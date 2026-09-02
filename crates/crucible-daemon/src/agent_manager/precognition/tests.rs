@@ -23,6 +23,7 @@ mod format_precognition_context_tests {
             highlights: None,
             snippet: snippet.map(|s| s.to_string()),
             kiln: kiln.map(crate::test_support::kiln_name),
+            block: None,
         }
     }
 
@@ -205,6 +206,7 @@ mod precognition_format_hook_tests {
             highlights: None,
             snippet: snippet.map(|s| s.to_string()),
             kiln: kiln.map(crate::test_support::kiln_name),
+            block: None,
         }
     }
 
@@ -458,6 +460,7 @@ mod precognition_select_hook_tests {
             highlights: None,
             snippet: Some(snippet.to_string()),
             kiln: Some(crate::test_support::kiln_name(KILN)),
+            block: None,
         }
     }
 
@@ -961,4 +964,81 @@ mod precognition_select_hook_tests {
             lua_total.saturating_sub(rust_total) / ITERATIONS
         );
     }
+}
+
+#[test]
+fn a_block_hit_is_injected_as_a_passage_with_its_location() {
+    use crucible_core::types::database::BlockRef;
+
+    let results = vec![crucible_core::SearchResult {
+        document_id: crucible_core::DocumentId("guide.md".to_string()),
+        score: 0.91,
+        highlights: None,
+        snippet: Some("run the command with the flag you need".to_string()),
+        kiln: None,
+        block: Some(BlockRef {
+            span_start: 120,
+            span_end: 158,
+            kind: "paragraph".to_string(),
+        }),
+    }];
+
+    let block = AgentManager::precognition_context_block(&results, false);
+
+    assert!(block.contains("Found 1 relevant passages:"));
+    assert!(block.contains("(paragraph at bytes 120-158)"));
+    assert!(block.contains("run the command with the flag you need"));
+}
+
+#[test]
+fn a_note_hit_still_reads_as_a_whole_note() {
+    let results = vec![crucible_core::SearchResult {
+        document_id: crucible_core::DocumentId("guide.md".to_string()),
+        score: 0.42,
+        highlights: None,
+        snippet: Some("the whole file".to_string()),
+        kiln: None,
+        block: None,
+    }];
+
+    let block = AgentManager::precognition_context_block(&results, false);
+
+    assert!(block.contains("Found 1 relevant notes:"));
+    assert!(
+        !block.contains("at bytes"),
+        "a whole-note hit must not claim a location it does not have"
+    );
+}
+
+#[test]
+fn a_mixed_result_set_says_how_many_of_each() {
+    use crucible_core::types::database::BlockRef;
+
+    let results = vec![
+        crucible_core::SearchResult {
+            document_id: crucible_core::DocumentId("a.md".to_string()),
+            score: 0.9,
+            highlights: None,
+            snippet: Some("a passage".to_string()),
+            kiln: None,
+            block: Some(BlockRef {
+                span_start: 0,
+                span_end: 9,
+                kind: "callout".to_string(),
+            }),
+        },
+        crucible_core::SearchResult {
+            document_id: crucible_core::DocumentId("b.md".to_string()),
+            score: 0.8,
+            highlights: None,
+            snippet: Some("a file".to_string()),
+            kiln: None,
+            block: None,
+        },
+    ];
+
+    let block = AgentManager::precognition_context_block(&results, false);
+
+    assert!(block.contains("Found 2 relevant results (1 passages, 1 whole notes):"));
+    assert!(block.contains("(callout at bytes 0-9)"));
 }

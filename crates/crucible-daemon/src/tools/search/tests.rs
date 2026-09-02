@@ -25,6 +25,15 @@ struct OneHitRepository;
 
 #[async_trait::async_trait]
 impl KnowledgeRepository for OneHitRepository {
+    async fn search_blocks(
+        &self,
+        _vector: Vec<f32>,
+        _limit: usize,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        // No block store behind this repository; callers fall back to notes.
+        Ok(Vec::new())
+    }
+
     async fn get_note_by_name(
         &self,
         _name: &str,
@@ -55,6 +64,7 @@ impl KnowledgeRepository for OneHitRepository {
             highlights: None,
             snippet: Some("body".to_string()),
             kiln: None,
+            block: None,
         }])
     }
 }

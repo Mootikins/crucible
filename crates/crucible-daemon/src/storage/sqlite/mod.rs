@@ -34,6 +34,7 @@
 //! ```
 
 pub mod adapters;
+pub mod block_store;
 pub mod config;
 pub mod connection;
 mod error_ext;
@@ -46,6 +47,7 @@ pub mod schema;
 
 // Re-exports
 pub use adapters::{create_sqlite_client, SqliteClientHandle};
+pub use block_store::SqliteBlockStore;
 pub use config::SqliteConfig;
 pub use connection::SqlitePool;
 pub use fts::{FtsIndex, FtsResult};

@@ -31,6 +31,9 @@ pub fn sid(id: &str) -> crucible_core::session::SessionId {
 #[derive(Default)]
 pub struct MockKnowledgeRepository {
     results: Vec<crucible_core::types::SearchResult>,
+    /// What `search_blocks` answers. Empty means "this kiln has no block
+    /// rows", which is what an un-reindexed kiln looks like.
+    block_results: Vec<crucible_core::types::SearchResult>,
     fail_search: bool,
 }
 
@@ -39,9 +42,16 @@ impl MockKnowledgeRepository {
         Self::default()
     }
 
+    /// Script the block-granularity answer.
+    pub fn with_block_results(mut self, results: Vec<crucible_core::types::SearchResult>) -> Self {
+        self.block_results = results;
+        self
+    }
+
     pub fn with_results(results: Vec<crucible_core::types::SearchResult>) -> Self {
         Self {
             results,
+            block_results: Vec::new(),
             fail_search: false,
         }
     }
@@ -49,6 +59,7 @@ impl MockKnowledgeRepository {
     pub fn failing() -> Self {
         Self {
             results: Vec::new(),
+            block_results: Vec::new(),
             fail_search: true,
         }
     }
@@ -56,6 +67,14 @@ impl MockKnowledgeRepository {
 
 #[async_trait]
 impl KnowledgeRepository for MockKnowledgeRepository {
+    async fn search_blocks(
+        &self,
+        _vector: Vec<f32>,
+        _limit: usize,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        Ok(self.block_results.clone())
+    }
+
     async fn get_note_by_name(
         &self,
         _name: &str,

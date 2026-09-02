@@ -11,6 +11,14 @@ use crucible_core::parser::types::BlockKind;
 use crucible_core::parser::BlockHash;
 use crucible_core::ParsedNote;
 
+/// The id a block carries through enrichment: its rank in the note.
+///
+/// One definition, because the pipeline pairs an embedding back to its block
+/// by this string when it writes the rows.
+pub fn block_id(index: usize) -> String {
+    format!("block_{index}")
+}
+
 /// One block queued for embedding.
 struct EmbedCandidate {
     /// The block's rank in the note, as `block_<n>`.
@@ -27,6 +35,9 @@ use tracing::{debug, info};
 /// Enriches parsed notes with embeddings and metadata.
 pub struct Enricher {
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    /// Where already-paid-for vectors are looked up by content hash.
+    /// `None` disables reuse; every block is then embedded afresh.
+    block_cache: Option<Arc<dyn crucible_core::storage::BlockStore>>,
     min_words_for_embedding: usize,
     max_batch_size: usize,
 }
@@ -36,6 +47,7 @@ impl Enricher {
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
             embedding_provider: Some(embedding_provider),
+            block_cache: None,
             min_words_for_embedding: 5,
             max_batch_size: 10,
         }
@@ -45,9 +57,19 @@ impl Enricher {
     pub fn without_embeddings() -> Self {
         Self {
             embedding_provider: None,
+            block_cache: None,
             min_words_for_embedding: 5,
             max_batch_size: 10,
         }
+    }
+
+    /// Reuse vectors already stored for the same text under the same model.
+    ///
+    /// An edit at the top of a file shifts every span below it, so every row
+    /// is rewritten — but the text is unchanged, so no vector is recomputed.
+    pub fn with_block_cache(mut self, blocks: Arc<dyn crucible_core::storage::BlockStore>) -> Self {
+        self.block_cache = Some(blocks);
+        self
     }
 
     /// Create an enricher, using embeddings if a provider is supplied.
@@ -144,9 +166,33 @@ impl Enricher {
             self.max_batch_size
         );
 
-        let mut all_embeddings = Vec::new();
+        // Ask the store what it already holds for this text under this
+        // model. Anything it answers costs no forward pass.
+        let reused = self.reuse_cached(&block_texts, model_name).await;
+        let mut all_embeddings: Vec<BlockEmbedding> = Vec::new();
+        let mut to_embed: Vec<&EmbedCandidate> = Vec::new();
+        for candidate in &block_texts {
+            match reused.get(&candidate.content_hash) {
+                Some(cached) => all_embeddings.push(BlockEmbedding::with_content_hash(
+                    candidate.block_id.clone(),
+                    cached.embedding.clone(),
+                    model_name.to_string(),
+                    None,
+                    candidate.content_hash.to_hex(),
+                )),
+                None => to_embed.push(candidate),
+            }
+        }
 
-        for (batch_idx, chunk) in block_texts.chunks(self.max_batch_size).enumerate() {
+        if !all_embeddings.is_empty() {
+            debug!(
+                "Reused {} of {} block vectors from the store",
+                all_embeddings.len(),
+                block_texts.len()
+            );
+        }
+
+        for (batch_idx, chunk) in to_embed.chunks(self.max_batch_size).enumerate() {
             debug!(
                 "Processing batch {} ({} blocks)",
                 batch_idx + 1,
@@ -180,6 +226,8 @@ impl Enricher {
             model_name
         );
 
+        // Back into document order: the reused ones were collected first.
+        all_embeddings.sort_by(|a, b| a.block_id.cmp(&b.block_id));
         Ok(all_embeddings)
     }
 
@@ -188,6 +236,32 @@ impl Enricher {
     /// One pass in document order. The id is the block's rank in the note, so
     /// it names a position in the document rather than a per-kind counter, and
     /// the heading trail comes from the walk rather than from an offset map.
+    /// Vectors the store already holds for these blocks under `model`.
+    ///
+    /// A miss is not an error: an unreachable store means every block is
+    /// embedded afresh, which is correct, only slower.
+    async fn reuse_cached(
+        &self,
+        candidates: &[EmbedCandidate],
+        model: &str,
+    ) -> std::collections::HashMap<BlockHash, crucible_core::storage::CachedVector> {
+        let Some(cache) = &self.block_cache else {
+            return std::collections::HashMap::new();
+        };
+
+        let mut hashes: Vec<BlockHash> = candidates.iter().map(|c| c.content_hash).collect();
+        hashes.sort_by_key(|h| h.to_hex());
+        hashes.dedup();
+
+        match cache.cached_vectors(&hashes, model).await {
+            Ok(found) => found.into_iter().collect(),
+            Err(e) => {
+                debug!(error = %e, "block vector cache unavailable; embedding every block");
+                std::collections::HashMap::new()
+            }
+        }
+    }
+
     fn extract_block_texts(
         &self,
         parsed: &ParsedNote,
@@ -222,7 +296,7 @@ impl Enricher {
                 trail.push((level, block.text.as_str()));
             }
 
-            let block_id = format!("block_{}", index);
+            let block_id = block_id(index);
             if !embed_all && !changed_blocks.contains(&block_id) {
                 continue;
             }

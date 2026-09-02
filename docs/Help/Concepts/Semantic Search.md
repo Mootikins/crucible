@@ -18,7 +18,9 @@ Semantic search finds content based on **meaning**, not just matching words. Whe
 2. **Searching**: When you search, your query is also converted to an embedding
 3. **Matching**: Crucible finds notes whose embeddings are closest to your query's embedding
 
-Retrieval is **note-level**: during indexing each note is embedded once, title first, and that single vector is what a search scores against. Crucible also embeds each block of the note, but it keeps no block-granularity index yet, so searches return matching notes, not individual paragraphs.
+`cru search` and the `search_vectors` RPC are **note-level**: during indexing each note is embedded once, title first, and that single vector is what they score against.
+
+Crucible also embeds each block of a note and stores it in `note_blocks`, one row per block with its byte span. **Precognition** retrieves through that table, so the context it injects names the passage that matched rather than the file it sat in. A kiln indexed before the table existed has no rows yet and falls back to whole notes until its next index pass.
 
 Under the hood, matching is an **exact cosine-similarity scan** over the `embedding` column of the kiln's SQLite database — every embedded note is scored against the query and the top results are returned. There is no approximate (ANN) index and no separate vector store; at kiln scale the exact scan is fast, and exact means recall is always 100%.
 

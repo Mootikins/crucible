@@ -114,4 +114,12 @@ pub trait KnowledgeRepository: Send + Sync {
     /// Search for notes using vector embeddings, returning at most `limit`
     /// hits ranked by similarity descending.
     async fn search_vectors(&self, vector: Vec<f32>, limit: usize) -> Result<Vec<SearchResult>>;
+
+    /// Search at block granularity: each hit names a passage inside a note,
+    /// with its byte span and its own text as the snippet.
+    ///
+    /// Required rather than defaulted, so a repository cannot silently answer
+    /// nothing here while answering `search_vectors`. An implementation with
+    /// no block store returns an empty vector, and the caller falls back.
+    async fn search_blocks(&self, vector: Vec<f32>, limit: usize) -> Result<Vec<SearchResult>>;
 }

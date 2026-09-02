@@ -5,6 +5,7 @@
 //! ## Key Components
 //!
 //! - **NoteStore**: Unified note metadata and vector search storage
+//! - **BlockStore**: Block-granularity vectors, so retrieval can name a passage
 //! - **PropertyStore**: Note property storage
 //!
 //! ## Architecture
@@ -15,6 +16,7 @@
 //! - Multiple storage backends (SQLite, in-memory)
 //! - Clean separation of concerns
 
+pub mod block_store;
 pub mod error;
 pub mod error_ext;
 pub mod note_store;
@@ -22,6 +24,7 @@ pub mod property_store;
 pub mod scope;
 
 // Re-export main types for convenience
+pub use block_store::{BlockHit, BlockRecord, BlockStore, CachedVector};
 pub use error::{StorageError, StorageResult};
 pub use error_ext::StorageResultExt;
 pub use note_store::{

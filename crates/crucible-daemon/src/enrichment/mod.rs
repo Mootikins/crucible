@@ -7,4 +7,4 @@
 pub mod service;
 pub mod types;
 
-pub use service::Enricher;
+pub use service::{block_id, Enricher};

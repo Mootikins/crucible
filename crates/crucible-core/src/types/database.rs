@@ -91,4 +91,24 @@ pub struct SearchResult {
     /// was built from a registered kiln. Never a path, never a basename.
     #[serde(default)]
     pub kiln: Option<crate::config::KilnName>,
+
+    /// The block this hit names, when retrieval reached block granularity.
+    ///
+    /// `None` means the hit names a whole note — either the kiln predates the
+    /// block store and has not been re-indexed, or the caller asked for note
+    /// search. A reader can tell the two apart, which matters: a block
+    /// reference points somewhere, a note reference points at a file.
+    #[serde(default)]
+    pub block: Option<BlockRef>,
+}
+
+/// Where in a note a hit sits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockRef {
+    /// Byte offset where the block starts, relative to the note body.
+    pub span_start: usize,
+    /// Byte offset one past the block's last byte.
+    pub span_end: usize,
+    /// The block's kind: `heading`, `paragraph`, `code`, `callout`, …
+    pub kind: String,
 }

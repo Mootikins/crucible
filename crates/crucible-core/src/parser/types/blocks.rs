@@ -41,6 +41,32 @@ pub enum BlockKind {
     HorizontalRule,
 }
 
+impl BlockKind {
+    /// The kind's stable name, as stored and as shown to a reader.
+    ///
+    /// One word per kind. A callout's own type is not folded in here: the
+    /// name says what the block is, not which flavour of callout.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BlockKind::Heading { .. } => "heading",
+            BlockKind::Paragraph => "paragraph",
+            BlockKind::Code { .. } => "code",
+            BlockKind::List { .. } => "list",
+            BlockKind::Blockquote => "quote",
+            BlockKind::Callout { .. } => "callout",
+            BlockKind::Latex => "latex",
+            BlockKind::Table => "table",
+            BlockKind::HorizontalRule => "rule",
+        }
+    }
+}
+
+impl std::fmt::Display for BlockKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// One top-level block of a note, in document order.
 ///
 /// The parser emits these in one pass over the markdown-it tree, so their

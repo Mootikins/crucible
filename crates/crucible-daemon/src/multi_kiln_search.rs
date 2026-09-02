@@ -32,7 +32,7 @@ pub async fn search_across_kilns(
     provider_trust: Option<TrustLevel>,
     workspace: Option<&Path>,
 ) -> Result<Vec<SearchResult>> {
-    let mut best: HashMap<(PathBuf, String), SearchResult> = HashMap::new();
+    let mut best: HashMap<(PathBuf, String, Option<usize>), SearchResult> = HashMap::new();
 
     for source in sources {
         // Trust filtering: skip kilns whose classification exceeds provider
@@ -55,20 +55,44 @@ pub async fn search_across_kilns(
                 continue;
             }
         }
-        let results = match source
+        // Blocks first: a hit that names a passage is strictly more useful
+        // than one that names the file it sat in. A kiln indexed before the
+        // block store existed answers nothing here, so the note search stays
+        // as the fallback rather than as a second-class path.
+        let block_results = match source
             .knowledge_repo
-            .search_vectors(query_embedding.clone(), top_k)
+            .search_blocks(query_embedding.clone(), top_k)
             .await
         {
             Ok(results) => results,
             Err(e) => {
                 tracing::warn!(
-                    "Kiln search failed for {}: {}",
+                    "Kiln block search failed for {}, falling back to notes: {}",
                     source.kiln_path.display(),
                     e
                 );
-                continue;
+                Vec::new()
             }
+        };
+
+        let results = if block_results.is_empty() {
+            match source
+                .knowledge_repo
+                .search_vectors(query_embedding.clone(), top_k)
+                .await
+            {
+                Ok(results) => results,
+                Err(e) => {
+                    tracing::warn!(
+                        "Kiln search failed for {}: {}",
+                        source.kiln_path.display(),
+                        e
+                    );
+                    continue;
+                }
+            }
+        } else {
+            block_results
         };
 
         for mut result in results {
@@ -78,7 +102,14 @@ pub async fn search_across_kilns(
             // carries one.
             result.kiln = source.kiln_name.clone();
             let doc_id: DocumentId = result.document_id.clone();
-            let key = (source.kiln_path.clone(), doc_id.0.clone());
+            // Several blocks of one note are several hits, so the span joins
+            // the key. Without it the merge would keep one block per note and
+            // throw the granularity away at the last step.
+            let key = (
+                source.kiln_path.clone(),
+                doc_id.0.clone(),
+                result.block.as_ref().map(|b| b.span_start),
+            );
 
             best.entry(key)
                 .and_modify(|existing| {
@@ -111,6 +142,7 @@ mod tests {
             highlights: None,
             snippet: None,
             kiln: None,
+            block: None,
         }
     }
 
@@ -486,5 +518,84 @@ mod tests {
         assert!(results
             .iter()
             .any(|r| r.document_id.0 == "unclassified-doc"));
+    }
+
+    fn block_result(document_id: &str, score: f64, span_start: usize) -> SearchResult {
+        SearchResult {
+            document_id: DocumentId(document_id.to_string()),
+            score,
+            highlights: None,
+            snippet: Some(format!("passage at {span_start}")),
+            kiln: None,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start,
+                span_end: span_start + 10,
+                kind: "paragraph".to_string(),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn block_hits_win_over_whole_note_hits() {
+        let dir = TempDir::new().unwrap();
+        let repo = MockKnowledgeRepository::with_results(vec![mock_result("a.md", 0.99)])
+            .with_block_results(vec![block_result("a.md", 0.5, 40)]);
+        let sources = vec![KilnSearchSource {
+            kiln_path: dir.path().to_path_buf(),
+            kiln_name: None,
+            knowledge_repo: Arc::new(repo),
+        }];
+
+        let results = search_across_kilns(&sources, vec![1.0], 10, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(
+            results[0].block.is_some(),
+            "a kiln with block rows must answer with passages, even at a lower score"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_kiln_without_block_rows_falls_back_to_notes() {
+        let dir = TempDir::new().unwrap();
+        // No block results scripted: what an un-reindexed kiln looks like.
+        let repo = MockKnowledgeRepository::with_results(vec![mock_result("a.md", 0.7)]);
+        let sources = vec![KilnSearchSource {
+            kiln_path: dir.path().to_path_buf(),
+            kiln_name: None,
+            knowledge_repo: Arc::new(repo),
+        }];
+
+        let results = search_across_kilns(&sources, vec![1.0], 10, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].block.is_none());
+    }
+
+    #[tokio::test]
+    async fn several_blocks_of_one_note_all_survive_the_merge() {
+        let dir = TempDir::new().unwrap();
+        let repo = MockKnowledgeRepository::new().with_block_results(vec![
+            block_result("a.md", 0.9, 0),
+            block_result("a.md", 0.8, 40),
+            block_result("a.md", 0.7, 80),
+        ]);
+        let sources = vec![KilnSearchSource {
+            kiln_path: dir.path().to_path_buf(),
+            kiln_name: None,
+            knowledge_repo: Arc::new(repo),
+        }];
+
+        let results = search_across_kilns(&sources, vec![1.0], 10, None, None)
+            .await
+            .unwrap();
+
+        // The dedup key is (kiln, note, span). Keyed on the note alone, this
+        // would collapse to one and throw the granularity away at the last step.
+        assert_eq!(results.len(), 3);
     }
 }

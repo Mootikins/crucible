@@ -43,6 +43,18 @@ fn plugin_result_payload(
     if let Some(name) = result.kiln.as_ref() {
         entry.insert("kiln".to_string(), serde_json::json!(name.as_str()));
     }
+    // Present only for a block hit, so a handler asking `if note.block` gets
+    // a truthful answer about which granularity it is looking at.
+    if let Some(block) = result.block.as_ref() {
+        entry.insert(
+            "block".to_string(),
+            serde_json::json!({
+                "kind": block.kind,
+                "span_start": block.span_start,
+                "span_end": block.span_end,
+            }),
+        );
+    }
     serde_json::Value::Object(entry)
 }
 
@@ -102,7 +114,19 @@ impl AgentManager {
         if results.is_empty() {
             return String::new();
         }
-        let mut context = format!("<system>\nFound {} relevant notes:\n", results.len());
+        let blocks = results.iter().filter(|r| r.block.is_some()).count();
+        let heading = if blocks == results.len() {
+            format!("Found {} relevant passages:", results.len())
+        } else if blocks > 0 {
+            format!(
+                "Found {} relevant results ({blocks} passages, {} whole notes):",
+                results.len(),
+                results.len() - blocks
+            )
+        } else {
+            format!("Found {} relevant notes:", results.len())
+        };
+        let mut context = format!("<system>\n{heading}\n");
         for result in results {
             let title = result_title(result);
             // The registry name the user typed, or nothing. This used to be
@@ -115,9 +139,18 @@ impl AgentManager {
                 .filter(|_| label_kilns)
                 .map(|name| format!(" [from: {name}]"))
                 .unwrap_or_default();
+            // A block hit names where it sits, so the model can cite the
+            // passage rather than the file. A note hit says nothing extra —
+            // the absence is the signal that this one is a whole note.
+            let where_in_note = result
+                .block
+                .as_ref()
+                .map(|b| format!(" ({} at bytes {}-{})", b.kind, b.span_start, b.span_end))
+                .unwrap_or_default();
             context.push_str(&format!(
-                "\n## {}{} (similarity: {:.2})\n\n{}\n",
+                "\n## {}{}{} (similarity: {:.2})\n\n{}\n",
                 title,
+                where_in_note,
                 kiln_label,
                 result.score,
                 result.snippet.clone().unwrap_or_default()

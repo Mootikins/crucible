@@ -137,6 +137,15 @@ pub(crate) fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
 
 #[async_trait]
 impl KnowledgeRepository for DaemonStorageClient {
+    async fn search_blocks(
+        &self,
+        _vector: Vec<f32>,
+        _limit: usize,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        // No block store behind this repository; callers fall back to notes.
+        Ok(Vec::new())
+    }
+
     async fn get_note_by_name(&self, name: &str) -> CoreResult<Option<ParsedNote>> {
         // Use the backend-agnostic get_note_by_name RPC method
         let result = self
@@ -207,6 +216,7 @@ impl KnowledgeRepository for DaemonStorageClient {
                 highlights: None,
                 snippet: None,
                 kiln: None,
+                block: None,
             })
             .collect())
     }

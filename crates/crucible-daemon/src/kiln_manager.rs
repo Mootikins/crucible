@@ -92,6 +92,12 @@ impl StorageHandle {
         self.sqlite.as_note_store()
     }
 
+    /// Block-granularity vector store (SQLite). One row per block, so
+    /// retrieval can name the passage that answered rather than the file.
+    pub fn as_block_store(&self) -> Arc<dyn crucible_core::storage::BlockStore> {
+        self.sqlite.as_block_store()
+    }
+
     /// Property/EAV store (SQLite).
     pub fn as_property_store(&self) -> Arc<dyn crucible_core::storage::PropertyStore> {
         self.sqlite.as_property_store()
@@ -1109,9 +1115,11 @@ async fn create_pipeline(
         info!("Kiln enrichment skipped (no config)");
         None
     };
-    let enricher = Arc::new(crate::enrichment::Enricher::from_optional_provider(
-        embedding_provider,
-    ));
+    let block_store = handle.as_block_store();
+    let enricher = Arc::new(
+        crate::enrichment::Enricher::from_optional_provider(embedding_provider)
+            .with_block_cache(block_store.clone()),
+    );
 
     // Get NoteStore from handle
     let note_store = handle.as_note_store();
@@ -1119,7 +1127,8 @@ async fn create_pipeline(
     let config = pipeline_config(enrichment_config);
 
     let pipeline = NotePipeline::with_config(enricher, note_store, config)
-        .with_text_index(handle.text.clone());
+        .with_text_index(handle.text.clone())
+        .with_block_store(block_store);
 
     Ok(pipeline)
 }

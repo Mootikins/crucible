@@ -44,6 +44,9 @@ fn scope_for(kiln_path: Option<&Path>) -> crucible_core::storage::Scope {
 pub struct SqliteKnowledgeRepository {
     store: Arc<SqliteNoteStore>,
     kiln_path: Option<PathBuf>,
+    /// Block-granularity search. `None` leaves `search_blocks` answering
+    /// nothing, and callers fall back to whole-note hits.
+    blocks: Option<Arc<dyn crucible_core::storage::BlockStore>>,
 }
 
 impl SqliteKnowledgeRepository {
@@ -52,6 +55,7 @@ impl SqliteKnowledgeRepository {
         Self {
             store,
             kiln_path: None,
+            blocks: None,
         }
     }
 
@@ -60,7 +64,14 @@ impl SqliteKnowledgeRepository {
         Self {
             store,
             kiln_path: Some(kiln_path),
+            blocks: None,
         }
+    }
+
+    /// Attach the block store, so `search_blocks` can answer.
+    pub fn with_block_store(mut self, blocks: Arc<dyn crucible_core::storage::BlockStore>) -> Self {
+        self.blocks = Some(blocks);
+        self
     }
 
     /// Read the first ~500 characters of a note file as a snippet
@@ -173,6 +184,39 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         Ok(filtered)
     }
 
+    async fn search_blocks(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> CrucibleResult<Vec<SearchResult>> {
+        let Some(blocks) = self.blocks.as_ref() else {
+            return Ok(Vec::new());
+        };
+
+        let hits = blocks
+            .search_blocks(&vector, limit)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Block search failed: {e}")))?;
+
+        Ok(hits
+            .into_iter()
+            .map(|hit| SearchResult {
+                document_id: DocumentId(hit.block.note_path),
+                score: hit.score as f64,
+                highlights: None,
+                // The block's own text is the snippet. Nothing re-reads the
+                // file: what was embedded is what is quoted.
+                snippet: Some(hit.block.text),
+                kiln: None,
+                block: Some(crucible_core::types::database::BlockRef {
+                    span_start: hit.block.span_start,
+                    span_end: hit.block.span_end,
+                    kind: hit.block.kind,
+                }),
+            })
+            .collect())
+    }
+
     async fn search_vectors(
         &self,
         vector: Vec<f32>,
@@ -203,6 +247,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
                     highlights: None,
                     snippet: Some(snippet),
                     kiln: None,
+                    block: None,
                 }
             })
             .collect();

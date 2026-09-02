@@ -62,6 +62,11 @@ impl SqliteClientHandle {
     }
 
     /// Get a trait object for PropertyStore (EAV properties)
+    /// Block-granularity vector store (SQLite).
+    pub fn as_block_store(&self) -> Arc<dyn crucible_core::storage::BlockStore> {
+        Arc::new(super::block_store::SqliteBlockStore::new(self.pool.clone()))
+    }
+
     pub fn as_property_store(&self) -> Arc<dyn PropertyStore> {
         self.note_store.clone()
     }
@@ -74,17 +79,20 @@ impl SqliteClientHandle {
     ///   from other tenants are filtered out).
     /// - Unbound handle → `Scope::Global` (test/admin only).
     pub fn as_knowledge_repository(&self) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
+        let blocks = self.as_block_store();
         match &self.kiln_path {
             Some(p) => Arc::new(
                 crate::storage::sqlite::repository::SqliteKnowledgeRepository::with_kiln_path(
                     self.note_store.clone(),
                     p.clone(),
-                ),
+                )
+                .with_block_store(blocks),
             ),
             None => Arc::new(
                 crate::storage::sqlite::repository::SqliteKnowledgeRepository::new(
                     self.note_store.clone(),
-                ),
+                )
+                .with_block_store(blocks),
             ),
         }
     }

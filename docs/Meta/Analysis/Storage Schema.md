@@ -42,6 +42,7 @@ recorded, and `SCHEMA_VERSION` is the count.
 | v4 | `notes` + 2 indexes, then adds `embedding_model` / `embedding_dimensions` to an older table | `NOTES_SCHEMA`, `note_store.rs` |
 | v5 | `note_links` v2 + 2 indexes; drops a v1 raw-text table if it finds one | `NOTE_LINKS_V2_SCHEMA`, `link_index.rs` |
 | v6 | `notes_fts` (FTS5 virtual table) | `NOTES_FTS_SCHEMA`, `fts.rs` |
+| v7 | `note_blocks` + 2 indexes: one vector per block | `NOTE_BLOCKS_SCHEMA`, `block_store.rs` |
 
 Three properties are worth stating rather than inferring:
 
@@ -76,6 +77,7 @@ The classification everything else turns on.
 |---|---|---|
 | `notes` (path, content_hash, title, tags, links_to, properties, updated_at) | derived | reparsing markdown; `kiln.open --process --force` re-walks every file |
 | `notes_fts` | derived | re-reading note bodies; the kiln open path already backfills it |
+| `note_blocks` | derived-but-costly | reparsing the markdown, but the vectors cost a provider call unless `content_hash` finds them again |
 | `note_links` | derived | re-extracting wikilinks — v1 rows have no spans and cannot be upgraded in place, which is why v5's drop-and-recreate is legitimate |
 | `notes.embedding`, `.embedding_model`, `.embedding_dimensions` | **derived (costly)** | re-embedding every note. This column is the *only* vector store: every semantic entry point scores it with an exact cosine scan. (The former LanceDB mirror at `<kiln>/.crucible/crucible-vectors.lance` was deleted after benchmarking; an orphaned directory of that name in old kilns is dead weight and safe to remove.) |
 | `properties` | **CANONICAL** | nothing. `cru.storage.set` is its only writer, carrying plugin-authored values with no on-disk source |
@@ -88,7 +90,8 @@ exploits, and the reason the code carries a registry rather than a comment:
 
 ```rust
 // storage/sqlite/schema/mod.rs
-pub(crate) const DERIVED_TABLES: &[&str] = &["notes", "notes_fts", "note_links"];
+pub(crate) const DERIVED_TABLES: &[&str] =
+    &["notes", "notes_fts", "note_links", "note_blocks"];
 ```
 
 A test asserts each name is created by exactly one DDL constant, and that

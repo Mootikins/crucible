@@ -19,7 +19,7 @@ use tracing::{debug, info};
 /// Schema version — tied to the crucible binary version.
 /// Bump when adding tables, columns, or data migrations.
 /// The daemon auto-migrates on startup; no user intervention needed.
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 /// Tables the daemon may drop and recreate because their contents are a
 /// function of files on disk. Anything NOT listed here holds data with no
@@ -33,7 +33,7 @@ const SCHEMA_VERSION: i32 = 6;
 /// *truncate*: it carries `embedding`, `embedding_model` and
 /// `embedding_dimensions`, which are recoverable only by re-paying an
 /// embedding provider.
-pub(crate) const DERIVED_TABLES: &[&str] = &["notes", "notes_fts", "note_links"];
+pub(crate) const DERIVED_TABLES: &[&str] = &["notes", "notes_fts", "note_links", "note_blocks"];
 
 /// What a migration run needs to tell its caller. Grows only when a migration
 /// genuinely cannot finish its own job.
@@ -99,6 +99,9 @@ pub fn apply_migrations(conn: &Connection) -> StorageResult<MigrationOutcome> {
     apply_migration_v5(conn, current_version, &mut outcome)?;
     if current_version < 6 {
         apply_migration_v6(conn)?;
+    }
+    if current_version < 7 {
+        apply_migration_v7(conn)?;
     }
 
     Ok(outcome)
@@ -428,6 +431,26 @@ fn apply_migration_v6(conn: &Connection) -> StorageResult<()> {
 
     record_migration(conn, 6)?;
     info!("Migration v6 applied successfully");
+    Ok(())
+}
+
+/// Migration v7: `note_blocks`, the block-granularity vector store
+///
+/// Derived, like `notes_fts`: `note_pipeline` re-parses each note and rewrites
+/// its rows, so a kiln that predates this table fills in on the next index
+/// pass. Additive only — a `CREATE TABLE IF NOT EXISTS` and two indexes.
+///
+/// Three earlier block tables were deleted from this codebase for having no
+/// reader (`1dace3ebd`, `0ec5fedd6`, `1de2bc417`). This one lands with its
+/// reader: precognition retrieves through it.
+fn apply_migration_v7(conn: &Connection) -> StorageResult<()> {
+    debug!("Applying migration v7: note_blocks table");
+
+    conn.execute_batch(crate::storage::sqlite::block_store::NOTE_BLOCKS_SCHEMA)
+        .map_err(|e| StorageError::Backend(format!("v7 note_blocks schema: {}", e)))?;
+
+    record_migration(conn, 7)?;
+    info!("Migration v7 applied successfully");
     Ok(())
 }
 

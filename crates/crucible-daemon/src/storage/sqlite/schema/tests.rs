@@ -552,6 +552,7 @@ fn a_migration_step_can_alter_notes_on_an_existing_database() {
 /// canonical table out of it.
 #[test]
 fn derived_tables_each_appear_in_exactly_one_ddl_constant() {
+    use crate::storage::sqlite::block_store::NOTE_BLOCKS_SCHEMA;
     use crate::storage::sqlite::fts::NOTES_FTS_SCHEMA;
     use crate::storage::sqlite::link_index::NOTE_LINKS_V2_SCHEMA;
     use crate::storage::sqlite::note_store::NOTES_SCHEMA;
@@ -560,6 +561,7 @@ fn derived_tables_each_appear_in_exactly_one_ddl_constant() {
         ("NOTES_SCHEMA", NOTES_SCHEMA),
         ("NOTE_LINKS_V2_SCHEMA", NOTE_LINKS_V2_SCHEMA),
         ("NOTES_FTS_SCHEMA", NOTES_FTS_SCHEMA),
+        ("NOTE_BLOCKS_SCHEMA", NOTE_BLOCKS_SCHEMA),
     ];
 
     for table in DERIVED_TABLES {
@@ -606,4 +608,36 @@ fn creates_table(sql: &str, table: &str) -> bool {
             .next()
             .is_some_and(|name| name == table.to_lowercase())
     })
+}
+
+#[test]
+fn a_database_from_before_the_block_table_gains_it_and_keeps_its_notes() {
+    let conn = Connection::open_in_memory().unwrap();
+    apply_migrations(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO notes (path, content_hash, title, tags, links_to, properties, updated_at)
+         VALUES ('kept.md', X'00', 'Kept', '[]', '[]', '{}', '2026-01-01')",
+        [],
+    )
+    .unwrap();
+
+    // Wind the ladder back to v6 and run it again, as an older kiln would.
+    conn.execute("DROP TABLE note_blocks", []).unwrap();
+    conn.execute("DELETE FROM schema_migrations WHERE version = 7", [])
+        .unwrap();
+    apply_migrations(&conn).unwrap();
+
+    let blocks: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'note_blocks'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(blocks, 1, "v7 must create note_blocks on an older kiln");
+
+    let notes: i64 = conn
+        .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(notes, 1, "the migration must not touch existing notes");
 }
