@@ -269,8 +269,12 @@ describe("reflection", function()
       expect.is_nil(plugin.validate_proposal({ kind = "update", target = "Notes/SKILL.md", title = "x", body = "B" }))
     end)
     it("still refuses an update that targets the staging area", function()
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/y.md", title = "y", body = "B" }))
-      expect.truthy(plugin.validate_proposal({ kind = "update", target = "./.crucible/proposals/y.md", title = "y", body = "B" }))
+      local reason = "update may not target the staging area"
+      expect.equal(reason, plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/y.md", title = "y", body = "B" }))
+      expect.equal(reason, plugin.validate_proposal({ kind = "update", target = "./.crucible/proposals/y.md", title = "y", body = "B" }))
+      -- A SKILL.md inside the staging area passes the `.crucible` rule, so
+      -- only the staging rule refuses it.
+      expect.equal(reason, plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/x/SKILL.md", title = "x", body = "B" }))
     end)
     it("refuses an update to the rest of the .crucible directory, as the CLI does", function()
       expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/kiln.toml", title = "T", body = "B" }))

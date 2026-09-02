@@ -482,11 +482,13 @@ fn update_text(
         .and_then(|f| f.get_string("target"))
         .ok_or_else(|| anyhow::anyhow!("an update proposal needs a target"))?;
     check_update_target(&target_rel, &target_rel)?;
-    let dest = resolve_target_within_kiln(kiln, &target_rel)?;
+    // An update replaces a file that exists, so it never creates a parent.
+    // `show` calls this too, and a read must leave the kiln unchanged.
+    let dest = lexical_target_within_kiln(kiln, &target_rel)?;
     if !dest.is_file() {
         bail!("update target does not exist: {}", dest.display());
     }
-    // The lexical check above cannot see a symlink. `fs::write` follows
+    // The lexical checks above cannot see a symlink. `fs::write` follows
     // one, so resolve the real file and apply the guard again.
     let real_rel = real_path_within_kiln(kiln, &dest, &target_rel)?;
     check_update_target(&real_rel, &format!("{target_rel} resolves to {real_rel}"))?;
@@ -519,12 +521,11 @@ fn real_path_within_kiln(kiln: &Path, dest: &Path, target_rel: &str) -> Result<S
     Ok(rel.to_string_lossy().into_owned())
 }
 
-/// Resolve a proposal's `target` to an absolute destination guaranteed to live
-/// inside the kiln, creating its parent directory. Rejects absolute targets and
-/// any `..` component lexically, then canonicalizes the created parent and
-/// asserts it is under the (canonicalized) kiln root — so neither a crafted
-/// path nor a symlink inside the kiln can escape it.
-fn resolve_target_within_kiln(kiln: &Path, target_rel: &str) -> Result<PathBuf> {
+/// Join a proposal's `target` onto the kiln after the lexical checks: an
+/// absolute target and any `..` component are refused. This touches no
+/// file. A symlink is invisible here, so the caller canonicalizes the
+/// parent or the file before it writes.
+fn lexical_target_within_kiln(kiln: &Path, target_rel: &str) -> Result<PathBuf> {
     use std::path::Component;
 
     let target = Path::new(target_rel);
@@ -539,8 +540,16 @@ fn resolve_target_within_kiln(kiln: &Path, target_rel: &str) -> Result<PathBuf> 
             _ => {}
         }
     }
+    Ok(kiln.join(target))
+}
 
-    let dest = kiln.join(target);
+/// Resolve a proposal's `target` to an absolute destination guaranteed to live
+/// inside the kiln, creating its parent directory. Only a kind that lands a
+/// new file calls this: after the lexical checks it canonicalizes the created
+/// parent and asserts it is under the (canonicalized) kiln root, so neither a
+/// crafted path nor a symlink inside the kiln can escape it.
+fn resolve_target_within_kiln(kiln: &Path, target_rel: &str) -> Result<PathBuf> {
+    let dest = lexical_target_within_kiln(kiln, target_rel)?;
     let parent = dest
         .parent()
         .ok_or_else(|| anyhow::anyhow!("proposal target has no parent: {target_rel}"))?;
@@ -1000,6 +1009,54 @@ mod tests {
         assert!(err.to_string().contains("staging"), "got: {err}");
         let text = std::fs::read_to_string(proposals_dir(&config).join("victim.md")).unwrap();
         assert!(text.contains("v\n"), "the staged proposal is untouched");
+
+        // A SKILL.md inside the staging area passes the `.crucible` rule, so
+        // only the staging rule refuses it. The file exists, so nothing else
+        // stops the write.
+        let inside = proposals_dir(&config).join("x");
+        std::fs::create_dir_all(&inside).unwrap();
+        std::fs::write(inside.join("SKILL.md"), "---\nname: x\n---\nv\n").unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "us3",
+            "---\nkind: update\ntarget: .crucible/proposals/x/SKILL.md\ntitle: V\n---\nhijack\n",
+        );
+        let err = accept(&config, "us3").unwrap_err();
+        assert!(err.to_string().contains("staging"), "got: {err}");
+        let text = std::fs::read_to_string(inside.join("SKILL.md")).unwrap();
+        assert!(
+            text.ends_with("v\n"),
+            "the staged skill is untouched: {text}"
+        );
+    }
+
+    #[test]
+    fn show_and_accept_of_a_missing_update_target_create_no_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "m1",
+            "---\nkind: update\ntarget: Nope/Deep/a.md\ntitle: A\n---\nb\n",
+        );
+        write_proposal(
+            &proposals_dir(&config),
+            "m2",
+            "---\nkind: update\ntarget: .crucible/skills/z/SKILL.md\ntitle: Z\n---\nb\n",
+        );
+
+        for id in ["m1", "m2"] {
+            let err = render_show(&config, id).unwrap_err();
+            assert!(err.to_string().contains("does not exist"), "got: {err}");
+            let err = accept(&config, id).unwrap_err();
+            assert!(err.to_string().contains("does not exist"), "got: {err}");
+        }
+        assert!(!kiln.join("Nope").exists(), "show or accept created Nope/");
+        assert!(
+            !kiln.join(".crucible/skills").exists(),
+            "show or accept created .crucible/skills/"
+        );
     }
 
     #[test]
