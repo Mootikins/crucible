@@ -206,7 +206,8 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
     let fm = result.frontmatter.as_ref();
     let kiln = &config.kiln_path;
 
-    let (dest, text) = match ProposalKind::from_frontmatter(fm)? {
+    // `Update` overwrites a checked file. The other kinds create a new one.
+    let (dest, text, overwrite) = match ProposalKind::from_frontmatter(fm)? {
         ProposalKind::Create => {
             // Where the promoted note lands: an explicit `target` (relative to
             // the kiln) or the kiln root under the proposal id.
@@ -214,13 +215,13 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
                 .and_then(|f| f.get_string("target"))
                 .unwrap_or_else(|| format!("{id}.md"));
             let dest = resolve_target_within_kiln(kiln, &target_rel)?;
-            if dest.exists() {
+            if occupied(&dest) {
                 bail!(
                     "refusing to overwrite existing note: {} (edit the proposal's `target` or move the note aside)",
                     dest.display()
                 );
             }
-            (dest, strip_provenance(fm, &result.body))
+            (dest, strip_provenance(fm, &result.body), false)
         }
         ProposalKind::Update => {
             let target_rel = fm
@@ -239,7 +240,7 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
             if is_skill_path(&real_rel) {
                 bail!("an update may not target a skill: {target_rel} resolves to {real_rel}");
             }
-            (dest, strip_provenance(fm, &result.body))
+            (dest, strip_provenance(fm, &result.body), true)
         }
         ProposalKind::Skill => {
             let fm = fm.ok_or_else(|| anyhow::anyhow!("a skill proposal needs frontmatter"))?;
@@ -248,19 +249,42 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
             let name = fm.get_string("name").unwrap_or_default();
             let dest =
                 resolve_target_within_kiln(kiln, &format!("{KILN_SKILLS_DIR}/{name}/SKILL.md"))?;
-            if dest.exists() {
+            if occupied(&dest) {
                 bail!("a skill named {name} already exists; pick a new name or edit it by hand");
             }
-            (dest, text)
+            (dest, text, false)
         }
     };
 
-    std::fs::write(&dest, text).with_context(|| format!("writing {}", dest.display()))?;
+    if overwrite {
+        std::fs::write(&dest, &text)
+    } else {
+        write_new_note(&dest, &text)
+    }
+    .with_context(|| format!("writing {}", dest.display()))?;
     std::fs::remove_file(&path).with_context(|| format!("removing proposal {}", path.display()))?;
 
     println!("Accepted proposal '{id}' -> {}", dest.display());
     println!("The daemon will index it on its next scan.");
     Ok(())
+}
+
+/// True when something already sits at `dest`. `Path::exists` follows a
+/// symlink, so a dangling one reads as free. This check does not follow it.
+fn occupied(dest: &Path) -> bool {
+    dest.symlink_metadata().is_ok()
+}
+
+/// Create `dest` and write `text` into it. `create_new` refuses a path that
+/// already exists, and a symlink counts, so this never writes through one.
+fn write_new_note(dest: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest)?
+        .write_all(text.as_bytes())
 }
 
 /// The spec's `name` rule: 1-64 chars, `a-z`, `0-9` and `-`, no leading or
@@ -921,5 +945,53 @@ mod tests {
         let err = accept(&config, "u7").unwrap_err();
         assert!(err.to_string().contains("escapes the kiln"), "got: {err}");
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "theirs\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_create_refuses_a_dangling_symlink_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let outside = tmp.path().join("outside.md");
+        std::fs::create_dir_all(kiln.join("Notes")).unwrap();
+        std::os::unix::fs::symlink(&outside, kiln.join("Notes/link.md")).unwrap();
+        let config = test_config(&kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "c1",
+            "---\nsource: reflection\ntarget: Notes/link.md\n---\nmine\n",
+        );
+
+        let err = accept(&config, "c1").unwrap_err();
+        assert!(
+            err.to_string().contains("refusing to overwrite"),
+            "got: {err}"
+        );
+        assert!(!outside.exists(), "must not write through the symlink");
+        assert!(
+            proposals_dir(&config).join("c1.md").is_file(),
+            "a refused proposal stays staged"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_skill_refuses_a_dangling_symlink_at_its_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let outside = tmp.path().join("outside.md");
+        let skill_dir = kiln.join(".crucible/skills/linked");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::os::unix::fs::symlink(&outside, skill_dir.join("SKILL.md")).unwrap();
+        let config = test_config(&kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "s4",
+            "---\nkind: skill\nname: linked\ndescription: d\n---\nmine\n",
+        );
+
+        let err = accept(&config, "s4").unwrap_err();
+        assert!(err.to_string().contains("exists"), "got: {err}");
+        assert!(!outside.exists(), "must not write through the symlink");
     }
 }
