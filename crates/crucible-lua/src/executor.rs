@@ -416,7 +416,7 @@ impl LuaExecutor {
 ///
 /// A level the match does not know logs at INFO rather than raising: a plugin
 /// that misspells a level must still get its message out.
-pub(crate) fn register_log_function(lua: &Lua, cru: &mlua::Table) -> Result<(), LuaError> {
+pub fn register_log_function(lua: &Lua, cru: &mlua::Table) -> Result<(), LuaError> {
     let mut root = crate::host_registry::Ns::over(lua, "cru", cru.clone());
     root.func(
         "log",

@@ -115,6 +115,10 @@ pub fn session_vm() -> anyhow::Result<Lua> {
     let cru = crucible_lua::lua_util::get_or_create_namespace(&lua, "cru")
         .map_err(|e| anyhow::anyhow!("cru namespace: {e}"))?;
     crucible_lua::register_hooks_module(&lua, &cru)?;
+    // `cru.log` and `cru.log.notify`, as `build_session_state` registers them
+    // before it installs the session's notify sink.
+    crucible_lua::register_log_function(&lua, &cru)?;
+    crucible_lua::register_notify_module(&lua, &cru)?;
 
     // `AgentManager` uses the default budget too. Nothing here reads it; a
     // registry is required to register the API at all.

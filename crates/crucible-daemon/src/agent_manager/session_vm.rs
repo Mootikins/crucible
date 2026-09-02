@@ -148,6 +148,15 @@ impl AgentManager {
                 if let Err(e) = crucible_lua::register_hooks_module(&lua, &table) {
                     error!(session_id = %session_id, error = %e, "Failed to register lifecycle hooks API");
                 }
+                // `cru.log(level, msg)` and the `cru.log.notify` family. The
+                // notify sink installed below is read by these functions, so
+                // a session VM without them would hold a sink nothing calls.
+                if let Err(e) = crucible_lua::register_log_function(&lua, &table) {
+                    error!(session_id = %session_id, error = %e, "Failed to register cru.log");
+                }
+                if let Err(e) = crucible_lua::register_notify_module(&lua, &table) {
+                    error!(session_id = %session_id, error = %e, "Failed to register cru.log.notify");
+                }
             }
             Err(e) => {
                 error!(session_id = %session_id, error = %e, "Failed to create Lua namespace");

@@ -127,7 +127,7 @@ pub use discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };
 pub use error::{format_lua_error, LuaError};
-pub use executor::LuaExecutor;
+pub use executor::{register_log_function, LuaExecutor};
 pub use fs::register_fs_module;
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,
@@ -142,7 +142,9 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
-pub use notify::{upgrade_with_notify_sink, NotificationSink, NotifyRequest};
+pub use notify::{
+    register_notify_module, upgrade_with_notify_sink, NotificationSink, NotifyRequest,
+};
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{

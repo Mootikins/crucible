@@ -822,6 +822,7 @@ mod lifecycle;
 mod messaging;
 mod models;
 mod models_discovery;
+mod notifications;
 mod parity_capture;
 mod permissions;
 mod precognition;
