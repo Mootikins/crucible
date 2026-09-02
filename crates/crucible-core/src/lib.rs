@@ -78,10 +78,8 @@ pub use types::{
 
 pub use parser::{
     // Parser types (canonical definitions in crucible-core::parser::types)
-    CodeBlock,
     Frontmatter,
     FrontmatterFormat,
-    Heading,
     NoteContent,
     ParsedNote,
     ParsedNoteMetadata,

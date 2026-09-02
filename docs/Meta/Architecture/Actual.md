@@ -431,9 +431,10 @@ kiln-search system message tagged `PRECOGNITION_TAG`
 
 - The two rival "block hash" definitions are gone with the Merkle subsystem.
   `BlockHash` now names one thing: a note's content hash on `NoteRecord`.
-- `ParsedNote` carries two copies of six lists (`parsed_note.rs:39-57`,
-  `content.rs:31-49`); `implementation.rs:454-459` clones them; the daemon DTO fills
-  only the top-level copies (`rpc_client/storage.rs:86`) while
+- The block half of that duplication is gone: `NoteContent` no longer carries
+  per-kind `Vec`s beside `blocks`. The inline lists still double up —
+  `ParsedNote` and `NoteContent` both hold wikilinks, tags and inline links; the
+  daemon DTO fills only the top-level copies (`rpc_client/storage.rs:86`) while
   `repository.rs:111` writes `note.content.wikilinks`.
 - Five frontmatter splitters in core (`implementation.rs:241`,
   `frontmatter_extractor.rs:111`, `workflow.rs:276`, `task.rs:213`) plus

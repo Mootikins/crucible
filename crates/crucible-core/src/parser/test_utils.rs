@@ -68,8 +68,8 @@ mod tests {
         let content = "# Test Heading\n\nSome content with [[wikilink]].";
         let parsed = parse_note(content, "test.md").await.unwrap();
 
-        assert!(!parsed.content.headings.is_empty());
-        assert_eq!(parsed.content.headings[0].text, "Test Heading");
+        assert_eq!(parsed.content.blocks[0].text, "Test Heading");
+        assert_eq!(parsed.metadata.heading_count, 1);
         assert_eq!(parsed.wikilinks.len(), 1);
         assert_eq!(parsed.wikilinks[0].target, "wikilink");
     }

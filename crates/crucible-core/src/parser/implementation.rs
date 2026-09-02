@@ -9,7 +9,8 @@ use super::error::{ParserError, ParserResult};
 use super::extensions::ExtensionRegistry;
 use super::traits::ParserCapabilities;
 use super::types::{
-    Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
+    BlockKind, Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote,
+    ParsedNoteMetadata,
 };
 
 /// The markdown parser.
@@ -250,19 +251,12 @@ impl CrucibleParser {
             word_count: content.split_whitespace().count(),
             char_count: content.chars().count(),
             blocks: Vec::new(),
-            headings: Vec::new(),
-            code_blocks: Vec::new(),
-            paragraphs: Vec::new(),
-            lists: Vec::new(),
             inline_links: Vec::new(),
             wikilinks: Vec::new(),
             tags: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
-            blockquotes: Vec::new(),
             footnotes: super::types::FootnoteMap::new(),
-            tables: Vec::new(),
-            horizontal_rules: Vec::new(),
         };
 
         parse_errors.extend(self.extensions.apply(content, &mut document_content));
@@ -333,13 +327,16 @@ impl CrucibleParser {
         latex: &[LatexExpression],
         footnotes: &FootnoteMap,
     ) -> ParsedNoteMetadata {
+        let count =
+            |want: fn(&BlockKind) -> bool| content.blocks.iter().filter(|b| want(&b.kind)).count();
+
         ParsedNoteMetadata {
             word_count: content.word_count,
             char_count: content.char_count,
-            heading_count: content.headings.len(),
-            code_block_count: content.code_blocks.len(),
-            list_count: content.lists.len(),
-            paragraph_count: content.paragraphs.len(),
+            heading_count: count(|k| matches!(k, BlockKind::Heading { .. })),
+            code_block_count: count(|k| matches!(k, BlockKind::Code { .. })),
+            list_count: count(|k| matches!(k, BlockKind::List { .. })),
+            paragraph_count: count(|k| matches!(k, BlockKind::Paragraph)),
             callout_count: callouts.len(),
             latex_count: latex.len(),
             footnote_count: footnotes.definitions.len(),

@@ -102,6 +102,22 @@ and `InputStyle` with concrete types and left `FrameRenderer`; B7 took option
 and no merge. The agents recorded 160 follow-up notes; section 5a holds them
 after deduplication.
 
+## 1d. Typed block lists result, 2026-09-02
+
+`NoteContent`'s seven per-kind `Vec`s are gone: `headings`, `paragraphs`,
+`code_blocks`, `lists`, `blockquotes`, `tables`, `horizontal_rules`. Nothing
+read them once the enricher moved to `blocks` — `ParsedNoteMetadata`'s counts
+now derive from `blocks`, and `NoteContent::outline` had no caller at all. The
+structs went with them (`Heading`, `Paragraph`, `CodeBlock`, `ListBlock`,
+`ListItem`, `ListType`, `ListMarkerStyle`, `ListStats`, `TaskStatus`,
+`Blockquote`, `Table`, `HorizontalRule`), and so did the two producers that
+existed only to fill them: `BlockquoteExtension` and
+`EnhancedTagsExtension::extract_task_lists`. `CheckboxStatus` stays —
+`workflow.rs` parses task syntax itself, over the raw body.
+
+This closes the block half of B15. The inline half stands: `ParsedNote` and
+`NoteContent` still both carry wikilinks, tags and inline links.
+
 ## 1c. Block subsystem result, 2026-09-02
 
 Every entry below that names `ASTBlock`, `ASTBlockType`, `ExtractionType`,

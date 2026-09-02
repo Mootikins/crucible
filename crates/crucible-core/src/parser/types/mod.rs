@@ -33,15 +33,13 @@ pub use crate::parser::error::ParseError;
 
 // Re-export all types for public API compatibility
 pub use block_hash::BlockHash;
-pub use blocks::{Block, BlockKind, Blockquote, HorizontalRule, Table};
+pub use blocks::{Block, BlockKind};
 pub use callout::{Callout, CalloutType, LatexExpression};
-pub use content::{CodeBlock, Heading, NoteContent, Paragraph};
+pub use content::NoteContent;
 pub use frontmatter::{Frontmatter, FrontmatterFormat};
 pub use inline_metadata::{extract_inline_metadata, InlineMetadata};
 pub use links::{FootnoteDefinition, FootnoteMap, FootnoteReference, InlineLink, Tag, Wikilink};
-pub use lists::{
-    CheckboxStatus, ListBlock, ListItem, ListMarkerStyle, ListStats, ListType, TaskStatus,
-};
+pub use lists::CheckboxStatus;
 pub use parsed_note::{ParsedNote, ParsedNoteBuilder, ParsedNoteMetadata};
 pub use task::{TaskFile, TaskGraph, TaskItem};
 pub use workflow::{
@@ -94,15 +92,6 @@ mod tests {
             fm.get_array("tags"),
             Some(vec!["ai".to_string(), "rust".to_string()])
         );
-    }
-
-    #[test]
-    fn test_heading_id_generation() {
-        let heading = Heading::new(1, "Hello World!", 0);
-        assert_eq!(heading.id, Some("hello-world".to_string()));
-
-        let heading = Heading::new(2, "API Reference (v2)", 10);
-        assert_eq!(heading.id, Some("api-reference-v2".to_string()));
     }
 
     #[test]

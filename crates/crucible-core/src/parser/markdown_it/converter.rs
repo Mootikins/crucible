@@ -8,9 +8,9 @@ use markdown_it::plugins::cmark::block::fence::CodeFence;
 use markdown_it::plugins::cmark::block::heading::ATXHeading;
 use markdown_it::plugins::cmark::block::hr::ThematicBreak;
 use markdown_it::plugins::cmark::block::lheading::SetextHeader;
-use markdown_it::plugins::cmark::block::list::{BulletList, ListItem as MdListItem, OrderedList};
+use markdown_it::plugins::cmark::block::list::{BulletList, OrderedList};
 use markdown_it::plugins::cmark::block::paragraph::Paragraph as MdParagraph;
-use markdown_it::plugins::extra::tables::{Table as MdTable, TableCell, TableHead, TableRow};
+use markdown_it::plugins::extra::tables::Table as MdTable;
 use markdown_it::Node;
 
 /// Converts markdown-it AST to NoteContent
@@ -21,134 +21,11 @@ impl AstConverter {
     pub fn convert(root: &Node, source: &str) -> ParserResult<NoteContent> {
         let mut content = NoteContent::new();
 
-        // Walk the AST and extract content
-        Self::walk_node(root, &mut content)?;
-
-        // The ordered view. One pass over the root's direct children, which
-        // are the document's top-level blocks in order, each carrying its own
-        // source-map span.
+        // One pass over the root's direct children: the document's top-level
+        // blocks, in order, each carrying its own source-map span.
         content.blocks = Self::top_level_blocks(root, source);
 
-        // Calculate word and character counts
-        content.word_count = Self::calculate_word_count(&content);
-        content.char_count = Self::calculate_char_count(&content);
-
         Ok(content)
-    }
-
-    fn walk_node(node: &Node, content: &mut NoteContent) -> ParserResult<()> {
-        // 1. Headings (from CommonMark ATX heading syntax)
-        if let Some(heading) = node.cast::<ATXHeading>() {
-            let text = Self::extract_text(node);
-            if !text.is_empty() {
-                let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-                content
-                    .headings
-                    .push(Heading::new(heading.level, text, offset));
-            }
-        }
-
-        // 2. Horizontal rules / thematic breaks (---, ***, ___)
-        if let Some(hr) = node.cast::<ThematicBreak>() {
-            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-            let style = match hr.marker {
-                '-' => "dash",
-                '*' => "asterisk",
-                '_' => "underscore",
-                _ => "unknown",
-            }
-            .to_string();
-            // Build raw_content from marker and marker_len
-            let raw_content: String = std::iter::repeat_n(hr.marker, hr.marker_len).collect();
-            content
-                .horizontal_rules
-                .push(HorizontalRule::new(raw_content, style, offset));
-        }
-
-        // 3. Code blocks (fenced code blocks ```language ... ```)
-        if let Some(fence) = node.cast::<CodeFence>() {
-            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-            // Extract language from info string (first word)
-            let language = fence
-                .info
-                .split_whitespace()
-                .next()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            content
-                .code_blocks
-                .push(CodeBlock::new(language, fence.content.clone(), offset));
-        }
-
-        // 4. Ordered lists
-        if node.cast::<OrderedList>().is_some() {
-            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-            let mut list_block = ListBlock::new(ListType::Ordered, offset);
-
-            // Count items by iterating children
-            for child in node.children.iter() {
-                if child.cast::<MdListItem>().is_some() {
-                    let item_text = Self::extract_text(child);
-                    let (checkbox_status, cleaned_text) = Self::extract_checkbox(&item_text);
-                    let mut item = ListItem::new(cleaned_text, 0);
-                    item.checkbox_status = checkbox_status;
-                    list_block.add_item(item);
-                }
-            }
-
-            content.lists.push(list_block);
-        }
-
-        // 5. Unordered (bullet) lists
-        if node.cast::<BulletList>().is_some() {
-            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-            let mut list_block = ListBlock::new(ListType::Unordered, offset);
-
-            // Count items by iterating children
-            for child in node.children.iter() {
-                if child.cast::<MdListItem>().is_some() {
-                    let item_text = Self::extract_text(child);
-                    let (checkbox_status, cleaned_text) = Self::extract_checkbox(&item_text);
-                    let mut item = ListItem::new(cleaned_text, 0);
-                    item.checkbox_status = checkbox_status;
-                    list_block.add_item(item);
-                }
-            }
-
-            content.lists.push(list_block);
-        }
-
-        // 6. Tables (GFM tables)
-        if node.cast::<MdTable>().is_some() {
-            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-            let (rows, columns, headers) = Self::extract_table_structure(node);
-
-            // Build raw content by extracting text from all cells
-            let raw_content = Self::extract_text(node);
-
-            content
-                .tables
-                .push(Table::new(raw_content, headers, columns, rows, offset));
-        }
-
-        // 7. Paragraphs. Gate on markdown-it's own paragraph node: the walk
-        // recurses into children, so a type test that any container satisfies
-        // emits the document root and every nesting level as its own
-        // paragraph, each repeating the text below it.
-        if node.is::<MdParagraph>() {
-            let text = Self::extract_text(node);
-            if !text.trim().is_empty() {
-                let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-                content.paragraphs.push(Paragraph::new(text, offset));
-            }
-        }
-
-        // Recursively process children
-        for child in node.children.iter() {
-            Self::walk_node(child, content)?;
-        }
-
-        Ok(())
     }
 
     /// Build the ordered block list from the root's direct children.
@@ -164,17 +41,35 @@ impl AstConverter {
                 let (mut kind, text) = Self::classify(node)?;
                 let (start_offset, end_offset) = node.srcmap?.get_byte_offsets();
 
-                // A display formula reaches markdown-it as a paragraph, so the
-                // source decides, not the stripped text.
+                // Two of Crucible's block types are not markdown-it nodes, so
+                // the source span decides, not the stripped text: a display
+                // formula arrives as a paragraph, a callout as a blockquote.
                 if kind == BlockKind::Paragraph
                     && Self::is_display_formula(source, start_offset, end_offset)
                 {
                     kind = BlockKind::Latex;
                 }
+                if kind == BlockKind::Blockquote {
+                    if let Some(callout_type) =
+                        Self::callout_marker(source, start_offset, end_offset)
+                    {
+                        kind = BlockKind::Callout { callout_type };
+                    }
+                }
 
                 Some(Block::new(kind, text, start_offset, end_offset, source))
             })
             .collect()
+    }
+
+    /// The callout type a `> [!type]` marker names, if the span opens with one.
+    fn callout_marker(source: &str, start_offset: usize, end_offset: usize) -> Option<CalloutType> {
+        let span = source.get(start_offset..end_offset)?;
+        let first = span.lines().next()?.trim_start();
+        let rest = first.strip_prefix('>')?.trim_start();
+        let inner = rest.strip_prefix("[!")?;
+        let name = inner.split(']').next()?;
+        (!name.is_empty()).then(|| name.parse::<CalloutType>().unwrap_or(CalloutType::Note))
     }
 
     /// True when the span is a `$$ ... $$` display formula.
@@ -222,6 +117,7 @@ impl AstConverter {
             return Some((BlockKind::List { ordered: true }, Self::extract_text(node)));
         }
         if node.is::<MdBlockquote>() {
+            // A callout is a blockquote to markdown-it. The marker decides.
             return Some((BlockKind::Blockquote, Self::extract_text(node)));
         }
         if node.is::<MdTable>() {
@@ -257,119 +153,11 @@ impl AstConverter {
 
         text
     }
-
-    /// Extract checkbox status and cleaned text from list item content
-    /// Returns (checkbox_status, cleaned_text)
-    fn extract_checkbox(text: &str) -> (Option<CheckboxStatus>, String) {
-        let trimmed = text.trim();
-
-        // Check for checkbox pattern: [X] where X is a single character
-        if trimmed.len() >= 3 && trimmed.starts_with('[') {
-            if let Some(close_bracket) = trimmed[1..].find(']') {
-                // close_bracket is relative to trimmed[1..], so add 1 for actual position
-                let actual_pos = close_bracket + 1;
-                if actual_pos == 2 {
-                    // Single character checkbox: [X]
-                    let checkbox_char = trimmed.chars().nth(1).unwrap();
-                    if let Some(status) = CheckboxStatus::from_char(checkbox_char) {
-                        // Extract the text after the checkbox (skip "[X] " or "[X]")
-                        let remaining = if trimmed.len() > 3 && trimmed.chars().nth(3) == Some(' ')
-                        {
-                            trimmed[4..].to_string()
-                        } else if trimmed.len() > 3 {
-                            trimmed[3..].to_string()
-                        } else {
-                            String::new()
-                        };
-                        return (Some(status), remaining);
-                    }
-                }
-            }
-        }
-
-        (None, text.to_string())
-    }
-
-    /// Extract table structure: (rows, columns, headers)
-    fn extract_table_structure(node: &Node) -> (usize, usize, Vec<String>) {
-        let mut rows = 0;
-        let mut columns = 0;
-        let mut headers = Vec::new();
-
-        // Walk the table to find headers and count rows
-        for child in node.children.iter() {
-            // TableHead contains the header row
-            if child.cast::<TableHead>().is_some() {
-                for row in child.children.iter() {
-                    if row.cast::<TableRow>().is_some() {
-                        for cell in row.children.iter() {
-                            if cell.cast::<TableCell>().is_some() {
-                                let header_text = Self::extract_text(cell);
-                                headers.push(header_text);
-                                columns = columns.max(headers.len());
-                            }
-                        }
-                        rows += 1;
-                    }
-                }
-            }
-            // TableBody contains data rows
-            else {
-                for row in child.children.iter() {
-                    if row.cast::<TableRow>().is_some() {
-                        let mut row_cols = 0;
-                        for cell in row.children.iter() {
-                            if cell.cast::<TableCell>().is_some() {
-                                row_cols += 1;
-                            }
-                        }
-                        columns = columns.max(row_cols);
-                        rows += 1;
-                    }
-                }
-            }
-        }
-
-        (rows, columns, headers)
-    }
-
-    fn calculate_word_count(content: &NoteContent) -> usize {
-        let mut count = 0;
-
-        // Count words in paragraphs
-        for para in &content.paragraphs {
-            count += para.content.split_whitespace().count();
-        }
-
-        // Count words in headings
-        for heading in &content.headings {
-            count += heading.text.split_whitespace().count();
-        }
-
-        count
-    }
-
-    fn calculate_char_count(content: &NoteContent) -> usize {
-        let mut count = 0;
-
-        // Count chars in paragraphs
-        for para in &content.paragraphs {
-            count += para.content.chars().count();
-        }
-
-        // Count chars in headings
-        for heading in &content.headings {
-            count += heading.text.chars().count();
-        }
-
-        count
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::CheckboxStatus;
     use markdown_it::MarkdownIt;
 
     fn setup_parser() -> MarkdownIt {
@@ -378,124 +166,48 @@ mod tests {
         md
     }
 
-    #[test]
-    fn test_convert_simple_content() {
+    fn blocks_of(source: &str) -> Vec<Block> {
         let md = setup_parser();
-        let source = "# Heading\n\nParagraph text.";
         let ast = md.parse(source);
-
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.headings.len(), 1);
-        assert_eq!(content.headings[0].text, "Heading");
-        assert!(!content.paragraphs.is_empty());
+        AstConverter::convert(&ast, source).unwrap().blocks
     }
 
     #[test]
-    fn test_word_count() {
-        let md = setup_parser();
-        let source = "# Title\n\nThis is a test paragraph.";
-        let ast = md.parse(source);
+    fn a_heading_and_a_paragraph_become_two_blocks() {
+        let blocks = blocks_of("# Heading\n\nParagraph text.");
 
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        // "Title" + "This is a test paragraph" = 6 words
-        assert!(content.word_count >= 6);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].kind, BlockKind::Heading { level: 1 });
+        assert_eq!(blocks[0].text, "Heading");
+        assert_eq!(blocks[1].kind, BlockKind::Paragraph);
+        assert_eq!(blocks[1].text, "Paragraph text.");
     }
 
     #[test]
-    fn parse_pending_checkbox() {
-        let md = setup_parser();
-        let source = "- [ ] task";
-        let ast = md.parse(source);
+    fn a_task_list_is_one_list_block_carrying_its_items() {
+        // Checkbox state is not a block property. `workflow.rs` parses task
+        // syntax itself, over the raw body, for TASKS.md.
+        let blocks = blocks_of("- [ ] first task\n- [x] second task");
 
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 1);
-        assert_eq!(
-            content.lists[0].items[0].checkbox_status,
-            Some(CheckboxStatus::Pending)
-        );
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, BlockKind::List { ordered: false });
+        assert!(blocks[0].text.contains("first task"));
+        assert!(blocks[0].text.contains("second task"));
     }
 
     #[test]
-    fn parse_done_checkbox() {
-        let md = setup_parser();
-        let source = "- [x] task";
-        let ast = md.parse(source);
+    fn an_ordered_list_is_marked_ordered() {
+        let blocks = blocks_of("1. one\n2. two");
 
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 1);
-        assert_eq!(
-            content.lists[0].items[0].checkbox_status,
-            Some(CheckboxStatus::Done)
-        );
+        assert_eq!(blocks[0].kind, BlockKind::List { ordered: true });
     }
 
     #[test]
-    fn parse_in_progress_checkbox() {
-        let md = setup_parser();
-        let source = "- [/] task";
-        let ast = md.parse(source);
+    fn a_thematic_break_is_a_block_with_no_text() {
+        let blocks = blocks_of("before the rule\n\n---\n\nafter the rule");
 
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 1);
-        assert_eq!(
-            content.lists[0].items[0].checkbox_status,
-            Some(CheckboxStatus::InProgress)
-        );
-    }
-
-    #[test]
-    fn parse_cancelled_checkbox() {
-        let md = setup_parser();
-        let source = "- [-] task";
-        let ast = md.parse(source);
-
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 1);
-        assert_eq!(
-            content.lists[0].items[0].checkbox_status,
-            Some(CheckboxStatus::Cancelled)
-        );
-    }
-
-    #[test]
-    fn parse_blocked_checkbox() {
-        let md = setup_parser();
-        let source = "- [!] task";
-        let ast = md.parse(source);
-
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 1);
-        assert_eq!(
-            content.lists[0].items[0].checkbox_status,
-            Some(CheckboxStatus::Blocked)
-        );
-    }
-
-    #[test]
-    fn parse_uppercase_x_as_done() {
-        let md = setup_parser();
-        let source = "- [X] task";
-        let ast = md.parse(source);
-
-        let content = AstConverter::convert(&ast, source).unwrap();
-
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 1);
-        assert_eq!(
-            content.lists[0].items[0].checkbox_status,
-            Some(CheckboxStatus::Done)
-        );
+        assert_eq!(blocks[1].kind, BlockKind::HorizontalRule);
+        assert!(blocks[1].text.is_empty());
+        assert!(blocks[1].end_offset > blocks[1].start_offset);
     }
 }

@@ -26,8 +26,7 @@ pub mod tool_ref;
 pub mod undo;
 // Re-export parser domain types
 pub use crate::parser::types::{
-    BlockHash, CodeBlock, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem, ListType,
-    NoteContent, Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
+    BlockHash, Frontmatter, FrontmatterFormat, NoteContent, ParsedNote, Tag, Wikilink,
 };
 
 // Re-export database domain types (canonical definitions in types::database)

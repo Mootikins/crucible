@@ -22,7 +22,6 @@ pub mod types;
 // Parser implementation modules (absorbed from crucible-parser)
 #[cfg(feature = "markdown-it-parser")]
 pub mod basic_markdown_it;
-pub mod blockquotes;
 pub mod callouts;
 pub mod enhanced_tags;
 pub mod footnotes;
@@ -54,50 +53,28 @@ pub use implementation::CrucibleParser;
 pub use types::{
     // AST types
     // Hash type
-    BlockHash,
-    Blockquote,
-    // Enhanced content types
+    BlockHash, // Enhanced content types
     Callout,
     CalloutType,
     CheckboxStatus,
-    CodeBlock,
-    FootnoteDefinition,
-    // Footnote types
+    FootnoteDefinition, // Footnote types
     FootnoteMap,
     FootnoteReference,
     Frontmatter,
-    FrontmatterFormat,
-    // Workflow types
-    Gate,
-    // Content structure types
-    Heading,
-    HorizontalRule,
-    InlineLink,
-    // Inline metadata
+    FrontmatterFormat, // Workflow types
+    Gate,              // Content structure types
+    InlineLink,        // Inline metadata
     InlineMetadata,
     LatexExpression,
-    ListBlock,
-    ListItem,
-    ListMarkerStyle,
-    ListType,
-    NoteContent,
-    Paragraph,
-    // Core note types
+    NoteContent, // Core note types
     ParsedNote,
     ParsedNoteBuilder,
-    ParsedNoteMetadata,
-    // Additional content types
-    Table,
-    Tag,
-    // Task file type
-    TaskFile,
-    // Task graph type
-    TaskGraph,
-    // Task types
+    ParsedNoteMetadata, // Additional content types
+    Tag,                // Task file type
+    TaskFile,           // Task graph type
+    TaskGraph,          // Task types
     TaskItem,
-    TaskStatus,
-    ValidationEntry,
-    // Link and tag types
+    ValidationEntry, // Link and tag types
     Wikilink,
     WorkflowDoc,
     WorkflowParseWarning,

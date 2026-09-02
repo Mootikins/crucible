@@ -3,7 +3,6 @@
 //! A new syntax is one `Extension` variant. The compiler then lists every
 //! `match` that the variant must join.
 
-use super::blockquotes::BlockquoteExtension;
 use super::callouts::CalloutExtension;
 use super::enhanced_tags::EnhancedTagsExtension;
 use super::error::ParseError;
@@ -31,8 +30,6 @@ pub enum Extension {
     Latex(LatexExtension),
     /// `> [!type] title` callouts.
     Callout(CalloutExtension),
-    /// Plain `> text` blockquotes.
-    Blockquote(BlockquoteExtension),
     /// `#tags` and `- [ ]` task lists.
     EnhancedTags(EnhancedTagsExtension),
     /// `[^id]` references and definitions.
@@ -49,7 +46,6 @@ impl Extension {
             Self::InlineLink(_) => "markdown-inline-links",
             Self::Latex(_) => "latex-math",
             Self::Callout(_) => "obsidian-callouts",
-            Self::Blockquote(_) => "markdown-blockquotes",
             Self::EnhancedTags(_) => "enhanced-tags",
             Self::Footnote(_) => "markdown-footnotes",
         }
@@ -64,7 +60,6 @@ impl Extension {
             Self::InlineLink(ext) => ext.can_handle(content),
             Self::Latex(ext) => ext.can_handle(content),
             Self::Callout(ext) => ext.can_handle(content),
-            Self::Blockquote(ext) => ext.can_handle(content),
             Self::EnhancedTags(ext) => ext.can_handle(content),
             Self::Footnote(ext) => ext.can_handle(content),
         }
@@ -81,7 +76,6 @@ impl Extension {
             Self::InlineLink(ext) => ext.parse(content, doc_content),
             Self::Latex(ext) => ext.parse(content, doc_content),
             Self::Callout(ext) => ext.parse(content, doc_content),
-            Self::Blockquote(ext) => ext.parse(content, doc_content),
             Self::EnhancedTags(ext) => ext.parse(content, doc_content),
             Self::Footnote(ext) => ext.parse(content, doc_content),
         }
@@ -111,7 +105,6 @@ impl ExtensionRegistry {
             Extension::InlineLink(InlineLinkExtension::new()),
             Extension::Latex(LatexExtension::new()),
             Extension::Callout(CalloutExtension::new()),
-            Extension::Blockquote(BlockquoteExtension::new()),
             Extension::EnhancedTags(EnhancedTagsExtension::new()),
             Extension::Footnote(FootnoteExtension::new()),
         ];
@@ -178,7 +171,6 @@ mod tests {
             "markdown-inline-links",
             "latex-math",
             "obsidian-callouts",
-            "markdown-blockquotes",
             "enhanced-tags",
             "markdown-footnotes",
         ];
@@ -206,9 +198,9 @@ mod tests {
     fn with_defaults_registers_every_variant() {
         let registry = ExtensionRegistry::with_defaults();
         let expected = if cfg!(feature = "markdown-it-parser") {
-            8
-        } else {
             7
+        } else {
+            6
         };
         assert_eq!(registry.extensions().len(), expected);
     }

@@ -101,14 +101,6 @@ impl BasicMarkdownItExtension {
             Ok(converted) => {
                 // Merge extracted content from the AST conversion
                 doc_content.blocks.extend(converted.blocks);
-                doc_content.headings.extend(converted.headings);
-                doc_content.paragraphs.extend(converted.paragraphs);
-                doc_content
-                    .horizontal_rules
-                    .extend(converted.horizontal_rules);
-                doc_content.code_blocks.extend(converted.code_blocks);
-                doc_content.lists.extend(converted.lists);
-                doc_content.tables.extend(converted.tables);
             }
             Err(e) => {
                 // The other extensions can still run, so the error is not fatal.
@@ -193,8 +185,21 @@ fn truncate_line(line: &str, max_len: usize) -> String {
 mod tests {
     use super::*;
 
+    /// Every paragraph block's text, in document order.
+    fn paragraph_texts(content: &NoteContent) -> Vec<&str> {
+        use crate::parser::types::BlockKind;
+        content
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::Paragraph)
+            .map(|b| b.text.as_str())
+            .collect()
+    }
+
     #[test]
-    fn test_basic_markdown_it_headings() {
+    fn headings_keep_their_level_and_text() {
+        use crate::parser::types::BlockKind;
+
         let ext = BasicMarkdownItExtension::new();
         let mut content = NoteContent::default();
 
@@ -204,25 +209,19 @@ mod tests {
         );
 
         assert!(errors.is_empty());
-        assert_eq!(content.headings.len(), 2);
-        assert_eq!(content.headings[0].level, 1);
-        assert_eq!(content.headings[0].text, "Heading 1");
-        assert_eq!(content.headings[1].level, 2);
-        assert_eq!(content.headings[1].text, "Heading 2");
-    }
-
-    #[test]
-    fn test_basic_markdown_it_paragraphs() {
-        let ext = BasicMarkdownItExtension::new();
-        let mut content = NoteContent::default();
-
-        let errors = ext.parse(
-            "This is a paragraph.\n\nThis is another paragraph.",
-            &mut content,
+        let headings: Vec<(&BlockKind, &str)> = content
+            .blocks
+            .iter()
+            .filter(|b| matches!(b.kind, BlockKind::Heading { .. }))
+            .map(|b| (&b.kind, b.text.as_str()))
+            .collect();
+        assert_eq!(
+            headings,
+            vec![
+                (&BlockKind::Heading { level: 1 }, "Heading 1"),
+                (&BlockKind::Heading { level: 2 }, "Heading 2"),
+            ]
         );
-
-        assert!(errors.is_empty());
-        assert_eq!(content.paragraphs.len(), 2);
     }
 
     #[test]
@@ -256,13 +255,8 @@ mod tests {
         );
 
         assert!(errors.is_empty());
-        let texts: Vec<&str> = content
-            .paragraphs
-            .iter()
-            .map(|p| p.content.as_str())
-            .collect();
         assert_eq!(
-            texts,
+            paragraph_texts(&content),
             vec![
                 "Alpha has enough words here.",
                 "Beta has enough words here.",
@@ -273,6 +267,8 @@ mod tests {
 
     #[test]
     fn paragraph_offsets_point_at_the_source_bytes() {
+        use crate::parser::types::BlockKind;
+
         let ext = BasicMarkdownItExtension::new();
         let mut content = NoteContent::default();
         let source = "Alpha has enough words here.\n\nBeta has enough words here.";
@@ -280,14 +276,21 @@ mod tests {
         let errors = ext.parse(source, &mut content);
 
         assert!(errors.is_empty());
-        assert_eq!(content.paragraphs.len(), 2);
-        assert_eq!(content.paragraphs[0].offset, 0);
-        assert_eq!(content.paragraphs[1].offset, 30);
-        assert!(source[content.paragraphs[1].offset..].starts_with("Beta"));
+        let paras: Vec<_> = content
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::Paragraph)
+            .collect();
+        assert_eq!(paras.len(), 2);
+        assert_eq!(paras[0].start_offset, 0);
+        assert_eq!(paras[1].start_offset, 30);
+        assert!(source[paras[1].start_offset..].starts_with("Beta"));
     }
 
     #[test]
     fn a_container_is_not_re_emitted_as_a_paragraph() {
+        use crate::parser::types::BlockKind;
+
         let ext = BasicMarkdownItExtension::new();
         let mut content = NoteContent::default();
 
@@ -297,18 +300,25 @@ mod tests {
         );
 
         assert!(errors.is_empty());
-        let texts: Vec<&str> = content
-            .paragraphs
-            .iter()
-            .map(|p| p.content.as_str())
-            .collect();
-        // A tight list item holds no paragraph node, and `content.lists`
-        // already carries the items. A code fence holds no paragraph either.
-        // Only the blockquote wraps one.
-        assert_eq!(texts, vec!["quoted text with several words"]);
-        assert_eq!(content.lists.len(), 1);
-        assert_eq!(content.lists[0].items.len(), 2);
-        assert_eq!(content.code_blocks.len(), 1);
+        // Each container is one block. The quote's inner paragraph is a child
+        // of the quote, so nothing emits it a second time on its own.
+        assert!(
+            paragraph_texts(&content).is_empty(),
+            "no container is re-emitted as a paragraph"
+        );
+        assert_eq!(
+            content.blocks.iter().map(|b| &b.kind).collect::<Vec<_>>(),
+            vec![
+                &BlockKind::List { ordered: false },
+                &BlockKind::Blockquote,
+                &BlockKind::Code {
+                    language: Some("rust".to_string())
+                },
+            ]
+        );
+        assert!(content.blocks[1]
+            .text
+            .contains("quoted text with several words"));
     }
 
     #[test]
@@ -324,10 +334,10 @@ mod tests {
         assert!(errors.is_empty());
         assert!(
             !content
-                .paragraphs
+                .blocks
                 .iter()
-                .any(|p| p.content.contains("Alpha") && p.content.contains("Beta")),
-            "no paragraph spans the whole document"
+                .any(|b| b.text.contains("Alpha") && b.text.contains("Beta")),
+            "no block spans the whole document"
         );
     }
 
@@ -464,6 +474,75 @@ mod tests {
                 language: Some("mermaid".to_string())
             },
             "a mermaid fence stays a code block, named by its info string"
+        );
+    }
+
+    #[test]
+    fn a_callout_is_its_own_kind_not_a_plain_quote() {
+        use crate::parser::types::{BlockKind, CalloutType};
+
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = "> [!warning] Take care\n> the details follow\n\n> just a quote\n";
+
+        let errors = ext.parse(source, &mut content);
+
+        assert!(errors.is_empty());
+        assert_eq!(
+            content.blocks[0].kind,
+            BlockKind::Callout {
+                callout_type: CalloutType::Warning
+            }
+        );
+        assert_eq!(content.blocks[1].kind, BlockKind::Blockquote);
+    }
+
+    #[test]
+    fn a_custom_callout_keeps_its_name() {
+        use crate::parser::types::{BlockKind, CalloutType};
+
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+
+        ext.parse("> [!crucible] a house type\n", &mut content);
+
+        assert_eq!(
+            content.blocks[0].kind,
+            BlockKind::Callout {
+                callout_type: CalloutType::Custom("crucible".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn no_top_level_node_is_dropped_without_a_block() {
+        // A block the classifier does not name is never embedded, and nothing
+        // reports the loss. This document holds one of every block form the
+        // parser's plugins produce.
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = concat!(
+            "# ATX heading\n\n",
+            "Setext heading\n==============\n\n",
+            "A paragraph of prose.\n\n",
+            "- bullet one\n- bullet two\n\n",
+            "1. first\n2. second\n\n",
+            "```rust\nlet x = 42;\n```\n\n",
+            "    indented code\n\n",
+            "> a quote\n\n",
+            "> [!note] a callout\n\n",
+            "$$\nE = mc^2\n$$\n\n",
+            "| a | b |\n| - | - |\n| 1 | 2 |\n\n",
+            "---\n"
+        );
+
+        ext.parse(source, &mut content);
+
+        assert_eq!(
+            content.blocks.len(),
+            12,
+            "every top-level node must yield a block; got kinds {:?}",
+            content.blocks.iter().map(|b| &b.kind).collect::<Vec<_>>()
         );
     }
 }
