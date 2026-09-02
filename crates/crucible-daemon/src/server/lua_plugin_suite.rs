@@ -622,36 +622,73 @@ mod shipped_plugin_tests {
             .expect("repo root")
     }
 
-    /// Every `.lua` under the repository except the plugins the test above
-    /// already walks, and except build output.
+    /// Every Lua source file git tracks, except the plugins the test above
+    /// already walks.
+    ///
+    /// The set is what git tracks, not what a directory walk finds: a nested
+    /// checkout under `.worktrees/`, build output, and a stray untracked file
+    /// are outside it by definition, so no name list has to keep up with them.
+    /// A new shipped Lua file is tracked, so it still reaches the profile gate.
     fn lua_files_outside_plugins(root: &std::path::Path) -> Vec<PathBuf> {
-        fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
-            let Ok(entries) = std::fs::read_dir(dir) else {
-                return;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if path.is_dir() {
-                    // `target` is build output, `.git` is history, and
-                    // `runtime/plugins` has its own gate.
-                    if name == "target" || name == ".git" || name == "node_modules" {
-                        continue;
-                    }
-                    if path.ends_with("runtime/plugins") {
-                        continue;
-                    }
-                    walk(&path, out);
-                } else if crucible_lua::source_files::is_lua_source(&path) {
-                    out.push(path);
-                }
-            }
-        }
-        let mut out = Vec::new();
-        walk(root, &mut out);
+        let output = std::process::Command::new("git")
+            .args([
+                "-C",
+                root.to_str().expect("utf-8 repo root"),
+                "ls-files",
+                "-z",
+            ])
+            .output()
+            .expect("git ls-files runs");
+        assert!(
+            output.status.success(),
+            "git ls-files failed under {}",
+            root.display()
+        );
+        let mut out: Vec<PathBuf> = String::from_utf8_lossy(&output.stdout)
+            .split('\0')
+            .filter(|rel| !rel.is_empty())
+            .filter(|rel| !rel.starts_with("runtime/plugins/"))
+            .map(|rel| root.join(rel))
+            .filter(|path| crucible_lua::source_files::is_lua_source(path))
+            .collect();
         out.sort();
         out
+    }
+
+    #[test]
+    fn the_typecheck_walk_sees_tracked_lua_files_only() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(args)
+                .status()
+                .expect("git runs");
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
+        std::fs::write(root.join("tracked.luau"), "return 1\n").unwrap();
+        std::fs::write(root.join("untracked.luau"), "return 2\n").unwrap();
+        std::fs::create_dir_all(root.join("ignored")).unwrap();
+        std::fs::write(root.join("ignored/nested.luau"), "return 3\n").unwrap();
+        std::fs::create_dir_all(root.join("runtime/plugins/x")).unwrap();
+        std::fs::write(root.join("runtime/plugins/x/init.luau"), "return 4\n").unwrap();
+        git(&[
+            "add",
+            ".gitignore",
+            "tracked.luau",
+            "runtime/plugins/x/init.luau",
+        ]);
+
+        let found = lua_files_outside_plugins(&root.canonicalize().unwrap());
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["tracked.luau"], "{found:?}");
     }
 
     /// setup that lets `require("config")` resolve a plugin's lua/ submodule.
