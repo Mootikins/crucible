@@ -25,9 +25,48 @@
 
 use crucible_core::types::{Notification, NotificationKind};
 use mlua::{Lua, Result as LuaResult, Table, Value};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 const NOTIFICATIONS_KEY: &str = "__crucible_notifications__";
 const NOTIFIED_ONCE_KEY: &str = "__crucible_notified_once__";
+
+/// One `cru.log.notify` call, as the daemon receives it.
+#[derive(Debug, Clone)]
+pub struct NotifyRequest {
+    pub notification: Notification,
+    /// The session whose VM made the call, when it was a session VM.
+    pub session_id: Option<String>,
+    /// `opts.workspace`, verbatim; the daemon canonicalizes it.
+    pub workspace: Option<PathBuf>,
+    /// `opts.kiln`, verbatim.
+    pub kiln: Option<String>,
+}
+
+/// Where a notification goes once a daemon is behind the VM. Sync on
+/// purpose: `cru.log.notify` is called from plain Lua, not from a coroutine,
+/// so the implementation must not block or await. The daemon's sink is a
+/// channel.
+pub trait NotificationSink: Send + Sync + 'static {
+    fn notify(&self, request: NotifyRequest) -> Result<(), String>;
+}
+
+struct InstalledSink {
+    sink: Arc<dyn NotificationSink>,
+    session_id: Option<String>,
+}
+
+/// Point `notify` and `notify_once` at `sink`. The daemon calls this after
+/// the session API upgrade. Before that the Lua-table queue stands in, which
+/// is what the unit tests and the stub generator read.
+pub fn upgrade_with_notify_sink(
+    lua: &Lua,
+    sink: Arc<dyn NotificationSink>,
+    session_id: Option<String>,
+) -> LuaResult<()> {
+    lua.set_app_data(InstalledSink { sink, session_id });
+    Ok(())
+}
 
 pub fn register_notify_module(lua: &Lua, cru: &Table) -> LuaResult<()> {
     register_log_levels(lua, cru)?;
@@ -80,10 +119,11 @@ fn register_log_levels(lua: &Lua, cru: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-/// The options table both notify functions read: a progress pair, or
-/// nothing. Every other key is ignored, so the declaration names only this
-/// one.
-const NOTIFY_OPTS: &str = "{ progress: { current: number, total: number }? }";
+/// The options table both notify functions read: a progress pair, and the
+/// workspace or the kiln the notification belongs to. Every other key is
+/// ignored, so the declaration names only these.
+const NOTIFY_OPTS: &str =
+    "{ progress: { current: number, total: number }?, workspace: string?, kiln: string? }";
 
 /// The arguments both notify functions take.
 ///
@@ -122,7 +162,7 @@ fn register_notify_function(lua: &Lua, log: &Table) -> LuaResult<()> {
 
             let (level, opts) = level_and_opts(&level, &opts);
             let notification = build_notification(&msg, level, opts.as_ref())?;
-            queue_notification(lua, notification)?;
+            deliver_notification(lua, notification, opts.as_ref())?;
 
             Ok(())
         },
@@ -163,7 +203,7 @@ fn register_notify_once_function(lua: &Lua, log: &Table) -> LuaResult<()> {
 
             let (level, opts) = level_and_opts(&level, &opts);
             let notification = build_notification(&msg, level, opts.as_ref())?;
-            queue_notification(lua, notification)?;
+            deliver_notification(lua, notification, opts.as_ref())?;
 
             Ok(true)
         },
@@ -224,6 +264,30 @@ fn level_to_kind(level: i32) -> NotificationKind {
         3 | 4 => NotificationKind::Warning,
         _ => NotificationKind::Toast,
     }
+}
+
+/// Send the notification to the installed sink, or queue it in the Lua table
+/// when no sink is installed. A sink that refuses raises in Lua.
+fn deliver_notification(
+    lua: &Lua,
+    notification: Notification,
+    opts: Option<&Table>,
+) -> LuaResult<()> {
+    let Some(installed) = lua.app_data_ref::<InstalledSink>() else {
+        return queue_notification(lua, notification);
+    };
+    let workspace: Option<String> = opts.and_then(|o| o.get("workspace").ok());
+    let kiln: Option<String> = opts.and_then(|o| o.get("kiln").ok());
+    let request = NotifyRequest {
+        notification,
+        session_id: installed.session_id.clone(),
+        workspace: workspace.map(PathBuf::from),
+        kiln,
+    };
+    installed
+        .sink
+        .notify(request)
+        .map_err(|e| mlua::Error::external(format!("notify: {e}")))
 }
 
 fn queue_notification(lua: &Lua, notification: Notification) -> LuaResult<()> {
@@ -435,6 +499,99 @@ mod tests {
             get_messages_action(&lua).unwrap(),
             Some("clear".to_string())
         );
+    }
+
+    #[derive(Default)]
+    struct Recording(std::sync::Mutex<Vec<NotifyRequest>>);
+
+    impl NotificationSink for Recording {
+        fn notify(&self, request: NotifyRequest) -> Result<(), String> {
+            self.0.lock().unwrap().push(request);
+            Ok(())
+        }
+    }
+
+    /// A VM with the notify module and a recording sink behind it.
+    fn lua_with_sink() -> (Lua, Arc<Recording>) {
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
+        let sink = Arc::new(Recording::default());
+        upgrade_with_notify_sink(&lua, sink.clone(), Some("chat-1".into())).unwrap();
+        (lua, sink)
+    }
+
+    #[test]
+    fn with_a_sink_installed_notify_sends_the_request_and_queues_nothing() {
+        let (lua, sink) = lua_with_sink();
+
+        lua.load(
+            r#"cru.log.notify("saved", cru.log.levels.WARN, { kiln = "notes", workspace = "/w" })"#,
+        )
+        .exec()
+        .unwrap();
+
+        let sent = sink.0.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].notification.message, "saved");
+        assert!(matches!(
+            sent[0].notification.kind,
+            NotificationKind::Warning
+        ));
+        assert_eq!(sent[0].session_id.as_deref(), Some("chat-1"));
+        assert_eq!(sent[0].kiln.as_deref(), Some("notes"));
+        assert_eq!(
+            sent[0].workspace.as_deref(),
+            Some(std::path::Path::new("/w"))
+        );
+        assert!(get_pending_notifications(&lua).unwrap().is_empty());
+    }
+
+    #[test]
+    fn with_a_sink_installed_notify_without_opts_sends_no_scope() {
+        let (lua, sink) = lua_with_sink();
+
+        lua.load(r#"cru.log.notify("saved")"#).exec().unwrap();
+
+        let sent = sink.0.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].kiln.is_none());
+        assert!(sent[0].workspace.is_none());
+    }
+
+    #[test]
+    fn notify_once_dedupes_before_the_sink_too() {
+        let (lua, sink) = lua_with_sink();
+
+        lua.load(
+            r#"
+            cru.log.notify_once("Only once")
+            cru.log.notify_once("Only once")
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let sent = sink.0.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].notification.message, "Only once");
+        assert_eq!(sent[0].session_id.as_deref(), Some("chat-1"));
+        assert!(get_pending_notifications(&lua).unwrap().is_empty());
+    }
+
+    struct Refusing;
+
+    impl NotificationSink for Refusing {
+        fn notify(&self, _request: NotifyRequest) -> Result<(), String> {
+            Err("hub is gone".to_string())
+        }
+    }
+
+    #[test]
+    fn a_sink_error_raises_in_lua() {
+        let (lua, _) = TestLuaBuilder::new().build_with_notify();
+        upgrade_with_notify_sink(&lua, Arc::new(Refusing), None).unwrap();
+
+        let err = lua.load(r#"cru.log.notify("saved")"#).exec().unwrap_err();
+        assert!(err.to_string().contains("hub is gone"), "{err}");
     }
 
     #[test]
