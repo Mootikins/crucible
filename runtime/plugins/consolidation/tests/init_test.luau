@@ -101,6 +101,20 @@ describe("consolidation", function()
       expect.equal(2, #picked)
       expect.equal("bad2", picked[2].id)
     end)
+
+    it("walks past a session whose group cap is 0", function()
+      -- A cap of 0 means the group is never wanted. The walk must not stop
+      -- at `clean1`: it skips it, takes `bad1`, and counts both as walked,
+      -- so the cursor can move past them.
+      local sessions = {
+        { id = "clean1", outcome = { tool_errors = 0, hunks_rejected = 0 } },
+        { id = "bad1", outcome = { tool_errors = 1, hunks_rejected = 0 } },
+      }
+      local picked, taken = plugin.stratify(sessions, { max_problem = 5, max_clean = 0 })
+      expect.equal(1, #picked)
+      expect.equal("bad1", picked[1].id)
+      expect.equal(2, taken)
+    end)
   end)
 
   describe("since_cursor", function()
@@ -263,6 +277,37 @@ describe("consolidation", function()
       expect.truthy(second:find("### session c", 1, true))
       expect.is_nil(second:find("### session a", 1, true))
       expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
+    end)
+
+    it("reviews the problem sessions when max_clean is 0", function()
+      -- `max_clean = 0` asks for problem sessions only. The oldest candidate
+      -- is clean. The pass must walk past it, review `bad`, and move the
+      -- cursor: a pass that stops at `clean` reads the same candidates
+      -- again forever and reviews nothing.
+      plugin.setup({ min_turns = 1, max_clean = 0 })
+      messages_by_id.clean = messages_by_id.short
+      messages_by_id.bad = {
+        { role = "user", content = "run it" },
+        { role = "tool_result", content = "", error = "exit 1" },
+      }
+      cru.session.list = function()
+        return {
+          { id = "clean", state = "ended", started_at = "2026-09-01T10:00:00Z" },
+          { id = "bad", state = "ended", started_at = "2026-09-01T11:00:00Z" },
+        }, nil
+      end
+
+      plugin.run(nil)
+
+      expect.equal(1, #review_calls)
+      local prompt: any = review_calls[1].prompt
+      expect.truthy(prompt:find("### session bad", 1, true))
+      expect.is_nil(prompt:find("### session clean", 1, true))
+      expect.equal("2026-09-01T11:00:00Z", cru.storage.get("consolidation", "last_run"))
+
+      plugin.run(nil)
+
+      expect.equal(1, #review_calls)
     end)
 
     it("moves the cursor past a short session that follows the sample", function()

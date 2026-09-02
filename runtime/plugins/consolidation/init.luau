@@ -67,8 +67,10 @@ end
 --- the clean ones. The problem group comes first, and each group keeps at
 --- most its cap. The walk goes in the order the caller gave (oldest first)
 --- and stops at the first session that does not fit its group, so the
---- sample is a prefix of `sessions`. The second answer is the length of
---- that prefix: the cursor may move past it and no session is skipped.
+--- sample comes from a prefix of `sessions`. A group with a cap of 0 is
+--- never wanted: the walk skips its sessions and does not stop at them.
+--- The second answer is the length of the prefix the walk covered: the
+--- cursor may move past it and no wanted session is skipped.
 function M.stratify(sessions: { any }, caps: { max_problem: number, max_clean: number }): ({ any }, number)
     local problem, clean = {}, {}
     local taken = 0
@@ -77,8 +79,10 @@ function M.stratify(sessions: { any }, caps: { max_problem: number, max_clean: n
         local bad = (o.tool_errors or 0) > 0 or (o.hunks_rejected or 0) > 0
         local group = if bad then problem else clean
         local cap = if bad then caps.max_problem else caps.max_clean
-        if #group >= cap then break end
-        group[#group + 1] = s
+        if cap > 0 then
+            if #group >= cap then break end
+            group[#group + 1] = s
+        end
         taken += 1
     end
     local out = {}

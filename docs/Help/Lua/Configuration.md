@@ -110,7 +110,7 @@ require("consolidation").setup({
 | `provider` | none | A provider override for the auxiliary model |
 | `interval` | `21600` | Seconds between passes; read once, at load |
 | `max_problem` | `5` | The most sessions with a tool error or a rejected edit in one pass |
-| `max_clean` | `3` | The most clean sessions in one pass |
+| `max_clean` | `3` | The most clean sessions in one pass; `0` reviews problem sessions only |
 | `min_turns` | `2` | The fewest user turns a session needs before the pass reads it |
 | `session_chars` | `15000` | Characters kept from each session's transcript |
 | `timeout` | `240` | Seconds to wait for the reviewer |
