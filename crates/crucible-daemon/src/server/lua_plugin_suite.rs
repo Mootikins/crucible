@@ -665,6 +665,7 @@ mod shipped_plugin_tests {
     // `every_shipped_plugin_executes` still walk the real directory, so a
     // broken plugin in the tree fails CI regardless of this list.
     #[test_case("auto-title")]
+    #[test_case("consolidation")]
     #[test_case("daily-notes")]
     #[test_case("discord")]
     #[test_case("oci")]
