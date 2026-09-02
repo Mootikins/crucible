@@ -44,7 +44,7 @@ Complete reference for all Crucible CLI commands.
 | `cru config` | Manage Crucible configuration (init, show, dump; `show --sources`/`--trace` traces where values came from) |
 | `cru auth` | Manage LLM provider credentials (login, logout, list) |
 | `cru set` | Configure a running session's settings (same syntax as TUI :set) |
-| `cru proposals` | Review reflection-pass proposals (list, show, accept, reject) |
+| `cru proposals` | Review the notes, updates and skills the reflection and consolidation passes propose (list, show, accept, reject). Accepting a `create` lands a note; an `update` replaces a note or a skill body; a `skill` lands a `SKILL.md`. Rejecting moves the file to `rejected/` so the reviewer does not repeat it — [[Help/CLI/proposals]] |
 
 ## System & Development Commands
 
@@ -153,6 +153,7 @@ table, and always exits 0.
 - [[Help/CLI/chat]] - Chat command reference
 - [[Help/CLI/stats]] - Statistics command
 - [[Help/CLI/session]] - Session lifecycle and maintenance
+- [[Help/CLI/proposals]] - Reviewing what the reflection pass proposed
 - [[Help/CLI/acp]] - Running Crucible as an ACP agent
 - [[Help/CLI/lua]] - Evaluating Lua against the daemon
 - [[Help/CLI/setup]] - Runtime directory bootstrap

@@ -66,8 +66,9 @@ allowed-tools: semantic_search read_note create_note
 | `license` | No | License identifier (e.g. MIT, Apache-2.0) |
 | `compatibility` | No | Which agents this skill works with |
 | `allowed-tools` | No | Space-delimited list of tools this skill may use |
+| `metadata` | No | A map of client-specific keys. The spec reserves it for data a tool stores about a skill; Crucible writes `crucible-source: reflection` here for a skill the reflection pass proposed |
 
-Additional metadata fields are preserved as key-value pairs and available to the agent.
+Those six fields are the spec's. Crucible's parser also keeps any other top-level frontmatter key as a key-value pair and makes it available to the agent; that is Crucible's behaviour, not the spec's, and a skill that must run under another agent should keep its extra data under `metadata`.
 
 ### Body Content
 

@@ -166,26 +166,7 @@ fn list(config: &CliConfig, format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&summaries)?),
         OutputFormat::Table => {
-            let rows: Vec<Vec<String>> = summaries
-                .iter()
-                .map(|s| {
-                    vec![
-                        s.id.clone(),
-                        s.kind.clone(),
-                        s.title.clone(),
-                        s.target.clone().unwrap_or_default(),
-                        s.created.clone().unwrap_or_default(),
-                        s.session.clone().unwrap_or_default(),
-                    ]
-                })
-                .collect();
-            println!(
-                "{}",
-                crate::output::records_table(
-                    &["ID", "Kind", "Title", "Target", "Created", "Session"],
-                    &rows
-                )
-            );
+            println!("{}", render_list_table(&summaries));
             println!("\nReview with `cru proposals show <id>`, then accept or reject.");
         }
         OutputFormat::Plain => {
@@ -207,6 +188,28 @@ fn list(config: &CliConfig, format: OutputFormat) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The table `list` prints on a terminal. The Kind and Target columns say
+/// what accept will do with each row before a human opens it.
+fn render_list_table(summaries: &[ProposalSummary]) -> String {
+    let rows: Vec<Vec<String>> = summaries
+        .iter()
+        .map(|s| {
+            vec![
+                s.id.clone(),
+                s.kind.clone(),
+                s.title.clone(),
+                s.target.clone().unwrap_or_default(),
+                s.created.clone().unwrap_or_default(),
+                s.session.clone().unwrap_or_default(),
+            ]
+        })
+        .collect();
+    crate::output::records_table(
+        &["ID", "Kind", "Title", "Target", "Created", "Session"],
+        &rows,
+    )
 }
 
 fn show(config: &CliConfig, id: &str) -> Result<()> {
@@ -1355,6 +1358,49 @@ mod tests {
         let s = summarize(&proposals_dir(&config).join("k1.md"));
         assert_eq!(s.kind, "update");
         assert_eq!(s.target.as_deref(), Some("Notes/a.md"));
+    }
+
+    #[test]
+    fn show_says_where_a_create_will_land() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "c7",
+            "---\ntitle: C\ntarget: Notes/c.md\n---\nbody\n",
+        );
+        let text = render_show(&config, "c7").unwrap();
+        assert!(
+            text.contains("Accept will write Notes/c.md in the kiln."),
+            "{text}"
+        );
+        assert!(text.contains("cru proposals accept c7"), "{text}");
+        // A create with no target lands under its id.
+        write_proposal(&proposals_dir(&config), "c8", "---\ntitle: C\n---\nbody\n");
+        let text = render_show(&config, "c8").unwrap();
+        assert!(
+            text.contains("Accept will write c8.md in the kiln."),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn list_table_shows_the_kind_and_target_columns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config(tmp.path());
+        write_proposal(
+            &proposals_dir(&config),
+            "k2",
+            "---\nkind: update\ntarget: Notes/a.md\ntitle: A\n---\nb\n",
+        );
+        let summaries = vec![summarize(&proposals_dir(&config).join("k2.md"))];
+        let table = render_list_table(&summaries);
+        // The first line is the top border; the header row is the second.
+        let header = table.lines().nth(1).unwrap_or_default();
+        assert!(header.contains("Kind"), "{table}");
+        assert!(header.contains("Target"), "{table}");
+        assert!(table.contains("update"), "{table}");
+        assert!(table.contains("Notes/a.md"), "{table}");
     }
 
     #[test]

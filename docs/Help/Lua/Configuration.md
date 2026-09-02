@@ -74,6 +74,44 @@ require("reflection").setup({
 })
 ```
 
+The `reflection` block takes these keys. `model` is the only one with no
+default; without it the plugin skips every session.
+
+| Key | Default | What it sets |
+|-----|---------|--------------|
+| `model` | none | The auxiliary model the reviewer runs on |
+| `provider` | none | A provider override for the auxiliary model |
+| `enabled` | `true` | The master switch |
+| `min_turns` | `3` | The fewest user turns a session needs before it is reviewed |
+| `max_proposals` | `5` | The most proposals one session may stage |
+| `timeout` | `120` | Seconds to wait for the reviewer |
+| `max_iterations` | `12` | The cap on the reviewer's tool-loop turns |
+| `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
+| `tool_result_chars` | `2000` | Characters kept from each tool result in the transcript |
+| `transcript_chars` | `60000` | Characters kept from the whole transcript, cut from the front |
+
+The `consolidation` block configures the periodic pass that proposes pattern
+notes from several sessions at once. It is **off by default**, because a pass
+spends model calls with no user present. `kiln` and `model` have no default.
+
+```lua
+require("consolidation").setup({
+  enabled = true,
+  kiln = "notes",
+  model = "llama3.2",
+  interval = 21600,   -- seconds between passes; read once, at load
+  max_problem = 5,    -- sessions with tool errors or rejected edits per pass
+  max_clean = 3,      -- clean sessions per pass
+  min_turns = 2,
+  session_chars = 15000,
+  timeout = 240,
+  max_iterations = 12,
+  rejection_memory = 20,
+})
+```
+
+See [[Help/Concepts/Reflection Pass]] for what each pass does with these.
+
 Plugin configuration has two working forms, and each plugin uses **one**:
 
 - **The direct form** — `require("reflection").setup({...})` at the top of `init.lua`. The call you write *owns* that plugin's setup: activation reuses the same module instance (the file is never evaluated twice) and skips its default `setup(cfg)` call.

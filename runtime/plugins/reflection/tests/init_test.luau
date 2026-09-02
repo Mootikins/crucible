@@ -721,8 +721,8 @@ describe("reflection", function()
 
   describe("config", function()
     -- Every test here reads the `defaults` layer, so clear the setup layer
-    -- on both sides. A value an earlier test wrote must not stand in for
-    -- the default.
+    -- on both sides. A value an earlier test wrote must not replace the
+    -- default.
     before_each(function()
       config.reset()
     end)

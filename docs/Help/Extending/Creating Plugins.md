@@ -78,15 +78,17 @@ All plugin directories are also added to Lua's `package.path`, so `require("task
 ### What ships
 
 `runtime/plugins/` in the repo is the bundled set, compiled into the binary and
-extracted on first run. Every one of them loads **enabled by default**:
+extracted on first run. Every one of them loads **enabled by default**, except
+`consolidation`:
 
 | Plugin | What it adds |
 |--------|--------------|
 | `auto-title` | Names a session after its opening exchange |
+| `consolidation` | Periodic pass that proposes pattern notes; off until `[plugins.consolidation] enabled = true` |
 | `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
 | `discord` | Discord gateway + REST integration |
 | `oci` | Routes workspace tools into containers |
-| `reflection` | Post-session retrospective notes |
+| `reflection` | Post-session review that proposes notes, note updates and skills |
 | `review` | `review_*` tools over the attributed diff |
 | `todo-list` | `tasks_list`, `tasks_add`, `tasks_complete`, `tasks_next`, `/tasks` |
 | `web-search` | Search over a provider chain |

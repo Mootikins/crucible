@@ -460,6 +460,18 @@ cru.on_session_end(function(session)
 end)
 ```
 
+**An `on_session_end` hook runs under the plugin that registered it.** The
+executor records the owner of each hook at registration and enters that
+plugin's context around the call, so `cru.storage` resolves the plugin's own
+namespace there. A plugin can read at session end what one of its event
+handlers stored during the session; the `reflection` plugin uses this to
+read the titles precognition injected. The hook gets no intercept grant. A
+hook registered outside a plugin (your `init.lua`) runs with no context.
+
+`on_session_start` does not yet do this: it fires with no plugin context, so
+`cru.storage` refuses a call from a start hook. That is a known gap, not a
+rule.
+
 
 ## Permission Hooks
 
