@@ -276,9 +276,17 @@ function M.validate_proposal(p: any): string?
     return nil
 end
 
---- Escape a scalar for single-line YAML.
+--- Escape a scalar for single-line YAML. The escape set mirrors the CLI's
+--- `yaml_string`: a raw line break would put the rest of the value on its
+--- own line, and a line that starts with `---` would close the frontmatter
+--- early, so `cru proposals` could not parse the staged file.
 local function yaml_scalar(s)
-    return '"' .. tostring(s):gsub('"', '\\"') .. '"'
+    local escaped = tostring(s)
+        :gsub("\\", "\\\\")
+        :gsub('"', '\\"')
+        :gsub("\n", "\\n")
+        :gsub("\r", "\\r")
+    return '"' .. escaped .. '"'
 end
 
 --- Build a staged proposal file: provenance frontmatter + body. The

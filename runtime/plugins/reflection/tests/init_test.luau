@@ -186,6 +186,22 @@ describe("reflection", function()
       local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", {})
       expect.falsy(out:find("model:", 1, true))
     end)
+
+    it("escapes a line break and a backslash in every scalar, as the CLI does", function()
+      local out = plugin.render_proposal(
+        { title = "a\n---\nb", body = "B", target = "dir\\x.md", tags = { "t\r" } },
+        "s", "t", { model = "m\nn" })
+      expect.truthy(out:find('title: "a\\n---\\nb"', 1, true))
+      expect.truthy(out:find('target: "dir\\\\x.md"', 1, true))
+      expect.truthy(out:find('  - "t\\r"', 1, true))
+      expect.truthy(out:find('model: "m\\nn"', 1, true))
+      -- The frontmatter opens once and closes once: no scalar adds a fence line.
+      local fences = 0
+      for line in (out .. "\n"):gmatch("(.-)\n") do
+        if line == "---" then fences += 1 end
+      end
+      expect.equal(2, fences)
+    end)
   end)
 
   describe("validate_proposal", function()
