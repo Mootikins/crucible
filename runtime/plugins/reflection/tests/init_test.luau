@@ -188,6 +188,52 @@ describe("reflection", function()
     end)
   end)
 
+  describe("validate_proposal", function()
+    it("accepts a create with title and body", function()
+      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B" }))
+    end)
+    it("requires target on an update", function()
+      expect.truthy(plugin.validate_proposal({ kind = "update", title = "T", body = "B" }))
+    end)
+    it("refuses an update that targets a skill", function()
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
+      expect.truthy(plugin.validate_proposal({ kind = "update", target = "Notes/SKILL.md", title = "T", body = "B" }))
+    end)
+    it("requires name and description on a skill", function()
+      expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x" }))
+      expect.is_nil(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "d" }))
+      expect.is_nil(plugin.validate_proposal({ kind = "skill", body = "B", name = "fix-flaky-nextest", description = "d" }))
+      for _, bad in ipairs({ "-lead", "trail-", "two--hyphens", "Upper", "has space", string.rep("x", 65) }) do
+        expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = bad, description = "d" }))
+      end
+    end)
+    it("rejects an unknown kind", function()
+      expect.truthy(plugin.validate_proposal({ kind = "patch", title = "T", body = "B" }))
+    end)
+  end)
+
+  describe("render_proposal kinds", function()
+    it("writes kind, name and description for a skill", function()
+      local out = plugin.render_proposal(
+        { kind = "skill", name = "fix-x", description = "d", body = "B" }, "s", "2026-09-01T00:00:00Z"
+      )
+      expect.truthy(out:find("kind: skill", 1, true))
+      expect.truthy(out:find("name: fix-x", 1, true))
+      expect.truthy(out:find('description: "d"', 1, true))
+    end)
+    it("writes kind and target for an update", function()
+      local out = plugin.render_proposal(
+        { kind = "update", target = "Notes/a.md", title = "A", body = "B" }, "s", "2026-09-01T00:00:00Z"
+      )
+      expect.truthy(out:find("kind: update", 1, true))
+      expect.truthy(out:find('target: "Notes/a.md"', 1, true))
+    end)
+    it("omits the kind line for a create", function()
+      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t")
+      expect.falsy(out:find("kind:", 1, true))
+    end)
+  end)
+
   describe("proposal_id", function()
     it("is filesystem-safe and slugified", function()
       local id = plugin.proposal_id({ title = "Hello, World! & Co." }, 1, "20260702-000000")
@@ -198,6 +244,11 @@ describe("reflection", function()
     it("falls back to 'note' for empty titles", function()
       local id = plugin.proposal_id({ title = "" }, 2, "20260702-000000")
       expect.truthy(id:find("note"))
+    end)
+
+    it("slugifies the name of a skill that has no title", function()
+      local id = plugin.proposal_id({ kind = "skill", name = "fix-x" }, 3, "20260702-000000")
+      expect.truthy(id:find("fix-x", 1, true))
     end)
   end)
 
@@ -367,6 +418,41 @@ describe("reflection", function()
 
       local configured = test_mocks.get_calls("session", "configure_agent")
       expect.equal(20, configured[1][2].max_iterations)
+    end)
+
+    it("attaches the kiln to the reviewer's session", function()
+      plugin.run({ id = "chat-1" })
+
+      -- The reviewer reads the kiln with semantic_search and read_note, so
+      -- the aux session names the same kiln as the session that ended.
+      local created = test_mocks.get_calls("session", "create")
+      expect.equal(1, #created)
+      expect.equal("notes", created[1][1].kilns[1])
+    end)
+
+    it("ends the aux session when the review raises", function()
+      cru.session.send_and_collect = function(id, prompt, opts)
+        error("boom")
+      end
+
+      local staged = plugin.run({ id = "chat-1" })
+
+      expect.equal(0, #staged)
+      local ended = test_mocks.get_calls("session", "end_session")
+      expect.equal(1, #ended)
+      expect.equal("mock-session-1", ended[1][1])
+    end)
+
+    it("skips a proposal that fails validation", function()
+      -- The two proposals have different shapes, so the list is typed `any`.
+      local proposals: { any } = {
+        { kind = "update", title = "T", body = "B" },
+        { kind = "skill", name = "fix-x", description = "d", body = "B" },
+      }
+      local staged = plugin.stage_proposals("notes", "chat-1", proposals)
+
+      expect.equal(1, #staged)
+      expect.truthy(staged[1]:find("fix-x", 1, true))
     end)
 
     it("writes the proposal file into the staging directory", function()

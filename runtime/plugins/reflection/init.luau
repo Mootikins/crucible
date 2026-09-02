@@ -62,14 +62,19 @@ DO NOT capture (these pollute the knowledge base):
 - One-off task narratives ("I did X then Y then Z for this request").
 - Secrets, tokens, credentials, or personal data.
 
-Emit ONLY a JSON array (no prose, no code fences). Each element:
-  {
-    "title": "Short note title",
-    "body": "Markdown note body. Use [[wikilinks]] to related concepts.",
-    "tags": ["optional", "tags"],
-    "target": "optional/relative/path.md"   // where it should land if accepted
-  }
-If nothing is worth saving, emit exactly: []
+Before you propose, search the kiln with `semantic_search` for each idea and
+read the closest note with `read_note`. If a note already covers it, propose
+an UPDATE of that note with the new evidence folded in, not a new note.
+
+Emit ONLY a JSON array (no prose, no code fences). Each element is one of:
+  { "kind": "create", "title": "...", "body": "...", "tags": [...], "target": "optional/path.md" }
+  { "kind": "update", "target": "existing/path.md", "title": "...", "body": "FULL revised note body" }
+  { "kind": "skill",  "name": "lowercase-hyphens", "description": "one sentence: when to use it",
+    "body": "SKILL.md body: When to apply, When NOT to apply, Steps. Wikilink the notes it rests on." }
+Propose a skill only for a procedure the agent ran more than once, or that
+failed once and then worked. Never propose an UPDATE to a skill: skills the
+user installed are read-only to you, and a skill you wrote before gets a new
+name, not an edit. If nothing is worth saving, emit exactly: []
 ]==]
 
 -- Sentinel baked into a reflection subagent's system prompt so the handler can
@@ -212,10 +217,48 @@ local function slugify(title)
     return slug:sub(1, 48)
 end
 
---- Deterministic-ish id for a proposal file (stem, no extension).
+--- Deterministic-ish id for a proposal file (stem, no extension). A skill
+--- has a `name` and no `title`, so the name gives the slug.
 function M.proposal_id(proposal, index, stamp)
     stamp = stamp or os.date("!%Y%m%d-%H%M%S")
-    return string.format("reflection-%s-%d-%s", stamp, index, slugify(proposal.title))
+    return string.format("reflection-%s-%d-%s", stamp, index, slugify(proposal.title or proposal.name))
+end
+
+--- Return nil when a proposal is well formed, else a reason string. The
+--- three kinds mirror `cru proposals`: a `create` lands a new note, an
+--- `update` replaces the body of an existing note, a `skill` lands a
+--- SKILL.md. An update may not target a skill: installed skills are
+--- read-only to the reviewer.
+function M.validate_proposal(p: any): string?
+    if type(p) ~= "table" then return "not a table" end
+    if type(p.body) ~= "string" or p.body == "" then return "missing body" end
+    local kind = p.kind or "create"
+    if kind == "create" then
+        if type(p.title) ~= "string" or p.title == "" then return "missing title" end
+    elseif kind == "update" then
+        if type(p.target) ~= "string" or p.target == "" then return "update needs a target" end
+        if p.target:match("^%.crucible/") or p.target:match("SKILL%.md$") then
+            return "update may not target a skill"
+        end
+        if type(p.title) ~= "string" or p.title == "" then return "missing title" end
+    elseif kind == "skill" then
+        -- agentskills.io: 1 to 64 characters, a-z, 0-9 and single hyphens,
+        -- with no hyphen at either end.
+        local name = p.name
+        local well_formed = type(name) == "string"
+            and #name > 0
+            and #name <= 64
+            and name:match("^[a-z0-9][a-z0-9%-]*$") ~= nil
+            and name:match("%-$") == nil
+            and name:find("--", 1, true) == nil
+        if not well_formed then return "skill needs a spec-valid name" end
+        if type(p.description) ~= "string" or p.description == "" or #p.description > 1024 then
+            return "skill needs a description of 1 to 1024 characters"
+        end
+    else
+        return "unknown kind: " .. tostring(kind)
+    end
+    return nil
 end
 
 --- Escape a scalar for single-line YAML.
@@ -228,6 +271,8 @@ end
 --- accept) plus the user-facing `title`/`tags`/`target`. `extra.model` names
 --- the model that wrote the session; `cru proposals accept` keeps that line,
 --- so a reader can tell one model's habits from another's in the kiln too.
+--- A `kind` other than `create` is written out; a skill also carries its
+--- `name` and `description`, and its title falls back to the name.
 function M.render_proposal(proposal, session_id, stamp, extra)
     stamp = stamp or os.date("!%Y-%m-%dT%H:%M:%SZ")
     local lines = {
@@ -241,7 +286,15 @@ function M.render_proposal(proposal, session_id, stamp, extra)
     if type(model) == "string" and model ~= "" then
         lines[#lines + 1] = "model: " .. yaml_scalar(model)
     end
-    lines[#lines + 1] = "title: " .. yaml_scalar(proposal.title or "Untitled")
+    local kind = proposal.kind
+    if type(kind) == "string" and kind ~= "create" then
+        lines[#lines + 1] = "kind: " .. kind
+    end
+    if kind == "skill" then
+        lines[#lines + 1] = "name: " .. tostring(proposal.name)
+        lines[#lines + 1] = "description: " .. yaml_scalar(proposal.description)
+    end
+    lines[#lines + 1] = "title: " .. yaml_scalar(proposal.title or proposal.name or "Untitled")
     if proposal.target and proposal.target ~= "" then
         lines[#lines + 1] = "target: " .. yaml_scalar(proposal.target)
     end
@@ -358,7 +411,10 @@ function M.stage_proposals(kiln, session_id, proposals, extra)
     local max = config.get("max_proposals", 5)
     for i, proposal in ipairs(proposals) do
         if i > max then break end
-        if type(proposal) == "table" and proposal.title and proposal.body then
+        local why = M.validate_proposal(proposal)
+        if why then
+            cru.log("warn", "reflection: skipping proposal: " .. why)
+        else
             local filename = M.proposal_id(proposal, i) .. ".md"
             if M.safe_filename(filename) then
                 local path = dir .. "/" .. filename
@@ -424,16 +480,12 @@ function M.run(session: any): { string }
         return {}
     end
 
-    -- Fork a separate session for the review so it never touches the source
-    -- session's prompt cache. It is NOT kiln-less: cru.session.create with no
-    -- kiln defaults to the daemon's data root, so the marker-based recursion
-    -- guard above (not the absence of a kiln) is what stops it reflecting on
-    -- itself.
-    local aux, err = cru.session.create({ type = "chat" })
-    if err or not aux then
-        cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
-        return {}
-    end
+    -- Every input the prompt needs comes before the aux session exists. A
+    -- raise between `create` and `end_session` would leak the session: the
+    -- handler's `pcall` only logs.
+    local transcript = M.build_transcript(messages)
+    local rejected = M.rejected_titles(M.read_rejected(kiln), config.get("rejection_memory", 20))
+    local prompt = M.build_prompt({ transcript = transcript, rejected = rejected })
 
     local agent_cfg = {
         model = model,
@@ -449,22 +501,36 @@ function M.run(session: any): { string }
     }
     local provider = config.get("provider", nil)
     if provider then agent_cfg.provider = provider end
-    cru.session.configure_agent(aux.id, agent_cfg)
 
-    local transcript = M.build_transcript(messages)
-    local rejected = M.rejected_titles(M.read_rejected(kiln), config.get("rejection_memory", 20))
-    local prompt = M.build_prompt({ transcript = transcript, rejected = rejected })
-
-    local iter, send_err = cru.session.send_and_collect(
-        aux.id, prompt, { timeout = config.get("timeout", 120) })
-    if send_err then
-        cru.log("warn", "reflection: review failed: " .. tostring(send_err))
-        cru.session.end_session(aux.id)
+    -- Fork a separate session for the review so it never touches the source
+    -- session's prompt cache. The same kiln is attached, so the reviewer can
+    -- call `semantic_search` and `read_note` before it proposes. The
+    -- marker-based recursion guard above is what stops it reflecting on
+    -- itself.
+    local aux, err = cru.session.create({ type = "chat", kilns = { kiln } })
+    if err or not aux then
+        cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
         return {}
     end
 
-    local output = collect_text(iter)
+    -- One `pcall` covers configure, send and collect, so the aux session
+    -- ends on every path before the result is read.
+    local ok, output = pcall(function(): string?
+        cru.session.configure_agent(aux.id, agent_cfg)
+        local iter, send_err = cru.session.send_and_collect(
+            aux.id, prompt, { timeout = config.get("timeout", 120) })
+        if send_err then
+            cru.log("warn", "reflection: review failed: " .. tostring(send_err))
+            return nil
+        end
+        return collect_text(iter)
+    end)
     cru.session.end_session(aux.id)
+    if not ok then
+        cru.log("warn", "reflection: review raised: " .. tostring(output))
+        return {}
+    end
+    if output == nil then return {} end
 
     local proposals = M.parse_proposals(output)
     if proposals == nil then
@@ -517,6 +583,7 @@ local plugin = {
     read_rejected = M.read_rejected,
     build_prompt = M.build_prompt,
     render_proposal = M.render_proposal,
+    validate_proposal = M.validate_proposal,
     proposal_id = M.proposal_id,
     stage_proposals = M.stage_proposals,
     safe_filename = M.safe_filename,
