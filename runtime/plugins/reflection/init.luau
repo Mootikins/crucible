@@ -224,22 +224,34 @@ function M.proposal_id(proposal, index, stamp)
     return string.format("reflection-%s-%d-%s", stamp, index, slugify(proposal.title or proposal.name))
 end
 
+--- True for a path a `create` or `update` may never touch. This mirrors
+--- `is_skill_path` in `cru proposals`: any path component named `.crucible`
+--- (not only the first one), or a file named `SKILL.md`. A proposal that
+--- fails here is refused at accept time, so it is not worth a stage.
+local function is_skill_path(target: string): boolean
+    for component in target:gmatch("[^/]+") do
+        if component == ".crucible" then return true end
+    end
+    return target:match("^SKILL%.md$") ~= nil or target:match("/SKILL%.md$") ~= nil
+end
+
 --- Return nil when a proposal is well formed, else a reason string. The
 --- three kinds mirror `cru proposals`: a `create` lands a new note, an
 --- `update` replaces the body of an existing note, a `skill` lands a
---- SKILL.md. An update may not target a skill: installed skills are
---- read-only to the reviewer.
+--- SKILL.md. Neither a create nor an update may land on a skill path:
+--- installed skills are read-only to the reviewer.
 function M.validate_proposal(p: any): string?
     if type(p) ~= "table" then return "not a table" end
     if type(p.body) ~= "string" or p.body == "" then return "missing body" end
     local kind = p.kind or "create"
     if kind == "create" then
         if type(p.title) ~= "string" or p.title == "" then return "missing title" end
+        if type(p.target) == "string" and is_skill_path(p.target) then
+            return "create may not target the .crucible directory or a SKILL.md"
+        end
     elseif kind == "update" then
         if type(p.target) ~= "string" or p.target == "" then return "update needs a target" end
-        if p.target:match("^%.crucible/") or p.target:match("SKILL%.md$") then
-            return "update may not target a skill"
-        end
+        if is_skill_path(p.target) then return "update may not target a skill" end
         if type(p.title) ~= "string" or p.title == "" then return "missing title" end
     elseif kind == "skill" then
         -- agentskills.io: 1 to 64 characters, a-z, 0-9 and single hyphens,
@@ -255,6 +267,9 @@ function M.validate_proposal(p: any): string?
         if type(p.description) ~= "string" or p.description == "" or #p.description > 1024 then
             return "skill needs a description of 1 to 1024 characters"
         end
+        -- The CLI refuses a description that spans lines: the frontmatter
+        -- splitter cuts at any line that starts with `---`.
+        if p.description:find("[\n\r]") then return "skill description must be one line" end
     else
         return "unknown kind: " .. tostring(kind)
     end

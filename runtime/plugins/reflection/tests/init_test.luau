@@ -199,6 +199,25 @@ describe("reflection", function()
       expect.truthy(plugin.validate_proposal({ kind = "update", target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
       expect.truthy(plugin.validate_proposal({ kind = "update", target = "Notes/SKILL.md", title = "T", body = "B" }))
     end)
+    it("refuses a skill path in every position, as the CLI does", function()
+      -- `cru proposals accept` checks every path component, not only the first.
+      for _, kind in ipairs({ "create", "update" }) do
+        expect.truthy(plugin.validate_proposal({ kind = kind, target = "Notes/.crucible/x.md", title = "T", body = "B" }))
+        expect.truthy(plugin.validate_proposal({ kind = kind, target = "./.crucible/x.md", title = "T", body = "B" }))
+        expect.truthy(plugin.validate_proposal({ kind = kind, target = ".crucible/skills/x/SKILL.md", title = "T", body = "B" }))
+        expect.truthy(plugin.validate_proposal({ kind = kind, target = "Notes/SKILL.md", title = "T", body = "B" }))
+        expect.truthy(plugin.validate_proposal({ kind = kind, target = "SKILL.md", title = "T", body = "B" }))
+      end
+      -- A file that only contains the name is a plain note.
+      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/my.crucible.md" }))
+      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/NOT-SKILL.md" }))
+    end)
+    it("refuses a skill description that spans lines", function()
+      -- The CLI refuses it at accept time: the frontmatter splitter cuts at
+      -- any line that starts with `---`.
+      expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "a\nb" }))
+      expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "a\rb" }))
+    end)
     it("requires name and description on a skill", function()
       expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x" }))
       expect.is_nil(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "d" }))
