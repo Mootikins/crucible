@@ -102,6 +102,25 @@ and `InputStyle` with concrete types and left `FrameRenderer`; B7 took option
 and no merge. The agents recorded 160 follow-up notes; section 5a holds them
 after deduplication.
 
+## 1c. Block subsystem result, 2026-09-02
+
+Every entry below that names `ASTBlock`, `ASTBlockType`, `ExtractionType`,
+`BlockExtractor`, `SimpleBlockHasher`, `block_extractor.rs`, `block_hasher.rs`,
+`ast.rs`, `BlockProcessingConfig`, `ParsedNote::block_hashes` or
+`ParsedNote::merkle_root` is **done by deletion**. That covers T5-06, B16, and
+the `ASTBlock` rows in the accessor and enum tables.
+
+The subsystem never ran in production: `BlockProcessingConfig::enabled` derived
+`Default`, so it was false at all three call sites. It had no reader outside the
+parser — 84 references, all self-referential. The parser now emits
+`NoteContent.blocks` on every parse: one entry per top-level block, in document
+order, each with the byte span markdown-it's source map already carried. The
+enricher reads that list. Net -2512 lines.
+
+Two consequences worth keeping: `BlockHash` now names exactly one thing, a
+note's content hash on `NoteRecord`; and a block id is a document rank
+(`block_7`), not a per-kind counter.
+
 ## 2. Tier 1 — safe mechanical, this session
 
 Actions: `delete` removes the item. `narrow` changes visibility. `merge-into X` keeps X and deletes the other copy. `call X` replaces an inline body with a call to X.

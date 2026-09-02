@@ -10,8 +10,6 @@
 //! - `error` - Parser error types
 //! - `extensions` - Syntax extension system
 //! - `implementation` - Main `CrucibleParser` implementation
-//! - `block_extractor` - AST block extraction
-//! - `block_hasher` - Block-level hashing
 //! - `frontmatter_extractor` - Frontmatter parsing utilities
 //! - `markdown_it` - markdown-it AST converter + syntax plugins (feature-gated)
 //! - Extension modules: `wikilinks`, `callouts`, `blockquotes`, etc.
@@ -24,8 +22,6 @@ pub mod types;
 // Parser implementation modules (absorbed from crucible-parser)
 #[cfg(feature = "markdown-it-parser")]
 pub mod basic_markdown_it;
-pub mod block_extractor;
-pub mod block_hasher;
 pub mod blockquotes;
 pub mod callouts;
 pub mod enhanced_tags;
@@ -48,20 +44,15 @@ pub use extensions::{Extension, ExtensionRegistry};
 pub use traits::ParserCapabilities;
 
 // Re-export implementation types
-pub use block_extractor::{BlockExtractor, ExtractionConfig};
-pub use block_hasher::SimpleBlockHasher;
 pub use frontmatter_extractor::{
     extract_frontmatter, FrontmatterExtractor, FrontmatterExtractorConfig, FrontmatterResult,
     LineEndingStyle,
 };
-pub use implementation::{BlockProcessingConfig, CrucibleParser};
+pub use implementation::CrucibleParser;
 
 // Re-export parser types from canonical source (this module)
 pub use types::{
     // AST types
-    ASTBlock,
-    ASTBlockMetadata,
-    ASTBlockType,
     // Hash type
     BlockHash,
     Blockquote,

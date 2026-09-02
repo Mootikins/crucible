@@ -2,9 +2,12 @@
 
 use crate::parser::error::ParserResult;
 use crate::parser::types::*;
+use markdown_it::plugins::cmark::block::blockquote::Blockquote as MdBlockquote;
+use markdown_it::plugins::cmark::block::code::CodeBlock as MdIndentedCode;
 use markdown_it::plugins::cmark::block::fence::CodeFence;
 use markdown_it::plugins::cmark::block::heading::ATXHeading;
 use markdown_it::plugins::cmark::block::hr::ThematicBreak;
+use markdown_it::plugins::cmark::block::lheading::SetextHeader;
 use markdown_it::plugins::cmark::block::list::{BulletList, ListItem as MdListItem, OrderedList};
 use markdown_it::plugins::cmark::block::paragraph::Paragraph as MdParagraph;
 use markdown_it::plugins::extra::tables::{Table as MdTable, TableCell, TableHead, TableRow};
@@ -20,6 +23,11 @@ impl AstConverter {
 
         // Walk the AST and extract content
         Self::walk_node(root, &mut content)?;
+
+        // The ordered view. One pass over the root's direct children, which
+        // are the document's top-level blocks in order, each carrying its own
+        // source-map span.
+        content.blocks = Self::top_level_blocks(root);
 
         // Calculate word and character counts
         content.word_count = Self::calculate_word_count(&content);
@@ -141,6 +149,70 @@ impl AstConverter {
         }
 
         Ok(())
+    }
+
+    /// Build the ordered block list from the root's direct children.
+    ///
+    /// A child of the root is a top-level block. Its source map gives both
+    /// ends of its span, so nothing here measures a block by arithmetic over
+    /// stripped text. A node whose kind is not one of the seven is skipped
+    /// rather than guessed at.
+    fn top_level_blocks(root: &Node) -> Vec<Block> {
+        root.children
+            .iter()
+            .filter_map(|node| {
+                let (kind, text) = Self::classify(node)?;
+                let (start_offset, end_offset) = node.srcmap?.get_byte_offsets();
+                Some(Block::new(kind, text, start_offset, end_offset))
+            })
+            .collect()
+    }
+
+    /// Classify one top-level node and take its text, or `None` when it is
+    /// not a block Crucible names.
+    ///
+    /// Code holds its source on the node rather than in inline text children,
+    /// so it is read from the node. Everything else joins its inline text.
+    fn classify(node: &Node) -> Option<(BlockKind, String)> {
+        if let Some(heading) = node.cast::<ATXHeading>() {
+            let level = heading.level;
+            return Some((BlockKind::Heading { level }, Self::extract_text(node)));
+        }
+        if let Some(heading) = node.cast::<SetextHeader>() {
+            let level = heading.level;
+            return Some((BlockKind::Heading { level }, Self::extract_text(node)));
+        }
+        if node.is::<MdParagraph>() {
+            return Some((BlockKind::Paragraph, Self::extract_text(node)));
+        }
+        if let Some(fence) = node.cast::<CodeFence>() {
+            let language = fence
+                .info
+                .split_whitespace()
+                .next()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            return Some((BlockKind::Code { language }, fence.content.clone()));
+        }
+        if let Some(code) = node.cast::<MdIndentedCode>() {
+            return Some((BlockKind::Code { language: None }, code.content.clone()));
+        }
+        if node.is::<BulletList>() {
+            return Some((BlockKind::List { ordered: false }, Self::extract_text(node)));
+        }
+        if node.is::<OrderedList>() {
+            return Some((BlockKind::List { ordered: true }, Self::extract_text(node)));
+        }
+        if node.is::<MdBlockquote>() {
+            return Some((BlockKind::Blockquote, Self::extract_text(node)));
+        }
+        if node.is::<MdTable>() {
+            return Some((BlockKind::Table, Self::extract_text(node)));
+        }
+        if node.is::<ThematicBreak>() {
+            return Some((BlockKind::HorizontalRule, String::new()));
+        }
+        None
     }
 
     /// Extract plain text from a node and its children

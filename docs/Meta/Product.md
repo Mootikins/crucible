@@ -62,7 +62,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Proof:** `crates/crucible-daemon/src/tools/search.rs`::test_property_search_single_property; `crates/crucible-web/web/src/lib/__tests__/frontmatter.test.ts`
 - [-] **Block References** `P0` — `^block-id` paragraph-level linking · [[Help/Block References]] · `crucible-core` (parser)
   - **Gets you:** nothing. `^block-id` is inert text everywhere — nothing defines, resolves, renders, or embeds a block.
-  - **Proof:** _none — there is no anchor-side parse at all; `parser/types/blocks.rs` blocks are content-hash units for the merkle tree, not addressable anchors. `docs/Help/Block References.md` is a spec for an unbuilt feature._
+  - **Proof:** _none — there is no anchor-side parse at all; `parser/types/blocks.rs` `Block` is an ordered span of the document, not an addressable anchor: nothing gives a block a stable name a link could target. `docs/Help/Block References.md` is a spec for an unbuilt feature._
 - [x] **Callouts** `P0` — `> [!type]` admonition blocks · `crucible-web` (markdown-it plugin)
   - **Gets you:** `> [!note] Title` renders as a styled callout box with icon and title in the web reading view and live preview; `> [!tip]-` renders a collapsed `<details>`.
   - **Proof:** `crates/crucible-web/web/src/lib/__tests__/callouts.test.ts`::renders a titled callout with icon, title, and body and `::foldable-collapsed renders a closed <details> with <summary>`. Not rendered in the TUI; the Rust-side `ParsedNote.callouts` extraction has no consumers.

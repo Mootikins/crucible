@@ -1,8 +1,8 @@
 //! Note content structure and basic block types
 
 use super::{
-    Blockquote, Callout, FootnoteMap, HorizontalRule, InlineLink, LatexExpression, ListBlock,
-    Table, Tag, Wikilink,
+    Block, Blockquote, Callout, FootnoteMap, HorizontalRule, InlineLink, LatexExpression,
+    ListBlock, Table, Tag, Wikilink,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,13 @@ pub struct NoteContent {
     /// Limited to first 1000 characters for search preview.
     /// Full content remains on disk.
     pub plain_text: String,
+
+    /// Every top-level block, in document order, with source-map spans.
+    ///
+    /// The typed collections below are views of the same document split by
+    /// kind. They carry no order between kinds; this one does.
+    #[serde(default)]
+    pub blocks: Vec<Block>,
 
     /// Extracted heading structure
     pub headings: Vec<Heading>,
@@ -71,6 +78,7 @@ impl NoteContent {
     pub fn new() -> Self {
         Self {
             plain_text: String::new(),
+            blocks: Vec::new(),
             headings: Vec::new(),
             code_blocks: Vec::new(),
             paragraphs: Vec::new(),

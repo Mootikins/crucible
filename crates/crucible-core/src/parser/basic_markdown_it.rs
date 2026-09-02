@@ -100,6 +100,7 @@ impl BasicMarkdownItExtension {
         match AstConverter::convert(&ast) {
             Ok(converted) => {
                 // Merge extracted content from the AST conversion
+                doc_content.blocks.extend(converted.blocks);
                 doc_content.headings.extend(converted.headings);
                 doc_content.paragraphs.extend(converted.paragraphs);
                 doc_content
@@ -328,5 +329,81 @@ mod tests {
                 .any(|p| p.content.contains("Alpha") && p.content.contains("Beta")),
             "no paragraph spans the whole document"
         );
+    }
+
+    #[test]
+    fn blocks_come_out_in_document_order_with_real_spans() {
+        use crate::parser::types::BlockKind;
+
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = concat!(
+            "# Title\n\n",
+            "Alpha has enough words here.\n\n",
+            "- item one\n- item two\n\n",
+            "```rust\nlet x = 42;\n```\n\n",
+            "> quoted text here\n\n",
+            "---\n"
+        );
+
+        let errors = ext.parse(source, &mut content);
+
+        assert!(errors.is_empty());
+        let kinds: Vec<&BlockKind> = content.blocks.iter().map(|b| &b.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                &BlockKind::Heading { level: 1 },
+                &BlockKind::Paragraph,
+                &BlockKind::List { ordered: false },
+                &BlockKind::Code {
+                    language: Some("rust".to_string())
+                },
+                &BlockKind::Blockquote,
+                &BlockKind::HorizontalRule,
+            ]
+        );
+
+        // Spans are ascending, non-overlapping, and slice the real source.
+        let mut last_end = 0;
+        for block in &content.blocks {
+            assert!(
+                block.start_offset >= last_end,
+                "block {:?} starts before the previous one ended",
+                block.kind
+            );
+            assert!(block.end_offset > block.start_offset);
+            assert!(block.end_offset <= source.len());
+            last_end = block.end_offset;
+        }
+        assert!(source[content.blocks[1].start_offset..].starts_with("Alpha"));
+        assert!(source[content.blocks[3].start_offset..].starts_with("```rust"));
+    }
+
+    #[test]
+    fn every_block_carries_its_own_text() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+        let source = concat!(
+            "# Title\n\n",
+            "Alpha has enough words here.\n\n",
+            "- item one\n- item two\n\n",
+            "```rust\nlet x = 42;\n```\n\n",
+            "> quoted text here\n"
+        );
+
+        let errors = ext.parse(source, &mut content);
+
+        assert!(errors.is_empty());
+        let texts: Vec<&str> = content.blocks.iter().map(|b| b.text.as_str()).collect();
+        assert_eq!(texts[0], "Title");
+        assert_eq!(texts[1], "Alpha has enough words here.");
+        assert!(texts[2].contains("item one"));
+        assert!(
+            texts[3].contains("let x = 42;"),
+            "a code block must carry its source, got {:?}",
+            texts[3]
+        );
+        assert!(texts[4].contains("quoted text here"));
     }
 }

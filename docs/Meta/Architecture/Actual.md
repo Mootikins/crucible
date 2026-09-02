@@ -358,8 +358,7 @@ them.
 | `Tag`, `InlineLink`, `FootnoteMap` | `links.rs:154,202,250` | |
 | `Frontmatter`, `FrontmatterFormat` | `crucible-core/src/parser/types/frontmatter.rs:13,121` | Raw text plus lazy map; Yaml, Toml, None |
 | `BlockHash` | `crucible-core/src/parser/types/block_hash.rs:12` | 32-byte newtype; `NoteRecord.content_hash` |
-| `ASTBlock`, `ASTBlockType` | `crucible-core/src/parser/types/ast.rs:83,12` | Semantic blocks when `BlockProcessingConfig.enabled` (default false) |
-| `BlockExtractor`, `SimpleBlockHasher` | `block_extractor.rs:130`, `block_hasher.rs:16` | Blocks, BLAKE3 hashes, Merkle root |
+| `Block`, `BlockKind` | `crucible-core/src/parser/types/blocks.rs` | Every top-level block, in document order, with source-map spans |
 | `ExtensionRegistry` | `crucible-core/src/parser/extensions.rs:94` | Ordered `Arc<dyn SyntaxExtension>`; one `Extension` enum after plan T3-B1 |
 | `TaskFile`, `TaskGraph` | `crucible-core/src/parser/types/task.rs:116,267` | TASKS.md view |
 | `WorkflowDoc`, `WorkflowStep`, `Gate` | `crucible-core/src/parser/types/workflow.rs:25,61,128` | `type: workflow` view |
@@ -430,14 +429,10 @@ kiln-search system message tagged `PRECOGNITION_TAG`
 
 **Confirmed problems.**
 
-- `hashing/` (5 files, about 1,000 lines) has zero callers; live hashing calls
-  `blake3` directly (`ast.rs:180`, `block_hasher.rs:60`), so
-  `normalize_block_text` never runs. Two hashes carry the name "block hash":
-  `ASTBlock.block_hash` is `blake3(content)`, `SimpleBlockHasher::hash_block`
-  hashes JSON of type, content, metadata and offsets.
+- The two rival "block hash" definitions are gone with the Merkle subsystem.
+  `BlockHash` now names one thing: a note's content hash on `NoteRecord`.
 - `ParsedNote` carries two copies of six lists (`parsed_note.rs:39-57`,
-  `content.rs:31-49`); `implementation.rs:454-459` clones them;
-  `block_extractor.rs:330-344` re-merges with `contains`; the daemon DTO fills
+  `content.rs:31-49`); `implementation.rs:454-459` clones them; the daemon DTO fills
   only the top-level copies (`rpc_client/storage.rs:86`) while
   `repository.rs:111` writes `note.content.wikilinks`.
 - Five frontmatter splitters in core (`implementation.rs:241`,

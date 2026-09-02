@@ -7,6 +7,7 @@
 use super::types::{BlockEmbedding, EnrichmentMetadata};
 use anyhow::Result;
 use crucible_core::enrichment::{EmbeddingProvider, EnrichedNote};
+use crucible_core::parser::types::BlockKind;
 use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -16,13 +17,6 @@ pub struct Enricher {
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     min_words_for_embedding: usize,
     max_batch_size: usize,
-}
-
-struct BlockCandidate {
-    block_id: String,
-    word_count: usize,
-    offset: usize,
-    text: String,
 }
 
 impl Enricher {
@@ -172,18 +166,19 @@ impl Enricher {
         Ok(all_embeddings)
     }
 
+    /// Build `(block_id, embedded_text)` for every block worth embedding.
+    ///
+    /// One pass in document order. The id is the block's rank in the note, so
+    /// it names a position in the document rather than a per-kind counter, and
+    /// the heading trail comes from the walk rather than from an offset map.
     fn extract_block_texts(
         &self,
         parsed: &ParsedNote,
         changed_blocks: &[String],
     ) -> Vec<(String, String)> {
-        let mut blocks = Vec::new();
-
-        let breadcrumbs = build_breadcrumbs(parsed);
-
-        // Embed everything when caller passes no block IDs, or when the IDs
+        // Embed everything when the caller names no blocks, or when the ids
         // are section-style (from the pipeline's diff layer) rather than
-        // concrete block IDs.
+        // concrete block ids.
         let embed_all = changed_blocks.is_empty()
             || changed_blocks.iter().any(|id| {
                 id.starts_with("modified_section")
@@ -191,151 +186,42 @@ impl Enricher {
                     || id.starts_with("removed_section")
             });
 
-        self.process_block_candidates(
-            &mut blocks,
-            parsed
-                .content
-                .headings
-                .iter()
-                .enumerate()
-                .map(|(idx, heading)| BlockCandidate {
-                    block_id: format!("heading_{}", idx),
-                    word_count: heading.text.split_whitespace().count(),
-                    offset: heading.offset,
-                    text: heading.text.clone(),
-                })
-                .collect(),
-            changed_blocks,
-            embed_all,
-            &breadcrumbs,
-        );
+        let filename = parsed
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Unknown");
 
-        self.process_block_candidates(
-            &mut blocks,
-            parsed
-                .content
-                .paragraphs
-                .iter()
-                .enumerate()
-                .map(|(idx, paragraph)| BlockCandidate {
-                    block_id: format!("paragraph_{}", idx),
-                    word_count: paragraph.word_count,
-                    offset: paragraph.offset,
-                    text: paragraph.content.clone(),
-                })
-                .collect(),
-            changed_blocks,
-            embed_all,
-            &breadcrumbs,
-        );
+        // The open heading path, as (level, text). A heading closes every
+        // entry at its own level or deeper.
+        let mut trail: Vec<(u8, &str)> = Vec::new();
+        let mut blocks = Vec::new();
 
-        self.process_block_candidates(
-            &mut blocks,
-            parsed
-                .content
-                .code_blocks
-                .iter()
-                .enumerate()
-                .map(|(idx, code_block)| BlockCandidate {
-                    block_id: format!("code_{}", idx),
-                    word_count: code_block.content.split_whitespace().count(),
-                    offset: code_block.offset,
-                    text: code_block.content.clone(),
-                })
-                .collect(),
-            changed_blocks,
-            embed_all,
-            &breadcrumbs,
-        );
+        for (index, block) in parsed.content.blocks.iter().enumerate() {
+            if let BlockKind::Heading { level } = block.kind {
+                while trail.last().is_some_and(|(open, _)| *open >= level) {
+                    trail.pop();
+                }
+                trail.push((level, block.text.as_str()));
+            }
 
-        self.process_block_candidates(
-            &mut blocks,
-            parsed
-                .content
-                .lists
-                .iter()
-                .enumerate()
-                .map(|(idx, list)| {
-                    let text = list
-                        .items
-                        .iter()
-                        .map(|item| item.content.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    BlockCandidate {
-                        block_id: format!("list_{}", idx),
-                        word_count: text.split_whitespace().count(),
-                        offset: list.offset,
-                        text,
-                    }
-                })
-                .collect(),
-            changed_blocks,
-            embed_all,
-            &breadcrumbs,
-        );
+            let block_id = format!("block_{}", index);
+            if !embed_all && !changed_blocks.contains(&block_id) {
+                continue;
+            }
+            if block.word_count() < self.min_words_for_embedding {
+                continue;
+            }
 
-        self.process_block_candidates(
-            &mut blocks,
-            parsed
-                .content
-                .blockquotes
-                .iter()
-                .enumerate()
-                .map(|(idx, blockquote)| BlockCandidate {
-                    block_id: format!("blockquote_{}", idx),
-                    word_count: blockquote.content.split_whitespace().count(),
-                    offset: blockquote.offset,
-                    text: blockquote.content.clone(),
-                })
-                .collect(),
-            changed_blocks,
-            embed_all,
-            &breadcrumbs,
-        );
-
-        debug!(
-            "Extracted {} blocks from {} ({} total blocks in note)",
-            blocks.len(),
-            parsed.path.display(),
-            parsed.content.headings.len()
-                + parsed.content.paragraphs.len()
-                + parsed.content.code_blocks.len()
-                + parsed.content.lists.len()
-                + parsed.content.blockquotes.len()
-        );
+            let mut breadcrumb = String::from(filename);
+            for (_, heading) in &trail {
+                breadcrumb.push_str(" > ");
+                breadcrumb.push_str(heading);
+            }
+            blocks.push((block_id, format!("[{}] {}", breadcrumb, block.text)));
+        }
 
         blocks
-    }
-
-    fn process_block_candidates(
-        &self,
-        blocks: &mut Vec<(String, String)>,
-        candidates: Vec<BlockCandidate>,
-        changed_blocks: &[String],
-        embed_all: bool,
-        breadcrumbs: &std::collections::HashMap<usize, String>,
-    ) {
-        for candidate in candidates {
-            if !embed_all && !changed_blocks.contains(&candidate.block_id) {
-                continue;
-            }
-
-            if candidate.word_count < self.min_words_for_embedding {
-                continue;
-            }
-
-            let context = breadcrumbs
-                .get(&candidate.offset)
-                .cloned()
-                .unwrap_or_default();
-            let text_with_context = if context.is_empty() {
-                candidate.text
-            } else {
-                format!("[{}] {}", context, candidate.text)
-            };
-            blocks.push((candidate.block_id, text_with_context));
-        }
     }
 
     async fn extract_metadata(&self, parsed: &ParsedNote) -> Result<EnrichmentMetadata> {
@@ -367,76 +253,6 @@ impl Enricher {
 
         Ok(metadata)
     }
-}
-
-/// Build breadcrumbs (heading hierarchy) for all content positions.
-///
-/// Maps byte offsets to paths like `Filename > H1 > H2 > ...`, letting blocks
-/// include their hierarchical context in embeddings without triggering cascade
-/// re-embeddings when a heading changes.
-fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, String> {
-    use std::collections::HashMap;
-
-    let mut breadcrumbs = HashMap::new();
-    let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
-
-    let filename = parsed
-        .path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Unknown");
-
-    for heading in &parsed.content.headings {
-        while let Some(&(stack_level, _, _)) = heading_stack.last() {
-            if stack_level >= heading.level {
-                heading_stack.pop();
-            } else {
-                break;
-            }
-        }
-
-        heading_stack.push((heading.level, &heading.text, heading.offset));
-
-        let mut path_parts: Vec<&str> = vec![filename];
-        path_parts.extend(heading_stack.iter().map(|(_, text, _)| *text));
-        let breadcrumb = path_parts.join(" > ");
-
-        breadcrumbs.insert(heading.offset, breadcrumb.clone());
-
-        let next_offset = parsed
-            .content
-            .headings
-            .iter()
-            .find(|h| h.offset > heading.offset)
-            .map(|h| h.offset)
-            .unwrap_or(usize::MAX);
-
-        for para in &parsed.content.paragraphs {
-            if para.offset > heading.offset && para.offset < next_offset {
-                breadcrumbs.insert(para.offset, breadcrumb.clone());
-            }
-        }
-
-        for code in &parsed.content.code_blocks {
-            if code.offset > heading.offset && code.offset < next_offset {
-                breadcrumbs.insert(code.offset, breadcrumb.clone());
-            }
-        }
-
-        for list in &parsed.content.lists {
-            if list.offset > heading.offset && list.offset < next_offset {
-                breadcrumbs.insert(list.offset, breadcrumb.clone());
-            }
-        }
-
-        for quote in &parsed.content.blockquotes {
-            if quote.offset > heading.offset && quote.offset < next_offset {
-                breadcrumbs.insert(quote.offset, breadcrumb.clone());
-            }
-        }
-    }
-
-    breadcrumbs
 }
 
 #[cfg(test)]
@@ -495,39 +311,54 @@ mod tests {
         ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build()
     }
 
+    fn para(text: &str, start_offset: usize) -> crucible_core::parser::types::Block {
+        use crucible_core::parser::types::{Block, BlockKind};
+        let end_offset = start_offset + text.len();
+        Block::new(
+            BlockKind::Paragraph,
+            text.to_string(),
+            start_offset,
+            end_offset,
+        )
+    }
+
+    fn heading(level: u8, text: &str, start_offset: usize) -> crucible_core::parser::types::Block {
+        use crucible_core::parser::types::{Block, BlockKind};
+        let end_offset = start_offset + text.len();
+        Block::new(
+            BlockKind::Heading { level },
+            text.to_string(),
+            start_offset,
+            end_offset,
+        )
+    }
+
     fn create_test_parsed_note_with_content() -> ParsedNote {
-        use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
+        use crucible_core::parser::ParsedNoteBuilder;
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
-
-        note.content.paragraphs.push(Paragraph::new(
-            "This is the first paragraph with more than five words for embedding.".to_string(),
-            0,
-        ));
-        note.content.paragraphs.push(Paragraph::new(
-            "This is the second paragraph also containing enough words.".to_string(),
-            100,
-        ));
-
+        note.content.blocks = vec![
+            para(
+                "This is the first paragraph with more than five words for embedding.",
+                0,
+            ),
+            para(
+                "This is the second paragraph also containing enough words.",
+                100,
+            ),
+        ];
         note
     }
 
     fn create_test_parsed_note_with_three_paragraphs() -> ParsedNote {
-        use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
+        use crucible_core::parser::ParsedNoteBuilder;
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
-        note.content.paragraphs.push(Paragraph::new(
-            "Paragraph one has more than five words for embedding".to_string(),
-            0,
-        ));
-        note.content.paragraphs.push(Paragraph::new(
-            "Paragraph two also has enough words for embedding".to_string(),
-            10,
-        ));
-        note.content.paragraphs.push(Paragraph::new(
-            "Paragraph three has enough words too for embedding".to_string(),
-            20,
-        ));
+        note.content.blocks = vec![
+            para("Paragraph one has more than five words for embedding", 0),
+            para("Paragraph two also has enough words for embedding", 100),
+            para("Paragraph three has enough words too for embedding", 200),
+        ];
         note
     }
 
@@ -545,8 +376,8 @@ mod tests {
             2,
             "Expected 2 embeddings for 2 paragraphs"
         );
-        assert_eq!(embeddings[0].block_id, "paragraph_0");
-        assert_eq!(embeddings[1].block_id, "paragraph_1");
+        assert_eq!(embeddings[0].block_id, "block_0");
+        assert_eq!(embeddings[1].block_id, "block_1");
     }
 
     #[tokio::test]
@@ -621,198 +452,155 @@ mod tests {
     }
 
     #[test]
-    fn build_breadcrumbs_with_headings() {
-        use crucible_core::parser::{Heading, Paragraph, ParsedNoteBuilder};
+    fn a_block_under_the_word_floor_is_not_embedded() {
+        use crucible_core::parser::ParsedNoteBuilder;
 
+        let service = Enricher::without_embeddings();
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
-        note.content
-            .headings
-            .push(Heading::new(1, "Introduction", 0));
-        note.content.headings.push(Heading::new(2, "Details", 50));
-        note.content.paragraphs.push(Paragraph::new(
-            "A paragraph under Details heading with enough words.".to_string(),
-            60,
-        ));
+        note.content.blocks = vec![para("Hi", 0), para("One two three four five six", 10)];
 
-        let crumbs = build_breadcrumbs(&note);
+        let blocks = service.extract_block_texts(&note, &[]);
 
-        assert!(crumbs.contains_key(&0));
-        assert!(crumbs.contains_key(&50));
-        let para_crumb = crumbs.get(&60).unwrap();
-        assert!(
-            para_crumb.contains("Details"),
-            "paragraph breadcrumb should contain parent heading: {para_crumb}"
+        assert_eq!(blocks.len(), 1, "the two-word block is skipped");
+        assert_eq!(
+            blocks[0].0, "block_1",
+            "the id stays the block's rank in the document, so the skip leaves a hole"
         );
     }
 
-    #[test]
-    fn build_breadcrumbs_empty_note() {
-        let note = create_test_parsed_note();
-        let crumbs = build_breadcrumbs(&note);
-        assert!(crumbs.is_empty());
-    }
-
-    #[test]
-    fn extract_block_texts_skips_short_blocks() {
-        use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
-
-        let service = Enricher::without_embeddings();
-        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
-        note.content
-            .paragraphs
-            .push(Paragraph::new("Hi".to_string(), 0));
-        note.content.paragraphs.push(Paragraph::new(
-            "One two three four five six".to_string(),
-            10,
-        ));
-
-        let blocks = service.extract_block_texts(&note, &[]);
-        assert_eq!(blocks.len(), 1, "short paragraph should be skipped");
-        assert_eq!(blocks[0].0, "paragraph_1");
-    }
-
     fn create_test_note_with_all_extractable_block_types() -> ParsedNote {
-        use crucible_core::parser::{
-            Blockquote, CodeBlock, Heading, ListBlock, ListItem, ListType, Paragraph,
-            ParsedNoteBuilder,
-        };
+        use crucible_core::parser::types::{Block, BlockKind};
+        use crucible_core::parser::ParsedNoteBuilder;
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/enrichment.md")).build();
-
-        note.content.headings.push(Heading::new(
-            1,
-            "Primary architecture heading context words",
-            0,
-        ));
-        note.content.headings.push(Heading::new(
-            2,
-            "Secondary execution heading context words",
-            40,
-        ));
-        note.content.headings.push(Heading::new(
-            3,
-            "Tertiary extraction heading context words",
-            80,
-        ));
-
-        note.content.paragraphs.push(Paragraph::new(
-            "Paragraph content carries enough words for extraction checks".to_string(),
-            120,
-        ));
-
-        note.content.code_blocks.push(CodeBlock::new(
-            Some("rust".to_string()),
-            "fn demo_example() { let answer = 42; println!(\"{}\", answer); }".to_string(),
-            160,
-        ));
-
-        let mut list = ListBlock::new(ListType::Unordered, 220);
-        list.add_item(ListItem::new(
-            "First list item carries context".to_string(),
-            0,
-        ));
-        list.add_item(ListItem::new(
-            "Second list item keeps meaning".to_string(),
-            0,
-        ));
-        note.content.lists.push(list);
-
-        note.content.blockquotes.push(Blockquote::new(
-            "Blockquote words stay visible with context".to_string(),
-            280,
-        ));
-
+        note.content.blocks = vec![
+            heading(1, "Primary architecture heading context words", 0),
+            heading(2, "Secondary execution heading context words", 40),
+            heading(3, "Tertiary extraction heading context words", 80),
+            para(
+                "Paragraph content carries enough words for extraction checks",
+                120,
+            ),
+            Block::new(
+                BlockKind::Code {
+                    language: Some("rust".to_string()),
+                },
+                "fn demo_example() { let answer = 42; println!(\"{}\", answer); }".to_string(),
+                160,
+                222,
+            ),
+            Block::new(
+                BlockKind::List { ordered: false },
+                "First list item carries context Second list item keeps meaning".to_string(),
+                230,
+                292,
+            ),
+            Block::new(
+                BlockKind::Blockquote,
+                "Blockquote words stay visible with context".to_string(),
+                300,
+                342,
+            ),
+        ];
         note
     }
 
+    /// The seven ids and texts every block-level test below expects, in
+    /// document order.
+    fn expected_all_block_types() -> Vec<(String, String)> {
+        let h1 = "Primary architecture heading context words";
+        let h2 = "Secondary execution heading context words";
+        let h3 = "Tertiary extraction heading context words";
+        let deep = format!("enrichment > {h1} > {h2} > {h3}");
+
+        vec![
+            ("block_0".to_string(), format!("[enrichment > {h1}] {h1}")),
+            (
+                "block_1".to_string(),
+                format!("[enrichment > {h1} > {h2}] {h2}"),
+            ),
+            ("block_2".to_string(), format!("[{deep}] {h3}")),
+            (
+                "block_3".to_string(),
+                format!("[{deep}] Paragraph content carries enough words for extraction checks"),
+            ),
+            (
+                "block_4".to_string(),
+                format!(
+                    "[{deep}] fn demo_example() {{ let answer = 42; println!(\"{{}}\", answer); }}"
+                ),
+            ),
+            (
+                "block_5".to_string(),
+                format!("[{deep}] First list item carries context Second list item keeps meaning"),
+            ),
+            (
+                "block_6".to_string(),
+                format!("[{deep}] Blockquote words stay visible with context"),
+            ),
+        ]
+    }
+
     #[test]
-    fn extract_block_texts_all_block_types_with_context() {
+    fn every_block_kind_is_embedded_with_its_heading_trail() {
         let service = Enricher::without_embeddings();
         let note = create_test_note_with_all_extractable_block_types();
 
         let blocks = service.extract_block_texts(&note, &[]);
 
-        let h1 = "Primary architecture heading context words";
-        let h2 = "Secondary execution heading context words";
-        let h3 = "Tertiary extraction heading context words";
-        let deep_context = format!("enrichment > {h1} > {h2} > {h3}");
-
-        let expected = vec![
-            (
-                "heading_0".to_string(),
-                format!("[enrichment > {h1}] {h1}"),
-            ),
-            (
-                "heading_1".to_string(),
-                format!("[enrichment > {h1} > {h2}] {h2}"),
-            ),
-            (
-                "heading_2".to_string(),
-                format!("[{deep_context}] {h3}"),
-            ),
-            (
-                "paragraph_0".to_string(),
-                format!("[{deep_context}] Paragraph content carries enough words for extraction checks"),
-            ),
-            (
-                "code_0".to_string(),
-                format!("[{deep_context}] fn demo_example() {{ let answer = 42; println!(\"{{}}\", answer); }}"),
-            ),
-            (
-                "list_0".to_string(),
-                format!("[{deep_context}] First list item carries context Second list item keeps meaning"),
-            ),
-            (
-                "blockquote_0".to_string(),
-                format!("[{deep_context}] Blockquote words stay visible with context"),
-            ),
-        ];
-
-        assert_eq!(blocks, expected);
+        assert_eq!(blocks, expected_all_block_types());
     }
 
     #[test]
-    fn extract_block_texts_respects_changed_block_ids() {
+    fn naming_changed_blocks_embeds_only_those() {
         let service = Enricher::without_embeddings();
         let note = create_test_note_with_all_extractable_block_types();
-        let changed_blocks = vec![
-            "heading_2".to_string(),
-            "paragraph_0".to_string(),
-            "code_0".to_string(),
-            "list_0".to_string(),
-            "blockquote_0".to_string(),
-        ];
+        let changed: Vec<String> = (2..=6).map(|i| format!("block_{i}")).collect();
 
-        let blocks = service.extract_block_texts(&note, &changed_blocks);
+        let blocks = service.extract_block_texts(&note, &changed);
 
-        let h1 = "Primary architecture heading context words";
-        let h2 = "Secondary execution heading context words";
-        let h3 = "Tertiary extraction heading context words";
-        let deep_context = format!("enrichment > {h1} > {h2} > {h3}");
+        assert_eq!(blocks, expected_all_block_types()[2..].to_vec());
+    }
 
-        let expected = vec![
-            (
-                "heading_2".to_string(),
-                format!("[{deep_context}] {h3}"),
+    #[test]
+    fn a_block_carries_the_breadcrumb_of_the_section_it_sits_in() {
+        use crucible_core::parser::types::{Block, BlockKind};
+        use crucible_core::parser::ParsedNoteBuilder;
+
+        let enricher = Enricher::without_embeddings();
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/guide.md")).build();
+        note.content.blocks = vec![
+            Block::new(BlockKind::Heading { level: 1 }, "Guide".into(), 0, 8),
+            Block::new(BlockKind::Heading { level: 2 }, "Setup".into(), 8, 17),
+            Block::new(
+                BlockKind::Paragraph,
+                "install the toolchain before anything else".into(),
+                17,
+                60,
             ),
-            (
-                "paragraph_0".to_string(),
-                format!("[{deep_context}] Paragraph content carries enough words for extraction checks"),
-            ),
-            (
-                "code_0".to_string(),
-                format!("[{deep_context}] fn demo_example() {{ let answer = 42; println!(\"{{}}\", answer); }}"),
-            ),
-            (
-                "list_0".to_string(),
-                format!("[{deep_context}] First list item carries context Second list item keeps meaning"),
-            ),
-            (
-                "blockquote_0".to_string(),
-                format!("[{deep_context}] Blockquote words stay visible with context"),
+            Block::new(BlockKind::Heading { level: 2 }, "Usage".into(), 60, 69),
+            Block::new(
+                BlockKind::Paragraph,
+                "run the command with the flag you need".into(),
+                69,
+                110,
             ),
         ];
 
-        assert_eq!(blocks, expected);
+        let blocks = enricher.extract_block_texts(&note, &[]);
+        let by_id: std::collections::HashMap<&str, &str> = blocks
+            .iter()
+            .map(|(id, text)| (id.as_str(), text.as_str()))
+            .collect();
+
+        assert_eq!(
+            by_id.get("block_2").copied(),
+            Some("[guide > Guide > Setup] install the toolchain before anything else")
+        );
+        assert_eq!(
+            by_id.get("block_4").copied(),
+            Some("[guide > Guide > Usage] run the command with the flag you need"),
+            "a block under the second H2 must not inherit the first H2"
+        );
     }
 }
