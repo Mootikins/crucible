@@ -319,6 +319,27 @@ local function install_notify_mock()
     end
 end
 
+--- `cru.tools.set_active` and `cru.tools.get_active` — the active tool
+--- set of a session. The mock records the patterns and narrows nothing:
+--- the runner VM dispatches no tool. A plugin test asserts what a session
+--- was narrowed to. The daemon registers the rest of `cru.tools`; the bare
+--- executor has none, so the table is made when it is absent.
+local function install_tools_mock()
+    local tools = cru.tools
+    if type(tools) ~= "table" then
+        tools = {}
+        cru.tools = tools
+    end
+    tools.set_active = function(session_id, patterns)
+        record_call("tools", "set_active", session_id, patterns)
+        return true, nil
+    end
+    tools.get_active = function(session_id)
+        record_call("tools", "get_active", session_id)
+        return nil, nil
+    end
+end
+
 function test_mocks.setup(overrides)
     overrides = overrides or {}
     _fixtures = default_fixtures()
@@ -337,6 +358,7 @@ function test_mocks.setup(overrides)
     -- The deprecated plural alias, mirroring the real module's forwarding.
     cru.sessions = cru.session
     install_notify_mock()
+    install_tools_mock()
 end
 
 function test_mocks.reset()

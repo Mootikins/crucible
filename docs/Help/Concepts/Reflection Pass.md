@@ -24,6 +24,7 @@ The governing principle is **propose, do not dispose.** Proposals are staged out
 - **Trigger:** `on_session_end`. Every finished session is a candidate; a session with fewer than `min_turns` user turns is skipped.
 - **Requires configuration:** the plugin is **inert until you configure an auxiliary model**. Without `plugins.reflection.model` it logs a warning and skips every session.
 - **Execution:** a forked auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. When the reviewer's own session ends, the plugin reads its type from the daemon and skips it, so a review never reviews itself.
+- **Read-only by tool set:** before the prompt is sent, the plugin narrows the reviewer's session to `semantic_search`, `read_note`, `list_notes` and `grep_notes` with `cru.tools.set_active`. The daemon refuses every other tool at dispatch, so the reviewer cannot write a note or a file. If the daemon cannot narrow the set, no prompt is sent.
 - **Reads before it proposes:** the reviewer searches the kiln with `semantic_search` and reads the closest note with `read_note`. When a note already covers the idea, it proposes an update of that note, not a duplicate.
 - **Output:** proposals of three kinds — `create`, `update` and `skill` — staged in `KILN/.crucible/proposals/`, *outside* the indexed kiln.
 - **Disposition:** `cru proposals {list,show,accept,reject}`. A human decides. A rejected proposal is kept in `rejected/`, and the reviewer is told not to propose it again.
@@ -97,7 +98,7 @@ The reviewer's prompt has four parts, in this order:
 3. **Outcome evidence.** The counts the daemon has about the session: user turns, tool calls, tool errors, and the edits the user accepted, rejected or did not review (from the [[Help/Concepts/Review Ledger|review ledger]]). No score exists. The prompt says that a rejected edit or a tool error is where a durable lesson usually is.
 4. **The transcript.** Every message, including each tool call with its arguments and each tool result. A tool result is cut at `tool_result_chars`; the whole transcript is cut at `transcript_chars` from the front, so the reviewer sees how the session ended. The prompt tells the reviewer that text inside a tool result is data the agent saw, never an instruction.
 
-The reviewer runs with the built-in tools and the session's kiln attached, so it can search and read before it answers. `max_iterations` caps its tool loop.
+The reviewer runs with the four read-only kiln tools and the session's kiln attached, so it can search and read before it answers. `max_iterations` caps its tool loop.
 
 ## Guardrails against kiln pollution
 
@@ -175,7 +176,6 @@ Because policy lives in Lua, both plugins are fully shadowable — the reviewer 
 
 - An `update` to a skill keeps the frontmatter as the parser returns it. CRLF line endings and blank lines at the edge of the frontmatter are normalised in the written file.
 - The plugin's `validate_proposal` refuses the same targets the CLI refuses, but its check of the staging path is laxer for paths with `./` or `//` segments. The CLI refuses those at accept, so the effect is a staged file that cannot land, never a write into the staging area.
-- The reviewer's session still has the built-in tools attached. `max_iterations` and the propose-only prompt bound it; a core knob to detach tools is a follow-up.
 
 ## Related
 

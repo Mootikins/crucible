@@ -767,6 +767,39 @@ describe("reflection", function()
       expect.equal("mock-session-1", ended[1][1])
     end)
 
+    it("narrows the reviewer to tools that only read the kiln", function()
+      plugin.review(opts())
+
+      -- The set is a list of glob patterns, enforced at dispatch. A write
+      -- tool in it, or a wildcard, would let the reviewer write to the
+      -- kiln or the workspace, and the contract is "nothing auto-merges".
+      local narrowed = test_mocks.get_calls("tools", "set_active")
+      expect.equal(1, #narrowed)
+      expect.equal("mock-session-1", narrowed[1][1])
+      local names: { string } = narrowed[1][2]
+      expect.truthy(#names > 0)
+      for _, name in ipairs(names) do
+        expect.truthy(name:find("*", 1, true) == nil)
+        expect.truthy(name ~= "create_note")
+        expect.truthy(name ~= "update_note")
+        expect.truthy(name ~= "write_file")
+        expect.truthy(name ~= "bash")
+      end
+    end)
+
+    it("sends nothing when the daemon refuses to narrow the tool set", function()
+      (cru.tools :: any).set_active = function(id, patterns)
+        return nil, "active tool sets are not bound"
+      end
+
+      local text, err = plugin.review(opts())
+
+      expect.is_nil(text)
+      expect.truthy((err :: string):find("not bound", 1, true) ~= nil)
+      expect.equal(0, #test_mocks.get_calls("session", "send_and_collect"))
+      expect.equal(1, #test_mocks.get_calls("session", "end_session"))
+    end)
+
     it("ends the aux session when the review raises", function()
       cru.session.send_and_collect = function(id, prompt, opts)
         error("boom")

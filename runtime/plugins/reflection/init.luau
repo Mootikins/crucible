@@ -41,7 +41,8 @@ M.SYSTEM_PROMPT = [==[
 You are a reflection reviewer. You read a finished agent session and propose
 durable knowledge notes worth keeping in a personal knowledge base (a "kiln").
 
-You do NOT write to the kiln. You only PROPOSE. A human reviews every proposal.
+Your tools only read the kiln. You cannot write to it. You only PROPOSE. A
+human reviews every proposal.
 Be conservative: proposing nothing is the correct answer for most sessions.
 
 Capture ONLY durable, reusable knowledge, such as:
@@ -562,6 +563,12 @@ function M.load_hunks(session_id: string): { any }?
     return nil
 end
 
+--- The tools the reviewer may call. Every one reads the kiln; none writes
+--- to the kiln or to the workspace. `cru.tools.set_active` narrows the aux
+--- session to this set, and the daemon refuses every other name at
+--- dispatch. The names are the ones `tools/surface.rs` registers.
+M.REVIEWER_TOOLS = { "semantic_search", "read_note", "list_notes", "grep_notes" }
+
 export type ReviewOpts = {
     kiln: string,
     model: string,
@@ -580,17 +587,19 @@ export type ReviewOpts = {
 --- consolidation pass leaves it out of its sample. The same kiln is
 --- attached, so the reviewer can search and read before it proposes. A
 --- separate session never touches the source session's prompt cache.
---- One `pcall` covers configure, send and collect, so the aux session ends
---- on every path before the result is read.
+--- One `pcall` covers configure, narrow, send and collect, so the aux
+--- session ends on every path before the result is read.
+---
+--- The session's tool set is narrowed to `REVIEWER_TOOLS` before the prompt
+--- is sent. A daemon that refuses to narrow gets no prompt: a reviewer with
+--- the write tools could land a note without a human.
 function M.review(opts: ReviewOpts): (string?, string?)
     local agent_cfg = {
         model = opts.model,
         system_prompt = opts.system_prompt,
         -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
         max_iterations = opts.max_iterations,
-        -- No external tool servers for an unattended reviewer. NOTE: built-in
-        -- tools are still attached — fully disabling tools needs a core knob
-        -- (follow-up); low max_iterations + the propose-only prompt bound it.
+        -- No external tool servers for an unattended reviewer.
         mcp_servers = {},
     }
     if opts.provider then agent_cfg.provider = opts.provider end
@@ -602,6 +611,10 @@ function M.review(opts: ReviewOpts): (string?, string?)
 
     local ok, text, send_err = pcall(function(): (string?, string?)
         cru.session.configure_agent(aux.id, agent_cfg)
+        local narrowed, narrow_err = cru.tools.set_active(aux.id, M.REVIEWER_TOOLS)
+        if not narrowed then
+            return nil, "could not narrow the reviewer's tools: " .. tostring(narrow_err)
+        end
         local iter, err = cru.session.send_and_collect(
             aux.id, opts.prompt, { timeout = opts.timeout })
         if err then return nil, "review failed: " .. tostring(err) end
