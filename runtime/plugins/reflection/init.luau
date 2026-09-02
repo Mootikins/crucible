@@ -614,8 +614,9 @@ function M.stage_proposals(kiln, session_id, proposals, extra: ProposalExtra?)
     end
     if #written > 0 then
         -- A toast needs a client; a daemon with none must not fail the stage.
+        local source = (extra and extra.source) or "reflection"
         pcall(cru.log.notify, string.format(
-            "reflection: %d proposal(s) staged. Review with `cru proposals list`.", #written),
+            "%s: %d proposal(s) staged. Review with `cru proposals list`.", source, #written),
             cru.log.levels.INFO)
     end
     return written
