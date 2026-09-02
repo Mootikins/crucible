@@ -233,6 +233,12 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
             if !dest.is_file() {
                 bail!("update target does not exist: {}", dest.display());
             }
+            // The lexical check above cannot see a symlink. `fs::write` follows
+            // one, so resolve the real file and apply both guards again.
+            let real_rel = real_path_within_kiln(kiln, &dest, &target_rel)?;
+            if is_skill_path(&real_rel) {
+                bail!("an update may not target a skill: {target_rel} resolves to {real_rel}");
+            }
             (dest, strip_provenance(fm, &result.body))
         }
         ProposalKind::Skill => {
@@ -312,12 +318,28 @@ fn yaml_string(s: &str) -> String {
 /// True for a path an `update` proposal may never touch: anything under
 /// `.crucible/` (skills and staging live there) and any `SKILL.md`. This
 /// loop never edits an installed skill.
+///
+/// `Path::components` keeps a leading `.` as `CurDir`, so the check looks at
+/// every component and not only the first one.
 fn is_skill_path(target_rel: &str) -> bool {
     let p = Path::new(target_rel);
-    p.components()
-        .next()
-        .is_some_and(|c| c.as_os_str() == ".crucible")
+    p.components().any(|c| c.as_os_str() == ".crucible")
         || p.file_name().is_some_and(|n| n == "SKILL.md")
+}
+
+/// Canonicalize an existing `dest` and return its path relative to the
+/// canonical kiln root. A symlink that leaves the kiln is refused here.
+fn real_path_within_kiln(kiln: &Path, dest: &Path, target_rel: &str) -> Result<String> {
+    let kiln_root = kiln
+        .canonicalize()
+        .with_context(|| format!("resolving kiln root {}", kiln.display()))?;
+    let real = dest
+        .canonicalize()
+        .with_context(|| format!("resolving {}", dest.display()))?;
+    let rel = real
+        .strip_prefix(&kiln_root)
+        .map_err(|_| anyhow::anyhow!("proposal target escapes the kiln: {target_rel}"))?;
+    Ok(rel.to_string_lossy().into_owned())
 }
 
 /// Resolve a proposal's `target` to an absolute destination guaranteed to live
@@ -818,5 +840,86 @@ mod tests {
         );
         let err = accept(&config, "s2").unwrap_err();
         assert!(err.to_string().contains("skill name"), "got: {err}");
+    }
+
+    #[test]
+    fn accept_update_refuses_a_dot_slash_crucible_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        std::fs::create_dir_all(kiln.join(".crucible")).unwrap();
+        std::fs::write(kiln.join(".crucible/kiln.toml"), "name = \"k\"\n").unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "u5",
+            "---\nkind: update\ntarget: ./.crucible/kiln.toml\n---\nowned\n",
+        );
+
+        let err = accept(&config, "u5").unwrap_err();
+        assert!(
+            err.to_string().contains("may not target a skill"),
+            "got: {err}"
+        );
+        let text = std::fs::read_to_string(kiln.join(".crucible/kiln.toml")).unwrap();
+        assert_eq!(text, "name = \"k\"\n", "kiln.toml is untouched");
+    }
+
+    #[test]
+    fn is_skill_path_ignores_a_leading_current_dir() {
+        assert!(is_skill_path("./.crucible/kiln.toml"));
+        assert!(is_skill_path("././.crucible/proposals/rejected/x.md"));
+        assert!(is_skill_path("./Notes/SKILL.md"));
+        assert!(!is_skill_path("./Notes/sock.md"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_update_refuses_a_symlink_into_a_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        let skill_dir = kiln.join(".crucible/skills/vendored");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: vendored\ndescription: d\n---\ntheirs\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(kiln.join("Notes")).unwrap();
+        std::os::unix::fs::symlink(skill_dir.join("SKILL.md"), kiln.join("Notes/link.md")).unwrap();
+        write_proposal(
+            &proposals_dir(&config),
+            "u6",
+            "---\nkind: update\ntarget: Notes/link.md\n---\nmine\n",
+        );
+
+        let err = accept(&config, "u6").unwrap_err();
+        assert!(
+            err.to_string().contains("may not target a skill"),
+            "got: {err}"
+        );
+        let text = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        assert!(text.contains("theirs"), "the installed skill is untouched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_update_refuses_a_symlink_that_leaves_the_kiln() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let outside = tmp.path().join("outside.md");
+        std::fs::create_dir_all(kiln.join("Notes")).unwrap();
+        std::fs::write(&outside, "theirs\n").unwrap();
+        std::os::unix::fs::symlink(&outside, kiln.join("Notes/link.md")).unwrap();
+        let config = test_config(&kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "u7",
+            "---\nkind: update\ntarget: Notes/link.md\n---\nmine\n",
+        );
+
+        let err = accept(&config, "u7").unwrap_err();
+        assert!(err.to_string().contains("escapes the kiln"), "got: {err}");
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "theirs\n");
     }
 }
