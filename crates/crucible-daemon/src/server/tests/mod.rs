@@ -22,6 +22,7 @@ mod lifecycle;
 mod models_settings;
 mod persist_event;
 mod persisted_session;
+mod plugin_boot;
 mod review_watch;
 mod rpc_basic;
 mod session_id_boundary;
