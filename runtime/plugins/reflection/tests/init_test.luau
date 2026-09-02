@@ -569,19 +569,6 @@ describe("reflection", function()
       expect.equal(0, #test_mocks.get_calls("session", "send_and_collect"))
     end)
 
-    it("ends the aux session when the review raises", function()
-      cru.session.send_and_collect = function(id, prompt, opts)
-        error("boom")
-      end
-
-      local staged = plugin.run({ id = "chat-1" })
-
-      expect.equal(0, #staged)
-      local ended = test_mocks.get_calls("session", "end_session")
-      expect.equal(1, #ended)
-      expect.equal("mock-session-1", ended[1][1])
-    end)
-
     it("gives the reviewer the session's outcome evidence", function()
       -- The mock has no review ledger; a test that wants hunks supplies them.
       (cru.session :: any).review_list_hunks = function(id)
@@ -732,6 +719,78 @@ describe("reflection", function()
       })
       expect.falsy(ok)
       expect.equal(0, #test_mocks.get_calls("fs", "mkdir"))
+    end)
+  end)
+
+  describe("review", function()
+    --- The options one review takes. A test overrides what it asserts on.
+    local function opts(): any
+      return {
+        kiln = "notes", model = "test-model", system_prompt = "be brief",
+        prompt = "review this", timeout = 5, max_iterations = 3,
+      }
+    end
+
+    before_each(function()
+      test_mocks.setup({
+        kiln = { roots = { notes = "/mock/notes" } },
+        sessions = {
+          response_parts = {
+            { type = "text", content = "[" },
+            { type = "text", content = "]" },
+          },
+        },
+      })
+    end)
+
+    after_each(function()
+      test_mocks.reset()
+    end)
+
+    it("answers with the reviewer's text and ends the aux session", function()
+      local text, err = plugin.review(opts())
+
+      expect.equal("[]", text)
+      expect.is_nil(err)
+      local created = test_mocks.get_calls("session", "create")
+      expect.equal(1, #created)
+      expect.equal("plugin", created[1][1].type)
+      expect.equal("notes", created[1][1].kilns[1])
+      local configured = test_mocks.get_calls("session", "configure_agent")
+      expect.equal("be brief", configured[1][2].system_prompt)
+      expect.equal(3, configured[1][2].max_iterations)
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal("review this", sent[1][2])
+      expect.equal(5, sent[1][3].timeout)
+      local ended = test_mocks.get_calls("session", "end_session")
+      expect.equal(1, #ended)
+      expect.equal("mock-session-1", ended[1][1])
+    end)
+
+    it("ends the aux session when the review raises", function()
+      cru.session.send_and_collect = function(id, prompt, opts)
+        error("boom")
+      end
+
+      local text, err = plugin.review(opts())
+
+      expect.is_nil(text)
+      expect.truthy(err)
+      local ended = test_mocks.get_calls("session", "end_session")
+      expect.equal(1, #ended)
+      expect.equal("mock-session-1", ended[1][1])
+    end)
+
+    it("answers with the error when the daemon refuses the send", function()
+      cru.session.send_and_collect = function(id, prompt, opts)
+        return nil, "no such model"
+      end
+
+      local text, err = plugin.review(opts())
+
+      expect.is_nil(text)
+      expect.truthy((err :: string):find("no such model", 1, true) ~= nil)
+      expect.equal(1, #test_mocks.get_calls("session", "end_session"))
     end)
   end)
 

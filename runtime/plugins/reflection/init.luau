@@ -546,6 +546,72 @@ local function collect_text(iter: (() -> any)?): string
     return table.concat(parts, "")
 end
 
+--- The review hunks of a session, or nil when the daemon has none. The
+--- daemon answers an empty list for a session with no ledger
+--- (server/session/review/mod.rs). The pcall covers an RPC error or an
+--- unknown session; the outcome then counts no edits, and the review
+--- still runs.
+function M.load_hunks(session_id: string): { any }?
+    local listed, hunks = pcall(function()
+        local list, err = cru.session.review_list_hunks(session_id)
+        if err then error(err) end
+        return list
+    end)
+    if listed then return hunks end
+    cru.log("debug", "reflection: no review hunks for " .. session_id .. ": " .. tostring(hunks))
+    return nil
+end
+
+export type ReviewOpts = {
+    kiln: string,
+    model: string,
+    provider: string?,
+    system_prompt: string,
+    prompt: string,
+    timeout: number,
+    max_iterations: number,
+}
+
+--- Run one review in a forked aux session. Answers with the reviewer's
+--- text, or with `(nil, err)`. The reflection pass and the consolidation
+--- pass both call this, so there is one lifecycle to keep correct.
+---
+--- The session is of type `plugin`: `run` skips it when it ends, and the
+--- consolidation pass leaves it out of its sample. The same kiln is
+--- attached, so the reviewer can search and read before it proposes. A
+--- separate session never touches the source session's prompt cache.
+--- One `pcall` covers configure, send and collect, so the aux session ends
+--- on every path before the result is read.
+function M.review(opts: ReviewOpts): (string?, string?)
+    local agent_cfg = {
+        model = opts.model,
+        system_prompt = opts.system_prompt,
+        -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
+        max_iterations = opts.max_iterations,
+        -- No external tool servers for an unattended reviewer. NOTE: built-in
+        -- tools are still attached — fully disabling tools needs a core knob
+        -- (follow-up); low max_iterations + the propose-only prompt bound it.
+        mcp_servers = {},
+    }
+    if opts.provider then agent_cfg.provider = opts.provider end
+
+    local aux, create_err = cru.session.create({ type = "plugin", kilns = { opts.kiln } })
+    if create_err or not aux then
+        return nil, "failed to create aux session: " .. tostring(create_err)
+    end
+
+    local ok, text, send_err = pcall(function(): (string?, string?)
+        cru.session.configure_agent(aux.id, agent_cfg)
+        local iter, err = cru.session.send_and_collect(
+            aux.id, opts.prompt, { timeout = opts.timeout })
+        if err then return nil, "review failed: " .. tostring(err) end
+        return collect_text(iter), nil
+    end)
+    cru.session.end_session(aux.id)
+    if not ok then return nil, "review raised: " .. tostring(text) end
+    return text, send_err
+end
+
 --- One plain file name: alphanumeric first character, then [%w._-], at
 --- most 128 bytes. `cru.kiln.path` refuses traversal in the relative part
 --- too; this keeps the plugin honest on its own, and a leading dot cannot
@@ -670,20 +736,7 @@ function M.run(session: any): { string }
     -- handler's `pcall` only logs.
     local transcript = M.build_transcript(messages)
     local rejected = M.rejected_titles(M.read_rejected(kiln), config.get("rejection_memory", 20))
-    -- The daemon answers an empty list for a session with no ledger
-    -- (server/session/review/mod.rs). The pcall covers an RPC error or an
-    -- unknown session; the outcome then counts no edits, and the review
-    -- still runs.
-    local listed, hunks = pcall(function()
-        local list, err = cru.session.review_list_hunks(session_id)
-        if err then error(err) end
-        return list
-    end)
-    if not listed then
-        cru.log("debug", "reflection: no review hunks for " .. session_id .. ": " .. tostring(hunks))
-        hunks = nil
-    end
-    local outcome = M.render_outcome(M.build_outcome(messages, hunks))
+    local outcome = M.render_outcome(M.build_outcome(messages, M.load_hunks(session_id)))
     local prompt = M.build_prompt({
         transcript = transcript,
         rejected = rejected,
@@ -691,48 +744,19 @@ function M.run(session: any): { string }
         outcome = outcome,
     })
 
-    local agent_cfg = {
+    local output, review_err = M.review({
+        kiln = kiln,
         model = model,
+        provider = config.get("provider", nil),
         system_prompt = M.SYSTEM_PROMPT,
-        -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
+        prompt = prompt,
+        timeout = config.get("timeout", 120),
         max_iterations = config.get("max_iterations", 12),
-        -- No external tool servers for an unattended reviewer. NOTE: built-in
-        -- tools are still attached — fully disabling tools needs a core knob
-        -- (follow-up); low max_iterations + the propose-only prompt bound it.
-        mcp_servers = {},
-    }
-    local provider = config.get("provider", nil)
-    if provider then agent_cfg.provider = provider end
-
-    -- Fork a separate session for the review so it never touches the source
-    -- session's prompt cache. The same kiln is attached, so the reviewer can
-    -- call `semantic_search` and `read_note` before it proposes. The type is
-    -- `plugin`, which is what the recursion guard above reads when this
-    -- session ends.
-    local aux, err = cru.session.create({ type = "plugin", kilns = { kiln } })
-    if err or not aux then
-        cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
+    })
+    if output == nil then
+        cru.log("warn", "reflection: " .. tostring(review_err))
         return {}
     end
-
-    -- One `pcall` covers configure, send and collect, so the aux session
-    -- ends on every path before the result is read.
-    local ok, output = pcall(function(): string?
-        cru.session.configure_agent(aux.id, agent_cfg)
-        local iter, send_err = cru.session.send_and_collect(
-            aux.id, prompt, { timeout = config.get("timeout", 120) })
-        if send_err then
-            cru.log("warn", "reflection: review failed: " .. tostring(send_err))
-            return nil
-        end
-        return collect_text(iter)
-    end)
-    cru.session.end_session(aux.id)
-    if not ok then
-        cru.log("warn", "reflection: review raised: " .. tostring(output))
-        return {}
-    end
-    if output == nil then return {} end
 
     local proposals = M.parse_proposals(output)
     if proposals == nil then
@@ -784,8 +808,12 @@ local plugin = {
     description = "Retrospective self-improvement: propose kiln notes after a session ends",
     capabilities = { "kiln", "agent", "config", "filesystem" },
 
-    -- Exposed for unit tests and manual invocation.
+    -- Exposed for unit tests and manual invocation. The consolidation
+    -- plugin calls `review` and `load_hunks`, so the two passes share one
+    -- lifecycle.
     run = M.run,
+    review = M.review,
+    load_hunks = M.load_hunks,
     count_user_turns = M.count_user_turns,
     build_transcript = M.build_transcript,
     parse_proposals = M.parse_proposals,

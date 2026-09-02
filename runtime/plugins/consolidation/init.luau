@@ -126,20 +126,6 @@ end
 -- Orchestration (daemon-facing)
 -- ============================================================================
 
-local function collect_text(iter: (() -> any)?): string
-    local parts = {}
-    if iter then
-        while true do
-            local part = iter()
-            if not part then break end
-            if part.type == "text" then
-                parts[#parts + 1] = part.content
-            end
-        end
-    end
-    return table.concat(parts, "")
-end
-
 --- The cursor the last pass stored, or nil. A VM with no store answers nil.
 local function read_cursor(): string?
     local store = cru.storage
@@ -158,17 +144,6 @@ local function write_cursor(stamp: string)
     if not ok then
         cru.log("warn", "consolidation: could not store the cursor: " .. tostring(err))
     end
-end
-
---- The review hunks of a session, or nil when the session has no ledger.
-local function load_hunks(session_id: string): { any }?
-    local listed, hunks = pcall(function()
-        local list, err = cru.session.review_list_hunks(session_id)
-        if err then error(err) end
-        return list
-    end)
-    if listed then return hunks end
-    return nil
 end
 
 --- One pass. Lists the sessions, picks the sample, asks the reviewer for
@@ -211,7 +186,7 @@ function M.run(kiln: string?): { string }
     for _, s in ipairs(candidates) do
         local messages = cru.session.messages(s.id, { tools = true })
         if messages then
-            local outcome = ref.build_outcome(messages, load_hunks(s.id))
+            local outcome = ref.build_outcome(messages, ref.load_hunks(s.id))
             if outcome.user_turns >= min_turns then
                 scored[#scored + 1] = { id = s.id, messages = messages, outcome = outcome }
             end
@@ -235,41 +210,21 @@ function M.run(kiln: string?): { string }
     local rejected = ref.rejected_titles(ref.read_rejected(target), config.get("rejection_memory", 20))
     local prompt = M.build_prompt(samples, rejected)
 
-    local agent_cfg = {
+    -- The reflection plugin owns the review lifecycle: a `plugin` session
+    -- that this pass leaves out of its next sample, and that always ends.
+    local output, review_err = ref.review({
+        kiln = target,
         model = model,
+        provider = config.get("provider", nil),
         system_prompt = M.SYSTEM_PROMPT,
+        prompt = prompt,
+        timeout = config.get("timeout", 240),
         max_iterations = config.get("max_iterations", 12),
-        mcp_servers = {},
-    }
-    local provider = config.get("provider", nil)
-    if provider then agent_cfg.provider = provider end
-
-    -- A plugin session: the reflection plugin skips it when it ends, and
-    -- the next pass leaves it out of the sample.
-    local aux, create_err = cru.session.create({ type = "plugin", kilns = { target } })
-    if create_err or not aux then
-        cru.log("warn", "consolidation: failed to create aux session: " .. tostring(create_err))
+    })
+    if output == nil then
+        cru.log("warn", "consolidation: " .. tostring(review_err))
         return {}
     end
-
-    -- One `pcall` covers configure, send and collect, so the aux session
-    -- ends on every path before the result is read.
-    local ok, output = pcall(function(): string?
-        cru.session.configure_agent(aux.id, agent_cfg)
-        local iter, send_err = cru.session.send_and_collect(
-            aux.id, prompt, { timeout = config.get("timeout", 240) })
-        if send_err then
-            cru.log("warn", "consolidation: review failed: " .. tostring(send_err))
-            return nil
-        end
-        return collect_text(iter)
-    end)
-    cru.session.end_session(aux.id)
-    if not ok then
-        cru.log("warn", "consolidation: review raised: " .. tostring(output))
-        return {}
-    end
-    if output == nil then return {} end
 
     local proposals = ref.parse_proposals(output)
     if proposals == nil then

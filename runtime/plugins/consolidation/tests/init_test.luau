@@ -22,7 +22,17 @@ end
 --- pass hands to the reflection plugin.
 local staged_calls: { any } = {}
 
+--- Every `review` call the stub saw, and the text the next one answers
+--- with. The lifecycle itself is the reflection suite's to test.
+local review_calls: { any } = {}
+local review_text = "[]"
+
 package.loaded["reflection"] = {
+  review = function(opts: any): (string?, string?)
+    review_calls[#review_calls + 1] = opts
+    return review_text, nil
+  end,
+  load_hunks = function(session_id: string): { any }? return nil end,
   build_outcome = function(messages: { any }, hunks: any): any
     return { user_turns = count_user_turns(messages), tool_errors = 0, hunks_rejected = 0 }
   end,
@@ -174,11 +184,9 @@ describe("consolidation", function()
     before_each(function()
       rows = fake_storage()
       staged_calls = {}
-      test_mocks.setup({
-        sessions = {
-          response_parts = { { type = "text", content = "[]" } },
-        },
-      })
+      review_calls = {}
+      review_text = "[]"
+      test_mocks.setup()
       cru.session.list = function()
         return {
           { id = "short", state = "ended", started_at = "2026-09-01T10:00:00Z" },
@@ -201,9 +209,8 @@ describe("consolidation", function()
     it("drops a session with fewer user turns than min_turns", function()
       plugin.run(nil)
 
-      local sent = test_mocks.get_calls("session", "send_and_collect")
-      expect.equal(1, #sent)
-      local prompt: any = sent[1][2]
+      expect.equal(1, #review_calls)
+      local prompt: any = review_calls[1].prompt
       expect.truthy(prompt:find("### session long", 1, true))
       expect.is_nil(prompt:find("### session short", 1, true))
     end)
@@ -212,28 +219,24 @@ describe("consolidation", function()
       plugin.setup({ min_turns = 1 })
       plugin.run(nil)
 
-      local sent = test_mocks.get_calls("session", "send_and_collect")
-      expect.equal(1, #sent)
-      local prompt: any = sent[1][2]
+      expect.equal(1, #review_calls)
+      local prompt: any = review_calls[1].prompt
       expect.truthy(prompt:find("### session short", 1, true))
       expect.truthy(prompt:find("### session long", 1, true))
     end)
 
-    it("creates the reviewer as a plugin session", function()
+    it("asks the reflection plugin for one review in the configured kiln", function()
+      plugin.setup({ timeout = 99, max_iterations = 7, provider = "anthropic" })
       plugin.run(nil)
 
-      local created = test_mocks.get_calls("session", "create")
-      expect.equal(1, #created)
-      expect.equal("plugin", created[1][1].type)
-    end)
-
-    it("bakes no marker into the reviewer's prompt", function()
-      plugin.run(nil)
-
-      local configured = test_mocks.get_calls("session", "configure_agent")
-      expect.equal(1, #configured)
-      local prompt: any = configured[1][2].system_prompt
-      expect.is_nil(prompt:find("<!--", 1, true))
+      expect.equal(1, #review_calls)
+      local call = review_calls[1]
+      expect.equal("notes", call.kiln)
+      expect.equal("test-model", call.model)
+      expect.equal("anthropic", call.provider)
+      expect.equal(plugin.system_prompt, call.system_prompt)
+      expect.equal(99, call.timeout)
+      expect.equal(7, call.max_iterations)
     end)
 
     it("stores the newest started_at as the cursor after a pass", function()
@@ -246,8 +249,7 @@ describe("consolidation", function()
       plugin.run(nil)
       plugin.run(nil)
 
-      local sent = test_mocks.get_calls("session", "send_and_collect")
-      expect.equal(1, #sent)
+      expect.equal(1, #review_calls)
     end)
 
     it("starts after the cursor a previous pass stored", function()
@@ -255,24 +257,16 @@ describe("consolidation", function()
       rows["consolidation/last_run"] = "2026-09-01T10:30:00Z"
       plugin.run(nil)
 
-      local sent = test_mocks.get_calls("session", "send_and_collect")
-      expect.equal(1, #sent)
-      local prompt: any = sent[1][2]
+      expect.equal(1, #review_calls)
+      local prompt: any = review_calls[1].prompt
       expect.truthy(prompt:find("### session long", 1, true))
       expect.is_nil(prompt:find("### session short", 1, true))
     end)
 
     it("stages what the reviewer proposes as consolidation, with no session", function()
-      test_mocks.setup({
-        sessions = {
-          response_parts = { { type = "text", content = '[{"title":"Pattern","body":"B","tags":["pattern"]}]' } },
-        },
-      })
+      review_text = '[{"title":"Pattern","body":"B","tags":["pattern"]}]'
       cru.session.list = function()
         return { { id = "long", state = "ended", started_at = "2026-09-01T11:00:00Z" } }, nil
-      end
-      cru.session.messages = function(id: string, opts: any)
-        return messages_by_id[id]
       end
 
       local written = plugin.run(nil)
@@ -291,7 +285,7 @@ describe("consolidation", function()
       plugin.run(nil)
 
       expect.equal("2026-09-01T12:00:00Z", rows["consolidation/last_run"])
-      expect.equal(0, #test_mocks.get_calls("session", "send_and_collect"))
+      expect.equal(0, #review_calls)
     end)
   end)
 end)
