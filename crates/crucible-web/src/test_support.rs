@@ -378,7 +378,28 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         "note.upsert" => json!({}),
         "embed.query" => json!({ "vector": [0.1, 0.2, 0.3] }),
-        "search_vectors" => json!([]),
+        // Three block hits, best first. Two of them sit in one note, so the
+        // semantic route must fold them into one row.
+        "search_vectors" => json!([
+            {
+                "document_id": "notes/kilns.md",
+                "score": 0.91,
+                "block": { "span_start": 40, "span_end": 90, "kind": "paragraph" },
+                "snippet": "A kiln is where knowledge goes."
+            },
+            {
+                "document_id": "notes/kilns.md",
+                "score": 0.83,
+                "block": { "span_start": 120, "span_end": 170, "kind": "paragraph" },
+                "snippet": "A session attaches a flat set of kilns."
+            },
+            {
+                "document_id": "notes/projects.md",
+                "score": 0.70,
+                "block": { "span_start": 0, "span_end": 30, "kind": "heading" },
+                "snippet": "Projects"
+            }
+        ]),
         "search_grep" => json!({
             "hits": [
                 {

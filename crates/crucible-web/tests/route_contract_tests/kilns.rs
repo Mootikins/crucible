@@ -210,6 +210,53 @@ async fn search_semantic_returns_200_with_results() {
     );
 }
 
+/// The daemon answers with one row per block. The panel shows notes, so the
+/// route keeps one row per note: the best block, with its span.
+#[tokio::test]
+async fn search_semantic_keeps_one_row_per_note_with_its_best_block() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/search/semantic")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "kiln": "/tmp/test-kiln",
+                        "query": "where does knowledge go",
+                        "limit": 5
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    let results = json["results"].as_array().expect("results array");
+    let rel_paths: Vec<&str> = results
+        .iter()
+        .map(|r| r["rel_path"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        rel_paths,
+        vec!["notes/kilns.md", "notes/projects.md"],
+        "one row per note, best first: {json}"
+    );
+    assert_eq!(results[0]["score"], 0.91, "the kept row is the best block");
+    assert_eq!(results[0]["block"]["span_start"], 40);
+    assert_eq!(results[0]["snippet"], "A kiln is where knowledge goes.");
+}
+
 #[tokio::test]
 async fn search_semantic_blank_query_returns_empty() {
     let (_mock, client) = start_mock_daemon().await;

@@ -480,10 +480,13 @@ async fn search_vectors(
 /// `POST /api/search/semantic` — text semantic search over a kiln's notes.
 /// Embeds the query with the kiln's embedding provider, then cosine-scans the
 /// embeddings in the kiln's SQLite store. Two daemon RPCs (`embed.query` +
-/// `search_vectors`) mirror the CLI's `run_semantic_search`. Each hit's
-/// `document_id` is the kiln-relative note path; `path` is the absolute path
-/// for the editor to open. Requires an embedding provider (else `embed.query`
-/// fails) AND processed notes (no embeddings yields no hits).
+/// `search_vectors`) mirror the CLI's `run_semantic_search`. The daemon
+/// answers with one row per block, best first. The panel lists notes, so
+/// this route keeps one row per note: its best block, with `block` and
+/// `snippet` when the kiln has block rows. Each hit's `document_id` is the
+/// kiln-relative note path; `path` is the absolute path for the editor to
+/// open. Requires an embedding provider (else `embed.query` fails) AND
+/// processed notes (no embeddings yields no hits).
 #[derive(Debug, Deserialize)]
 struct SemanticSearchRequest {
     kiln: PathBuf,
@@ -513,7 +516,7 @@ async fn search_semantic(
         .await
         .daemon_err()?;
 
-    let results_json: Vec<serde_json::Value> = results
+    let results_json: Vec<serde_json::Value> = one_row_per_note(results)
         .into_iter()
         .map(|hit| {
             serde_json::json!({
@@ -522,11 +525,21 @@ async fn search_semantic(
                 "path": absolute_note_path(&req.kiln, &hit.document_id),
                 "score": hit.score,
                 "block": hit.block,
+                "snippet": hit.snippet,
             })
         })
         .collect();
 
     Ok(Json(serde_json::json!({ "results": results_json })))
+}
+
+/// Keep the first hit of each note. Hits arrive best first, so the first
+/// block of a note is its best block.
+fn one_row_per_note(hits: Vec<crucible_daemon::VectorHit>) -> Vec<crucible_daemon::VectorHit> {
+    let mut seen = std::collections::HashSet::new();
+    hits.into_iter()
+        .filter(|hit| seen.insert(hit.document_id.clone()))
+        .collect()
 }
 
 /// `POST /api/search/grep` — ripgrep-style content search over an absolute
