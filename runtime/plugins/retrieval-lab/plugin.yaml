@@ -1,6 +1,6 @@
 name: retrieval-lab
 version: "0.1.0"
-description: Retrieval strategies over block trajectories, for measurement. Off by default.
+description: "A proof of concept. It exercises the search:rerank and index:blocks stages, the cru.vec bindings and the block trajectory idea. It ships off, and no strategy here is a recommended retrieval setting."
 author: Crucible Team
 license: MIT
 

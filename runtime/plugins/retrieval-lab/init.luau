@@ -1,5 +1,11 @@
 --!strict
---- retrieval-lab — retrieval strategies over block trajectories.
+--- retrieval-lab — a proof of concept, not a retrieval setting.
+---
+--- The plugin proves three things: that the `search:rerank` and
+--- `index:blocks` stages carry a real strategy, that the `cru.vec` and
+--- `cru.kiln.blocks` bindings are enough to compose one, and that the block
+--- trajectory idea is measurable. It does not show that a strategy helps.
+--- Read WHAT THE LAB MEASURED below before you enable one.
 ---
 --- A strategy is a table with `rerank(event)` and `index(event)`. `rerank`
 --- runs at `search:rerank`, after the daemon merges the hits of every kiln
@@ -17,6 +23,36 @@
 --- `queries`, one per rerank call, and `interior_wins`, one per rerank call
 --- that left a cited hit in the top ten. A strategy cites only when the
 --- curve's interior beat both endpoints. Nothing here ships as a default.
+---
+--- WHAT THE LAB MEASURED
+---
+--- Eight runs scored every strategy against `points` on two corpora, with
+--- the fastembed model bge-small-en-v1.5. The corpora are an adversarial
+--- fixture of 216 notes and the `docs/Help` plus `docs/Guides` documentary
+--- corpus, with 80 golden queries.
+---
+--- At note level nothing moved. Each strategy changed hit@1 and MRR by
+--- about one point on the documentary corpus. The gains and the losses
+--- cancelled, query for query.
+---
+--- The pair and the curve strategies win at block level only. Block-level
+--- hit@1 rose from 0.325 under `points` to between 0.500 and 0.575. The
+--- passage@10 measure, which asks for both blocks of a two-block answer,
+--- reached 0.675. The point baseline scores zero there by construction,
+--- because it never names two blocks.
+---
+--- `meta_pre` and `ppr_post` lost. Both raise a note-level signal, and both
+--- fell under `points` at note level and on the multi-hop set. `slate_post`
+--- with the ordered plan gained a little at rank ten and lost nothing; with
+--- an interleaved plan it lost.
+---
+--- The cost is real. `arc_post` and `bezier_post` read every hit's blocks
+--- after the scan, which takes 7 to 8 times the baseline search time.
+--- `arc_pre` pays at index time instead: it writes one row per gated pair,
+--- and its scan is 1.4 times the baseline. `slate_post` takes 360 to 405
+--- milliseconds per query.
+---
+--- So enable a strategy for a measurement, and never as a default.
 ---
 --- STRATEGIES
 ---
