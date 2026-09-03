@@ -31,6 +31,8 @@ pub enum CruNamespace {
     Context,
     /// Session VMs only: seeded session defaults (`cru.defaults.x = …`).
     Defaults,
+    /// The kiln's own embedding provider: `cru.embed(kiln, text)`.
+    Embed,
     Emitter,
     Errors,
     Fs,
@@ -103,6 +105,7 @@ impl CruNamespace {
             | Self::Colorscheme
             | Self::Config
             | Self::Context
+            | Self::Embed
             | Self::Emitter
             | Self::Errors
             | Self::Fs

@@ -129,7 +129,7 @@ fn find_note(kiln_path: &Path, expect_note: &str) -> Result<PathBuf> {
         .filter_entry(|e| !hidden(e))
         .filter_map(Result::ok)
         .map(walkdir::DirEntry::into_path)
-        .filter(|p| p.extension().is_some_and(|x| x == "md"))
+        .filter(|p| crucible_core::is_note_file(p))
         .filter(|p| normalize_stem(&p.to_string_lossy()) == want)
         .collect();
     match found.len() {

@@ -481,7 +481,7 @@ strategies.bezier_post = {
 -- row and a row without a vector keep what the pipeline gave them.
 strategies.meta_pre = {
     rerank = function(event) return nil end,
-    index = function(event)
+    index = function(event: any): any
         if type(event.kiln) ~= "string" then return nil end
         local title = M.note_title(event.title, event.path)
         local description = M.note_description(event.description)
@@ -508,7 +508,7 @@ strategies.meta_pre = {
 -- first searched kiln, after the scan. Hits from another kiln keep their
 -- score.
 strategies.ppr_post = {
-    rerank = function(event)
+    rerank = function(event: any): any
         local kiln = event.kilns[1]
         if type(kiln) ~= "string" then return nil end
         local graph = M.graph_for(kiln)

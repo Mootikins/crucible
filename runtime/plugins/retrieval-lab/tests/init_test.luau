@@ -270,7 +270,7 @@ describe("retrieval-lab", function()
                 title = "Note N",
                 description = "About N",
                 blocks = {
-                    { span_start = 0, span_end = 8, kind = "paragraph", text = "intro", vector = A },
+                    { span_start = 0, span_end = 8, kind = "paragraph", text = "intro", vector = A :: { number }? },
                     { span_start = 10, span_end = 18, kind = "heading", text = "## Part one", vector = nil },
                     { span_start = 20, span_end = 28, kind = "paragraph", text = "short", vector = nil },
                     { span_start = 30, span_end = 38, kind = "paragraph", text = "body", vector = D },
