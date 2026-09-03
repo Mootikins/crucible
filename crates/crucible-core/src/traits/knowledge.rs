@@ -51,6 +51,7 @@
 //! interface used throughout Crucible.
 
 use crate::parser::ParsedNote;
+use crate::storage::BlockRecord;
 use crate::types::SearchResult;
 use crate::Result;
 use async_trait::async_trait;
@@ -122,4 +123,11 @@ pub trait KnowledgeRepository: Send + Sync {
     /// nothing here while answering `search_vectors`. An implementation with
     /// no block store returns an empty vector, and the caller falls back.
     async fn search_blocks(&self, vector: Vec<f32>, limit: usize) -> Result<Vec<SearchResult>>;
+
+    /// Every stored block of one note, in span order, vectors included.
+    ///
+    /// A retrieval strategy reads a hit's neighbours here. Required for the
+    /// same reason as [`Self::search_blocks`]: a repository with no block
+    /// store answers an empty vector, and says so in its own body.
+    async fn blocks_for_note(&self, path: &str) -> Result<Vec<BlockRecord>>;
 }

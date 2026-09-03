@@ -217,6 +217,19 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
             .collect())
     }
 
+    async fn blocks_for_note(
+        &self,
+        path: &str,
+    ) -> CrucibleResult<Vec<crucible_core::storage::BlockRecord>> {
+        let Some(blocks) = self.blocks.as_ref() else {
+            return Ok(Vec::new());
+        };
+        blocks
+            .blocks_for_note(path)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Block read failed: {e}")))
+    }
+
     async fn search_vectors(
         &self,
         vector: Vec<f32>,

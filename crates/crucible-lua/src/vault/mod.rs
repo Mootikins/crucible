@@ -42,6 +42,12 @@
 //!
 //! -- Get neighbors within depth (async) - undirected walk, depth 1 = direct
 //! local nearby = cru.kiln.neighbors("path/to/note.md", 2)
+//!
+//! -- The stored blocks of one note in a NAMED kiln, in span order, each
+//! -- with its vector when it has one (async). A retrieval strategy reads
+//! -- a hit's neighbours here. The stub answers an empty table; the daemon
+//! -- binds it through `register_kiln_blocks_resolver`.
+//! local blocks = cru.kiln.blocks(kiln, "path/to/note.md")
 //! ```
 //!
 //! All three graph functions read the daemon's resolved-link index and are
@@ -67,6 +73,17 @@ pub type KilnPathResolver = Arc<dyn Fn(&str) -> Result<PathBuf, String> + Send +
 
 /// The message a VM with no resolver answers `cru.kiln.path` with.
 const NO_RESOLVER: &str = "cru.kiln.path is not available in this runtime";
+
+/// Maps a kiln NAME to the repository that holds its blocks.
+///
+/// The same seam as [`KilnPathResolver`], one level up: the host owns the
+/// name-to-repository map, and Lua names a kiln, never a directory or a
+/// database. The error string reaches Lua as-is, so it must name the kiln.
+pub type KilnRepositoryResolver = Arc<
+    dyn Fn(&str) -> Result<Arc<dyn crucible_core::traits::KnowledgeRepository>, String>
+        + Send
+        + Sync,
+>;
 
 /// The Luau type of every `cru.kiln.*` function, in one place.
 ///
@@ -105,6 +122,17 @@ mod decl {
 
     /// `depth` counts hops and defaults to 1 — direct links only.
     pub const NEIGHBORS: &str = "(path: string, depth: number?) -> { string }";
+
+    /// One stored block, as [`super::block_record_to_lua`] builds it. The
+    /// vector is absent when the block fell under the word floor.
+    pub const BLOCK: &str =
+        "{ span_start: number, span_end: number, kind: string, vector: { number }? }";
+
+    /// The kiln is named, not implied: a rerank stage sees hits from every
+    /// attached kiln, and the host maps the name to a repository.
+    pub fn blocks() -> String {
+        format!("(kiln: string, path: string) -> {{ {BLOCK} }}")
+    }
 
     /// The name is REQUIRED and the relative part is not: `kiln_path` raises
     /// without a name and joins the relative part when it gets one. Declaring
@@ -153,6 +181,38 @@ fn kiln_path(
     let canonical = std::fs::canonicalize(&root)
         .map_err(|e| LuaError::Runtime(format!("kiln '{name}' is not reachable: {e}")))?;
     join_relative(&canonical, name, relative.unwrap_or(""))
+}
+
+/// Register `cru.kiln.blocks(kiln, path)` against a repository resolver.
+///
+/// Registration replaces the empty stub `register_vault_module` installs.
+pub fn register_kiln_blocks_resolver(
+    lua: &Lua,
+    resolver: KilnRepositoryResolver,
+) -> Result<(), LuaError> {
+    let cru: Table = lua.globals().get("cru")?;
+    let vault: Table = cru.get("kiln")?;
+    let mut kiln = crate::host_registry::Ns::over(lua, "cru.kiln", vault);
+    kiln.async_func(
+        "blocks",
+        &decl::blocks(),
+        move |lua, (name, path): (String, String)| {
+            let resolver = Arc::clone(&resolver);
+            async move {
+                let repo = resolver(&name).map_err(mlua::Error::runtime)?;
+                let blocks = repo
+                    .blocks_for_note(&path)
+                    .await
+                    .map_err(|e| mlua::Error::runtime(format!("Kiln error: {e}")))?;
+                let table = lua.create_table()?;
+                for (i, block) in blocks.iter().enumerate() {
+                    table.set(i + 1, block_record_to_lua(&lua, block)?)?;
+                }
+                Ok(Value::Table(table))
+            }
+        },
+    )?;
+    Ok(())
 }
 
 /// Register `cru.kiln.path(name, relative?)` against a resolver.
@@ -230,6 +290,17 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
         "neighbors",
         decl::NEIGHBORS,
         |lua, (_path, _depth): (String, Option<usize>)| async move {
+            let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
+
+    // Async like its resolver-backed replacement, for the same reason as the
+    // graph stubs above.
+    kiln.async_func(
+        "blocks",
+        &decl::blocks(),
+        |lua, (_kiln, _path): (String, String)| async move {
             let table = lua.create_table()?;
             Ok(Value::Table(table))
         },
@@ -557,6 +628,23 @@ fn note_record_to_lua(
 
     table.set("has_embedding", record.has_embedding())?;
 
+    Ok(Value::Table(table))
+}
+
+/// One block as Lua sees it: the span, the kind, and the vector when the
+/// block has one. The text and the hash stay behind — a strategy scores
+/// vectors, and the snippet already rides on the hit.
+fn block_record_to_lua(
+    lua: &Lua,
+    block: &crucible_core::storage::BlockRecord,
+) -> Result<Value, mlua::Error> {
+    let table = lua.create_table()?;
+    table.set("span_start", block.span_start)?;
+    table.set("span_end", block.span_end)?;
+    table.set("kind", block.kind.as_str())?;
+    if let Some(vector) = &block.embedding {
+        table.set("vector", vector.as_slice())?;
+    }
     Ok(Value::Table(table))
 }
 

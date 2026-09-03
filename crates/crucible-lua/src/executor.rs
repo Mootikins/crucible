@@ -294,6 +294,7 @@ impl LuaExecutor {
         register_fs_module(lua)?;
         crate::timer::register_timer_module(lua)?;
         crate::ratelimit::register_ratelimit_module(lua)?;
+        crate::vec_api::register_vec_module(lua)?;
         crate::prelude::register_prelude(lua)?;
 
         Ok(())

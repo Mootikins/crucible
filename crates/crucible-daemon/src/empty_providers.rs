@@ -15,6 +15,14 @@ impl KnowledgeRepository for EmptyKnowledgeRepository {
         Ok(Vec::new())
     }
 
+    async fn blocks_for_note(
+        &self,
+        _path: &str,
+    ) -> crucible_core::Result<Vec<crucible_core::storage::BlockRecord>> {
+        // No block store behind this repository.
+        Ok(Vec::new())
+    }
+
     async fn get_note_by_name(
         &self,
         _name: &str,

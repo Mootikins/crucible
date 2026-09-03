@@ -707,3 +707,146 @@ mod graph_tests {
         );
     }
 }
+
+/// `cru.kiln.blocks(kiln, path)`: a note's blocks, in span order, with
+/// their vectors, read through a `KnowledgeRepository` the host resolves
+/// by kiln NAME.
+mod blocks_tests {
+    use crate::test_support::TestLuaBuilder;
+    use crate::vault::*;
+    use crucible_core::storage::BlockRecord;
+    use crucible_core::traits::KnowledgeRepository;
+    use std::sync::Arc;
+
+    /// A repository that holds the blocks of one note and nothing else.
+    struct BlocksOnly(Vec<BlockRecord>);
+
+    #[async_trait::async_trait]
+    impl KnowledgeRepository for BlocksOnly {
+        async fn get_note_by_name(
+            &self,
+            _name: &str,
+        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+            Ok(None)
+        }
+        async fn get_note_by_path(
+            &self,
+            _path: &str,
+        ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
+            Ok(None)
+        }
+        async fn list_notes(
+            &self,
+            _path: Option<&str>,
+        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+            Ok(Vec::new())
+        }
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+            _limit: usize,
+        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+            Ok(Vec::new())
+        }
+        async fn search_blocks(
+            &self,
+            _vector: Vec<f32>,
+            _limit: usize,
+        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+            Ok(Vec::new())
+        }
+        async fn blocks_for_note(&self, path: &str) -> crucible_core::Result<Vec<BlockRecord>> {
+            Ok(self
+                .0
+                .iter()
+                .filter(|b| b.note_path == path)
+                .cloned()
+                .collect())
+        }
+    }
+
+    fn block(span_start: usize, kind: &str, embedding: Option<Vec<f32>>) -> BlockRecord {
+        BlockRecord {
+            note_path: "a.md".to_string(),
+            span_start,
+            span_end: span_start + 5,
+            kind: kind.to_string(),
+            content_hash: crucible_core::parser::BlockHash::zero(),
+            text: "text".to_string(),
+            embedding,
+            embedding_model: None,
+            embedding_dimensions: None,
+        }
+    }
+
+    fn lua_with_blocks() -> mlua::Lua {
+        let lua = TestLuaBuilder::new().with_vault().build();
+        let repo: Arc<dyn KnowledgeRepository> = Arc::new(BlocksOnly(vec![
+            block(0, "heading", None),
+            block(10, "paragraph", Some(vec![0.0, 1.0])),
+            block(20, "paragraph", Some(vec![1.0, 0.0])),
+        ]));
+        let resolver: KilnRepositoryResolver = Arc::new(move |name: &str| {
+            if name == "notes" {
+                Ok(Arc::clone(&repo))
+            } else {
+                Err(format!("kiln '{name}' is not attached"))
+            }
+        });
+        register_kiln_blocks_resolver(&lua, resolver).unwrap();
+        lua
+    }
+
+    #[test]
+    fn the_stub_answers_an_empty_table() {
+        let lua = TestLuaBuilder::new().with_vault().build();
+        let count: usize = lua
+            .load(r#"return #cru.kiln.blocks("notes", "a.md")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn blocks_come_in_span_order_with_their_vectors() {
+        let lua = lua_with_blocks();
+        let rows: Vec<mlua::Table> = lua
+            .load(r#"return cru.kiln.blocks("notes", "a.md")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(rows.len(), 3);
+
+        let starts: Vec<usize> = rows.iter().map(|r| r.get("span_start").unwrap()).collect();
+        assert_eq!(starts, vec![0, 10, 20]);
+        let kinds: Vec<String> = rows.iter().map(|r| r.get("kind").unwrap()).collect();
+        assert_eq!(kinds, vec!["heading", "paragraph", "paragraph"]);
+        let end: usize = rows[1].get("span_end").unwrap();
+        assert_eq!(end, 15);
+
+        // A block under the word floor has no vector, and the field is absent.
+        let none: mlua::Value = rows[0].get("vector").unwrap();
+        assert!(none.is_nil());
+        let vector: Vec<f64> = rows[1].get("vector").unwrap();
+        assert_eq!(vector, vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn a_note_with_no_blocks_answers_an_empty_table() {
+        let lua = lua_with_blocks();
+        let count: usize = lua
+            .load(r#"return #cru.kiln.blocks("notes", "missing.md")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn an_unknown_kiln_name_is_an_error_naming_the_kiln() {
+        let lua = lua_with_blocks();
+        let err = lua
+            .load(r#"return cru.kiln.blocks("other", "a.md")"#)
+            .eval::<mlua::Value>()
+            .expect_err("an unknown name must be refused");
+        assert!(err.to_string().contains("other"), "unhelpful: {err}");
+    }
+}

@@ -79,6 +79,8 @@ pub enum CruNamespace {
     Timer,
     Tools,
     Ui,
+    /// Vector geometry over plain number arrays: `cru.vec.arc_best`.
+    Vec,
     Ws,
 }
 
@@ -137,6 +139,7 @@ impl CruNamespace {
             | Self::Timer
             | Self::Tools
             | Self::Ui
+            | Self::Vec
             | Self::Ws => true,
         }
     }

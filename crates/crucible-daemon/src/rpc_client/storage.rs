@@ -146,6 +146,14 @@ impl KnowledgeRepository for DaemonStorageClient {
         Ok(Vec::new())
     }
 
+    async fn blocks_for_note(
+        &self,
+        _path: &str,
+    ) -> crucible_core::Result<Vec<crucible_core::storage::BlockRecord>> {
+        // No block store behind this repository.
+        Ok(Vec::new())
+    }
+
     async fn get_note_by_name(&self, name: &str) -> CoreResult<Option<ParsedNote>> {
         // Use the backend-agnostic get_note_by_name RPC method
         let result = self

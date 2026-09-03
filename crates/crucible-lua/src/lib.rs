@@ -92,6 +92,7 @@ mod tools_api;
 mod types;
 pub mod ui;
 mod vault;
+mod vec_api;
 mod ws;
 
 #[cfg(test)]
@@ -163,9 +164,11 @@ pub use storage_api::{register_storage_module, register_storage_module_with_stor
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
-    register_kiln_path_resolver, register_vault_module, register_vault_module_with_store,
-    register_vault_module_with_store_scoped, KilnPathResolver,
+    register_kiln_blocks_resolver, register_kiln_path_resolver, register_vault_module,
+    register_vault_module_with_store, register_vault_module_with_store_scoped, KilnPathResolver,
+    KilnRepositoryResolver,
 };
+pub use vec_api::register_vec_module;
 pub use ws::register_ws_module;
 
 /// The shipped defaults, compiled in as a last-resort baseline.
