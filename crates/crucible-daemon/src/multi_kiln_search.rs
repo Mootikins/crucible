@@ -187,7 +187,7 @@ pub async fn search_across_kilns_with_stage(
     });
 
     if let Some(stage) = rerank {
-        let event = rerank_event(sources, &query_embedding, top_k, &merged).await;
+        let event = rerank_event(sources, &query_embedding, top_k, &merged);
         let reranked = first_usable_transform(
             StageId::SearchRerank,
             &stage.vms,
@@ -226,11 +226,7 @@ fn source_named<'a>(
 
 /// The `search:rerank` event: the query, the kilns, the limit, and every
 /// merged hit with a 1-based `index` the handler returns to address it.
-///
-/// A hit from a named kiln also carries the note's `title`, read once per
-/// note from that kiln's index row. A hit with no kiln name has no source to
-/// read from, and a note the index has no row for has no title.
-async fn rerank_event(
+fn rerank_event(
     sources: &[KilnSearchSource],
     query_embedding: &[f32],
     top_k: usize,
@@ -241,32 +237,12 @@ async fn rerank_event(
         .filter_map(|s| s.kiln_name.as_ref())
         .map(|n| n.as_str())
         .collect();
-    let mut titles: HashMap<(crucible_core::config::KilnName, String), Option<String>> =
-        HashMap::new();
     let mut entries = Vec::with_capacity(hits.len());
     for (position, hit) in hits.iter().enumerate() {
         let mut entry = serde_json::Map::new();
         entry.insert("index".into(), serde_json::json!(position + 1));
         if let Some(name) = hit.kiln.as_ref() {
             entry.insert("kiln".into(), serde_json::json!(name.as_str()));
-            let key = (name.clone(), hit.document_id.0.clone());
-            if !titles.contains_key(&key) {
-                let title = match source_named(sources, name) {
-                    Some(source) => source
-                        .knowledge_repo
-                        .get_note_by_path(&hit.document_id.0)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|note| note.title)
-                        .filter(|title| !title.is_empty()),
-                    None => None,
-                };
-                titles.insert(key.clone(), title);
-            }
-            if let Some(title) = titles[&key].as_ref() {
-                entry.insert("title".into(), serde_json::json!(title));
-            }
         }
         entry.insert("path".into(), serde_json::json!(hit.document_id.0));
         entry.insert("score".into(), serde_json::json!(hit.score));
@@ -1161,26 +1137,20 @@ mod rerank_tests {
         }
     }
 
-    /// A source whose store also answers `blocks_for_note` and
-    /// `get_note_by_path`, so a handler can introduce a row and read a title.
+    /// A source whose store also answers `blocks_for_note`, so a handler can
+    /// introduce a row.
     fn stored_source(
         dir: &TempDir,
         hits: Vec<SearchResult>,
         rows: Vec<crucible_core::storage::BlockRecord>,
     ) -> Vec<KilnSearchSource> {
-        let note = crucible_core::storage::note_store::NoteRecord::new(
-            "a.md",
-            crucible_core::parser::BlockHash::new([0; 32]),
-        )
-        .with_title("Note A");
         vec![KilnSearchSource {
             kiln_path: dir.path().to_path_buf(),
             kiln_name: crucible_core::config::KilnName::normalize("lab"),
             knowledge_repo: Arc::new(
                 MockKnowledgeRepository::new()
                     .with_block_results(hits)
-                    .with_note_blocks(rows)
-                    .with_notes(vec![note]),
+                    .with_note_blocks(rows),
             ),
         }]
     }
@@ -1188,7 +1158,7 @@ mod rerank_tests {
     /// A handler introduces a block the search did not return; the daemon
     /// reads its row from the named kiln, and the cut counts it.
     #[tokio::test]
-    async fn a_handler_introduces_a_stored_block_and_reads_the_title() {
+    async fn a_handler_introduces_a_stored_block() {
         let dir = TempDir::new().unwrap();
         let sources = stored_source(
             &dir,
@@ -1200,8 +1170,6 @@ mod rerank_tests {
             vec![plugin_vm(
                 r#"
                 cru.on("search:rerank", function(ctx, event)
-                    assert(event.hits[1].title == "Note A", "the index row's title rides along")
-                    assert(event.hits[2].title == nil, "a note with no row has no title")
                     return {
                         { kiln = "lab", path = "c.md", span_start = 40, score = 0.95, cited = { { 0, 5 } } },
                         { index = 1 },

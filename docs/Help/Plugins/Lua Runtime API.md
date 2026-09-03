@@ -1235,7 +1235,7 @@ A tool or command declared without a `fn` is not registered — declaring one th
 
 ## Kiln reads by name
 
-These functions take a kiln NAME first, never a directory. The daemon maps the name to the open kiln through its registry, and the same read authority as `cru.kiln.list` and `cru.kiln.get` applies. An unregistered name raises an error that names the kiln. Before the daemon binds them, each function is a stub: `note` answers `nil`, the array functions answer an empty table, `links` answers two empty arrays, and `cru.embed` raises.
+These functions take a kiln NAME first, never a directory. The daemon maps the name to the open kiln through its registry. The same read authority as `cru.kiln.list` applies to `note`, `notes` and `links`; `blocks` and `search` read the kiln's block table, which holds only that kiln's rows. An unregistered name raises an error that names the kiln. Before the daemon binds them, each function is a stub: `note` answers `nil`, the array functions answer an empty table, `links` answers two empty arrays, and `cru.embed` raises.
 
 ### cru.kiln.blocks(kiln, path)
 

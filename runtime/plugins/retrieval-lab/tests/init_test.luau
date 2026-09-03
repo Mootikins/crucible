@@ -288,12 +288,13 @@ describe("retrieval-lab", function()
             expect.deep_equal({ #embedded[2], 0, 0 }, out.replace[2].vector)
         end)
 
-        it("falls back to the file stem when the event has no title, and honours meta_format", function()
+        it("honours meta_format", function()
             use("meta_pre")
             plugin.setup({ meta_format = "{meta} | {text}" })
             local event = {
                 kiln = "notes",
                 path = "Help/Guide.md",
+                title = "Guide",
                 blocks = { { span_start = 0, span_end = 8, kind = "paragraph", text = "body", vector = A } },
             }
 
@@ -340,7 +341,7 @@ describe("retrieval-lab", function()
             expect.truthy(out[2].score < out[1].score)
         end)
 
-        it("reads the graph once, and again after a note event", function()
+        it("reads the graph once, and registers a note handler that drops it", function()
             use("ppr_post")
             graph()
             local event = { query_vector = A, kilns = { "notes" }, limit = 10, hits = { hit(1, "n.md", 0, 0.6) } }

@@ -583,7 +583,12 @@ pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> R
     let kiln_path = require_param!(req, "kiln", as_str);
     let text = require_param!(req, "text", as_str);
 
-    match km.embedding_provider(Path::new(kiln_path)).await {
+    // Open the kiln first, so an unknown path is refused before any embed.
+    if let Err(e) = km.get_or_open(Path::new(kiln_path)).await {
+        return internal_error(req.id, e);
+    }
+
+    match km.embedding_provider().await {
         Ok(provider) => match provider.embed(text).await {
             Ok(vector) => Response::success(req.id, serde_json::json!({ "vector": vector })),
             Err(e) => internal_error(req.id, anyhow::anyhow!(e)),

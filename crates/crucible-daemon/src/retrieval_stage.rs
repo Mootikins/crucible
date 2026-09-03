@@ -241,10 +241,14 @@ fn replace_vectors(note_path: &str, records: &mut [BlockRecord], replace: &[serd
             );
             continue;
         }
-        let Some(row) = records.iter_mut().find(|r| r.span_start == span_start) else {
+        let Some(row) = records
+            .iter_mut()
+            .find(|r| r.span_start == span_start && r.embedding.is_some())
+        else {
             warn!(
                 note_path,
-                span_start, "index:blocks replace entry names a start no row has; dropping"
+                span_start,
+                "index:blocks replace entry names a start no embedded row has; dropping"
             );
             continue;
         };

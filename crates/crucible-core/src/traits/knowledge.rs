@@ -98,7 +98,7 @@ impl From<crate::storage::note_store::NoteRecord> for NoteInfo {
 ///
 /// Dangling targets are not here: they name no note, so nothing can follow
 /// them. Both lists are sorted and deduplicated.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NoteLinks {
     /// The notes this note links to.
     pub outlinks: Vec<String>,

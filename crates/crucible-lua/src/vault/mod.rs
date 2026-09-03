@@ -235,8 +235,9 @@ const HOST_BOUND: &[&str] = &["blocks", "note", "notes", "links", "search", "pat
 ///
 /// Registration replaces the empty stubs `register_vault_module` installs.
 /// Every function takes the kiln NAME first; the resolver maps it to a
-/// repository the host already bound to that kiln, and the repository
-/// applies its own read authority.
+/// repository the host already bound to that kiln. `note`, `notes` and
+/// `links` go through that repository's read scope; `blocks` and `search`
+/// read the kiln's block table, which holds only that kiln's rows.
 pub fn register_kiln_repository_resolver(
     lua: &Lua,
     resolver: KilnRepositoryResolver,

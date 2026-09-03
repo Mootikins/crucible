@@ -441,15 +441,12 @@ impl DaemonPluginLoader {
             let kiln_manager = Arc::clone(&kiln_manager);
             Box::pin(async move {
                 let (kiln_name, _) = registered_kiln_path(&registry, &name)?;
-                // The provider is one per config, never per connection. A
-                // lookup through `KilnManager::embedding_provider` waits on
-                // the connection map, which `process_batch` holds while
-                // `index:blocks` fires; a handler that embeds there would
-                // wait on itself until its budget stopped it.
-                let config = kiln_manager.enrichment_config().ok_or_else(|| {
-                    format!("kiln '{kiln_name}' has no embedder: no embedding provider configured")
-                })?;
-                crate::embedding::get_or_create_embedding_provider(config)
+                // The provider is one per config, never per connection, so
+                // this does not open the kiln: `process_batch` holds the
+                // connection map while `index:blocks` fires, and a handler
+                // that waited on it would wait on itself.
+                kiln_manager
+                    .embedding_provider()
                     .await
                     .map_err(|e| format!("kiln '{kiln_name}' has no embedder: {e}"))
             })

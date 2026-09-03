@@ -355,11 +355,9 @@ Event fields:
 - `event.limit` — how many hits the caller asked for; the cut happens after
   the handler returns
 - `event.hits` — an array of
-  `{ index, kiln, path, title, span_start, span_end, kind, score, snippet }`,
-  best first. `kiln` follows the rules of `precognition_select`. `title` is
-  the note's title from the index, absent for a hit with no kiln name and
-  for a note the index has no row for. The three block fields are absent for
-  a hit that names a whole note.
+  `{ index, kiln, path, span_start, span_end, kind, score, snippet }`,
+  best first. `kiln` follows the rules of `precognition_select`. The three
+  block fields are absent for a hit that names a whole note.
 
 Return an array of entries. An entry is one of two shapes:
 
@@ -435,8 +433,9 @@ Event fields:
   stage fires, so a named read would wait on it until the handler budget
   stops the handler.
 - `event.blocks` — an array of `{ span_start, span_end, kind, text, vector }`
-  in span order. `text` is the text the pipeline embedded, heading trail
-  included. `vector` is absent for a block under the word floor.
+  in span order. `text` is the block's own text as the parser cut it; the
+  heading trail the pipeline embeds with is not on it. `vector` is absent
+  for a block under the word floor.
 
 Return `{ extra = { ... }, replace = { ... } }`. Either key may be absent.
 
@@ -452,10 +451,11 @@ embedded block to take a model name from.
 `replace` is an array of `{ span_start, vector }`. Each entry swaps the
 vector of the row that starts at `span_start`; the row's text and content
 hash stay, so the block cache still reuses the row on a reprocess and the
-handler runs again over it. An entry is dropped with a warning when no row
-starts at `span_start`, when its vector has a different dimension from the
-note's embedded blocks, or when the note has no embedded block to take a
-model name from. Replacements apply before extra rows are checked.
+handler runs again over it. An entry is dropped with a warning when no
+embedded row starts at `span_start` (a row under the word floor has no
+vector to swap), when its vector has a different dimension from the note's
+embedded blocks, or when the note has no embedded block to take a model
+name from. Replacements apply before extra rows are checked.
 
 | Return | Effect |
 |--------|--------|

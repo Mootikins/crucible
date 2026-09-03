@@ -290,6 +290,7 @@ tools = {
         },
         fn = function(args)
             local kiln = cru.kiln.active
+            if not kiln then return {} end
             local vector = cru.embed(kiln, args.query)
             return { results = cru.kiln.search(kiln, vector, args.limit or 10) }
         end,

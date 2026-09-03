@@ -241,22 +241,6 @@ end
 -- Metadata prefix (meta_pre)
 -- ============================================================================
 
---- The event's title, or the file stem when the event carries none. The
---- stage puts the title and the description on the event: a read through
---- `cru.kiln.note` would wait on the connection the batch holds.
-function M.note_title(title: any, path: string): string
-    if type(title) == "string" and title ~= "" then
-        return title
-    end
-    local stem = path:match("([^/]+)$") or path
-    return (stem:gsub("%.md$", ""))
-end
-
---- The event's description, or the empty string.
-function M.note_description(description: any): string
-    return if type(description) == "string" then description else ""
-end
-
 --- A heading's text without its `#` marks.
 function M.heading_text(text: string): string
     return (text:gsub("^#+%s*", ""):gsub("%s+$", ""))
@@ -483,8 +467,10 @@ strategies.meta_pre = {
     rerank = function(event) return nil end,
     index = function(event: any): any
         if type(event.kiln) ~= "string" then return nil end
-        local title = M.note_title(event.title, event.path)
-        local description = M.note_description(event.description)
+        -- The stage puts the title and the description on the event: a read
+        -- through `cru.kiln.note` would wait on the connection the batch holds.
+        local title: string = event.title or ""
+        local description: string = event.description or ""
         local heading = ""
         local replace = {}
         for _, block in ipairs(event.blocks) do

@@ -1440,18 +1440,20 @@ mod tests {
         let (pipeline, blocks) = staged_pipeline(
             r#"
             cru.on("index:blocks", function(ctx, event)
-                local first
+                local first, bare
                 for _, block in ipairs(event.blocks) do
                     assert(block.text ~= nil, "every block carries its text")
                     if block.vector and not first then first = block end
+                    if not block.vector and not bare then bare = block end
                 end
-                assert(first.text:find("Alpha"), "the text is the embedded text")
+                assert(first.text:find("Alpha"), "the text is the block's own text")
                 local swapped = {}
                 for i = 1, #first.vector do swapped[i] = 0.5 end
                 return { replace = {
                     { span_start = first.span_start, vector = swapped },
                     { span_start = 999999, vector = swapped },
                     { span_start = first.span_start, vector = { 1, 2, 3 } },
+                    { span_start = bare.span_start, vector = swapped },
                 } }
             end)
             "#,
@@ -1468,8 +1470,13 @@ mod tests {
         let untouched = plain_blocks.blocks_for_note(&path).await.unwrap();
 
         // The first paragraph carries the handler's vector, the second the
-        // provider's. The unknown start and the wrong dimension change nothing.
+        // provider's. The unknown start, the wrong dimension and the row
+        // without a vector change nothing.
         assert_eq!(stored.len(), 4);
+        assert!(
+            stored[0].embedding.is_none(),
+            "a row with no vector to swap takes none"
+        );
         let near = |row: &crucible_core::storage::BlockRecord, value: f32| {
             row.embedding
                 .as_ref()

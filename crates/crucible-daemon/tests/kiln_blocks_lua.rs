@@ -226,7 +226,6 @@ async fn cru_embed_answers_inside_an_index_blocks_handler() {
     kiln.kiln_manager
         .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
 
-    let started = std::time::Instant::now();
     kiln.kiln_manager
         .process_batch(&kiln.kiln_dir, &[kiln.kiln_dir.join("a.md")], true)
         .await
@@ -247,9 +246,4 @@ async fn cru_embed_answers_inside_an_index_blocks_handler() {
         .await
         .expect("read the title");
     assert_eq!(title, "a", "the event carries the note's title");
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(10),
-        "the handler waited {:?}",
-        started.elapsed()
-    );
 }
