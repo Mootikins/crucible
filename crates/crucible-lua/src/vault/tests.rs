@@ -841,6 +841,44 @@ mod blocks_tests {
         assert_eq!(count, 0);
     }
 
+    /// A kiln that opens re-registers the vault module over its store. The
+    /// host binds `cru.kiln.blocks` and `cru.kiln.path` through resolvers
+    /// this crate cannot rebuild, so the upgrade must carry them over.
+    #[test]
+    fn the_host_bound_members_survive_a_storage_upgrade() {
+        use super::store_tests::MockNoteStore;
+        use crucible_core::storage::{NoteStore, Scope};
+
+        let lua = lua_with_blocks();
+        let kiln = tempfile::TempDir::new().unwrap();
+        let root = kiln.path().canonicalize().unwrap();
+        let path_root = root.clone();
+        let path_resolver: KilnPathResolver = Arc::new(move |name: &str| {
+            if name == "notes" {
+                Ok(path_root.clone())
+            } else {
+                Err(format!("kiln '{name}' is not registered"))
+            }
+        });
+        register_kiln_path_resolver(&lua, path_resolver).unwrap();
+
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+        register_vault_module_with_store_scoped(
+            &lua,
+            store,
+            Scope::workspace_unchecked(root.clone()),
+        )
+        .unwrap();
+
+        let count: usize = lua
+            .load(r#"return #cru.kiln.blocks("notes", "a.md")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(count, 3, "the storage upgrade put the blocks stub back");
+        let resolved: String = lua.load(r#"return cru.kiln.path("notes")"#).eval().unwrap();
+        assert_eq!(resolved, root.to_string_lossy());
+    }
+
     #[test]
     fn an_unknown_kiln_name_is_an_error_naming_the_kiln() {
         let lua = lua_with_blocks();

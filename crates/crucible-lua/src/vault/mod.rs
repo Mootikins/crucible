@@ -355,11 +355,31 @@ pub fn register_vault_module_with_store_scoped(
     store: Arc<dyn NoteStore>,
     authority: Scope,
 ) -> Result<(), LuaError> {
+    // The host binds `cru.kiln.blocks` and `cru.kiln.path` at boot through
+    // resolvers this crate cannot rebuild, and `register_vault_module`
+    // publishes a fresh table. Carry the two bindings over: without this,
+    // every kiln open put the stubs back, and a plugin read empty blocks
+    // after the first `cru process`.
+    let globals = lua.globals();
+    let host_bound: Vec<(&str, Value)> = match globals
+        .get::<Table>("cru")
+        .and_then(|cru| cru.get::<Table>("kiln"))
+    {
+        Ok(previous) => ["blocks", "path"]
+            .into_iter()
+            .filter_map(|name| previous.get::<Value>(name).ok().map(|v| (name, v)))
+            .filter(|(_, v)| v.is_function())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+
     register_vault_module(lua)?;
 
-    let globals = lua.globals();
     let cru: Table = globals.get("cru")?;
     let vault: Table = cru.get("kiln")?;
+    for (name, value) in host_bound {
+        vault.set(name, value)?;
+    }
     let mut kiln = crate::host_registry::Ns::over(lua, "cru.kiln", vault);
 
     let s = Arc::clone(&store);
