@@ -1,0 +1,226 @@
+# Multi-hop queries for the retrieval lab.
+#
+# The corpus is `docs/Help` plus `docs/Guides`, processed into one kiln.
+# Every entry is a MULTI-HOP query. The question uses the words of a source
+# note S. The answer is in a target note T. S links to T with a wikilink, or
+# T links to S. A retrieval strategy that follows the link graph should win
+# these; a strategy that scores the block vector alone should land on S.
+#
+# The comment above each entry names S, the wikilink, and the sentence in T
+# that answers the question.
+#
+# `expect_note` is the stem of T; `rank_of` compares stems, so `Agent Cards`
+# matches `Help/Extending/Agent Cards.md`. Stems shared by several notes
+# (`Index`, `Configuration`, `acp`, `Canvas`) are never used. `lenient = true`
+# marks a query a third note also answers defensibly: counted for recall@k,
+# excluded from strict hit rate. No entry carries `expect_text`; the eval
+# scores these at note rank only.
+#
+# No question repeats a transition or control question from
+# `assets/fixtures/transition_queries/golden.toml`.
+
+top_k = 10
+
+# =============================================================================
+# Multi-hop queries (30)
+# =============================================================================
+
+# S: Help/Block References.md — [[Help/Wikilinks]]
+#   T: Help/Wikilinks.md — "The heading reference is captured on the parsed link; no heading-scoped content is embedded."
+#   lenient: Block References itself says an embed renders as a plain link.
+[[queries]]
+question = "the embed prefix parses but there is no transclusion, so what does an embed with a heading reference like ![[Note Name#Heading]] actually embed?"
+expect_note = "Wikilinks"
+lenient = true
+
+# S: Help/Delegation Patterns.md — [[Help/Concepts/Delegation]]
+#   T: Help/Concepts/Delegation.md — "Delegation flows through the `delegate_session` tool. ... Creates a real child session (linked to the parent via `parent_session_id`)"
+#   lenient: Lua Runtime API also names `parent_session_id`.
+[[queries]]
+question = "collect_subagents waits on background jobs from the daemon's subagent infrastructure; which tool spawns those jobs, and what links the child session to its parent?"
+expect_note = "Delegation"
+lenient = true
+
+# S: Help/Concepts/Delegation.md — [[Help/Extending/Agent Cards|Agent cards]]
+#   T: Help/Extending/Agent Cards.md — "Discovery order (later locations shadow earlier ones, by card name)"
+[[queries]]
+question = "agent cards are defined as markdown cards in my kiln, project, or config directory; when two of those hold a card with the same name, which one wins?"
+expect_note = "Agent Cards"
+
+# S: Help/Config/agents.md — [[Help/Concepts/Agent Client Protocol|Agent Client Protocol]]
+#   T: Help/Concepts/Agent Client Protocol.md — "`opencode`, `gemini` and `hermes` speak ACP directly; the other three are bridges that also need the underlying vendor CLI installed."
+[[queries]]
+question = "the ACP agents Claude Code, OpenCode and Gemini are hosted via the protocol; which of them speak it directly, and which need a bridge plus the vendor CLI?"
+expect_note = "Agent Client Protocol"
+
+# S: Help/CLI/proposals.md — [[Help/Concepts/Reflection Pass|reflection pass]]
+#   T: Help/Concepts/Reflection Pass.md — "consolidation runs on a timer, reads several finished sessions at once, and proposes pattern notes ... It is off by default"
+[[queries]]
+question = "the proposals command reviews what the consolidation pass proposed; what does that pass propose, and is it on by default?"
+expect_note = "Reflection Pass"
+
+# S: Help/Concepts/Agents & Protocols.md — [[Help/Task Management|TASKS.md]]
+#   T: Help/Task Management.md — "TASKS.md follows the "Ralph Wiggum" pattern ... The file is read as part of a cached prefix (system prompt position)"
+[[queries]]
+question = "storing progress in TASKS.md instead of accumulating message history; what is that pattern called, and where in the prompt does the file sit?"
+expect_note = "Task Management"
+
+# S: Help/Concepts/Model Context Protocol.md — [[Help/Extending/MCP Gateway]]
+#   T: Help/Extending/MCP Gateway.md — "Tools appear with their configured prefix (e.g., `gh_search_code`) ... all sessions share the same server connections."
+#   lenient: Help/Config/mcp.md documents the `prefix` key.
+[[queries]]
+question = "the gateway aggregates tools from many upstream servers into a unified namespace; how are the tool names kept apart, and do sessions share the server connections?"
+expect_note = "MCP Gateway"
+lenient = true
+
+# S: Help/Concepts/Oil.md — [[Help/Plugins/Oil Lua API]]
+#   T: Help/Plugins/Oil Lua API.md — "oil.text("Important!", { fg = "red", bold = true }) ... oil.when(is_loading, oil.spinner("Please wait..."))"
+#   lenient: Help/Extending/Scripted UI.md also covers the `cru.oil` API.
+[[queries]]
+question = "the Oil control flow helper when and the spinner widget; how do I show a spinner only while something is loading, and style a text node red and bold?"
+expect_note = "Oil Lua API"
+lenient = true
+
+# S: Help/Concepts/Scripting Languages.md — [[Help/Extending/Creating Plugins]]
+#   T: Help/Extending/Creating Plugins.md — "A plugin directory that auto-loaded on `cd` would turn `git clone` into arbitrary code execution ... `runtimepath = ["~/kilns/work"]` loads `~/kilns/work/plugins/`"
+#   lenient: Help/Lua/Configuration.md also documents `runtimepath`.
+[[queries]]
+question = "no kiln, project or workspace directory is searched for plugins on its own; why not, and how does runtimepath opt a tree in?"
+expect_note = "Creating Plugins"
+lenient = true
+
+# S: Help/Concepts/Agent Client Protocol.md — [[Help/Concepts/Permission Precedence]]
+#   T: Help/Concepts/Permission Precedence.md — "Every tool call the agent makes walks this list top to bottom. ... 1 CLI `--permissions` override, 2 `[permissions]` config, 3 Saved patterns, 4 Lua permission hooks ..."
+[[queries]]
+question = "a hosted agent's tool calls go through the same permission gate as every other session, with permission patterns, Lua hooks and the [permissions] config; in which order do those layers run?"
+expect_note = "Permission Precedence"
+
+# S: Help/Concepts/Reflection Pass.md — [[Help/Concepts/Review Ledger|review ledger]]
+#   T: Help/Concepts/Review Ledger.md — "Around each tool call that could write ... the daemon records the tree before and after. If the trees differ, that becomes an interval attributed to that call's `tool_call_id`."
+[[queries]]
+question = "the reviewer sees the edits the user accepted, rejected or did not review from the review ledger; how does the ledger attribute an edit to one tool call?"
+expect_note = "Review Ledger"
+
+# S: Help/Concepts/Permission Precedence.md — [[Help/Extending/Container Isolation]]
+#   T: Help/Extending/Container Isolation.md — "Isolation is off until an image is configured. Add a `[plugins.oci]` section ... with the session's workspace bind-mounted at `/workspace`"
+[[queries]]
+question = "to prevent a catastrophic action, run the agent in a container rather than rely on a deny rule; what do I configure to turn that on, and where is the workspace mounted inside?"
+expect_note = "Container Isolation"
+
+# S: Help/Concepts/Semantic Search.md — [[Help/Config/embedding]]
+#   T: Help/Config/embedding.md — "Changing model changes the vector dimension, which makes old vectors unusable — reprocess after switching with `cru process --force`."
+#   lenient: Help/CLI/process.md documents `--force` for a model switch.
+[[queries]]
+question = "semantic search needs an embedding provider, local or cloud; if I switch from FastEmbed to OpenAI, do my old vectors still work?"
+expect_note = "embedding"
+lenient = true
+
+# S: Help/Extending/Event Hooks.md — [[Help/Config/web]]
+#   T: Help/Config/web.md — "`~/.config/crucible/webhooks.toml`, one entry per webhook. ... it is read once, when the server starts — restart `cru web` after editing it."
+[[queries]]
+question = "every webhook delivery is HMAC-verified before it reaches the webhook:received hook; where is the secrets file, and when does the server read it?"
+expect_note = "web"
+
+# S: Help/Concepts/Precognition.md — [[Help/Extending/Event Hooks]]
+#   T: Help/Extending/Event Hooks.md — "Return an array of `{ index = n, snippet = "..." }` ... a handler cannot introduce a note that isn't"
+[[queries]]
+question = "a precognition_select handler sees the retrieved notes and chooses which to keep; what does it return, and can it add a note the search did not retrieve?"
+expect_note = "Event Hooks"
+
+# S: Help/Extending/Custom Tools.md — [[Help/Extending/Creating Plugins]]
+#   T: Help/Extending/Creating Plugins.md — "Plugins are discovered from these directories (highest priority first) ... Same-name plugins at higher priority shadow lower ones."
+#   lenient: Help/Concepts/Scripting Languages.md lists the plugin directories.
+[[queries]]
+question = "there is one declaration form and one loader for Lua tools; which directories does that loader search, and which wins for two plugins with the same name?"
+expect_note = "Creating Plugins"
+lenient = true
+
+# S: Help/Plugins/Vendoring Lua Dependencies.md — [[Help/Plugins/Lua Runtime API]]
+#   T: Help/Plugins/Lua Runtime API.md — "cru.json.array(table): Mark a table as a JSON list and return it. ... encodes as [] rather than {}"
+[[queries]]
+question = "before vendoring a JSON library, cru.json ships in the box; how do I make an empty result list encode as [] rather than {}?"
+expect_note = "Lua Runtime API"
+
+# S: Help/Extending/Plugin Manifest.md — [[Help/Extending/Creating Plugins]]
+#   T: Help/Extending/Creating Plugins.md — "A broken init.lua is warned about and skipped (the daemon runs with TOML-only config); it never blocks startup."
+[[queries]]
+question = "plugin configuration is handed to setup() at load and overridable from init.lua; what happens at startup when my init.lua is broken?"
+expect_note = "Creating Plugins"
+
+# S: Help/Extending/Creating Plugins.md — [[Help/Lua/Language Basics]]
+#   T: Help/Lua/Language Basics.md — "Five idioms `--!strict` asks for ... 1. Annotate the local, not the expression."
+[[queries]]
+question = "every shipped plugin carries --!strict and it costs something; which idioms does the checker ask for, and why does args = args or {} read as a defect?"
+expect_note = "Language Basics"
+
+# S: Help/Extending/Creating Plugins.md — [[Help/Extending/Plugin Manifest]]
+#   T: Help/Extending/Plugin Manifest.md — "optional: true # Won't block load if missing ... a missing required dependency blocks the load."
+[[queries]]
+question = "the manifest's dependencies are matched by name only; can I mark one as optional so a missing one does not block the load?"
+expect_note = "Plugin Manifest"
+
+# S: Help/Extending/Custom Handlers.md — [[Help/Extending/Event Hooks]]
+#   T: Help/Extending/Event Hooks.md — "A name outside the closed set below raises an error naming the closest match"
+[[queries]]
+question = "with the simpler hook-based approach, what happens when I register a handler under a misspelt event name?"
+expect_note = "Event Hooks"
+
+# S: Help/Extending/Scripted UI.md — [[Help/Extending/Script Agent Queries]]
+#   T: Help/Extending/Script Agent Queries.md — "the workable route is to expose the plugin's work as a tool and let the session's agent make the call"
+[[queries]]
+question = "cru.ui asks the user a question, but asking an LLM from a script is unimplemented; what is the workable route for a plugin that needs an LLM decision today?"
+expect_note = "Script Agent Queries"
+
+# S: Help/TUI/Keybindings.md — [[Help/TUI/Shell Execution]]
+#   T: Help/TUI/Shell Execution.md — "`d` / `u` Scroll down / up half a page; `PageDown` / `PageUp` Scroll by a full page; `Ctrl+C` Cancel the running command"
+[[queries]]
+question = "PageUp and PageDown are not bound in the chat view but the shell modal binds them; what do PageUp and d/u do there, and which key cancels the running command?"
+expect_note = "Shell Execution"
+
+# S: Help/TUI/Keybindings.md — [[Help/TUI/Commands]]
+#   T: Help/TUI/Commands.md — "`high` | 8192 | Thorough reasoning ... `thinkingbudget` accepts presets only — a raw token count ... is rejected"
+#   lenient: Help/CLI/chat.md also lists the preset token counts.
+[[queries]]
+question = "the thinking budget takes presets like high, medium and low; how many tokens is high, and is a raw token count accepted?"
+expect_note = "Commands"
+lenient = true
+
+# S: Help/Extending/Discord.md — [[Help/Operations/Discord Bot Runbook]]
+#   T: Help/Operations/Discord Bot Runbook.md — "1. Stop it answering (keeps the process, keeps the logs) ... `enabled = false # <- the only line you add`"
+[[queries]]
+question = "of the three ways to stop the Discord bot, which one keeps the process and the logs, and what is the one line it adds to config.toml?"
+expect_note = "Discord Bot Runbook"
+
+# S: Help/Lua/Configuration.md — [[Help/Concepts/Reflection Pass]]
+#   T: Help/Concepts/Reflection Pass.md — "Because policy lives in Lua, both plugins are fully shadowable — the reviewer prompt, capture criteria, and trigger are all user-editable."
+[[queries]]
+question = "the reflection and consolidation keys are declared in the plugin manifests; can I change the reviewer prompt and the capture criteria, or are they fixed in Rust?"
+expect_note = "Reflection Pass"
+
+# S: Guides/Getting Started.md — [[Help/Config/embedding]]
+#   T: Help/Config/embedding.md — "type = "openai" ... The removed knobs `dimensions`, `retry_attempts` and `headers` still load without an error; the values are ignored."
+[[queries]]
+question = "the daemon skips embeddings without an [enrichment] section, and fastembed is one provider; how do I set up the OpenAI provider, and does a dimensions knob in that section still do anything?"
+expect_note = "embedding"
+
+# S: Help/TUI/Modes.md — [[Help/Extending/Agent Cards|agent cards]]
+#   T: Help/Extending/Agent Cards.md — "`true` or `allow` — auto-approve ... `false` or `deny` — the tool is removed from the agent's toolset AND refused at dispatch"
+#   lenient: Help/Concepts/Permission Precedence.md describes the agent-card gate.
+[[queries]]
+question = "modes are a permission layer on top of agent cards; what per-tool values can a card itself set, and what does deny do to a tool?"
+expect_note = "Agent Cards"
+lenient = true
+
+# S: Guides/Basic Commands.md — [[Help/CLI/process]]
+#   T: Help/CLI/process.md — "`--parallel <N>`: Accepted for compatibility but currently a no-op: processing runs in the daemon"
+[[queries]]
+question = "after adding many new notes I run the process command; does the --parallel flag make it faster?"
+expect_note = "process"
+
+# S: Help/Concepts/Kilns.md — [[Guides/Your First Kiln]]
+#   T: Guides/Your First Kiln.md — "it creates `.crucible/kiln.toml`, registers the kiln in your global config, and prompts for a data classification."
+#   lenient: Help/CLI/init.md documents the same command.
+[[queries]]
+question = "for detailed setup after explicitly initializing with cru init; what does init create inside the kiln directory, and what does it prompt for?"
+expect_note = "Your First Kiln"
+lenient = true
