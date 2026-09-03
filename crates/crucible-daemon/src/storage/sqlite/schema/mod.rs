@@ -19,7 +19,7 @@ use tracing::{debug, info};
 /// Schema version — tied to the crucible binary version.
 /// Bump when adding tables, columns, or data migrations.
 /// The daemon auto-migrates on startup; no user intervention needed.
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 /// Tables the daemon may drop and recreate because their contents are a
 /// function of files on disk. Anything NOT listed here holds data with no
@@ -102,6 +102,9 @@ pub fn apply_migrations(conn: &Connection) -> StorageResult<MigrationOutcome> {
     }
     if current_version < 7 {
         apply_migration_v7(conn)?;
+    }
+    if current_version < 8 {
+        apply_migration_v8(conn)?;
     }
 
     Ok(outcome)
@@ -451,6 +454,62 @@ fn apply_migration_v7(conn: &Connection) -> StorageResult<()> {
 
     record_migration(conn, 7)?;
     info!("Migration v7 applied successfully");
+    Ok(())
+}
+
+/// Every name the deleted `FastEmbedProvider::get_model_info` could write,
+/// paired with the catalog name that replaces it.
+///
+/// The old code named five models and gave every other model its Rust
+/// variant name (`format!("{:?}", model)`). Its parser accepted twelve
+/// models, so this table is the complete history and can never grow: the
+/// code that wrote these strings is gone.
+const V8_MODEL_RENAMES: &[(&str, &str)] = &[
+    ("BAAI/bge-small-en-v1.5", "bge-small-en-v1.5"),
+    ("BGEBaseENV15", "bge-base-en-v1.5"),
+    ("BGELargeENV15", "bge-large-en-v1.5"),
+    ("AllMiniLML12V2", "all-MiniLM-L12-v2"),
+    ("NomicEmbedTextV1", "nomic-embed-text-v1"),
+    ("nomic-ai/nomic-embed-text-v1.5", "nomic-embed-text-v1.5"),
+    ("intfloat/multilingual-e5-large", "multilingual-e5-large"),
+    ("MultilingualE5Base", "multilingual-e5-base"),
+    ("MultilingualE5Small", "multilingual-e5-small"),
+    ("mixedbread-ai/mxbai-embed-large-v1", "mxbai-embed-large-v1"),
+    (
+        "ParaphraseMLMiniLML12V2",
+        "paraphrase-multilingual-MiniLM-L12-v2",
+    ),
+];
+
+/// v8 — rename the stored fastembed model names to the catalog names.
+///
+/// `embedding_model` is the reuse key: `cached_vectors` matches a block by
+/// its content hash AND this string, so a vector stored under the old name
+/// is never reused once the catalog renames the model. Search reads a
+/// vector by its dimension and never by this column, so the rows keep
+/// serving search either way; without this rename the only cost is a
+/// silent re-embedding of every block on the next index pass.
+///
+/// The match is exact, so a name another provider wrote survives. That
+/// matters: Ollama's `nomic-embed-text` is not fastembed's
+/// `nomic-embed-text-v1.5`.
+fn apply_migration_v8(conn: &Connection) -> StorageResult<()> {
+    debug!("Applying migration v8: fastembed model names");
+
+    let mut renamed = 0usize;
+    for (old, new) in V8_MODEL_RENAMES {
+        for table in ["notes", "note_blocks"] {
+            renamed += conn
+                .execute(
+                    &format!("UPDATE {table} SET embedding_model = ?1 WHERE embedding_model = ?2"),
+                    rusqlite::params![new, old],
+                )
+                .map_err(|e| StorageError::Backend(format!("v8 {table} rename: {e}")))?;
+        }
+    }
+
+    record_migration(conn, 8)?;
+    info!(renamed, "Migration v8 applied successfully");
     Ok(())
 }
 

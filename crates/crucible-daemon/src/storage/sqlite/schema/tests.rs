@@ -622,8 +622,9 @@ fn a_database_from_before_the_block_table_gains_it_and_keeps_its_notes() {
     .unwrap();
 
     // Wind the ladder back to v6 and run it again, as an older kiln would.
+    // The current version is a MAX, so every later row goes too.
     conn.execute("DROP TABLE note_blocks", []).unwrap();
-    conn.execute("DELETE FROM schema_migrations WHERE version = 7", [])
+    conn.execute("DELETE FROM schema_migrations WHERE version >= 7", [])
         .unwrap();
     apply_migrations(&conn).unwrap();
 
@@ -640,4 +641,76 @@ fn a_database_from_before_the_block_table_gains_it_and_keeps_its_notes() {
         .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
         .unwrap();
     assert_eq!(notes, 1, "the migration must not touch existing notes");
+}
+
+/// A block vector stored under the old fastembed name keeps serving the
+/// reuse cache after the catalog renames the model, and a name another
+/// provider wrote is left alone.
+#[test]
+fn v8_renames_the_fastembed_models_and_leaves_another_provider_alone() {
+    let conn = Connection::open_in_memory().unwrap();
+    apply_migrations(&conn).unwrap();
+
+    let rows = [
+        ("a.md", 0, "BAAI/bge-small-en-v1.5"),
+        ("b.md", 1, "BGELargeENV15"),
+        ("c.md", 2, "all-MiniLM-L6-v2"),
+        ("d.md", 3, "nomic-embed-text"),
+    ];
+    for (path, span_start, model) in rows {
+        conn.execute(
+            "INSERT INTO notes (path, content_hash, title, tags, links_to, properties, updated_at)
+             VALUES (?1, X'00', 'T', '[]', '[]', '{}', '2026-01-01')",
+            rusqlite::params![path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO note_blocks
+                (note_path, span_start, span_end, kind, content_hash, text, embedding_model,
+                 updated_at)
+             VALUES (?1, ?2, ?3, 'paragraph', ?4, 'text', ?5, '2026-01-01')",
+            rusqlite::params![path, span_start, span_start + 1, vec![0u8; 32], model],
+        )
+        .unwrap();
+    }
+
+    // The ladder ran at v8 already, so re-apply the step alone.
+    apply_migration_v8(&conn).unwrap();
+
+    let stored = |path: &str| -> String {
+        conn.query_row(
+            "SELECT embedding_model FROM note_blocks WHERE note_path = ?1",
+            rusqlite::params![path],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(stored("a.md"), "bge-small-en-v1.5", "the named model");
+    assert_eq!(stored("b.md"), "bge-large-en-v1.5", "the Rust variant name");
+    assert_eq!(
+        stored("c.md"),
+        "all-MiniLM-L6-v2",
+        "a name that did not move"
+    );
+    assert_eq!(
+        stored("d.md"),
+        "nomic-embed-text",
+        "another provider's name"
+    );
+}
+
+/// Every rename the ladder makes names a model the catalog knows, so the
+/// reuse key a rewritten row carries is the key the provider now asks for.
+#[cfg(feature = "fastembed")]
+#[test]
+fn v8_renames_reach_the_catalog() {
+    for (old, new) in V8_MODEL_RENAMES {
+        let entry = crate::llm::embeddings::catalog::find(new).unwrap_or_else(|| {
+            panic!("v8 renames {old} to {new}, which the catalog does not know")
+        });
+        assert_eq!(
+            entry.canonical_name, *new,
+            "{new} must be the catalog's canonical name, not one of its aliases"
+        );
+    }
 }
