@@ -456,6 +456,7 @@ mod tests {
                 span_start,
                 span_end: span_start + 8,
                 kind: "paragraph".to_string(),
+                cited: Vec::new(),
             }),
             snippet: None,
         }

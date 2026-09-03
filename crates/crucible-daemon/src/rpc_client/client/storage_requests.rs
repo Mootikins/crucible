@@ -233,6 +233,7 @@ mod first_per_note_tests {
                 span_start,
                 span_end: span_start + 10,
                 kind: "paragraph".to_string(),
+                cited: Vec::new(),
             }),
             snippet: None,
         }
