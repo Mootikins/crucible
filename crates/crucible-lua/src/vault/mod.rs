@@ -56,6 +56,7 @@
 
 use crate::error::LuaError;
 use crucible_core::storage::{NoteStore, Scope, StorageError, StorageResult};
+use futures_util::future::BoxFuture;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
@@ -79,9 +80,16 @@ const NO_RESOLVER: &str = "cru.kiln.path is not available in this runtime";
 /// The same seam as [`KilnPathResolver`], one level up: the host owns the
 /// name-to-repository map, and Lua names a kiln, never a directory or a
 /// database. The error string reaches Lua as-is, so it must name the kiln.
+///
+/// The lookup is async: the daemon holds its open kilns behind an async lock
+/// and opens a named kiln on first use.
 pub type KilnRepositoryResolver = Arc<
-    dyn Fn(&str) -> Result<Arc<dyn crucible_core::traits::KnowledgeRepository>, String>
-        + Send
+    dyn Fn(
+            &str,
+        ) -> BoxFuture<
+            'static,
+            Result<Arc<dyn crucible_core::traits::KnowledgeRepository>, String>,
+        > + Send
         + Sync,
 >;
 
@@ -199,7 +207,7 @@ pub fn register_kiln_blocks_resolver(
         move |lua, (name, path): (String, String)| {
             let resolver = Arc::clone(&resolver);
             async move {
-                let repo = resolver(&name).map_err(mlua::Error::runtime)?;
+                let repo = resolver(&name).await.map_err(mlua::Error::runtime)?;
                 let blocks = repo
                     .blocks_for_note(&path)
                     .await

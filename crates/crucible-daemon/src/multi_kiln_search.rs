@@ -38,19 +38,17 @@ pub struct RerankStage {
     pub session_id: Option<String>,
     /// Session VM first, then the plugin VM.
     pub vms: Vec<StageVm>,
-    /// Each source answers `top_k * fanout` rows when a handler is
-    /// registered, so a rerank has more than the final cut to choose from.
-    pub fanout: usize,
 }
 
+/// How many rows each source answers per requested row when a
+/// `search:rerank` handler is registered, so a rerank has more than the
+/// final cut to choose from. With no handler the search fetches `top_k`.
+pub const RERANK_FANOUT: usize = 5;
+
 impl RerankStage {
-    /// A stage over `vms` with no over-fetch.
+    /// A stage over `vms`.
     pub fn new(session_id: Option<String>, vms: Vec<StageVm>) -> Self {
-        Self {
-            session_id,
-            vms,
-            fanout: 1,
-        }
+        Self { session_id, vms }
     }
 }
 
@@ -85,7 +83,7 @@ pub async fn search_across_kilns_with_stage(
 
     // Over-fetch only when a handler will look at the extra rows.
     let rerank = rerank.filter(|stage| has_handlers(StageId::SearchRerank, &stage.vms));
-    let fetch = rerank.map_or(top_k, |stage| top_k.saturating_mul(stage.fanout.max(1)));
+    let fetch = rerank.map_or(top_k, |_| top_k.saturating_mul(RERANK_FANOUT));
 
     for source in sources {
         // Trust filtering: skip kilns whose classification exceeds provider
@@ -953,12 +951,42 @@ mod rerank_tests {
     async fn no_handler_means_no_over_fetch_and_no_change() {
         let dir = TempDir::new().unwrap();
         let sources = source(&dir, vec![block_hit("a.md", 0.9, 0)]);
-        let mut stage = RerankStage::new(None, vec![plugin_vm("")]);
-        stage.fanout = 5;
+        let stage = RerankStage::new(None, vec![plugin_vm("")]);
 
         let results = search(&sources, 10, &stage).await;
 
         assert_eq!(results.len(), 1);
         assert!(results[0].block.as_ref().unwrap().cited.is_empty());
+    }
+
+    /// With a handler registered each source answers `top_k * RERANK_FANOUT`
+    /// rows, and the reply is still cut to `top_k`. Without one the source
+    /// answers `top_k`.
+    #[tokio::test]
+    async fn a_registered_handler_over_fetches_and_the_cut_still_holds() {
+        let dir = TempDir::new().unwrap();
+        let hits: Vec<SearchResult> = (0..12)
+            .map(|i| block_hit("a.md", 1.0 - i as f64 / 100.0, i * 10))
+            .collect();
+        let repo = Arc::new(MockKnowledgeRepository::new().with_block_results(hits));
+        let sources = vec![KilnSearchSource {
+            kiln_path: dir.path().to_path_buf(),
+            kiln_name: crucible_core::config::KilnName::normalize("lab"),
+            knowledge_repo: repo.clone(),
+        }];
+        let stage = RerankStage::new(
+            None,
+            vec![plugin_vm(
+                r#"cru.on("search:rerank", function(ctx, event) return nil end)"#,
+            )],
+        );
+
+        let results = search(&sources, 2, &stage).await;
+        assert_eq!(repo.block_limits(), vec![2 * RERANK_FANOUT]);
+        assert_eq!(results.len(), 2);
+
+        let silent = RerankStage::new(None, vec![plugin_vm("")]);
+        search(&sources, 2, &silent).await;
+        assert_eq!(repo.block_limits(), vec![2 * RERANK_FANOUT, 2]);
     }
 }

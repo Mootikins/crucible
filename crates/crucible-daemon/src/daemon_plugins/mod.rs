@@ -386,6 +386,40 @@ impl DaemonPluginLoader {
         Ok(self)
     }
 
+    /// Wire `cru.kiln.blocks` to the daemon's open kilns.
+    ///
+    /// A plugin names a kiln; the registry turns the name into a directory
+    /// and the manager opens that directory on first use. The directory
+    /// never reaches Lua, and an unregistered name answers with an error
+    /// that names the kiln alone.
+    pub fn with_kiln_blocks_resolver(
+        self,
+        registry: Arc<crate::kiln_registry::KilnRegistry>,
+        kiln_manager: Arc<crate::kiln_manager::KilnManager>,
+    ) -> anyhow::Result<Self> {
+        let resolver: crucible_lua::KilnRepositoryResolver = Arc::new(move |name: &str| {
+            let name = name.to_string();
+            let registry = Arc::clone(&registry);
+            let kiln_manager = Arc::clone(&kiln_manager);
+            Box::pin(async move {
+                let kiln_name =
+                    crucible_core::config::KilnName::parse(&name).map_err(|e| e.to_string())?;
+                let path = registry
+                    .resolve(&kiln_name)
+                    .path()
+                    .ok_or_else(|| format!("kiln '{kiln_name}' is not registered"))?;
+                let handle = kiln_manager
+                    .get_or_open(&path)
+                    .await
+                    .map_err(|e| format!("kiln '{kiln_name}' did not open: {e}"))?;
+                Ok(handle.as_knowledge_repository())
+            })
+        });
+        crucible_lua::register_kiln_blocks_resolver(self.executor.lua(), resolver)
+            .map_err(|e| anyhow::anyhow!("cru.kiln.blocks (kiln resolver): {e}"))?;
+        Ok(self)
+    }
+
     /// Where persisted plugin options live, for the RPC layer that records
     /// them. `None` when no data root was bound — nothing is persisted.
     pub fn option_store_dir(&self) -> Option<&Path> {

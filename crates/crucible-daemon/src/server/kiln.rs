@@ -501,12 +501,13 @@ pub(crate) async fn handle_search_vectors(
     // One search path. `cru search` and `cru eval precognition` read this
     // reply, so it comes from the same block-first search the search tool
     // and precognition use. The repository scopes note reads to the kiln
-    // itself. No name: the request carries a directory, not a registry
-    // entry, and a hit must not disclose the directory as a name.
+    // itself. The name comes from the registry, never from the directory:
+    // a `search:rerank` handler reads a hit's neighbours by kiln name, and
+    // an unregistered directory stays nameless.
     let source = crate::multi_kiln_search::KilnSearchSource {
         knowledge_repo: handle.as_knowledge_repository(),
+        kiln_name: km.kiln_name_for(&kiln_path),
         kiln_path,
-        kiln_name: None,
     };
     // No session VM behind an RPC: `search:rerank` reaches plugin handlers.
     let rerank = {

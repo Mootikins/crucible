@@ -787,11 +787,12 @@ mod blocks_tests {
             block(20, "paragraph", Some(vec![1.0, 0.0])),
         ]));
         let resolver: KilnRepositoryResolver = Arc::new(move |name: &str| {
-            if name == "notes" {
+            let answer = if name == "notes" {
                 Ok(Arc::clone(&repo))
             } else {
                 Err(format!("kiln '{name}' is not attached"))
-            }
+            };
+            Box::pin(async move { answer })
         });
         register_kiln_blocks_resolver(&lua, resolver).unwrap();
         lua

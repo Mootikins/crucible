@@ -35,6 +35,8 @@ pub struct MockKnowledgeRepository {
     /// rows", which is what an un-reindexed kiln looks like.
     block_results: Vec<crucible_core::types::SearchResult>,
     fail_search: bool,
+    /// Every `limit` a `search_blocks` call asked for, in order.
+    block_limits: std::sync::Mutex<Vec<usize>>,
 }
 
 impl MockKnowledgeRepository {
@@ -51,17 +53,20 @@ impl MockKnowledgeRepository {
     pub fn with_results(results: Vec<crucible_core::types::SearchResult>) -> Self {
         Self {
             results,
-            block_results: Vec::new(),
-            fail_search: false,
+            ..Self::default()
         }
     }
 
     pub fn failing() -> Self {
         Self {
-            results: Vec::new(),
-            block_results: Vec::new(),
             fail_search: true,
+            ..Self::default()
         }
+    }
+
+    /// The `limit` of every `search_blocks` call so far, in order.
+    pub fn block_limits(&self) -> Vec<usize> {
+        self.block_limits.lock().unwrap().clone()
     }
 }
 
@@ -70,9 +75,10 @@ impl KnowledgeRepository for MockKnowledgeRepository {
     async fn search_blocks(
         &self,
         _vector: Vec<f32>,
-        _limit: usize,
+        limit: usize,
     ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-        Ok(self.block_results.clone())
+        self.block_limits.lock().unwrap().push(limit);
+        Ok(self.block_results.iter().take(limit).cloned().collect())
     }
 
     async fn blocks_for_note(

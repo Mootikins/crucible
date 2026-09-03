@@ -299,6 +299,19 @@ impl Server {
             }
         }
 
+        let kiln_manager = Arc::new(
+            KilnManager::with_event_tx(
+                event_tx.clone(),
+                params.enrichment_config.clone(),
+                params.max_precognition_chars,
+            )
+            // So a kiln it opened by path can be broadcast by the name the user
+            // registered it under. The same registry the session manager and the
+            // storage layer resolve against — two would be two answers to "where
+            // is kiln X".
+            .with_kiln_registry(kiln_registry.clone()),
+        );
+
         // The boot evaluation's loader when one was handed in — init.lua has
         // already evaluated in its VM — otherwise a fresh one (tests, an
         // in-process daemon handed a config value).
@@ -310,7 +323,11 @@ impl Server {
             match built_loader.and_then(|loader| {
                 // `kiln://<name>/…` paths in `cru.fs` resolve through the
                 // registry inside the daemon; the directory never reaches Lua.
-                loader.with_kiln_path_resolver(kiln_registry.clone())
+                loader
+                    .with_kiln_path_resolver(kiln_registry.clone())?
+                    // `cru.kiln.blocks` reads the open kiln by name, through
+                    // the same registry.
+                    .with_kiln_blocks_resolver(kiln_registry.clone(), kiln_manager.clone())
             }) {
                 Ok(loader) => {
                     info!("Daemon plugin loader initialized");
@@ -324,19 +341,6 @@ impl Server {
                 }
             },
         ));
-
-        let kiln_manager = Arc::new(
-            KilnManager::with_event_tx(
-                event_tx.clone(),
-                params.enrichment_config.clone(),
-                params.max_precognition_chars,
-            )
-            // So a kiln it opened by path can be broadcast by the name the user
-            // registered it under. The same registry the session manager and the
-            // storage layer resolve against — two would be two answers to "where
-            // is kiln X".
-            .with_kiln_registry(kiln_registry.clone()),
-        );
 
         // Workspace directories ride in on the serialized app config;
         // `scm.clone` and the startup repo scan read `root_dir` from it, and
