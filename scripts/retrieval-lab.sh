@@ -25,9 +25,11 @@
 # The docs kiln is registered under the name `docs` on every daemon, because
 # a strategy reads a hit's blocks by kiln name and a kiln opened by path
 # alone has none.
-# After both evals the script asks the plugin VM for its counters with
-# `cru lua '=RETRIEVAL_LAB_COUNTERS'`; a table `{ queries = N, interior_wins =
-# N }` fills the last two columns, and its absence prints `n/a`.
+# Before each eval the script zeroes the plugin's counters, and after it
+# reads them with `cru lua '=RETRIEVAL_LAB_COUNTERS'`; a table `{ queries =
+# N, interior_wins = N }` fills two columns, and its absence prints `n/a`.
+# The transition set also scores the hit rows at block granularity
+# (`block@1`, `block@k`, `passage@k`) over the queries with `expect_text`.
 #
 # Usage: scripts/retrieval-lab.sh [--dry-run] [--out DIR] [--cru BIN]
 #                                 [--provider NAME] [--model NAME]
@@ -103,16 +105,24 @@ ADVERSARIAL_SRC="$REPO/assets/fixtures/adversarial_kiln/corpus"
 ADVERSARIAL_GOLDEN="$REPO/assets/fixtures/adversarial_kiln/golden"
 TRANSITION_GOLDEN="$REPO/assets/fixtures/transition_queries/golden.toml"
 RESULTS="$OUT/results.tsv"
+# A used home carries an index from an earlier run, so its first strategy
+# would measure that index. Refuse it.
+if [ -d "$LAB_HOME" ] && [ -n "$(ls -A "$LAB_HOME")" ]; then
+    echo "retrieval-lab: $LAB_HOME is not empty; pass a fresh --out" >&2
+    exit 2
+fi
 mkdir -p "$LAB_HOME" "$KILNS"
 # Unix socket paths are capped near 108 bytes, so the sockets live in a short
 # directory of their own rather than under $OUT.
 SOCK_DIR="$(mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/rl.XXXXXX")"
 
-# Every cru invocation runs with a child-scoped CRUCIBLE_HOME and socket, so
-# nothing here touches the developer's real ~/.crucible or daemon.
+# Every cru invocation runs with a child-scoped data root, config dir, data
+# dir and socket, so nothing here reads the developer's plugins or writes
+# under their ~/.local/share/crucible.
+LAB_ENV=(CRUCIBLE_HOME="$LAB_HOME" XDG_CONFIG_HOME="$LAB_HOME/config" XDG_DATA_HOME="$LAB_HOME/data")
 cru() {
     local cfg="$1"; shift
-    env CRUCIBLE_HOME="$LAB_HOME" CRUCIBLE_SOCKET="$SOCK" "$CRU" --config "$cfg" "$@"
+    env "${LAB_ENV[@]}" CRUCIBLE_SOCKET="$SOCK" "$CRU" --config "$cfg" "$@"
 }
 
 # One config per strategy. The daemon opens `kiln_path` at boot; the docs
@@ -182,7 +192,7 @@ start_daemon() {
     local cfg="$1" log="$2"
     # The daemon's cwd is $OUT, so any relative path it writes stays out of
     # the repository.
-    (cd "$OUT" && exec env CRUCIBLE_HOME="$LAB_HOME" CRUCIBLE_SOCKET="$SOCK" \
+    (cd "$OUT" && exec env "${LAB_ENV[@]}" CRUCIBLE_SOCKET="$SOCK" \
         "$CRU" --config "$cfg" daemon serve) >"$log" 2>&1 &
     DAEMON_PID=$!
     local waited=0
@@ -226,6 +236,8 @@ with open(out, "a") as f:
             strategy, corpus, r["class"], r["n"],
             f'{r["hit_at_1"]:.3f}', f'{r["hit_at_k"]:.3f}',
             f'{r["mrr"]:.3f}', f'{r["recall_at_k"]:.3f}',
+            r["passage_n"], f'{r["block_hit_at_1"]:.3f}',
+            f'{r["block_hit_at_k"]:.3f}', f'{r["passage_hit_at_k"]:.3f}',
             queries, wins, ms,
         ]) + "\n")
 EOF
@@ -262,6 +274,9 @@ run_strategy() {
         fi
         report="$OUT/$strategy-$corpus.json"
         say "== $strategy: eval over $corpus"
+        # The counters accumulate across evals; zero them so each corpus
+        # reports its own. No plugin, no counters.
+        cru "$cfg" lua 'local c = RETRIEVAL_LAB_COUNTERS; if c then c.queries = 0; c.interior_wins = 0 end' > /dev/null 2>&1 || true
         start=$(date +%s%N)
         cru "$cfg" eval precognition --kiln "$KILNS/$corpus" "${golden_args[@]}" --json > "$report"
         end=$(date +%s%N)
@@ -320,7 +335,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
     exit 0
 fi
 
-printf 'strategy\tcorpus\tclass\tn\thit@1\thit@k\tmrr\trecall@k\tqueries\tinterior_wins\tms_per_query\n' > "$RESULTS"
+printf 'strategy\tcorpus\tclass\tn\thit@1\thit@k\tmrr\trecall@k\tpassage_n\tblock@1\tblock@k\tpassage@k\tqueries\tinterior_wins\tms_per_query\n' > "$RESULTS"
 previous=""
 for s in $STRATEGIES; do
     run_strategy "$s" "$previous"

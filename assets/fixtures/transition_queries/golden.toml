@@ -16,7 +16,10 @@
 # `Semantic Search` matches `Help/Concepts/Semantic Search.md`. Stems shared by
 # several notes (`Index`) are never used. `lenient = true` marks a query a
 # second note also answers defensibly: counted for recall@k, excluded from
-# strict hit rate.
+# strict hit rate. `expect_text` names the two expected blocks by a phrase
+# each one holds, whitespace collapsed; the eval finds the block whose source
+# holds the phrase and scores the hit rows at block granularity beside the
+# note rank.
 #
 # Every query is written as a user would type it, not in the note's words.
 
@@ -32,6 +35,7 @@ top_k = 10
 [[queries]]
 question = "why doesn't the built-in docs kiln include the roadmap, and what does a kiln actually need to contain?"
 expect_note = "Kilns"
+expect_text = ["`Meta/` — the roadmap, decision log and planning notes", "A kiln is simply a folder containing:"]
 
 # TRANSITION Help/Concepts/Kilns.md
 #   "## Kiln vs Folder" — "When you start using Crucible in a folder, it becomes a kiln"
@@ -39,6 +43,7 @@ expect_note = "Kilns"
 [[queries]]
 question = "is a kiln just any folder of notes, and how is it different from an Obsidian vault?"
 expect_note = "Kilns"
+expect_text = ["When you start using Crucible in a folder, it becomes a kiln", "If you're coming from Obsidian, a kiln is similar to a vault:"]
 
 # TRANSITION Help/Wikilinks.md
 #   "### 3. Code Block Exclusion" — "Wikilinks inside code blocks are **not parsed**."
@@ -46,6 +51,7 @@ expect_note = "Kilns"
 [[queries]]
 question = "are links inside code fences ignored, and how does the daemon pick which note a link points at?"
 expect_note = "Wikilinks"
+expect_text = ["Wikilinks inside code blocks are **not parsed**.", "The daemon's link index resolves each link target deterministically"]
 
 # TRANSITION Help/Wikilinks.md
 #   "### 4. Link Resolution" — "No match leaves the link dangling (unresolved). There is **no fuzzy-matching stage**"
@@ -53,6 +59,7 @@ expect_note = "Wikilinks"
 [[queries]]
 question = "does link resolution guess with fuzzy matching, and can note names have dashes or dots in them?"
 expect_note = "Wikilinks"
+expect_text = ["No match leaves the link dangling (unresolved). There is **no fuzzy-matching stage**", "Wikilinks support various special characters in note names:"]
 
 # TRANSITION Help/Tags.md
 #   "## Nested Tags" — "Nested tags allow: Searching for all `#project/*` notes"
@@ -60,6 +67,7 @@ expect_note = "Wikilinks"
 [[queries]]
 question = "can tags be hierarchical with slashes, and should I keep them lowercase?"
 expect_note = "Tags"
+expect_text = ["Searching for all `#project/*` notes", "**Lowercase**: `#productivity` not `#Productivity`"]
 
 # TRANSITION Help/Tags.md
 #   "## Tags vs Folders" — "**Use folders for:** Primary organization"
@@ -67,6 +75,7 @@ expect_note = "Tags"
 [[queries]]
 question = "when should I use folders instead of tags, and how do tags combine with PARA?"
 expect_note = "Tags"
+expect_text = ["**Use folders for:**", "para/project"]
 
 # TRANSITION Help/Frontmatter.md
 #   "## Required Fields" — "`description` is only read as a typed field for task files and workflow notes"
@@ -74,6 +83,7 @@ expect_note = "Tags"
 [[queries]]
 question = "which frontmatter keys does Crucible actually use, and which Obsidian ones are only stored?"
 expect_note = "Frontmatter"
+expect_text = ["`description` is only read as a typed field for task files and workflow notes", "These fields are conventions carried over from Obsidian-style vaults."]
 
 # TRANSITION Help/Callouts.md
 #   (intro) — "Folding is a **web-frontend rendering feature** ... in the folded form the title is not captured"
@@ -81,6 +91,7 @@ expect_note = "Frontmatter"
 [[queries]]
 question = "does the parser understand a collapsed callout, and what callout types are there?"
 expect_note = "Callouts"
+expect_text = ["Folding is a **web-frontend rendering feature**", "> [!note] Note"]
 
 # TRANSITION Help/Footnotes.md
 #   "## Syntax" — "**Inline footnotes** — a nonstandard caret form"
@@ -88,6 +99,7 @@ expect_note = "Callouts"
 [[queries]]
 question = "how are caret-style inline footnotes treated, and in what order do references get numbered?"
 expect_note = "Footnotes"
+expect_text = ["**Inline footnotes** — a nonstandard caret form", "References are kept in order of appearance"]
 
 # TRANSITION Help/Footnotes.md
 #   "## What the parser records" — "Definitions are keyed by identifier on the parsed note."
@@ -95,6 +107,7 @@ expect_note = "Footnotes"
 [[queries]]
 question = "what does the parser keep about footnote definitions, and what warning does an orphaned reference raise?"
 expect_note = "Footnotes"
+expect_text = ["Definitions are keyed by identifier on the parsed note.", "Parsing produces per-note diagnostics rather than failing:"]
 
 # TRANSITION Help/Block References.md
 #   "## Heading References vs Block References" — "Both parse; neither fragment is resolved to a location inside the target note today."
@@ -102,6 +115,7 @@ expect_note = "Footnotes"
 [[queries]]
 question = "do heading links or block links resolve inside the target note, and which parts of block references are still missing?"
 expect_note = "Block References"
+expect_text = ["Both parse; neither fragment is resolved to a location inside the target note today.", "Everything below describes Obsidian's behavior, kept here as the design target."]
 
 # TRANSITION Help/Concepts/Semantic Search.md
 #   (intro) — "Under the hood, matching is an **exact cosine-similarity scan**"
@@ -109,6 +123,7 @@ expect_note = "Block References"
 [[queries]]
 question = "is there an approximate vector index, and what command runs a meaning-only search?"
 expect_note = "Semantic Search"
+expect_text = ["Under the hood, matching is an **exact cosine-similarity scan**", "cru search \"how do I stay focused while working?\" --type semantic"]
 
 # TRANSITION Help/Concepts/Semantic Search.md
 #   "## When to Use It" — "**Text search** (`cru search --type text`) works best for:"
@@ -116,6 +131,7 @@ expect_note = "Semantic Search"
 [[queries]]
 question = "when is plain text search the better choice, and does a long multi-topic note rank worse?"
 expect_note = "Semantic Search"
+expect_text = ["**Text search** (`cru search --type text`) works best for:", "Results point at whole notes."]
 
 # TRANSITION Help/Concepts/Precognition.md
 #   "## What Gets Searched" — "Every kiln the session is attached to is searched."
@@ -123,6 +139,7 @@ expect_note = "Semantic Search"
 [[queries]]
 question = "does the automatic context lookup cover every attached kiln, and is it enabled out of the box?"
 expect_note = "Precognition"
+expect_text = ["Every kiln the session is attached to is searched.", "Precognition is **on by default**."]
 
 # TRANSITION Help/Concepts/Precognition.md
 #   "### Customizing with Lua" — "Both seams name the kiln a note came from as `note.kiln`"
@@ -130,6 +147,7 @@ expect_note = "Precognition"
 [[queries]]
 question = "can a Lua hook tell which kiln an injected note came from, and does injection happen on every turn?"
 expect_note = "Precognition"
+expect_text = ["Both seams name the kiln a note came from as `note.kiln`", "Precognition runs on the **first user message of a session**"]
 
 # TRANSITION Help/Concepts/Precognition.md
 #   "## Requirements" — "If embeddings aren't available, Precognition silently disables itself."
@@ -137,6 +155,7 @@ expect_note = "Precognition"
 [[queries]]
 question = "what happens when no embedding provider is set up, and how do I write notes the agent will find?"
 expect_note = "Precognition"
+expect_text = ["If embeddings aren't available, Precognition silently disables itself.", "Precognition is only as good as your notes."]
 
 # TRANSITION Help/Concepts/Session Compaction.md
 #   "## The threshold" — "Once the session is in `compacting` state, later triggers fail their state guard silently"
@@ -144,6 +163,7 @@ expect_note = "Precognition"
 [[queries]]
 question = "when does automatic compaction fire, and how do I change its threshold from the chat?"
 expect_note = "Session Compaction"
+expect_text = ["Once the session is in `compacting` state, later triggers fail their state guard silently", ":set autocompact_threshold=0.8"]
 
 # TRANSITION Help/Concepts/Session Replay.md
 #   "## TUI Replay" — "Add `--replay-auto-exit` to close the TUI automatically when playback finishes."
@@ -151,6 +171,7 @@ expect_note = "Session Compaction"
 [[queries]]
 question = "can I watch a recording inside the full chat interface, and what is inside the recording file?"
 expect_note = "Session Replay"
+expect_text = ["Add `--replay-auto-exit` to close the TUI automatically when playback finishes.", "Recordings use JSONL (JSON Lines), where each line is one event."]
 
 # TRANSITION Help/Concepts/Session Replay.md
 #   "## Recording Your Own Sessions" — "When you exit, the recording saves to the path you specified."
@@ -158,6 +179,7 @@ expect_note = "Session Replay"
 [[queries]]
 question = "how do I record my own chat, and are there sample recordings that ship with the tool?"
 expect_note = "Session Replay"
+expect_text = ["When you exit, the recording saves to the path you specified.", "Crucible ships with pre-recorded fixtures in `assets/fixtures/`:"]
 
 # TRANSITION Help/Concepts/Review Ledger.md
 #   "## The composed diff" — "Hunk identity is derived from content and base position, not worktree position"
@@ -165,6 +187,7 @@ expect_note = "Session Replay"
 [[queries]]
 question = "how does a hunk keep its identity after nearby edits, and what states can a hunk be in?"
 expect_note = "Review Ledger"
+expect_text = ["Hunk identity is derived from content and base position, not worktree position", "Each hunk is `unreviewed`, `accepted`, or `rejected`."]
 
 # TRANSITION Help/Concepts/Review Ledger.md
 #   "## The review gate" — "The release for that state is an explicit **rebase** ... always a deliberate human action."
@@ -172,6 +195,7 @@ expect_note = "Review Ledger"
 [[queries]]
 question = "how do I release a review root that got degraded, and where in the web UI do I accept hunks?"
 expect_note = "Review Ledger"
+expect_text = ["The release for that state is an explicit **rebase**", "**The web console.** The Changes panel lists the composed diff"]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
 #   "## Why staging lives outside the index" — "This is the deliberate correction of the removed `session-digest` feature"
@@ -179,6 +203,7 @@ expect_note = "Review Ledger"
 [[queries]]
 question = "why are proposals kept out of the search index, and what is the path from a session ending to an accepted note?"
 expect_note = "Reflection Pass"
+expect_text = ["This is the deliberate correction of the removed `session-digest` feature", "timer (every `interval` seconds)"]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
 #   "## Guardrails against kiln pollution" — "A skill is proposed only for a procedure the agent ran more than once"
@@ -186,6 +211,7 @@ expect_note = "Reflection Pass"
 [[queries]]
 question = "what does the after-session reviewer refuse to capture, and what does the periodic pass do differently?"
 expect_note = "Reflection Pass"
+expect_text = ["A skill is proposed only for a procedure the agent ran more than once", "The `consolidation` plugin is the periodic half of the loop."]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
 #   "## The consolidation pass" — "**Known gap.** `cru.session.list()` answers from the daemon's resident session map."
@@ -193,6 +219,7 @@ expect_note = "Reflection Pass"
 [[queries]]
 question = "why does the periodic review miss sessions from before a daemon restart, and how do I set its model?"
 expect_note = "Reflection Pass"
+expect_text = ["**Known gap.** `cru.session.list()` answers from the daemon's resident session map.", "Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model"]
 
 # TRANSITION Help/Concepts/The Knowledge Graph.md
 #   "## Backlinks" — "You didn't have to create those connections manually."
@@ -200,6 +227,7 @@ expect_note = "Reflection Pass"
 [[queries]]
 question = "are backlinks made automatically, and how do links compare with putting notes in folders?"
 expect_note = "The Knowledge Graph"
+expect_text = ["You didn't have to create those connections manually.", "| Folders | Links |"]
 
 # TRANSITION Help/Concepts/Plaintext First.md
 #   "## What Crucible Adds" — "embeddings for semantic search are not derivable from the files alone"
@@ -207,6 +235,7 @@ expect_note = "The Knowledge Graph"
 [[queries]]
 question = "if I delete the cache database do I lose my embeddings, and what does Crucible promise about my files?"
 expect_note = "Plaintext First"
+expect_text = ["embeddings for semantic search are not derivable from the files alone", "Crucible commits to:"]
 
 # TRANSITION Help/Concepts/Delegation.md
 #   "### Depth Limits" — "Setting this too high risks runaway chains."
@@ -214,6 +243,7 @@ expect_note = "Plaintext First"
 [[queries]]
 question = "how deep can an agent hand-off chain go, and what is a child agent not allowed to do?"
 expect_note = "Delegation"
+expect_text = ["Setting this too high risks runaway chains.", "Delegation follows a principle of least privilege."]
 
 # TRANSITION Help/Concepts/Delegation.md
 #   "## Example Workflow" — "All of this happens within your single conversation."
@@ -221,6 +251,7 @@ expect_note = "Delegation"
 [[queries]]
 question = "when Claude hands the test updates to another agent, does that agent see the earlier conversation?"
 expect_note = "Delegation"
+expect_text = ["All of this happens within your single conversation.", "**No shared state.** Child agents don't see the parent's conversation history."]
 
 # TRANSITION Help/Concepts/Trust and Classification.md
 #   "## How They Fit Together" — "An `untrusted` provider can only touch `public` data."
@@ -228,6 +259,7 @@ expect_note = "Delegation"
 [[queries]]
 question = "which provider trust levels unlock which data classes, and how do I set a provider's trust in config?"
 expect_note = "Trust and Classification"
+expect_text = ["An `untrusted` provider can only touch `public` data.", "Add `trust_level` to any provider in your `config.toml`:"]
 
 # TRANSITION Help/Concepts/Trust and Classification.md
 #   "### Classifying Your Kilns" — "Classification lives on a **kiln attachment** in the project's own `.crucible/project.toml`"
@@ -235,6 +267,7 @@ expect_note = "Trust and Classification"
 [[queries]]
 question = "where do I declare how sensitive a kiln is, and what does a setup with a private journal and work notes look like?"
 expect_note = "Trust and Classification"
+expect_text = ["Classification lives on a **kiln attachment** in the project's own `.crucible/project.toml`", "Say you have three kilns and two providers."]
 
 # TRANSITION Help/Concepts/Trust and Classification.md
 #   "## Delegation and Trust" — "Even if you trust the parent agent completely, the child agent still has to earn its own access."
@@ -242,6 +275,7 @@ expect_note = "Trust and Classification"
 [[queries]]
 question = "does a delegated agent inherit the parent's trust, and what if I never classify a kiln at all?"
 expect_note = "Trust and Classification"
+expect_text = ["Even if you trust the parent agent completely, the child agent still has to earn its own access.", "**Kilns default to `public`.**"]
 
 # TRANSITION Help/Concepts/Agent Skills.md
 #   "## Progressive Disclosure" — "A 200-line `SKILL.md` that links to 2,000 lines of reference is far more effective than a 2,200-line monolith."
@@ -249,6 +283,7 @@ expect_note = "Trust and Classification"
 [[queries]]
 question = "why keep the skill entry file short, and which directories get scanned for skills?"
 expect_note = "Agent Skills"
+expect_text = ["A 200-line `SKILL.md` that links to 2,000 lines of reference is far more effective than a 2,200-line monolith.", "Crucible discovers skills from three scopes, in priority order:"]
 
 # TRANSITION Help/Concepts/Agent Skills.md
 #   "### Content Hashing" — "Each discovered skill gets a SHA-256 content hash for change detection."
@@ -256,6 +291,7 @@ expect_note = "Agent Skills"
 [[queries]]
 question = "how does Crucible notice a skill file changed, and is my notes folder itself a skill?"
 expect_note = "Agent Skills"
+expect_text = ["Each discovered skill gets a SHA-256 content hash for change detection.", "A Crucible kiln is, structurally, a skill."]
 
 # TRANSITION Help/CLI/process.md
 #   "## Incremental Processing" — "**Force full reprocessing with:** cru process --force"
@@ -263,6 +299,7 @@ expect_note = "Agent Skills"
 [[queries]]
 question = "how does indexing skip files that did not change, and what stages does each file go through?"
 expect_note = "process"
+expect_text = ["**Force full reprocessing with:**", "Files go through these stages:"]
 
 # TRANSITION Help/CLI/process.md
 #   "## Database Location" — "This is derived data - your markdown files remain the source of truth."
@@ -270,6 +307,7 @@ expect_note = "process"
 [[queries]]
 question = "where does the indexed database live, and which folders does indexing skip?"
 expect_note = "process"
+expect_text = ["This is derived data - your markdown files remain the source of truth.", "These directories are automatically skipped:"]
 
 # TRANSITION Help/CLI/search.md
 #   "## The `cru search` command" — "`.txt` files in a kiln are full-text searchable too."
@@ -277,6 +315,7 @@ expect_note = "process"
 [[queries]]
 question = "are plain text files searchable, and does a query with several words need all of them to match?"
 expect_note = "search"
+expect_text = ["`.txt` files in a kiln are full-text searchable too.", "A multi-word query matches notes containing **all** of the words"]
 
 # TRANSITION Help/CLI/search.md
 #   "## Access Methods" / "### Via Chat Mode" — "cru chat \"Find all notes about machine learning\""
@@ -284,6 +323,7 @@ expect_note = "search"
 [[queries]]
 question = "can I search from inside a chat, and how do I choose between the three search tools?"
 expect_note = "search"
+expect_text = ["cru chat \"Find all notes about machine learning\"", "**When to use semantic_search:**"]
 
 # TRANSITION Help/CLI/session.md
 #   "### `cru session search <query>`" — "Falls back to a local ripgrep/in-memory scan when the daemon is unreachable."
@@ -291,6 +331,7 @@ expect_note = "search"
 [[queries]]
 question = "does searching old sessions still work with the daemon down, and how do I reopen one in the chat UI?"
 expect_note = "session"
+expect_text = ["Falls back to a local ripgrep/in-memory scan when the daemon is unreachable.", "Opens the session in the TUI"]
 
 # TRANSITION Help/CLI/kiln.md
 #   "### Where the registration goes" — "A registration takes effect immediately. You do not have to restart the daemon."
@@ -298,6 +339,7 @@ expect_note = "session"
 [[queries]]
 question = "do I restart the daemon after registering a kiln, and why is there a register command at all?"
 expect_note = "kiln"
+expect_text = ["A registration takes effect immediately. You do not have to restart the daemon.", "Two daemon refusals name `cru kiln register` as the remedy"]
 
 # TRANSITION Help/CLI/kiln.md
 #   "## forget" — "The removal takes effect at the next daemon start."
@@ -305,6 +347,7 @@ expect_note = "kiln"
 [[queries]]
 question = "when does forgetting a kiln name take effect, and how do kilns get names without me registering them?"
 expect_note = "kiln"
+expect_text = ["The removal takes effect at the next daemon start.", "You do not have to register a kiln by hand."]
 
 # =============================================================================
 # Control queries (40) — one block answers each

@@ -102,6 +102,19 @@ describe("retrieval-lab", function()
             expect.deep_equal({ { 0, 8 }, { 20, 28 } }, out[1].cited)
         end)
 
+        it("refuses a neighbour that is only a better point", function()
+            use("arc_post")
+            fixtures["notes/n.md"] = { block(0, "paragraph", A), block(10, "paragraph", D) }
+            -- q lies past D, so the arc's best point is the endpoint D.
+            local q = unit({ 1, 2, 0 })
+            local own = hit(1, "n.md", 0, cru.vec.cosine(q, A))
+
+            local out = registered["search:rerank"](nil, { query_vector = q, kilns = { "notes" }, limit = 10, hits = { own } })
+
+            expect.equal(cru.vec.cosine(q, A), out[1].score)
+            expect.is_nil(out[1].cited)
+        end)
+
         it("leaves a whole-note hit and a nameless kiln alone", function()
             use("arc_post")
             local q = unit({ 1, 0.5, 0 })
@@ -117,7 +130,7 @@ describe("retrieval-lab", function()
     end)
 
     describe("arc_pre", function()
-        it("emits one transition row per gated pair, keyed at the first block's end", function()
+        it("emits one transition row per gated pair, keyed one byte into the first block", function()
             use("arc_pre")
             local event = {
                 kiln = "notes",
@@ -134,7 +147,7 @@ describe("retrieval-lab", function()
 
             expect.equal(1, #out.extra)
             local row = out.extra[1]
-            expect.equal(18, row.span_start)
+            expect.equal(11, row.span_start)
             expect.equal(28, row.span_end)
             expect.equal("transition", row.kind)
             local mid = unit(D)
@@ -169,13 +182,32 @@ describe("retrieval-lab", function()
                 block(10, "paragraph", D),
                 block(20, "paragraph", B),
             }
-            local q = unit({ 1, 0.3, 0 })
+            -- q sits between A and D, nearer an interior sample than either.
+            local q = unit({ 1, 0.7, 0 })
             local own = hit(1, "n.md", 10, cru.vec.cosine(q, D))
 
             local out = registered["search:rerank"](nil, { query_vector = q, kilns = { "notes" }, limit = 10, hits = { own } })
 
             expect.truthy(out[1].score > cru.vec.cosine(q, D))
+            expect.truthy(out[1].score > cru.vec.cosine(q, A))
             expect.deep_equal({ { 0, 8 }, { 10, 18 }, { 20, 28 } }, out[1].cited)
+        end)
+
+        it("refuses a curve whose best sample is an endpoint", function()
+            use("bezier_post")
+            fixtures["notes/n.md"] = {
+                block(0, "paragraph", A),
+                block(10, "paragraph", D),
+                block(20, "paragraph", B),
+            }
+            -- q lies past A, so the curve's best sample is A itself.
+            local q = unit({ 1, -0.3, 0 })
+            local own = hit(1, "n.md", 10, cru.vec.cosine(q, D))
+
+            local out = registered["search:rerank"](nil, { query_vector = q, kilns = { "notes" }, limit = 10, hits = { own } })
+
+            expect.equal(cru.vec.cosine(q, D), out[1].score)
+            expect.is_nil(out[1].cited)
         end)
     end)
 
@@ -188,7 +220,7 @@ describe("retrieval-lab", function()
     end)
 
     describe("counters", function()
-        it("count every query, and a win only when the top ten changed", function()
+        it("count every query, and a win only when a cited hit is in the top ten", function()
             use("arc_post")
             fixtures["notes/n.md"] = { block(0, "paragraph", A), block(10, "paragraph", B) }
             local q = unit({ 1, 1, 0 })

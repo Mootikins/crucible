@@ -173,7 +173,18 @@ pub async fn search_across_kilns_with_stage(
     }
 
     let mut merged: Vec<SearchResult> = best.into_values().collect();
-    merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    // Equal scores fall back to note then span, so two runs of one query
+    // give one order. The map's order is per process.
+    merged.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.document_id.0.cmp(&b.document_id.0))
+            .then_with(|| {
+                let start = |r: &SearchResult| r.block.as_ref().map(|b| b.span_start);
+                start(a).cmp(&start(b))
+            })
+    });
 
     if let Some(stage) = rerank {
         let event = rerank_event(sources, &query_embedding, top_k, &merged);

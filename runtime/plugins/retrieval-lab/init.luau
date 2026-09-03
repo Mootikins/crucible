@@ -15,7 +15,8 @@
 ---
 --- The plugin keeps two counters in the global `RETRIEVAL_LAB_COUNTERS`:
 --- `queries`, one per rerank call, and `interior_wins`, one per rerank call
---- that changed the top ten. Nothing here ships as a default.
+--- that left a cited hit in the top ten. A strategy cites only when the
+--- curve's interior beat both endpoints. Nothing here ships as a default.
 
 local config = require("config")
 
@@ -169,16 +170,6 @@ function M.sorted(hits: { any }): { any }
     return out
 end
 
---- True when the first `n` indices differ between two hit lists.
-function M.top_changed(before: { any }, after: { any }, n: number): boolean
-    local count = math.min(n, #before, #after)
-    if #before ~= #after and math.min(#before, #after) < n then return true end
-    for i = 1, count do
-        if before[i].index ~= after[i].index then return true end
-    end
-    return false
-end
-
 -- ============================================================================
 -- Block access
 -- ============================================================================
@@ -228,8 +219,10 @@ strategies.arc_post = {
                 if own ~= nil then
                     for _, nb in ipairs(neighbours) do
                         if cru.vec.cosine(own.vector :: { number }, nb.vector :: { number }) >= min then
-                            local score, _t = cru.vec.arc_best(event.query_vector, own.vector :: { number }, nb.vector :: { number })
-                            if score > hit.score then
+                            local score, t = cru.vec.arc_best(event.query_vector, own.vector :: { number }, nb.vector :: { number })
+                            -- An endpoint (t = 0 or 1) is a point score the
+                            -- scan already has; only the interior is a win.
+                            if t > 0 and t < 1 and score > hit.score then
                                 hit.score = score
                                 hit.cited = { { own.span_start, own.span_end }, { nb.span_start, nb.span_end } }
                             end
@@ -244,8 +237,9 @@ strategies.arc_post = {
 }
 
 -- Normalized midpoints written at index time; the plain scan sees them.
--- A transition row is keyed at `a.span_end`, because a row's `span_start`
--- is its primary key and `a.span_start` is taken.
+-- A row's `span_start` is its primary key and `a.span_start` is taken, so
+-- a transition row starts one byte into `a`. No block starts there, and
+-- the span still overlaps both blocks, so the row quotes both.
 strategies.arc_pre = {
     rerank = function(event) return nil end,
     index = function(event)
@@ -254,7 +248,7 @@ strategies.arc_pre = {
         for _, pair in ipairs(M.adjacent_embedded_pairs(event.blocks, min)) do
             local a, b = pair[1], pair[2]
             extra[#extra + 1] = {
-                span_start = a.span_end,
+                span_start = a.span_start + 1,
                 span_end = b.span_end,
                 kind = "transition",
                 vector = cru.vec.normalize(M.add(a.vector :: { number }, b.vector :: { number })),
@@ -276,8 +270,8 @@ strategies.bezier_post = {
             if blocks ~= nil then
                 local window = M.window_around(hit, blocks, size, min)
                 if #window >= 3 then
-                    local score, _t = cru.vec.curve_best(event.query_vector, M.vectors(window), samples)
-                    if score > hit.score then
+                    local score, t = cru.vec.curve_best(event.query_vector, M.vectors(window), samples)
+                    if t > 0 and t < 1 and score > hit.score then
                         hit.score = score
                         hit.cited = M.spans(window)
                     end
@@ -314,13 +308,14 @@ function M.rerank(event: any): any
     local strategy = M.current()
     if strategy == nil then return nil end
     counters.queries += 1
-    local before = {}
-    for i, hit in ipairs(event.hits) do
-        before[i] = { index = hit.index }
-    end
     local after = strategy.rerank(event)
-    if type(after) == "table" and M.top_changed(before, after, 10) then
-        counters.interior_wins += 1
+    if type(after) == "table" then
+        for i = 1, math.min(10, #after) do
+            if after[i].cited ~= nil then
+                counters.interior_wins += 1
+                break
+            end
+        end
     end
     return after
 end
@@ -356,15 +351,8 @@ local plugin = {
     capabilities = { "kiln", "config" },
 
     -- Exposed for unit tests.
-    rerank = M.rerank,
-    index = M.index,
-    strategies = strategies,
     counters = M.counters,
     reset_counters = M.reset_counters,
-    embedded_neighbours = M.embedded_neighbours,
-    adjacent_embedded_pairs = M.adjacent_embedded_pairs,
-    window_around = M.window_around,
-    top_changed = M.top_changed,
 
     setup = function(cfg)
         if cfg then

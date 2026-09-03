@@ -240,9 +240,11 @@ fn admit_extra_rows(
 
         let text = match entry.get("text").and_then(|v| v.as_str()) {
             Some(text) => text.to_string(),
+            // Every stored block the span touches, so a row across two
+            // blocks quotes both.
             None => records
                 .iter()
-                .filter(|r| r.span_start >= span_start && r.span_end <= span_end)
+                .filter(|r| r.span_end > span_start && r.span_start < span_end)
                 .map(|r| r.text.as_str())
                 .collect::<Vec<_>>()
                 .join("\n\n"),

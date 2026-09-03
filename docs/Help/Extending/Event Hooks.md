@@ -398,7 +398,7 @@ cru.on("index:blocks", function(ctx, event)
           sum[i] = prev.vector[i] + block.vector[i]
         end
         extra[#extra + 1] = {
-          span_start = prev.span_end,
+          span_start = prev.span_start + 1,
           span_end = block.span_end,
           kind = "transition",
           vector = cru.vec.normalize(sum),

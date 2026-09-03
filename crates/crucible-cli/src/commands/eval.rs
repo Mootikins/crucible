@@ -9,13 +9,18 @@
 //! `crucible_core::enrichment::eval`, and retrieval is the daemon's existing
 //! search surface. This file only orchestrates and renders.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::common::daemon_client;
 use crate::config::CliConfig;
-use crucible_core::enrichment::eval::{hit_rate_at_k, mrr, rank_of, GoldenSet, NamedGoldenSet};
+use crucible_core::enrichment::eval::{
+    hit_rate_at_k, mrr, normalize_stem, rank_of, GoldenQuery, GoldenSet, NamedGoldenSet,
+};
+use crucible_core::parser::CrucibleParser;
+use crucible_daemon::VectorHit;
 
 /// One scored query, rendered as a row.
 #[derive(Clone, serde::Serialize)]
@@ -25,7 +30,16 @@ pub struct QueryResult {
     pub question: String,
     pub expect_note: String,
     pub lenient: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub expect_text: Vec<String>,
+    /// Rank over distinct notes.
     pub rank: Option<usize>,
+    /// Rank over hit rows of the first row of the expected note that touches
+    /// one expected block. `None` without `expect_text`.
+    pub block_rank: Option<usize>,
+    /// Rank over hit rows of the first row whose spans, own and cited, touch
+    /// every expected block. `None` without `expect_text`.
+    pub passage_rank: Option<usize>,
 }
 
 /// Run every golden query against the kiln's semantic search.
@@ -47,6 +61,7 @@ async fn run_eval_named(
     golden: &GoldenSet,
 ) -> Result<Vec<QueryResult>> {
     let mut results = Vec::with_capacity(golden.queries.len());
+    let mut notes = HashMap::new();
     for q in &golden.queries {
         let vector = client
             .embed_query(kiln_path, &q.question)
@@ -59,16 +74,153 @@ async fn run_eval_named(
             .search_vectors(kiln_path, &vector, golden.top_k * OVER_FETCH, None)
             .await
             .with_context(|| format!("search failed for: {}", q.question))?;
+        let (block_rank, passage_rank) = if q.expect_text.is_empty() {
+            (None, None)
+        } else {
+            let expected = expected_spans(kiln_path, q, &mut notes).await?;
+            row_ranks(&hits, &q.expect_note, &expected)
+        };
         let rank = rank_among_notes(hits, &q.expect_note);
         results.push(QueryResult {
             class: class.to_string(),
             question: q.question.clone(),
             expect_note: q.expect_note.clone(),
             lenient: q.lenient,
+            expect_text: q.expect_text.clone(),
             rank,
+            block_rank,
+            passage_rank,
         });
     }
     Ok(results)
+}
+
+/// A note's body and the byte spans of its blocks, as the parser cuts them.
+struct NoteBlocks {
+    body: String,
+    spans: Vec<(usize, usize)>,
+}
+
+async fn parse_note(path: &Path) -> Result<NoteBlocks> {
+    let text = tokio::fs::read_to_string(path)
+        .await
+        .with_context(|| format!("reading {}", path.display()))?;
+    let note = CrucibleParser::new()
+        .parse_content(&text, path)
+        .await
+        .with_context(|| format!("parsing {}", path.display()))?;
+    Ok(NoteBlocks {
+        body: text[note.body_offset..].to_string(),
+        spans: note
+            .content
+            .blocks
+            .iter()
+            .map(|b| (b.start_offset, b.end_offset))
+            .collect(),
+    })
+}
+
+/// The one `*.md` under `kiln_path` whose stem is `expect_note`.
+fn find_note(kiln_path: &Path, expect_note: &str) -> Result<PathBuf> {
+    let want = normalize_stem(expect_note);
+    let hidden = |e: &walkdir::DirEntry| e.file_name().to_string_lossy().starts_with('.');
+    let mut found: Vec<PathBuf> = walkdir::WalkDir::new(kiln_path)
+        .into_iter()
+        .filter_entry(|e| !hidden(e))
+        .filter_map(Result::ok)
+        .map(walkdir::DirEntry::into_path)
+        .filter(|p| p.extension().is_some_and(|x| x == "md"))
+        .filter(|p| normalize_stem(&p.to_string_lossy()) == want)
+        .collect();
+    match found.len() {
+        1 => Ok(found.remove(0)),
+        0 => bail!("no note named {expect_note} under {}", kiln_path.display()),
+        n => bail!(
+            "{n} notes named {expect_note} under {}",
+            kiln_path.display()
+        ),
+    }
+}
+
+fn collapse(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The span of the one block whose source holds `phrase`. A phrase that no
+/// block or several blocks hold is a fixture error, not a miss.
+fn block_holding(note: &NoteBlocks, phrase: &str) -> Result<(usize, usize)> {
+    let want = collapse(phrase);
+    let found: Vec<(usize, usize)> = note
+        .spans
+        .iter()
+        .copied()
+        .filter(|(s, e)| collapse(&note.body[*s..*e]).contains(&want))
+        .collect();
+    match found.as_slice() {
+        [one] => Ok(*one),
+        [] => bail!("no block holds {phrase:?}"),
+        many => bail!("{} blocks hold {phrase:?}", many.len()),
+    }
+}
+
+/// The spans of the blocks `q.expect_text` names, in the note the golden set
+/// expects. Parsed notes are kept in `notes` across the queries of one set.
+async fn expected_spans(
+    kiln_path: &Path,
+    q: &GoldenQuery,
+    notes: &mut HashMap<PathBuf, NoteBlocks>,
+) -> Result<Vec<(usize, usize)>> {
+    let path = find_note(kiln_path, &q.expect_note)?;
+    if !notes.contains_key(&path) {
+        notes.insert(path.clone(), parse_note(&path).await?);
+    }
+    let note = &notes[&path];
+    q.expect_text
+        .iter()
+        .map(|phrase| {
+            block_holding(note, phrase)
+                .with_context(|| format!("{} for {:?}", q.expect_note, q.question))
+        })
+        .collect()
+}
+
+fn overlaps(a: (usize, usize), b: (usize, usize)) -> bool {
+    a.0 < b.1 && b.0 < a.1
+}
+
+/// Block-granular ranks over the hit rows, in reply order: the first row of
+/// the expected note that touches one expected block, and the first whose
+/// spans touch them all. A strategy that cites a pair can reach the second;
+/// a plain block hit cannot when the answer spans two blocks.
+fn row_ranks(
+    hits: &[VectorHit],
+    expect_note: &str,
+    expected: &[(usize, usize)],
+) -> (Option<usize>, Option<usize>) {
+    let want = normalize_stem(expect_note);
+    let mut block_rank = None;
+    let mut passage_rank = None;
+    for (i, hit) in hits.iter().enumerate() {
+        let Some(block) = &hit.block else { continue };
+        if normalize_stem(&hit.document_id) != want {
+            continue;
+        }
+        let spans = || {
+            std::iter::once((block.span_start, block.span_end)).chain(block.cited.iter().copied())
+        };
+        let covered = expected
+            .iter()
+            .filter(|e| spans().any(|s| overlaps(s, **e)))
+            .count();
+        if covered > 0 {
+            block_rank.get_or_insert(i + 1);
+        }
+        if covered == expected.len() {
+            passage_rank.get_or_insert(i + 1);
+            break;
+        }
+    }
+    (block_rank, passage_rank)
 }
 
 /// Rows requested per golden `top_k`. Four blocks of one note above the
@@ -82,7 +234,7 @@ const OVER_FETCH: usize = 4;
 /// rank is read, so a note with several blocks above the answer costs the
 /// answer one rank, not several. `rank_of` matches by stem, so the corpus
 /// layout does not have to match the fixture.
-fn rank_among_notes(hits: Vec<crucible_daemon::VectorHit>, expect_note: &str) -> Option<usize> {
+fn rank_among_notes(hits: Vec<VectorHit>, expect_note: &str) -> Option<usize> {
     let titles: Vec<String> = crucible_daemon::first_per_note(hits)
         .into_iter()
         .map(|hit| hit.document_id)
@@ -114,12 +266,19 @@ struct ClassReport {
     hit_at_k: f64,
     mrr: f64,
     recall_at_k: f64,
+    /// Queries with `expect_text`; the three block metrics are over these.
+    passage_n: usize,
+    block_hit_at_1: f64,
+    block_hit_at_k: f64,
+    passage_hit_at_k: f64,
     queries: Vec<QueryResult>,
 }
 
 impl ClassReport {
     fn new(class: &str, results: &[QueryResult], top_k: usize) -> Self {
         let (hit_at_1, hit_at_k, mrr, recall_at_k) = aggregate(results, top_k);
+        let (passage_n, block_hit_at_1, block_hit_at_k, passage_hit_at_k) =
+            aggregate_rows(results, top_k);
         Self {
             class: class.to_string(),
             n: results.len(),
@@ -128,6 +287,10 @@ impl ClassReport {
             hit_at_k,
             mrr,
             recall_at_k,
+            passage_n,
+            block_hit_at_1,
+            block_hit_at_k,
+            passage_hit_at_k,
             queries: results.to_vec(),
         }
     }
@@ -139,8 +302,8 @@ struct EvalReport {
     kiln: PathBuf,
     /// `[plugins.retrieval-lab] strategy`, when the daemon's config sets it.
     strategy: Option<String>,
-    /// Ranks are over distinct notes; block rows of one note collapse to
-    /// the note's first row.
+    /// `rank` is over distinct notes; block rows of one note collapse to
+    /// the note's first row. `block_rank` and `passage_rank` are over rows.
     ranks_over: &'static str,
     classes: Vec<ClassReport>,
     total: ClassReport,
@@ -187,24 +350,59 @@ fn aggregate(results: &[QueryResult], top_k: usize) -> (f64, f64, f64, f64) {
     )
 }
 
+/// The three block-granular rates over the queries that carry `expect_text`,
+/// with their count. Zero queries give zero rates; the count says so.
+fn aggregate_rows(results: &[QueryResult], top_k: usize) -> (usize, f64, f64, f64) {
+    let scored: Vec<&QueryResult> = results
+        .iter()
+        .filter(|r| !r.expect_text.is_empty())
+        .collect();
+    let block: Vec<Option<usize>> = scored.iter().map(|r| r.block_rank).collect();
+    let passage: Vec<Option<usize>> = scored.iter().map(|r| r.passage_rank).collect();
+    (
+        scored.len(),
+        hit_rate_at_k(&block, 1),
+        hit_rate_at_k(&block, top_k),
+        hit_rate_at_k(&passage, top_k),
+    )
+}
+
+fn rank_cell(rank: Option<usize>) -> String {
+    rank.map(|v| v.to_string()).unwrap_or_else(|| "miss".into())
+}
+
 fn render(results: &[QueryResult], top_k: usize) {
     println!(
-        "{:<4} {:<6} {:<8} question → expected",
-        "#", "rank", "lenient"
+        "{:<4} {:<6} {:<6} {:<8} {:<8} question → expected",
+        "#", "rank", "block", "passage", "lenient"
     );
     for (i, r) in results.iter().enumerate() {
         println!(
-            "{:<4} {:<6} {:<8} {} → {}",
+            "{:<4} {:<6} {:<6} {:<8} {:<8} {} → {}",
             i + 1,
-            r.rank
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "miss".into()),
+            rank_cell(r.rank),
+            if r.expect_text.is_empty() {
+                "-".into()
+            } else {
+                rank_cell(r.block_rank)
+            },
+            if r.expect_text.is_empty() {
+                "-".into()
+            } else {
+                rank_cell(r.passage_rank)
+            },
             if r.lenient { "yes" } else { "no" },
             truncate(&r.question, 48),
             r.expect_note,
         );
     }
     render_aggregate_line(&aggregate(results, top_k), top_k);
+    let (n, b1, bk, pk) = aggregate_rows(results, top_k);
+    if n > 0 {
+        println!(
+            "over rows, {n} queries with expect_text: block@1 {b1:.3} · block@{top_k} {bk:.3} · passage@{top_k} {pk:.3}"
+        );
+    }
 }
 
 fn render_aggregate_line(agg: &(f64, f64, f64, f64), top_k: usize) {
@@ -232,32 +430,32 @@ fn render_class_table(rows: &[(String, Vec<QueryResult>)], top_k: usize) {
         );
     }
     println!(
-        "{:<32} {:>5} {:>7} {:>7} {:>7} {:>9}",
-        "class", "n", "hit@1", "hit@k", "MRR", "recall@k"
+        "{:<32} {:>5} {:>7} {:>7} {:>7} {:>9} {:>5} {:>7} {:>7} {:>9}",
+        "class", "n", "hit@1", "hit@k", "MRR", "recall@k", "psg_n", "blk@1", "blk@k", "passage@k"
     );
     let mut all = Vec::new();
     for (name, results) in rows {
-        let (h1, hk, m, recall) = aggregate(results, top_k);
-        println!(
-            "{:<32} {:>5} {:>7.3} {:>7.3} {:>7.3} {:>9.3}",
-            name,
-            results.len(),
-            h1,
-            hk,
-            m,
-            recall
-        );
+        render_class_row(name, results, top_k);
         all.extend(results.iter().cloned());
     }
-    let (h1, hk, m, recall) = aggregate(&all, top_k);
+    render_class_row("TOTAL", &all, top_k);
+}
+
+fn render_class_row(name: &str, results: &[QueryResult], top_k: usize) {
+    let (h1, hk, m, recall) = aggregate(results, top_k);
+    let (pn, b1, bk, pk) = aggregate_rows(results, top_k);
     println!(
-        "{:<32} {:>5} {:>7.3} {:>7.3} {:>7.3} {:>9.3}",
-        "TOTAL",
-        all.len(),
+        "{:<32} {:>5} {:>7.3} {:>7.3} {:>7.3} {:>9.3} {:>5} {:>7.3} {:>7.3} {:>9.3}",
+        name,
+        results.len(),
         h1,
         hk,
         m,
-        recall
+        recall,
+        pn,
+        b1,
+        bk,
+        pk
     );
 }
 
@@ -430,14 +628,20 @@ mod tests {
                 question: "a".into(),
                 expect_note: "x".into(),
                 lenient: false,
+                expect_text: vec![],
                 rank: Some(1),
+                block_rank: None,
+                passage_rank: None,
             },
             QueryResult {
                 class: String::new(),
                 question: "b".into(),
                 expect_note: "y".into(),
                 lenient: true,
+                expect_text: vec![],
                 rank: None,
+                block_rank: None,
+                passage_rank: None,
             },
         ];
         let (h1, _hk, _m, recall10) = aggregate(&results, 10);
@@ -491,7 +695,10 @@ mod tests {
             question: "q".into(),
             expect_note: "n".into(),
             lenient: false,
+            expect_text: vec![],
             rank,
+            block_rank: None,
+            passage_rank: None,
         };
         let classes = vec![("c".to_string(), vec![mk(Some(1)), mk(None)], 5)];
         let report = EvalReport::new(Path::new("/k"), Some("bezier_post".into()), &classes, 10);
@@ -507,6 +714,61 @@ mod tests {
         );
         assert_eq!(value["total"]["top_k"], 10);
         assert_eq!(value["total"]["n"], 2);
+    }
+
+    #[test]
+    fn row_ranks_read_the_cited_spans_and_stop_at_the_first_full_cover() {
+        let mut cited = block_row("n", 100);
+        cited.block.as_mut().unwrap().cited = vec![(0, 8), (10, 18)];
+        let hits = vec![
+            block_row("other", 0),
+            block_row("n", 50),
+            block_row("n", 10),
+            cited,
+        ];
+        let expected = [(0, 8), (10, 18)];
+        assert_eq!(row_ranks(&hits, "n", &expected), (Some(3), Some(4)));
+        assert_eq!(row_ranks(&hits, "other", &expected), (Some(1), None));
+        assert_eq!(row_ranks(&hits, "absent", &expected), (None, None));
+    }
+
+    #[test]
+    fn block_holding_matches_across_a_line_wrap_and_refuses_a_shared_phrase() {
+        let body = "one two
+three
+
+four five
+
+six two";
+        let note = NoteBlocks {
+            body: body.into(),
+            spans: vec![(0, 13), (15, 24), (26, 33)],
+        };
+        assert_eq!(block_holding(&note, "two three").unwrap(), (0, 13));
+        assert!(block_holding(&note, "two").is_err());
+        assert!(block_holding(&note, "seven").is_err());
+    }
+
+    /// Every `expect_text` phrase of the transition fixture names exactly one
+    /// block of the note it expects, in the docs the lab copies into its kiln.
+    #[tokio::test]
+    async fn transition_fixture_phrases_each_name_one_block() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text =
+            std::fs::read_to_string(root.join("assets/fixtures/transition_queries/golden.toml"))
+                .unwrap();
+        let golden = GoldenSet::parse_toml(&text).unwrap();
+        let mut notes = HashMap::new();
+        let mut scored = 0;
+        for q in golden.queries.iter().filter(|q| !q.expect_text.is_empty()) {
+            let spans = expected_spans(&root.join("docs"), q, &mut notes)
+                .await
+                .unwrap();
+            assert_eq!(spans.len(), 2, "{}", q.question);
+            assert_ne!(spans[0], spans[1], "{}", q.question);
+            scored += 1;
+        }
+        assert_eq!(scored, 40);
     }
 
     #[test]
@@ -528,7 +790,10 @@ mod tests {
             question: "q".into(),
             expect_note: "n".into(),
             lenient: false,
+            expect_text: vec![],
             rank,
+            block_rank: None,
+            passage_rank: None,
         };
         let rows = vec![
             ("class-b".to_string(), vec![mk("class-b", Some(1))]),

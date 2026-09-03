@@ -20,6 +20,11 @@ pub struct GoldenQuery {
     /// recall@k, excluded from strict hit rate. Defaults to false.
     #[serde(default)]
     pub lenient: bool,
+    /// A phrase from each block the answer spans, whitespace collapsed. Empty
+    /// for a query scored at note rank only. With phrases, the eval also ranks
+    /// the hit rows at block granularity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expect_text: Vec<String>,
 }
 
 /// The whole fixture file.
@@ -96,7 +101,8 @@ pub fn rank_of(results: &[String], expect_note: &str) -> Option<usize> {
 }
 
 /// Filename stem, lowercased, separators folded to hyphens, extension stripped.
-fn normalize_stem(name: &str) -> String {
+/// The comparable form of a note name: its stem, lower case, `-` for space.
+pub fn normalize_stem(name: &str) -> String {
     let no_ext = name.strip_suffix(".md").unwrap_or(name);
     let stem = no_ext.rsplit(['/', '\\']).next().unwrap_or(no_ext);
     stem.to_lowercase().replace([' ', '_'], "-")
