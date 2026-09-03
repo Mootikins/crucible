@@ -195,3 +195,54 @@ async fn cru_kiln_note_notes_and_links_read_the_named_kiln() {
     let outlinks: Vec<String> = links.get("outlinks").unwrap();
     assert_eq!(outlinks, vec!["a.md"]);
 }
+
+/// `process_batch` holds the kiln's connection while `index:blocks` fires.
+/// A handler that calls `cru.embed` there must get the provider without that
+/// connection, or it waits on itself until the handler budget stops it.
+#[tokio::test]
+async fn cru_embed_answers_inside_an_index_blocks_handler() {
+    let kiln = processed_kiln().await;
+    let loader = loader(&kiln);
+    let lua = loader.plugin_lua();
+    lua.load(
+        r#"cru.on("index:blocks", {}, function(ctx, event)
+               local replace = {}
+               for _, block in ipairs(event.blocks) do
+                   if block.vector ~= nil then
+                       replace[#replace + 1] = {
+                           span_start = block.span_start,
+                           vector = cru.embed(event.kiln, "again: " .. block.text),
+                       }
+                   end
+               end
+               EMBEDDED_IN_HANDLER = #replace
+               return { replace = replace }
+           end)"#,
+    )
+    .exec_async()
+    .await
+    .expect("register the handler");
+    kiln.kiln_manager
+        .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+
+    let started = std::time::Instant::now();
+    kiln.kiln_manager
+        .process_batch(&kiln.kiln_dir, &[kiln.kiln_dir.join("a.md")], true)
+        .await
+        .expect("process the batch");
+    let embedded: Option<i64> = lua
+        .load("return EMBEDDED_IN_HANDLER")
+        .eval_async()
+        .await
+        .expect("read the count");
+    assert_eq!(
+        embedded,
+        Some(2),
+        "both prose blocks were re-embedded in the handler"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "the handler waited {:?}",
+        started.elapsed()
+    );
+}
