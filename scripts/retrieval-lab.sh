@@ -5,8 +5,13 @@
 # CRUCIBLE_HOME, with `[plugins.retrieval-lab] enabled = true` and
 # `strategy = "<name>"` in a temporary config. It processes two temporary
 # kilns, the adversarial fixture and the Help plus Guides docs, then runs
-# `cru eval precognition --json` over both golden sets. One row per strategy
-# per class lands in `$OUT/results.tsv`, and the table prints at the end.
+# `cru eval precognition --json` over three golden sets: the adversarial
+# classes, the transition queries and the multi-hop queries. The last two
+# run over the docs kiln. One row per strategy per class lands in
+# `$OUT/results.tsv`, and the table prints at the end. A docs row names
+# its golden set in the class column (`transition_queries`,
+# `multihop_queries`), because the eval names the class after the golden
+# file and both files are `golden.toml`.
 #
 # EMBEDDER. The lab needs a REAL embedder. The script writes
 # `[enrichment.provider] type = "<provider>"` into its config. The default
@@ -20,6 +25,7 @@
 # STRATEGY CONTRACT. The plugin reads `[plugins.retrieval-lab]`:
 #   enabled  = true
 #   strategy = "points" | "arc_post" | "arc_pre" | "bezier_post"
+#            | "meta_pre" | "ppr_post" | "meta_ppr"
 # A strategy in INDEX_STRATEGIES changes what the index stage writes, so the
 # kilns are reprocessed with `--force` when the run enters or leaves one.
 # The docs kiln is registered under the name `docs` on every daemon, because
@@ -42,14 +48,15 @@
 #   --model       Embedding model name; omitted means the provider's default.
 #   --cache-dir   Where fastembed keeps its models (default: ~/.fastembed_cache,
 #                 shared across runs so the model downloads once).
-#   --strategies  Space-separated list (default: "points arc_post arc_pre bezier_post").
+#   --strategies  Space-separated list (default: "points meta_pre ppr_post
+#                 meta_ppr arc_pre").
 #   --exclude-kinds "a b"  Block kinds the strategies never pair (default: the
 #                 plugin's own default, `heading` and `transition`).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STRATEGIES="points arc_post arc_pre bezier_post"
-INDEX_STRATEGIES="arc_pre"
+STRATEGIES="points meta_pre ppr_post meta_ppr arc_pre"
+INDEX_STRATEGIES="arc_pre meta_pre meta_ppr"
 DRY_RUN=0
 OUT=""
 CRU=""
@@ -108,6 +115,7 @@ KILNS="$OUT/kilns"
 ADVERSARIAL_SRC="$REPO/assets/fixtures/adversarial_kiln/corpus"
 ADVERSARIAL_GOLDEN="$REPO/assets/fixtures/adversarial_kiln/golden"
 TRANSITION_GOLDEN="$REPO/assets/fixtures/transition_queries/golden.toml"
+MULTIHOP_GOLDEN="$REPO/assets/fixtures/multihop_queries/golden.toml"
 RESULTS="$OUT/results.tsv"
 # A used home carries an index from an earlier run, so its first strategy
 # would measure that index. Refuse it.
@@ -221,12 +229,14 @@ EOF
 
 in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
 
-# Appends the rows of one JSON report to results.tsv.
+# Appends the rows of one JSON report to results.tsv. A non-empty `label`
+# replaces the report's class name, so one kiln can carry several golden
+# sets that share a file name.
 append_rows() {
-    local strategy="$1" corpus="$2" report="$3" ms_per_query="$4" counters="$5"
-    python3 - "$strategy" "$corpus" "$report" "$ms_per_query" "$counters" "$RESULTS" <<'EOF'
+    local strategy="$1" corpus="$2" report="$3" ms_per_query="$4" counters="$5" label="${6:-}"
+    python3 - "$strategy" "$corpus" "$report" "$ms_per_query" "$counters" "$RESULTS" "$label" <<'EOF'
 import json, sys
-strategy, corpus, report, ms, counters, out = sys.argv[1:7]
+strategy, corpus, report, ms, counters, out, label = sys.argv[1:8]
 data = json.load(open(report))
 try:
     c = json.load(open(counters))
@@ -240,7 +250,7 @@ if len(rows) > 1:
 with open(out, "a") as f:
     for r in rows:
         f.write("\t".join(str(x) for x in [
-            strategy, corpus, r["class"], r["n"],
+            strategy, corpus, label or r["class"], r["n"],
             f'{r["hit_at_1"]:.3f}', f'{r["hit_at_k"]:.3f}',
             f'{r["mrr"]:.3f}', f'{r["recall_at_k"]:.3f}',
             r["passage_n"], f'{r["block_hit_at_1"]:.3f}',
@@ -271,16 +281,23 @@ run_strategy() {
     cru "$cfg" process "$KILNS/adversarial" --json $force > "$OUT/$strategy-process-adversarial.json"
     cru "$cfg" process "$KILNS/docs" --json $force > "$OUT/$strategy-process-docs.json"
 
+    # One eval per golden set: `corpus:label:path`. An empty label is the
+    # adversarial directory, whose classes the report names itself.
     local start end ms n
-    for corpus in adversarial docs; do
-        local golden_args report
-        if [ "$corpus" = adversarial ]; then
-            golden_args=(--golden-dir "$ADVERSARIAL_GOLDEN")
+    for run in "adversarial::$ADVERSARIAL_GOLDEN" \
+               "docs:transition_queries:$TRANSITION_GOLDEN" \
+               "docs:multihop_queries:$MULTIHOP_GOLDEN"; do
+        local corpus label golden golden_args report
+        corpus="${run%%:*}"
+        label="${run#*:}"; label="${label%%:*}"
+        golden="${run#*:*:}"
+        if [ -z "$label" ]; then
+            golden_args=(--golden-dir "$golden")
         else
-            golden_args=(--golden "$TRANSITION_GOLDEN")
+            golden_args=(--golden "$golden")
         fi
-        report="$OUT/$strategy-$corpus.json"
-        say "== $strategy: eval over $corpus"
+        report="$OUT/$strategy-$corpus${label:+-$label}.json"
+        say "== $strategy: eval over $corpus${label:+ ($label)}"
         # The counters accumulate across evals; zero them so each corpus
         # reports its own. No plugin, no counters.
         cru "$cfg" lua 'local c = RETRIEVAL_LAB_COUNTERS; if c then c.queries = 0; c.interior_wins = 0 end' > /dev/null 2>&1 || true
@@ -290,8 +307,8 @@ run_strategy() {
         n=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["total"]["n"])' "$report")
         ms=$(( (end - start) / 1000000 / (n > 0 ? n : 1) ))
         # The plugin's counters, when it exposes them. No plugin, no counters.
-        cru "$cfg" lua '=RETRIEVAL_LAB_COUNTERS' > "$OUT/$strategy-$corpus-counters.json" 2>/dev/null || true
-        append_rows "$strategy" "$corpus" "$report" "$ms" "$OUT/$strategy-$corpus-counters.json"
+        cru "$cfg" lua '=RETRIEVAL_LAB_COUNTERS' > "${report%.json}-counters.json" 2>/dev/null || true
+        append_rows "$strategy" "$corpus" "$report" "$ms" "${report%.json}-counters.json" "$label"
     done
 
     stop_daemon
@@ -311,9 +328,11 @@ say "  kilns:      $KILNS/adversarial <- $ADVERSARIAL_SRC"
 say "              $KILNS/docs        <- $REPO/docs/Help + $REPO/docs/Guides"
 say "  golden:     $ADVERSARIAL_GOLDEN"
 say "              $TRANSITION_GOLDEN"
+say "              $MULTIHOP_GOLDEN"
 
 [ -d "$ADVERSARIAL_SRC" ] || fail "missing $ADVERSARIAL_SRC"
 [ -f "$TRANSITION_GOLDEN" ] || fail "missing $TRANSITION_GOLDEN"
+[ -f "$MULTIHOP_GOLDEN" ] || fail "missing $MULTIHOP_GOLDEN"
 
 prepare_kilns
 check_embedder
@@ -335,6 +354,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
         say "  [$s] cru process $KILNS/docs --json$force"
         say "  [$s] cru eval precognition --kiln $KILNS/adversarial --golden-dir $ADVERSARIAL_GOLDEN --json"
         say "  [$s] cru eval precognition --kiln $KILNS/docs --golden $TRANSITION_GOLDEN --json"
+        say "  [$s] cru eval precognition --kiln $KILNS/docs --golden $MULTIHOP_GOLDEN --json"
         say "  [$s] cru lua '=RETRIEVAL_LAB_COUNTERS'"
         previous="$s"
     done

@@ -26,6 +26,15 @@ local defaults = {
     curve_window = 3,
     curve_samples = 8,
     exclude_kinds = { "heading", "transition" },
+    -- meta_pre: `{meta}` is the title, the heading and the description;
+    -- `{text}` is the block's own text.
+    meta_format = "{meta}\n\n{text}",
+    -- ppr_post: the teleport mass of a hit note is its best dense score
+    -- times the seed weight. The rest of the mass teleports uniformly.
+    ppr_seed_weight = 0.05,
+    ppr_damping = 0.5,
+    ppr_blend = 1.0,
+    ppr_extra = 3,
 }
 
 -- setup() values, kept apart from `defaults` so the order above stays

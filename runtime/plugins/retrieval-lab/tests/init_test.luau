@@ -18,6 +18,50 @@ local logged: { string } = {}
     logged[#logged + 1] = message
 end
 
+-- The named graph reads and the embedder, as the merged API declares them:
+-- `cru.kiln.note(kiln, path)`, `cru.kiln.notes(kiln, limit?)`,
+-- `cru.kiln.links(kiln, path)` and `cru.embed(kiln, text)`. Each stub
+-- answers from a table a test fills, and `embedded` records every text
+-- the embedder saw.
+local notes: { [string]: any } = {}
+local links: { [string]: any } = {}
+local notes_calls = 0
+;(cru.kiln :: any).note = function(kiln: string, path: string)
+    return notes[kiln .. "/" .. path]
+end
+;(cru.kiln :: any).notes = function(kiln: string, limit: number?)
+    notes_calls += 1
+    local out = {}
+    for key, note in pairs(notes) do
+        if key:sub(1, #kiln + 1) == kiln .. "/" then
+            out[#out + 1] = note
+        end
+    end
+    table.sort(out, function(a, b) return a.path < b.path end)
+    return out
+end
+;(cru.kiln :: any).links = function(kiln: string, path: string)
+    return links[kiln .. "/" .. path] or { outlinks = {}, backlinks = {} }
+end
+local embedded: { string } = {}
+;(cru :: any).embed = function(kiln: string, text: string)
+    embedded[#embedded + 1] = text
+    return { #text, 0, 0 }
+end
+
+local function note(path: string, title: string, description: string?)
+    return {
+        path = path,
+        title = title,
+        content_hash = "",
+        tags = {},
+        links_to = {},
+        properties = if description then { description = description } else {},
+        updated_at = "",
+        has_embedding = true,
+    }
+end
+
 local function unit(v: { number }): { number }
     return cru.vec.normalize(v)
 end
@@ -54,6 +98,11 @@ describe("retrieval-lab", function()
         plugin.reset_counters()
         fixtures = {}
         logged = {}
+        notes = {}
+        links = {}
+        embedded = {}
+        notes_calls = 0
+        plugin.forget_graphs()
     end
 
     describe("arc_post", function()
@@ -209,6 +258,112 @@ describe("retrieval-lab", function()
 
             expect.equal(cru.vec.cosine(q, D), out[1].score)
             expect.is_nil(out[1].cited)
+        end)
+    end)
+
+    describe("meta_pre", function()
+        it("re-embeds every embedded block under the title, the nearest heading and the description", function()
+            use("meta_pre")
+            notes["notes/n.md"] = note("n.md", "Note N", "About N")
+            local event = {
+                kiln = "notes",
+                path = "n.md",
+                blocks = {
+                    { span_start = 0, span_end = 8, kind = "paragraph", text = "intro", vector = A },
+                    { span_start = 10, span_end = 18, kind = "heading", text = "## Part one", vector = nil },
+                    { span_start = 20, span_end = 28, kind = "paragraph", text = "short", vector = nil },
+                    { span_start = 30, span_end = 38, kind = "paragraph", text = "body", vector = D },
+                },
+            }
+
+            local out = registered["index:blocks"](nil, event)
+
+            expect.equal(2, #embedded)
+            expect.equal("Note N\nAbout N\n\nintro", embedded[1])
+            expect.equal("Note N > Part one\nAbout N\n\nbody", embedded[2])
+            expect.equal(2, #out.replace)
+            expect.equal(0, out.replace[1].span_start)
+            expect.equal(30, out.replace[2].span_start)
+            expect.deep_equal({ #embedded[2], 0, 0 }, out.replace[2].vector)
+        end)
+
+        it("falls back to the file stem when the index has no note, and honours meta_format", function()
+            use("meta_pre")
+            plugin.setup({ meta_format = "{meta} | {text}" })
+            local event = {
+                kiln = "notes",
+                path = "Help/Guide.md",
+                blocks = { { span_start = 0, span_end = 8, kind = "paragraph", text = "body", vector = A } },
+            }
+
+            registered["index:blocks"](nil, event)
+
+            expect.deep_equal({ "Guide | body" }, embedded)
+        end)
+
+        it("leaves a nameless kiln alone", function()
+            use("meta_pre")
+            expect.is_nil(registered["index:blocks"](nil, { path = "n.md", blocks = {} }))
+            expect.equal(0, #embedded)
+        end)
+    end)
+
+    describe("ppr_post", function()
+        -- n links to t; m is an island. The scan hits n alone.
+        local function graph()
+            notes["notes/n.md"] = note("n.md", "N")
+            notes["notes/t.md"] = note("t.md", "T")
+            notes["notes/m.md"] = note("m.md", "M")
+            links["notes/n.md"] = { outlinks = { "t.md" }, backlinks = {} }
+            fixtures["notes/t.md"] = { block(0, "heading", nil), block(10, "paragraph", B) }
+            fixtures["notes/m.md"] = { block(0, "paragraph", B) }
+        end
+
+        it("raises the hit note, and introduces the linked note through its first embedded block", function()
+            use("ppr_post")
+            plugin.setup({ ppr_extra = 1 })
+            graph()
+            local own = hit(1, "n.md", 0, 0.6)
+
+            local out = registered["search:rerank"](nil, { query_vector = A, kilns = { "notes" }, limit = 10, hits = { own } })
+
+            expect.equal(2, #out)
+            expect.equal(1, out[1].index)
+            expect.truthy(out[1].score > 0.6)
+            expect.is_nil(out[2].index)
+            expect.equal("notes", out[2].kiln)
+            expect.equal("t.md", out[2].path)
+            expect.equal(10, out[2].span_start)
+            expect.equal(18, out[2].span_end)
+            expect.truthy(out[2].score > 0)
+            expect.truthy(out[2].score < out[1].score)
+        end)
+
+        it("reads the graph once, and again after a note event", function()
+            use("ppr_post")
+            graph()
+            local event = { query_vector = A, kilns = { "notes" }, limit = 10, hits = { hit(1, "n.md", 0, 0.6) } }
+
+            registered["search:rerank"](nil, event)
+            registered["search:rerank"](nil, event)
+            expect.equal(1, notes_calls)
+
+            registered["note:modified"](nil, { path = "n.md" })
+            registered["search:rerank"](nil, event)
+            expect.equal(2, notes_calls)
+        end)
+
+        it("leaves a search with no named kiln alone", function()
+            use("ppr_post")
+            expect.is_nil(registered["search:rerank"](nil, { query_vector = A, kilns = {}, limit = 10, hits = {} }))
+        end)
+    end)
+
+    describe("meta_ppr", function()
+        it("shares the meta_pre index and the ppr_post rerank", function()
+            use("meta_ppr")
+            expect.equal(plugin.strategies.meta_pre.index, plugin.strategies.meta_ppr.index)
+            expect.equal(plugin.strategies.ppr_post.rerank, plugin.strategies.meta_ppr.rerank)
         end)
     end)
 
