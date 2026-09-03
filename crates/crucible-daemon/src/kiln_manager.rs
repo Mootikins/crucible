@@ -103,35 +103,6 @@ impl StorageHandle {
         self.sqlite.as_property_store()
     }
 
-    /// Scope-aware vector similarity search (exact cosine over
-    /// `notes.embedding`).
-    ///
-    /// Returns (document_id, score) pairs sorted by similarity descending,
-    /// tie-broken by path ascending. The scope filter is applied at the SQL
-    /// layer (`Filter::Scope`), so out-of-scope rows never occupy result
-    /// slots — the old Lance over-fetch + post-filter could return fewer
-    /// than `limit` hits when strangers dominated the similarity ranking.
-    pub async fn search_vectors(
-        &self,
-        vector: Vec<f32>,
-        limit: usize,
-        authority: &crucible_core::storage::Scope,
-    ) -> Result<Vec<(String, f64)>> {
-        let results = self
-            .sqlite
-            .as_note_store()
-            .search(
-                &vector,
-                limit,
-                Some(crucible_core::storage::Filter::Scope(authority.clone())),
-            )
-            .await?;
-        Ok(results
-            .into_iter()
-            .map(|r| (r.note.path, r.score as f64))
-            .collect())
-    }
-
     /// List notes by metadata filter. Always reads from SQLite.
     ///
     /// `authority` is the request authority — see [`crucible_core::storage::Scope`].

@@ -478,8 +478,9 @@ pub(crate) async fn handle_kiln_forget(
 
 pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
     // `params.scope` is deliberately not read: authority comes from `kiln`
-    // alone (see `request_scope`). Deserializing the field rather than
-    // dropping it keeps the client's struct honest about what it sends.
+    // alone, because the repository the handle opens is bound to the kiln
+    // path and scopes every note read to it. Deserializing the field rather
+    // than dropping it keeps the client's struct honest about what it sends.
     let params = match typed_params::<crate::rpc_client::SearchVectorsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,

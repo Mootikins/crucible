@@ -81,9 +81,9 @@ pub use session::{
     SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionTestInteractionRequest,
 };
 pub use storage_requests::{
-    FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
-    KilnRegisterRequest, LlmRegisterProviderRequest, McpStartRequest, NoteRenameRequest,
-    ProcessFileRequest, ScmCloneRequest, SearchVectorsRequest, VectorHit,
+    first_per_note, FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest,
+    KilnOpenRequest, KilnRegisterRequest, LlmRegisterProviderRequest, McpStartRequest,
+    NoteRenameRequest, ProcessFileRequest, ScmCloneRequest, SearchVectorsRequest, VectorHit,
 };
 pub use types::{
     AgentsListCardsRequest, DaemonCapabilities, NameRequest, PathRequest, SessionEvent,

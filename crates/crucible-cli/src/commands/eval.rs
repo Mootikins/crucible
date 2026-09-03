@@ -52,15 +52,14 @@ async fn run_eval_named(
             .embed_query(kiln_path, &q.question)
             .await
             .with_context(|| format!("embedding failed for: {}", q.question))?;
+        // The reply is one row per block. Ranks are over notes, so the
+        // request over-fetches and the reduction below keeps the first row of
+        // each note; `top_k` distinct notes need more than `top_k` rows.
         let hits = client
-            .search_vectors(kiln_path, &vector, golden.top_k, None)
+            .search_vectors(kiln_path, &vector, golden.top_k * OVER_FETCH, None)
             .await
             .with_context(|| format!("search failed for: {}", q.question))?;
-        // Several blocks of one note are several hits, and each names the
-        // note. `rank_of` matches by stem, so the corpus layout does not have
-        // to match the fixture.
-        let titles: Vec<String> = hits.into_iter().map(|hit| hit.document_id).collect();
-        let rank = rank_of(&titles, &q.expect_note);
+        let rank = rank_among_notes(hits, &q.expect_note);
         results.push(QueryResult {
             class: class.to_string(),
             question: q.question.clone(),
@@ -70,6 +69,25 @@ async fn run_eval_named(
         });
     }
     Ok(results)
+}
+
+/// Rows requested per golden `top_k`. Four blocks of one note above the
+/// answer is common in a long note; more than that and the answer is a miss
+/// that the metrics should report.
+const OVER_FETCH: usize = 4;
+
+/// 1-based rank of the expected note among distinct notes, in reply order.
+///
+/// Block rows of one note collapse to that note's first row before the
+/// rank is read, so a note with several blocks above the answer costs the
+/// answer one rank, not several. `rank_of` matches by stem, so the corpus
+/// layout does not have to match the fixture.
+fn rank_among_notes(hits: Vec<crucible_daemon::VectorHit>, expect_note: &str) -> Option<usize> {
+    let titles: Vec<String> = crucible_daemon::first_per_note(hits)
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect();
+    rank_of(&titles, expect_note)
 }
 
 fn aggregate(results: &[QueryResult], top_k: usize) -> (f64, f64, f64, f64) {
@@ -237,7 +255,7 @@ async fn execute_single(
     let kiln_path = config.kiln_path.clone();
 
     println!(
-        "Scoring {} queries against {} (top_k={})",
+        "Scoring {} queries against {} (top_k={}; ranks are over notes, block rows deduplicated)",
         golden.queries.len(),
         kiln_path.display(),
         golden.top_k
@@ -257,7 +275,7 @@ async fn execute_multi(
     let total: usize = sets.iter().map(|s| s.set.queries.len()).sum();
 
     println!(
-        "Scoring {} classes / {} queries against {} (top_k from each fixture)",
+        "Scoring {} classes / {} queries against {} (top_k from each fixture; ranks are over notes, block rows deduplicated)",
         sets.len(),
         total,
         kiln_path.display()
@@ -303,6 +321,30 @@ mod tests {
             "lenient miss must not drag strict hit@1"
         );
         assert!((recall10 - 0.5).abs() < 1e-9);
+    }
+
+    fn block_row(document_id: &str, span_start: usize) -> crucible_daemon::VectorHit {
+        crucible_daemon::VectorHit {
+            document_id: document_id.to_string(),
+            score: 0.9,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start,
+                span_end: span_start + 8,
+                kind: "paragraph".to_string(),
+            }),
+            snippet: None,
+        }
+    }
+
+    #[test]
+    fn rank_counts_distinct_notes_not_block_rows() {
+        let hits = vec![
+            block_row("notes/A.md", 0),
+            block_row("notes/A.md", 8),
+            block_row("notes/A.md", 16),
+            block_row("notes/B.md", 0),
+        ];
+        assert_eq!(rank_among_notes(hits, "b"), Some(2));
     }
 
     #[test]

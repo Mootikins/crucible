@@ -209,6 +209,50 @@ pub struct VectorHit {
     pub snippet: Option<String>,
 }
 
+/// Reduce a block-ranked reply to one row per note, in reply order.
+///
+/// Several blocks of one note arrive as several rows. A caller that ranks
+/// notes (the eval, the note store) keeps the first row of each note, so a
+/// note with many blocks near the query occupies one rank, not several.
+pub fn first_per_note(hits: Vec<VectorHit>) -> Vec<VectorHit> {
+    let mut seen = std::collections::HashSet::new();
+    hits.into_iter()
+        .filter(|hit| seen.insert(hit.document_id.clone()))
+        .collect()
+}
+
+#[cfg(test)]
+mod first_per_note_tests {
+    use super::*;
+
+    fn hit(document_id: &str, span_start: usize) -> VectorHit {
+        VectorHit {
+            document_id: document_id.to_string(),
+            score: 1.0 - span_start as f64 / 100.0,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start,
+                span_end: span_start + 10,
+                kind: "paragraph".to_string(),
+            }),
+            snippet: None,
+        }
+    }
+
+    #[test]
+    fn keeps_the_first_row_of_each_note_in_reply_order() {
+        let rows = vec![
+            hit("a.md", 0),
+            hit("a.md", 10),
+            hit("b.md", 20),
+            hit("a.md", 30),
+        ];
+        let notes = first_per_note(rows);
+        let ids: Vec<&str> = notes.iter().map(|h| h.document_id.as_str()).collect();
+        assert_eq!(ids, vec!["a.md", "b.md"]);
+        assert_eq!(notes[0].block.as_ref().unwrap().span_start, 0);
+    }
+}
+
 /// Request for `search_text`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchTextRequest {

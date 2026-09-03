@@ -124,15 +124,15 @@ pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};
 pub use rpc_client::DaemonAgentHandle;
-pub use rpc_client::{ChatResultExt, DaemonNoteStore, DaemonStorageClient};
 pub use rpc_client::{
-    DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
-    LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
-    LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
+    first_per_note, DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest,
+    LuaDiscoverPluginsResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,
+    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
     LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionEvent, VectorHit,
     VersionCheck,
 };
+pub use rpc_client::{ChatResultExt, DaemonNoteStore, DaemonStorageClient};
 pub use scm::ScmCloneResponse;
 pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
