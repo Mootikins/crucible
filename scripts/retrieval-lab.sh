@@ -22,6 +22,9 @@
 #   strategy = "points" | "arc_post" | "arc_pre" | "bezier_post"
 # A strategy in INDEX_STRATEGIES changes what the index stage writes, so the
 # kilns are reprocessed with `--force` when the run enters or leaves one.
+# The docs kiln is registered under the name `docs` on every daemon, because
+# a strategy reads a hit's blocks by kiln name and a kiln opened by path
+# alone has none.
 # After both evals the script asks the plugin VM for its counters with
 # `cru lua '=RETRIEVAL_LAB_COUNTERS'`; a table `{ queries = N, interior_wins =
 # N }` fills the last two columns, and its absence prints `n/a`.
@@ -236,6 +239,10 @@ run_strategy() {
 
     say "== $strategy: starting the daemon"
     start_daemon "$cfg" "$OUT/daemon-$strategy.log"
+    # A kiln opened by path alone is nameless, and a nameless hit carries no
+    # `kiln` for the plugin to read its blocks through. The adversarial kiln
+    # is named `default` by the config; the docs kiln needs a registration.
+    cru "$cfg" kiln register docs "$KILNS/docs" > /dev/null
 
     local force=""
     if in_list "$strategy" "$INDEX_STRATEGIES" || in_list "$previous" "$INDEX_STRATEGIES"; then
@@ -301,6 +308,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
         fi
         say "  [$s] config: [plugins.retrieval-lab] enabled = true, strategy = \"$s\""
         say "  [$s] cru daemon serve  (CRUCIBLE_SOCKET=$SOCK_DIR/$s.sock)"
+        say "  [$s] cru kiln register docs $KILNS/docs"
         say "  [$s] cru process $KILNS/adversarial --json$force"
         say "  [$s] cru process $KILNS/docs --json$force"
         say "  [$s] cru eval precognition --kiln $KILNS/adversarial --golden-dir $ADVERSARIAL_GOLDEN --json"
