@@ -583,25 +583,7 @@ pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> R
     let kiln_path = require_param!(req, "kiln", as_str);
     let text = require_param!(req, "text", as_str);
 
-    let Some(config) = km.enrichment_config().cloned() else {
-        // Do not name `[embedding]` here: the config loader rejects that
-        // section outright as legacy, so a user who followed this advice
-        // would brick every subsequent `cru` command.
-        return internal_error(
-            req.id,
-            anyhow::anyhow!(
-                "no embedding provider configured; add one under \
-                 [llm.providers.<name>] and set [llm].default, then run `cru doctor` to verify"
-            ),
-        );
-    };
-
-    // Ensure the kiln is open so the daemon has loaded its config + caches.
-    if let Err(e) = km.get_or_open(Path::new(kiln_path)).await {
-        return internal_error(req.id, e);
-    }
-
-    match crate::embedding::get_or_create_embedding_provider(&config).await {
+    match km.embedding_provider(Path::new(kiln_path)).await {
         Ok(provider) => match provider.embed(text).await {
             Ok(vector) => Response::success(req.id, serde_json::json!({ "vector": vector })),
             Err(e) => internal_error(req.id, anyhow::anyhow!(e)),

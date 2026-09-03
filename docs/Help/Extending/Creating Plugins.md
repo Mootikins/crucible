@@ -289,7 +289,9 @@ tools = {
             { name = "limit", type = "number", desc = "Maximum results", optional = true },
         },
         fn = function(args)
-            return { results = cru.kiln.search(args.query, { limit = args.limit or 10 }) }
+            local kiln = cru.kiln.active
+            local vector = cru.embed(kiln, args.query)
+            return { results = cru.kiln.search(kiln, vector, args.limit or 10) }
         end,
     },
 }

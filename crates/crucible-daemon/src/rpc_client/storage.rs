@@ -154,6 +154,18 @@ impl KnowledgeRepository for DaemonStorageClient {
         Ok(Vec::new())
     }
 
+    /// No RPC carries index rows or resolved links to a client, and no
+    /// client-side caller reads them. Empty is the honest answer.
+    async fn list_note_records(
+        &self,
+    ) -> CoreResult<Vec<crucible_core::storage::note_store::NoteRecord>> {
+        Ok(Vec::new())
+    }
+
+    async fn links_for_note(&self, _path: &str) -> CoreResult<crucible_core::traits::NoteLinks> {
+        Ok(crucible_core::traits::NoteLinks::default())
+    }
+
     async fn get_note_by_name(&self, name: &str) -> CoreResult<Option<ParsedNote>> {
         // Use the backend-agnostic get_note_by_name RPC method
         let result = self

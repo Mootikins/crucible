@@ -277,19 +277,25 @@ contract.
 ### Example: Custom Context Injection
 
 ```lua
--- Prepend recently modified notes to the prompt. Registered at load time;
+-- Prepend the notes nearest the prompt. Registered at load time;
 -- `pre_llm_call` hands the handler `{ prompt, model }` and a returned
 -- `{ prompt = ... }` replaces it. Returning `{ cancel = true }` cancels the
 -- turn outright.
 cru.on("pre_llm_call", { priority = 100 }, function(ctx, event)
-    local recent = cru.kiln.search({
-        modified_after = os.time() - 86400  -- 24 hours
-    })
-    if #recent == 0 then
+    local kiln = cru.kiln.active
+    if not kiln then
         return
     end
+    local hits = cru.kiln.search(kiln, cru.embed(kiln, event.prompt), 3)
+    if #hits == 0 then
+        return
+    end
+    local paths = {}
+    for _, hit in ipairs(hits) do
+        paths[#paths + 1] = hit.path
+    end
     return {
-        prompt = "## Recent Activity\n" .. table.concat(recent, "\n")
+        prompt = "## Related notes\n" .. table.concat(paths, "\n")
             .. "\n\n" .. event.prompt,
     }
 end)

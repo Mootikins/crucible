@@ -826,8 +826,12 @@ Queue retrieved content for the session's **next LLM call**. Context only: attac
 cru.on("tool_result", { pattern = "read_file" }, function(ctx, event)
   local ft = event.args.path:match("%.(%w+)$")
   if not ft then return end
-  local notes = cru.kiln.search("conventions for " .. ft)
-  cru.context.attach(ctx.session_id, notes, { key = "filetype:" .. ft })
+  local kiln = cru.kiln.active
+  if not kiln then return end
+  local hits = cru.kiln.search(kiln, cru.embed(kiln, "conventions for " .. ft), 3)
+  local paths = {}
+  for _, hit in ipairs(hits) do paths[#paths + 1] = hit.path end
+  cru.context.attach(ctx.session_id, table.concat(paths, "\n"), { key = "filetype:" .. ft })
 end)
 ```
 
@@ -1228,6 +1232,43 @@ A tool or command declared without a `fn` is not registered — declaring one th
 - Plugin state lives under the global data root, not inside the kiln or workspace.
 
 `plugin` must be a single path component: `""`, `"."`, `".."`, `"a/b"`, and absolute paths are refused.
+
+## Kiln reads by name
+
+These functions take a kiln NAME first, never a directory. The daemon maps the name to the open kiln through its registry, and the same read authority as `cru.kiln.list` and `cru.kiln.get` applies. An unregistered name raises an error that names the kiln. Before the daemon binds them, each function is a stub: `note` answers `nil`, the array functions answer an empty table, `links` answers two empty arrays, and `cru.embed` raises.
+
+### cru.kiln.blocks(kiln, path)
+
+The stored blocks of one note, in span order. Each row is `{ span_start, span_end, kind, vector? }`. The vector is absent when the block fell under the word floor. A path with no note answers an empty table.
+
+### cru.kiln.note(kiln, path)
+
+The index row of one note by its exact kiln-relative path, in the same shape `cru.kiln.get` answers with: `path`, `title`, `content_hash`, `tags`, `links_to`, `properties`, `updated_at`, `has_embedding`. `properties` holds the frontmatter, so `note.properties.description` reads a note's description. A path with no note answers `nil`.
+
+### cru.kiln.notes(kiln, limit?)
+
+Every index row the authority can read, in the same shape as `note`. `limit` cuts the array after that many rows. The order is the store's order, not a ranking. A strategy that builds a graph of the kiln starts here.
+
+### cru.kiln.links(kiln, path)
+
+The resolved links of one note in both directions: `{ outlinks = { path, ... }, backlinks = { path, ... } }`. Both arrays hold note paths, sorted, with no duplicates. A wikilink that names no note is absent, because nothing can follow it. A path with no note, or one outside the authority, answers two empty arrays.
+
+### cru.kiln.search(kiln, vector, limit)
+
+A dense search over the stored blocks of the kiln: the best `limit` blocks by cosine similarity to `vector`. Each row is `{ path, span_start, span_end, kind, score }`. The vector comes from `cru.embed`, so the dimension is the caller's to get right. A kiln with no block rows answers an empty table. This search runs no `search:rerank` stage, so a rerank handler can call it without recursion.
+
+### cru.embed(kiln, text)
+
+The vector the kiln's embedder gives `text`, as an array of numbers. It uses the provider the daemon configured for indexing, the same one the `kiln.embed_query` RPC uses, so a vector from here compares with the stored block vectors. When no embedding provider is configured, the call raises with the reason.
+
+```lua
+local kiln = "notes"
+local hits = cru.kiln.search(kiln, cru.embed(kiln, "how does a session attach a kiln"), 5)
+for _, hit in ipairs(hits) do
+  local note = cru.kiln.note(kiln, hit.path)
+  print(note and note.title, hit.span_start, hit.score)
+end
+```
 
 ## Kiln access and the `vault` name
 

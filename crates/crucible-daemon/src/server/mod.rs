@@ -325,9 +325,10 @@ impl Server {
                 // registry inside the daemon; the directory never reaches Lua.
                 loader
                     .with_kiln_path_resolver(kiln_registry.clone())?
-                    // `cru.kiln.blocks` reads the open kiln by name, through
-                    // the same registry.
-                    .with_kiln_blocks_resolver(kiln_registry.clone(), kiln_manager.clone())
+                    // The named kiln reads and `cru.embed` reach the open
+                    // kiln by name, through the same registry.
+                    .with_kiln_repository_resolver(kiln_registry.clone(), kiln_manager.clone())?
+                    .with_embed_resolver(kiln_registry.clone(), kiln_manager.clone())
             }) {
                 Ok(loader) => {
                     info!("Daemon plugin loader initialized");

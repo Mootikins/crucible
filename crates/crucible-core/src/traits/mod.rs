@@ -20,7 +20,7 @@ pub mod tools;
 
 pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall, SessionKnobs};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
-pub use knowledge::{KnowledgeRepository, NoteInfo};
+pub use knowledge::{KnowledgeRepository, NoteInfo, NoteLinks};
 pub use llm::{
     FunctionCall, FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage, ToolCall,
 };

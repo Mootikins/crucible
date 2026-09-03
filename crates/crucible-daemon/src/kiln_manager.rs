@@ -423,6 +423,28 @@ impl KilnManager {
         self.enrichment_config.as_ref()
     }
 
+    /// The provider that embeds a query for `kiln_path`: the configured one,
+    /// after the kiln is open so its config and caches are loaded.
+    ///
+    /// One body for the `kiln.embed_query` RPC and for `cru.embed`, so the
+    /// two cannot pick different models.
+    pub async fn embedding_provider(
+        &self,
+        kiln_path: &Path,
+    ) -> Result<Arc<dyn crucible_core::enrichment::EmbeddingProvider>> {
+        let Some(config) = self.enrichment_config.clone() else {
+            // Do not name `[embedding]` here: the config loader rejects that
+            // section outright as legacy, so a user who followed this advice
+            // would brick every subsequent `cru` command.
+            anyhow::bail!(
+                "no embedding provider configured; add one under \
+                 [llm.providers.<name>] and set [llm].default, then run `cru doctor` to verify"
+            );
+        };
+        self.get_or_open(kiln_path).await?;
+        get_or_create_embedding_provider(&config).await
+    }
+
     pub fn max_precognition_chars(&self) -> usize {
         self.max_precognition_chars
     }

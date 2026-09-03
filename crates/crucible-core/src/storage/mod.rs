@@ -22,6 +22,7 @@ pub mod error_ext;
 pub mod note_store;
 pub mod property_store;
 pub mod scope;
+pub mod scoped_links;
 
 // Re-export main types for convenience
 pub use block_store::{BlockHit, BlockRecord, BlockStore, CachedVector};
@@ -32,3 +33,4 @@ pub use note_store::{
 };
 pub use property_store::PropertyStore;
 pub use scope::{Scope, ScopeError};
+pub use scoped_links::{scoped_backlinks, scoped_outlinks, sorted_unique, visible_paths};

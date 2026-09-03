@@ -134,6 +134,7 @@ impl StubGenerator {
         register_oq_module(lua)?;
         register_paths_module(lua, PathsContext::new())?;
         register_vault_module(lua)?;
+        crate::register_embed_module(lua)?;
         register_sessions_module(lua)?;
         register_ui_module(lua)?;
         register_context_module_stub(lua)?;

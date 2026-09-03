@@ -731,9 +731,9 @@ mod blocks_tests {
         }
         async fn get_note_by_path(
             &self,
-            _path: &str,
+            path: &str,
         ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
-            Ok(None)
+            Ok(self.records().into_iter().find(|r| r.path == path))
         }
         async fn list_notes(
             &self,
@@ -748,12 +748,58 @@ mod blocks_tests {
         ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
             Ok(Vec::new())
         }
+        /// The blocks that carry a vector, best first by dot product.
         async fn search_blocks(
             &self,
-            _vector: Vec<f32>,
-            _limit: usize,
+            vector: Vec<f32>,
+            limit: usize,
         ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-            Ok(Vec::new())
+            let mut hits: Vec<_> = self
+                .0
+                .iter()
+                .filter_map(|b| {
+                    let v = b.embedding.as_ref()?;
+                    let score: f32 = v.iter().zip(&vector).map(|(a, b)| a * b).sum();
+                    Some(crucible_core::types::SearchResult {
+                        document_id: crucible_core::types::DocumentId(b.note_path.clone()),
+                        score: score as f64,
+                        highlights: None,
+                        snippet: Some(b.text.clone()),
+                        kiln: None,
+                        block: Some(crucible_core::types::database::BlockRef {
+                            span_start: b.span_start,
+                            span_end: b.span_end,
+                            kind: b.kind.clone(),
+                            cited: Vec::new(),
+                        }),
+                    })
+                })
+                .collect();
+            hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+            hits.truncate(limit);
+            Ok(hits)
+        }
+        async fn list_note_records(
+            &self,
+        ) -> crucible_core::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
+            Ok(self.records())
+        }
+        async fn links_for_note(
+            &self,
+            path: &str,
+        ) -> crucible_core::Result<crucible_core::traits::NoteLinks> {
+            Ok(crucible_core::traits::NoteLinks {
+                outlinks: if path == "a.md" {
+                    vec!["b.md".to_string()]
+                } else {
+                    Vec::new()
+                },
+                backlinks: if path == "b.md" {
+                    vec!["a.md".to_string()]
+                } else {
+                    Vec::new()
+                },
+            })
         }
         async fn blocks_for_note(&self, path: &str) -> crucible_core::Result<Vec<BlockRecord>> {
             Ok(self
@@ -762,6 +808,23 @@ mod blocks_tests {
                 .filter(|b| b.note_path == path)
                 .cloned()
                 .collect())
+        }
+    }
+
+    impl BlocksOnly {
+        /// Two note records, `a.md` (the one with blocks) and `b.md`.
+        fn records(&self) -> Vec<crucible_core::storage::note_store::NoteRecord> {
+            use crucible_core::storage::note_store::NoteRecord;
+            vec![
+                NoteRecord::new("a.md", crucible_core::parser::BlockHash::zero())
+                    .with_title("A")
+                    .with_properties(
+                        [("description".to_string(), serde_json::json!("about a"))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                NoteRecord::new("b.md", crucible_core::parser::BlockHash::zero()).with_title("B"),
+            ]
         }
     }
 
@@ -794,7 +857,7 @@ mod blocks_tests {
             };
             Box::pin(async move { answer })
         });
-        register_kiln_blocks_resolver(&lua, resolver).unwrap();
+        register_kiln_repository_resolver(&lua, resolver).unwrap();
         lua
     }
 
@@ -829,6 +892,104 @@ mod blocks_tests {
         assert!(none.is_nil());
         let vector: Vec<f64> = rows[1].get("vector").unwrap();
         assert_eq!(vector, vec![0.0, 1.0]);
+    }
+
+    /// The named graph reads go through the same resolver as `blocks`.
+    #[tokio::test]
+    async fn note_notes_and_links_read_the_named_kiln() {
+        let lua = lua_with_blocks();
+
+        let description: String = lua
+            .load(r#"return cru.kiln.note("notes", "a.md").properties.description"#)
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(description, "about a");
+        let missing: mlua::Value = lua
+            .load(r#"return cru.kiln.note("notes", "missing.md")"#)
+            .eval_async()
+            .await
+            .unwrap();
+        assert!(missing.is_nil());
+
+        let titles: Vec<String> = lua
+            .load(
+                r#"local t = {}
+                   for _, n in ipairs(cru.kiln.notes("notes")) do t[#t + 1] = n.title end
+                   return t"#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(titles, vec!["A", "B"]);
+        let limited: usize = lua
+            .load(r#"return #cru.kiln.notes("notes", 1)"#)
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(limited, 1);
+
+        let links: mlua::Table = lua
+            .load(r#"return cru.kiln.links("notes", "a.md")"#)
+            .eval_async()
+            .await
+            .unwrap();
+        let outlinks: Vec<String> = links.get("outlinks").unwrap();
+        let backlinks: Vec<String> = links.get("backlinks").unwrap();
+        assert_eq!(outlinks, vec!["b.md"]);
+        assert!(backlinks.is_empty());
+
+        // The stubs answer the empty shapes, so a script written against
+        // them keeps its types once the host binds the resolver.
+        let stub = TestLuaBuilder::new().with_vault().build();
+        let shape: Vec<String> = stub
+            .load(
+                r#"local l = cru.kiln.links("notes", "a.md")
+                   return { type(cru.kiln.note("notes", "a.md")), type(l.outlinks), type(l.backlinks),
+                            tostring(#cru.kiln.notes("notes")) }"#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(shape, vec!["nil", "table", "table", "0"]);
+    }
+
+    /// `cru.kiln.search` is a dense block search: the best block first, each
+    /// row naming its passage.
+    #[tokio::test]
+    async fn search_ranks_the_blocks_of_the_named_kiln() {
+        let lua = lua_with_blocks();
+        let rows: Vec<mlua::Table> = lua
+            .load(r#"return cru.kiln.search("notes", { 1.0, 0.0 }, 5)"#)
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2, "the heading has no vector, so no hit");
+        let path: String = rows[0].get("path").unwrap();
+        let start: usize = rows[0].get("span_start").unwrap();
+        let end: usize = rows[0].get("span_end").unwrap();
+        let kind: String = rows[0].get("kind").unwrap();
+        let score: f64 = rows[0].get("score").unwrap();
+        assert_eq!(
+            (path.as_str(), start, end, kind.as_str()),
+            ("a.md", 20, 25, "paragraph")
+        );
+        assert_eq!(score, 1.0);
+        let second: f64 = rows[1].get("score").unwrap();
+        assert_eq!(second, 0.0);
+
+        let one: usize = lua
+            .load(r#"return #cru.kiln.search("notes", { 1.0, 0.0 }, 1)"#)
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(one, 1);
+
+        let stub = TestLuaBuilder::new().with_vault().build();
+        let none: usize = stub
+            .load(r#"return #cru.kiln.search("notes", { 1.0, 0.0 }, 5)"#)
+            .eval()
+            .unwrap();
+        assert_eq!(none, 0);
     }
 
     #[test]

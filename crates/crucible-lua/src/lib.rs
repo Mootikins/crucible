@@ -48,6 +48,7 @@ pub mod check;
 mod context;
 mod context_attach;
 pub mod discovered;
+mod embed;
 mod error;
 mod error_ext;
 mod executor;
@@ -127,6 +128,7 @@ pub use context_attach::{
 pub use discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };
+pub use embed::{register_embed_module, register_embed_resolver, EmbedResolver};
 pub use error::{format_lua_error, LuaError};
 pub use executor::{register_log_function, LuaExecutor};
 pub use fs::register_fs_module;
@@ -164,7 +166,7 @@ pub use storage_api::{register_storage_module, register_storage_module_with_stor
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
-    register_kiln_blocks_resolver, register_kiln_path_resolver, register_vault_module,
+    register_kiln_path_resolver, register_kiln_repository_resolver, register_vault_module,
     register_vault_module_with_store, register_vault_module_with_store_scoped, KilnPathResolver,
     KilnRepositoryResolver,
 };

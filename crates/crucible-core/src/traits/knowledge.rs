@@ -20,6 +20,8 @@
 //!   - `get_note_by_name()` - Retrieve parsed notes by name/wikilink
 //!   - `get_note_by_path()` - Read one index row by exact path
 //!   - `list_notes()` - Browse notes with filtering
+//!   - `list_note_records()` - Every index row the authority can read
+//!   - `links_for_note()` - The resolved links of one note, both directions
 //!   - `search_vectors()` - Semantic search with embeddings
 //!
 //! ## Mid-Level: Database Operations
@@ -92,6 +94,18 @@ impl From<crate::storage::note_store::NoteRecord> for NoteInfo {
     }
 }
 
+/// The resolved links of one note, both directions, as note paths.
+///
+/// Dangling targets are not here: they name no note, so nothing can follow
+/// them. Both lists are sorted and deduplicated.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteLinks {
+    /// The notes this note links to.
+    pub outlinks: Vec<String>,
+    /// The notes that link to this note.
+    pub backlinks: Vec<String>,
+}
+
 /// Abstract interface for accessing knowledge in the kiln
 ///
 /// This trait decouples the tool system from the specific storage backend (SQLite),
@@ -130,4 +144,14 @@ pub trait KnowledgeRepository: Send + Sync {
     /// same reason as [`Self::search_blocks`]: a repository with no block
     /// store answers an empty vector, and says so in its own body.
     async fn blocks_for_note(&self, path: &str) -> Result<Vec<BlockRecord>>;
+
+    /// Every index row the repository's authority can read, as the indexer
+    /// stored it. The graph view of a kiln starts here: a caller pairs it
+    /// with [`Self::links_for_note`] to build an adjacency.
+    async fn list_note_records(&self) -> Result<Vec<crate::storage::note_store::NoteRecord>>;
+
+    /// The resolved links of one note, filtered to what the authority can
+    /// read. A path the authority cannot read answers with empty lists, the
+    /// same as a path with no note.
+    async fn links_for_note(&self, path: &str) -> Result<NoteLinks>;
 }

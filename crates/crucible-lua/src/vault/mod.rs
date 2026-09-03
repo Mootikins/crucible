@@ -22,11 +22,10 @@
 //!     end
 //! end
 //!
-//! -- Search notes (async). BOTH bodies answer with an empty table today:
-//! -- the stub and the store-backed one build a table and never fill it, so
-//! -- the scored `{ path, title, score, snippet }` rows this once advertised
-//! -- do not exist. The declaration says `{ any }` for that reason.
-//! local results = cru.kiln.search("machine learning", {limit = 5, threshold = 0.6})
+//! -- Dense block search over a NAMED kiln (async): the vector comes from
+//! -- `cru.embed`, and each hit names a passage. The stub answers an empty
+//! -- table; the daemon binds it through `register_kiln_repository_resolver`.
+//! local hits = cru.kiln.search(kiln, cru.embed(kiln, "machine learning"), 5)
 //!
 //! -- There is no `cru.kiln.create_note`. This block used to document one,
 //! -- with a frontmatter table and an `overwrite` flag; nothing in `crates/`
@@ -46,16 +45,30 @@
 //! -- The stored blocks of one note in a NAMED kiln, in span order, each
 //! -- with its vector when it has one (async). A retrieval strategy reads
 //! -- a hit's neighbours here. The stub answers an empty table; the daemon
-//! -- binds it through `register_kiln_blocks_resolver`.
+//! -- binds it through `register_kiln_repository_resolver`.
 //! local blocks = cru.kiln.blocks(kiln, "path/to/note.md")
+//!
+//! -- The graph of a NAMED kiln, through the same resolver (async): one
+//! -- note record, every note record, and the resolved links of one note
+//! -- in both directions. A strategy builds an adjacency from `notes` and
+//! -- `links`.
+//! local note = cru.kiln.note(kiln, "path/to/note.md")
+//! local all = cru.kiln.notes(kiln, 500)
+//! local links = cru.kiln.links(kiln, "path/to/note.md")
+//! for _, target in ipairs(links.outlinks) do print(target) end
 //! ```
 //!
-//! All three graph functions read the daemon's resolved-link index and are
-//! filtered by the same authority as `list`/`get`, so a plugin bound to
-//! kiln A never sees a path from kiln B.
+//! All three path-only graph functions read the daemon's resolved-link
+//! index and are filtered by the same authority as `list`/`get`, so a
+//! plugin bound to kiln A never sees a path from kiln B. The named reads go
+//! through a repository the host already bound to the named kiln, and that
+//! repository applies the same authority.
 
 use crate::error::LuaError;
-use crucible_core::storage::{NoteStore, Scope, StorageError, StorageResult};
+use crucible_core::storage::{
+    scoped_backlinks, scoped_outlinks, sorted_unique, visible_paths, NoteStore, Scope,
+    StorageError, StorageResult,
+};
 use futures_util::future::BoxFuture;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -118,11 +131,33 @@ mod decl {
         format!("(path: string) -> {NOTE}?")
     }
 
-    /// The element type is `any`, not a result record: the closure builds an
-    /// EMPTY table and never fills it, in both registrations. See the comment
-    /// in `register_vault_module_with_store_scoped`.
-    pub const SEARCH: &str =
-        "(query: string, options: { limit: number?, threshold: number? }?) -> { any }";
+    /// One block hit of a dense search, as [`super::hit_to_lua`] builds it.
+    /// The kiln is not on the row: the caller named it.
+    pub const HIT: &str = "{ path: string, span_start: number, span_end: number, \
+                            kind: string, score: number }";
+
+    /// A dense block search over a NAMED kiln. The vector comes from
+    /// `cru.embed`, so its dimension is the caller's to get right. The stub
+    /// answers an empty table.
+    pub fn search() -> String {
+        format!("(kiln: string, vector: {{ number }}, limit: number) -> {{ {HIT} }}")
+    }
+
+    /// The named graph reads: the kiln first, never a path to it.
+    pub fn note() -> String {
+        format!("(kiln: string, path: string) -> {NOTE}?")
+    }
+
+    pub fn notes() -> String {
+        format!("(kiln: string, limit: number?) -> {{ {NOTE} }}")
+    }
+
+    /// Resolved paths in both directions. Dangling targets are absent.
+    pub const NOTE_LINKS: &str = "{ outlinks: { string }, backlinks: { string } }";
+
+    pub fn links() -> String {
+        format!("(kiln: string, path: string) -> {NOTE_LINKS}")
+    }
 
     /// The three graph functions all answer with note paths.
     pub const OUTLINKS: &str = "(path: string) -> { string }";
@@ -191,27 +226,34 @@ fn kiln_path(
     join_relative(&canonical, name, relative.unwrap_or(""))
 }
 
-/// Register `cru.kiln.blocks(kiln, path)` against a repository resolver.
+/// The `cru.kiln` members the host binds through a resolver, which a storage
+/// upgrade must carry over rather than replace with the stubs.
+const HOST_BOUND: &[&str] = &["blocks", "note", "notes", "links", "search", "path"];
+
+/// Register the named reads — `cru.kiln.blocks`, `note`, `notes`, `links`
+/// and `search` — against a repository resolver.
 ///
-/// Registration replaces the empty stub `register_vault_module` installs.
-pub fn register_kiln_blocks_resolver(
+/// Registration replaces the empty stubs `register_vault_module` installs.
+/// Every function takes the kiln NAME first; the resolver maps it to a
+/// repository the host already bound to that kiln, and the repository
+/// applies its own read authority.
+pub fn register_kiln_repository_resolver(
     lua: &Lua,
     resolver: KilnRepositoryResolver,
 ) -> Result<(), LuaError> {
     let cru: Table = lua.globals().get("cru")?;
     let vault: Table = cru.get("kiln")?;
     let mut kiln = crate::host_registry::Ns::over(lua, "cru.kiln", vault);
+
+    let r = Arc::clone(&resolver);
     kiln.async_func(
         "blocks",
         &decl::blocks(),
         move |lua, (name, path): (String, String)| {
-            let resolver = Arc::clone(&resolver);
+            let r = Arc::clone(&r);
             async move {
-                let repo = resolver(&name).await.map_err(mlua::Error::runtime)?;
-                let blocks = repo
-                    .blocks_for_note(&path)
-                    .await
-                    .map_err(|e| mlua::Error::runtime(format!("Kiln error: {e}")))?;
+                let repo = r(&name).await.map_err(mlua::Error::runtime)?;
+                let blocks = repo.blocks_for_note(&path).await.map_err(repo_error)?;
                 let table = lua.create_table()?;
                 for (i, block) in blocks.iter().enumerate() {
                     table.set(i + 1, block_record_to_lua(&lua, block)?)?;
@@ -220,7 +262,89 @@ pub fn register_kiln_blocks_resolver(
             }
         },
     )?;
+
+    let r = Arc::clone(&resolver);
+    kiln.async_func(
+        "note",
+        &decl::note(),
+        move |lua, (name, path): (String, String)| {
+            let r = Arc::clone(&r);
+            async move {
+                let repo = r(&name).await.map_err(mlua::Error::runtime)?;
+                match repo.get_note_by_path(&path).await.map_err(repo_error)? {
+                    Some(record) => note_record_to_lua(&lua, &record),
+                    None => Ok(Value::Nil),
+                }
+            }
+        },
+    )?;
+
+    let r = Arc::clone(&resolver);
+    kiln.async_func(
+        "notes",
+        &decl::notes(),
+        move |lua, (name, limit): (String, Option<usize>)| {
+            let r = Arc::clone(&r);
+            async move {
+                let repo = r(&name).await.map_err(mlua::Error::runtime)?;
+                let records = repo.list_note_records().await.map_err(repo_error)?;
+                let table = lua.create_table()?;
+                let limit = limit.unwrap_or(records.len());
+                for (i, record) in records.iter().take(limit).enumerate() {
+                    table.set(i + 1, note_record_to_lua(&lua, record)?)?;
+                }
+                Ok(Value::Table(table))
+            }
+        },
+    )?;
+
+    let r = Arc::clone(&resolver);
+    kiln.async_func(
+        "links",
+        &decl::links(),
+        move |lua, (name, path): (String, String)| {
+            let r = Arc::clone(&r);
+            async move {
+                let repo = r(&name).await.map_err(mlua::Error::runtime)?;
+                let links = repo.links_for_note(&path).await.map_err(repo_error)?;
+                let table = lua.create_table()?;
+                table.set("outlinks", string_vec_to_lua_table(&lua, &links.outlinks)?)?;
+                table.set(
+                    "backlinks",
+                    string_vec_to_lua_table(&lua, &links.backlinks)?,
+                )?;
+                Ok(Value::Table(table))
+            }
+        },
+    )?;
+
+    kiln.async_func(
+        "search",
+        &decl::search(),
+        move |lua, (name, vector, limit): (String, Vec<f32>, usize)| {
+            let r = Arc::clone(&resolver);
+            async move {
+                let repo = r(&name).await.map_err(mlua::Error::runtime)?;
+                let hits = repo
+                    .search_blocks(vector, limit)
+                    .await
+                    .map_err(repo_error)?;
+                let table = lua.create_table()?;
+                // A hit without a block names a whole note, which this row
+                // shape cannot carry. The block store answers only block hits,
+                // so the filter is a type guard, not a policy.
+                for (i, hit) in hits.iter().filter(|h| h.block.is_some()).enumerate() {
+                    table.set(i + 1, hit_to_lua(&lua, hit)?)?;
+                }
+                Ok(Value::Table(table))
+            }
+        },
+    )?;
     Ok(())
+}
+
+fn repo_error(e: crucible_core::CrucibleError) -> mlua::Error {
+    mlua::Error::runtime(format!("Kiln error: {e}"))
 }
 
 /// Register `cru.kiln.path(name, relative?)` against a resolver.
@@ -262,11 +386,39 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
         Ok(Value::Nil)
     })?;
 
+    // The named reads are async like their resolver-backed replacements, for
+    // the reason the graph stubs below give.
     kiln.async_func(
         "search",
-        decl::SEARCH,
-        |lua, (_query, _opts): (String, Option<Table>)| async move {
+        &decl::search(),
+        |lua, (_kiln, _vector, _limit): (String, Vec<f32>, usize)| async move {
             let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
+
+    kiln.async_func(
+        "note",
+        &decl::note(),
+        |_, (_kiln, _path): (String, String)| async move { Ok(Value::Nil) },
+    )?;
+
+    kiln.async_func(
+        "notes",
+        &decl::notes(),
+        |lua, (_kiln, _limit): (String, Option<usize>)| async move {
+            let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
+
+    kiln.async_func(
+        "links",
+        &decl::links(),
+        |lua, (_kiln, _path): (String, String)| async move {
+            let table = lua.create_table()?;
+            table.set("outlinks", lua.create_table()?)?;
+            table.set("backlinks", lua.create_table()?)?;
             Ok(Value::Table(table))
         },
     )?;
@@ -355,9 +507,9 @@ pub fn register_vault_module_with_store_scoped(
     store: Arc<dyn NoteStore>,
     authority: Scope,
 ) -> Result<(), LuaError> {
-    // The host binds `cru.kiln.blocks` and `cru.kiln.path` at boot through
+    // The host binds the named reads and `cru.kiln.path` at boot through
     // resolvers this crate cannot rebuild, and `register_vault_module`
-    // publishes a fresh table. Carry the two bindings over: without this,
+    // publishes a fresh table. Carry those bindings over: without this,
     // every kiln open put the stubs back, and a plugin read empty blocks
     // after the first `cru process`.
     let globals = lua.globals();
@@ -365,8 +517,9 @@ pub fn register_vault_module_with_store_scoped(
         .get::<Table>("cru")
         .and_then(|cru| cru.get::<Table>("kiln"))
     {
-        Ok(previous) => ["blocks", "path"]
-            .into_iter()
+        Ok(previous) => HOST_BOUND
+            .iter()
+            .copied()
             .filter_map(|name| previous.get::<Value>(name).ok().map(|v| (name, v)))
             .filter(|(_, v)| v.is_function())
             .collect(),
@@ -423,11 +576,8 @@ pub fn register_vault_module_with_store_scoped(
         }
     })?;
 
-    // `search` is intentionally not implemented here — the bare stub from
-    // `register_vault_module` (which returns an empty table) is the
-    // production-shipping behaviour. Implementing semantic search would
-    // require an embedding provider, which lives daemon-side. `decl::SEARCH`
-    // says `{ any }` for that reason: no result record is ever built.
+    // `search` is not bound here: it names a kiln, and the host binds it
+    // through `register_kiln_repository_resolver`, carried over above.
 
     let s = Arc::clone(&store);
     let auth = authority.clone();
@@ -477,76 +627,9 @@ pub fn register_vault_module_with_store_scoped(
 // Graph traversal over NoteStore
 // ============================================================================
 
-/// The note paths `authority` is allowed to read.
-///
-/// Every path the three graph functions emit is gated through this set.
-/// `NoteStore`'s link methods (`backlinks`, `graph_links`) take no authority
-/// — they are raw projections of the daemon's resolved-link index, and the
-/// trait leaves scope enforcement to the layer above it, unlike `list`/`get`
-/// which filter in SQL. So the filter has to be applied *here*: without it
-/// `cru.kiln.backlinks()` would hand a plugin bound to kiln A exactly the
-/// paths `cru.kiln.list()` is careful to hide from it.
-///
-/// One scoped `list` rather than a `get` per candidate: `neighbors` needs the
-/// whole visible set anyway, and one query beats a round trip per hop.
-async fn visible_paths(store: &dyn NoteStore, authority: &Scope) -> StorageResult<HashSet<String>> {
-    Ok(store
-        .list(authority)
-        .await?
-        .into_iter()
-        .map(|record| record.path)
-        .collect())
-}
-
-/// Resolved outgoing links of `path`, filtered to what `authority` can read.
-///
-/// Reads `graph_links()` rather than `NoteRecord::links_to`, which the note
-/// pipeline fills with *raw* wikilink targets (`"async"`, `"Async"`) and not
-/// note paths. Raw targets do not join with what `backlinks()` returns, so
-/// using them would stop `outlinks` and `backlinks` being inverses and a
-/// caller could not walk the graph one hop at a time. Unresolved (dangling)
-/// edges are dropped for the same reason: they name no note, so they can
-/// neither be traversed further nor scope-checked. The `kiln.graph` RPC
-/// remains the surface that reports dangling edges.
-async fn scoped_outlinks(
-    store: &dyn NoteStore,
-    authority: &Scope,
-    path: &str,
-) -> StorageResult<Vec<String>> {
-    let visible = visible_paths(store, authority).await?;
-    if !visible.contains(path) {
-        return Ok(Vec::new());
-    }
-
-    Ok(sorted_unique(
-        store
-            .graph_links()
-            .await?
-            .into_iter()
-            .filter(|link| link.resolved && link.source == path && visible.contains(&link.target))
-            .map(|link| link.target),
-    ))
-}
-
-/// Notes whose links resolve to `path`, filtered to what `authority` can read.
-async fn scoped_backlinks(
-    store: &dyn NoteStore,
-    authority: &Scope,
-    path: &str,
-) -> StorageResult<Vec<String>> {
-    let visible = visible_paths(store, authority).await?;
-    if !visible.contains(path) {
-        return Ok(Vec::new());
-    }
-
-    Ok(sorted_unique(
-        store
-            .backlinks(path)
-            .await?
-            .into_iter()
-            .filter(|source| visible.contains(source)),
-    ))
-}
+// `visible_paths`, `scoped_outlinks` and `scoped_backlinks` live in
+// `crucible_core::storage::scoped_links`, shared with the knowledge
+// repository that answers the named reads.
 
 /// Notes within `depth` hops of `path`, filtered to what `authority` can read.
 ///
@@ -611,14 +694,6 @@ async fn scoped_neighbors(
     Ok(sorted_unique(visited))
 }
 
-/// Deterministic order for a Lua-visible array of paths.
-fn sorted_unique(paths: impl IntoIterator<Item = String>) -> Vec<String> {
-    let mut paths: Vec<String> = paths.into_iter().collect();
-    paths.sort();
-    paths.dedup();
-    paths
-}
-
 fn kiln_error(e: StorageError) -> mlua::Error {
     mlua::Error::runtime(format!("Kiln error: {e}"))
 }
@@ -673,6 +748,21 @@ fn block_record_to_lua(
     if let Some(vector) = &block.embedding {
         table.set("vector", vector.as_slice())?;
     }
+    Ok(Value::Table(table))
+}
+
+/// One block hit as Lua sees it. The snippet stays behind: a strategy that
+/// wants the text reads `cru.kiln.blocks`, and the hit already names the
+/// span.
+fn hit_to_lua(lua: &Lua, hit: &crucible_core::types::SearchResult) -> Result<Value, mlua::Error> {
+    let table = lua.create_table()?;
+    table.set("path", hit.document_id.0.as_str())?;
+    if let Some(block) = &hit.block {
+        table.set("span_start", block.span_start)?;
+        table.set("span_end", block.span_end)?;
+        table.set("kind", block.kind.as_str())?;
+    }
+    table.set("score", hit.score)?;
     Ok(Value::Table(table))
 }
 

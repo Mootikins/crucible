@@ -89,6 +89,19 @@ impl KnowledgeRepository for MockKnowledgeRepository {
         Ok(Vec::new())
     }
 
+    async fn list_note_records(
+        &self,
+    ) -> crucible_core::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
+        Ok(Vec::new())
+    }
+
+    async fn links_for_note(
+        &self,
+        _path: &str,
+    ) -> crucible_core::Result<crucible_core::traits::NoteLinks> {
+        Ok(crucible_core::traits::NoteLinks::default())
+    }
+
     async fn get_note_by_name(
         &self,
         _name: &str,

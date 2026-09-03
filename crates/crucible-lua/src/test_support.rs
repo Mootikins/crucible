@@ -63,6 +63,7 @@ impl TestLuaBuilder {
     pub fn with_vault(self) -> Self {
         self.ensure_cru_table();
         register_vault_module(&self.lua).expect("Should register vault module");
+        crate::register_embed_module(&self.lua).expect("Should register cru.embed");
         self
     }
 

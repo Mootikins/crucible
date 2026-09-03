@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use crucible_core::parser::{Frontmatter, FrontmatterFormat, ParsedNote, Wikilink};
-use crucible_core::traits::{KnowledgeRepository, NoteInfo};
+use crucible_core::traits::{KnowledgeRepository, NoteInfo, NoteLinks};
 use crucible_core::types::{DocumentId, SearchResult};
 use crucible_core::{CrucibleError, Result as CrucibleResult};
 use std::path::{Path, PathBuf};
@@ -229,6 +229,35 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
             .blocks_for_note(path)
             .await
             .map_err(|e| CrucibleError::DatabaseError(format!("Block read failed: {e}")))
+    }
+
+    async fn list_note_records(
+        &self,
+    ) -> CrucibleResult<Vec<crucible_core::storage::note_store::NoteRecord>> {
+        use crucible_core::storage::NoteStore;
+
+        let authority = scope_for(self.kiln_path.as_deref());
+        self.store
+            .list(&authority)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to list notes: {e}")))
+    }
+
+    async fn links_for_note(&self, path: &str) -> CrucibleResult<NoteLinks> {
+        use crucible_core::storage::{scoped_backlinks, scoped_outlinks};
+
+        let authority = scope_for(self.kiln_path.as_deref());
+        let store: &dyn crucible_core::storage::NoteStore = self.store.as_ref();
+        let outlinks = scoped_outlinks(store, &authority, path)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to read links: {e}")))?;
+        let backlinks = scoped_backlinks(store, &authority, path)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to read links: {e}")))?;
+        Ok(NoteLinks {
+            outlinks,
+            backlinks,
+        })
     }
 
     async fn search_vectors(

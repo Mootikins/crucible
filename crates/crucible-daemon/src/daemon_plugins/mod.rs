@@ -186,6 +186,22 @@ pub struct DaemonPluginLoader {
     option_store_dir: Option<PathBuf>,
 }
 
+/// The registered directory of a kiln NAME, for a Lua resolver.
+///
+/// The error string reaches Lua as-is, so it names the kiln and never a
+/// directory.
+fn registered_kiln_path(
+    registry: &crate::kiln_registry::KilnRegistry,
+    name: &str,
+) -> Result<(crucible_core::config::KilnName, PathBuf), String> {
+    let kiln_name = crucible_core::config::KilnName::parse(name).map_err(|e| e.to_string())?;
+    let path = registry
+        .resolve(&kiln_name)
+        .path()
+        .ok_or_else(|| format!("kiln '{kiln_name}' is not registered"))?;
+    Ok((kiln_name, path))
+}
+
 impl DaemonPluginLoader {
     /// Create a new loader, registering daemon-appropriate Lua modules.
     ///
@@ -223,6 +239,7 @@ impl DaemonPluginLoader {
         reg("oq", register_oq_module(lua))?;
         reg("paths", register_paths_module(lua, PathsContext::new()))?;
         reg("vault", register_vault_module(lua))?;
+        reg("embed", crucible_lua::register_embed_module(lua))?;
         reg("storage", register_storage_module(lua))?;
         reg("session", register_sessions_module(lua))?;
         reg("ui", register_ui_module(lua))?;
@@ -374,25 +391,21 @@ impl DaemonPluginLoader {
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> anyhow::Result<Self> {
-        let resolver: crucible_lua::KilnPathResolver = Arc::new(move |name: &str| {
-            let name = crucible_core::config::KilnName::parse(name).map_err(|e| e.to_string())?;
-            registry
-                .resolve(&name)
-                .path()
-                .ok_or_else(|| format!("kiln '{name}' is not registered"))
-        });
+        let resolver: crucible_lua::KilnPathResolver =
+            Arc::new(move |name: &str| registered_kiln_path(&registry, name).map(|(_, path)| path));
         crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
             .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)
     }
 
-    /// Wire `cru.kiln.blocks` to the daemon's open kilns.
+    /// Wire the named kiln reads — `cru.kiln.blocks`, `note`, `notes`,
+    /// `links` and `search` — to the daemon's open kilns.
     ///
     /// A plugin names a kiln; the registry turns the name into a directory
     /// and the manager opens that directory on first use. The directory
     /// never reaches Lua, and an unregistered name answers with an error
     /// that names the kiln alone.
-    pub fn with_kiln_blocks_resolver(
+    pub fn with_kiln_repository_resolver(
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
         kiln_manager: Arc<crate::kiln_manager::KilnManager>,
@@ -402,12 +415,7 @@ impl DaemonPluginLoader {
             let registry = Arc::clone(&registry);
             let kiln_manager = Arc::clone(&kiln_manager);
             Box::pin(async move {
-                let kiln_name =
-                    crucible_core::config::KilnName::parse(&name).map_err(|e| e.to_string())?;
-                let path = registry
-                    .resolve(&kiln_name)
-                    .path()
-                    .ok_or_else(|| format!("kiln '{kiln_name}' is not registered"))?;
+                let (kiln_name, path) = registered_kiln_path(&registry, &name)?;
                 let handle = kiln_manager
                     .get_or_open(&path)
                     .await
@@ -415,8 +423,32 @@ impl DaemonPluginLoader {
                 Ok(handle.as_knowledge_repository())
             })
         });
-        crucible_lua::register_kiln_blocks_resolver(self.executor.lua(), resolver)
-            .map_err(|e| anyhow::anyhow!("cru.kiln.blocks (kiln resolver): {e}"))?;
+        crucible_lua::register_kiln_repository_resolver(self.executor.lua(), resolver)
+            .map_err(|e| anyhow::anyhow!("cru.kiln named reads (kiln resolver): {e}"))?;
+        Ok(self)
+    }
+
+    /// Wire `cru.embed` to the provider a named kiln embeds with — the same
+    /// one the `kiln.embed_query` RPC uses.
+    pub fn with_embed_resolver(
+        self,
+        registry: Arc<crate::kiln_registry::KilnRegistry>,
+        kiln_manager: Arc<crate::kiln_manager::KilnManager>,
+    ) -> anyhow::Result<Self> {
+        let resolver: crucible_lua::EmbedResolver = Arc::new(move |name: &str| {
+            let name = name.to_string();
+            let registry = Arc::clone(&registry);
+            let kiln_manager = Arc::clone(&kiln_manager);
+            Box::pin(async move {
+                let (kiln_name, path) = registered_kiln_path(&registry, &name)?;
+                kiln_manager
+                    .embedding_provider(&path)
+                    .await
+                    .map_err(|e| format!("kiln '{kiln_name}' has no embedder: {e}"))
+            })
+        });
+        crucible_lua::register_embed_resolver(self.executor.lua(), resolver)
+            .map_err(|e| anyhow::anyhow!("cru.embed (kiln resolver): {e}"))?;
         Ok(self)
     }
 
