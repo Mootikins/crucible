@@ -18,7 +18,7 @@ config:
       default: false
     strategy:
       type: string
-      description: "One of points, arc_post, arc_pre, bezier_post, meta_pre, ppr_post, meta_ppr"
+      description: "One of points, arc_post, arc_pre, bezier_post, meta_pre, ppr_post, meta_ppr, slate_post"
       default: points
     pair_cosine_min:
       type: number
@@ -54,6 +54,16 @@ config:
       type: number
       description: How many notes the walk reached and the scan did not enter the list
       default: 3
+    slate:
+      type: array
+      items:
+        type: object
+      description: "slate_post: the quota plan, in order; each entry is { type = point | arc | hop, n }. The rest of the list follows by point score."
+      default: [{ type: point, n: 2 }, { type: arc, n: 2 }, { type: hop, n: 2 }]
+    hop_from:
+      type: number
+      description: "slate_post: how many top dense notes the hop slot expands by one link"
+      default: 2
 
 exports:
   auto_discover: true

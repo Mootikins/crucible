@@ -55,7 +55,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STRATEGIES="points meta_pre ppr_post meta_ppr arc_pre"
+STRATEGIES="points slate_post arc_pre meta_pre ppr_post"
 INDEX_STRATEGIES="arc_pre meta_pre meta_ppr"
 DRY_RUN=0
 OUT=""

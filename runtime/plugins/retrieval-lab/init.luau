@@ -40,6 +40,12 @@
 --- the vector changes. The title and the description come with the event.
 --- The strategy needs a named kiln and a bound `cru.embed`.
 ---
+--- `slate_post` keeps a signal per candidate (point score, interior arc,
+--- link hop) and composes the list by quota: the `slate` plan names the
+--- slots in order, one row per note across them, then the rest follows by
+--- point score. The counters `slots_point`, `slots_arc` and `slots_hop`
+--- count the rows each type placed.
+---
 --- `ppr_post` runs a personalized PageRank over the link graph of the first
 --- searched kiln after the scan. The teleport vector is the notes the scan
 --- hit, each with its best dense score, scaled to sum to one; no mass
@@ -64,7 +70,7 @@ local M = {}
 -- Counters
 -- ============================================================================
 
-local counters = { queries = 0, interior_wins = 0 }
+local counters: { [string]: number? } = { queries = 0, interior_wins = 0 }
 ;(_G :: any).RETRIEVAL_LAB_COUNTERS = counters
 
 function M.counters()
@@ -74,6 +80,9 @@ end
 function M.reset_counters()
     counters.queries = 0
     counters.interior_wins = 0
+    counters.slots_point = nil
+    counters.slots_arc = nil
+    counters.slots_hop = nil
 end
 
 -- ============================================================================
@@ -373,6 +382,71 @@ end
 -- Strategies
 -- ============================================================================
 
+-- ============================================================================
+-- Match signals and the slate (slate_post)
+-- ============================================================================
+
+--- The best interior arc between the hit's block and an embedded
+--- neighbour: the score and the two spans, or nil when no neighbour passes
+--- the gate or the interior does not beat the point. An endpoint (t = 0 or
+--- 1) is a point score the scan already has.
+function M.arc_signal(hit: any, blocks: { Block }, query: { number }, min: number): (number?, { Span }?)
+    local own, prev, next = M.embedded_neighbours(hit, blocks)
+    if own == nil then return nil, nil end
+    local neighbours: { Block } = {}
+    if prev ~= nil then neighbours[#neighbours + 1] = prev end
+    if next ~= nil then neighbours[#neighbours + 1] = next end
+    local best: number? = nil
+    local cited: { Span }? = nil
+    for _, nb in ipairs(neighbours) do
+        if cru.vec.cosine(own.vector :: { number }, nb.vector :: { number }) >= min then
+            local score, t = cru.vec.arc_best(query, own.vector :: { number }, nb.vector :: { number })
+            if t > 0 and t < 1 and score > hit.score and (best == nil or score > best) then
+                best = score
+                cited = { { own.span_start, own.span_end }, { nb.span_start, nb.span_end } }
+            end
+        end
+    end
+    return best, cited
+end
+
+--- The best block of every note one link from a note in `from`, by cosine
+--- with the query, best first. Notes in `skip` are left out. Each entry is
+--- a row the rerank may introduce: `{ kiln, path, span_start, span_end, score }`.
+function M.hop_signal(kiln: string, from: { string }, query: { number }, skip: { [string]: boolean }): { any }
+    local graph = M.graph_for(kiln)
+    if graph == nil then return {} end
+    local seen: { [string]: boolean } = {}
+    local out: { any } = {}
+    for _, path in ipairs(from) do
+        for _, nb in ipairs(graph.neighbours[path] or {}) do
+            if not seen[nb] and not skip[nb] then
+                seen[nb] = true
+                local ok, blocks = pcall(cru.kiln.blocks, kiln, nb)
+                if ok and type(blocks) == "table" then
+                    local best: Block? = nil
+                    local best_score = -1
+                    for _, block in ipairs(M.usable_blocks(blocks)) do
+                        local c = cru.vec.cosine(query, block.vector :: { number })
+                        if c > best_score then
+                            best_score = c
+                            best = block
+                        end
+                    end
+                    if best ~= nil then
+                        out[#out + 1] = { kiln = kiln, path = nb, span_start = best.span_start, span_end = best.span_end, score = best_score }
+                    end
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.score ~= b.score then return a.score > b.score end
+        return a.path < b.path
+    end)
+    return out
+end
+
 local strategies: { [string]: any } = {}
 
 -- Identity. The baseline every other strategy is measured against.
@@ -383,28 +457,16 @@ strategies.points = {
 
 -- Great-circle arc to each embedded neighbour, after the scan.
 strategies.arc_post = {
-    rerank = function(event)
+    rerank = function(event: any): any
         local cache = {}
         local min = config.get("pair_cosine_min")
         for _, hit in ipairs(event.hits) do
             local blocks = M.blocks_for(hit, cache)
             if blocks ~= nil then
-                local own, prev, next = M.embedded_neighbours(hit, blocks)
-                local neighbours = {}
-                if prev ~= nil then neighbours[#neighbours + 1] = prev end
-                if next ~= nil then neighbours[#neighbours + 1] = next end
-                if own ~= nil then
-                    for _, nb in ipairs(neighbours) do
-                        if cru.vec.cosine(own.vector :: { number }, nb.vector :: { number }) >= min then
-                            local score, t = cru.vec.arc_best(event.query_vector, own.vector :: { number }, nb.vector :: { number })
-                            -- An endpoint (t = 0 or 1) is a point score the
-                            -- scan already has; only the interior is a win.
-                            if t > 0 and t < 1 and score > hit.score then
-                                hit.score = score
-                                hit.cited = { { own.span_start, own.span_end }, { nb.span_start, nb.span_end } }
-                            end
-                        end
-                    end
+                local score, cited = M.arc_signal(hit, blocks, event.query_vector, min)
+                if score ~= nil then
+                    hit.score = score
+                    hit.cited = cited
                 end
             end
         end
@@ -552,6 +614,113 @@ strategies.meta_ppr = {
     index = strategies.meta_pre.index,
 }
 
+-- A slate: the list is filled by quota from each match type in turn, one
+-- row per note across the quota slots, then the rest by point score. A
+-- slot type is `point` (dense order), `arc` (interior pair wins, best
+-- first; the row takes the arc score and cites the pair) or `hop` (the best
+-- block of a note one link from the top `hop_from` dense notes; an existing
+-- row of that note stands in, else the row is introduced). The `slate`
+-- knob is the plan, so a config change is a new composition.
+strategies.slate_post = {
+    rerank = function(event: any): any
+        local kiln = event.kilns[1]
+        local cache = {}
+        local min = config.get("pair_cosine_min")
+        local plan = config.get("slate")
+        if type(plan) ~= "table" then return nil end
+        local query = event.query_vector
+
+        local by_point = M.sorted(event.hits)
+        local function row_key(h: any): string
+            return tostring(h.kiln) .. "\0" .. tostring(h.path) .. "\0" .. tostring(h.span_start)
+        end
+        local function note_key(h: any): string
+            return tostring(h.kiln) .. "\0" .. tostring(h.path)
+        end
+
+        local arcs: { any } = {}
+        for _, hit in ipairs(event.hits) do
+            local blocks = M.blocks_for(hit, cache)
+            if blocks ~= nil then
+                local score, cited = M.arc_signal(hit, blocks, query, min)
+                if score ~= nil then
+                    arcs[#arcs + 1] = { hit = hit, score = score, cited = cited }
+                end
+            end
+        end
+        table.sort(arcs, function(a, b)
+            if a.score ~= b.score then return a.score > b.score end
+            return a.hit.index < b.hit.index
+        end)
+
+        local hops: { any } = {}
+        if type(kiln) == "string" then
+            local from: { string } = {}
+            local from_set: { [string]: boolean } = {}
+            for _, hit in ipairs(by_point) do
+                if #from >= config.get("hop_from") then break end
+                if hit.kiln == kiln and type(hit.path) == "string" and not from_set[hit.path] then
+                    from_set[hit.path] = true
+                    from[#from + 1] = hit.path
+                end
+            end
+            hops = M.hop_signal(kiln, from, query, from_set)
+        end
+
+        local out: { any } = {}
+        local taken_rows: { [string]: boolean } = {}
+        local taken_notes: { [string]: boolean } = {}
+        local function place(entry: any): boolean
+            if taken_rows[row_key(entry)] or taken_notes[note_key(entry)] then return false end
+            taken_rows[row_key(entry)] = true
+            taken_notes[note_key(entry)] = true
+            out[#out + 1] = entry
+            return true
+        end
+        for _, slot in ipairs(plan) do
+            local filled = 0
+            if slot.type == "point" then
+                for _, hit in ipairs(by_point) do
+                    if filled >= slot.n then break end
+                    if place(hit) then filled += 1 end
+                end
+            elseif slot.type == "arc" then
+                for _, arc in ipairs(arcs) do
+                    if filled >= slot.n then break end
+                    if not taken_rows[row_key(arc.hit)] and not taken_notes[note_key(arc.hit)] then
+                        arc.hit.score = arc.score
+                        arc.hit.cited = arc.cited
+                        place(arc.hit)
+                        filled += 1
+                    end
+                end
+            elseif slot.type == "hop" then
+                for _, hop in ipairs(hops) do
+                    if filled >= slot.n then break end
+                    local entry = hop
+                    for _, hit in ipairs(by_point) do
+                        if hit.kiln == hop.kiln and hit.path == hop.path then
+                            entry = hit
+                            break
+                        end
+                    end
+                    if place(entry) then filled += 1 end
+                end
+            end
+            local name = "slots_" .. tostring(slot.type)
+            counters[name] = (counters[name] or 0) + filled
+        end
+        for _, hit in ipairs(by_point) do
+            if not taken_rows[row_key(hit)] then
+                taken_rows[row_key(hit)] = true
+                out[#out + 1] = hit
+            end
+        end
+        return out
+    end,
+    index = function(event) return nil end,
+}
+
 M.strategies = strategies
 
 -- ============================================================================
@@ -576,12 +745,12 @@ end
 function M.rerank(event: any): any
     local strategy = M.current()
     if strategy == nil then return nil end
-    counters.queries += 1
+    counters.queries = (counters.queries or 0) + 1
     local after = strategy.rerank(event)
     if type(after) == "table" then
         for i = 1, math.min(10, #after) do
             if after[i].cited ~= nil then
-                counters.interior_wins += 1
+                counters.interior_wins = (counters.interior_wins or 0) + 1
                 break
             end
         end

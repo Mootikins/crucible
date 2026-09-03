@@ -361,6 +361,73 @@ describe("retrieval-lab", function()
         end)
     end)
 
+    describe("slate_post", function()
+        -- Hits: n (top, links to t), m (an interior arc with its neighbour),
+        -- o (a plain point). t is one link from n and is not a hit.
+        local function scene()
+            notes["notes/n.md"] = note("n.md", "N")
+            notes["notes/m.md"] = note("m.md", "M")
+            notes["notes/o.md"] = note("o.md", "O")
+            notes["notes/t.md"] = note("t.md", "T")
+            links["notes/n.md"] = { outlinks = { "t.md" }, backlinks = {} }
+            fixtures["notes/n.md"] = { block(0, "paragraph", A) }
+            fixtures["notes/m.md"] = { block(0, "paragraph", A), block(10, "paragraph", D) }
+            fixtures["notes/o.md"] = { block(0, "paragraph", A) }
+            fixtures["notes/t.md"] = { block(0, "paragraph", B), block(10, "paragraph", D) }
+        end
+        local plan = { { type = "point", n = 1 }, { type = "arc", n = 1 }, { type = "hop", n = 1 } }
+
+        it("fills the point, arc and hop slots in order, one note each, then the rest by score", function()
+            use("slate_post")
+            plugin.setup({ slate = plan, hop_from = 1 })
+            scene()
+            local q = unit({ 1, 0.5, 0 })
+            local hits = { hit(1, "n.md", 0, 0.9), hit(2, "m.md", 0, 0.85), hit(3, "o.md", 0, 0.8) }
+
+            local out = registered["search:rerank"](nil, { query_vector = q, kilns = { "notes" }, limit = 10, hits = hits })
+
+            expect.equal(4, #out)
+            expect.equal(1, out[1].index)
+            expect.equal(2, out[2].index)
+            expect.truthy(out[2].cited ~= nil)
+            expect.is_nil(out[3].index)
+            expect.equal("t.md", out[3].path)
+            expect.equal(10, out[3].span_start)
+            expect.equal(3, out[4].index)
+            expect.equal(1, plugin.counters().slots_point)
+            expect.equal(1, plugin.counters().slots_arc)
+            expect.equal(1, plugin.counters().slots_hop)
+        end)
+
+        it("lets an existing row of the linked note stand in for the hop", function()
+            use("slate_post")
+            plugin.setup({ slate = plan, hop_from = 1 })
+            scene()
+            local q = unit({ 1, 0.5, 0 })
+            local hits = { hit(1, "n.md", 0, 0.9), hit(2, "m.md", 0, 0.85), hit(3, "o.md", 0, 0.8), hit(4, "t.md", 0, 0.4) }
+
+            local out = registered["search:rerank"](nil, { query_vector = q, kilns = { "notes" }, limit = 10, hits = hits })
+
+            expect.equal(4, #out)
+            expect.equal(4, out[3].index)
+            expect.equal(3, out[4].index)
+        end)
+
+        it("keeps the point order when no slot has a candidate", function()
+            use("slate_post")
+            plugin.setup({ slate = plan, hop_from = 1 })
+            fixtures["notes/n.md"] = { block(0, "paragraph", A) }
+            fixtures["notes/o.md"] = { block(0, "paragraph", A) }
+            local hits = { hit(1, "o.md", 0, 0.8), hit(2, "n.md", 0, 0.9) }
+
+            local out = registered["search:rerank"](nil, { query_vector = A, kilns = { "notes" }, limit = 10, hits = hits })
+
+            expect.equal(2, out[1].index)
+            expect.equal(1, out[2].index)
+            expect.equal(0, plugin.counters().slots_hop)
+        end)
+    end)
+
     describe("meta_ppr", function()
         it("shares the meta_pre index and the ppr_post rerank", function()
             use("meta_ppr")

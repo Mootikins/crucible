@@ -34,6 +34,9 @@ local defaults = {
     ppr_damping = 0.5,
     ppr_blend = 0.1,
     ppr_extra = 3,
+    -- slate_post: the quota plan, in order, then the rest by point score.
+    slate = { { type = "point", n = 2 }, { type = "arc", n = 2 }, { type = "hop", n = 2 } },
+    hop_from = 2,
 }
 
 -- setup() values, kept apart from `defaults` so the order above stays
