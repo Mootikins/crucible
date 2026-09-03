@@ -52,6 +52,8 @@
 #                 meta_ppr arc_pre").
 #   --exclude-kinds "a b"  Block kinds the strategies never pair (default: the
 #                 plugin's own default, `heading` and `transition`).
+#   --plugin-toml "k = v"  A raw line appended to [plugins.retrieval-lab] in every
+#                 config, for a knob the flags above do not cover (repeatable).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -64,6 +66,7 @@ PROVIDER="fastembed"
 MODEL=""
 CACHE_DIR="${HOME}/.fastembed_cache"
 EXCLUDE_KINDS=""
+PLUGIN_TOML=()
 DAEMON_WAIT_SECS=90
 
 while [ $# -gt 0 ]; do
@@ -76,6 +79,7 @@ while [ $# -gt 0 ]; do
         --cache-dir) CACHE_DIR="$2"; shift ;;
         --strategies) STRATEGIES="$2"; shift ;;
         --exclude-kinds) EXCLUDE_KINDS="$2"; shift ;;
+        --plugin-toml) PLUGIN_TOML+=("$2"); shift ;;
         -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -153,6 +157,9 @@ write_config() {
         if [ -n "$EXCLUDE_KINDS" ]; then
             printf 'exclude_kinds = [%s]\n' "$(printf '"%s", ' $EXCLUDE_KINDS | sed 's/, $//')"
         fi
+        for line in "${PLUGIN_TOML[@]+"${PLUGIN_TOML[@]}"}"; do
+            printf '%s\n' "$line"
+        done
     } > "$path"
 }
 
