@@ -111,4 +111,8 @@ pub struct BlockRef {
     pub span_end: usize,
     /// The block's kind: `heading`, `paragraph`, `code`, `callout`, …
     pub kind: String,
+    /// Further `(span_start, span_end)` pairs a `search:rerank` handler cited
+    /// for this hit, in the order it gave them. Empty for a plain block hit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cited: Vec<(usize, usize)>,
 }

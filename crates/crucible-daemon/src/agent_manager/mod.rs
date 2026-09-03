@@ -9,7 +9,7 @@ use crate::daemon_plugins::DaemonPluginLoader;
 use crate::delegation::DelegationService;
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
-use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
+use crate::multi_kiln_search::KilnSearchSource;
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::provider::model_listing;
@@ -1090,6 +1090,12 @@ impl AgentManager {
                     containment.clone(),
                 )
                 .with_search_sources(search_sources)
+                .with_rerank_stage(self.plugin_handlers().map(|(registry, lua)| {
+                    crate::multi_kiln_search::RerankStage::new(
+                        None,
+                        vec![((*registry).clone(), (*lua).clone())],
+                    )
+                }))
                 // `get_kiln_info` answers the model with this, or with no name
                 // at all — never with the anchor directory's basename.
                 .with_kiln_name(session.default_kiln().cloned()),

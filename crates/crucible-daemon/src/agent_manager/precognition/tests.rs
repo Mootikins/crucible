@@ -980,6 +980,7 @@ fn a_block_hit_is_injected_as_a_passage_with_its_location() {
             span_start: 120,
             span_end: 158,
             kind: "paragraph".to_string(),
+            cited: Vec::new(),
         }),
     }];
 
@@ -1025,6 +1026,7 @@ fn a_mixed_result_set_says_how_many_of_each() {
                 span_start: 0,
                 span_end: 9,
                 kind: "callout".to_string(),
+                cited: Vec::new(),
             }),
         },
         crucible_core::SearchResult {
