@@ -1,3 +1,6 @@
+/// The local embedding catalog and the commands that change it.
+pub mod embeddings;
+
 use crate::config::CliConfig;
 use crate::formatting::OutputFormat;
 use anyhow::{Context, Result};

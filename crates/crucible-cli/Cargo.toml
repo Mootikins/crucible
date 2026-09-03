@@ -137,6 +137,8 @@ textwrap = "0.16.2"
 
 # TOML serialization (for workspace.toml)
 toml = { workspace = true }
+# TOML editing that keeps the user's comments (`cru models embeddings use`)
+toml_edit = { workspace = true }
 
 [dev-dependencies]
 # The `cru acp` initialize test joins tokio duplex pipes to the SDK byte streams.

@@ -24,7 +24,7 @@ Complete reference for all Crucible CLI commands.
 | `cru project` | Manage the projects Crucible knows about (register, list, forget) — [[Help/CLI/project]] |
 | `cru stats` | Display kiln statistics |
 | `cru status` | Display storage status and statistics for the knowledge base |
-| `cru models` | List available models from configured LLM provider |
+| `cru models` | List chat models; `cru models embeddings` manages the local embedding models — [[Help/CLI/models]] |
 
 ## Agent & Integration Commands
 

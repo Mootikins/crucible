@@ -65,8 +65,8 @@ pub use lua::{
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use agent::{
-    ListAllModelsRequest, ListProvidersRequest, SessionConfigureAgentRequest,
-    SessionSwitchModelRequest,
+    EmbeddingCatalog, EmbeddingModelRow, EmbeddingModelsRequest, ListAllModelsRequest,
+    ListProvidersRequest, SessionConfigureAgentRequest, SessionSwitchModelRequest,
 };
 pub use notifications::{NotificationDismissRequest, NotificationListRequest};
 pub use plugin_requests::{

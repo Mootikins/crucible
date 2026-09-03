@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "fastembed")]
+use crucible_core::config::EmbeddingProviderConfig;
 use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::protocol::rpc::{Request, Response, INVALID_PARAMS};
 use tracing::info;
@@ -105,6 +107,123 @@ pub(crate) async fn handle_llm_register_provider(
             // was serving.
             "still_serving": if applied { None } else { serving_now },
         }),
+    )
+}
+
+/// `embeddings.models`: the local embedding catalog, and what of it is on disk.
+///
+/// The catalog lives here because the daemon links fastembed and owns the model
+/// cache. The CLI links neither, so it asks rather than answers. `download`
+/// names a model to fetch first; it is the only write this method makes, and it
+/// writes into the cache directory alone.
+pub(crate) async fn handle_embedding_models(
+    req: Request,
+    effective_config: Option<&serde_json::Value>,
+) -> Response {
+    let params = match typed_params::<crate::rpc_client::EmbeddingModelsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    embedding_catalog(req, params, effective_config).await
+}
+
+/// The embedding provider the daemon's own config selects.
+///
+/// Through the domain type rather than through two string lookups, so an
+/// absent `[enrichment]` section yields the same answer the pipeline itself
+/// uses: the FastEmbed default.
+#[cfg(feature = "fastembed")]
+fn configured_provider(effective_config: Option<&serde_json::Value>) -> EmbeddingProviderConfig {
+    effective_config
+        .and_then(|config| config.pointer("/enrichment/provider"))
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "fastembed")]
+async fn embedding_catalog(
+    req: Request,
+    params: crate::rpc_client::EmbeddingModelsRequest,
+    effective_config: Option<&serde_json::Value>,
+) -> Response {
+    use crate::llm::embeddings::catalog;
+
+    // Only a FastEmbed selection can name a row in this catalog. A remote
+    // service names a model nothing here can run, so no row carries the mark.
+    let fastembed = match configured_provider(effective_config) {
+        EmbeddingProviderConfig::FastEmbed(config) => Some(config),
+        EmbeddingProviderConfig::OpenAI(_)
+        | EmbeddingProviderConfig::Ollama(_)
+        | EmbeddingProviderConfig::Mock(_) => None,
+    };
+    // The catalog resolves the alias, so a config that holds the HuggingFace
+    // name marks the same row the canonical name marks.
+    let configured = fastembed
+        .as_ref()
+        .and_then(|config| catalog::find(&config.model))
+        .map(|entry| entry.canonical_name.to_string());
+    let cache_dir = catalog::cache_dir(
+        fastembed
+            .as_ref()
+            .and_then(|config| config.cache_dir.as_deref())
+            .map(std::path::Path::new),
+    );
+
+    // The download first, so the row that follows reports the model as present.
+    // An unknown name never reaches the network: the catalog refuses it, and
+    // the refusal carries the near names.
+    let mut downloaded_to = None;
+    if let Some(name) = params.download.as_deref() {
+        let model = match catalog::parse_model_name(name) {
+            Ok(model) => model,
+            Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+        };
+        match catalog::download(&model, &cache_dir).await {
+            Ok(path) => downloaded_to = Some(path.display().to_string()),
+            Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+        }
+    }
+
+    let models: Vec<crate::rpc_client::EmbeddingModelRow> = catalog::all()
+        .into_iter()
+        .map(|entry| crate::rpc_client::EmbeddingModelRow {
+            name: entry.canonical_name.to_string(),
+            aliases: entry.aliases.iter().map(|a| (*a).to_string()).collect(),
+            dimensions: entry.dimensions,
+            parameter_millions: entry.parameter_millions,
+            max_input_tokens: entry.max_input_tokens,
+            retrieval_score: entry.retrieval_score,
+            recommended: entry.recommended,
+            note: entry.note.to_string(),
+            downloaded: catalog::is_downloaded(&entry.model, &cache_dir),
+            disk_bytes: catalog::disk_bytes(&entry.model, &cache_dir),
+        })
+        .collect();
+
+    Response::success(
+        req.id,
+        serde_json::json!(crate::rpc_client::EmbeddingCatalog {
+            models,
+            configured,
+            cache_dir: Some(cache_dir.display().to_string()),
+            downloaded_to,
+        }),
+    )
+}
+
+/// The answer a daemon without the `fastembed` feature can give: none.
+///
+/// An empty catalog, not an error, because the caller's question is "what can
+/// this daemon run", and "nothing local" is a true answer to it.
+#[cfg(not(feature = "fastembed"))]
+async fn embedding_catalog(
+    req: Request,
+    _params: crate::rpc_client::EmbeddingModelsRequest,
+    _effective_config: Option<&serde_json::Value>,
+) -> Response {
+    Response::success(
+        req.id,
+        serde_json::json!(crate::rpc_client::EmbeddingCatalog::default()),
     )
 }
 

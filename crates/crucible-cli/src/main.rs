@@ -7,7 +7,7 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
-    cli::{Cli, Commands, LogLevel},
+    cli::{Cli, Commands, EmbeddingsCommands, LogLevel, ModelsCommands},
     commands, config,
 };
 
@@ -465,7 +465,23 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Stats { format }) => commands::stats::execute(config, format).await?,
 
-        Some(Commands::Models { format }) => commands::models::execute(config, format).await?,
+        // A bare `cru models` keeps its old meaning: the chat models the
+        // configured provider offers. The subcommands cover embeddings.
+        Some(Commands::Models { format, command }) => match command {
+            None => commands::models::execute(config, format).await?,
+            Some(ModelsCommands::Embeddings {
+                format,
+                command: None,
+            }) => commands::models::embeddings::list(format).await?,
+            Some(ModelsCommands::Embeddings {
+                command: Some(EmbeddingsCommands::Download { name }),
+                ..
+            }) => commands::models::embeddings::download(&name).await?,
+            Some(ModelsCommands::Embeddings {
+                command: Some(EmbeddingsCommands::Use { name }),
+                ..
+            }) => commands::models::embeddings::select(&name, cli_config_path.clone()).await?,
+        },
 
         Some(Commands::Config(cmd)) => {
             commands::config::execute(config, cmd, cli_config_path.clone()).await?

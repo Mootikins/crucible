@@ -2,6 +2,7 @@ mod agents;
 mod chat;
 mod init;
 mod misc;
+mod models;
 mod session;
 mod tasks;
 

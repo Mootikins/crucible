@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use std::path::Path;
+use std::time::Duration;
 
 use super::session::SessionIdRequest;
 use super::types::{extract_string_array, EmptyParams, NameRequest};
@@ -152,6 +153,70 @@ pub struct SessionSetAutocompactThresholdRequest {
 pub struct ListAllModelsRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kiln_path: Option<String>,
+}
+
+/// Request for `embeddings.models`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingModelsRequest {
+    /// When set, fetch this model into the cache before the daemon answers.
+    ///
+    /// One method, two questions, because the answer to the second is the
+    /// first asked again: after a download the caller wants the row, and the
+    /// row is what says where the files are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download: Option<String>,
+}
+
+/// One local embedding model, as `embeddings.models` reports it.
+///
+/// The daemon owns the catalog because it links fastembed and holds the model
+/// cache. This struct is the projection the CLI renders; it carries no
+/// fastembed type, so a build without that feature still compiles.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingModelRow {
+    /// The name to write in the config file.
+    pub name: String,
+    /// The other names that resolve to this model, the HuggingFace form
+    /// included. A user who copied a name from a model card writes one of
+    /// these, so the CLI must accept them too.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// The width of the vector.
+    pub dimensions: usize,
+    /// The parameter count in millions.
+    pub parameter_millions: u32,
+    /// The longest input the model accepts, in tokens.
+    pub max_input_tokens: u32,
+    /// The MTEB v1 English retrieval score, or `None` when nobody published
+    /// one. Never a guess.
+    pub retrieval_score: Option<f32>,
+    /// Whether Crucible recommends this model.
+    pub recommended: bool,
+    /// One sentence on why to pick this model, or why not.
+    pub note: String,
+    /// Whether the files are already in the cache.
+    pub downloaded: bool,
+    /// The bytes the model occupies, when it is present.
+    #[serde(default)]
+    pub disk_bytes: Option<u64>,
+}
+
+/// The answer to `embeddings.models`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingCatalog {
+    /// Every model the daemon can run, ordered by name. Empty when the daemon
+    /// was built without the `fastembed` feature.
+    #[serde(default)]
+    pub models: Vec<EmbeddingModelRow>,
+    /// The model the daemon's own config names, when it names one.
+    #[serde(default)]
+    pub configured: Option<String>,
+    /// The directory the daemon reads and writes models in.
+    #[serde(default)]
+    pub cache_dir: Option<String>,
+    /// The directory the requested download landed in.
+    #[serde(default)]
+    pub downloaded_to: Option<String>,
 }
 
 /// Request for `providers.list` (no active session required).
@@ -322,6 +387,27 @@ impl DaemonClient {
             .await?;
 
         Ok(extract_string_array(&result, "models"))
+    }
+
+    /// The local embedding catalog, and what of it is already on disk.
+    ///
+    /// `download` names a model to fetch first. A fetch reads a few hundred
+    /// megabytes over the network, so the timeout is the download's, not the
+    /// default request's.
+    pub async fn embedding_models(&self, download: Option<&str>) -> Result<EmbeddingCatalog> {
+        /// Long enough for the largest model on a slow link.
+        const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(1800);
+
+        let params = EmbeddingModelsRequest {
+            download: download.map(str::to_string),
+        };
+        if download.is_some() {
+            self.typed_call_with_timeout("embeddings.models", params, DOWNLOAD_TIMEOUT)
+                .await
+        } else {
+            self.typed_call_with_retry("embeddings.models", params)
+                .await
+        }
     }
 
     /// List all available providers without requiring an active session.

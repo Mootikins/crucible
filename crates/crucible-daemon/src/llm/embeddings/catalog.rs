@@ -200,17 +200,70 @@ pub fn cache_dir(configured: Option<&Path>) -> PathBuf {
 /// ask it for all 44 models to render a table.
 #[must_use]
 pub fn is_downloaded(model: &EmbeddingModel, cache_dir: &Path) -> bool {
-    let Ok(info) = TextEmbedding::get_model_info(model) else {
-        return false;
-    };
+    snapshot_dir(model, cache_dir).is_some()
+}
+
+/// The directory that holds the model's files, or `None` when they are absent.
+///
+/// The same probe as [`is_downloaded`], and the answer `cru models embeddings
+/// download` prints: a user who asks where the file went gets a path rather
+/// than a yes.
+#[must_use]
+pub fn snapshot_dir(model: &EmbeddingModel, cache_dir: &Path) -> Option<PathBuf> {
+    let info = TextEmbedding::get_model_info(model).ok()?;
     let repo = cache_dir.join(format!("models--{}", info.model_code.replace('/', "--")));
-    let Ok(commit) = std::fs::read_to_string(repo.join("refs").join("main")) else {
-        return false;
-    };
-    repo.join("snapshots")
-        .join(commit.trim())
-        .join(&info.model_file)
-        .exists()
+    let commit = std::fs::read_to_string(repo.join("refs").join("main")).ok()?;
+    let dir = repo.join("snapshots").join(commit.trim());
+    dir.join(&info.model_file).exists().then_some(dir)
+}
+
+/// The number of bytes the model occupies, or `None` when it is absent.
+///
+/// The walk follows the symbolic links that the HuggingFace cache writes into
+/// a snapshot directory, so the number is the size of the blobs themselves.
+#[must_use]
+pub fn disk_bytes(model: &EmbeddingModel, cache_dir: &Path) -> Option<u64> {
+    let mut pending = vec![snapshot_dir(model, cache_dir)?];
+    let mut total = 0;
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            match std::fs::metadata(entry.path()) {
+                Ok(meta) if meta.is_dir() => pending.push(entry.path()),
+                Ok(meta) => total += meta.len(),
+                Err(_) => {}
+            }
+        }
+    }
+    Some(total)
+}
+
+/// Fetch the model into `cache_dir`, then report the directory it landed in.
+///
+/// fastembed downloads a model as a side effect of constructing the encoder,
+/// so this constructs one and drops it. The daemon does the fetch because the
+/// CLI links no ONNX runtime and holds no cache.
+pub async fn download(model: &EmbeddingModel, cache_dir: &Path) -> EmbeddingResult<PathBuf> {
+    let options = fastembed::InitOptions::new(model.clone())
+        .with_cache_dir(cache_dir.to_path_buf())
+        .with_show_download_progress(true);
+    tokio::task::spawn_blocking(move || TextEmbedding::try_new(options))
+        .await
+        .map_err(|e| EmbeddingError::ProviderError {
+            provider: "FastEmbed".to_string(),
+            message: format!("The download task did not finish: {e}"),
+        })?
+        .map_err(|e| EmbeddingError::ProviderError {
+            provider: "FastEmbed".to_string(),
+            message: format!("The download failed: {e}"),
+        })?;
+
+    snapshot_dir(model, cache_dir).ok_or_else(|| EmbeddingError::ProviderError {
+        provider: "FastEmbed".to_string(),
+        message: "The download reported success but the cache holds no files.".to_string(),
+    })
 }
 
 /// The vector width, read from fastembed's registry rather than restated here.

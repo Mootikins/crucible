@@ -226,7 +226,9 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         results.push(DoctorCheckResult {
             check_name: "Embeddings".to_string(),
             status: "pass".to_string(),
-            message: "Embeddings available (fastembed)".to_string(),
+            message: "Embeddings available (fastembed). See `cru models embeddings` for the \
+                      catalog"
+                .to_string(),
         });
     } else if ollama_embedding_available {
         results.push(DoctorCheckResult {
@@ -235,10 +237,15 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
             message: "Embeddings available (ollama)".to_string(),
         });
     } else {
+        // The pointer, not only the fault. A user who reads "disabled" has no
+        // next command; `cru models embeddings` is the one that leads to a
+        // working setup.
         results.push(DoctorCheckResult {
             check_name: "Embeddings".to_string(),
             status: "warn".to_string(),
-            message: "No embedding backend available (semantic search disabled)".to_string(),
+            message: "No embedding backend available (semantic search disabled). Run \
+                      `cru models embeddings` to pick a local model"
+                .to_string(),
         });
     }
 

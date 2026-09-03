@@ -8,6 +8,7 @@ mod auth;
 mod config;
 mod eval;
 mod kiln;
+mod models;
 mod project;
 mod proposals;
 mod session;
@@ -23,6 +24,7 @@ pub use auth::AuthCommands;
 pub use config::ConfigCommands;
 pub use eval::EvalCommands;
 pub use kiln::KilnCommands;
+pub use models::{EmbeddingsCommands, ModelsCommands};
 pub use project::ProjectCommands;
 pub use proposals::ProposalsCommands;
 pub use session::SessionCommands;
@@ -300,13 +302,16 @@ pub enum Commands {
 
     /// List available models from configured LLM provider
     #[command(
-        long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json"
+        long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nThe `embeddings` subcommand covers the local embedding models instead.\n\nExamples:\n  # List chat models from the configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json\n\n  # The local embedding catalog\n  cru models embeddings\n\n  # Fetch one model into the cache\n  cru models embeddings download arctic-embed-m\n\n  # Select it for the next reprocess\n  cru models embeddings use arctic-embed-m"
     )]
     Models {
         /// Output format. Defaults to a table on a terminal, plain lines when
         /// piped or redirected.
         #[arg(short = 'f', long)]
         format: Option<OutputFormat>,
+
+        #[command(subcommand)]
+        command: Option<ModelsCommands>,
     },
 
     /// Manage Crucible configuration (initialize, view, export)

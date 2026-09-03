@@ -46,10 +46,16 @@ Fast local embeddings with no API key needed:
 ```toml
 [enrichment.provider]
 type = "fastembed"
-model = "BAAI/bge-small-en-v1.5"   # default
+model = "bge-small-en-v1.5"        # default
 batch_size = 32
 # cache_dir = "/path/to/cache"     # optional
 ```
+
+`cru models embeddings` prints the whole catalog of local models, with the
+vector width, the retrieval score and what is already on disk.
+`cru models embeddings use <NAME>` writes the two keys above for you. See
+[[Help/CLI/models]]. Both the short name and the HuggingFace name resolve, so
+`bge-small-en-v1.5` and `BAAI/bge-small-en-v1.5` name the same model.
 
 `model`, `batch_size` and `cache_dir` are all read. The real vector dimension comes
 from the model itself. The removed knobs `dimensions` and `num_threads` still load
@@ -123,7 +129,7 @@ Different models produce different vector sizes:
 | `text-embedding-3-small` | 1536 |
 | `text-embedding-3-large` | 3072 |
 
-Changing model changes the vector dimension, which makes old vectors unusable — reprocess after switching with `cru process --force`.
+Changing model changes the vector dimension, which makes old vectors unusable — reprocess after switching with `cru process --force`. `cru models embeddings` prints the dimension of every local model.
 
 ## Processing
 

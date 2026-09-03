@@ -238,6 +238,7 @@ rpc_methods! {
     AgentsResolveProfile = "agents.resolve_profile",
     ModelsList = "models.list",
     ProvidersList = "providers.list",
+    EmbeddingsModels = "embeddings.models",
     SubagentCollect = "subagent.collect",
     WebhookReceive = "webhook.receive",
     SuggestLinks = "suggest_links",
@@ -534,6 +535,13 @@ impl RpcDispatcher {
             RpcMethod::ProvidersList => forward!(
                 id,
                 crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents)
+            ),
+            RpcMethod::EmbeddingsModels => forward!(
+                id,
+                crate::server::llm::handle_embedding_models(
+                    req.clone(),
+                    self.ctx.effective_config.as_ref()
+                )
             ),
 
             // Session lifecycle handlers
