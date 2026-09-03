@@ -25,6 +25,11 @@ pub enum EvalCommands {
         /// Kiln to score against; defaults to the configured kiln_path
         #[arg(long)]
         kiln: Option<PathBuf>,
+
+        /// Print one JSON object (strategy, per-class metrics, per-query
+        /// ranks) instead of the tables, so a script can collect rows
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -35,13 +40,19 @@ impl EvalCommands {
                 golden,
                 golden_dir,
                 kiln,
+                json,
             } => {
                 let mut config = config;
                 if let Some(path) = kiln {
                     config.kiln_path = path.clone();
                 }
-                super::super::commands::eval::execute(config, golden.clone(), golden_dir.clone())
-                    .await
+                super::super::commands::eval::execute(
+                    config,
+                    golden.clone(),
+                    golden_dir.clone(),
+                    *json,
+                )
+                .await
             }
         }
     }
