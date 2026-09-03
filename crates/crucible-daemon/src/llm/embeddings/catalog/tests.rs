@@ -1,10 +1,16 @@
 //! What the compiler cannot check about the catalog.
 //!
 //! rustc proves that every `EmbeddingModel` variant has a row. It cannot prove
-//! that the row is complete, that two rows do not claim the same name, or that
-//! the dimension matches the model. The expectation therefore comes from
+//! that the row is complete, that two rows claim different names, or that a
+//! name parses back to the model it addresses. The walk therefore comes from
 //! `TextEmbedding::list_supported_models()` — the crate's own registry — and
 //! never from a list typed into this file.
+//!
+//! A field the catalog copies out of that same registry is not asserted here.
+//! `dimensions` is `get_model_info(model).dim`, and the registry is where the
+//! expectation would come from, so the assertion would compare a value with
+//! itself. An independent oracle for it means writing 44 more literals, which
+//! is the hand-kept list this module exists to avoid.
 
 use super::*;
 use std::collections::BTreeMap;
@@ -20,13 +26,6 @@ fn the_catalog_answers_for_every_model_fastembed_exposes() {
     let registered = TextEmbedding::list_supported_models();
     assert!(!registered.is_empty(), "fastembed registers no text model");
 
-    let entries = all();
-    assert_eq!(
-        entries.len(),
-        registered.len(),
-        "the catalog and fastembed's registry hold a different number of models"
-    );
-
     // Every name a user may write, mapped back to the model it addresses. A
     // duplicate here means one of the two models is unreachable.
     let mut names: BTreeMap<String, &'static str> = BTreeMap::new();
@@ -34,11 +33,6 @@ fn the_catalog_answers_for_every_model_fastembed_exposes() {
     for info in &registered {
         let entry = entry(&info.model);
 
-        assert_eq!(
-            entry.dimensions, info.dim,
-            "'{}' reports a dimension fastembed does not agree with",
-            entry.canonical_name
-        );
         assert!(
             !entry.note.is_empty(),
             "'{}' has no note, so a user reading the list learns nothing about it",
@@ -112,19 +106,90 @@ fn the_probe_finds_a_model_that_is_already_in_the_cache() {
         "an empty cache directory holds no model"
     );
 
-    let info = TextEmbedding::get_model_info(&model).expect("fastembed knows the default model");
-    let repo = cache
-        .path()
-        .join(format!("models--{}", info.model_code.replace('/', "--")));
-    let snapshot = repo.join("snapshots").join("deadbeef");
-    std::fs::create_dir_all(snapshot.join(info.model_file.rsplit_once('/').map_or("", |p| p.0)))
-        .expect("snapshot directory");
-    std::fs::create_dir_all(repo.join("refs")).expect("refs directory");
-    std::fs::write(repo.join("refs").join("main"), "deadbeef\n").expect("ref file");
-    std::fs::write(snapshot.join(&info.model_file), b"onnx").expect("model file");
+    seed(cache.path(), &model, None);
 
     assert!(
         is_downloaded(&model, cache.path()),
         "the probe missed a model that is already in the cache"
+    );
+}
+
+/// An interrupted download is not a model.
+///
+/// hf-hub writes `refs/main` on the first file it fetches, and fastembed
+/// fetches the ONNX file first. So the state below — the ref and the weights,
+/// no tokenizer — is what a killed `download` leaves behind, and the probe
+/// must not call it ready: `cru process` would then fail on a missing file
+/// after the CLI said the model was in the cache.
+#[test]
+fn the_probe_refuses_a_download_that_stopped_after_the_weights() {
+    let cache = tempfile::TempDir::new().expect("tempdir");
+    let model = EmbeddingModel::BGESmallENV15;
+    let info = TextEmbedding::get_model_info(&model).expect("fastembed knows the default model");
+
+    for missing in std::iter::once(info.model_file.as_str())
+        .chain(info.additional_files.iter().map(String::as_str))
+        .chain(["tokenizer.json", "config.json"])
+    {
+        let cache = cache.path().join(missing.replace('/', "-"));
+        seed(&cache, &model, Some(missing));
+        assert!(
+            !is_downloaded(&model, &cache),
+            "the probe called a model ready with '{missing}' missing"
+        );
+    }
+}
+
+/// Write the HuggingFace cache layout for `model` under `cache`, leaving out
+/// the one file `omit` names. Every file holds four bytes, so `disk_bytes`
+/// over the seeded set is countable.
+fn seed(cache: &std::path::Path, model: &EmbeddingModel, omit: Option<&str>) {
+    let info = TextEmbedding::get_model_info(model).expect("fastembed knows the model");
+    let repo = cache.join(format!("models--{}", info.model_code.replace('/', "--")));
+    let snapshot = repo.join("snapshots").join("deadbeef");
+    std::fs::create_dir_all(repo.join("refs")).expect("refs directory");
+    std::fs::write(repo.join("refs").join("main"), "deadbeef\n").expect("ref file");
+
+    let files = std::iter::once(info.model_file.as_str())
+        .chain(info.additional_files.iter().map(String::as_str))
+        .chain([
+            "tokenizer.json",
+            "config.json",
+            "special_tokens_map.json",
+            "tokenizer_config.json",
+        ]);
+    for file in files.filter(|file| Some(*file) != omit) {
+        let path = snapshot.join(file);
+        std::fs::create_dir_all(path.parent().expect("a file has a parent"))
+            .expect("snapshot directory");
+        std::fs::write(path, b"onnx").expect("cache file");
+    }
+}
+
+/// The size a download reports counts this model's files, not its neighbour's.
+///
+/// `arctic-embed-xs` and `arctic-embed-xs-q` live in one HuggingFace
+/// repository, so a walk over the snapshot directory would report each of them
+/// as the size of both.
+#[test]
+fn the_size_of_a_model_excludes_a_sibling_in_the_same_repository() {
+    let cache = tempfile::TempDir::new().expect("tempdir");
+    let model = EmbeddingModel::SnowflakeArcticEmbedXS;
+    let sibling = EmbeddingModel::SnowflakeArcticEmbedXSQ;
+    let info = TextEmbedding::get_model_info(&model).expect("fastembed knows the model");
+    let sibling_info = TextEmbedding::get_model_info(&sibling).expect("fastembed knows the model");
+    assert_eq!(
+        info.model_code, sibling_info.model_code,
+        "the pair no longer shares a repository, so this test proves nothing"
+    );
+
+    seed(cache.path(), &model, None);
+    let alone = disk_bytes(&model, cache.path()).expect("the model is in the cache");
+    seed(cache.path(), &sibling, None);
+
+    assert_eq!(
+        disk_bytes(&model, cache.path()),
+        Some(alone),
+        "the sibling's weights were counted against this model"
     );
 }

@@ -180,64 +180,92 @@ pub fn model_info(model: &EmbeddingModel) -> ModelInfo {
 /// This repeats fastembed's own precedence — `HF_HOME` wins over the
 /// configured directory — because a probe that answered for a different
 /// directory than the download uses is worse than no probe.
+/// The directory is made absolute, because the relative default
+/// (`.fastembed_cache`) would otherwise answer for the daemon's working
+/// directory: the probe and the path the CLI prints would both change when
+/// the daemon restarts somewhere else.
 #[must_use]
 pub fn cache_dir(configured: Option<&Path>) -> PathBuf {
-    std::env::var_os("HF_HOME").map_or_else(
+    let dir = std::env::var_os("HF_HOME").map_or_else(
         || {
             configured
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| PathBuf::from(fastembed::get_cache_dir()))
         },
         PathBuf::from,
-    )
+    );
+    std::path::absolute(&dir).unwrap_or(dir)
+}
+
+/// Every file fastembed reads before it can build the encoder.
+///
+/// `TextEmbedding::try_new` fetches the ONNX file, then `additional_files`,
+/// then these four tokenizer files (`fastembed::common::load_tokenizer_hf_hub`).
+/// The list matters because hf-hub writes `refs/main` on the *first* file, so
+/// the ref proves only that a download started.
+fn required_files(info: &fastembed::ModelInfo<EmbeddingModel>) -> impl Iterator<Item = &str> {
+    const TOKENIZER: [&str; 4] = [
+        "tokenizer.json",
+        "config.json",
+        "special_tokens_map.json",
+        "tokenizer_config.json",
+    ];
+    std::iter::once(info.model_file.as_str())
+        .chain(info.additional_files.iter().map(String::as_str))
+        .chain(TOKENIZER)
 }
 
 /// Whether the model's files are already in `cache_dir`.
 ///
 /// A directory probe over the HuggingFace cache layout
 /// (`models--<org>--<repo>/refs/main` names the commit, `snapshots/<commit>/`
-/// holds the files). It reads two paths and downloads nothing, so a caller may
-/// ask it for all 44 models to render a table.
+/// holds the files). It stats a handful of paths and downloads nothing, so a
+/// caller may ask it for all 44 models to render a table.
 #[must_use]
 pub fn is_downloaded(model: &EmbeddingModel, cache_dir: &Path) -> bool {
     snapshot_dir(model, cache_dir).is_some()
 }
 
-/// The directory that holds the model's files, or `None` when they are absent.
+/// The directory that holds the model's files, or `None` when any is absent.
 ///
 /// The same probe as [`is_downloaded`], and the answer `cru models embeddings
 /// download` prints: a user who asks where the file went gets a path rather
 /// than a yes.
+///
+/// Every file [`required_files`] names must be present. The ONNX file alone is
+/// not enough: an interrupted download leaves the ONNX file and the ref behind
+/// with no tokenizer, and a probe that answered `true` for that state would
+/// tell the user a model is ready that `cru process` cannot load. Three models
+/// carry a multi-gigabyte `model.onnx_data` in `additional_files`, which is
+/// where the interruption is most likely.
 #[must_use]
 pub fn snapshot_dir(model: &EmbeddingModel, cache_dir: &Path) -> Option<PathBuf> {
     let info = TextEmbedding::get_model_info(model).ok()?;
     let repo = cache_dir.join(format!("models--{}", info.model_code.replace('/', "--")));
     let commit = std::fs::read_to_string(repo.join("refs").join("main")).ok()?;
     let dir = repo.join("snapshots").join(commit.trim());
-    dir.join(&info.model_file).exists().then_some(dir)
+    required_files(info)
+        .all(|file| dir.join(file).exists())
+        .then_some(dir)
 }
 
 /// The number of bytes the model occupies, or `None` when it is absent.
 ///
-/// The walk follows the symbolic links that the HuggingFace cache writes into
-/// a snapshot directory, so the number is the size of the blobs themselves.
+/// The sum covers the files this model needs and no others, because eight of
+/// the 44 models share a repository with a quantised sibling: a walk over the
+/// snapshot directory would report each of the pair as the size of both.
+/// `metadata` follows the symbolic links the HuggingFace cache writes, so the
+/// number is the size of the blobs themselves.
 #[must_use]
 pub fn disk_bytes(model: &EmbeddingModel, cache_dir: &Path) -> Option<u64> {
-    let mut pending = vec![snapshot_dir(model, cache_dir)?];
-    let mut total = 0;
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            match std::fs::metadata(entry.path()) {
-                Ok(meta) if meta.is_dir() => pending.push(entry.path()),
-                Ok(meta) => total += meta.len(),
-                Err(_) => {}
-            }
-        }
-    }
-    Some(total)
+    let dir = snapshot_dir(model, cache_dir)?;
+    let info = TextEmbedding::get_model_info(model).ok()?;
+    Some(
+        required_files(info)
+            .filter_map(|file| std::fs::metadata(dir.join(file)).ok())
+            .map(|meta| meta.len())
+            .sum(),
+    )
 }
 
 /// Fetch the model into `cache_dir`, then report the directory it landed in.
@@ -245,10 +273,15 @@ pub fn disk_bytes(model: &EmbeddingModel, cache_dir: &Path) -> Option<u64> {
 /// fastembed downloads a model as a side effect of constructing the encoder,
 /// so this constructs one and drops it. The daemon does the fetch because the
 /// CLI links no ONNX runtime and holds no cache.
+///
+/// The progress bar is off. fastembed writes it to this process's stdout,
+/// which is the daemon's log file or `/dev/null` — never the terminal the user
+/// is watching. Reporting progress to the caller needs a session event, so the
+/// CLI says what the wait is for instead.
 pub async fn download(model: &EmbeddingModel, cache_dir: &Path) -> EmbeddingResult<PathBuf> {
     let options = fastembed::InitOptions::new(model.clone())
         .with_cache_dir(cache_dir.to_path_buf())
-        .with_show_download_progress(true);
+        .with_show_download_progress(false);
     tokio::task::spawn_blocking(move || TextEmbedding::try_new(options))
         .await
         .map_err(|e| EmbeddingError::ProviderError {
@@ -384,7 +417,7 @@ fn facts(model: &EmbeddingModel) -> Facts {
             Facts::new("bge-small-en-v1.5", &["BAAI/bge-small-en-v1.5"], 33, 512)
                 .score(51.68)
                 .recommended()
-                .note("The default. The smallest model here with a published retrieval score.")
+                .note("The default. The smallest model we recommend.")
         }
         EmbeddingModel::BGEBaseENV15 => {
             Facts::new("bge-base-en-v1.5", &["BAAI/bge-base-en-v1.5"], 109, 512)
@@ -540,7 +573,7 @@ fn facts(model: &EmbeddingModel) -> Facts {
             137,
             8192,
         )
-        .score(53.25)
+        .score(53.01)
         .note("A long-context model with a good score. It gives 768 dimensions."),
         EmbeddingModel::NomicEmbedTextV15Q => {
             Facts::new("nomic-embed-text-v1.5-q", &[], 137, 8192).note(QUANTISED)

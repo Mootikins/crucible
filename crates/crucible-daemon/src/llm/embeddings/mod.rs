@@ -34,8 +34,6 @@ pub mod mock;
 #[cfg(test)]
 pub(crate) mod test_helpers;
 
-#[cfg(feature = "fastembed")]
-pub use catalog::CatalogEntry;
 pub use config::{BackendType, EmbeddingConfig};
 pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};

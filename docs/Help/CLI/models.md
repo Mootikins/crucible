@@ -10,7 +10,9 @@ tags:
 
 `cru models` lists the chat models the configured LLM provider offers.
 `cru models embeddings` covers the local embedding models: which ones exist,
-which one this kiln uses, which ones are on disk, and how to change the choice.
+which one this daemon uses, which ones are on disk, and how to change the
+choice. The choice is the daemon's, not a kiln's: one enrichment provider
+serves every kiln the daemon holds.
 
 ## Synopsis
 
@@ -30,9 +32,9 @@ of the models the local `fastembed` backend can run. The daemon owns the
 catalog and the model cache; the CLI reads both over one RPC method,
 `embeddings.models`.
 
-The default model is `bge-small-en-v1.5`. It is the smallest model with a
-published retrieval score. A larger model retrieves better and costs more CPU
-time for each note.
+The default model is `bge-small-en-v1.5`. It is the smallest model Crucible
+recommends. A larger model retrieves better and costs more CPU time for each
+note.
 
 ## `cru models`
 
@@ -89,7 +91,12 @@ entries.
 
 ```bash
 cru models embeddings download arctic-embed-m
+cru models embeddings -f json download arctic-embed-m
 ```
+
+The download reports no progress. The daemon fetches the files, so the progress
+bar goes to the daemon's log and not to your terminal. A large model takes
+minutes on a slow link, and the command prints nothing until it finishes.
 
 A download is not necessary before `use`: the daemon fetches a missing model
 the first time it embeds. Download it first when you want the wait to happen
@@ -107,20 +114,28 @@ model = "arctic-embed-m"
 
 The command prints the config file path, the old model and the new one. It
 writes nothing else, and it keeps the rest of the file, comments included. Use
-`--config <PATH>` to write to a config file other than the default.
+`--config <PATH>` to write to a config file other than the default, and
+`-f json` to read the result from a script.
 
-**A change of model needs a reprocess.** Each stored vector comes from the
-model that made it. The old vectors are not the new model's vectors, so
-semantic search stays wrong until you rebuild them:
+If the file named a remote provider before, its other keys stay in the file.
+The command names them, because nothing reads them under `type = "fastembed"`
+and the config loader ignores them without a word.
+
+**A change of model needs a daemon restart, then a reprocess.** The running
+daemon holds the config it started with and reads no file again, so a reprocess
+before the restart re-embeds every note with the *old* model and reports
+success. Each stored vector comes from the model that made it, so semantic
+search stays wrong until you rebuild them:
 
 ```bash
+cru daemon restart
 cru process --force
 ```
 
 A different model also gives a different vector width, which is why the old
 vectors cannot be reused.
 
-> `init.luau` out-ranks `config.toml`. If your Lua config sets
+> `init.lua` out-ranks `config.toml`. If your Lua config sets
 > `enrichment.provider`, that value wins over the one this command writes.
 > Move the setting into the Lua config, or remove it from there.
 

@@ -9,8 +9,9 @@ use clap::Subcommand;
 pub enum ModelsCommands {
     /// Local embedding models: the catalog, what is on disk, what is configured
     Embeddings {
-        /// Output format. Defaults to a table on a terminal, plain lines when
-        /// piped or redirected.
+        /// Output format. The listing defaults to a table on a terminal and
+        /// plain lines when piped; `download` and `use` report their prose
+        /// unless this names `json`.
         #[arg(short = 'f', long)]
         format: Option<OutputFormat>,
 

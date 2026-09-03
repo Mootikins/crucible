@@ -474,13 +474,15 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 command: None,
             }) => commands::models::embeddings::list(format).await?,
             Some(ModelsCommands::Embeddings {
+                format,
                 command: Some(EmbeddingsCommands::Download { name }),
-                ..
-            }) => commands::models::embeddings::download(&name).await?,
+            }) => commands::models::embeddings::download(&name, format).await?,
             Some(ModelsCommands::Embeddings {
+                format,
                 command: Some(EmbeddingsCommands::Use { name }),
-                ..
-            }) => commands::models::embeddings::select(&name, cli_config_path.clone()).await?,
+            }) => {
+                commands::models::embeddings::select(&name, cli_config_path.clone(), format).await?
+            }
         },
 
         Some(Commands::Config(cmd)) => {

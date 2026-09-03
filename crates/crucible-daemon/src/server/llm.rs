@@ -116,6 +116,10 @@ pub(crate) async fn handle_llm_register_provider(
 /// cache. The CLI links neither, so it asks rather than answers. `download`
 /// names a model to fetch first; it is the only write this method makes, and it
 /// writes into the cache directory alone.
+///
+/// The method also resolves a name for the caller. `cru models embeddings use`
+/// must write the canonical name into the config file, and the catalog that
+/// knows the aliases lives here.
 pub(crate) async fn handle_embedding_models(
     req: Request,
     effective_config: Option<&serde_json::Value>,
@@ -169,17 +173,31 @@ async fn embedding_catalog(
             .map(std::path::Path::new),
     );
 
+    // The name the caller gave, resolved here and nowhere else. An unknown
+    // name never reaches the network, and the refusal carries the near names,
+    // so the CLI needs neither a matcher nor a suggestion list of its own.
+    let requested = match params.model.as_deref().map(catalog::parse_model_name) {
+        Some(Ok(model)) => Some(model),
+        Some(Err(e)) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+        None => None,
+    };
+    let resolved = requested
+        .as_ref()
+        .map(|model| catalog::entry(model).canonical_name.to_string());
+
     // The download first, so the row that follows reports the model as present.
-    // An unknown name never reaches the network: the catalog refuses it, and
-    // the refusal carries the near names.
     let mut downloaded_to = None;
-    if let Some(name) = params.download.as_deref() {
-        let model = match catalog::parse_model_name(name) {
-            Ok(model) => model,
-            Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    let mut downloaded_bytes = None;
+    if params.download {
+        let Some(model) = requested.as_ref() else {
+            let message = "`download` needs a `model` to fetch.";
+            return Response::error(req.id, INVALID_PARAMS, message.to_string());
         };
-        match catalog::download(&model, &cache_dir).await {
-            Ok(path) => downloaded_to = Some(path.display().to_string()),
+        match catalog::download(model, &cache_dir).await {
+            Ok(path) => {
+                downloaded_to = Some(path.display().to_string());
+                downloaded_bytes = catalog::disk_bytes(model, &cache_dir);
+            }
             Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
         }
     }
@@ -188,7 +206,6 @@ async fn embedding_catalog(
         .into_iter()
         .map(|entry| crate::rpc_client::EmbeddingModelRow {
             name: entry.canonical_name.to_string(),
-            aliases: entry.aliases.iter().map(|a| (*a).to_string()).collect(),
             dimensions: entry.dimensions,
             parameter_millions: entry.parameter_millions,
             max_input_tokens: entry.max_input_tokens,
@@ -196,7 +213,6 @@ async fn embedding_catalog(
             recommended: entry.recommended,
             note: entry.note.to_string(),
             downloaded: catalog::is_downloaded(&entry.model, &cache_dir),
-            disk_bytes: catalog::disk_bytes(&entry.model, &cache_dir),
         })
         .collect();
 
@@ -206,7 +222,9 @@ async fn embedding_catalog(
             models,
             configured,
             cache_dir: Some(cache_dir.display().to_string()),
+            resolved,
             downloaded_to,
+            downloaded_bytes,
         }),
     )
 }

@@ -158,13 +158,22 @@ pub struct ListAllModelsRequest {
 /// Request for `embeddings.models`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EmbeddingModelsRequest {
-    /// When set, fetch this model into the cache before the daemon answers.
+    /// A name to resolve through the catalog, in any form the catalog accepts.
+    ///
+    /// The answer carries the canonical form as `resolved`, and an unknown
+    /// name is an error that names the near entries. The caller therefore
+    /// holds no matcher of its own, so no second matcher can drift from the
+    /// catalog's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+
+    /// Fetch `model` into the cache before the daemon answers.
     ///
     /// One method, two questions, because the answer to the second is the
     /// first asked again: after a download the caller wants the row, and the
     /// row is what says where the files are.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub download: Option<String>,
+    #[serde(default)]
+    pub download: bool,
 }
 
 /// One local embedding model, as `embeddings.models` reports it.
@@ -176,11 +185,6 @@ pub struct EmbeddingModelsRequest {
 pub struct EmbeddingModelRow {
     /// The name to write in the config file.
     pub name: String,
-    /// The other names that resolve to this model, the HuggingFace form
-    /// included. A user who copied a name from a model card writes one of
-    /// these, so the CLI must accept them too.
-    #[serde(default)]
-    pub aliases: Vec<String>,
     /// The width of the vector.
     pub dimensions: usize,
     /// The parameter count in millions.
@@ -196,9 +200,6 @@ pub struct EmbeddingModelRow {
     pub note: String,
     /// Whether the files are already in the cache.
     pub downloaded: bool,
-    /// The bytes the model occupies, when it is present.
-    #[serde(default)]
-    pub disk_bytes: Option<u64>,
 }
 
 /// The answer to `embeddings.models`.
@@ -214,9 +215,18 @@ pub struct EmbeddingCatalog {
     /// The directory the daemon reads and writes models in.
     #[serde(default)]
     pub cache_dir: Option<String>,
+    /// The canonical catalog name of the model the request named.
+    #[serde(default)]
+    pub resolved: Option<String>,
     /// The directory the requested download landed in.
     #[serde(default)]
     pub downloaded_to: Option<String>,
+    /// The bytes that download occupies.
+    ///
+    /// Only for the model just fetched. Every row carried this once, which
+    /// cost a directory walk per model on a listing that never prints it.
+    #[serde(default)]
+    pub downloaded_bytes: Option<u64>,
 }
 
 /// Request for `providers.list` (no active session required).
@@ -391,17 +401,22 @@ impl DaemonClient {
 
     /// The local embedding catalog, and what of it is already on disk.
     ///
-    /// `download` names a model to fetch first. A fetch reads a few hundred
-    /// megabytes over the network, so the timeout is the download's, not the
-    /// default request's.
-    pub async fn embedding_models(&self, download: Option<&str>) -> Result<EmbeddingCatalog> {
+    /// `model` names one model to resolve through the catalog; `download`
+    /// fetches it first. A fetch reads a few hundred megabytes over the
+    /// network, so the timeout is the download's, not the default request's.
+    pub async fn embedding_models(
+        &self,
+        model: Option<&str>,
+        download: bool,
+    ) -> Result<EmbeddingCatalog> {
         /// Long enough for the largest model on a slow link.
         const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(1800);
 
         let params = EmbeddingModelsRequest {
-            download: download.map(str::to_string),
+            model: model.map(str::to_string),
+            download,
         };
-        if download.is_some() {
+        if download {
             self.typed_call_with_timeout("embeddings.models", params, DOWNLOAD_TIMEOUT)
                 .await
         } else {
