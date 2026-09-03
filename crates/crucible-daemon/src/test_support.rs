@@ -37,6 +37,10 @@ pub struct MockKnowledgeRepository {
     fail_search: bool,
     /// Every `limit` a `search_blocks` call asked for, in order.
     block_limits: std::sync::Mutex<Vec<usize>>,
+    /// The stored rows `blocks_for_note` answers, filtered by `note_path`.
+    note_blocks: Vec<crucible_core::storage::BlockRecord>,
+    /// The note rows `get_note_by_path` answers, keyed by path.
+    notes: Vec<crucible_core::storage::note_store::NoteRecord>,
 }
 
 impl MockKnowledgeRepository {
@@ -47,6 +51,21 @@ impl MockKnowledgeRepository {
     /// Script the block-granularity answer.
     pub fn with_block_results(mut self, results: Vec<crucible_core::types::SearchResult>) -> Self {
         self.block_results = results;
+        self
+    }
+
+    /// Script the stored rows of every note `blocks_for_note` may be asked for.
+    pub fn with_note_blocks(mut self, rows: Vec<crucible_core::storage::BlockRecord>) -> Self {
+        self.note_blocks = rows;
+        self
+    }
+
+    /// Script the note rows `get_note_by_path` answers.
+    pub fn with_notes(
+        mut self,
+        notes: Vec<crucible_core::storage::note_store::NoteRecord>,
+    ) -> Self {
+        self.notes = notes;
         self
     }
 
@@ -83,10 +102,14 @@ impl KnowledgeRepository for MockKnowledgeRepository {
 
     async fn blocks_for_note(
         &self,
-        _path: &str,
+        path: &str,
     ) -> crucible_core::Result<Vec<crucible_core::storage::BlockRecord>> {
-        // No block store behind this repository.
-        Ok(Vec::new())
+        Ok(self
+            .note_blocks
+            .iter()
+            .filter(|row| row.note_path == path)
+            .cloned()
+            .collect())
     }
 
     async fn get_note_by_name(
@@ -98,9 +121,9 @@ impl KnowledgeRepository for MockKnowledgeRepository {
 
     async fn get_note_by_path(
         &self,
-        _path: &str,
+        path: &str,
     ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
-        Ok(None)
+        Ok(self.notes.iter().find(|note| note.path == path).cloned())
     }
 
     async fn list_notes(

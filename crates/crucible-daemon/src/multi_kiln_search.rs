@@ -187,7 +187,7 @@ pub async fn search_across_kilns_with_stage(
     });
 
     if let Some(stage) = rerank {
-        let event = rerank_event(sources, &query_embedding, top_k, &merged);
+        let event = rerank_event(sources, &query_embedding, top_k, &merged).await;
         let reranked = first_usable_transform(
             StageId::SearchRerank,
             &stage.vms,
@@ -197,7 +197,15 @@ pub async fn search_across_kilns_with_stage(
         )
         .await;
         if let Some(reranked) = reranked {
-            merged = reranked;
+            let decided = !reranked.is_empty();
+            let resolved = resolve_reranked(sources, reranked).await;
+            if decided && resolved.is_empty() {
+                tracing::warn!(
+                    "search:rerank handler introduced no resolvable hit; keeping the merged order"
+                );
+            } else {
+                merged = resolved;
+            }
         }
     }
     merged.truncate(top_k);
@@ -205,9 +213,24 @@ pub async fn search_across_kilns_with_stage(
     Ok(merged)
 }
 
+/// The source a handler names by kiln. The first of that name, as the
+/// registry names are unique in a well-formed config.
+fn source_named<'a>(
+    sources: &'a [KilnSearchSource],
+    name: &crucible_core::config::KilnName,
+) -> Option<&'a KilnSearchSource> {
+    sources
+        .iter()
+        .find(|source| source.kiln_name.as_ref() == Some(name))
+}
+
 /// The `search:rerank` event: the query, the kilns, the limit, and every
 /// merged hit with a 1-based `index` the handler returns to address it.
-fn rerank_event(
+///
+/// A hit from a named kiln also carries the note's `title`, read once per
+/// note from that kiln's index row. A hit with no kiln name has no source to
+/// read from, and a note the index has no row for has no title.
+async fn rerank_event(
     sources: &[KilnSearchSource],
     query_embedding: &[f32],
     top_k: usize,
@@ -218,28 +241,46 @@ fn rerank_event(
         .filter_map(|s| s.kiln_name.as_ref())
         .map(|n| n.as_str())
         .collect();
-    let hits: Vec<serde_json::Value> = hits
-        .iter()
-        .enumerate()
-        .map(|(position, hit)| {
-            let mut entry = serde_json::Map::new();
-            entry.insert("index".into(), serde_json::json!(position + 1));
-            if let Some(name) = hit.kiln.as_ref() {
-                entry.insert("kiln".into(), serde_json::json!(name.as_str()));
+    let mut titles: HashMap<(crucible_core::config::KilnName, String), Option<String>> =
+        HashMap::new();
+    let mut entries = Vec::with_capacity(hits.len());
+    for (position, hit) in hits.iter().enumerate() {
+        let mut entry = serde_json::Map::new();
+        entry.insert("index".into(), serde_json::json!(position + 1));
+        if let Some(name) = hit.kiln.as_ref() {
+            entry.insert("kiln".into(), serde_json::json!(name.as_str()));
+            let key = (name.clone(), hit.document_id.0.clone());
+            if !titles.contains_key(&key) {
+                let title = match source_named(sources, name) {
+                    Some(source) => source
+                        .knowledge_repo
+                        .get_note_by_path(&hit.document_id.0)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|note| note.title)
+                        .filter(|title| !title.is_empty()),
+                    None => None,
+                };
+                titles.insert(key.clone(), title);
             }
-            entry.insert("path".into(), serde_json::json!(hit.document_id.0));
-            entry.insert("score".into(), serde_json::json!(hit.score));
-            if let Some(snippet) = hit.snippet.as_ref() {
-                entry.insert("snippet".into(), serde_json::json!(snippet));
+            if let Some(title) = titles[&key].as_ref() {
+                entry.insert("title".into(), serde_json::json!(title));
             }
-            if let Some(block) = hit.block.as_ref() {
-                entry.insert("span_start".into(), serde_json::json!(block.span_start));
-                entry.insert("span_end".into(), serde_json::json!(block.span_end));
-                entry.insert("kind".into(), serde_json::json!(block.kind));
-            }
-            serde_json::Value::Object(entry)
-        })
-        .collect();
+        }
+        entry.insert("path".into(), serde_json::json!(hit.document_id.0));
+        entry.insert("score".into(), serde_json::json!(hit.score));
+        if let Some(snippet) = hit.snippet.as_ref() {
+            entry.insert("snippet".into(), serde_json::json!(snippet));
+        }
+        if let Some(block) = hit.block.as_ref() {
+            entry.insert("span_start".into(), serde_json::json!(block.span_start));
+            entry.insert("span_end".into(), serde_json::json!(block.span_end));
+            entry.insert("kind".into(), serde_json::json!(block.kind));
+        }
+        entries.push(serde_json::Value::Object(entry));
+    }
+    let hits = entries;
     SessionEvent::Custom {
         name: StageId::SearchRerank.as_str().to_string(),
         payload: serde_json::json!({
@@ -251,20 +292,101 @@ fn rerank_event(
     }
 }
 
+/// One entry of a `search:rerank` return, after the sync checks and before
+/// the block store is asked about the introduced ones.
+enum Reranked {
+    /// A merged hit the handler addressed by `index`, with its edits applied.
+    Kept(SearchResult),
+    /// A block the kilns did not return, named by kiln, note and start.
+    Introduced {
+        kiln: crucible_core::config::KilnName,
+        path: String,
+        span_start: usize,
+        score: f64,
+        cited: Vec<(usize, usize)>,
+    },
+}
+
+/// The `(start, stop)` pairs of an entry's `cited`, when it has one.
+fn cited_pairs(entry: &serde_json::Value) -> Option<Vec<(usize, usize)>> {
+    let cited = entry.get("cited").and_then(lua_array)?;
+    Some(
+        cited
+            .iter()
+            .filter_map(|pair| {
+                let pair = lua_array(pair)?;
+                let start = pair.first()?.as_u64()? as usize;
+                let stop = pair.get(1)?.as_u64()? as usize;
+                (start <= stop).then_some((start, stop))
+            })
+            .collect(),
+    )
+}
+
 /// Read a `search:rerank` Transform over the merged hits.
 ///
-/// Entries address hits by `index`, so a handler can reorder, rescore, widen
-/// and cite but never introduce a hit the kilns did not return. `None` means
-/// the value is not a list, or every entry was unusable; the merged order
-/// then stands. An empty list is a decision and yields no hits.
-fn apply_rerank(merged: &[SearchResult], value: &serde_json::Value) -> Option<Vec<SearchResult>> {
+/// An entry with an `index` addresses a merged hit, so a handler can
+/// reorder, rescore, widen and cite it. An entry with no `index` but with
+/// `kiln`, `path`, `span_start` and `score` introduces a block the kilns did
+/// not return; [`resolve_reranked`] reads it afterwards. An introduced block
+/// that a merged hit already names, or that an earlier entry introduced, is
+/// dropped. `None` means the value is not a list, or every entry was
+/// unusable; the merged order then stands. An empty list is a decision and
+/// yields no hits.
+fn apply_rerank(merged: &[SearchResult], value: &serde_json::Value) -> Option<Vec<Reranked>> {
     let entries = lua_array(value)?;
     let mut seen = std::collections::HashSet::new();
+    let mut introduced = std::collections::HashSet::new();
+    let known: std::collections::HashSet<(Option<&crucible_core::config::KilnName>, &str, usize)> =
+        merged
+            .iter()
+            .filter_map(|hit| {
+                let block = hit.block.as_ref()?;
+                Some((
+                    hit.kiln.as_ref(),
+                    hit.document_id.0.as_str(),
+                    block.span_start,
+                ))
+            })
+            .collect();
     let mut reranked = Vec::with_capacity(entries.len());
 
     for entry in &entries {
         let Some(index) = entry.get("index").and_then(|v| v.as_u64()) else {
-            tracing::warn!("search:rerank entry missing numeric `index`; dropping");
+            let kiln = entry
+                .get("kiln")
+                .and_then(|v| v.as_str())
+                .and_then(crucible_core::config::KilnName::normalize);
+            let path = entry.get("path").and_then(|v| v.as_str());
+            let span_start = entry.get("span_start").and_then(|v| v.as_u64());
+            let score = entry.get("score").and_then(|v| v.as_f64());
+            let (Some(kiln), Some(path), Some(span_start), Some(score)) =
+                (kiln, path, span_start, score)
+            else {
+                tracing::warn!(
+                    "search:rerank entry has no `index` and no complete `kiln`, `path`, `span_start`, `score`; dropping"
+                );
+                continue;
+            };
+            let span_start = span_start as usize;
+            if known.contains(&(Some(&kiln), path, span_start))
+                || !introduced.insert((kiln.clone(), path.to_string(), span_start))
+            {
+                tracing::warn!(
+                    kiln = kiln.as_str(),
+                    path,
+                    span_start,
+                    "search:rerank introduces a block the list already has; dropping"
+                );
+                continue;
+            }
+            reranked.push(Reranked::Introduced {
+                kiln,
+                path: path.to_string(),
+                span_start,
+                score,
+                cited: cited_pairs(entry).unwrap_or_default(),
+            });
             continue;
         };
         let Some(original) = index
@@ -290,19 +412,11 @@ fn apply_rerank(merged: &[SearchResult], value: &serde_json::Value) -> Option<Ve
                     block.span_end = span_end;
                 }
             }
-            if let Some(cited) = entry.get("cited").and_then(lua_array) {
-                block.cited = cited
-                    .iter()
-                    .filter_map(|pair| {
-                        let pair = lua_array(pair)?;
-                        let start = pair.first()?.as_u64()? as usize;
-                        let stop = pair.get(1)?.as_u64()? as usize;
-                        (start <= stop).then_some((start, stop))
-                    })
-                    .collect();
+            if let Some(cited) = cited_pairs(entry) {
+                block.cited = cited;
             }
         }
-        reranked.push(hit);
+        reranked.push(Reranked::Kept(hit));
     }
 
     if !entries.is_empty() && reranked.is_empty() {
@@ -313,6 +427,67 @@ fn apply_rerank(merged: &[SearchResult], value: &serde_json::Value) -> Option<Ve
         return None;
     }
     Some(reranked)
+}
+
+/// Turn every introduced entry into a hit by reading its block row from the
+/// named kiln, in the handler's order. A kiln the search did not cover, or a
+/// row the store does not have, drops the entry with a warning.
+async fn resolve_reranked(
+    sources: &[KilnSearchSource],
+    entries: Vec<Reranked>,
+) -> Vec<SearchResult> {
+    let mut hits = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let (kiln, path, span_start, score, cited) = match entry {
+            Reranked::Kept(hit) => {
+                hits.push(hit);
+                continue;
+            }
+            Reranked::Introduced {
+                kiln,
+                path,
+                span_start,
+                score,
+                cited,
+            } => (kiln, path, span_start, score, cited),
+        };
+        let Some(source) = source_named(sources, &kiln) else {
+            tracing::warn!(
+                kiln = kiln.as_str(),
+                path,
+                "search:rerank introduces a block from a kiln the search did not cover; dropping"
+            );
+            continue;
+        };
+        let rows = source
+            .knowledge_repo
+            .blocks_for_note(&path)
+            .await
+            .unwrap_or_default();
+        let Some(row) = rows.into_iter().find(|row| row.span_start == span_start) else {
+            tracing::warn!(
+                kiln = kiln.as_str(),
+                path,
+                span_start,
+                "search:rerank introduces a block the store has no row for; dropping"
+            );
+            continue;
+        };
+        hits.push(SearchResult {
+            document_id: DocumentId(path),
+            score,
+            highlights: None,
+            snippet: Some(row.text),
+            kiln: Some(kiln),
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start: row.span_start,
+                span_end: row.span_end,
+                kind: row.kind,
+                cited,
+            }),
+        });
+    }
+    hits
 }
 
 #[cfg(test)]
@@ -968,6 +1143,131 @@ mod rerank_tests {
 
         assert_eq!(results.len(), 1);
         assert!(results[0].block.as_ref().unwrap().cited.is_empty());
+    }
+
+    /// A stored row of `path` at `span_start`, as the block store would
+    /// answer it to `blocks_for_note`.
+    fn stored_row(path: &str, span_start: usize) -> crucible_core::storage::BlockRecord {
+        crucible_core::storage::BlockRecord {
+            note_path: path.to_string(),
+            span_start,
+            span_end: span_start + 10,
+            kind: "paragraph".to_string(),
+            content_hash: crucible_core::parser::BlockHash::new([0; 32]),
+            text: format!("stored passage of {path} at {span_start}"),
+            embedding: Some(vec![1.0, 0.0]),
+            embedding_model: Some("mock".to_string()),
+            embedding_dimensions: Some(2),
+        }
+    }
+
+    /// A source whose store also answers `blocks_for_note` and
+    /// `get_note_by_path`, so a handler can introduce a row and read a title.
+    fn stored_source(
+        dir: &TempDir,
+        hits: Vec<SearchResult>,
+        rows: Vec<crucible_core::storage::BlockRecord>,
+    ) -> Vec<KilnSearchSource> {
+        let note = crucible_core::storage::note_store::NoteRecord::new(
+            "a.md",
+            crucible_core::parser::BlockHash::new([0; 32]),
+        )
+        .with_title("Note A");
+        vec![KilnSearchSource {
+            kiln_path: dir.path().to_path_buf(),
+            kiln_name: crucible_core::config::KilnName::normalize("lab"),
+            knowledge_repo: Arc::new(
+                MockKnowledgeRepository::new()
+                    .with_block_results(hits)
+                    .with_note_blocks(rows)
+                    .with_notes(vec![note]),
+            ),
+        }]
+    }
+
+    /// A handler introduces a block the search did not return; the daemon
+    /// reads its row from the named kiln, and the cut counts it.
+    #[tokio::test]
+    async fn a_handler_introduces_a_stored_block_and_reads_the_title() {
+        let dir = TempDir::new().unwrap();
+        let sources = stored_source(
+            &dir,
+            vec![block_hit("a.md", 0.9, 0), block_hit("b.md", 0.5, 0)],
+            vec![stored_row("c.md", 40)],
+        );
+        let stage = RerankStage::new(
+            None,
+            vec![plugin_vm(
+                r#"
+                cru.on("search:rerank", function(ctx, event)
+                    assert(event.hits[1].title == "Note A", "the index row's title rides along")
+                    assert(event.hits[2].title == nil, "a note with no row has no title")
+                    return {
+                        { kiln = "lab", path = "c.md", span_start = 40, score = 0.95, cited = { { 0, 5 } } },
+                        { index = 1 },
+                        { index = 2 },
+                    }
+                end)
+                "#,
+            )],
+        );
+
+        let results = search(&sources, 2, &stage).await;
+
+        assert_eq!(results.len(), 2, "the cut counts the introduced hit");
+        let first = &results[0];
+        assert_eq!(first.document_id.0, "c.md");
+        assert_eq!(first.score, 0.95);
+        assert_eq!(
+            first.kiln,
+            crucible_core::config::KilnName::normalize("lab")
+        );
+        assert_eq!(
+            first.snippet.as_deref(),
+            Some("stored passage of c.md at 40")
+        );
+        let block = first.block.as_ref().unwrap();
+        assert_eq!((block.span_start, block.span_end), (40, 50));
+        assert_eq!(block.cited, vec![(0, 5)]);
+        assert_eq!(results[1].document_id.0, "a.md");
+    }
+
+    /// An introduced entry that names another kiln, a row the store lacks,
+    /// a block a merged hit already names, or a block already introduced is
+    /// dropped; the entries around it stand.
+    #[tokio::test]
+    async fn an_introduced_block_the_search_cannot_place_is_dropped() {
+        let dir = TempDir::new().unwrap();
+        let sources = stored_source(
+            &dir,
+            vec![block_hit("a.md", 0.9, 0)],
+            vec![stored_row("c.md", 40)],
+        );
+        let stage = RerankStage::new(
+            None,
+            vec![plugin_vm(
+                r#"
+                cru.on("search:rerank", function(ctx, event)
+                    return {
+                        { kiln = "other", path = "c.md", span_start = 40, score = 1 },
+                        { kiln = "lab", path = "c.md", span_start = 7, score = 1 },
+                        { kiln = "lab", path = "a.md", span_start = 0, score = 1 },
+                        { kiln = "lab", path = "c.md", span_start = 40, score = 0.8 },
+                        { kiln = "lab", path = "c.md", span_start = 40, score = 0.7 },
+                        { index = 1 },
+                    }
+                end)
+                "#,
+            )],
+        );
+
+        let results = search(&sources, 10, &stage).await;
+
+        let order: Vec<(&str, f64)> = results
+            .iter()
+            .map(|r| (r.document_id.0.as_str(), r.score))
+            .collect();
+        assert_eq!(order, vec![("c.md", 0.8), ("a.md", 0.9)]);
     }
 
     /// With a handler registered each source answers `top_k * RERANK_FANOUT`

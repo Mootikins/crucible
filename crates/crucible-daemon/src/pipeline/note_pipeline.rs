@@ -291,14 +291,13 @@ impl NotePipeline {
         if let Some(blocks) = self.block_store.as_ref() {
             let mut records = Self::block_records(&enriched, &path_str);
             if let Some(vm) = self.index_stage.as_ref().and_then(|stage| stage.get()) {
-                let extra = crate::retrieval_stage::index_blocks_extra_rows(
+                crate::retrieval_stage::index_blocks(
                     vm,
                     self.kiln_name.as_ref(),
                     &path_str,
-                    &records,
+                    &mut records,
                 )
                 .await;
-                records.extend(extra);
             }
             if let Err(e) = blocks.replace_note_blocks(&path_str, records).await {
                 tracing::error!(
@@ -1427,6 +1426,57 @@ mod tests {
         // already owns and an unknown kind: none of the four is written.
         assert_eq!(stored.len(), 4);
         assert!(stored.iter().all(|b| b.kind != "transition"));
+    }
+
+    #[tokio::test]
+    async fn a_replace_entry_swaps_one_vector_and_keeps_the_hash() {
+        let (pipeline, blocks) = staged_pipeline(
+            r#"
+            cru.on("index:blocks", function(ctx, event)
+                local first
+                for _, block in ipairs(event.blocks) do
+                    assert(block.text ~= nil, "every block carries its text")
+                    if block.vector and not first then first = block end
+                end
+                assert(first.text:find("Alpha"), "the text is the embedded text")
+                local swapped = {}
+                for i = 1, #first.vector do swapped[i] = 0.5 end
+                return { replace = {
+                    { span_start = first.span_start, vector = swapped },
+                    { span_start = 999999, vector = swapped },
+                    { span_start = first.span_start, vector = { 1, 2, 3 } },
+                } }
+            end)
+            "#,
+        )
+        .await;
+        let file = write_temp_note(NOTE);
+        let path = file.path().to_string_lossy().to_string();
+
+        pipeline.process(file.path()).await.unwrap();
+        let stored = blocks.blocks_for_note(&path).await.unwrap();
+
+        let (plain, plain_blocks) = sqlite_pipeline().await;
+        plain.process(file.path()).await.unwrap();
+        let untouched = plain_blocks.blocks_for_note(&path).await.unwrap();
+
+        // The first paragraph carries the handler's vector, the second the
+        // provider's. The unknown start and the wrong dimension change nothing.
+        assert_eq!(stored.len(), 4);
+        let near = |row: &crucible_core::storage::BlockRecord, value: f32| {
+            row.embedding
+                .as_ref()
+                .unwrap()
+                .iter()
+                .all(|v| (v - value).abs() < 1e-6)
+        };
+        assert!(near(&stored[1], 0.5), "the named row takes the vector");
+        assert!(near(&stored[3], 0.1), "the other row keeps its own");
+        assert_eq!(stored[1].embedding_model, untouched[1].embedding_model);
+        assert_eq!(
+            stored[1].content_hash, untouched[1].content_hash,
+            "a swapped vector leaves the reuse key alone"
+        );
     }
 
     #[tokio::test]

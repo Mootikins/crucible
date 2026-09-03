@@ -355,17 +355,29 @@ Event fields:
 - `event.limit` — how many hits the caller asked for; the cut happens after
   the handler returns
 - `event.hits` — an array of
-  `{ index, kiln, path, span_start, span_end, kind, score, snippet }`, best
-  first. `kiln` follows the rules of `precognition_select`. The three block
-  fields are absent for a hit that names a whole note.
+  `{ index, kiln, path, title, span_start, span_end, kind, score, snippet }`,
+  best first. `kiln` follows the rules of `precognition_select`. `title` is
+  the note's title from the index, absent for a hit with no kiln name and
+  for a note the index has no row for. The three block fields are absent for
+  a hit that names a whole note.
 
-Return an array of `{ index, score, span_end, cited }`. `index` is the handle
-from `event.hits` and is required; the others are optional. `score` replaces
-the hit's score. `span_end` widens the block a hit names and is ignored on a
-whole-note hit or when it is smaller than the hit's start. `cited` is an array
-of `{ start, stop }` pairs the hit also draws on; it reaches the tool result,
-the precognition block and `cru search` as `block.cited`. Returned order is
-the order the caller sees, and the daemon cuts it to `event.limit`.
+Return an array of entries. An entry is one of two shapes:
+
+- `{ index, score, span_end, cited }` addresses a hit. `index` is the handle
+  from `event.hits`; the others are optional. `score` replaces the hit's
+  score. `span_end` widens the block a hit names and is ignored on a
+  whole-note hit or when it is smaller than the hit's start. `cited` is an
+  array of `{ start, stop }` pairs the hit also draws on; it reaches the tool
+  result, the precognition block and `cru search` as `block.cited`.
+- `{ kiln, path, span_start, score, cited }` introduces a block the kilns did
+  not return. `kiln` must name one of `event.kilns`, and the block must be a
+  stored row of that note, so a handler can read one with
+  `cru.kiln.blocks(kiln, path)` and hand it back. The daemon reads the row
+  and builds the hit from it, with the given `score` and `cited`. The first
+  four fields are required.
+
+Returned order is the order the caller sees, and the daemon cuts it to
+`event.limit`; an introduced hit counts like any other.
 
 | Return | Effect |
 |--------|--------|
@@ -374,16 +386,19 @@ the order the caller sees, and the daemon cuts it to `event.limit`.
 | `{}` | no hits |
 | anything else | warns and falls back to the merged order |
 
-Out-of-range, duplicate and non-numeric indices are dropped with a warning,
-and a return with no usable entry falls back to the merged order. The hook
-fails open: a handler that errors leaves the merged order in place.
+Out-of-range, duplicate and non-numeric indices are dropped with a warning.
+An introduced entry is dropped with a warning when its `kiln` is not one the
+search covered, when the store has no row at `span_start`, when a merged hit
+already names that block, or when an earlier entry introduced it. A return
+with no usable entry falls back to the merged order. The hook fails open: a
+handler that errors leaves the merged order in place.
 
 ### `index:blocks`
 
 Fires once per note, after its blocks are embedded and before their rows are
 written. A handler may add synthetic rows, which the plain vector scan then
-sees like any other block. The pipeline has no session VM, so only plugin
-handlers fire.
+sees like any other block, and may swap the vector of a parser row. The
+pipeline has no session VM, so only plugin handlers fire.
 
 ```lua
 cru.on("index:blocks", function(ctx, event)
@@ -414,10 +429,13 @@ end)
 Event fields:
 - `event.kiln` — the registry name of the kiln, absent when it has none
 - `event.path` — the note's path as the index stores it
-- `event.blocks` — an array of `{ span_start, span_end, kind, vector }` in
-  span order. `vector` is absent for a block under the word floor.
+- `event.blocks` — an array of `{ span_start, span_end, kind, text, vector }`
+  in span order. `text` is the text the pipeline embedded, heading trail
+  included. `vector` is absent for a block under the word floor.
 
-Return `{ extra = { { span_start, span_end, kind, vector, text } } }`. Extra
+Return `{ extra = { ... }, replace = { ... } }`. Either key may be absent.
+
+`extra` is an array of `{ span_start, span_end, kind, vector, text }`. Extra
 rows are written with the note's own rows and removed with them, so a
 reprocess replaces them. `kind` must be a parser kind or `transition`.
 `text` is optional; without it the row quotes the note's blocks inside its
@@ -426,10 +444,19 @@ when its `span_start` is already a row's start, when its vector has a
 different dimension from the note's embedded blocks, or when the note has no
 embedded block to take a model name from.
 
+`replace` is an array of `{ span_start, vector }`. Each entry swaps the
+vector of the row that starts at `span_start`; the row's text and content
+hash stay, so the block cache still reuses the row on a reprocess and the
+handler runs again over it. An entry is dropped with a warning when no row
+starts at `span_start`, when its vector has a different dimension from the
+note's embedded blocks, or when the note has no embedded block to take a
+model name from. Replacements apply before extra rows are checked.
+
 | Return | Effect |
 |--------|--------|
 | `nil` | the parser's rows alone |
 | `{ extra = {...} }` | the parser's rows plus the rows that pass the checks |
+| `{ replace = {...} }` | the parser's rows, with the vectors that pass the checks swapped |
 | anything else | warns and writes the parser's rows alone |
 
 The hook fails open: a handler that errors leaves the parser's rows alone.

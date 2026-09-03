@@ -110,23 +110,26 @@ pub fn has_handlers(stage: StageId, vms: &[StageVm]) -> bool {
     })
 }
 
-/// Fire `index:blocks` over a note's block rows and return the extra rows a
-/// handler added, checked and ready to write beside `records`.
+/// Fire `index:blocks` over a note's block rows and apply what the handler
+/// decided: swap the vectors `replace` names, then append the `extra` rows,
+/// checked and ready to write beside the parser's own.
 ///
-/// An extra row must name a kind [`BlockKind::STORED_NAMES`] lists, sit
-/// inside the note, start where no other row starts, and carry a vector of
-/// the note's own dimension. The model name comes from the note's embedded
-/// blocks, so a note with none admits no extra rows. Rows that fail a check
-/// are dropped with a warning, never the whole write.
-pub async fn index_blocks_extra_rows(
+/// A replacement names a row by its `span_start` and carries a vector of the
+/// note's own dimension; the row's text and `content_hash` stay. An extra
+/// row must name a kind [`BlockKind::STORED_NAMES`] lists, sit inside the
+/// note, start where no other row starts, and carry a vector of the note's
+/// own dimension. The model name comes from the note's embedded blocks, so a
+/// note with none admits no vector at all. Entries that fail a check are
+/// dropped with a warning, never the whole write.
+pub async fn index_blocks(
     vm: &StageVm,
     kiln_name: Option<&crucible_core::config::KilnName>,
     note_path: &str,
-    records: &[BlockRecord],
-) -> Vec<BlockRecord> {
+    records: &mut Vec<BlockRecord>,
+) {
     let vms = std::slice::from_ref(vm);
     if !has_handlers(StageId::IndexBlocks, vms) {
-        return Vec::new();
+        return;
     }
 
     let blocks: Vec<serde_json::Value> = records
@@ -136,6 +139,7 @@ pub async fn index_blocks_extra_rows(
             entry.insert("span_start".into(), serde_json::json!(record.span_start));
             entry.insert("span_end".into(), serde_json::json!(record.span_end));
             entry.insert("kind".into(), serde_json::json!(record.kind));
+            entry.insert("text".into(), serde_json::json!(record.text));
             if let Some(vector) = record.embedding.as_ref() {
                 entry.insert("vector".into(), serde_json::json!(vector));
             }
@@ -153,12 +157,90 @@ pub async fn index_blocks_extra_rows(
         payload: serde_json::Value::Object(payload),
     };
 
-    first_usable_transform(StageId::IndexBlocks, vms, None, &event, |value| {
-        let extra = value.get("extra")?;
-        Some(admit_extra_rows(note_path, records, &lua_array(extra)?))
+    // A return with neither key is not a decision; a key that is not a list
+    // is a value the stage cannot read.
+    let decision = first_usable_transform(StageId::IndexBlocks, vms, None, &event, |value| {
+        let list = |key: &str| match value.get(key) {
+            Some(entries) => lua_array(entries).map(Some),
+            None => Some(None),
+        };
+        match (list("replace")?, list("extra")?) {
+            (None, None) => None,
+            (replace, extra) => Some((replace.unwrap_or_default(), extra.unwrap_or_default())),
+        }
     })
-    .await
-    .unwrap_or_default()
+    .await;
+    let Some((replace, extra)) = decision else {
+        return;
+    };
+
+    replace_vectors(note_path, records, &replace);
+    let admitted = admit_extra_rows(note_path, records, &extra);
+    records.extend(admitted);
+}
+
+/// The vector a handler entry carries, when it carries a list.
+fn entry_vector(entry: &serde_json::Value) -> Option<Vec<f32>> {
+    let values = entry.get("vector").and_then(lua_array)?;
+    Some(
+        values
+            .iter()
+            .filter_map(|v| v.as_f64())
+            .map(|f| f as f32)
+            .collect(),
+    )
+}
+
+/// The model and the dimension of the note's embedded blocks, which every
+/// vector a handler supplies must match.
+fn reference_model(records: &[BlockRecord]) -> Option<(String, u32)> {
+    records
+        .iter()
+        .find_map(|r| Some((r.embedding_model.clone()?, r.embedding_dimensions?)))
+}
+
+/// Swap the vector of every row a `replace` entry names by `span_start`.
+fn replace_vectors(note_path: &str, records: &mut [BlockRecord], replace: &[serde_json::Value]) {
+    let reference = reference_model(records);
+
+    for entry in replace {
+        let span_start = entry.get("span_start").and_then(|v| v.as_u64());
+        let (Some(span_start), Some(vector)) = (span_start, entry_vector(entry)) else {
+            warn!(
+                note_path,
+                "index:blocks replace entry lacks span_start or vector; dropping"
+            );
+            continue;
+        };
+        let span_start = span_start as usize;
+        let Some((model, dimensions)) = reference.as_ref() else {
+            warn!(
+                note_path,
+                "index:blocks replace entry on a note with no embedded block; dropping"
+            );
+            continue;
+        };
+        if vector.len() != *dimensions as usize {
+            warn!(
+                note_path,
+                span_start,
+                dimensions,
+                got = vector.len(),
+                "index:blocks replace entry has a vector of another dimension; dropping"
+            );
+            continue;
+        }
+        let Some(row) = records.iter_mut().find(|r| r.span_start == span_start) else {
+            warn!(
+                note_path,
+                span_start, "index:blocks replace entry names a start no row has; dropping"
+            );
+            continue;
+        };
+        row.embedding = Some(vector);
+        row.embedding_model = Some(model.clone());
+        row.embedding_dimensions = Some(*dimensions);
+    }
 }
 
 /// The subset of `extra` that passes every check, as rows of `note_path`.
@@ -170,9 +252,7 @@ fn admit_extra_rows(
     use crucible_core::parser::types::BlockKind;
 
     let note_end = records.iter().map(|r| r.span_end).max().unwrap_or(0);
-    let reference = records
-        .iter()
-        .find_map(|r| Some((r.embedding_model.clone()?, r.embedding_dimensions?)));
+    let reference = reference_model(records);
     let mut starts: std::collections::HashSet<usize> =
         records.iter().map(|r| r.span_start).collect();
     let mut admitted = Vec::new();
@@ -181,16 +261,9 @@ fn admit_extra_rows(
         let span_start = entry.get("span_start").and_then(|v| v.as_u64());
         let span_end = entry.get("span_end").and_then(|v| v.as_u64());
         let kind = entry.get("kind").and_then(|v| v.as_str());
-        let vector: Option<Vec<f32>> = entry.get("vector").and_then(lua_array).map(|values| {
-            values
-                .iter()
-                .filter_map(|v| v.as_f64())
-                .map(|f| f as f32)
-                .collect()
-        });
 
         let (Some(span_start), Some(span_end), Some(kind), Some(vector)) =
-            (span_start, span_end, kind, vector)
+            (span_start, span_end, kind, entry_vector(entry))
         else {
             warn!(
                 note_path,
