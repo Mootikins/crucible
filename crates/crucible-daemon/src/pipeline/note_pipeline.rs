@@ -291,10 +291,17 @@ impl NotePipeline {
         if let Some(blocks) = self.block_store.as_ref() {
             let mut records = Self::block_records(&enriched, &path_str);
             if let Some(vm) = self.index_stage.as_ref().and_then(|stage| stage.get()) {
+                let description = enriched
+                    .parsed
+                    .frontmatter
+                    .as_ref()
+                    .and_then(|f| f.get_string("description"));
                 crate::retrieval_stage::index_blocks(
                     vm,
                     self.kiln_name.as_ref(),
                     &path_str,
+                    &enriched.parsed.title(),
+                    description.as_deref(),
                     &mut records,
                 )
                 .await;

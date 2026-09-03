@@ -37,8 +37,8 @@
 --- the note's title, the nearest heading above the block, and the note's
 --- `description` property. `meta_format` sets the layout of the text that
 --- reaches the embedder. The parser's rows keep their spans and text; only
---- the vector changes. The strategy needs a named kiln and a bound
---- `cru.embed`.
+--- the vector changes. The title and the description come with the event.
+--- The strategy needs a named kiln and a bound `cru.embed`.
 ---
 --- `ppr_post` runs a personalized PageRank over the link graph of the first
 --- searched kiln after the scan. The seeds are the notes the scan hit, each
@@ -241,27 +241,19 @@ end
 -- Metadata prefix (meta_pre)
 -- ============================================================================
 
---- The note record behind an `index:blocks` event, or nil when the read
---- fails. The pipeline writes the note record before it fires the stage.
-function M.note_for(kiln: string, path: string): any
-    local ok, note = pcall(cru.kiln.note, kiln, path)
-    if not ok or type(note) ~= "table" then return nil end
-    return note
-end
-
---- The note's title, or its file stem when the index has no title.
-function M.note_title(note: any, path: string): string
-    if note ~= nil and type(note.title) == "string" and note.title ~= "" then
-        return note.title
+--- The event's title, or the file stem when the event carries none. The
+--- stage puts the title and the description on the event: a read through
+--- `cru.kiln.note` would wait on the connection the batch holds.
+function M.note_title(title: any, path: string): string
+    if type(title) == "string" and title ~= "" then
+        return title
     end
     local stem = path:match("([^/]+)$") or path
     return (stem:gsub("%.md$", ""))
 end
 
---- The note's `description` property, or the empty string.
-function M.note_description(note: any): string
-    if note == nil or type(note.properties) ~= "table" then return "" end
-    local description = note.properties.description
+--- The event's description, or the empty string.
+function M.note_description(description: any): string
     return if type(description) == "string" then description else ""
 end
 
@@ -491,9 +483,8 @@ strategies.meta_pre = {
     rerank = function(event) return nil end,
     index = function(event)
         if type(event.kiln) ~= "string" then return nil end
-        local note = M.note_for(event.kiln, event.path)
-        local title = M.note_title(note, event.path)
-        local description = M.note_description(note)
+        local title = M.note_title(event.title, event.path)
+        local description = M.note_description(event.description)
         local heading = ""
         local replace = {}
         for _, block in ipairs(event.blocks) do

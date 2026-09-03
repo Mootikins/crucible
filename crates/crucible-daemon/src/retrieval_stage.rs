@@ -121,10 +121,17 @@ pub fn has_handlers(stage: StageId, vms: &[StageVm]) -> bool {
 /// own dimension. The model name comes from the note's embedded blocks, so a
 /// note with none admits no vector at all. Entries that fail a check are
 /// dropped with a warning, never the whole write.
+///
+/// The payload carries the note's title and its `description` property, so
+/// a handler that labels a block needs no read through `cru.kiln.note`. It
+/// could not make one: `process_batch` holds the connection map while this
+/// stage fires, and a named read waits on that map.
 pub async fn index_blocks(
     vm: &StageVm,
     kiln_name: Option<&crucible_core::config::KilnName>,
     note_path: &str,
+    title: &str,
+    description: Option<&str>,
     records: &mut Vec<BlockRecord>,
 ) {
     let vms = std::slice::from_ref(vm);
@@ -151,6 +158,10 @@ pub async fn index_blocks(
         payload.insert("kiln".into(), serde_json::json!(name.as_str()));
     }
     payload.insert("path".into(), serde_json::json!(note_path));
+    payload.insert("title".into(), serde_json::json!(title));
+    if let Some(description) = description {
+        payload.insert("description".into(), serde_json::json!(description));
+    }
     payload.insert("blocks".into(), serde_json::Value::Array(blocks));
     let event = SessionEvent::Custom {
         name: StageId::IndexBlocks.as_str().to_string(),

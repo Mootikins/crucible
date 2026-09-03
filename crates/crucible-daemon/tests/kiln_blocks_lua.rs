@@ -216,6 +216,7 @@ async fn cru_embed_answers_inside_an_index_blocks_handler() {
                    end
                end
                EMBEDDED_IN_HANDLER = #replace
+               INDEX_TITLE = event.title
                return { replace = replace }
            end)"#,
     )
@@ -240,6 +241,12 @@ async fn cru_embed_answers_inside_an_index_blocks_handler() {
         Some(2),
         "both prose blocks were re-embedded in the handler"
     );
+    let title: String = lua
+        .load("return INDEX_TITLE")
+        .eval_async()
+        .await
+        .expect("read the title");
+    assert_eq!(title, "a", "the event carries the note's title");
     assert!(
         started.elapsed() < std::time::Duration::from_secs(10),
         "the handler waited {:?}",

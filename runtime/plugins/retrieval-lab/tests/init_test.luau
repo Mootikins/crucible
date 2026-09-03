@@ -264,10 +264,11 @@ describe("retrieval-lab", function()
     describe("meta_pre", function()
         it("re-embeds every embedded block under the title, the nearest heading and the description", function()
             use("meta_pre")
-            notes["notes/n.md"] = note("n.md", "Note N", "About N")
             local event = {
                 kiln = "notes",
                 path = "n.md",
+                title = "Note N",
+                description = "About N",
                 blocks = {
                     { span_start = 0, span_end = 8, kind = "paragraph", text = "intro", vector = A },
                     { span_start = 10, span_end = 18, kind = "heading", text = "## Part one", vector = nil },
@@ -287,7 +288,7 @@ describe("retrieval-lab", function()
             expect.deep_equal({ #embedded[2], 0, 0 }, out.replace[2].vector)
         end)
 
-        it("falls back to the file stem when the index has no note, and honours meta_format", function()
+        it("falls back to the file stem when the event has no title, and honours meta_format", function()
             use("meta_pre")
             plugin.setup({ meta_format = "{meta} | {text}" })
             local event = {

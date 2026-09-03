@@ -429,6 +429,11 @@ end)
 Event fields:
 - `event.kiln` — the registry name of the kiln, absent when it has none
 - `event.path` — the note's path as the index stores it
+- `event.title` — the note's title; `event.description` — its `description`
+  property, absent when the note has none. A handler reads them here and not
+  through `cru.kiln.note`: the batch holds the kiln's connection while this
+  stage fires, so a named read would wait on it until the handler budget
+  stops the handler.
 - `event.blocks` — an array of `{ span_start, span_end, kind, text, vector }`
   in span order. `text` is the text the pipeline embedded, heading trail
   included. `vector` is absent for a block under the word floor.
