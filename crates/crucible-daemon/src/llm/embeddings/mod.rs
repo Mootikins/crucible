@@ -16,6 +16,10 @@ pub mod ollama;
 /// OpenAI provider implementation.
 pub mod openai;
 
+/// The catalog of local embedding models.
+#[cfg(feature = "fastembed")]
+pub mod catalog;
+
 /// FastEmbed local provider implementation.
 #[cfg(feature = "fastembed")]
 pub mod fastembed;
@@ -30,6 +34,8 @@ pub mod mock;
 #[cfg(test)]
 pub(crate) mod test_helpers;
 
+#[cfg(feature = "fastembed")]
+pub use catalog::CatalogEntry;
 pub use config::{BackendType, EmbeddingConfig};
 pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};

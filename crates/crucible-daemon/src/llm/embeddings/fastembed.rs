@@ -27,12 +27,9 @@
 //!
 //! ## Supported Models
 //!
-//! ### Priority Models (Recommended)
-//! - `BGESmallENV15` (384 dims) - Default, fast, high quality
-//! - `AllMiniLML6V2` (384 dims) - Very fast, lightweight
-//! - `NomicEmbedTextV15` (768 dims) - High quality, larger
-//! - `MxbaiEmbedLargeV1` (1024 dims) - Best quality, slower
-//! - `MultilingualE5Large` (384 dims) - Multilingual support
+//! The [`catalog`](super::catalog) module holds every model, the name each one
+//! answers to, and what it costs. This provider decides nothing about models;
+//! it reads that table.
 //!
 //! ## Usage Example
 //!
@@ -59,8 +56,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use super::catalog;
 use super::error::{EmbeddingError, EmbeddingResult};
-use super::provider::{ModelFamily, ModelInfo, ParameterSize};
+use super::provider::ModelInfo;
 use crucible_core::enrichment::EmbeddingProvider;
 
 /// Local embedding provider using FastEmbed library
@@ -140,11 +138,10 @@ impl FastEmbedProvider {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(config: super::config::EmbeddingConfig) -> EmbeddingResult<Self> {
-        // Parse model name to fastembed's EmbeddingModel enum
-        let model = Self::parse_model_name(config.model_name())?;
-
-        // Get model metadata
-        let model_info = Self::get_model_info(&model);
+        // The catalog owns both answers, so the name a user writes and the
+        // metadata the provider reports cannot disagree.
+        let model = catalog::parse_model_name(config.model_name())?;
+        let model_info = catalog::model_info(&model);
 
         // Read these off the config rather than hardcoding them. They were
         // `None` and `Some(32)` here, so `[embedding.fastembed] cache_dir` and
@@ -163,123 +160,6 @@ impl FastEmbedProvider {
             config: fastembed_config,
             model_info,
         })
-    }
-
-    /// Parse model name string to FastEmbed's EmbeddingModel enum
-    fn parse_model_name(name: &str) -> EmbeddingResult<EmbeddingModel> {
-        // Support both HuggingFace names and simple names
-        let model = match name.to_lowercase().as_str() {
-            // BGE models
-            "bge-small-en-v1.5" | "baai/bge-small-en-v1.5" => EmbeddingModel::BGESmallENV15,
-            "bge-base-en-v1.5" | "baai/bge-base-en-v1.5" => EmbeddingModel::BGEBaseENV15,
-            "bge-large-en-v1.5" | "baai/bge-large-en-v1.5" => EmbeddingModel::BGELargeENV15,
-
-            // MiniLM models
-            "all-minilm-l6-v2" | "sentence-transformers/all-minilm-l6-v2" => {
-                EmbeddingModel::AllMiniLML6V2
-            }
-            "all-minilm-l12-v2" | "sentence-transformers/all-minilm-l12-v2" => {
-                EmbeddingModel::AllMiniLML12V2
-            }
-
-            // Nomic models
-            "nomic-embed-text-v1" | "nomic-ai/nomic-embed-text-v1" => {
-                EmbeddingModel::NomicEmbedTextV1
-            }
-            "nomic-embed-text-v1.5" | "nomic-ai/nomic-embed-text-v1.5" => {
-                EmbeddingModel::NomicEmbedTextV15
-            }
-
-            // E5 models
-            "multilingual-e5-large" | "intfloat/multilingual-e5-large" => {
-                EmbeddingModel::MultilingualE5Large
-            }
-            "multilingual-e5-base" | "intfloat/multilingual-e5-base" => {
-                EmbeddingModel::MultilingualE5Base
-            }
-            "multilingual-e5-small" | "intfloat/multilingual-e5-small" => {
-                EmbeddingModel::MultilingualE5Small
-            }
-
-            // Other models
-            "mxbai-embed-large-v1" | "mixedbread-ai/mxbai-embed-large-v1" => {
-                EmbeddingModel::MxbaiEmbedLargeV1
-            }
-            "paraphrase-minilm-l12-v2" | "sentence-transformers/paraphrase-minilm-l12-v2" => {
-                EmbeddingModel::ParaphraseMLMiniLML12V2
-            }
-
-            _ => {
-                return Err(EmbeddingError::ConfigError(format!(
-                    "Unsupported FastEmbed model: {}. Supported models: bge-small-en-v1.5, \
-                    all-minilm-l6-v2, nomic-embed-text-v1.5, mxbai-embed-large-v1, etc.",
-                    name
-                )))
-            }
-        };
-
-        Ok(model)
-    }
-
-    /// Get model metadata for a given EmbeddingModel
-    fn get_model_info(model: &EmbeddingModel) -> ModelInfo {
-        match model {
-            EmbeddingModel::BGESmallENV15 => ModelInfo::builder()
-                .name("BAAI/bge-small-en-v1.5")
-                .display_name("BGE Small EN v1.5")
-                .family(ModelFamily::Bert)
-                .dimensions(384)
-                .parameter_size(ParameterSize::new(33, true))
-                .format("onnx")
-                .recommended(true)
-                .build(),
-
-            EmbeddingModel::AllMiniLML6V2 => ModelInfo::builder()
-                .name("all-MiniLM-L6-v2")
-                .display_name("all-MiniLM-L6-v2")
-                .family(ModelFamily::Bert)
-                .dimensions(384)
-                .parameter_size(ParameterSize::new(22, true))
-                .format("onnx")
-                .recommended(true)
-                .build(),
-
-            EmbeddingModel::NomicEmbedTextV15 => ModelInfo::builder()
-                .name("nomic-ai/nomic-embed-text-v1.5")
-                .display_name("Nomic Embed Text v1.5")
-                .family(ModelFamily::Bert)
-                .dimensions(768)
-                .parameter_size(ParameterSize::new(137, true))
-                .format("onnx")
-                .recommended(true)
-                .build(),
-
-            EmbeddingModel::MxbaiEmbedLargeV1 => ModelInfo::builder()
-                .name("mixedbread-ai/mxbai-embed-large-v1")
-                .display_name("Mixedbread Embed Large v1")
-                .family(ModelFamily::Bert)
-                .dimensions(1024)
-                .parameter_size(ParameterSize::new(335, true))
-                .format("onnx")
-                .build(),
-
-            EmbeddingModel::MultilingualE5Large => ModelInfo::builder()
-                .name("intfloat/multilingual-e5-large")
-                .display_name("Multilingual E5 Large")
-                .family(ModelFamily::Bert)
-                .dimensions(1024)
-                .parameter_size(ParameterSize::new(560, true))
-                .format("onnx")
-                .build(),
-
-            _ => ModelInfo::builder()
-                .name(format!("{:?}", model))
-                .display_name(format!("{:?}", model))
-                .family(ModelFamily::Bert)
-                .dimensions(768)
-                .format("onnx")
-                .build(),
-        }
     }
 
     /// Ensure the model is loaded, loading it if necessary
@@ -462,15 +342,12 @@ impl EmbeddingProvider for FastEmbedProvider {
     }
 
     async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-        Ok(vec![
-            Self::get_model_info(&EmbeddingModel::BGESmallENV15).name,
-            Self::get_model_info(&EmbeddingModel::AllMiniLML6V2).name,
-            Self::get_model_info(&EmbeddingModel::NomicEmbedTextV15).name,
-            Self::get_model_info(&EmbeddingModel::MxbaiEmbedLargeV1).name,
-            Self::get_model_info(&EmbeddingModel::MultilingualE5Large).name,
-            Self::get_model_info(&EmbeddingModel::BGEBaseENV15).name,
-            Self::get_model_info(&EmbeddingModel::BGELargeENV15).name,
-        ])
+        // The whole catalog, not a favourite few. A hand-picked list of seven
+        // hid the other thirty-seven models a user may configure.
+        Ok(catalog::all()
+            .into_iter()
+            .map(|entry| entry.canonical_name.to_string())
+            .collect())
     }
 }
 
@@ -573,21 +450,9 @@ mod tests {
         let models = models.unwrap();
         assert!(!models.is_empty());
 
-        assert!(models.contains(&"BAAI/bge-small-en-v1.5".to_string()));
+        assert!(models.contains(&"bge-small-en-v1.5".to_string()));
         assert!(models.contains(&"all-MiniLM-L6-v2".to_string()));
-        assert!(models.contains(&"nomic-ai/nomic-embed-text-v1.5".to_string()));
-    }
-
-    #[test]
-    fn test_model_name_parsing() {
-        // Test various model name formats
-        assert!(FastEmbedProvider::parse_model_name("bge-small-en-v1.5").is_ok());
-        assert!(FastEmbedProvider::parse_model_name("BAAI/bge-small-en-v1.5").is_ok());
-        assert!(FastEmbedProvider::parse_model_name("all-MiniLM-L6-v2").is_ok());
-        assert!(FastEmbedProvider::parse_model_name("nomic-embed-text-v1.5").is_ok());
-
-        // Test invalid model
-        assert!(FastEmbedProvider::parse_model_name("invalid-model").is_err());
+        assert!(models.contains(&"nomic-embed-text-v1.5".to_string()));
     }
 
     /// What the user configured is what the provider is built with.
