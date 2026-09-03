@@ -18,7 +18,7 @@ use crate::config::CliConfig;
 use crucible_core::enrichment::eval::{hit_rate_at_k, mrr, rank_of, GoldenSet, NamedGoldenSet};
 
 /// One scored query, rendered as a row.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub struct QueryResult {
     /// Class this query came from (empty in single-file mode).
     pub class: String,
@@ -52,15 +52,14 @@ async fn run_eval_named(
             .embed_query(kiln_path, &q.question)
             .await
             .with_context(|| format!("embedding failed for: {}", q.question))?;
+        // The reply is one row per block. Ranks are over notes, so the
+        // request over-fetches and the reduction below keeps the first row of
+        // each note; `top_k` distinct notes need more than `top_k` rows.
         let hits = client
-            .search_vectors(kiln_path, &vector, golden.top_k, None)
+            .search_vectors(kiln_path, &vector, golden.top_k * OVER_FETCH, None)
             .await
             .with_context(|| format!("search failed for: {}", q.question))?;
-        // Several blocks of one note are several hits, and each names the
-        // note. `rank_of` matches by stem, so the corpus layout does not have
-        // to match the fixture.
-        let titles: Vec<String> = hits.into_iter().map(|hit| hit.document_id).collect();
-        let rank = rank_of(&titles, &q.expect_note);
+        let rank = rank_among_notes(hits, &q.expect_note);
         results.push(QueryResult {
             class: class.to_string(),
             question: q.question.clone(),
@@ -70,6 +69,106 @@ async fn run_eval_named(
         });
     }
     Ok(results)
+}
+
+/// Rows requested per golden `top_k`. Four blocks of one note above the
+/// answer is common in a long note; more than that and the answer is a miss
+/// that the metrics should report.
+const OVER_FETCH: usize = 4;
+
+/// 1-based rank of the expected note among distinct notes, in reply order.
+///
+/// Block rows of one note collapse to that note's first row before the
+/// rank is read, so a note with several blocks above the answer costs the
+/// answer one rank, not several. `rank_of` matches by stem, so the corpus
+/// layout does not have to match the fixture.
+fn rank_among_notes(hits: Vec<crucible_daemon::VectorHit>, expect_note: &str) -> Option<usize> {
+    let titles: Vec<String> = crucible_daemon::first_per_note(hits)
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect();
+    rank_of(&titles, expect_note)
+}
+
+/// The retrieval strategy the daemon runs, from `[plugins.retrieval-lab]`.
+///
+/// The lab plugin selects its strategy by this one key. The eval names it
+/// in the header so a results row says which strategy it measured. `None`
+/// when the section or the key is absent, which is the block-point default.
+fn retrieval_strategy(config: &CliConfig) -> Option<String> {
+    config
+        .plugins
+        .get("retrieval-lab")
+        .and_then(|section| section.get("strategy"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+/// One class of the `--json` report: its metrics and its rows.
+#[derive(serde::Serialize)]
+struct ClassReport {
+    class: String,
+    n: usize,
+    top_k: usize,
+    hit_at_1: f64,
+    hit_at_k: f64,
+    mrr: f64,
+    recall_at_k: f64,
+    queries: Vec<QueryResult>,
+}
+
+impl ClassReport {
+    fn new(class: &str, results: &[QueryResult], top_k: usize) -> Self {
+        let (hit_at_1, hit_at_k, mrr, recall_at_k) = aggregate(results, top_k);
+        Self {
+            class: class.to_string(),
+            n: results.len(),
+            top_k,
+            hit_at_1,
+            hit_at_k,
+            mrr,
+            recall_at_k,
+            queries: results.to_vec(),
+        }
+    }
+}
+
+/// The whole `--json` report, one object on stdout.
+#[derive(serde::Serialize)]
+struct EvalReport {
+    kiln: PathBuf,
+    /// `[plugins.retrieval-lab] strategy`, when the daemon's config sets it.
+    strategy: Option<String>,
+    /// Ranks are over distinct notes; block rows of one note collapse to
+    /// the note's first row.
+    ranks_over: &'static str,
+    classes: Vec<ClassReport>,
+    total: ClassReport,
+}
+
+impl EvalReport {
+    fn new(
+        kiln: &Path,
+        strategy: Option<String>,
+        class_results: &[(String, Vec<QueryResult>, usize)],
+        total_top_k: usize,
+    ) -> Self {
+        let classes: Vec<ClassReport> = class_results
+            .iter()
+            .map(|(name, rows, top_k)| ClassReport::new(name, rows, *top_k))
+            .collect();
+        let all: Vec<QueryResult> = class_results
+            .iter()
+            .flat_map(|(_, rows, _)| rows.iter().cloned())
+            .collect();
+        Self {
+            kiln: kiln.to_path_buf(),
+            strategy,
+            ranks_over: "notes",
+            classes,
+            total: ClassReport::new("TOTAL", &all, total_top_k),
+        }
+    }
 }
 
 fn aggregate(results: &[QueryResult], top_k: usize) -> (f64, f64, f64, f64) {
@@ -210,15 +309,19 @@ async fn open_kiln(config: &CliConfig) -> Result<crucible_daemon::DaemonClient> 
 }
 
 /// Execute `cru eval precognition`. Exactly one of golden/golden_dir must be set.
+///
+/// With `json`, stdout is one [`EvalReport`] object and nothing else, so a
+/// script can collect rows across runs.
 pub async fn execute(
     config: CliConfig,
     golden_path: Option<PathBuf>,
     golden_dir: Option<PathBuf>,
+    json: bool,
 ) -> Result<()> {
     let kiln = open_kiln(&config).await?;
     match (golden_path, golden_dir) {
-        (Some(path), None) => execute_single(kiln, config, path).await,
-        (None, Some(dir)) => execute_multi(kiln, config, dir).await,
+        (Some(path), None) => execute_single(kiln, config, path, json).await,
+        (None, Some(dir)) => execute_multi(kiln, config, dir, json).await,
         (None, None) => anyhow::bail!("specify --golden <file.toml> or --golden-dir <dir>"),
         (Some(_), Some(_)) => {
             anyhow::bail!("--golden and --golden-dir are mutually exclusive")
@@ -226,24 +329,50 @@ pub async fn execute(
     }
 }
 
+fn render_strategy_line(strategy: Option<&str>) {
+    println!(
+        "strategy: {}",
+        strategy.unwrap_or("points (no [plugins.retrieval-lab] strategy set)")
+    );
+}
+
 async fn execute_single(
     kiln: crucible_daemon::DaemonClient,
     config: CliConfig,
     golden_path: PathBuf,
+    json: bool,
 ) -> Result<()> {
     let text = std::fs::read_to_string(&golden_path)
         .with_context(|| format!("reading golden set {}", golden_path.display()))?;
     let golden = GoldenSet::parse_toml(&text).context("parsing golden set")?;
     let kiln_path = config.kiln_path.clone();
+    let strategy = retrieval_strategy(&config);
 
-    println!(
-        "Scoring {} queries against {} (top_k={})",
-        golden.queries.len(),
-        kiln_path.display(),
-        golden.top_k
-    );
-    let results = run_eval(&kiln, &kiln_path, &golden).await?;
-    render(&results, golden.top_k);
+    if !json {
+        println!(
+            "Scoring {} queries against {} (top_k={}; ranks are over notes, block rows deduplicated)",
+            golden.queries.len(),
+            kiln_path.display(),
+            golden.top_k
+        );
+        render_strategy_line(strategy.as_deref());
+    }
+    let class = golden_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let results = run_eval_named(&kiln, &kiln_path, &class, &golden).await?;
+    if json {
+        let report = EvalReport::new(
+            &kiln_path,
+            strategy,
+            &[(class, results, golden.top_k)],
+            golden.top_k,
+        );
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        render(&results, golden.top_k);
+    }
     Ok(())
 }
 
@@ -251,23 +380,37 @@ async fn execute_multi(
     kiln: crucible_daemon::DaemonClient,
     config: CliConfig,
     dir: PathBuf,
+    json: bool,
 ) -> Result<()> {
     let sets = GoldenSet::parse_dir(&dir)?;
     let kiln_path = config.kiln_path.clone();
+    let strategy = retrieval_strategy(&config);
     let total: usize = sets.iter().map(|s| s.set.queries.len()).sum();
 
-    println!(
-        "Scoring {} classes / {} queries against {} (top_k from each fixture)",
-        sets.len(),
-        total,
-        kiln_path.display()
-    );
+    if !json {
+        println!(
+            "Scoring {} classes / {} queries against {} (top_k from each fixture; ranks are over notes, block rows deduplicated)",
+            sets.len(),
+            total,
+            kiln_path.display()
+        );
+        render_strategy_line(strategy.as_deref());
+    }
     let mut class_results = Vec::new();
     for named in &sets {
         let rows = run_eval_named(&kiln, &kiln_path, &named.name, &named.set).await?;
-        class_results.push((named.name.clone(), rows));
+        class_results.push((named.name.clone(), rows, named.set.top_k));
     }
-    render_multi(&sets, &class_results, 10);
+    if json {
+        let report = EvalReport::new(&kiln_path, strategy, &class_results, 10);
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        let rows: Vec<(String, Vec<QueryResult>)> = class_results
+            .into_iter()
+            .map(|(name, rows, _)| (name, rows))
+            .collect();
+        render_multi(&sets, &rows, 10);
+    }
     Ok(())
 }
 
@@ -303,6 +446,67 @@ mod tests {
             "lenient miss must not drag strict hit@1"
         );
         assert!((recall10 - 0.5).abs() < 1e-9);
+    }
+
+    fn block_row(document_id: &str, span_start: usize) -> crucible_daemon::VectorHit {
+        crucible_daemon::VectorHit {
+            document_id: document_id.to_string(),
+            score: 0.9,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start,
+                span_end: span_start + 8,
+                kind: "paragraph".to_string(),
+                cited: Vec::new(),
+            }),
+            snippet: None,
+        }
+    }
+
+    #[test]
+    fn rank_counts_distinct_notes_not_block_rows() {
+        let hits = vec![
+            block_row("notes/A.md", 0),
+            block_row("notes/A.md", 8),
+            block_row("notes/A.md", 16),
+            block_row("notes/B.md", 0),
+        ];
+        assert_eq!(rank_among_notes(hits, "b"), Some(2));
+    }
+
+    #[test]
+    fn strategy_comes_from_the_retrieval_lab_plugin_section() {
+        let mut config = CliConfig::default();
+        assert_eq!(retrieval_strategy(&config), None);
+        config.plugins.insert(
+            "retrieval-lab".to_string(),
+            serde_json::json!({ "enabled": true, "strategy": "arc_post" }),
+        );
+        assert_eq!(retrieval_strategy(&config).as_deref(), Some("arc_post"));
+    }
+
+    #[test]
+    fn json_report_carries_strategy_metrics_and_rows_per_class() {
+        let mk = |rank: Option<usize>| QueryResult {
+            class: "c".into(),
+            question: "q".into(),
+            expect_note: "n".into(),
+            lenient: false,
+            rank,
+        };
+        let classes = vec![("c".to_string(), vec![mk(Some(1)), mk(None)], 5)];
+        let report = EvalReport::new(Path::new("/k"), Some("bezier_post".into()), &classes, 10);
+        let value = serde_json::to_value(&report).unwrap();
+        assert_eq!(value["strategy"], "bezier_post");
+        assert_eq!(value["ranks_over"], "notes");
+        assert_eq!(value["classes"][0]["n"], 2);
+        assert_eq!(value["classes"][0]["top_k"], 5);
+        assert!((value["classes"][0]["hit_at_1"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+        assert_eq!(
+            value["classes"][0]["queries"][1]["rank"],
+            serde_json::Value::Null
+        );
+        assert_eq!(value["total"]["top_k"], 10);
+        assert_eq!(value["total"]["n"], 2);
     }
 
     #[test]

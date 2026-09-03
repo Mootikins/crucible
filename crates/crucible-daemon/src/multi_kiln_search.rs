@@ -1,8 +1,11 @@
+use crate::retrieval_stage::{first_usable_transform, has_handlers, lua_array, StageVm};
 use crate::trust_resolution::resolve_session_classification;
 use anyhow::Result;
 use crucible_core::config::{DataClassification, TrustLevel};
+use crucible_core::events::SessionEvent;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::{DocumentId, SearchResult};
+use crucible_lua::StageId;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -25,6 +28,33 @@ pub struct KilnSearchSource {
     pub knowledge_repo: Arc<dyn KnowledgeRepository>,
 }
 
+/// The `search:rerank` stage a search fires after the merge and before the
+/// cut. The VMs run in order, first usable Transform wins: precognition lists
+/// the session VM before the plugin VM; the tool and the RPC list the plugin
+/// VM alone.
+#[derive(Clone)]
+pub struct RerankStage {
+    /// The session the handlers run for, when the caller has one.
+    pub session_id: Option<String>,
+    /// Session VM first, then the plugin VM.
+    pub vms: Vec<StageVm>,
+    /// Each source answers `top_k * fanout` rows when a handler is
+    /// registered, so a rerank has more than the final cut to choose from.
+    pub fanout: usize,
+}
+
+impl RerankStage {
+    /// A stage over `vms` with no over-fetch.
+    pub fn new(session_id: Option<String>, vms: Vec<StageVm>) -> Self {
+        Self {
+            session_id,
+            vms,
+            fanout: 1,
+        }
+    }
+}
+
+/// [`search_across_kilns_with_stage`] with no rerank stage.
 pub async fn search_across_kilns(
     sources: &[KilnSearchSource],
     query_embedding: Vec<f32>,
@@ -32,7 +62,30 @@ pub async fn search_across_kilns(
     provider_trust: Option<TrustLevel>,
     workspace: Option<&Path>,
 ) -> Result<Vec<SearchResult>> {
+    search_across_kilns_with_stage(
+        sources,
+        query_embedding,
+        top_k,
+        provider_trust,
+        workspace,
+        None,
+    )
+    .await
+}
+
+pub async fn search_across_kilns_with_stage(
+    sources: &[KilnSearchSource],
+    query_embedding: Vec<f32>,
+    top_k: usize,
+    provider_trust: Option<TrustLevel>,
+    workspace: Option<&Path>,
+    rerank: Option<&RerankStage>,
+) -> Result<Vec<SearchResult>> {
     let mut best: HashMap<(PathBuf, String, Option<usize>), SearchResult> = HashMap::new();
+
+    // Over-fetch only when a handler will look at the extra rows.
+    let rerank = rerank.filter(|stage| has_handlers(StageId::SearchRerank, &stage.vms));
+    let fetch = rerank.map_or(top_k, |stage| top_k.saturating_mul(stage.fanout.max(1)));
 
     for source in sources {
         // Trust filtering: skip kilns whose classification exceeds provider
@@ -61,7 +114,7 @@ pub async fn search_across_kilns(
         // as the fallback rather than as a second-class path.
         let block_results = match source
             .knowledge_repo
-            .search_blocks(query_embedding.clone(), top_k)
+            .search_blocks(query_embedding.clone(), fetch)
             .await
         {
             Ok(results) => results,
@@ -78,7 +131,7 @@ pub async fn search_across_kilns(
         let results = if block_results.is_empty() {
             match source
                 .knowledge_repo
-                .search_vectors(query_embedding.clone(), top_k)
+                .search_vectors(query_embedding.clone(), fetch)
                 .await
             {
                 Ok(results) => results,
@@ -123,9 +176,134 @@ pub async fn search_across_kilns(
 
     let mut merged: Vec<SearchResult> = best.into_values().collect();
     merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+
+    if let Some(stage) = rerank {
+        let event = rerank_event(sources, &query_embedding, top_k, &merged);
+        let reranked = first_usable_transform(
+            StageId::SearchRerank,
+            &stage.vms,
+            stage.session_id.as_deref(),
+            &event,
+            |value| apply_rerank(&merged, value),
+        )
+        .await;
+        if let Some(reranked) = reranked {
+            merged = reranked;
+        }
+    }
     merged.truncate(top_k);
 
     Ok(merged)
+}
+
+/// The `search:rerank` event: the query, the kilns, the limit, and every
+/// merged hit with a 1-based `index` the handler returns to address it.
+fn rerank_event(
+    sources: &[KilnSearchSource],
+    query_embedding: &[f32],
+    top_k: usize,
+    hits: &[SearchResult],
+) -> SessionEvent {
+    let kilns: Vec<&str> = sources
+        .iter()
+        .filter_map(|s| s.kiln_name.as_ref())
+        .map(|n| n.as_str())
+        .collect();
+    let hits: Vec<serde_json::Value> = hits
+        .iter()
+        .enumerate()
+        .map(|(position, hit)| {
+            let mut entry = serde_json::Map::new();
+            entry.insert("index".into(), serde_json::json!(position + 1));
+            if let Some(name) = hit.kiln.as_ref() {
+                entry.insert("kiln".into(), serde_json::json!(name.as_str()));
+            }
+            entry.insert("path".into(), serde_json::json!(hit.document_id.0));
+            entry.insert("score".into(), serde_json::json!(hit.score));
+            if let Some(snippet) = hit.snippet.as_ref() {
+                entry.insert("snippet".into(), serde_json::json!(snippet));
+            }
+            if let Some(block) = hit.block.as_ref() {
+                entry.insert("span_start".into(), serde_json::json!(block.span_start));
+                entry.insert("span_end".into(), serde_json::json!(block.span_end));
+                entry.insert("kind".into(), serde_json::json!(block.kind));
+            }
+            serde_json::Value::Object(entry)
+        })
+        .collect();
+    SessionEvent::Custom {
+        name: StageId::SearchRerank.as_str().to_string(),
+        payload: serde_json::json!({
+            "query_vector": query_embedding,
+            "kilns": kilns,
+            "limit": top_k,
+            "hits": hits,
+        }),
+    }
+}
+
+/// Read a `search:rerank` Transform over the merged hits.
+///
+/// Entries address hits by `index`, so a handler can reorder, rescore, widen
+/// and cite but never introduce a hit the kilns did not return. `None` means
+/// the value is not a list, or every entry was unusable; the merged order
+/// then stands. An empty list is a decision and yields no hits.
+fn apply_rerank(merged: &[SearchResult], value: &serde_json::Value) -> Option<Vec<SearchResult>> {
+    let entries = lua_array(value)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut reranked = Vec::with_capacity(entries.len());
+
+    for entry in &entries {
+        let Some(index) = entry.get("index").and_then(|v| v.as_u64()) else {
+            tracing::warn!("search:rerank entry missing numeric `index`; dropping");
+            continue;
+        };
+        let Some(original) = index
+            .checked_sub(1)
+            .and_then(|zero_based| merged.get(zero_based as usize))
+        else {
+            tracing::warn!(index, "search:rerank index out of range; dropping");
+            continue;
+        };
+        if !seen.insert(index) {
+            tracing::warn!(index, "search:rerank duplicate index; dropping");
+            continue;
+        }
+
+        let mut hit = original.clone();
+        if let Some(score) = entry.get("score").and_then(|v| v.as_f64()) {
+            hit.score = score;
+        }
+        if let Some(block) = hit.block.as_mut() {
+            if let Some(span_end) = entry.get("span_end").and_then(|v| v.as_u64()) {
+                let span_end = span_end as usize;
+                if span_end >= block.span_start {
+                    block.span_end = span_end;
+                }
+            }
+            if let Some(cited) = entry.get("cited").and_then(lua_array) {
+                block.cited = cited
+                    .iter()
+                    .filter_map(|pair| {
+                        let pair = lua_array(pair)?;
+                        let start = pair.first()?.as_u64()? as usize;
+                        let stop = pair.get(1)?.as_u64()? as usize;
+                        (start <= stop).then_some((start, stop))
+                    })
+                    .collect();
+            }
+        }
+        reranked.push(hit);
+    }
+
+    if !entries.is_empty() && reranked.is_empty() {
+        tracing::warn!(
+            requested = entries.len(),
+            "search:rerank handler returned no usable entry; keeping the merged order"
+        );
+        return None;
+    }
+    Some(reranked)
 }
 
 #[cfg(test)]
@@ -531,6 +709,7 @@ mod tests {
                 span_start,
                 span_end: span_start + 10,
                 kind: "paragraph".to_string(),
+                cited: Vec::new(),
             }),
         }
     }
@@ -597,5 +776,189 @@ mod tests {
         // The dedup key is (kiln, note, span). Keyed on the note alone, this
         // would collapse to one and throw the granularity away at the last step.
         assert_eq!(results.len(), 3);
+    }
+}
+
+/// The `search:rerank` stage, fired through a plugin VM with no session.
+#[cfg(test)]
+mod rerank_tests {
+    use super::*;
+    use crate::test_support::MockKnowledgeRepository;
+    use crucible_lua::register_cru_on_api;
+    use tempfile::TempDir;
+
+    fn plugin_vm(handler: &str) -> StageVm {
+        let lua = mlua::Lua::new();
+        let registry = crucible_lua::LuaScriptHandlerRegistry::new();
+        register_cru_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("register_cru_on_api should succeed");
+        lua.load(handler).exec().expect("the handler loads");
+        (registry, lua)
+    }
+
+    fn block_hit(document_id: &str, score: f64, span_start: usize) -> SearchResult {
+        SearchResult {
+            document_id: DocumentId(document_id.to_string()),
+            score,
+            highlights: None,
+            snippet: None,
+            kiln: None,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start,
+                span_end: span_start + 10,
+                kind: "paragraph".to_string(),
+                cited: Vec::new(),
+            }),
+        }
+    }
+
+    fn source(dir: &TempDir, hits: Vec<SearchResult>) -> Vec<KilnSearchSource> {
+        vec![KilnSearchSource {
+            kiln_path: dir.path().to_path_buf(),
+            kiln_name: crucible_core::config::KilnName::normalize("lab"),
+            knowledge_repo: Arc::new(MockKnowledgeRepository::new().with_block_results(hits)),
+        }]
+    }
+
+    async fn search(
+        sources: &[KilnSearchSource],
+        top_k: usize,
+        stage: &RerankStage,
+    ) -> Vec<SearchResult> {
+        search_across_kilns_with_stage(sources, vec![1.0, 0.0], top_k, None, None, Some(stage))
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_handler_reorders_rescores_widens_and_cites() {
+        let dir = TempDir::new().unwrap();
+        let sources = source(
+            &dir,
+            vec![
+                block_hit("a.md", 0.9, 0),
+                block_hit("a.md", 0.8, 40),
+                block_hit("b.md", 0.7, 0),
+            ],
+        );
+        let stage = RerankStage::new(
+            None,
+            vec![plugin_vm(
+                r#"
+                cru.on("search:rerank", function(ctx, event)
+                    assert(#event.query_vector == 2, "the query vector is a plain array")
+                    assert(event.kilns[1] == "lab", "the kiln is named")
+                    assert(event.limit == 10)
+                    local out = {}
+                    for i = #event.hits, 1, -1 do
+                        local hit = event.hits[i]
+                        assert(hit.path and hit.span_start and hit.kind == "paragraph")
+                        out[#out + 1] = {
+                            index = hit.index,
+                            score = hit.score + 1,
+                            span_end = hit.span_end + 30,
+                            cited = { { hit.span_start, hit.span_end }, { 100, 120 } },
+                        }
+                    end
+                    return out
+                end)
+                "#,
+            )],
+        );
+
+        let results = search(&sources, 10, &stage).await;
+
+        let order: Vec<(String, usize)> = results
+            .iter()
+            .map(|r| {
+                (
+                    r.document_id.0.clone(),
+                    r.block.as_ref().unwrap().span_start,
+                )
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec![("b.md".into(), 0), ("a.md".into(), 40), ("a.md".into(), 0)]
+        );
+        assert!(
+            (results[0].score - 1.7).abs() < 1e-9,
+            "the score is replaced"
+        );
+        let block = results[0].block.as_ref().unwrap();
+        assert_eq!(block.span_end, 40, "the span is widened");
+        assert_eq!(block.cited, vec![(0, 10), (100, 120)]);
+        assert_eq!(
+            results[0].kiln,
+            crucible_core::config::KilnName::normalize("lab")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_cut_happens_after_the_rerank() {
+        let dir = TempDir::new().unwrap();
+        let sources = source(
+            &dir,
+            vec![block_hit("a.md", 0.9, 0), block_hit("b.md", 0.5, 0)],
+        );
+        let stage = RerankStage::new(
+            None,
+            vec![plugin_vm(
+                r#"
+                cru.on("search:rerank", function(ctx, event)
+                    return { { index = 2 }, { index = 1 } }
+                end)
+                "#,
+            )],
+        );
+
+        let results = search(&sources, 1, &stage).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].document_id.0, "b.md",
+            "the handler's first hit survives the cut"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unusable_return_keeps_the_merged_order() {
+        let dir = TempDir::new().unwrap();
+        let sources = source(
+            &dir,
+            vec![block_hit("a.md", 0.9, 0), block_hit("b.md", 0.5, 0)],
+        );
+        let stage = RerankStage::new(
+            None,
+            vec![plugin_vm(
+                r#"
+                cru.on("search:rerank", function(ctx, event)
+                    return { { index = 99 }, { score = 1 } }
+                end)
+                "#,
+            )],
+        );
+
+        let results = search(&sources, 10, &stage).await;
+
+        let order: Vec<&str> = results.iter().map(|r| r.document_id.0.as_str()).collect();
+        assert_eq!(order, vec!["a.md", "b.md"]);
+    }
+
+    #[tokio::test]
+    async fn no_handler_means_no_over_fetch_and_no_change() {
+        let dir = TempDir::new().unwrap();
+        let sources = source(&dir, vec![block_hit("a.md", 0.9, 0)]);
+        let mut stage = RerankStage::new(None, vec![plugin_vm("")]);
+        stage.fanout = 5;
+
+        let results = search(&sources, 10, &stage).await;
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].block.as_ref().unwrap().cited.is_empty());
     }
 }

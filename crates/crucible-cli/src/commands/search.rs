@@ -330,6 +330,7 @@ mod tests {
                 span_start: 42,
                 span_end: 91,
                 kind: "paragraph".into(),
+                cited: Vec::new(),
             }),
         }]
     }

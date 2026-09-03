@@ -455,7 +455,11 @@ impl RpcDispatcher {
             // Note search and retrieval handlers
             RpcMethod::SearchVectors => forward!(
                 id,
-                crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln)
+                crate::server::kiln::handle_search_vectors(
+                    req.clone(),
+                    &self.ctx.kiln,
+                    &self.ctx.plugin_loader
+                )
             ),
             RpcMethod::SearchText => forward!(
                 id,

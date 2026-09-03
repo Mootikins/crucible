@@ -20,7 +20,7 @@ Semantic search finds content based on **meaning**, not just matching words. Whe
 
 Crucible embeds each block of a note and stores it in `note_blocks`, one row per block with its byte span. `cru search`, the `search_vectors` RPC, the search tool and **precognition** all retrieve through that table, so a hit names the passage that matched rather than the file it sat in. A `search_vectors` row carries `block` (`span_start`, `span_end`, `kind`) and `snippet` (the block's text). A kiln indexed before the table existed has no rows yet. It falls back to whole notes, embedded once each, title first, until its next index pass; those hits carry no `block`.
 
-Under the hood, matching is an **exact cosine-similarity scan** over the `embedding` column of the kiln's SQLite database — every embedded note is scored against the query and the top results are returned. There is no approximate (ANN) index and no separate vector store; at kiln scale the exact scan is fast, and exact means recall is always 100%.
+Under the hood, matching is an **exact cosine-similarity scan** over the kiln's SQLite database. The scan reads `note_blocks` first, so every embedded block is scored against the query. Only a kiln with no block rows falls back to the `embedding` column of `notes`, one vector per note. There is no approximate (ANN) index and no separate vector store; at kiln scale the exact scan is fast, and exact means recall is always 100%.
 
 ## Using Semantic Search
 

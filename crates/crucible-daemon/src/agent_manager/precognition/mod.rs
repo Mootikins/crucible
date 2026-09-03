@@ -7,10 +7,12 @@ struct ExecuteMultiKilnSearchParams<'a> {
     session: &'a crucible_core::session::Session,
     event_tx: &'a broadcast::Sender<SessionEventMessage>,
     original_content: &'a str,
+    rerank: &'a RerankStage,
 }
 
 use super::*;
 use crate::agent_manager::vm_pass::{fold_vms_locked, PluginHandlers};
+use crate::multi_kiln_search::{search_across_kilns_with_stage, RerankStage};
 use crucible_lua::StageId;
 use std::ops::ControlFlow;
 
@@ -382,12 +384,13 @@ impl AgentManager {
             resolve_provider_trust(params.agent_config, self.llm_config().as_deref());
         let kilns_searched = params.sources.len();
 
-        match search_across_kilns(
+        match search_across_kilns_with_stage(
             params.sources,
             params.query_embedding,
             params.agent_config.precognition_results,
             Some(provider_trust),
             params.session.workspace.as_deref(),
+            Some(params.rerank),
         )
         .await
         {
@@ -470,6 +473,18 @@ impl AgentManager {
             return None;
         }
 
+        // `search:rerank` runs inside the search, session VM first. The
+        // handles are cloned out under a short lock so the search itself
+        // holds nothing.
+        let rerank = {
+            let session_state = self.get_or_create_session_state(session_id);
+            let state = session_state.lock().await;
+            let mut vms = vec![(state.registry.clone(), state.lua.clone())];
+            if let Some((registry, lua)) = self.plugin_handlers() {
+                vms.push(((*registry).clone(), (*lua).clone()));
+            }
+            RerankStage::new(Some(session_id.to_string()), vms)
+        };
         let mut results = self
             .execute_multi_kiln_search(ExecuteMultiKilnSearchParams {
                 session_id,
@@ -479,6 +494,7 @@ impl AgentManager {
                 session,
                 event_tx,
                 original_content,
+                rerank: &rerank,
             })
             .await?;
 
@@ -597,26 +613,7 @@ fn result_title(result: &crucible_core::SearchResult) -> String {
 /// suppressing precognition. A genuinely empty table yields an empty selection,
 /// which is the documented "suppress this turn" outcome.
 fn selection_entries(selection: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
-    if let Some(array) = selection.as_array() {
-        return Some(array.clone());
-    }
-
-    let map = selection.as_object()?;
-    if map.is_empty() {
-        return Some(Vec::new());
-    }
-
-    let mut keyed: Vec<(u64, serde_json::Value)> = map
-        .iter()
-        .filter_map(|(key, value)| key.parse::<u64>().ok().map(|k| (k, value.clone())))
-        .collect();
-
-    if keyed.is_empty() {
-        return None;
-    }
-
-    keyed.sort_by_key(|(key, _)| *key);
-    Some(keyed.into_iter().map(|(_, value)| value).collect())
+    crate::retrieval_stage::lua_array(selection)
 }
 
 /// Apply a `precognition_select` handler's return value to the search results.

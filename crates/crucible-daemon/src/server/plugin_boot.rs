@@ -43,6 +43,10 @@ impl Server {
             // never reads.
             self.agent_manager
                 .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+            // The index pipeline fires `index:blocks` through the same pair.
+            self.rpc_context
+                .kiln
+                .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
             self.agent_manager.set_isolation(loader.isolation());
             // Registry lives on the AgentManager (created eagerly, so session
             // VMs never race this); the plugin VM just gets the same instance.

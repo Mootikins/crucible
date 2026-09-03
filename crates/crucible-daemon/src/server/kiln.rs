@@ -476,10 +476,15 @@ pub(crate) async fn handle_kiln_forget(
     }
 }
 
-pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_search_vectors(
+    req: Request,
+    km: &Arc<KilnManager>,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
     // `params.scope` is deliberately not read: authority comes from `kiln`
-    // alone (see `request_scope`). Deserializing the field rather than
-    // dropping it keeps the client's struct honest about what it sends.
+    // alone, because the repository the handle opens is bound to the kiln
+    // path and scopes every note read to it. Deserializing the field rather
+    // than dropping it keeps the client's struct honest about what it sends.
     let params = match typed_params::<crate::rpc_client::SearchVectorsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -503,7 +508,28 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
         kiln_path,
         kiln_name: None,
     };
-    match crate::multi_kiln_search::search_across_kilns(&[source], vector, limit, None, None).await
+    // No session VM behind an RPC: `search:rerank` reaches plugin handlers.
+    let rerank = {
+        let guard = plugin_loader.lock().await;
+        guard.as_ref().map(|loader| {
+            crate::multi_kiln_search::RerankStage::new(
+                None,
+                vec![(
+                    (*loader.plugin_handlers()).clone(),
+                    (*loader.plugin_lua()).clone(),
+                )],
+            )
+        })
+    };
+    match crate::multi_kiln_search::search_across_kilns_with_stage(
+        &[source],
+        vector,
+        limit,
+        None,
+        None,
+        rerank.as_ref(),
+    )
+    .await
     {
         Ok(results) => {
             let hits: Vec<crate::rpc_client::VectorHit> = results

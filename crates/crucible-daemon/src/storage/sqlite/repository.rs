@@ -212,6 +212,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
                     span_start: hit.block.span_start,
                     span_end: hit.block.span_end,
                     kind: hit.block.kind,
+                    cited: Vec::new(),
                 }),
             })
             .collect())

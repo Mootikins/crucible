@@ -410,6 +410,10 @@ impl NoteStore for DaemonNoteStore {
         let hydration_authority = scope.unwrap_or_else(|| {
             crucible_core::storage::Scope::workspace_unchecked(self.client.kiln_path())
         });
+        // The reply is one row per block. This store answers in notes, so a
+        // note with several blocks near the query is one hit, at its first
+        // row's rank.
+        let results = crate::rpc_client::first_per_note(results);
         let mut hits = Vec::with_capacity(results.len());
         for hit in results {
             if let Ok(Some(note)) = self.get(&hit.document_id, &hydration_authority).await {
@@ -548,5 +552,83 @@ mod tests {
         // answering "no rows", which a rename would read as "nothing to splice".
         assert!(store.inbound_links("Beta.md").await.is_err());
         assert!(store.reindex_links("Beta.md", &[]).await.is_err());
+    }
+
+    /// A daemon whose kilns embed with the mock provider, under an isolated
+    /// data root, so the search reply has block rows to reduce.
+    async fn setup_embedding_daemon() -> (TempDir, Arc<DaemonClient>) {
+        use crate::server::BindWithPluginConfigParams;
+        use crucible_core::config::{EmbeddingProviderConfig, MockConfig};
+
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
+            path: sock_path.clone(),
+            data_home: Some(tmp.path().to_path_buf()),
+            config_home: Some(tmp.path().join("config")),
+            enrichment_config: Some(EmbeddingProviderConfig::Mock(MockConfig {
+                model: "mock-model".to_string(),
+                dimensions: 384,
+            })),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let client = Arc::new(DaemonClient::connect_to(&sock_path).await.unwrap());
+        (tmp, client)
+    }
+
+    /// The daemon answers `search_vectors` with one row per block. This
+    /// store answers in notes, so a note with several blocks near the query
+    /// is one hit, not one per block.
+    #[tokio::test]
+    async fn daemon_note_store_search_answers_each_note_once() {
+        let (_tmp, daemon_client) = setup_embedding_daemon().await;
+        let kiln_dir = TempDir::new().unwrap();
+        let kiln = kiln_dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(kiln.join(".crucible")).unwrap();
+        std::fs::write(kiln.join(".crucible").join("kiln.toml"), "").unwrap();
+        std::fs::write(
+            kiln.join("Many.md"),
+            "# Many\n\n\
+             The first paragraph says the kiln keeps notes in plain text.\n\n\
+             The second paragraph says a session attaches a flat set of kilns.\n\n\
+             The third paragraph says the daemon owns every byte of storage.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            kiln.join("One.md"),
+            "# One\n\nA single paragraph about the parser and its byte spans.\n",
+        )
+        .unwrap();
+        daemon_client
+            .kiln_open_with_options(&kiln, true, false)
+            .await
+            .unwrap();
+        let query = daemon_client
+            .embed_query(&kiln, "where do notes live")
+            .await
+            .unwrap();
+
+        let store = DaemonNoteStore::new(Arc::new(DaemonStorageClient::new(
+            daemon_client,
+            kiln.clone(),
+        )));
+        let hits = store.search(&query, 10, None).await.unwrap();
+
+        let paths: Vec<&str> = hits.iter().map(|h| h.note.path.as_str()).collect();
+        let mut distinct = paths.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert!(!paths.is_empty(), "the processed kiln answers the query");
+        assert_eq!(
+            paths.len(),
+            distinct.len(),
+            "a note appears once, at its best block's rank: {paths:?}"
+        );
     }
 }
