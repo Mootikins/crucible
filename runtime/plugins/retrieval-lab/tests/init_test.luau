@@ -89,6 +89,7 @@ describe("retrieval-lab", function()
 
         it("steps over an excluded kind to the next prose block", function()
             use("arc_post")
+            plugin.setup({ exclude_kinds = { "heading", "transition" } })
             fixtures["notes/n.md"] = {
                 block(0, "paragraph", A),
                 block(10, "heading", D),
