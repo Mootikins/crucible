@@ -143,8 +143,8 @@ fn de_casteljau(points: &[Vec<f32>], t: f64) -> Vec<f32> {
 /// The best cosine between `q` and any of `n` samples of the Bézier curve
 /// through `points`, and the parameter `t` of that sample.
 ///
-/// With no control points, or `n = 0`, there is nothing to score:
-/// the answer is `(0.0, 0.0)`.
+/// The best cosine can be negative. Only when there is nothing to score,
+/// with no control points or `n = 0`, is the answer `(0.0, 0.0)`.
 pub fn curve_best(q: &[f32], points: &[Vec<f32>], n: usize) -> (f64, f64) {
     let samples = bezier_samples(points, n);
     let count = samples.len();
@@ -159,13 +159,14 @@ pub fn curve_best(q: &[f32], points: &[Vec<f32>], n: usize) -> (f64, f64) {
             };
             (cosine(q, sample), t)
         })
-        .fold((0.0, 0.0), |best, candidate| {
+        .reduce(|best, candidate| {
             if candidate.0 > best.0 {
                 candidate
             } else {
                 best
             }
         })
+        .unwrap_or((0.0, 0.0))
 }
 
 #[cfg(test)]
@@ -336,5 +337,27 @@ mod tests {
         assert_eq!(end_t, 1.0);
 
         assert_eq!(curve_best(&q, &[], 10), (0.0, 0.0));
+    }
+
+    /// A query that opposes every sample still gets its best cosine, which
+    /// is negative. Only the empty case answers zero.
+    #[test]
+    fn curve_best_answers_the_best_negative_cosine_when_every_sample_opposes() {
+        let points = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
+        let q = normalize(&[-1.0, -1.0, 0.0]);
+        let (score, t) = curve_best(&q, &points, 101);
+        assert!(
+            (score + std::f64::consts::FRAC_1_SQRT_2).abs() < TOLERANCE,
+            "score {score}"
+        );
+        // The middle of the curve scores `-1.0`, so the two endpoints tie
+        // for the best, and the first one wins.
+        assert_eq!(t, 0.0);
+
+        // The same query at one sample: the first control point, and its
+        // cosine, however negative.
+        let (score, t) = curve_best(&q, &points, 1);
+        assert!((score - cosine(&q, &points[0])).abs() < TOLERANCE);
+        assert_eq!(t, 0.0);
     }
 }
