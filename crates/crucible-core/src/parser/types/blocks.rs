@@ -39,6 +39,12 @@ pub enum BlockKind {
     Table,
     /// A thematic break.
     HorizontalRule,
+    /// A synthetic row over the passage between two adjacent blocks.
+    ///
+    /// The parser never produces one. The `index:blocks` stage is its only
+    /// producer, so retrieval can score the trajectory between two blocks as
+    /// a row of its own.
+    Transition,
 }
 
 impl BlockKind {
@@ -57,8 +63,24 @@ impl BlockKind {
             BlockKind::Latex => "latex",
             BlockKind::Table => "table",
             BlockKind::HorizontalRule => "rule",
+            BlockKind::Transition => "transition",
         }
     }
+
+    /// Every name [`Self::as_str`] can answer. The `index:blocks` stage
+    /// admits an extra row only under one of these.
+    pub const STORED_NAMES: &'static [&'static str] = &[
+        "heading",
+        "paragraph",
+        "code",
+        "list",
+        "quote",
+        "callout",
+        "latex",
+        "table",
+        "rule",
+        "transition",
+    ];
 }
 
 impl std::fmt::Display for BlockKind {

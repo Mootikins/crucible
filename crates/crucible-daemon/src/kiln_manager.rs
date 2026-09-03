@@ -379,6 +379,9 @@ pub struct KilnManager {
     event_tx: Option<broadcast::Sender<SessionEventMessage>>,
     enrichment_config: Option<EmbeddingProviderConfig>,
     max_precognition_chars: usize,
+    /// The plugin VM every kiln's pipeline fires `index:blocks` through.
+    /// Bound once at daemon boot; a pipeline created earlier reads it late.
+    index_stage: crate::retrieval_stage::SharedStageVm,
     /// How this manager names a kiln it only has a directory for.
     ///
     /// It opens kilns BY PATH — every caller reaches it with one — so anything
@@ -397,6 +400,7 @@ impl KilnManager {
             event_tx: None,
             enrichment_config: None,
             max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
+            index_stage: Arc::default(),
             kiln_registry: None,
         }
     }
@@ -411,8 +415,18 @@ impl KilnManager {
             event_tx: Some(event_tx),
             enrichment_config,
             max_precognition_chars,
+            index_stage: Arc::default(),
             kiln_registry: None,
         }
+    }
+
+    /// Bind the plugin VM `index:blocks` fires through. Idempotent.
+    pub fn set_plugin_handlers(
+        &self,
+        registry: Arc<crucible_lua::LuaScriptHandlerRegistry>,
+        lua: Arc<mlua::Lua>,
+    ) {
+        let _ = self.index_stage.set(((*registry).clone(), (*lua).clone()));
     }
 
     /// Let this manager name the kilns it opens. See [`Self::kiln_registry`].
@@ -496,7 +510,9 @@ impl KilnManager {
             }
         }
 
-        let mut pipeline = create_pipeline(&handle, self.enrichment_config.as_ref()).await?;
+        let mut pipeline = create_pipeline(&handle, self.enrichment_config.as_ref())
+            .await?
+            .with_index_stage(self.index_stage.clone(), self.kiln_name_for(&canonical));
         pipeline.set_kiln_root(canonical.clone());
         info!("Pipeline created for kiln at {:?}", canonical);
 

@@ -79,6 +79,13 @@ pub struct NotePipeline {
 
     /// Block-granularity vector store. `None` in tests that don't exercise it.
     block_store: Option<Arc<dyn crucible_core::storage::BlockStore>>,
+
+    /// The plugin VM `index:blocks` fires through, bound at daemon boot.
+    /// `None` when no plugin runtime reaches this pipeline.
+    index_stage: Option<crate::retrieval_stage::SharedStageVm>,
+
+    /// The registry name `index:blocks` reports for this kiln.
+    kiln_name: Option<crucible_core::config::KilnName>,
 }
 
 impl NotePipeline {
@@ -98,7 +105,21 @@ impl NotePipeline {
             config,
             kiln_root: None,
             block_store: None,
+            index_stage: None,
+            kiln_name: None,
         }
+    }
+
+    /// Let `index:blocks` fire through the plugin VM before a note's block
+    /// rows are written, naming the kiln by `kiln_name` when it has one.
+    pub fn with_index_stage(
+        mut self,
+        stage: crate::retrieval_stage::SharedStageVm,
+        kiln_name: Option<crucible_core::config::KilnName>,
+    ) -> Self {
+        self.index_stage = Some(stage);
+        self.kiln_name = kiln_name;
+        self
     }
 
     /// Attach the FTS5 text index. The pipeline writes each note's title and
@@ -268,7 +289,17 @@ impl NotePipeline {
         // reference `notes(path)`. A failure here costs block-granularity
         // retrieval for one note, not the indexing pass.
         if let Some(blocks) = self.block_store.as_ref() {
-            let records = Self::block_records(&enriched, &path_str);
+            let mut records = Self::block_records(&enriched, &path_str);
+            if let Some(vm) = self.index_stage.as_ref().and_then(|stage| stage.get()) {
+                let extra = crate::retrieval_stage::index_blocks_extra_rows(
+                    vm,
+                    self.kiln_name.as_ref(),
+                    &path_str,
+                    &records,
+                )
+                .await;
+                records.extend(extra);
+            }
             if let Err(e) = blocks.replace_note_blocks(&path_str, records).await {
                 tracing::error!(
                     path = %path_str,
@@ -1283,6 +1314,119 @@ mod tests {
         assert!(hits.iter().any(|h| h.block.text.contains("Alpha")));
         assert!(hits.iter().any(|h| h.block.text.contains("Beta")));
         assert!(hits.iter().all(|h| h.block.span_end > h.block.span_start));
+    }
+
+    /// A pipeline whose `index:blocks` stage reaches a plugin VM running
+    /// `handler`.
+    async fn staged_pipeline(
+        handler: &str,
+    ) -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
+        let lua = mlua::Lua::new();
+        let registry = crucible_lua::LuaScriptHandlerRegistry::new();
+        crucible_lua::register_cru_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("register_cru_on_api should succeed");
+        lua.load(handler).exec().expect("the handler loads");
+        let stage: crate::retrieval_stage::SharedStageVm = Arc::default();
+        assert!(stage.set((registry, lua)).is_ok(), "bound once");
+
+        let (pipeline, blocks) = sqlite_pipeline().await;
+        (
+            pipeline.with_index_stage(stage, crucible_core::config::KilnName::normalize("lab")),
+            blocks,
+        )
+    }
+
+    /// One transition row over the two paragraphs, keyed at the first
+    /// paragraph's end so it collides with no parser row.
+    const TRANSITION_HANDLER: &str = r#"
+        cru.on("index:blocks", function(ctx, event)
+            assert(event.kiln == "lab", "the kiln is named")
+            assert(event.path ~= nil)
+            local embedded = {}
+            for _, block in ipairs(event.blocks) do
+                if block.vector then embedded[#embedded + 1] = block end
+            end
+            assert(#embedded == 2, "two paragraphs clear the word floor")
+            local a, b = embedded[1], embedded[2]
+            return { extra = { {
+                span_start = a.span_end,
+                span_end = b.span_end,
+                kind = "transition",
+                vector = a.vector,
+            } } }
+        end)
+    "#;
+
+    const NOTE: &str = "# Title\n\nAlpha has enough words here for embedding.\n\n## Section\n\nBeta has enough words here for embedding.\n";
+
+    #[tokio::test]
+    async fn an_index_blocks_handler_adds_a_transition_row_that_a_reprocess_replaces() {
+        let (pipeline, blocks) = staged_pipeline(TRANSITION_HANDLER).await;
+        let file = write_temp_note(NOTE);
+        let path = file.path().to_string_lossy().to_string();
+
+        pipeline.process(file.path()).await.unwrap();
+        let stored = blocks.blocks_for_note(&path).await.unwrap();
+
+        let transitions: Vec<_> = stored.iter().filter(|b| b.kind == "transition").collect();
+        assert_eq!(
+            transitions.len(),
+            1,
+            "one extra row beside the parser's four"
+        );
+        assert_eq!(stored.len(), 5);
+        let row = transitions[0];
+        assert_eq!(row.span_start, stored[1].span_end);
+        assert_eq!(row.span_end, stored[4].span_end);
+        assert_eq!(
+            row.embedding, stored[1].embedding,
+            "the handler's vector is stored"
+        );
+        assert_eq!(row.embedding_model, stored[1].embedding_model);
+        assert!(
+            row.text.contains("Beta"),
+            "the row quotes the blocks inside its span"
+        );
+
+        pipeline.process(file.path()).await.unwrap();
+        let again = blocks.blocks_for_note(&path).await.unwrap();
+        assert_eq!(
+            again.iter().filter(|b| b.kind == "transition").count(),
+            1,
+            "a reprocess replaces the extra row rather than adding a second"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_extra_row_of_another_dimension_is_dropped() {
+        let (pipeline, blocks) = staged_pipeline(
+            r#"
+            cru.on("index:blocks", function(ctx, event)
+                local last = event.blocks[#event.blocks]
+                return { extra = {
+                    { span_start = 1, span_end = last.span_end, kind = "transition", vector = { 1, 2, 3 } },
+                    { span_start = 1, span_end = last.span_end + 1000, kind = "transition", vector = last.vector },
+                    { span_start = 0, span_end = last.span_end, kind = "transition", vector = last.vector },
+                    { span_start = 2, span_end = last.span_end, kind = "arc", vector = last.vector },
+                } }
+            end)
+            "#,
+        )
+        .await;
+        let file = write_temp_note(NOTE);
+        let path = file.path().to_string_lossy().to_string();
+
+        pipeline.process(file.path()).await.unwrap();
+        let stored = blocks.blocks_for_note(&path).await.unwrap();
+
+        // The wrong dimension, a span past the note, a start the heading
+        // already owns and an unknown kind: none of the four is written.
+        assert_eq!(stored.len(), 4);
+        assert!(stored.iter().all(|b| b.kind != "transition"));
     }
 
     #[tokio::test]

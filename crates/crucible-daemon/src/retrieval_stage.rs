@@ -9,6 +9,8 @@
 //! one, so those callers hand over the plugin VM alone.
 
 use crucible_core::events::SessionEvent;
+use crucible_core::parser::BlockHash;
+use crucible_core::storage::BlockRecord;
 use crucible_lua::{LuaScriptHandlerRegistry, ScriptHandlerResult, StageId};
 use mlua::Lua;
 use std::sync::{Arc, OnceLock};
@@ -106,4 +108,156 @@ pub fn has_handlers(stage: StageId, vms: &[StageVm]) -> bool {
             .runtime_handlers_for(stage.as_str(), None)
             .is_empty()
     })
+}
+
+/// Fire `index:blocks` over a note's block rows and return the extra rows a
+/// handler added, checked and ready to write beside `records`.
+///
+/// An extra row must name a kind [`BlockKind::STORED_NAMES`] lists, sit
+/// inside the note, start where no other row starts, and carry a vector of
+/// the note's own dimension. The model name comes from the note's embedded
+/// blocks, so a note with none admits no extra rows. Rows that fail a check
+/// are dropped with a warning, never the whole write.
+pub async fn index_blocks_extra_rows(
+    vm: &StageVm,
+    kiln_name: Option<&crucible_core::config::KilnName>,
+    note_path: &str,
+    records: &[BlockRecord],
+) -> Vec<BlockRecord> {
+    let vms = std::slice::from_ref(vm);
+    if !has_handlers(StageId::IndexBlocks, vms) {
+        return Vec::new();
+    }
+
+    let blocks: Vec<serde_json::Value> = records
+        .iter()
+        .map(|record| {
+            let mut entry = serde_json::Map::new();
+            entry.insert("span_start".into(), serde_json::json!(record.span_start));
+            entry.insert("span_end".into(), serde_json::json!(record.span_end));
+            entry.insert("kind".into(), serde_json::json!(record.kind));
+            if let Some(vector) = record.embedding.as_ref() {
+                entry.insert("vector".into(), serde_json::json!(vector));
+            }
+            serde_json::Value::Object(entry)
+        })
+        .collect();
+    let mut payload = serde_json::Map::new();
+    if let Some(name) = kiln_name {
+        payload.insert("kiln".into(), serde_json::json!(name.as_str()));
+    }
+    payload.insert("path".into(), serde_json::json!(note_path));
+    payload.insert("blocks".into(), serde_json::Value::Array(blocks));
+    let event = SessionEvent::Custom {
+        name: StageId::IndexBlocks.as_str().to_string(),
+        payload: serde_json::Value::Object(payload),
+    };
+
+    first_usable_transform(StageId::IndexBlocks, vms, None, &event, |value| {
+        let extra = value.get("extra")?;
+        Some(admit_extra_rows(note_path, records, &lua_array(extra)?))
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// The subset of `extra` that passes every check, as rows of `note_path`.
+fn admit_extra_rows(
+    note_path: &str,
+    records: &[BlockRecord],
+    extra: &[serde_json::Value],
+) -> Vec<BlockRecord> {
+    use crucible_core::parser::types::BlockKind;
+
+    let note_end = records.iter().map(|r| r.span_end).max().unwrap_or(0);
+    let reference = records
+        .iter()
+        .find_map(|r| Some((r.embedding_model.clone()?, r.embedding_dimensions?)));
+    let mut starts: std::collections::HashSet<usize> =
+        records.iter().map(|r| r.span_start).collect();
+    let mut admitted = Vec::new();
+
+    for entry in extra {
+        let span_start = entry.get("span_start").and_then(|v| v.as_u64());
+        let span_end = entry.get("span_end").and_then(|v| v.as_u64());
+        let kind = entry.get("kind").and_then(|v| v.as_str());
+        let vector: Option<Vec<f32>> = entry.get("vector").and_then(lua_array).map(|values| {
+            values
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .map(|f| f as f32)
+                .collect()
+        });
+
+        let (Some(span_start), Some(span_end), Some(kind), Some(vector)) =
+            (span_start, span_end, kind, vector)
+        else {
+            warn!(
+                note_path,
+                "index:blocks extra row lacks span, kind or vector; dropping"
+            );
+            continue;
+        };
+        let (span_start, span_end) = (span_start as usize, span_end as usize);
+        if !BlockKind::STORED_NAMES.contains(&kind) {
+            warn!(
+                note_path,
+                kind, "index:blocks extra row names an unknown kind; dropping"
+            );
+            continue;
+        }
+        if span_start > span_end || span_end > note_end {
+            warn!(
+                note_path,
+                span_start, span_end, "index:blocks extra row is not inside the note; dropping"
+            );
+            continue;
+        }
+        let Some((model, dimensions)) = reference.as_ref() else {
+            warn!(
+                note_path,
+                "index:blocks extra row on a note with no embedded block; dropping"
+            );
+            continue;
+        };
+        if vector.len() != *dimensions as usize {
+            warn!(
+                note_path,
+                span_start,
+                dimensions,
+                got = vector.len(),
+                "index:blocks extra row has a vector of another dimension; dropping"
+            );
+            continue;
+        }
+        if !starts.insert(span_start) {
+            warn!(
+                note_path,
+                span_start, "index:blocks extra row starts where a row already starts; dropping"
+            );
+            continue;
+        }
+
+        let text = match entry.get("text").and_then(|v| v.as_str()) {
+            Some(text) => text.to_string(),
+            None => records
+                .iter()
+                .filter(|r| r.span_start >= span_start && r.span_end <= span_end)
+                .map(|r| r.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        };
+        admitted.push(BlockRecord {
+            note_path: note_path.to_string(),
+            span_start,
+            span_end,
+            kind: kind.to_string(),
+            content_hash: BlockHash::new(*blake3::hash(text.as_bytes()).as_bytes()),
+            text,
+            embedding_dimensions: Some(*dimensions),
+            embedding: Some(vector),
+            embedding_model: Some(model.clone()),
+        });
+    }
+    admitted
 }

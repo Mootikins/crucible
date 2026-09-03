@@ -68,14 +68,15 @@ in a fixed order: **session-VM handlers first, then plugin-VM handlers**,
 each registry in ascending priority. Transforms chain across the boundary:
 a plugin handler sees arguments a session handler already rewrote.
 
-The two precognition hooks and `search:rerank` are the exception to chaining:
+The two precognition hooks, `search:rerank` and `index:blocks` are the
+exception to chaining:
 they take the **first usable Transform** and stop — session VM before plugin
 VM — because a selection is a decision, not a patch.
 
 ## Event Types
 
 The complete set, and it is closed: `cru.on` raises on a name that is not
-here. Two Rust enums hold it — `StageId` for the twelve turn-loop stages,
+here. Two Rust enums hold it — `StageId` for the thirteen turn-loop stages,
 `EventName` for the eight daemon events
 (`crucible-lua/src/handlers/hook_name.rs`) — and
 `the_documented_table_lists_every_hook` fails if this table and those enums
@@ -95,6 +96,7 @@ disagree.
 | `tool:display_start` | to customise how a running tool card renders |
 | `tool:display_complete` | to customise how a finished tool card renders |
 | `search:rerank` | over the merged search hits, before the cut to the caller's limit |
+| `index:blocks` | over a note's block rows, before the pipeline writes them |
 | `FileChanged` | a watched file was created or modified |
 | `FileDeleted` | a watched file was removed |
 | `FileMoved` | a watched file was renamed or moved |
@@ -375,6 +377,62 @@ the order the caller sees, and the daemon cuts it to `event.limit`.
 Out-of-range, duplicate and non-numeric indices are dropped with a warning,
 and a return with no usable entry falls back to the merged order. The hook
 fails open: a handler that errors leaves the merged order in place.
+
+### `index:blocks`
+
+Fires once per note, after its blocks are embedded and before their rows are
+written. A handler may add synthetic rows, which the plain vector scan then
+sees like any other block. The pipeline has no session VM, so only plugin
+handlers fire.
+
+```lua
+cru.on("index:blocks", function(ctx, event)
+  -- One row over each pair of adjacent embedded paragraphs.
+  local extra = {}
+  local prev
+  for _, block in ipairs(event.blocks) do
+    if block.vector then
+      if prev then
+        local sum = {}
+        for i = 1, #block.vector do
+          sum[i] = prev.vector[i] + block.vector[i]
+        end
+        extra[#extra + 1] = {
+          span_start = prev.span_end,
+          span_end = block.span_end,
+          kind = "transition",
+          vector = cru.vec.normalize(sum),
+        }
+      end
+      prev = block
+    end
+  end
+  return { extra = extra }
+end)
+```
+
+Event fields:
+- `event.kiln` — the registry name of the kiln, absent when it has none
+- `event.path` — the note's path as the index stores it
+- `event.blocks` — an array of `{ span_start, span_end, kind, vector }` in
+  span order. `vector` is absent for a block under the word floor.
+
+Return `{ extra = { { span_start, span_end, kind, vector, text } } }`. Extra
+rows are written with the note's own rows and removed with them, so a
+reprocess replaces them. `kind` must be a parser kind or `transition`.
+`text` is optional; without it the row quotes the note's blocks inside its
+span. A row is dropped with a warning when its span is not inside the note,
+when its `span_start` is already a row's start, when its vector has a
+different dimension from the note's embedded blocks, or when the note has no
+embedded block to take a model name from.
+
+| Return | Effect |
+|--------|--------|
+| `nil` | the parser's rows alone |
+| `{ extra = {...} }` | the parser's rows plus the rows that pass the checks |
+| anything else | warns and writes the parser's rows alone |
+
+The hook fails open: a handler that errors leaves the parser's rows alone.
 
 ### `pre_llm_call` / `post_llm_call`
 

@@ -163,6 +163,8 @@ pub enum StageId {
     ToolDisplayComplete,
     /// Over the merged search hits, before the cut to the caller's limit.
     SearchRerank,
+    /// Over a note's block rows, before the pipeline writes them.
+    IndexBlocks,
 }
 
 impl StageId {
@@ -180,6 +182,7 @@ impl StageId {
         Self::ToolDisplayStart,
         Self::ToolDisplayComplete,
         Self::SearchRerank,
+        Self::IndexBlocks,
     ];
 
     /// The name a plugin registers.
@@ -200,6 +203,7 @@ impl StageId {
             Self::ToolDisplayStart => "tool:display_start",
             Self::ToolDisplayComplete => "tool:display_complete",
             Self::SearchRerank => "search:rerank",
+            Self::IndexBlocks => "index:blocks",
         }
     }
 
@@ -225,7 +229,8 @@ impl StageId {
             | Self::ToolBeforeExecute
             | Self::ToolDisplayStart
             | Self::ToolDisplayComplete
-            | Self::SearchRerank => TURN_STAGE_BUDGET,
+            | Self::SearchRerank
+            | Self::IndexBlocks => TURN_STAGE_BUDGET,
         }
     }
 
