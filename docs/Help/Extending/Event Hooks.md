@@ -467,6 +467,28 @@ name from. Replacements apply before extra rows are checked.
 
 The hook fails open: a handler that errors leaves the parser's rows alone.
 
+### The `retrieval-lab` plugin
+
+`runtime/plugins/retrieval-lab/` is the worked example of both stages. One
+plugin registers one `search:rerank` handler and one `index:blocks` handler,
+and it composes each strategy from `cru.vec` and `cru.kiln.blocks` alone. Read
+it for the shape of a real handler at either stage.
+
+The plugin is a proof of concept, not a retrieval setting. It ships with
+`enabled = false`, and it stays off until you set the two knobs:
+
+```toml
+[plugins.retrieval-lab]
+enabled = true
+strategy = "arc_post"
+```
+
+Eight measurement runs found no strategy worth a default. At note level a
+strategy moves hit@1 and MRR by about one point on a documentary corpus, and
+the gains and the losses cancel. The pair and the curve strategies win at
+block level only, and they cost 7 to 8 times the baseline search time. The
+header of `init.luau` carries the numbers.
+
 ### `pre_llm_call` / `post_llm_call`
 
 `pre_llm_call` fires once per provider request, before it is sent.
