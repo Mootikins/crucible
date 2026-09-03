@@ -161,6 +161,8 @@ pub enum StageId {
     ToolDisplayStart,
     /// A tool call finished and its display is final.
     ToolDisplayComplete,
+    /// Over the merged search hits, before the cut to the caller's limit.
+    SearchRerank,
 }
 
 impl StageId {
@@ -177,6 +179,7 @@ impl StageId {
         Self::ToolBeforeExecute,
         Self::ToolDisplayStart,
         Self::ToolDisplayComplete,
+        Self::SearchRerank,
     ];
 
     /// The name a plugin registers.
@@ -196,6 +199,7 @@ impl StageId {
             Self::ToolBeforeExecute => "tool:before_execute",
             Self::ToolDisplayStart => "tool:display_start",
             Self::ToolDisplayComplete => "tool:display_complete",
+            Self::SearchRerank => "search:rerank",
         }
     }
 
@@ -220,7 +224,8 @@ impl StageId {
             | Self::TurnComplete
             | Self::ToolBeforeExecute
             | Self::ToolDisplayStart
-            | Self::ToolDisplayComplete => TURN_STAGE_BUDGET,
+            | Self::ToolDisplayComplete
+            | Self::SearchRerank => TURN_STAGE_BUDGET,
         }
     }
 

@@ -691,3 +691,64 @@ async fn an_unregistered_json_handler_has_no_opinion_instead_of_failing_closed()
         "got: {result:?}"
     );
 }
+
+/// `search:rerank` is a registered stage, and a handler at it can return
+/// the hits in a new order with a widened span.
+#[tokio::test]
+async fn a_search_rerank_handler_returns_the_hits_it_reordered() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_cru_on_api(
+        &lua,
+        registry.runtime_handlers.clone(),
+        registry.handler_functions.clone(),
+    )
+    .unwrap();
+
+    lua.load(
+        r#"
+        cru.on("search:rerank", function(ctx, event)
+            local out = {}
+            for i = #event.hits, 1, -1 do
+                local hit = event.hits[i]
+                out[#out + 1] = { index = hit.index, span_end = hit.span_end + 5 }
+            end
+            return out
+        end)
+        "#,
+    )
+    .exec()
+    .unwrap();
+
+    let handlers = registry.runtime_handlers_for("search:rerank", None);
+    assert_eq!(handlers.len(), 1);
+
+    let event = SessionEvent::Custom {
+        name: "search:rerank".to_string(),
+        payload: serde_json::json!({
+            "query_vector": [1.0, 0.0],
+            "kilns": ["lab"],
+            "limit": 2,
+            "hits": [
+                { "index": 1, "path": "a.md", "span_start": 0, "span_end": 10, "kind": "paragraph", "score": 0.9 },
+                { "index": 2, "path": "b.md", "span_start": 20, "span_end": 30, "kind": "paragraph", "score": 0.8 },
+            ],
+        }),
+    };
+    let result = registry
+        .execute_runtime_handler(&lua, &handlers[0].name, &event, None)
+        .await
+        .unwrap();
+
+    let ScriptHandlerResult::Transform(value) = result else {
+        panic!("expected a Transform, got {result:?}");
+    };
+    // A top-level Lua array crosses as an object keyed by position.
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "1": { "index": 2, "span_end": 35 },
+            "2": { "index": 1, "span_end": 15 },
+        })
+    );
+}

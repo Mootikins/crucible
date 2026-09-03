@@ -66,6 +66,7 @@ pub mod provider;
 pub mod recording;
 pub mod registry_store;
 pub mod replay;
+pub mod retrieval_stage;
 pub mod review;
 pub mod rpc;
 pub mod rpc_client;

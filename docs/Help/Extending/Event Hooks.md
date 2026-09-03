@@ -68,15 +68,14 @@ in a fixed order: **session-VM handlers first, then plugin-VM handlers**,
 each registry in ascending priority. Transforms chain across the boundary:
 a plugin handler sees arguments a session handler already rewrote.
 
-The two precognition hooks are the exception to chaining:
-`precognition_select` and `precognition_format` take the **first usable
-Transform** and stop — session VM before plugin VM — because a selection is a
-decision, not a patch.
+The two precognition hooks and `search:rerank` are the exception to chaining:
+they take the **first usable Transform** and stop — session VM before plugin
+VM — because a selection is a decision, not a patch.
 
 ## Event Types
 
 The complete set, and it is closed: `cru.on` raises on a name that is not
-here. Two Rust enums hold it — `StageId` for the eleven turn-loop stages,
+here. Two Rust enums hold it — `StageId` for the twelve turn-loop stages,
 `EventName` for the eight daemon events
 (`crucible-lua/src/handlers/hook_name.rs`) — and
 `the_documented_table_lists_every_hook` fails if this table and those enums
@@ -95,6 +94,7 @@ disagree.
 | `tool:before_execute` | immediately before execution, after permission |
 | `tool:display_start` | to customise how a running tool card renders |
 | `tool:display_complete` | to customise how a finished tool card renders |
+| `search:rerank` | over the merged search hits, before the cut to the caller's limit |
 | `FileChanged` | a watched file was created or modified |
 | `FileDeleted` | a watched file was removed |
 | `FileMoved` | a watched file was renamed or moved |
@@ -324,6 +324,57 @@ these notes have already been chosen and there is nothing to address them by.
 Does **not** fire when the search returned nothing — the daemon short-circuits
 before invoking it. To inject something on the empty case, use
 `transform_context`, which fires every turn.
+
+### `search:rerank`
+
+Fires on every semantic search — the `semantic_search` tool, precognition,
+`cru search` and `cru eval precognition` — after the hits from every kiln are
+merged and before the list is cut to the caller's limit. A handler can rescore
+the hits, reorder them, widen the span a hit names and cite further spans.
+Precognition fires it with the session VM first; the tool and the RPC have no
+session VM and reach plugin handlers only.
+
+```lua
+cru.on("search:rerank", function(ctx, event)
+  -- Prefer prose: halve the score of every heading hit.
+  for _, hit in ipairs(event.hits) do
+    if hit.kind == "heading" then
+      hit.score = hit.score / 2
+    end
+  end
+  table.sort(event.hits, function(a, b) return a.score > b.score end)
+  return event.hits
+end)
+```
+
+Event fields:
+- `event.query_vector` — the query embedding, an array of numbers
+- `event.kilns` — the registry names of the kilns searched
+- `event.limit` — how many hits the caller asked for; the cut happens after
+  the handler returns
+- `event.hits` — an array of
+  `{ index, kiln, path, span_start, span_end, kind, score, snippet }`, best
+  first. `kiln` follows the rules of `precognition_select`. The three block
+  fields are absent for a hit that names a whole note.
+
+Return an array of `{ index, score, span_end, cited }`. `index` is the handle
+from `event.hits` and is required; the others are optional. `score` replaces
+the hit's score. `span_end` widens the block a hit names and is ignored on a
+whole-note hit or when it is smaller than the hit's start. `cited` is an array
+of `{ start, stop }` pairs the hit also draws on; it reaches the tool result,
+the precognition block and `cru search` as `block.cited`. Returned order is
+the order the caller sees, and the daemon cuts it to `event.limit`.
+
+| Return | Effect |
+|--------|--------|
+| `nil` | the merged order stands |
+| array of entries | those hits, in that order |
+| `{}` | no hits |
+| anything else | warns and falls back to the merged order |
+
+Out-of-range, duplicate and non-numeric indices are dropped with a warning,
+and a return with no usable entry falls back to the merged order. The hook
+fails open: a handler that errors leaves the merged order in place.
 
 ### `pre_llm_call` / `post_llm_call`
 

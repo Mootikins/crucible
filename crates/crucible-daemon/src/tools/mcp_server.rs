@@ -199,6 +199,16 @@ impl CrucibleMcpServer {
         self
     }
 
+    /// Let `semantic_search` fire `search:rerank` through the plugin VM.
+    #[must_use]
+    pub fn with_rerank_stage(
+        mut self,
+        stage: Option<crate::multi_kiln_search::RerankStage>,
+    ) -> Self {
+        self.search_tools = self.search_tools.with_rerank_stage(stage);
+        self
+    }
+
     /// Name the kiln these tools are anchored to, so `get_kiln_info` can answer
     /// with the registry name instead of the anchor's directory basename.
     ///

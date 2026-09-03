@@ -9,7 +9,7 @@ use super::containment::RootSet;
 use super::fs_scope::FsScope;
 use super::grep_engine::{grep_search, GrepSearchError, WalkScope};
 use super::helpers::{json_success, McpResultExt};
-use crate::multi_kiln_search::KilnSearchSource;
+use crate::multi_kiln_search::{KilnSearchSource, RerankStage};
 use crucible_core::serde_helpers::default_true;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use rmcp::handler::server::wrapper::Parameters;
@@ -43,6 +43,9 @@ pub struct SearchTools {
     /// session-connected kilns (same sources precognition uses — one
     /// builder, one filter policy). Trust gating happens at attach time.
     search_sources: Vec<KilnSearchSource>,
+    /// The `search:rerank` stage, over the plugin VM. A tool call has no
+    /// session VM of its own here; `None` for a server opened by path.
+    rerank: Option<RerankStage>,
 }
 
 /// Parameters for semantic search
@@ -101,7 +104,15 @@ impl SearchTools {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             embedding_provider,
             search_sources,
+            rerank: None,
         }
+    }
+
+    /// Let `semantic_search` fire `search:rerank` through these VMs.
+    #[must_use]
+    pub fn with_rerank_stage(mut self, stage: Option<RerankStage>) -> Self {
+        self.rerank = stage;
+        self
     }
 
     /// Contain these tools to the session's roots — see
@@ -143,12 +154,13 @@ impl SearchTools {
         // precognition uses (dedup + merge-sort + kiln labeling). Trust
         // filtering is None here: every kiln passes the trust gate at attach
         // time.
-        let note_results = crate::multi_kiln_search::search_across_kilns(
+        let note_results = crate::multi_kiln_search::search_across_kilns_with_stage(
             &self.search_sources,
             embedding,
             limit,
             None,
             Some(self.scope.anchor()),
+            self.rerank.as_ref(),
         )
         .await
         .mcp_err_ctx("Note search failed")?;
