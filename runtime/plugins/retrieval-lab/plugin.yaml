@@ -36,8 +36,8 @@ config:
       type: array
       items:
         type: string
-      description: Block kinds a strategy never pairs with or walks through. Every embedded block of any other kind joins a pair.
-      default: ["transition"]
+      description: Block kinds a strategy never pairs with or walks through. Every embedded content block of any other kind joins a pair.
+      default: ["heading", "transition"]
 
 exports:
   auto_discover: true

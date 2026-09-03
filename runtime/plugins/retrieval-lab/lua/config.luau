@@ -14,16 +14,18 @@ local PLUGIN = "retrieval-lab"
 
 local M = {}
 
--- The keys mirror plugin.yaml. Every embedded block of any kind joins a
--- pair; only `transition` is excluded, so that a synthetic row an earlier
--- `arc_pre` index wrote never counts as a neighbour.
+-- The keys mirror plugin.yaml. Every embedded content block joins a pair.
+-- A heading is a label, and the few long enough to embed cost the
+-- adversarial corpus without a gain (lab runs 3 and 4). `transition` is
+-- excluded so that a synthetic row an earlier `arc_pre` index wrote never
+-- counts as a neighbour.
 local defaults = {
     enabled = false,
     strategy = "points",
     pair_cosine_min = 0.5,
     curve_window = 3,
     curve_samples = 8,
-    exclude_kinds = { "transition" },
+    exclude_kinds = { "heading", "transition" },
 }
 
 -- setup() values, kept apart from `defaults` so the order above stays
