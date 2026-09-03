@@ -31,9 +31,8 @@ local defaults = {
     meta_format = "{meta}\n\n{text}",
     -- ppr_post: the teleport mass of a hit note is its best dense score
     -- times the seed weight. The rest of the mass teleports uniformly.
-    ppr_seed_weight = 0.05,
     ppr_damping = 0.5,
-    ppr_blend = 1.0,
+    ppr_blend = 0.1,
     ppr_extra = 3,
 }
 

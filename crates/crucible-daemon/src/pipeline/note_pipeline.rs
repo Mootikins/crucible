@@ -1256,9 +1256,16 @@ mod tests {
     /// A pipeline over a real SQLite kiln, so the block rows are written
     /// through the same store production uses.
     async fn sqlite_pipeline() -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
-        use crate::storage::sqlite::{SqliteBlockStore, SqliteNoteStore, SqlitePool};
+        sqlite_pipeline_over(crate::storage::sqlite::SqlitePool::memory().unwrap()).await
+    }
 
-        let pool = SqlitePool::memory().unwrap();
+    /// A forced pipeline over `pool`, so a test can process one note twice
+    /// through two pipelines that share a store.
+    async fn sqlite_pipeline_over(
+        pool: crate::storage::sqlite::SqlitePool,
+    ) -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
+        use crate::storage::sqlite::{SqliteBlockStore, SqliteNoteStore};
+
         let notes: Arc<dyn NoteStore> = Arc::new(SqliteNoteStore::new(pool.clone()));
         let blocks: Arc<dyn crucible_core::storage::BlockStore> =
             Arc::new(SqliteBlockStore::new(pool));
@@ -1327,6 +1334,17 @@ mod tests {
     async fn staged_pipeline(
         handler: &str,
     ) -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
+        staged_pipeline_over(
+            crate::storage::sqlite::SqlitePool::memory().unwrap(),
+            handler,
+        )
+        .await
+    }
+
+    async fn staged_pipeline_over(
+        pool: crate::storage::sqlite::SqlitePool,
+        handler: &str,
+    ) -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
         let lua = mlua::Lua::new();
         let registry = crucible_lua::LuaScriptHandlerRegistry::new();
         crucible_lua::register_cru_on_api(
@@ -1339,7 +1357,7 @@ mod tests {
         let stage: crate::retrieval_stage::SharedStageVm = Arc::default();
         assert!(stage.set((registry, lua)).is_ok(), "bound once");
 
-        let (pipeline, blocks) = sqlite_pipeline().await;
+        let (pipeline, blocks) = sqlite_pipeline_over(pool).await;
         (
             pipeline.with_index_stage(stage, crucible_core::config::KilnName::normalize("lab")),
             blocks,
@@ -1486,10 +1504,63 @@ mod tests {
         };
         assert!(near(&stored[1], 0.5), "the named row takes the vector");
         assert!(near(&stored[3], 0.1), "the other row keeps its own");
-        assert_eq!(stored[1].embedding_model, untouched[1].embedding_model);
         assert_eq!(
             stored[1].content_hash, untouched[1].content_hash,
             "a swapped vector leaves the reuse key alone"
+        );
+        assert_eq!(
+            stored[1].embedding_model.as_deref(),
+            Some("mock-model#index:blocks"),
+            "a swapped vector is stored under its own model name, so the cache never serves it as the provider's"
+        );
+        assert_eq!(stored[3].embedding_model, untouched[3].embedding_model);
+    }
+
+    /// A reprocess with no handler re-embeds a swapped block: the swapped
+    /// vector sits under another model name, so the cache never answers
+    /// with it.
+    #[tokio::test]
+    async fn a_forced_reprocess_replaces_a_swapped_vector_with_the_providers() {
+        let pool = crate::storage::sqlite::SqlitePool::memory().unwrap();
+        let (staged, blocks) = staged_pipeline_over(
+            pool.clone(),
+            r#"
+            cru.on("index:blocks", function(ctx, event)
+                local replace = {}
+                for _, block in ipairs(event.blocks) do
+                    if block.vector then
+                        local swapped = {}
+                        for i = 1, #block.vector do swapped[i] = 0.5 end
+                        replace[#replace + 1] = { span_start = block.span_start, vector = swapped }
+                    end
+                end
+                return { replace = replace }
+            end)
+            "#,
+        )
+        .await;
+        let file = write_temp_note(NOTE);
+        let path = file.path().to_string_lossy().to_string();
+        staged.process(file.path()).await.unwrap();
+        let swapped = blocks.blocks_for_note(&path).await.unwrap();
+        assert!(swapped[1]
+            .embedding
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|v| (v - 0.5).abs() < 1e-6));
+
+        let (forced, _) = sqlite_pipeline_over(pool).await;
+        forced.process(file.path()).await.unwrap();
+        let stored = blocks.blocks_for_note(&path).await.unwrap();
+        assert!(
+            stored[1]
+                .embedding
+                .as_ref()
+                .unwrap()
+                .iter()
+                .all(|v| (v - 0.1).abs() < 1e-6),
+            "the reprocess re-embeds the block instead of reusing the swapped vector"
         );
     }
 

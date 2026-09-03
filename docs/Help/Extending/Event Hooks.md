@@ -450,8 +450,9 @@ embedded block to take a model name from.
 
 `replace` is an array of `{ span_start, vector }`. Each entry swaps the
 vector of the row that starts at `span_start`; the row's text and content
-hash stay, so the block cache still reuses the row on a reprocess and the
-handler runs again over it. An entry is dropped with a warning when no
+hash stay. The row's model name gets the suffix `#index:blocks`, so the
+block cache never serves the swapped vector as the provider's: a reprocess
+embeds the block again and the handler runs again over it. An entry is dropped with a warning when no
 embedded row starts at `span_start` (a row under the word floor has no
 vector to swap), when its vector has a different dimension from the note's
 embedded blocks, or when the note has no embedded block to take a model

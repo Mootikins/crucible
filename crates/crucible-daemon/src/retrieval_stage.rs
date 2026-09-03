@@ -253,10 +253,18 @@ fn replace_vectors(note_path: &str, records: &mut [BlockRecord], replace: &[serd
             continue;
         };
         row.embedding = Some(vector);
-        row.embedding_model = Some(model.clone());
+        // The block's hash is the store's reuse key. Under the provider's
+        // model name the swapped vector would come back as the provider's
+        // on the next reprocess, so it is stored under a name of its own.
+        row.embedding_model = Some(format!("{model}{REPLACED_MODEL_SUFFIX}"));
         row.embedding_dimensions = Some(*dimensions);
     }
 }
+
+/// Appended to the model name of a row whose vector an `index:blocks`
+/// handler replaced. Search reads vectors by dimension and never by model;
+/// the vector cache reads by model, so it never serves a replaced row.
+pub const REPLACED_MODEL_SUFFIX: &str = "#index:blocks";
 
 /// The subset of `extra` that passes every check, as rows of `note_path`.
 fn admit_extra_rows(

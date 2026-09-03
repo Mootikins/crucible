@@ -42,10 +42,6 @@ config:
       type: string
       description: "The text meta_pre embeds. {meta} is the title, the nearest heading and the description; {text} is the block's own text."
       default: "{meta}\n\n{text}"
-    ppr_seed_weight:
-      type: number
-      description: The teleport mass of a hit note is its best dense score times this weight. The mass the seeds leave teleports uniformly.
-      default: 0.05
     ppr_damping:
       type: number
       description: The share of a PageRank round that follows a link rather than teleports
@@ -53,7 +49,7 @@ config:
     ppr_blend:
       type: number
       description: How much of a note's PageRank, scaled so the best is one, joins each hit's score
-      default: 1.0
+      default: 0.1
     ppr_extra:
       type: number
       description: How many notes the walk reached and the scan did not enter the list

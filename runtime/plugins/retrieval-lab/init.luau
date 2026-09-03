@@ -41,10 +41,11 @@
 --- The strategy needs a named kiln and a bound `cru.embed`.
 ---
 --- `ppr_post` runs a personalized PageRank over the link graph of the first
---- searched kiln after the scan. The seeds are the notes the scan hit, each
---- with `ppr_seed_weight` times its best dense score; the mass the seeds
---- leave teleports uniformly. Twenty rounds at `ppr_damping`, then the
---- ranks are scaled so the highest is one. Each hit gains `ppr_blend` times
+--- searched kiln after the scan. The teleport vector is the notes the scan
+--- hit, each with its best dense score, scaled to sum to one; no mass
+--- teleports elsewhere, so the walk stays personal and a hub note gains
+--- only through a seed. Twenty rounds at `ppr_damping`, then the ranks are
+--- scaled so the highest is one. Each hit gains `ppr_blend` times
 --- its note's rank. The `ppr_extra` best notes the scan did not hit enter
 --- the list through their first embedded block, with the score
 --- `ppr_blend` times their rank. The graph is read once per kiln and
@@ -328,12 +329,11 @@ function M.pagerank(graph: Graph, seeds: { [string]: number }, damping: number, 
     for _, mass in pairs(seeds) do
         total += mass
     end
-    local uniform = math.max(0, 1 - total) / n
-    local scale = if total > 1 then 1 / total else 1
+    if total <= 0 then return {} end
     local teleport: { [string]: number } = {}
     local rank: { [string]: number } = {}
     for _, path in ipairs(graph.paths) do
-        teleport[path] = uniform + (seeds[path] or 0) * scale
+        teleport[path] = (seeds[path] or 0) / total
         rank[path] = teleport[path]
     end
     for _ = 1, iterations do
@@ -499,14 +499,10 @@ strategies.ppr_post = {
         if type(kiln) ~= "string" then return nil end
         local graph = M.graph_for(kiln)
         if graph == nil then return nil end
-        local weight = config.get("ppr_seed_weight")
         local seeds: { [string]: number } = {}
         for _, hit in ipairs(event.hits) do
-            if hit.kiln == kiln and type(hit.path) == "string" then
-                local mass = hit.score * weight
-                if mass > (seeds[hit.path] or 0) then
-                    seeds[hit.path] = mass
-                end
+            if hit.kiln == kiln and type(hit.path) == "string" and hit.score > (seeds[hit.path] or 0) then
+                seeds[hit.path] = hit.score
             end
         end
         if next(seeds) == nil then return nil end
