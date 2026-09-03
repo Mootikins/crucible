@@ -1,0 +1,43 @@
+name: retrieval-lab
+version: "0.1.0"
+description: Retrieval strategies over block trajectories, for measurement. Off by default.
+author: Crucible Team
+license: MIT
+
+main: init.luau
+
+capabilities:
+  - kiln
+  - config
+
+config:
+  properties:
+    enabled:
+      type: boolean
+      description: Register the search:rerank and index:blocks handlers. Off means the plain block scan.
+      default: false
+    strategy:
+      type: string
+      description: "One of points, arc_post, arc_pre, bezier_post"
+      default: points
+    pair_cosine_min:
+      type: number
+      description: Two adjacent blocks form a pair only when their cosine reaches this value
+      default: 0.5
+    curve_window:
+      type: number
+      description: How many consecutive blocks the bezier_post curve passes through
+      default: 3
+    curve_samples:
+      type: number
+      description: How many points of the curve bezier_post scores
+      default: 8
+    exclude_kinds:
+      type: array
+      items:
+        type: string
+      description: Block kinds a strategy never pairs with or walks through
+      default: ["heading", "list", "table", "code", "rule", "transition"]
+
+exports:
+  auto_discover: true
