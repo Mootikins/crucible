@@ -119,11 +119,13 @@ enum TurnExpectation {
         stop_reason: StopReason,
         /// `None` means the agent's `PromptResponse` carried no `usage`.
         usage: Option<ExpectedUsage>,
-        /// `(used, size)` from the agent's `usage_update` frame, or `None`
-        /// for an agent that never reports its window. This is the only
-        /// source of a context limit on a delegated session (A3), so the
-        /// numbers are asserted, not just the shape.
-        context_window: Option<(u64, u64)>,
+        /// Every `(used, size)` the agent's `usage_update` frames carried,
+        /// in order — empty for an agent that never reports its window. This
+        /// is the only source of a context limit on a delegated session (A3),
+        /// so the numbers are asserted, not just the shape. A list because
+        /// agents differ in how often they report: claude-agent-acp sends
+        /// four per turn and revises both operands as it goes.
+        context_window: &'static [(u64, u64)],
         /// Substring the one tool call's `ToolEnd.result` must carry, or
         /// `None` for a turn with no tool calls. Hermes puts a polished
         /// tool's result only in `content` text blocks (`rawOutput` is
@@ -141,6 +143,12 @@ struct FixtureCase {
     /// Directory under `tests/fixtures/acp/recorded/`, and the value the
     /// fixture header must declare.
     agent: &'static str,
+    /// Basename of the capture under that directory, without `.jsonl`. One
+    /// agent can have several: re-recording against a newer build replaces
+    /// what the agent does *now*, and the path it no longer takes — a prompt
+    /// error, a refusal — stays behind as its own scenario rather than being
+    /// deleted with the file.
+    scenario: &'static str,
     /// `cwd` sent on `session/new` — mirrors what was recorded.
     cwd: &'static str,
     prompt: &'static str,
@@ -154,35 +162,46 @@ struct FixtureCase {
     turn: TurnExpectation,
 }
 
-/// Claude Code 2.1.114 (`@zed-industries/claude-agent-acp` 0.22.2).
+/// Claude Code via `@agentclientprotocol/claude-agent-acp` 0.73.0.
 /// The plainest shape: answer text only, full usage including cache-write.
+///
+/// Four `usage_update` frames, which is why the window is a list. The agent
+/// revises both operands mid-turn — `size` moves from 200000 to 1000000 on
+/// the last one — so a single-value expectation would pin whichever frame
+/// happened to arrive last and call the rest noise.
 const CLAUDE: FixtureCase = FixtureCase {
     agent: "claude",
-    cwd: "<HOME>/.crucible",
+    scenario: "basic-chat",
+    cwd: "<HOME>/.crucible/workspaces/chat-2026-09-04T0223-qsogzw",
     prompt: "say hello in exactly 3 words",
-    agent_info: Some(("@zed-industries/claude-agent-acp", "0.22.2")),
+    agent_info: Some(("@agentclientprotocol/claude-agent-acp", "0.73.0")),
     auth_methods: &[],
-    session_id: "c299d62f-4d2b-49d1-8b77-9c7f8d403f01",
+    session_id: "4d5cb397-557c-4d1c-b5b9-3bcb291fcebe",
     turn: TurnExpectation::Completed {
-        // Three `agent_message_chunk` frames — `""`, `"Hello"`, `" to you!"` —
-        // then the trailing `usage_update`. Real agents report the window at
-        // the end of the turn; the mock in `turn_event_parity.rs` reports it
-        // at the start, so both positions are covered.
-        shapes: &[ChunkShape::Text, ChunkShape::ContextWindow],
-        text: "Hello to you!",
+        // The window lands before the text here: this bridge reports usage as
+        // soon as the turn starts, where opencode reports it at the end. Both
+        // orders are therefore covered by recorded captures.
+        shapes: &[
+            ChunkShape::ContextWindow,
+            ChunkShape::Text,
+            ChunkShape::ContextWindow,
+        ],
+        text: "Hello there, friend.",
         thinking_contains: None,
         stop_reason: StopReason::EndTurn,
         usage: Some(ExpectedUsage {
-            prompt_tokens: 3,
-            completion_tokens: 7,
-            total_tokens: 22706,
-            cache_read_tokens: Some(0),
-            cache_creation_tokens: Some(22696),
+            prompt_tokens: 2,
+            completion_tokens: 10,
+            total_tokens: 27509,
+            cache_read_tokens: Some(10346),
+            cache_creation_tokens: Some(17151),
         }),
-        // `used` is 6 below the response's `totalTokens` (22706): it is the
-        // context *before* the 7 output tokens landed, so the two numbers
-        // measure the same quantity a moment apart.
-        context_window: Some((22700, 1_000_000)),
+        context_window: &[
+            (27503, 200_000),
+            (27509, 200_000),
+            (27509, 200_000),
+            (27509, 1_000_000),
+        ],
         tool_result_contains: None,
     },
 };
@@ -193,6 +212,7 @@ const CLAUDE: FixtureCase = FixtureCase {
 /// delegated turn rendered with no thinking block at all.
 const OPENCODE: FixtureCase = FixtureCase {
     agent: "opencode",
+    scenario: "basic-chat",
     cwd: "<HOME>/.crucible",
     prompt: "say hello in exactly 3 words",
     agent_info: Some(("OpenCode", "1.3.13")),
@@ -220,17 +240,46 @@ const OPENCODE: FixtureCase = FixtureCase {
         // Exactly inputTokens 24496 + cachedReadTokens 3728. The response's
         // totalTokens 28278 adds the 54 output tokens on top, which is why
         // the `PromptResponse` usage is preferred when both are present.
-        context_window: Some((28224, 200_000)),
+        context_window: &[(28224, 200_000)],
         tool_result_contains: None,
     },
 };
 
-/// cursor-agent. Recorded unauthenticated (`authMethods: ["cursor-login"]`),
-/// so the turn ends in `Refusal` having streamed nothing. Thin, but it is the
-/// only recorded capture of the produced-nothing path, which
-/// `turn_stop_reason` collapses to `StopReason::Empty` downstream.
+/// cursor-agent's own ACP server, authenticated. Streams reasoning and then
+/// the answer, and reports neither usage nor a context window — the
+/// delegated session that gets no context indicator at all and must not be
+/// given a fabricated one.
 const CURSOR: FixtureCase = FixtureCase {
     agent: "cursor",
+    scenario: "basic-chat",
+    cwd: "<HOME>/.crucible/workspaces/chat-2026-09-04T0223-6oxna7",
+    prompt: "say hello in exactly 3 words",
+    agent_info: None,
+    auth_methods: &["cursor_login"],
+    session_id: "388e3149-7196-48ee-8a47-d028dee22444",
+    turn: TurnExpectation::Completed {
+        shapes: &[ChunkShape::Thinking, ChunkShape::Text],
+        text: "Hello there friend",
+        thinking_contains: Some("three-word"),
+        stop_reason: StopReason::EndTurn,
+        usage: None,
+        context_window: &[],
+        tool_result_contains: None,
+    },
+};
+
+/// The same agent before `cursor-agent login`, kept from the capture that
+/// preceded the authenticated one above. `authMethods` names the login it
+/// wants and the turn ends in `Refusal` having streamed nothing. It is the
+/// only recorded capture of the produced-nothing path, which
+/// `turn_stop_reason` collapses to `StopReason::Empty` downstream, so it
+/// outlives the re-recording that replaced `basic-chat`.
+///
+/// Note the auth id: this capture says `cursor-login`, the live agent now
+/// says `cursor_login`. Ids are opaque and agents rename them.
+const CURSOR_UNAUTHENTICATED: FixtureCase = FixtureCase {
+    agent: "cursor",
+    scenario: "unauthenticated",
     cwd: "<HOME>/.crucible",
     prompt: "say hello in exactly 3 words",
     agent_info: None,
@@ -242,16 +291,44 @@ const CURSOR: FixtureCase = FixtureCase {
         thinking_contains: None,
         stop_reason: StopReason::Refusal,
         usage: None,
-        // Reports neither usage nor a window: the delegated session that gets
-        // no context indicator at all, and must not get a fabricated one.
-        context_window: None,
+        context_window: &[],
         tool_result_contains: None,
     },
 };
 
-/// codex-acp 0.11.1. The handshake succeeds and `session/prompt` comes back as
-/// a JSON-RPC error, so this is the recorded coverage for the mid-turn agent
-/// error path.
+/// codex-acp 1.8.0, authenticated and answering normally. Seven one-word
+/// `agent_message_chunk` frames, so this is also the capture that proves
+/// chunk reassembly across many small frames.
+const CODEX: FixtureCase = FixtureCase {
+    agent: "codex",
+    scenario: "basic-chat",
+    cwd: "<HOME>/.crucible/workspaces/chat-2026-09-04T0223-5wxycb",
+    prompt: "say hello in exactly 3 words",
+    agent_info: Some(("@agentclientprotocol/codex-acp", "1.8.0")),
+    auth_methods: &["api-key", "chat-gpt"],
+    session_id: "01a06a3a-bcf2-74c2-aa4e-e8ac64bea23b",
+    turn: TurnExpectation::Completed {
+        shapes: &[ChunkShape::Text, ChunkShape::ContextWindow],
+        text: "Hello, good to meet you.",
+        thinking_contains: None,
+        stop_reason: StopReason::EndTurn,
+        usage: Some(ExpectedUsage {
+            prompt_tokens: 6321,
+            completion_tokens: 11,
+            total_tokens: 17340,
+            cache_read_tokens: Some(11008),
+            cache_creation_tokens: None,
+        }),
+        context_window: &[(17340, 258_400)],
+        tool_result_contains: None,
+    },
+};
+
+/// codex-acp 0.11.1, kept from the capture that preceded the working one
+/// above. The handshake succeeds and `session/prompt` comes back as a
+/// JSON-RPC error, so this is the recorded coverage for the mid-turn agent
+/// error path — the reason it outlives the re-recording that replaced
+/// `basic-chat`.
 ///
 /// Note what is asserted: Codex's `error.message` is the generic "Internal
 /// error" and the whole reason the turn failed lives in the agent-defined
@@ -259,8 +336,9 @@ const CURSOR: FixtureCase = FixtureCase {
 /// envelope whose innermost `message` names the unsupported model. The
 /// surfaced text must carry that sentence, or the user is told only that
 /// something internal went wrong.
-const CODEX: FixtureCase = FixtureCase {
+const CODEX_PROMPT_ERROR: FixtureCase = FixtureCase {
     agent: "codex",
+    scenario: "prompt-error",
     cwd: "<HOME>/.crucible",
     prompt: "say hello in exactly 3 words",
     agent_info: Some(("codex-acp", "0.11.1")),
@@ -287,6 +365,7 @@ const CODEX: FixtureCase = FixtureCase {
 /// the call keeps the name its own `tool_call` announced.
 const HERMES: FixtureCase = FixtureCase {
     agent: "hermes",
+    scenario: "basic-chat",
     cwd: "<HOME>/.crucible",
     prompt: "run pwd and tell me the directory",
     agent_info: Some(("hermes-agent", "0.20.5")),
@@ -311,7 +390,7 @@ const HERMES: FixtureCase = FixtureCase {
             cache_read_tokens: None,
             cache_creation_tokens: None,
         }),
-        context_window: Some((6100, 128_000)),
+        context_window: &[(6100, 128_000)],
         tool_result_contains: Some("<HOME>/.crucible"),
     },
 };
@@ -328,7 +407,7 @@ fn fixture_path(rel: &str) -> PathBuf {
 
 async fn run_case(case: &FixtureCase) {
     let agent = case.agent;
-    let path = fixture_path(&format!("{agent}/basic-chat.jsonl"));
+    let path = fixture_path(&format!("{agent}/{}.jsonl", case.scenario));
     let fixture = ReplayFixture::load(&path)
         .unwrap_or_else(|e| panic!("[{agent}] load fixture {}: {e}", path.display()));
 
@@ -488,7 +567,7 @@ async fn run_case(case: &FixtureCase) {
             // reports it once.
             assert_eq!(
                 windows.as_slice(),
-                expected_window.as_slice(),
+                *expected_window,
                 "[{agent}] context window reported by the agent"
             );
 
@@ -573,8 +652,18 @@ async fn cursor_basic_chat_replays_cleanly() {
 }
 
 #[tokio::test]
+async fn cursor_unauthenticated_replays_cleanly() {
+    run_case(&CURSOR_UNAUTHENTICATED).await;
+}
+
+#[tokio::test]
 async fn codex_basic_chat_replays_cleanly() {
     run_case(&CODEX).await;
+}
+
+#[tokio::test]
+async fn codex_prompt_error_replays_cleanly() {
+    run_case(&CODEX_PROMPT_ERROR).await;
 }
 
 #[tokio::test]

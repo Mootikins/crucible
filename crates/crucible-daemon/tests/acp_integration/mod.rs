@@ -17,6 +17,7 @@ mod display_parity;
 mod error_propagation;
 mod inbound_requests;
 mod interleaved_frames;
+mod mcp_server_frame;
 mod mock_agent_framework;
 mod permission_flow;
 mod streaming_chat;
