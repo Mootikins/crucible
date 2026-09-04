@@ -295,7 +295,18 @@ impl AcpAgentHandle {
             }
         }
 
-        let mode_id = "normal".to_string();
+        // The modes belong to the agent. claude-agent-acp declares five and
+        // codex-acp three, with ids Crucible does not share, so answering
+        // with `default_internal_modes()` offered a front end modes the
+        // agent would reject and named a current mode (`normal`) that no ACP
+        // agent has. The internal set stands in only for an agent that
+        // declares none — the mock's default profile, and any agent that
+        // answers `session/set_mode` with `-32601`.
+        let mode_state = session
+            .modes()
+            .cloned()
+            .unwrap_or_else(default_internal_modes);
+        let mode_id = mode_state.current_mode_id.0.to_string();
         let model = session.model().cloned();
 
         Ok(Self {
@@ -303,7 +314,7 @@ impl AcpAgentHandle {
             _mcp_host: mcp_host,
             agent_name,
             mode_id,
-            mode_state: default_internal_modes(),
+            mode_state,
             model,
             session_id: Some(session_id),
             cached_temperature: agent_config.temperature,

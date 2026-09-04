@@ -15,7 +15,8 @@
 //! - **Open/Closed**: Extensible through configuration without modification
 
 use agent_client_protocol::schema::v1::{
-    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOptions, SessionModeState,
 };
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +124,10 @@ pub struct AcpSession {
     /// The model selector from the agent's `session/new` reply, when it
     /// advertised one.
     model: Option<ModelChoice>,
+    /// The mode set from the agent's `session/new` reply, when it declared
+    /// one. The modes belong to the agent — Crucible's own set is a stand-in
+    /// for agents that declare none, not a default to merge with.
+    modes: Option<SessionModeState>,
     /// How the connect flow obtained this session.
     resume: ResumeDisposition,
 }
@@ -138,6 +143,7 @@ impl AcpSession {
         Self {
             session_id,
             model: None,
+            modes: None,
             resume: ResumeDisposition::NotAttempted,
         }
     }
@@ -145,6 +151,12 @@ impl AcpSession {
     /// Attach the model selector the agent advertised.
     pub fn with_model(mut self, model: Option<ModelChoice>) -> Self {
         self.model = model;
+        self
+    }
+
+    /// Attach the mode set the agent declared.
+    pub fn with_modes(mut self, modes: Option<SessionModeState>) -> Self {
+        self.modes = modes;
         self
     }
 
@@ -162,6 +174,11 @@ impl AcpSession {
     /// The model selector the agent advertised, if any.
     pub fn model(&self) -> Option<&ModelChoice> {
         self.model.as_ref()
+    }
+
+    /// The mode set the agent declared, if any.
+    pub fn modes(&self) -> Option<&SessionModeState> {
+        self.modes.as_ref()
     }
 
     /// How the connect flow obtained this session.

@@ -550,6 +550,19 @@ impl MockStdioAgent {
         })
     }
 
+    /// A `SessionModeState` naming `current` among three modes, in the shape
+    /// claude-agent-acp sends.
+    fn mode_state(current: &str) -> Value {
+        json!({
+            "currentModeId": current,
+            "availableModes": [
+                {"id": "default", "name": "Manual", "description": "Always ask first"},
+                {"id": "acceptEdits", "name": "Accept edits", "description": "Take file edits"},
+                {"id": "plan", "name": "Plan", "description": "Plan before changing"}
+            ]
+        })
+    }
+
     /// Handle new session request
     fn handle_new_session(&mut self, request: &Value) -> Value {
         if self.config.inject_errors {
@@ -569,10 +582,20 @@ impl MockStdioAgent {
             Value::Null
         };
 
+        // Advertise a session mode set when asked, the way claude-agent-acp
+        // does. The value names the current mode, so a test can assert that
+        // the handle adopts the agent's mode rather than its own default.
+        // Read by VALUE, not by presence: `=0` meaning "on" is the trap the
+        // model hook above still has.
+        let modes = match env::var("CRU_MOCK_ADVERTISE_MODES") {
+            Ok(current) if !current.is_empty() => Self::mode_state(&current),
+            _ => Value::Null,
+        };
+
         // Construct proper NewSessionResponse using ACP types
         let response: NewSessionResponse = serde_json::from_value(json!({
             "sessionId": session_id,
-            "modes": null,
+            "modes": modes,
             "configOptions": config_options,
             "_meta": null
         }))

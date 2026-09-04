@@ -20,6 +20,7 @@ mod interleaved_frames;
 mod mcp_server_frame;
 mod mock_agent_framework;
 mod permission_flow;
+mod session_modes;
 mod streaming_chat;
 mod tool_roundtrip;
 mod turn_event_parity;
