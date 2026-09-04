@@ -101,6 +101,11 @@ The status bar layout is configurable via Lua — see [[Help/Lua/Configuration]]
 
 ```lua
 cru.modes.review = {
+  -- What the TUI and web show for this mode. Optional: without it the id is
+  -- humanized, so `deepReview` reads as "Deep review" and `read-only` as
+  -- "Read only". Declare one when the derived name is not what you want.
+  label = "Deep review",
+
   -- Which tools the agent can see at all. Globs use the same syntax as
   -- `cru.on`'s `pattern`.
   tools = { "read_*", "grep", "glob", "bash" },
@@ -115,6 +120,11 @@ cru.modes.review = {
 ```
 
 `permissions` may also be just `"allow"`, `"deny"`, or `"ask"`.
+
+Names are sentence case everywhere — "Accept edits", not "Accept Edits" or
+"acceptEdits" — so a mode you declare and one an external agent advertises
+read the same in the same list. The modeline upper-cases whatever it is
+given; that is the modeline's styling, not a second name.
 
 Rules use the same engine as the global `[permissions]` config, so
 `bash:rg *` inherits its handling of chained commands — permitting `rg` does

@@ -538,6 +538,63 @@ async fn the_shipped_modes_are_declared_in_lua() {
     );
 }
 
+/// The label a front end renders comes from the declaration, not from
+/// capitalising the id here. Both front ends show `name`, so the derivation
+/// is what a user actually reads for any mode that did not declare one.
+#[tokio::test]
+async fn a_declared_modes_label_reaches_the_descriptor() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.modes.acceptEdits = { permissions = "ask" }
+           cru.modes.deepReview = { label = "Deep review", permissions = "ask" }"#,
+    )
+    .unwrap();
+
+    let session_manager = temp_session_manager();
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(tmp.path().to_path_buf()),
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+    let _vm = agent_manager.get_or_create_session_state(&session.id);
+
+    let labels: Vec<(String, String)> = agent_manager
+        .session_modes(&session.id)
+        .available_modes
+        .iter()
+        .map(|m| (m.id.0.to_string(), m.name.clone()))
+        .collect();
+
+    let label_of = |id: &str| {
+        labels
+            .iter()
+            .find(|(i, _)| i == id)
+            .map(|(_, n)| n.clone())
+            .unwrap_or_else(|| panic!("mode {id} missing from {labels:?}"))
+    };
+
+    assert_eq!(label_of("ask"), "Ask", "the shipped modes declare theirs");
+    assert_eq!(label_of("plan"), "Plan");
+    assert_eq!(
+        label_of("acceptEdits"),
+        "Accept edits",
+        "an id with a word boundary must not reach a front end as `AcceptEdits`"
+    );
+    assert_eq!(
+        label_of("deepReview"),
+        "Deep review",
+        "a declared label wins over the derived one"
+    );
+}
+
 /// `ask` was `normal` until the id was made to name its stance. The id is
 /// persisted on a session and the registry has no fallback, so a session
 /// written before the rename would fail to resolve its mode rather than

@@ -143,9 +143,63 @@ impl ModePermissions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeDefinition {
     pub name: String,
+    /// What a front end calls this mode, when the declaration says. `None`
+    /// derives one from the id — see [`ModeDefinition::label`].
+    pub label: Option<String>,
     pub description: Option<String>,
     pub tools: ToolSelector,
     pub permissions: ModePermissions,
+}
+
+impl ModeDefinition {
+    /// The name a front end shows for this mode.
+    ///
+    /// A declaration says it outright; otherwise it is derived from the id,
+    /// because a mode is usable without a label and an id is a poor label.
+    /// The derivation is the whole reason `label` exists: capitalising the
+    /// first letter is right for `ask` and wrong for every id with a word
+    /// boundary in it — `acceptEdits` became "AcceptEdits", `read-only`
+    /// became "Read-only".
+    ///
+    /// One style, so a mode declared in Lua and one an ACP agent advertises
+    /// read the same in the same list. The TUI upper-cases whatever it gets
+    /// for the modeline; that is the modeline's styling, not a second name.
+    pub fn label(&self) -> String {
+        self.label
+            .clone()
+            .unwrap_or_else(|| humanize_mode_id(&self.name))
+    }
+}
+
+/// `acceptEdits` -> "Accept edits", `read-only` -> "Read only", `ask` -> "Ask".
+///
+/// Sentence case, not title case: it reads as a label rather than a heading,
+/// and it is what claude-agent-acp already sends ("Accept edits").
+pub fn humanize_mode_id(id: &str) -> String {
+    let mut words: Vec<String> = Vec::new();
+    let mut word = String::new();
+
+    for ch in id.chars() {
+        if ch == '-' || ch == '_' || ch == ' ' {
+            if !word.is_empty() {
+                words.push(std::mem::take(&mut word));
+            }
+        } else if ch.is_uppercase() && !word.is_empty() {
+            words.push(std::mem::take(&mut word));
+            word.push(ch.to_ascii_lowercase());
+        } else {
+            word.push(ch.to_ascii_lowercase());
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+
+    let mut out = words.join(" ");
+    if let Some(first) = out.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+    out
 }
 
 /// Shared, ordered registry of modes.
@@ -282,6 +336,7 @@ fn definition_from_lua(name: &str, table: &Table) -> LuaResult<ModeDefinition> {
 
     Ok(ModeDefinition {
         name: name.to_string(),
+        label: table.get::<Option<String>>("label")?,
         description: table.get::<Option<String>>("description")?,
         tools,
         permissions,
@@ -295,7 +350,8 @@ impl UserData for ModeRegistry {
                 return Ok(Value::Nil);
             };
             let t = lua.create_table()?;
-            t.set("name", mode.name)?;
+            t.set("name", mode.name.clone())?;
+            t.set("label", mode.label())?;
             if let Some(description) = mode.description {
                 t.set("description", description)?;
             }
@@ -421,6 +477,46 @@ mod tests {
         let mode = registry.get("auto").expect("auto must be registered");
         assert_eq!(mode.tools, ToolSelector::All);
         assert_eq!(mode.permissions.default, ModeStance::Allow);
+    }
+
+    /// One name style across every source of modes. A Lua declaration may
+    /// state its label; anything else is derived, because an id with a word
+    /// boundary in it makes a poor label and the old derivation — upper-case
+    /// the first letter — produced "AcceptEdits" and "Read-only".
+    #[test]
+    fn a_mode_id_without_a_label_is_humanized_into_one() {
+        // The shipped ids were the only shape the old derivation handled.
+        assert_eq!(humanize_mode_id("ask"), "Ask");
+        assert_eq!(humanize_mode_id("plan"), "Plan");
+
+        // claude-agent-acp's ids are camelCase.
+        assert_eq!(humanize_mode_id("acceptEdits"), "Accept edits");
+        assert_eq!(humanize_mode_id("bypassPermissions"), "Bypass permissions");
+
+        // codex-acp's are hyphenated; a user's own are likely snake_case.
+        assert_eq!(humanize_mode_id("read-only"), "Read only");
+        assert_eq!(humanize_mode_id("full-access"), "Full access");
+        assert_eq!(humanize_mode_id("code_review"), "Code review");
+
+        assert_eq!(humanize_mode_id(""), "", "an empty id derives nothing");
+    }
+
+    /// Sentence case, matching what claude-agent-acp already sends, so a
+    /// delegated session's list does not mix two styles.
+    #[test]
+    fn a_declared_label_wins_over_the_derived_one() {
+        let (lua, registry) = lua_with_modes();
+        lua.load(r#"cru.modes.review = { label = "Deep review" }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(registry.get("review").unwrap().label(), "Deep review");
+
+        lua.load(r#"cru.modes.acceptEdits = {}"#).exec().unwrap();
+        assert_eq!(
+            registry.get("acceptEdits").unwrap().label(),
+            "Accept edits",
+            "an undeclared label is derived, not left as the raw id"
+        );
     }
 
     #[test]

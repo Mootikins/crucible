@@ -930,14 +930,11 @@ impl AgentManager {
         let available = declared
             .into_iter()
             .map(|m| {
-                let title = {
-                    let mut c = m.name.chars();
-                    match c.next() {
-                        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                        None => m.name.clone(),
-                    }
-                };
-                let mode = SessionMode::new(SessionModeId::new(m.name.as_str()), title);
+                // The label belongs to the declaration, so one style covers a
+                // Lua-declared mode and an agent-advertised one alike. This
+                // used to upper-case the first letter here, which read as
+                // "AcceptEdits" for any id with a word boundary in it.
+                let mode = SessionMode::new(SessionModeId::new(m.name.as_str()), m.label());
                 match m.description {
                     Some(d) => mode.description(d),
                     None => mode,

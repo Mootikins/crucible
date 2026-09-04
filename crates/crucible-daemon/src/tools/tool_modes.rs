@@ -97,6 +97,7 @@ mod plugin_admission_tests {
         let reg = crucible_lua::ModeRegistry::new();
         reg.set(ModeDefinition {
             name: "plan".to_string(),
+            label: None,
             description: None,
             tools: selector,
             permissions: ModePermissions::default(),

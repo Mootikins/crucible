@@ -95,6 +95,7 @@ end)
 -- The host resolves the former id `normal` to this one, so a session or
 -- config written before the rename still loads.
 cru.modes.ask = {
+  label = "Ask",
   description = "Ask before each change",
   tools = "*",
   permissions = "ask",
@@ -105,6 +106,7 @@ cru.modes.ask = {
 -- agent card's `ask` policy can push a read-only tool through the gate. The
 -- hook below expresses that. This is the split the two tiers exist for.
 cru.modes.plan = {
+  label = "Plan",
   description = "Read-only exploration",
   tools = {
     -- `grep_notes` is named explicitly: it is the one read-only search tool
@@ -116,6 +118,7 @@ cru.modes.plan = {
 }
 
 cru.modes.auto = {
+  label = "Auto",
   description = "Auto-approve all operations",
   tools = "*",
   permissions = "allow",

@@ -2396,6 +2396,7 @@ mod tests {
         let registry = crucible_lua::ModeRegistry::new();
         registry.set(crucible_lua::ModeDefinition {
             name: "review".to_string(),
+            label: None,
             description: Some("Read-only review".to_string()),
             tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
             permissions: crucible_lua::ModePermissions::default(),
@@ -2428,6 +2429,7 @@ mod tests {
         let registry = crucible_lua::ModeRegistry::new();
         registry.set(crucible_lua::ModeDefinition {
             name: "review".to_string(),
+            label: None,
             description: None,
             tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
             permissions: crucible_lua::ModePermissions::default(),
@@ -2495,6 +2497,7 @@ mod tests {
         let registry = crucible_lua::ModeRegistry::new();
         registry.set(crucible_lua::ModeDefinition {
             name: "review".to_string(),
+            label: None,
             description: None,
             tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
             permissions: crucible_lua::ModePermissions::default(),
@@ -3168,6 +3171,7 @@ mod tests {
             {
                 r.set(ModeDefinition {
                     name: name.to_string(),
+                    label: None,
                     description: None,
                     tools: sel,
                     permissions: ModePermissions::default(),
