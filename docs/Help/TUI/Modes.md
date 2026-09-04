@@ -22,11 +22,11 @@ sits in the order of everything else that can allow or deny a call is
 
 | Mode | Behavior | Use When |
 |------|----------|----------|
-| **Normal** | Auto-read, ask for writes | Normal interactive use (default) |
+| **Ask** | Auto-read, ask for writes | Normal interactive use (default) |
 | **Plan** | Read-only tool set | Exploring options before acting |
 | **Auto** | Full access, minimal prompts | Trusted automated workflows |
 
-## Normal Mode
+## Ask Mode
 
 The standard mode for interactive use (and the default when starting a session). The agent can:
 - Read files and search freely
@@ -48,7 +48,7 @@ Use plan mode when you want to:
 - Explore unfamiliar codebases safely
 
 Plan mode does not write anything itself — the agent describes its plan in
-the conversation, and you switch to normal or auto mode to execute it.
+the conversation, and you switch to ask or auto mode to execute it.
 
 ## Auto Mode
 
@@ -74,7 +74,7 @@ Every declared mode is its own slash command, so a mode you named `review` gets
 ```
 /mode       Cycle to the next declared mode
 /<name>     Switch to that mode (/plan, /auto, /review, …)
-/default    Switch to the default mode (normal)
+/default    Switch to the default mode (ask)
 ```
 
 ### Status Bar
@@ -90,7 +90,7 @@ The badge is the mode's name in upper case, rendered with inverted colors
 - **Normal** — Green badge
 - **Plan** — Blue badge
 - **Auto** — Yellow badge
-- Anything you declared — the normal colour, until per-mode colours land
+- Anything you declared — the default colour, until per-mode colours land
 
 A mode change made from another client — the web UI, a Lua handler — updates
 this badge too; the daemon is the one authority on which mode a session is in.

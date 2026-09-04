@@ -369,7 +369,7 @@ mod chat_mode_properties {
     /// A list including a Lua-declared mode, so cycling is exercised over more
     /// than the three the TUI used to hardcode.
     fn available() -> Vec<String> {
-        ["normal", "plan", "auto", "review"]
+        ["ask", "plan", "auto", "review"]
             .iter()
             .map(|s| s.to_string())
             .collect()
@@ -381,7 +381,7 @@ mod chat_mode_properties {
         #[test]
         fn cycling_the_whole_list_returns_to_start(cycles in 1usize..10) {
             let modes = available();
-            let start = "normal";
+            let start = "ask";
             let mut mode: std::sync::Arc<str> = start.into();
 
             for _ in 0..(cycles * modes.len()) {
@@ -908,7 +908,7 @@ mod cli_invariants {
     /// user declared in Lua, which the TUI must handle identically.
     fn arb_chat_mode() -> impl Strategy<Value = String> {
         prop_oneof![
-            Just("normal".to_string()),
+            Just("ask".to_string()),
             Just("plan".to_string()),
             Just("auto".to_string()),
             Just("review".to_string()),

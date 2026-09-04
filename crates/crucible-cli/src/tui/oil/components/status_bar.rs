@@ -188,9 +188,9 @@ mod tests {
 
     #[test]
     fn emergency_view_shows_mode() {
-        let bar = StatusBar::new().mode("normal");
+        let bar = StatusBar::new().mode("ask");
         let plain = render_to_plain_text(&bar.emergency_view(), 80);
-        assert!(plain.contains("NORMAL"));
+        assert!(plain.contains("ASK"));
     }
 
     #[test]
@@ -224,11 +224,11 @@ mod tests {
 
     #[test]
     fn status_bar_modes_have_different_colors() {
-        let normal = StatusBar::new().mode("normal");
+        let ask = StatusBar::new().mode("ask");
         let plan = StatusBar::new().mode("plan");
         let auto = StatusBar::new().mode("auto");
 
-        assert_ne!(normal.mode_style().bg, plan.mode_style().bg);
+        assert_ne!(ask.mode_style().bg, plan.mode_style().bg);
         assert_ne!(plan.mode_style().bg, auto.mode_style().bg);
     }
 
@@ -236,7 +236,7 @@ mod tests {
     fn emergency_view_spacer_fills_width() {
         // Test that spacer() in row layout expands to fill remaining width
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("gpt-4o")
             .context(4000, 8000);
         let plain = render_to_plain_text(&bar.emergency_view(), 80);
@@ -253,7 +253,7 @@ mod tests {
     fn emergency_view_spacer_fills_width_at_120() {
         // Test that spacer() expands correctly at different widths
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("gpt-4o")
             .context(4000, 8000);
         let plain = render_to_plain_text(&bar.emergency_view(), 120);

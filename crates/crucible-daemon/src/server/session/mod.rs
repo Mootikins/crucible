@@ -139,7 +139,7 @@ fn spawn_setup_task(
     // at create time we almost always observe `None` here and the event
     // carries empty strings. Task 1.3 (CLI) will still render progressively;
     // a future `agent_configured` event can refresh these fields on clients
-    // that care. `mode` has no daemon-side representation yet; emit "normal"
+    // that care. `mode` has no daemon-side representation yet; emit "ask"
     // as a placeholder that matches the default TUI mode.
     let model = session
         .agent
@@ -148,7 +148,7 @@ fn spawn_setup_task(
         .unwrap_or_default();
     let agent_name = session.agent.as_ref().and_then(|a| a.agent_name.clone());
     let endpoint = session.agent.as_ref().and_then(|a| a.endpoint.clone());
-    let mode = "normal".to_string();
+    let mode = "ask".to_string();
 
     tokio::spawn(async move {
         // 1. session_initialized (always first)

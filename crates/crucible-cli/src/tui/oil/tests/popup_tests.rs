@@ -408,7 +408,7 @@ mod overlay_graduation_tests {
             text("▄".repeat(80)),
             text(" > /"),
             text("▀".repeat(80)),
-            text(" NORMAL │ Ready"),
+            text(" ASK │ Ready"),
             overlay_from_bottom(popup(sample_items(), 0, 10), 4),
         ]);
 
@@ -572,7 +572,7 @@ mod composer_stability_tests {
 
         let status_line_idx = lines
             .iter()
-            .position(|l| l.contains("NORMAL") || l.contains("PLAN"));
+            .position(|l| l.contains("ASK") || l.contains("PLAN"));
         assert!(status_line_idx.is_some(), "Should have status bar");
 
         let status_idx = status_line_idx.unwrap();

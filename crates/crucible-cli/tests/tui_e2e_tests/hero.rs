@@ -171,7 +171,7 @@ fn hero_leg_1() {
 
     let mut session =
         TuiTestSession::spawn(chat_resume_config(&session_id, &kiln)).expect("spawn cru chat");
-    session.wait_for_ready().expect("TUI never reached NORMAL");
+    session.wait_for_ready().expect("TUI never reached ASK");
     dump_frame(&mut session, &artifact, "leg1-01-ready");
 
     // Turn 1: a scripted prompt. "baseline" is in the fake reply, NOT the prompt,
@@ -228,7 +228,7 @@ fn hero_leg_3() {
 
     let mut session =
         TuiTestSession::spawn(chat_resume_config(&session_id, &kiln)).expect("spawn cru chat");
-    session.wait_for_ready().expect("TUI never reached NORMAL");
+    session.wait_for_ready().expect("TUI never reached ASK");
 
     // Both turns hydrate from daemon history: turn 1 ("baseline") was sent from
     // the TUI, turn 2 ("records") from the browser — yet both are visible here.
@@ -261,11 +261,11 @@ fn hero_leg_3() {
     dump_frame(&mut session, &artifact, "leg3-02-cat-shows-browser-edit");
 
     // Close the shell-output modal (`q` quits) so input returns to the chat
-    // composer, then wait for the NORMAL prompt.
+    // composer, then wait for the default-mode prompt.
     session.send("q").ok();
     session
-        .wait_until(|s| s.contents().contains("NORMAL"), Duration::from_secs(10))
-        .expect("shell modal did not close back to NORMAL");
+        .wait_until(|s| s.contents().contains("ASK"), Duration::from_secs(10))
+        .expect("shell modal did not close back to ASK");
 
     // Turn 3 from the terminal, to confirm the session is still live for writes.
     session
@@ -306,7 +306,7 @@ fn agent_fs_leg_tui_write() {
     let artifact = std::env::var("HERO_ARTIFACT").unwrap_or_else(|_| kiln.clone());
 
     let mut session = TuiTestSession::spawn(chat_new_config(&kiln)).expect("spawn cru chat");
-    session.wait_for_ready().expect("TUI never reached NORMAL");
+    session.wait_for_ready().expect("TUI never reached ASK");
     dump_frame(&mut session, &artifact, "agentfs-tui-01-ready");
 
     // Trigger prompt — substring "write-via-tui-agent" matches the fake's

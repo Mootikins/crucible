@@ -342,7 +342,7 @@ mod tests {
 
     fn data() -> StatusBar {
         StatusBar {
-            mode: "normal".into(),
+            mode: "ask".into(),
             model: "claude-opus-5".to_string(),
             context_used: 5_000,
             context_total: 10_000,
@@ -405,7 +405,7 @@ mod tests {
             &data(),
             false,
         );
-        assert!(out.contains("NORMAL"), "got {out:?}");
+        assert!(out.contains("ASK"), "got {out:?}");
         assert!(out.contains("claude-opus-5"), "got {out:?}");
     }
 
@@ -473,7 +473,7 @@ mod tests {
         }];
         assert!(render(&items, &d, false).contains("planning"));
 
-        d.mode = "normal".into();
+        d.mode = "ask".into();
         assert!(!render(&items, &d, false).contains("planning"));
     }
 
@@ -566,7 +566,7 @@ mod tests {
             other => panic!("the built-in places a row after the input: {other:?}"),
         };
         let out = render(items, &data(), false);
-        assert!(out.contains("NORMAL"), "got {out:?}");
+        assert!(out.contains("ASK"), "got {out:?}");
         assert!(out.contains("claude-opus-5"), "got {out:?}");
         assert!(out.contains("50% ctx"), "got {out:?}");
     }

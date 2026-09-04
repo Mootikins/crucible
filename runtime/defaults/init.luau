@@ -88,8 +88,14 @@ end)
 --     if request.tool_name == "bash" then return { deny = true } end
 --     return nil
 --   end)
-cru.modes.normal = {
-  description = "Full read/write access",
+-- The id is the stance. "normal" said only "this is the default one", while
+-- the mode's actual rule — ask before each change — was written one line
+-- below it, and its old description ("Full read/write access") described
+-- `auto`. Cursor and Claude Code both show this mode as "Ask"/"always ask".
+-- The host resolves the former id `normal` to this one, so a session or
+-- config written before the rename still loads.
+cru.modes.ask = {
+  description = "Ask before each change",
   tools = "*",
   permissions = "ask",
 }

@@ -166,13 +166,19 @@ impl ModeRegistry {
         self.inner.read().expect("mode registry: poisoned").clone()
     }
 
+    /// Look a mode up by name, then by deprecated alias.
+    ///
+    /// The alias pass is not a convenience. A session persists its mode id,
+    /// and this registry has no default and no fallback, so a session written
+    /// before a rename names an id that no longer exists and fails hard
+    /// rather than degrading. Resolution is the only place that can absorb
+    /// that; `all()` deliberately does not, so a renamed mode does not appear
+    /// twice in the mode cycle.
     pub fn get(&self, name: &str) -> Option<ModeDefinition> {
-        self.inner
-            .read()
-            .expect("mode registry: poisoned")
-            .iter()
-            .find(|m| m.name == name)
-            .cloned()
+        let guard = self.inner.read().expect("mode registry: poisoned");
+        let by_name = |wanted: &str| guard.iter().find(|m| m.name == wanted).cloned();
+
+        by_name(name).or_else(|| by_name(crucible_core::types::canonical_mode_id(name)))
     }
 
     pub fn is_empty(&self) -> bool {

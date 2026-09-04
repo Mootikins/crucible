@@ -7,41 +7,37 @@ use super::*;
 
 #[test]
 fn mode_cycles_through_the_daemon_s_list_including_a_lua_declared_one() {
-    let modes: Vec<String> = ["normal", "plan", "auto", "review"]
+    let modes: Vec<String> = ["ask", "plan", "auto", "review"]
         .iter()
         .map(|s| s.to_string())
         .collect();
 
-    assert_eq!(next_mode("normal", &modes).as_deref(), Some("plan"));
+    assert_eq!(next_mode("ask", &modes).as_deref(), Some("plan"));
     assert_eq!(next_mode("auto", &modes).as_deref(), Some("review"));
     assert_eq!(
         next_mode("review", &modes).as_deref(),
-        Some("normal"),
+        Some("ask"),
         "the last declared mode wraps to the first"
     );
 }
 
 #[test]
 fn a_mode_absent_from_the_daemon_s_list_cycles_nowhere() {
-    let modes = vec!["normal".to_string(), "plan".to_string()];
+    let modes = vec!["ask".to_string(), "plan".to_string()];
 
     assert_eq!(
         next_mode("review", &modes),
         None,
         "a mode whose declaration is gone must not advance into another one"
     );
-    assert_eq!(
-        next_mode("normal", &[]),
-        None,
-        "an empty list cycles nowhere"
-    );
+    assert_eq!(next_mode("ask", &[]), None, "an empty list cycles nowhere");
 }
 
 #[test]
 fn mode_label_badges_a_mode_the_tui_has_never_heard_of() {
     // The built-ins keep their exact labels — this is what holds the
     // statusline snapshots still.
-    assert_eq!(mode_label("normal"), " NORMAL ");
+    assert_eq!(mode_label("ask"), " ASK ");
     assert_eq!(mode_label("plan"), " PLAN ");
     assert_eq!(mode_label("auto"), " AUTO ");
     assert_eq!(mode_label("review"), " REVIEW ");
@@ -51,7 +47,7 @@ fn mode_label_badges_a_mode_the_tui_has_never_heard_of() {
 fn test_app_init() {
     let app = OilChatApp::default();
     assert!(!app.is_streaming());
-    assert_eq!(&*app.mode, "normal");
+    assert_eq!(&*app.mode, "ask");
 }
 
 // ─── Task 1.3: setup events populate OilChatApp ─────────────────────
@@ -103,7 +99,7 @@ fn session_initialized_preserves_model_when_empty_string() {
 
     app.on_message(ChatAppMsg::SessionInitialized(SessionInitializedPayload {
         model: String::new(),
-        mode: "normal".into(),
+        mode: "ask".into(),
         agent_name: None,
         kilns: Vec::new(),
         workspace_path: PathBuf::from("/w"),

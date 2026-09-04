@@ -492,9 +492,9 @@ impl TuiTestSession {
         self.wait_until(move |s| s.contents().contains(&owned), timeout)
     }
 
-    /// Wait for the TUI to initialize and show the NORMAL mode indicator.
+    /// Wait for the TUI to initialize and show the default mode indicator.
     ///
-    /// **Call this after `spawn()`, rather than waiting for `"NORMAL"` yourself.**
+    /// **Call this after `spawn()`, rather than waiting for `"ASK"` yourself.**
     /// This is the one place the startup budget lives, and it exists because
     /// twelve tests used to hand-roll the same wait with three different
     /// numbers. Three of them used 3s, and `oil_mode_cycle` failed the gated CI
@@ -507,11 +507,11 @@ impl TuiTestSession {
     /// failed was ~1.5x. If this budget ever needs raising, raise it *here* —
     /// a caller that names its own duration is how the outliers appeared.
     ///
-    /// Waiting for `"NORMAL"` mid-test is a different assertion (that the TUI
-    /// *returned* to normal mode) and correctly uses `wait_for_text` with its
+    /// Waiting for `"ASK"` mid-test is a different assertion (that the TUI
+    /// *returned* to the default mode) and correctly uses `wait_for_text` with its
     /// own, usually tighter, budget. Don't fold those into this.
     pub fn wait_for_ready(&mut self) -> Result<(), String> {
-        self.wait_for_text("NORMAL", Duration::from_secs(5))
+        self.wait_for_text("ASK", Duration::from_secs(5))
     }
 
     /// Brief pause to let the PTY process pending input/output, then drain.

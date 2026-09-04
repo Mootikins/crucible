@@ -127,12 +127,12 @@ mod tests {
     fn status_no_error_shows_bar_only() {
         let mut harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
-            .mode("normal")
+            .mode("ask")
             .model("gpt-4")
             .context(4000, 8000);
         harness.render_component(&comp);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
-        assert!(plain.contains("NORMAL"));
+        assert!(plain.contains("ASK"));
         assert!(plain.contains("gpt-4"));
         assert!(plain.contains("50% ctx"));
         assert!(!plain.contains("Error:"));

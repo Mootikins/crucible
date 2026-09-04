@@ -43,7 +43,7 @@ impl AgentHandle for KnobRecordingAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         self.calls.push("set_mode_str");
@@ -264,7 +264,7 @@ impl AgentHandle for ModeRejectingAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         Err(crucible_core::traits::chat::ChatError::ModeChange(format!(
@@ -306,7 +306,7 @@ async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
 
     assert_eq!(
         app.mode(),
-        "normal",
+        "ask",
         "a refused mode must revert to what the handle reports"
     );
     assert!(
@@ -496,9 +496,9 @@ async fn fetch_modes_reaches_the_app_through_the_agent() {
     let mut app = OilChatApp::default();
     let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
     let mut agent = ModeListingAgent {
-        modes: vec!["normal".to_string(), "review".to_string()],
+        modes: vec!["ask".to_string(), "review".to_string()],
         fetches: fetches.clone(),
-        mode: "normal".to_string(),
+        mode: "ask".to_string(),
     };
     let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
@@ -532,9 +532,9 @@ async fn a_mode_declared_after_startup_is_picked_up() {
     let mut app = OilChatApp::default();
     let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
     let mut agent = ModeListingAgent {
-        modes: vec!["normal".to_string(), "review".to_string()],
+        modes: vec!["ask".to_string(), "review".to_string()],
         fetches: fetches.clone(),
-        mode: "normal".to_string(),
+        mode: "ask".to_string(),
     };
     let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));

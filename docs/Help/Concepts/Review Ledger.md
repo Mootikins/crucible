@@ -12,7 +12,7 @@ tags:
 
 # Review Ledger
 
-The review ledger answers two questions about an agent session: *what changed*, and *which tool call did it*. Every writing tool call is bracketed by git tree snapshots of the session's roots, and the difference between the session's starting tree and the worktree now — the **composed diff** — becomes a queue of hunks you accept or reject. In `normal` mode, a **review gate** holds any further write to a file until its unreviewed hunks are dealt with.
+The review ledger answers two questions about an agent session: *what changed*, and *which tool call did it*. Every writing tool call is bracketed by git tree snapshots of the session's roots, and the difference between the session's starting tree and the worktree now — the **composed diff** — becomes a queue of hunks you accept or reject. In `ask` mode, a **review gate** holds any further write to a file until its unreviewed hunks are dealt with.
 
 The evidence is the filesystem, not the agent's claims: changes are keyed on git tree SHAs rather than on what a call reported, so attribution works the same for the internal agent and for external [[Agent Client Protocol|ACP]] agents.
 
@@ -52,10 +52,10 @@ Whether a write waits on review is a property of the session's mode:
 | Mode | Policy | Effect |
 |---|---|---|
 | `plan` | none | nothing gated, nothing owed |
-| `normal` | pre-write | a write to a file with unreviewed hunks waits until they are reviewed |
+| `ask` | pre-write | a write to a file with unreviewed hunks waits until they are reviewed |
 | `auto` | post-turn | nothing is held; changes land in the queue for review after the fact |
 
-Unknown mode ids fail closed to pre-write. External ACP agents degrade pre-write to post-turn — the daemon cannot hold a tool the external agent already ran — so an ACP session in `normal` mode reviews at turn end rather than being gated.
+Unknown mode ids fail closed to pre-write. External ACP agents degrade pre-write to post-turn — the daemon cannot hold a tool the external agent already ran — so an ACP session in `ask` mode reviews at turn end rather than being gated.
 
 A held call **blocks rather than being denied**: a denial is text the model reads and retries; waiting is what the situation is. There is no gate timeout — the turn's own execution timeout and your cancel bound it — and the block is observable: a `review_gate` event fires on block and release, and `review.list_hunks` reports the current block under `gate`, naming the tool and the file it waits on. `delegate_session` names no file, so it is gated against any hunk left unreviewed by an *earlier* turn — a delegation is never blocked by the edits of the turn that issued it. `bash` is the other special case: its targets cannot be known from its arguments, and gating it session-wide would block almost every turn on its own edits (turns end in build and test commands), so it is deliberately never held — its writes are still captured and attributed.
 

@@ -1,0 +1,6 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
+assertion_line: 397
+expression: "render_bar(&bar, 80)"
+---
+ ASK  gpt-4o-mini                                                         8% ctx

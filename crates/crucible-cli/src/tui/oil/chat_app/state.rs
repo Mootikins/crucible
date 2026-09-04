@@ -8,7 +8,7 @@ use crucible_oil::style::Color;
 // site that skips the parse function.
 
 /// The mode a session shows before the daemon has said otherwise.
-pub const DEFAULT_MODE: &str = "normal";
+pub const DEFAULT_MODE: &str = "ask";
 
 /// The modes to offer before `session.list_modes` answers.
 ///
@@ -16,9 +16,9 @@ pub const DEFAULT_MODE: &str = "normal";
 /// the moment it arrives. It exists so `/mode` and Shift+Tab work during the
 /// first frames, and so a TUI driven by a mock agent (every unit test) still
 /// cycles.
-pub const DEFAULT_MODES: [&str; 3] = ["normal", "plan", "auto"];
+pub const DEFAULT_MODES: [&str; 3] = ["ask", "plan", "auto"];
 
-/// The statusline badge for a mode: ` NORMAL `, ` PLAN `, ` REVIEW `.
+/// The statusline badge for a mode: ` ASK `, ` PLAN `, ` REVIEW `.
 ///
 /// Derived rather than matched so a mode the TUI has never heard of still gets
 /// its own badge. The built-ins reproduce their previous labels byte-for-byte,

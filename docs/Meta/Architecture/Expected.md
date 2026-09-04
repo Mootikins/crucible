@@ -169,7 +169,7 @@ entry but no shipped proof.
 | F96 | Tool discovery `discover_tools`, `get_tool_schema`, `invoke_tool` | P |
 | F97 | Progressive tool disclosure when schemas exceed 15% of the budget | P |
 | F98 | Agent skills: `SKILL.md` discovery across scopes, catalog in the prompt, `skill_view`, `cru skills list\|show\|search` | P, R, W |
-| F99 | Chat modes `normal`, `plan`, `auto` declared in Lua; BackTab cycles; one slash command per mode | P, R, T |
+| F99 | Chat modes `ask`, `plan`, `auto` declared in Lua; BackTab cycles; one slash command per mode | P, R, T |
 | F100 | Active tool set narrowing `cru.tools.set_active` and `get_active` | P |
 | F101 | Lua tool primitives `cru.tools.{call, batch, list}` under the operator's rules | P |
 | F102 | Lua session primitives `cru.session.{messages, inject, fork, collect_subagents, subscribe, create}` | P |
@@ -1660,7 +1660,7 @@ below follow the product docs where the docs name a method. [D10]
 ### 8.6 Permission modes: `ModeId` with shipped declarations
 
 Not a Rust enum. `ModeId` is a string validated against `ModeRegistry`. Shipped
-declarations: `normal` (stance Ask, all tools), `plan` (stance Deny for a
+declarations: `ask` (stance Ask, all tools), `plan` (stance Deny for a
 mutating tool, a read-shaped tool selector, plus an unconditional Rust deny for a
 mutating tool that reaches the gate), `auto` (stance Allow). A Lua config may
 remove or add any. An unknown mode fails closed. `ModeRegistry` has no Rust

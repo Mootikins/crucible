@@ -420,7 +420,7 @@ fn chat_short_prompt_streams_response() {
 
     session
         .wait_for_ready()
-        .expect("TUI never reached NORMAL ready state");
+        .expect("TUI never reached ASK ready state");
 
     // The TUI echoes the user's prompt as a message bubble, so any token
     // that appears in the prompt will trivially match on the screen. We send

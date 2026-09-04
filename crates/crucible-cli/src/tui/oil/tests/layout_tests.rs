@@ -267,7 +267,7 @@ fn builder_methods_work() {
 
 #[test]
 fn row_wrapped_spacer_fills_remaining_width() {
-    let node = row([text(" NORMAL "), spacer(), text("50% ctx")]);
+    let node = row([text(" ASK "), spacer(), text("50% ctx")]);
 
     let layout = build_layout_tree(&node, 80, 4).root;
 

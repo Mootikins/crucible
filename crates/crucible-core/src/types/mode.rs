@@ -5,7 +5,7 @@
 //!
 //! # Default Mode
 //!
-//! The default mode is `normal` (full read/write access). This follows the pattern
+//! The default mode is `ask` (every tool, permission asked first). This follows the pattern
 //! of other AI coding assistants (OpenCode's "build", Codex's "workspace-write")
 //! where developers expect to code by default, not just read.
 //!
@@ -81,10 +81,38 @@ impl ReviewPolicy {
 /// appearing here. This is only what can be answered about a mode id with no
 /// declaration in hand, gathered in one place so those questions are asked
 /// once instead of by comparing string literals at each call site.
+/// Mode ids that older sessions and user configs still name, and what each
+/// means now.
+///
+/// A session persists its mode id, and neither the Lua registry nor the
+/// handles have a fallback for an id they cannot find, so a rename turns
+/// every session written before it into a hard failure. This table is what
+/// absorbs that, and [`canonical_mode_id`] is the single place it is applied.
+/// It is deliberately not merged into the advertised mode list: an alias
+/// resolves, but offering it would show the same mode twice and put a dead
+/// id in the mode cycle.
+pub const DEPRECATED_MODE_ALIASES: &[(&str, &str)] = &[
+    // `normal` named a position rather than a stance, which `plan` and `auto`
+    // both do and which its own `permissions = "ask"` already said.
+    ("normal", "ask"),
+];
+
+/// The id a mode is known by now, given an id from any era.
+///
+/// Unknown ids pass through unchanged — this canonicalises, it does not
+/// validate, and a mode declared in Lua or advertised by an ACP agent is
+/// legitimate without appearing in any table here.
+pub fn canonical_mode_id(id: &str) -> &str {
+    DEPRECATED_MODE_ALIASES
+        .iter()
+        .find(|(from, _)| *from == id)
+        .map_or(id, |(_, to)| to)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinMode {
-    /// Full read/write access.
-    Normal,
+    /// Every tool is available, and each change is asked about first.
+    Ask,
     /// Read-only exploration.
     Plan,
     /// Auto-approve every operation.
@@ -95,8 +123,8 @@ impl BuiltinMode {
     /// The shipped mode with this id, or `None` for a mode the daemon does not
     /// ship (declared elsewhere, or gone).
     pub fn from_id(id: &str) -> Option<Self> {
-        match id {
-            "normal" => Some(Self::Normal),
+        match canonical_mode_id(id) {
+            "ask" => Some(Self::Ask),
             "plan" => Some(Self::Plan),
             "auto" => Some(Self::Auto),
             _ => None,
@@ -118,7 +146,7 @@ impl BuiltinMode {
         match self {
             // Read-only, so the gate is vacuous rather than merely disabled.
             Self::Plan => ReviewPolicy::None,
-            Self::Normal => ReviewPolicy::PreWrite,
+            Self::Ask => ReviewPolicy::PreWrite,
             // Auto keeps the receipt and surfaces the queue at turn end,
             // instead of leaving changes unexamined forever.
             Self::Auto => ReviewPolicy::PostTurn,
@@ -212,7 +240,7 @@ impl From<&SessionMode> for ModeDescriptor {
 ///
 /// # Modes
 ///
-/// - **normal**: Full read/write access (default)
+/// - **ask**: Every tool, permission asked before each change (default)
 /// - **plan**: Read-only exploration mode
 /// - **auto**: Auto-approve all operations
 ///
@@ -222,15 +250,15 @@ impl From<&SessionMode> for ModeDescriptor {
 /// use crucible_core::types::mode::default_internal_modes;
 ///
 /// let modes = default_internal_modes();
-/// assert_eq!(modes.current_mode_id.0.as_ref(), "normal");
+/// assert_eq!(modes.current_mode_id.0.as_ref(), "ask");
 /// assert_eq!(modes.available_modes.len(), 3);
 /// ```
 pub fn default_internal_modes() -> SessionModeState {
     SessionModeState::new(
-        SessionModeId::new("normal"),
+        SessionModeId::new("ask"),
         vec![
-            SessionMode::new(SessionModeId::new("normal"), "Normal".to_string())
-                .description("Full read/write access".to_string()),
+            SessionMode::new(SessionModeId::new("ask"), "Ask".to_string())
+                .description("Ask before each change".to_string()),
             SessionMode::new(SessionModeId::new("plan"), "Plan".to_string())
                 .description("Read-only exploration mode".to_string()),
             SessionMode::new(SessionModeId::new("auto"), "Auto".to_string())
@@ -286,12 +314,12 @@ mod tests {
     #[test]
     fn test_mode_descriptor_serialization() {
         let mode = ModeDescriptor {
-            id: "normal".to_string(),
-            name: "Normal".to_string(),
+            id: "ask".to_string(),
+            name: "Ask".to_string(),
             description: Some("desc".to_string()),
             icon: Some("⚡".to_string()),
             color: Some("#000".to_string()),
-            review_policy: ReviewPolicy::for_mode_id("normal"),
+            review_policy: ReviewPolicy::for_mode_id("ask"),
         };
 
         let json = serde_json::to_string(&mode).unwrap();
@@ -311,9 +339,9 @@ mod tests {
     }
 
     #[test]
-    fn test_default_internal_modes_current_is_normal() {
+    fn test_default_internal_modes_current_is_ask() {
         let state = default_internal_modes();
-        assert_eq!(state.current_mode_id.0.as_ref(), "normal");
+        assert_eq!(state.current_mode_id.0.as_ref(), "ask");
     }
 
     #[test]
@@ -344,8 +372,8 @@ mod tests {
     }
 
     #[test]
-    fn normal_mode_gates_before_the_write() {
-        assert_eq!(ReviewPolicy::for_mode_id("normal"), ReviewPolicy::PreWrite);
+    fn ask_mode_gates_before_the_write() {
+        assert_eq!(ReviewPolicy::for_mode_id("ask"), ReviewPolicy::PreWrite);
     }
 
     #[test]
@@ -414,7 +442,7 @@ mod tests {
     #[test]
     fn descriptor_degraded_for_an_external_agent_reports_the_effective_policy() {
         let descriptor =
-            ModeDescriptor::from(&test_session_mode("normal", "Normal", None)).degraded_for("acp");
+            ModeDescriptor::from(&test_session_mode("ask", "Ask", None)).degraded_for("acp");
         assert_eq!(descriptor.review_policy, ReviewPolicy::PostTurn);
     }
 
@@ -423,8 +451,8 @@ mod tests {
     #[test]
     fn a_descriptor_without_a_policy_field_defaults_to_gating() {
         let restored: ModeDescriptor = serde_json::from_value(json!({
-            "id": "normal",
-            "name": "Normal",
+            "id": "ask",
+            "name": "Ask",
             "description": null,
             "icon": null,
             "color": null,
@@ -453,7 +481,7 @@ mod tests {
     #[test]
     fn plan_is_the_only_shipped_read_only_mode() {
         assert!(BuiltinMode::from_id("plan").unwrap().is_read_only());
-        assert!(!BuiltinMode::from_id("normal").unwrap().is_read_only());
+        assert!(!BuiltinMode::from_id("ask").unwrap().is_read_only());
         assert!(!BuiltinMode::from_id("auto").unwrap().is_read_only());
         assert!(BuiltinMode::from_id("architect").is_none());
     }
@@ -467,7 +495,7 @@ mod tests {
             .map(|m| m.id.0.as_ref())
             .collect();
 
-        assert!(ids.contains(&"normal"));
+        assert!(ids.contains(&"ask"));
         assert!(ids.contains(&"plan"));
         assert!(ids.contains(&"auto"));
     }

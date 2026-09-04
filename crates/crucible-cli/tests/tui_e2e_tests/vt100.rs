@@ -28,7 +28,7 @@ fn vt100_exemplar_screen_content_verification() {
         .wait_for_ready()
         .expect("TUI should render mode indicator on startup");
 
-    assert_screen_contains(session.screen(), "NORMAL");
+    assert_screen_contains(session.screen(), "ASK");
 
     session.send(":quit\r").ok();
 }
@@ -88,9 +88,7 @@ fn vt100_exemplar_mode_indicator() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session
-        .wait_for_ready()
-        .expect("Should start in NORMAL mode");
+    session.wait_for_ready().expect("Should start in ASK mode");
 
     session.send("/auto\r").expect("Failed to send /auto");
     session
@@ -131,7 +129,7 @@ fn vt100_exemplar_terminal_size_adaptation() {
             )
         });
 
-        assert_screen_contains(session.screen(), "NORMAL");
+        assert_screen_contains(session.screen(), "ASK");
 
         session.send(":quit\r").ok();
     }

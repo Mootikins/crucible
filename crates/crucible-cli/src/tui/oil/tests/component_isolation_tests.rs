@@ -129,11 +129,11 @@ mod status_bar_tests {
 
     #[test]
     fn renders_mode_label_at_start() {
-        let bar = StatusBar::new().mode("normal");
+        let bar = StatusBar::new().mode("ask");
         let plain = render_bar(&bar, 80);
 
         assert!(
-            plain.starts_with(" NORMAL "),
+            plain.starts_with(" ASK "),
             "Mode label should be at start with padding: {:?}",
             plain
         );
@@ -141,18 +141,18 @@ mod status_bar_tests {
 
     #[test]
     fn mode_labels_have_consistent_padding() {
-        let normal = StatusBar::new().mode("normal");
+        let ask = StatusBar::new().mode("ask");
         let plan = StatusBar::new().mode("plan");
         let auto = StatusBar::new().mode("auto");
 
-        assert!(render_bar(&normal, 80).contains(" NORMAL "));
+        assert!(render_bar(&ask, 80).contains(" ASK "));
         assert!(render_bar(&plan, 80).contains(" PLAN "));
         assert!(render_bar(&auto, 80).contains(" AUTO "));
     }
 
     #[test]
     fn ansi_output_has_color_codes() {
-        let bar = StatusBar::new().mode("normal").model("gpt-4o");
+        let bar = StatusBar::new().mode("ask").model("gpt-4o");
         let ansi = render_bar_ansi(&bar, 80);
 
         assert!(
@@ -171,12 +171,12 @@ mod status_bar_tests {
     /// so `48;5;2` cannot be satisfied by `48;5;20`.
     #[test]
     fn mode_badge_colors_include_bg_fg_and_bold() {
-        let normal = render_bar_ansi(&StatusBar::new().mode("normal"), 80);
+        let ask = render_bar_ansi(&StatusBar::new().mode("ask"), 80);
         let plan = render_bar_ansi(&StatusBar::new().mode("plan"), 80);
         let auto = render_bar_ansi(&StatusBar::new().mode("auto"), 80);
 
         for (mode, ansi, bg_slot, colour) in [
-            ("NORMAL", &normal, 2, "green"),
+            ("ASK", &ask, 2, "green"),
             ("PLAN", &plan, 4, "blue"),
             ("AUTO", &auto, 3, "yellow"),
         ] {
@@ -198,14 +198,14 @@ mod status_bar_tests {
     #[test]
     fn different_modes_have_different_colors() {
         // Compare the STYLE, not the rendered frame: the frames already differ
-        // in plain text (" NORMAL " vs " PLAN "), so a frame comparison passes
+        // in plain text (" ASK " vs " PLAN "), so a frame comparison passes
         // even if every mode resolves to the same colour. `mode_style` now has
         // a `_ =>` catch-all, so deleting the "plan" arm no longer fails to
         // compile either.
         use crate::tui::oil::chat_app::mode_style;
 
         assert_ne!(
-            mode_style("normal").bg,
+            mode_style("ask").bg,
             mode_style("plan").bg,
             "normal and plan must be visually distinguishable"
         );
@@ -214,10 +214,10 @@ mod status_bar_tests {
 
     #[test]
     fn model_name_appears_after_mode() {
-        let bar = StatusBar::new().mode("normal").model("claude-3-opus");
+        let bar = StatusBar::new().mode("ask").model("claude-3-opus");
         let plain = render_bar(&bar, 80);
 
-        let mode_pos = plain.find("NORMAL").expect("mode should exist");
+        let mode_pos = plain.find("ASK").expect("mode should exist");
         let model_pos = plain.find("claude-3-opus").expect("model should exist");
 
         assert!(model_pos > mode_pos, "Model should appear after mode label");
@@ -251,12 +251,12 @@ mod status_bar_tests {
     fn notification_badge_appears_on_right() {
         use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .toast("Processing", NotificationToastKind::Info);
         let node = configured_bar_node(&bar);
         let plain = render_to_plain_text(&node, 80);
 
-        let mode_pos = plain.find("NORMAL").expect("mode should exist");
+        let mode_pos = plain.find("ASK").expect("mode should exist");
         let badge_pos = plain.find("INFO").expect("notification badge should exist");
 
         assert!(
@@ -274,7 +274,7 @@ mod status_bar_tests {
     fn ctrlc_notification_bar() -> StatusBar {
         use crate::tui::oil::components::NotificationToastKind;
         StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("glm-4.7-flash-iq4")
             .toast("Ctrl+C again to quit", NotificationToastKind::Warning)
     }
@@ -306,7 +306,7 @@ mod status_bar_tests {
         use crate::tui::oil::components::NotificationToastKind;
 
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("glm-4.7-flash-iq4")
             .counts(vec![
                 (NotificationToastKind::Warning, 2),
@@ -341,7 +341,7 @@ mod status_bar_tests {
 
         let plain = render_configured_bar(&bar, 40);
         assert!(
-            plain.contains(" NORMAL ") && plain.contains(" WARN "),
+            plain.contains(" ASK ") && plain.contains(" WARN "),
             "badges must survive extreme narrow widths intact: {plain:?}"
         );
 
@@ -351,7 +351,7 @@ mod status_bar_tests {
     #[test]
     fn snapshot_statusline_idle_context_fallback_right_aligned() {
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("glm-4.7-flash-iq4")
             .context(4096, 32768);
 
@@ -374,7 +374,7 @@ mod status_bar_tests {
     fn fits_width_80() {
         use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("claude-3-opus-very-long-name")
             .context(64000, 128000)
             .status("Streaming...")
@@ -389,12 +389,12 @@ mod status_bar_tests {
     }
 
     #[test]
-    fn snapshot_normal_mode() {
+    fn snapshot_ask_mode() {
         let bar = StatusBar::new()
-            .mode("normal")
+            .mode("ask")
             .model("gpt-4o-mini")
             .context(10000, 128000);
-        assert_snapshot!("status_bar_normal", render_bar(&bar, 80));
+        assert_snapshot!("status_bar_ask", render_bar(&bar, 80));
     }
 
     #[test]
@@ -725,7 +725,7 @@ mod layout_tests {
 
     #[test]
     fn nested_components_render_correctly() {
-        let status = StatusBar::new().mode("normal").model("test-model");
+        let status = StatusBar::new().mode("ask").model("test-model");
         let input = InputComponent::new("Hello", 5, 80);
 
         let focus = FocusContext::new();
@@ -735,7 +735,7 @@ mod layout_tests {
         let plain = render_to_plain_text(&combined, 80);
 
         // Both components should be present
-        assert!(plain.contains("NORMAL"));
+        assert!(plain.contains("ASK"));
         assert!(plain.contains("test-model"));
         assert!(plain.contains("Hello"));
     }

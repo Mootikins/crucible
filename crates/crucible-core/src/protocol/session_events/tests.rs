@@ -353,7 +353,7 @@ fn a_session_initialized_is_persisted_only_once_the_model_is_known() {
     let with_model = SessionEventPayload::from_wire(
         "session_initialized",
         &serde_json::json!({
-            "model": "glm-5", "mode": "normal", "agent_name": null,
+            "model": "glm-5", "mode": "ask", "agent_name": null,
             "kilns": ["notes"], "workspace_path": "/w",
         }),
     )
@@ -363,7 +363,7 @@ fn a_session_initialized_is_persisted_only_once_the_model_is_known() {
     let without = SessionEventPayload::from_wire(
         "session_initialized",
         &serde_json::json!({
-            "model": "", "mode": "normal", "agent_name": null,
+            "model": "", "mode": "ask", "agent_name": null,
             "kilns": ["notes"], "workspace_path": "/w",
         }),
     )
@@ -537,14 +537,14 @@ fn tool_result_body_covers_every_shape_the_daemon_produces() {
 fn session_initialized_shape() {
     let p = SessionInitializedPayload {
         model: "glm-5".into(),
-        mode: "normal".into(),
+        mode: "ask".into(),
         agent_name: None,
         kilns: vec![crate::config::KilnName::parse("notes").unwrap()],
         workspace_path: PathBuf::from("/w"),
     };
     let v = serde_json::to_value(&p).unwrap();
     assert_eq!(v["model"], "glm-5");
-    assert_eq!(v["mode"], "normal");
+    assert_eq!(v["mode"], "ask");
     assert!(v["agent_name"].is_null());
     assert_eq!(v["workspace_path"], "/w");
     // Names, and only names. This payload is broadcast to every subscriber and
@@ -566,7 +566,7 @@ fn session_initialized_shape() {
 fn a_kiln_less_session_announces_no_kilns_rather_than_the_empty_path() {
     let p = SessionInitializedPayload {
         model: "glm-5".into(),
-        mode: "normal".into(),
+        mode: "ask".into(),
         agent_name: None,
         kilns: Vec::new(),
         workspace_path: PathBuf::from("/w"),

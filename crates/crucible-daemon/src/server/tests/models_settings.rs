@@ -217,7 +217,7 @@ async fn session_list_modes_reports_the_session_s_own_current_mode() {
         .map(|m| m["id"].as_str().expect("mode id").to_string())
         .collect();
     assert!(
-        ids.contains(&"normal".to_string()) && ids.contains(&"plan".to_string()),
+        ids.contains(&"ask".to_string()) && ids.contains(&"plan".to_string()),
         "the built-in modes must be listed, got {ids:?}"
     );
     assert!(

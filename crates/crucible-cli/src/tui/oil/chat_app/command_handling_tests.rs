@@ -342,7 +342,7 @@ fn slash_plan_sets_mode_and_syncs() {
 #[test]
 fn slash_mode_cycles() {
     let mut app = app();
-    assert_eq!(app.mode(), "normal");
+    assert_eq!(app.mode(), "ask");
     app.handle_slash_command("/mode");
     assert_eq!(app.mode(), "plan");
 }
@@ -570,7 +570,7 @@ fn undo_count_floors_at_one() {
 fn a_lua_declared_mode_is_selectable_and_cyclable() {
     let mut app = app();
     app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "normal".to_string(),
+        "ask".to_string(),
         "review".to_string(),
     ]));
 
@@ -584,7 +584,7 @@ fn a_lua_declared_mode_is_selectable_and_cyclable() {
     app.handle_slash_command("/mode");
     assert_eq!(
         app.mode(),
-        "normal",
+        "ask",
         "cycling wraps within the daemon's list, not the built-in ring"
     );
     app.handle_slash_command("/mode");
@@ -600,9 +600,9 @@ fn a_lua_declared_mode_is_selectable_and_cyclable() {
 #[test]
 fn a_mode_the_daemon_no_longer_offers_cycles_nowhere() {
     let mut app = app();
-    app.on_message(ChatAppMsg::ModesLoaded(vec!["normal".to_string()]));
+    app.on_message(ChatAppMsg::ModesLoaded(vec!["ask".to_string()]));
     app.handle_slash_command("/mode");
-    assert_eq!(app.mode(), "normal");
+    assert_eq!(app.mode(), "ask");
 
     app.on_message(ChatAppMsg::ModeSynced("review".into()));
     app.handle_slash_command("/mode");
@@ -620,7 +620,7 @@ fn a_mode_the_daemon_no_longer_offers_cycles_nowhere() {
 fn a_mode_named_after_a_builtin_does_not_shadow_it() {
     let mut app = app();
     app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "normal".to_string(),
+        "ask".to_string(),
         "undo".to_string(),
         "help".to_string(),
     ]));
@@ -630,7 +630,7 @@ fn a_mode_named_after_a_builtin_does_not_shadow_it() {
         matches!(action, Action::Send(ChatAppMsg::Undo(2))),
         "/undo must still undo, got {action:?}"
     );
-    assert_eq!(app.mode(), "normal", "and must not have changed the mode");
+    assert_eq!(app.mode(), "ask", "and must not have changed the mode");
 }
 
 /// A mode declared as `cru.modes.Review` is reachable as `/review`, and
@@ -639,7 +639,7 @@ fn a_mode_named_after_a_builtin_does_not_shadow_it() {
 fn a_mode_id_matches_case_insensitively() {
     let mut app = app();
     app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "normal".to_string(),
+        "ask".to_string(),
         "Review".to_string(),
     ]));
 

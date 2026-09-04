@@ -34,7 +34,7 @@ pub const PLAN_TOOL_NAMES: &[&str] = &[
 /// `Option::is_some` can decide it. Membership here can: a session in `normal`
 /// with no Lua is the ordinary un-configured state, while a session in
 /// `review` with no declaration is a mode that went away.
-pub const BUILTIN_MODE_NAMES: &[&str] = &["normal", "plan", "auto"];
+pub const BUILTIN_MODE_NAMES: &[&str] = &["ask", "plan", "auto"];
 
 /// Whether `name` is a mode the daemon ships.
 #[must_use]
@@ -166,7 +166,7 @@ mod plugin_admission_tests {
     fn nothing_is_barred_outside_plan_mode() {
         let modes = registry(ToolSelector::Patterns(vec!["read_*".into()]));
         assert!(!plugin_tool_barred(
-            "normal",
+            "ask",
             "web_search",
             &plugin_tools(),
             Some(&modes)

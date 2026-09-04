@@ -1226,6 +1226,9 @@ impl AgentManager {
         let mode_id = mode_id.trim();
         // Consult the registry, not the built-in list: a Lua-declared mode
         // that `set_mode` rejects would be a mode you can define and never use.
+        // As in `set_mode_str`: an id from before a rename resolves to the
+        // mode it names now, and the canonical spelling is what gets stored.
+        let mode_id = crucible_core::types::canonical_mode_id(mode_id);
         let modes = self.session_modes(session_id);
         if !modes
             .available_modes

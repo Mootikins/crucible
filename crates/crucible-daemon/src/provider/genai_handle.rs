@@ -1483,6 +1483,10 @@ impl AgentHandle for GenaiAgentHandle {
     }
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        // A renamed mode still arrives under its old id from a session
+        // written before the rename, so resolve it before deciding whether
+        // it exists — and store the current spelling, not the old one.
+        let mode_id = crucible_core::types::canonical_mode_id(mode_id);
         let exists = self
             .mode_state
             .available_modes

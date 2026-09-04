@@ -191,7 +191,7 @@ impl AgentHandle for MultiTurnScriptedAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -240,7 +240,7 @@ impl AgentHandle for PromptCapturingAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -258,7 +258,7 @@ impl AgentHandle for MockAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -276,7 +276,7 @@ impl AgentHandle for StreamingMockAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -335,7 +335,7 @@ impl AgentHandle for OwnsToolsMockAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -910,7 +910,7 @@ impl AgentHandle for InboundRecordingAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())

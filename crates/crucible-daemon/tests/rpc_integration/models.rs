@@ -279,18 +279,15 @@ async fn test_session_set_mode_round_trip() {
     );
 
     // Switching again overwrites.
-    client
-        .session_set_mode(&session_id, "normal")
-        .await
-        .unwrap();
+    client.session_set_mode(&session_id, "ask").await.unwrap();
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(session["agent"]["mode"].as_str(), Some("normal"));
+    assert_eq!(session["agent"]["mode"].as_str(), Some("ask"));
 
     // Unknown modes are rejected loudly, not persisted.
     let err = client.session_set_mode(&session_id, "yolo").await;
     assert!(err.is_err(), "unknown mode must be rejected");
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(session["agent"]["mode"].as_str(), Some("normal"));
+    assert_eq!(session["agent"]["mode"].as_str(), Some("ask"));
 
     server.shutdown().await;
 }

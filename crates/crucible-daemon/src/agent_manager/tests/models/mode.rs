@@ -87,7 +87,7 @@ async fn set_mode_applies_to_cached_live_handle() {
         Arc::new(Mutex::new(Box::new(ModeRecordingAgent {
             last_mode: last_mode.clone(),
             reject: Arc::new(AtomicBool::new(false)),
-            current_mode: "normal".to_string(),
+            current_mode: "ask".to_string(),
         }))),
     );
 
@@ -112,7 +112,7 @@ async fn set_mode_rejected_by_handle_persists_nothing() {
         Arc::new(Mutex::new(Box::new(ModeRecordingAgent {
             last_mode: Arc::new(std::sync::Mutex::new(None)),
             reject: Arc::new(AtomicBool::new(true)),
-            current_mode: "normal".to_string(),
+            current_mode: "ask".to_string(),
         }))),
     );
 
@@ -140,7 +140,7 @@ async fn set_mode_rejects_unknown_mode() {
         .unwrap_err();
     match err {
         AgentError::NotSupported(msg) => {
-            assert!(msg.contains("normal") && msg.contains("plan") && msg.contains("auto"));
+            assert!(msg.contains("ask") && msg.contains("plan") && msg.contains("auto"));
         }
         other => panic!("expected NotSupported, got {other:?}"),
     }

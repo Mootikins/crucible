@@ -81,7 +81,7 @@ async fn auto_mode_registers_no_permission_hook() {
 async fn normal_mode_still_reaches_the_prompt() {
     let (_tmp, agent_manager, session_id) = session_with_defaults().await;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("normal")).await;
+    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("ask")).await;
 
     assert_eq!(
         result,
@@ -533,8 +533,49 @@ async fn the_shipped_modes_are_declared_in_lua() {
 
     assert_eq!(
         ids,
-        vec!["normal", "plan", "auto"],
+        vec!["ask", "plan", "auto"],
         "the built-ins now come from runtime/defaults/init.lua, in declaration order"
+    );
+}
+
+/// `ask` was `normal` until the id was made to name its stance. The id is
+/// persisted on a session and the registry has no fallback, so a session
+/// written before the rename would fail to resolve its mode rather than
+/// degrade — the alias is what stops that.
+#[tokio::test]
+async fn the_former_normal_id_still_resolves_to_ask() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    // Declaring the modes is what loading the session's VM does.
+    let _vm = agent_manager.get_or_create_session_state(&session_id);
+
+    assert_eq!(
+        agent_manager.mode_stance("normal"),
+        agent_manager.mode_stance("ask"),
+        "a session that still names `normal` must get the mode it used to name"
+    );
+    assert!(
+        agent_manager.mode_stance("normal").is_some(),
+        "the alias must resolve to a real mode, not to None"
+    );
+}
+
+/// The alias resolves, but it is not a mode. Listing it would show the user
+/// the same mode twice and put a dead id in the mode cycle.
+#[tokio::test]
+async fn the_former_normal_id_is_not_offered_as_a_mode() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let _vm = agent_manager.get_or_create_session_state(&session_id);
+
+    let ids: Vec<String> = agent_manager
+        .session_modes(&session_id)
+        .available_modes
+        .iter()
+        .map(|m| m.id.0.to_string())
+        .collect();
+
+    assert!(
+        !ids.contains(&"normal".to_string()),
+        "the deprecated id must not be advertised; got {ids:?}"
     );
 }
 
@@ -593,6 +634,46 @@ async fn a_user_defined_mode_can_be_selected() {
     );
 }
 
+/// Accepting the old id is half the migration. Storing it would write the
+/// dead spelling back onto the session and keep it alive forever, so the
+/// canonical id is what lands.
+#[tokio::test]
+async fn selecting_the_former_normal_id_stores_the_canonical_one() {
+    let tmp = TempDir::new().unwrap();
+    let session_manager = temp_session_manager();
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(tmp.path().to_path_buf()),
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager
+        .set_mode(&session.id, "normal", None)
+        .await
+        .expect("the id a pre-rename session persists must still be selectable");
+
+    assert_eq!(
+        session_manager
+            .get_session(&session.id)
+            .unwrap()
+            .agent
+            .unwrap()
+            .mode
+            .as_deref(),
+        Some("ask"),
+        "the session must be left naming the mode's current id, not the alias"
+    );
+}
+
 #[tokio::test]
 async fn an_undeclared_mode_is_still_rejected() {
     let (_tmp, agent_manager, session_id) = session_with_defaults().await;
@@ -636,12 +717,12 @@ async fn a_shipped_mode_can_be_removed() {
         .iter()
         .map(|m| m.id.0.to_string())
         .collect();
-    assert_eq!(ids, vec!["normal", "plan"]);
+    assert_eq!(ids, vec!["ask", "plan"]);
 }
 
 /// The stance replaces the hand-written auto/plan permission hooks.
 #[test_case::test_case("auto", PermissionHookResult::Prompt; "auto defers to the stance, not a hook")]
-#[test_case::test_case("normal", PermissionHookResult::Prompt; "normal prompts")]
+#[test_case::test_case("ask", PermissionHookResult::Prompt; "ask prompts")]
 #[tokio::test]
 async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: PermissionHookResult) {
     // With modes carrying the stance, the defaults file registers NO permission
@@ -676,7 +757,7 @@ async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
          blunt deny stance would refuse reads an agent card pushed through"
     );
     assert_eq!(
-        agent_manager.mode_stance("normal"),
+        agent_manager.mode_stance("ask"),
         Some(crucible_lua::ModeStance::Ask)
     );
 }
@@ -733,7 +814,7 @@ async fn session_modes_reports_the_sessions_own_current_mode() {
         .await
         .unwrap();
 
-    // "normal" is declared FIRST in runtime/defaults/init.lua, so selecting
+    // "ask" is declared FIRST in runtime/defaults/init.lua, so selecting
     // anything else is what distinguishes the session's mode from the
     // registration order.
     agent_manager
@@ -835,8 +916,8 @@ async fn an_agents_own_mode_outranks_the_default() {
     defaults.set(values);
 
     let mut agent = bare_agent();
-    agent.mode = Some("normal".to_string());
+    agent.mode = Some("ask".to_string());
     let agent = configured_agent(&agent_manager, &session_manager, &session_id, agent).await;
 
-    assert_eq!(agent.mode.as_deref(), Some("normal"));
+    assert_eq!(agent.mode.as_deref(), Some("ask"));
 }

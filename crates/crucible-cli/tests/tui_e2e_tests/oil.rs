@@ -332,7 +332,7 @@ fn oil_mode_cycle() {
 
     session
         .wait_for_ready()
-        .expect("Initial mode should be NORMAL");
+        .expect("Initial mode should be ASK");
 
     for _ in 0..3 {
         session.send("/mode\r").expect("Failed to send /mode");
