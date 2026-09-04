@@ -19,6 +19,26 @@ fn parse_log_level(level: &str) -> Option<LevelFilter> {
         .map(LevelFilter::from)
 }
 
+/// Choose the log file for a stdio command.
+///
+/// `log_file_override` is the value of `CRUCIBLE_LOG_FILE`. When it is absent,
+/// the log goes under `crucible_home`, which `CRUCIBLE_HOME` controls. The CLI
+/// log read `dirs::home_dir()` directly before, so `CRUCIBLE_HOME` moved
+/// `daemon.log` but not `chat.log`. A test that redirected `CRUCIBLE_HOME` then
+/// wrote into the developer's own `~/.crucible/chat.log`.
+///
+/// Both arguments come in as values. The function reads no environment.
+fn stdio_log_file_path(
+    log_file_override: Option<&str>,
+    crucible_home: &std::path::Path,
+    log_file_name: &str,
+) -> std::path::PathBuf {
+    match log_file_override {
+        Some(path) => std::path::PathBuf::from(path),
+        None => crucible_home.join(log_file_name),
+    }
+}
+
 /// Cleans up the standalone daemon socket on drop.
 struct SocketCleanup(std::path::PathBuf);
 impl Drop for SocketCleanup {
@@ -315,17 +335,15 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 _ => "crucible.log",
             };
 
-            let log_file_path = std::env::var("CRUCIBLE_LOG_FILE").unwrap_or_else(|_| {
-                dirs::home_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-                    .join(".crucible")
-                    .join(log_file_name)
-                    .to_string_lossy()
-                    .to_string()
-            });
+            let log_file_override = std::env::var("CRUCIBLE_LOG_FILE").ok();
+            let log_file_path = stdio_log_file_path(
+                log_file_override.as_deref(),
+                &crucible_core::config::crucible_home(),
+                log_file_name,
+            );
 
             // Create parent directory if it doesn't exist
-            if let Some(parent) = std::path::Path::new(&log_file_path).parent() {
+            if let Some(parent) = log_file_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
 
@@ -611,6 +629,42 @@ mod tests {
         assert_eq!(parse_log_level(""), None);
         assert_eq!(parse_log_level("quiet"), None);
         assert_eq!(parse_log_level("warning"), None);
+    }
+
+    // ---- stdio_log_file_path ----
+
+    #[test]
+    fn stdio_log_file_path_uses_crucible_home_when_no_override() {
+        let home = tempfile::tempdir().unwrap();
+
+        let path = stdio_log_file_path(None, home.path(), "chat.log");
+
+        assert_eq!(path, home.path().join("chat.log"));
+    }
+
+    #[test]
+    fn stdio_log_file_path_prefers_the_override() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let wanted = elsewhere.path().join("somewhere.log");
+
+        let path = stdio_log_file_path(Some(wanted.to_str().unwrap()), home.path(), "chat.log");
+
+        assert_eq!(path, wanted);
+    }
+
+    #[test]
+    fn stdio_log_file_path_keeps_the_real_user_path() {
+        // `crucible_home()` falls back to `~/.crucible`, so a user who sets
+        // neither variable keeps `~/.crucible/chat.log`.
+        let home = std::path::PathBuf::from("/home/example/.crucible");
+
+        let path = stdio_log_file_path(None, &home, "chat.log");
+
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/home/example/.crucible/chat.log")
+        );
     }
 
     // ---- SocketCleanup ----
