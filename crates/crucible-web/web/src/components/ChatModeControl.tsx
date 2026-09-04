@@ -11,7 +11,7 @@ import { ChipSelect } from '@/components/composer/ChipSelect';
  * a placeholder with no way to change mode at all.
  */
 export const FALLBACK_MODES: ModeDescriptor[] = [
-  { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+  { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
   { id: 'plan', name: 'Plan', description: null, icon: null, color: null },
   { id: 'auto', name: 'Auto', description: null, icon: null, color: null },
 ];

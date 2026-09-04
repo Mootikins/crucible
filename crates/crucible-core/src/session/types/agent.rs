@@ -121,7 +121,7 @@ pub struct SessionAgent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub autocompact_threshold: Option<f32>,
 
-    /// Session mode id ("normal" | "plan" | "auto"). Persisted so a mode set
+    /// Session mode id ("ask" | "plan" | "auto"). Persisted so a mode set
     /// before the first message (no live handle yet) still applies when the
     /// agent handle is created, and survives handle eviction. `None` = normal.
     #[serde(default, skip_serializing_if = "Option::is_none")]

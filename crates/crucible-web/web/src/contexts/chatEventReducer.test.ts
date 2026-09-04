@@ -80,7 +80,7 @@ function createHarness(): ReducerHarness {
     currentStreamingMessageId: null,
     subagentEvents: [],
     contextUsage: null,
-    chatMode: 'normal',
+    chatMode: 'ask',
     pendingInteraction: null,
     error: null,
     connectionStatus: 'connected',
@@ -950,7 +950,7 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
       { maxLength: 10 },
     ),
   }),
-  evt('mode_changed', { mode: fc.constantFrom('normal' as const, 'plan' as const, 'auto' as const) }),
+  evt('mode_changed', { mode: fc.constantFrom('ask' as const, 'plan' as const, 'auto' as const) }),
   evt('session_event', { event: fc.string(), data: fc.anything() }),
 ) as fc.Arbitrary<ChatEvent>;
 
@@ -1179,7 +1179,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'token' || t === 'thinking') minimal.content = '';
       if (t === 'context_usage') { minimal.used = 0; minimal.total = 0; }
       if (t === 'precognition_result') { minimal.notes_count = 0; minimal.notes = []; }
-      if (t === 'mode_changed') minimal.mode = 'normal';
+      if (t === 'mode_changed') minimal.mode = 'ask';
       if (t === 'title_changed') minimal.title = 'A generated title';
       if (t === 'session_event') { minimal.event = 'x'; minimal.data = null; }
       if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }

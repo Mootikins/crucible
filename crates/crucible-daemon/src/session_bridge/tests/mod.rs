@@ -179,7 +179,7 @@ impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
 }
 

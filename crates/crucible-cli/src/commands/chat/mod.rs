@@ -205,7 +205,7 @@ fn initial_mode(read_only: bool) -> &'static str {
     if read_only {
         "plan"
     } else {
-        "normal"
+        "ask"
     }
 }
 

@@ -80,7 +80,7 @@ export const ChatInput: Component = () => {
     await sendMessage(message);
   };
 
-  // Shift+Tab cycles chat mode (Normal → Plan → Auto). Enter-to-send is the
+  // Shift+Tab cycles chat mode (Ask → Plan → Auto). Enter-to-send is the
   // ComposerCard's default, applied after this returns without claiming the key.
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Tab' && e.shiftKey) {

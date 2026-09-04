@@ -23,7 +23,7 @@ vi.mock('@/contexts/ChatContext', () => ({
     error,
     connectionStatus,
     retryConnection: mockRetryConnection,
-    chatMode: () => 'normal',
+    chatMode: () => 'ask',
     setChatMode: vi.fn(),
     switchMode: vi.fn(),
     sessionId: () => 'test-session',
@@ -88,7 +88,7 @@ vi.mock('@/lib/api', () => ({
   disconnectSessionKiln: vi.fn(),
   setSessionWorkspace: vi.fn(),
   getSessionStatus: vi.fn(async () => []),
-  listModes: vi.fn(async () => ({ current_mode_id: 'normal', modes: [] })),
+  listModes: vi.fn(async () => ({ current_mode_id: 'ask', modes: [] })),
   subscribeToEvents: vi.fn(() => () => {}),
 }));
 

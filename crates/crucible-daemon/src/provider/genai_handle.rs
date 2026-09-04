@@ -2579,7 +2579,7 @@ mod tests {
             "read-only built-ins stay visible in plan"
         );
 
-        handle.set_mode_str("normal").await.unwrap();
+        handle.set_mode_str("ask").await.unwrap();
         let (back_names, _) = handle.visible_tool_names_for_test();
         assert!(
             back_names.iter().any(|n| n == "my_plugin_tool"),

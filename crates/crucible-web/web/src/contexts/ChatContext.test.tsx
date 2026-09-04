@@ -15,9 +15,9 @@ vi.mock('@/lib/api', () => ({
   getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
   listSessions: vi.fn(async () => []),
   listModes: vi.fn(async () => ({
-    current_mode_id: 'normal',
+    current_mode_id: 'ask',
     modes: [
-      { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
       { id: 'review', name: 'Review', description: null, icon: null, color: null },
     ],
   })),
@@ -783,7 +783,7 @@ describe('isLoadingHistory', () => {
 
 describe('mode hydration', () => {
   it('restores a Lua-declared mode the frontend has no constant for', async () => {
-    // The old hydrateMode checked the id against 'normal' | 'plan' | 'auto'
+    // The old hydrateMode checked the id against 'ask' | 'plan' | 'auto'
     // and dropped anything else, so a session persisted in `review` came back
     // showing Normal while the agent kept running review.
     mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
@@ -816,7 +816,7 @@ describe('mode hydration', () => {
       </ChatProvider>
     ));
 
-    await waitFor(() => expect(modes().map((m) => m.id)).toEqual(['normal', 'review']));
+    await waitFor(() => expect(modes().map((m) => m.id)).toEqual(['ask', 'review']));
   });
 
   it("takes the daemon's current_mode_id over the persisted string", async () => {
@@ -826,9 +826,9 @@ describe('mode hydration', () => {
     // that describes what will actually run.
     mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
     (api.listModes as ReturnType<typeof vi.fn>).mockResolvedValue({
-      current_mode_id: 'normal',
+      current_mode_id: 'ask',
       modes: [
-        { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+        { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
         { id: 'plan', name: 'Plan', description: null, icon: null, color: null },
       ],
     });
@@ -844,7 +844,7 @@ describe('mode hydration', () => {
       </ChatProvider>
     ));
 
-    await waitFor(() => expect(mode()).toBe('normal'));
+    await waitFor(() => expect(mode()).toBe('ask'));
   });
 
   it('re-fetches the mode list when the daemon rejects a switch', async () => {
@@ -854,9 +854,9 @@ describe('mode hydration', () => {
     const listModes = api.listModes as ReturnType<typeof vi.fn>;
     listModes.mockRejectedValueOnce(new Error('daemon down'));
     listModes.mockResolvedValue({
-      current_mode_id: 'normal',
+      current_mode_id: 'ask',
       modes: [
-        { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+        { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
         { id: 'review', name: 'Review', description: null, icon: null, color: null },
       ],
     });
@@ -881,7 +881,7 @@ describe('mode hydration', () => {
     ctx!.switchMode('plan');
 
     await waitFor(() =>
-      expect(ctx!.availableModes().map((m) => m.id)).toEqual(['normal', 'review'])
+      expect(ctx!.availableModes().map((m) => m.id)).toEqual(['ask', 'review'])
     );
   });
 });

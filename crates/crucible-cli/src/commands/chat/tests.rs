@@ -269,7 +269,7 @@ fn explicit_query_does_not_read_stdin() {
 #[test]
 fn plan_flag_selects_plan_mode_and_its_absence_normal() {
     assert_eq!(initial_mode(true), "plan");
-    assert_eq!(initial_mode(false), "normal");
+    assert_eq!(initial_mode(false), "ask");
 }
 
 #[test]

@@ -132,7 +132,7 @@ impl CrucibleAcpClient {
     /// # Arguments
     ///
     /// * `session_id` - The session ID to set the mode for
-    /// * `mode_id` - The mode ID to set (e.g., "normal", "plan", "auto", "ask", "architect", "code")
+    /// * `mode_id` - The mode ID to set (e.g., "ask", "plan", "auto", "architect", "code")
     ///
     /// # Returns
     ///

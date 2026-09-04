@@ -977,12 +977,12 @@ async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["current_mode_id"], "normal");
+    assert_eq!(json["current_mode_id"], "ask");
     let ids: Vec<&str> = json["modes"]
         .as_array()
         .expect("modes must be an array")
         .iter()
         .map(|m| m["id"].as_str().expect("mode id"))
         .collect();
-    assert_eq!(ids, vec!["normal", "plan"]);
+    assert_eq!(ids, vec!["ask", "plan"]);
 }

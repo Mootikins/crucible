@@ -62,7 +62,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [connectionStatus, setConnectionStatus] = createSignal<ConnectionStatus>('connected');
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
   const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
-  const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
+  const [chatMode, setChatMode] = createSignal<ChatMode>('ask');
   // Modes are declared in Lua, so the list is per-session and comes from the
   // daemon. Held here rather than in ChatModeControl because Shift+Tab cycles
   // from ChatInput — two fetches would be two lists, and they would disagree
@@ -728,7 +728,7 @@ const fallbackChatContext: ChatContextValue = {
   retryConnection: () => {},
   subagentEvents: () => [],
   contextUsage: () => null,
-  chatMode: () => 'normal',
+  chatMode: () => 'ask',
   availableModes: () => FALLBACK_MODES,
   isLoadingHistory: () => false,
   setChatMode: () => {},

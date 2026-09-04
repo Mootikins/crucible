@@ -636,7 +636,7 @@ impl OilChatApp {
         let mode = self
             .runtime_config
             .get("mode")
-            .unwrap_or(ConfigValue::String("normal".to_string()));
+            .unwrap_or(ConfigValue::String("ask".to_string()));
         output.push_str(&format!("  mode: {}\n", mode));
 
         output.push_str(&format!(

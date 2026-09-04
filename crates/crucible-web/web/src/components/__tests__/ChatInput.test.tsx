@@ -22,7 +22,7 @@ vi.mock('@/contexts/ChatContext', () => ({
     error: () => null,
     connectionStatus: () => 'connected',
     retryConnection: vi.fn(),
-    chatMode: () => 'normal',
+    chatMode: () => 'ask',
     setChatMode: mockSetChatMode,
     switchMode: mockSwitchMode,
     sessionId: () => 'test-session',
@@ -81,7 +81,7 @@ vi.mock('../MicButton', () => ({
 
 vi.mock('../ChatModeControl', () => ({
   ChatModeControl: () => <div data-testid="chat-mode-control-mock" />,
-  nextChatMode: (mode: string) => (mode === 'normal' ? 'plan' : 'normal'),
+  nextChatMode: (mode: string) => (mode === 'ask' ? 'plan' : 'ask'),
 }));
 
 vi.mock('../AutocompletePopup', () => ({
@@ -102,7 +102,7 @@ vi.mock('@/lib/api', () => ({
   // SessionStatusChips (also rendered inside ChatInput): no plugin slots, no
   // review policy, and a review event stream that never emits.
   getSessionStatus: vi.fn(async () => []),
-  listModes: vi.fn(async () => ({ current_mode_id: 'normal', modes: [] })),
+  listModes: vi.fn(async () => ({ current_mode_id: 'ask', modes: [] })),
   subscribeToEvents: vi.fn(() => () => {}),
 }));
 

@@ -45,7 +45,7 @@ impl AgentHandle for CountingAgent {
     }
 
     fn get_mode_id(&self) -> &str {
-        "normal"
+        "ask"
     }
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())

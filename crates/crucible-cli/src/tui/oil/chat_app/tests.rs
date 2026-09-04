@@ -43,6 +43,60 @@ fn mode_label_badges_a_mode_the_tui_has_never_heard_of() {
     assert_eq!(mode_label("review"), " REVIEW ");
 }
 
+/// The mode ids an ACP agent declares are its own, not Crucible's. Since
+/// `get_modes` reports the agent's set, a delegated session's statusline and
+/// mode cycle are driven by ids this crate has never seen — camelCase from
+/// claude-agent-acp, hyphenated from codex-acp.
+///
+/// The badge derives from the id rather than matching a known list, so this
+/// is about proving the derivation survives real ACP ids, and that cycling
+/// walks the agent's set instead of the shipped one.
+#[test]
+fn an_acp_agents_own_mode_ids_render_and_cycle() {
+    // Exactly what claude-agent-acp 0.73.0 declares.
+    let claude: Vec<String> = [
+        "default",
+        "acceptEdits",
+        "plan",
+        "auto",
+        "bypassPermissions",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    assert_eq!(mode_label("acceptEdits"), " ACCEPTEDITS ");
+    assert_eq!(mode_label("bypassPermissions"), " BYPASSPERMISSIONS ");
+    assert_eq!(mode_label("default"), " DEFAULT ");
+
+    assert_eq!(
+        next_mode("default", &claude).as_deref(),
+        Some("acceptEdits"),
+        "cycling must walk the agent's set, not the shipped ask/plan/auto"
+    );
+    assert_eq!(
+        next_mode("bypassPermissions", &claude).as_deref(),
+        Some("default"),
+        "the last of the agent's modes wraps to its first"
+    );
+
+    // codex-acp's ids are hyphenated, and none of them is a Crucible mode.
+    let codex: Vec<String> = ["read-only", "auto", "full-access"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(mode_label("full-access"), " FULL-ACCESS ");
+    assert_eq!(next_mode("read-only", &codex).as_deref(), Some("auto"));
+
+    // A mode Crucible ships but this agent does not offer cycles nowhere,
+    // rather than advancing into something `set_mode` would reject.
+    assert_eq!(
+        next_mode("ask", &claude),
+        None,
+        "a current mode absent from the agent's set must not cycle"
+    );
+}
+
 #[test]
 fn test_app_init() {
     let app = OilChatApp::default();

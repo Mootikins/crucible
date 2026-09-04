@@ -84,7 +84,7 @@ describe('ChatContext.switchMode', () => {
 
     await waitFor(() => {
       // Plan mode that is not enforced server-side must not LOOK enabled.
-      expect(ctx.chatMode()).toBe('normal');
+      expect(ctx.chatMode()).toBe('ask');
     });
   });
 });

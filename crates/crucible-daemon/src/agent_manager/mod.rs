@@ -908,7 +908,7 @@ impl AgentManager {
         let declared = self.modes.all();
         if declared.is_empty() {
             let fallback = default_internal_modes();
-            // Same rule for the fallback set: the built-ins hardcode "normal"
+            // Same rule for the fallback set: the built-ins hardcode `ask`
             // as current, which would silently disagree with `get_mode`.
             let current = persisted
                 .filter(|m| {
@@ -926,7 +926,7 @@ impl AgentManager {
         let current = persisted
             .filter(|m| declared.iter().any(|d| &d.name == m))
             .or_else(|| declared.first().map(|m| m.name.clone()))
-            .unwrap_or_else(|| "normal".to_string());
+            .unwrap_or_else(|| "ask".to_string());
         let available = declared
             .into_iter()
             .map(|m| {

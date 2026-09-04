@@ -510,7 +510,7 @@ mod tests {
     /// of it is PostTurn — and PostTurn gates nothing.
     #[test]
     fn an_external_agents_write_is_never_held() {
-        let policy = ReviewPolicy::for_mode_id("normal").effective_for("acp");
+        let policy = ReviewPolicy::for_mode_id("ask").effective_for("acp");
         assert_eq!(policy, ReviewPolicy::PostTurn);
         assert_eq!(
             gate_subject(policy, "edit_file", &targets(&["src/foo.rs"])),
@@ -520,7 +520,7 @@ mod tests {
 
     #[test]
     fn the_same_write_is_held_for_an_internal_agent() {
-        let policy = ReviewPolicy::for_mode_id("normal").effective_for("internal");
+        let policy = ReviewPolicy::for_mode_id("ask").effective_for("internal");
         assert_eq!(
             gate_subject(policy, "edit_file", &targets(&["src/foo.rs"])),
             GateSubject::Files(targets(&["src/foo.rs"]))

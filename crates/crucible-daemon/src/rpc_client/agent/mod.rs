@@ -83,7 +83,7 @@ impl DaemonAgentHandle {
             streaming_rx: Arc::new(Mutex::new(streaming_rx)),
             interaction_rx: Some(interaction_rx),
             raw_event_rx: None,
-            mode_id: "normal".to_string(),
+            mode_id: "ask".to_string(),
             cached_model: None,
             cached_temperature: None,
             cached_max_tokens: None,

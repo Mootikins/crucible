@@ -471,9 +471,9 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.set_mode" => json!(null),
         "session.list_modes" => json!({
             "session_id": "test-session-001",
-            "current_mode_id": "normal",
+            "current_mode_id": "ask",
             "modes": [
-                {"id": "normal", "name": "Normal", "description": "Full read/write access",
+                {"id": "ask", "name": "Ask", "description": "Ask before each change",
                  "icon": null, "color": null},
                 {"id": "plan", "name": "Plan", "description": "Read-only exploration mode",
                  "icon": null, "color": null},

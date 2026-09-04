@@ -6,7 +6,7 @@ import type { ChatMode, ContextUsage } from '@/lib/types';
 // context hooks. This module-level store is updated by ChatContext when
 // events arrive, and read by StatusBar directly.
 
-const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
+const [chatMode, setChatMode] = createSignal<ChatMode>('ask');
 const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
 const [activeModel, setActiveModel] = createSignal<string | null>(null);
 const [notificationCount, setNotificationCount] = createSignal(0);

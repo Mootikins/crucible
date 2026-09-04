@@ -11,7 +11,7 @@ vi.mock('@/contexts/SessionContext', () => ({
 }));
 
 const getSessionStatusMock = vi.fn();
-const listModesMock = vi.fn(async () => ({ current_mode_id: 'normal', modes: [] }));
+const listModesMock = vi.fn(async () => ({ current_mode_id: 'ask', modes: [] }));
 // The chips retain the session's review state, which opens one SSE stream and
 // lists the composed diff. Both are stubbed: this suite is about the chips.
 vi.mock('@/lib/api', () => ({

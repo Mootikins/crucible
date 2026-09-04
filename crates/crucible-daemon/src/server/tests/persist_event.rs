@@ -281,7 +281,7 @@ async fn a_session_initialized_is_persisted_once_the_model_is_known() {
     let payload = |model: &str| {
         serde_json::json!({
             "model": model,
-            "mode": "normal",
+            "mode": "ask",
             "agent_name": null,
             "kiln_path": "/k",
             "workspace_path": "/w",

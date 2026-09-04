@@ -36,7 +36,7 @@ pub struct PermissionRequest {
     /// policy that keys off "is this mutating?" needs to know the difference
     /// rather than assume everything reaching it mutates.
     pub is_safe: bool,
-    /// Session mode for the turn making this request ("normal" | "plan" |
+    /// Session mode for the turn making this request ("ask" | "plan" |
     /// "auto"). Carried so the *policy* for a mode can live in Lua rather
     /// than being hard-coded in the daemon — the built-in `auto` auto-approve
     /// is itself just a default hook in `defaults/init.lua`. `None` where no

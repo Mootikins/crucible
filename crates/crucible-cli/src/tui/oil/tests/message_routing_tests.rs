@@ -354,7 +354,7 @@ fn a_lua_declared_mode_reaches_the_statusline() {
 
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "normal".to_string(),
+        "ask".to_string(),
         "review".to_string(),
     ]));
     app.on_message(ChatAppMsg::ModeSynced("review".into()));

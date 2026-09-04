@@ -958,7 +958,7 @@ async fn no_tool_is_advertised_to_the_model_twice() {
         None,
         None,
         None,
-        "normal",
+        "ask",
         None,
     )
     .await;

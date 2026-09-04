@@ -388,6 +388,33 @@ mod status_bar_tests {
         assert_fits_width(&plain, 80);
     }
 
+    /// An ACP badge is far wider than a shipped one — ` BYPASSPERMISSIONS `
+    /// is 19 columns against ` ASK `'s 5. Since `get_modes` now reports the
+    /// agent's own ids, a delegated session really does put that on the
+    /// statusline, and at 40 columns it is nearly half the width. The model
+    /// name and context indicator must give way rather than overflow.
+    #[test]
+    fn a_long_acp_mode_badge_does_not_overflow_a_narrow_statusline() {
+        let bar = StatusBar::new()
+            .mode("bypassPermissions")
+            .model("claude-sonnet-4-5")
+            .context(10_000, 128_000);
+
+        let plain = render_bar(&bar, 40);
+
+        assert!(
+            plain.contains(" BYPASSPERMISSIONS "),
+            "the agent's own mode must still be named; got {plain:?}"
+        );
+        for line in plain.lines() {
+            assert!(
+                line.chars().count() <= 40,
+                "the statusline must not exceed its width; got {} cols: {line:?}",
+                line.chars().count()
+            );
+        }
+    }
+
     #[test]
     fn snapshot_ask_mode() {
         let bar = StatusBar::new()

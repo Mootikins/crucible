@@ -59,7 +59,7 @@ const mode = (id: string, review_policy?: ReviewAwareMode['review_policy']): Rev
 beforeEach(() => {
   handlers.length = 0;
   listReviewHunks.mockResolvedValue({ session_id: 's1', hunks: [], comments: [] });
-  modes('normal', mode('normal'));
+  modes('ask', mode('ask'));
 });
 
 afterEach(() => {
@@ -71,7 +71,7 @@ afterEach(() => {
 
 describe('SessionStatusChips — effective review policy', () => {
   it('renders the policy the daemon says is IN FORCE', async () => {
-    modes('normal', mode('normal', 'pre_write'));
+    modes('ask', mode('ask', 'pre_write'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
     const chip = await waitFor(() => screen.getByTestId('session-review-policy'));
@@ -83,7 +83,7 @@ describe('SessionStatusChips — effective review policy', () => {
     // tools run in its own process — a chip reading "gated" there would be a
     // lie about a safety property. Nothing here re-derives it from the mode id,
     // which is the only way that lie could get told.
-    modes('normal', mode('normal', 'post_turn'));
+    modes('ask', mode('ask', 'post_turn'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
     const chip = await waitFor(() => screen.getByTestId('session-review-policy'));
@@ -99,7 +99,7 @@ describe('SessionStatusChips — effective review policy', () => {
   });
 
   it('a daemon that predates the field gets no chip rather than a guessed one', async () => {
-    modes('normal', mode('normal'));
+    modes('ask', mode('ask'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(listModes).toHaveBeenCalled());
@@ -107,7 +107,7 @@ describe('SessionStatusChips — effective review policy', () => {
   });
 
   it('drops the previous session policy before the new one answers', async () => {
-    modes('normal', mode('normal', 'pre_write'));
+    modes('ask', mode('ask', 'pre_write'));
     setCurrentSession(session('s1'));
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(screen.getByTestId('session-review-policy')).toBeInTheDocument());
