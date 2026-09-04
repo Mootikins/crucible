@@ -691,13 +691,34 @@ impl AgentManager {
             }
         }
 
+        // The agent's own mode set, read once here while nothing holds the
+        // handle. An ACP agent declares its modes in the `session/new` reply,
+        // so this is the first moment they exist; an internal agent answers
+        // `None` and the session keeps the Lua-declared set.
+        let agent_modes = agent.get_modes().cloned();
+
+        // Tell the clients when the agent's own mode set replaces the one they
+        // are showing. An ACP agent's modes arrive with the handshake, so a
+        // front end that fetched `session.list_modes` before the first message
+        // is holding Crucible's Lua-declared set and a current mode this agent
+        // never had. `mode_changed` is the signal both front ends already act
+        // on: an id they do not recognise makes them re-fetch the list.
+        if let Some(current) = agent_modes.as_ref().map(|m| m.current_mode_id.0.as_ref()) {
+            if agent_config.mode.as_deref() != Some(current) {
+                emit_event(
+                    event_tx,
+                    SessionEventMessage::mode_changed(session_id, current),
+                );
+            }
+        }
+
         // Cache and return. Install only if nothing invalidated us while we
         // were building — step 4 of the interleaving on this function. Losing
         // the race is not an error: this turn keeps the handle it just built
         // (valid for the config it read) and simply goes uncached, so the next
         // turn rebuilds from the new config.
         let agent = Arc::new(Mutex::new(agent));
-        if !slot.install_agent(generation, &agent) {
+        if !slot.install_agent(generation, &agent, agent_modes) {
             debug!(
                 session_id = %session_id,
                 "session config changed during agent build; serving this turn uncached"

@@ -67,6 +67,7 @@ interface ReducerHarness {
     addMessage: ReturnType<typeof vi.fn>;
     updateMessage: ReturnType<typeof vi.fn>;
     appendToMessage: ReturnType<typeof vi.fn>;
+    onUnknownMode: ReturnType<typeof vi.fn>;
   };
   /** Mutate state for setup (e.g. install a streaming message before token). */
   setUp: {
@@ -89,6 +90,7 @@ function createHarness(): ReducerHarness {
   };
   const spies = {
     onTitleChanged: vi.fn(),
+    onUnknownMode: vi.fn(),
     addMessage: vi.fn((message: Message) => {
       state.messages.push(message);
     }),
@@ -114,6 +116,7 @@ function createHarness(): ReducerHarness {
       state.currentStreamingMessageId = id;
     },
     onTitleChanged: spies.onTitleChanged,
+    onUnknownMode: spies.onUnknownMode,
     addMessage: spies.addMessage,
     updateMessage: spies.updateMessage,
     appendToMessage: spies.appendToMessage,
@@ -1194,5 +1197,33 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'subagent_spawned' || t === 'delegation_spawned') minimal.prompt = '';
       expect(() => h.reducer(minimal as ChatEvent)).not.toThrow();
     }
+  });
+});
+
+// An ACP session's modes belong to the external agent, and the daemon does
+// not learn them until it connects — which is the first message. A front end
+// that fetched `session.list_modes` before then is offering Crucible's own
+// three, all of which the agent rejects.
+//
+// `mode_changed` is the only thing that says otherwise, so the reducer has to
+// hand every one of them to `onUnknownMode`. ChatContext refetches the list
+// when the id is not in the one it holds; if the reducer swallowed the event
+// the mode chip would stay wrong until the page reloaded.
+describe('mode_changed announces the mode for a staleness check', () => {
+  it('reports the mode so an unfamiliar one can trigger a refetch', () => {
+    const h = createHarness();
+
+    h.reducer({ type: 'mode_changed', mode: 'acceptEdits' } as ChatEvent);
+
+    expect(h.state.chatMode).toBe('acceptEdits');
+    expect(h.spies.onUnknownMode).toHaveBeenCalledWith('acceptEdits');
+  });
+
+  it('reports a familiar mode too, leaving the decision to the caller', () => {
+    const h = createHarness();
+
+    h.reducer({ type: 'mode_changed', mode: 'plan' } as ChatEvent);
+
+    expect(h.spies.onUnknownMode).toHaveBeenCalledWith('plan');
   });
 });

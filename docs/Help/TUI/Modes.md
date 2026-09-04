@@ -156,6 +156,28 @@ session's **workspace** — the directory work happens in — not its kiln; see
 For decisions that depend on the arguments rather than the tool, use a
 permission hook instead — see [[Help/Concepts/Permission Precedence]].
 
+## Modes in an ACP Session
+
+A session that runs an external agent — `cru chat --acp claude`, or any
+`[acp.agents.*]` profile — shows **that agent's** modes, not the ones you
+declared in Lua. The agent owns them: claude-agent-acp offers five
+(`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), codex-acp
+offers its own three, and an agent rejects a mode it never declared.
+
+The agent reports its modes when Crucible connects to it, which does not
+happen until you send the first message. Until then the session offers
+Crucible's own modes, because nothing has asked the agent yet. The list
+changes once at the first message; the TUI and the web UI both refresh
+themselves when it does.
+
+An external agent that declares no modes leaves the session on Crucible's
+set.
+
+Switching mode in such a session sends `session/set_mode` to the agent. The
+agent enforces it in its own process, which is also why the review policy
+chip reads `post_turn` for an ACP session: a gate that runs in the daemon
+arrives after a write the agent already made.
+
 ## Interaction with Agent Cards
 
 Modes and agent cards work together:

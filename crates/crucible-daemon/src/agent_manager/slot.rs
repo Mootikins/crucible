@@ -93,6 +93,18 @@ pub(crate) struct SessionSlot {
 struct BuildCache {
     agent: Option<Arc<tokio::sync::Mutex<BoxedAgentHandle>>>,
     dispatcher: Option<Arc<dyn ToolDispatcher>>,
+    /// The mode set the cached handle's agent declared, when it declared one.
+    ///
+    /// Only an ACP agent answers this: its modes belong to the agent process
+    /// and are not known until the handshake finishes, which is why they are
+    /// cached here rather than read from the handle on demand. A turn holds
+    /// the handle's mutex for its whole loop, so asking the handle would make
+    /// `session.list_modes` either block or answer a different list mid-turn.
+    ///
+    /// It lives in `BuildCache` and not beside it because it has exactly the
+    /// handle's lifetime: every path that clears `agent` must clear this, and
+    /// one field cannot be forgotten in the way a second lock could.
+    agent_modes: Option<crucible_core::types::acp::schema::SessionModeState>,
     /// Bumped on every invalidation. A build that started at generation N
     /// installs nothing if the generation moved while it was awaiting —
     /// otherwise a `switch_model` landing mid-build is silently lost and the
@@ -143,18 +155,32 @@ impl SessionSlot {
     /// valid handle for the config it read, so its turn can proceed uncached and
     /// the next turn rebuilds from the new config. Failing the turn instead would
     /// punish the user for switching models at an unlucky moment.
+    ///
+    /// `modes` is what the handle's agent declares, or `None` for an agent
+    /// that declares none. It is installed with the handle because the two
+    /// are one fact: a mode set that outlived its handle would describe an
+    /// agent process that is gone.
     #[must_use]
     pub(crate) fn install_agent(
         &self,
         generation: u64,
         agent: &Arc<tokio::sync::Mutex<BoxedAgentHandle>>,
+        modes: Option<crucible_core::types::acp::schema::SessionModeState>,
     ) -> bool {
         let mut build = self.lock_build();
         if build.generation != generation {
             return false;
         }
         build.agent = Some(Arc::clone(agent));
+        build.agent_modes = modes;
         true
+    }
+
+    /// The mode set the cached handle's agent declared, if it declared one.
+    pub(crate) fn agent_modes(
+        &self,
+    ) -> Option<crucible_core::types::acp::schema::SessionModeState> {
+        self.lock_build().agent_modes.clone()
     }
 
     /// The cached tool dispatcher, or the generation a build must install against.
@@ -187,6 +213,7 @@ impl SessionSlot {
     pub(crate) fn invalidate_agent(&self) {
         let mut build = self.lock_build();
         build.agent = None;
+        build.agent_modes = None;
         build.generation += 1;
     }
 
@@ -197,6 +224,7 @@ impl SessionSlot {
     pub(crate) fn invalidate_build(&self) {
         let mut build = self.lock_build();
         build.agent = None;
+        build.agent_modes = None;
         build.dispatcher = None;
         build.generation += 1;
     }

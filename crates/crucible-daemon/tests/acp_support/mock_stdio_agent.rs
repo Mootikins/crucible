@@ -392,6 +392,7 @@ impl MockStdioAgent {
             "session/new" => self.handle_new_session(request),
             "session/prompt" => self.handle_prompt(request),
             "session/set_config_option" => self.handle_set_config_option(request),
+            "session/set_mode" => self.handle_set_mode(request),
             "session/close" if self.close_supported() => self.handle_close_session(request),
             "session/resume" if self.resume_supported() => self.handle_resume_session(request),
             "authenticate" => self.handle_authenticate(request),
@@ -472,6 +473,29 @@ impl MockStdioAgent {
             "jsonrpc": "2.0",
             "id": request.get("id"),
             "result": { "modes": modes }
+        })
+    }
+
+    /// Answer `session/set_mode` by adopting the requested mode, and record it
+    /// to the file named by `CRU_MOCK_MODE_CAPTURE` (when set) so a test can
+    /// assert the switch reached the agent over the wire.
+    ///
+    /// An agent that declares modes must answer this method; without it the
+    /// mock declared a mode set it then refused to switch within, which no
+    /// real agent does.
+    fn handle_set_mode(&self, request: &Value) -> Value {
+        let mode_id = request
+            .get("params")
+            .and_then(|p| p.get("modeId"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        if let Ok(path) = env::var("CRU_MOCK_MODE_CAPTURE") {
+            let _ = fs::write(path, mode_id);
+        }
+        json!({
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {}
         })
     }
 

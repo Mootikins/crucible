@@ -905,6 +905,41 @@ impl AgentManager {
             .get_session(session_id)
             .and_then(|s| s.agent.and_then(|a| a.mode));
 
+        // An ACP agent's modes are the agent's, not Crucible's. claude-agent-acp
+        // declares five and codex-acp three, with ids Crucible does not share,
+        // so answering with the Lua registry offered a front end modes the
+        // agent would reject and named a current mode the agent was not in.
+        // The set is known only once the handshake finishes, which is why this
+        // reads the cache the handle build filled rather than the registry.
+        if let Some(agent_modes) = self
+            .slot(session_id)
+            .agent_modes()
+            .filter(|m| !m.available_modes.is_empty())
+        {
+            // The persisted mode wins when the agent offers it, and it is not
+            // redundant: the cached set is a snapshot from the handshake, so
+            // its `current_mode_id` goes stale the moment `set_mode` switches
+            // the live handle. `set_mode` persists what it applied, which
+            // makes the persisted value the fresher of the two.
+            //
+            // Same rule as below for the other direction: a persisted mode the
+            // agent does not offer is ignored rather than advertised, because
+            // `set_mode` would reject it. Then the snapshot's own current mode
+            // stands, and it is accurate — nothing has switched.
+            let current = persisted
+                .filter(|m| {
+                    agent_modes
+                        .available_modes
+                        .iter()
+                        .any(|d| d.id.0.as_ref() == m)
+                })
+                .unwrap_or_else(|| agent_modes.current_mode_id.0.to_string());
+            return SessionModeState::new(
+                SessionModeId::new(current.as_str()),
+                agent_modes.available_modes,
+            );
+        }
+
         let declared = self.modes.all();
         if declared.is_empty() {
             let fallback = default_internal_modes();
