@@ -65,8 +65,11 @@ fn an_acp_agents_own_mode_ids_render_and_cycle() {
     .map(|s| s.to_string())
     .collect();
 
-    assert_eq!(mode_label("acceptEdits"), " ACCEPTEDITS ");
-    assert_eq!(mode_label("bypassPermissions"), " BYPASSPERMISSIONS ");
+    // The badge humanizes the id before upper-casing it, using the one naming
+    // rule the rest of the system uses. Raw upper-casing read as
+    // ` ACCEPTEDITS `, which is a word no one wrote.
+    assert_eq!(mode_label("acceptEdits"), " ACCEPT EDITS ");
+    assert_eq!(mode_label("bypassPermissions"), " BYPASS PERMISSIONS ");
     assert_eq!(mode_label("default"), " DEFAULT ");
 
     assert_eq!(
@@ -85,7 +88,7 @@ fn an_acp_agents_own_mode_ids_render_and_cycle() {
         .iter()
         .map(|s| s.to_string())
         .collect();
-    assert_eq!(mode_label("full-access"), " FULL-ACCESS ");
+    assert_eq!(mode_label("full-access"), " FULL ACCESS ");
     assert_eq!(next_mode("read-only", &codex).as_deref(), Some("auto"));
 
     // A mode Crucible ships but this agent does not offer cycles nowhere,

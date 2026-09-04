@@ -420,11 +420,24 @@ mod chat_mode_properties {
         }
 
         /// Every mode gets a badge, including one the TUI has never heard of.
+        ///
+        /// Stated as the shape of the badge rather than as a second copy of
+        /// the formatting: an ACP session's ids are the external agent's, so
+        /// `acceptEdits` and `read-only` reach here and the separators in them
+        /// must not survive into the badge.
         #[test]
-        fn every_mode_id_renders_a_badge(id in "[a-z][a-z_]{2,10}") {
+        fn every_mode_id_renders_a_badge(id in "[a-z][a-zA-Z_-]{2,10}") {
             let label = mode_label(&id);
 
-            prop_assert_eq!(label, format!(" {} ", id.to_uppercase()));
+            prop_assert!(label.starts_with(' ') && label.ends_with(' '));
+            let body = label.trim();
+            prop_assert!(!body.is_empty(), "a mode with no badge cannot be seen");
+            prop_assert_eq!(body, body.to_uppercase(), "the badge is upper-case");
+            prop_assert!(
+                !body.contains('_') && !body.contains('-'),
+                "an id's separators must become spaces, not survive: {}",
+                body
+            );
         }
     }
 }
@@ -912,6 +925,11 @@ mod cli_invariants {
             Just("plan".to_string()),
             Just("auto".to_string()),
             Just("review".to_string()),
+            // An ACP session's modes are the external agent's. These two ids
+            // are claude-agent-acp's, and they are the reason the badge
+            // humanizes: raw upper-casing rendered ` ACCEPTEDITS `.
+            Just("acceptEdits".to_string()),
+            Just("bypassPermissions".to_string()),
         ]
     }
 
@@ -948,7 +966,7 @@ mod cli_invariants {
             // generator emits `review` precisely so an id the TUI does not
             // hardcode has to reach the frame.
             prop_assert!(
-                rendered_once.contains(&mode.to_uppercase()),
+                rendered_once.contains(crate::tui::oil::chat_app::mode_label(&mode).trim()),
                 "the mode must reach the rendered frame; got:\n{}",
                 rendered_once
             );

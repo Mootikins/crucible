@@ -388,11 +388,11 @@ mod status_bar_tests {
         assert_fits_width(&plain, 80);
     }
 
-    /// An ACP badge is far wider than a shipped one — ` BYPASSPERMISSIONS `
-    /// is 19 columns against ` ASK `'s 5. Since `get_modes` now reports the
-    /// agent's own ids, a delegated session really does put that on the
-    /// statusline, and at 40 columns it is nearly half the width. The model
-    /// name and context indicator must give way rather than overflow.
+    /// An ACP badge is far wider than a shipped one — ` BYPASS PERMISSIONS `
+    /// is 20 columns against ` ASK `'s 5. An ACP session's mode list is the
+    /// agent's, so a real session puts that on the statusline, and at 40
+    /// columns it is half the width. The model name and context indicator
+    /// must give way rather than overflow.
     #[test]
     fn a_long_acp_mode_badge_does_not_overflow_a_narrow_statusline() {
         let bar = StatusBar::new()
@@ -403,7 +403,7 @@ mod status_bar_tests {
         let plain = render_bar(&bar, 40);
 
         assert!(
-            plain.contains(" BYPASSPERMISSIONS "),
+            plain.contains(" BYPASS PERMISSIONS "),
             "the agent's own mode must still be named; got {plain:?}"
         );
         for line in plain.lines() {

@@ -211,7 +211,8 @@ pub use manifest::{
 };
 pub use mcp::register_mcp_module_stub;
 pub use modes::{
-    register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
+    humanize_mode_id, register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance,
+    ToolSelector,
 };
 pub use modules::{ModuleLoadHook, ModuleRegistry, ModuleRequest, PrivateRootGuard, RootKind};
 pub use session_api::{

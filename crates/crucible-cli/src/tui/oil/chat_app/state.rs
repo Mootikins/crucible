@@ -18,13 +18,19 @@ pub const DEFAULT_MODE: &str = "ask";
 /// cycles.
 pub const DEFAULT_MODES: [&str; 3] = ["ask", "plan", "auto"];
 
-/// The statusline badge for a mode: ` ASK `, ` PLAN `, ` REVIEW `.
+/// The statusline badge for a mode: ` ASK `, ` PLAN `, ` ACCEPT EDITS `.
 ///
 /// Derived rather than matched so a mode the TUI has never heard of still gets
 /// its own badge. The built-ins reproduce their previous labels byte-for-byte,
 /// which is what keeps the statusline snapshots from moving.
+///
+/// The id is humanized before it is upper-cased, using the same rule that
+/// names a mode everywhere else. An ACP session's modes are the external
+/// agent's, so ids like `acceptEdits` and `bypassPermissions` reach this
+/// badge; upper-casing them raw read as ` ACCEPTEDITS `. A single-word id is
+/// unaffected, which is why no snapshot moves.
 pub fn mode_label(mode: &str) -> String {
-    format!(" {} ", mode.to_uppercase())
+    format!(" {} ", crucible_lua::humanize_mode_id(mode).to_uppercase())
 }
 
 /// The badge's colours.

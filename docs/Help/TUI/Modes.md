@@ -123,8 +123,9 @@ cru.modes.review = {
 
 Names are sentence case everywhere — "Accept edits", not "Accept Edits" or
 "acceptEdits" — so a mode you declare and one an external agent advertises
-read the same in the same list. The modeline upper-cases whatever it is
-given; that is the modeline's styling, not a second name.
+read the same in the same list. The modeline applies the same rule to the id
+and upper-cases the result, so `acceptEdits` shows as ` ACCEPT EDITS `; that
+is the modeline's styling, not a second name.
 
 Rules use the same engine as the global `[permissions]` config, so
 `bash:rg *` inherits its handling of chained commands — permitting `rg` does
