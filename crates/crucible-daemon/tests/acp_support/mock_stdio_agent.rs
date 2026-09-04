@@ -385,6 +385,7 @@ impl MockStdioAgent {
         if let Some(log) = &self.config.method_log {
             log.lock().unwrap().push(method.to_string());
         }
+        Self::append_method_log_file(method, request);
 
         match method {
             "initialize" => self.handle_initialize(request),
@@ -418,10 +419,44 @@ impl MockStdioAgent {
         })
     }
 
+    /// Append one line per received method to the file named by
+    /// `CRU_MOCK_METHOD_LOG`, as `<method> <sessionId>`.
+    ///
+    /// The in-process `method_log` field cannot serve a spawned binary, and
+    /// resume spans two agent PROCESSES: the first opens the session, the
+    /// second must resume it. The file is appended, never truncated, so the
+    /// second process adds to what the first wrote and one test reads the
+    /// whole conversation of both.
+    fn append_method_log_file(method: &str, request: &Value) {
+        let Ok(path) = env::var("CRU_MOCK_METHOD_LOG") else {
+            return;
+        };
+        let session_id = request
+            .get("params")
+            .and_then(|p| p.get("sessionId"))
+            .and_then(|s| s.as_str())
+            .unwrap_or("-");
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{method} {session_id}");
+        }
+    }
+
     /// Answer `session/resume` by adopting the requested session id, the way
-    /// a real agent continues an existing conversation. The reply is the
-    /// minimal `ResumeSessionResponse`: no modes, no config options.
+    /// a real agent continues an existing conversation.
+    ///
+    /// With `CRU_MOCK_RESUME_REJECT` set, the answer is an error that is NOT
+    /// `-32601` — a real agent that knows the method but has forgotten this
+    /// particular session, which is what a stale stored id looks like after
+    /// the agent itself restarts. The two error replies mean different
+    /// things and the client must not treat them alike.
+    ///
+    /// The reply carries the same mode set as `session/new` when
+    /// `CRU_MOCK_ADVERTISE_MODES` names one: an agent that resumes reports
+    /// its modes again, and the resumed session must adopt them.
     fn handle_resume_session(&mut self, request: &Value) -> Value {
+        if env_flag("CRU_MOCK_RESUME_REJECT") {
+            return self.error_response(request, -32602, "no such session");
+        }
         let session_id = request
             .get("params")
             .and_then(|p| p.get("sessionId"))
@@ -429,10 +464,14 @@ impl MockStdioAgent {
             .unwrap_or_default()
             .to_string();
         self.session_id = Some(session_id);
+        let modes = match env::var("CRU_MOCK_ADVERTISE_MODES") {
+            Ok(current) if !current.is_empty() => Self::mode_state(&current),
+            _ => Value::Null,
+        };
         json!({
             "jsonrpc": "2.0",
             "id": request.get("id"),
-            "result": {}
+            "result": { "modes": modes }
         })
     }
 
