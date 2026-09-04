@@ -180,6 +180,20 @@ TUI features need a story in `docs/Meta/TUI User Stories.md` plus T1 + T2 covera
 Style followed · `just ci` passes · docs updated (architecture → `docs/Meta/`) · no debug code ·
 conventional commits · bugfixes include regression tests · snapshots verified correct.
 
+**A feature is done when a user can reach it and read about it.** Four questions, each of
+which has shipped broken at least once because nothing asked it:
+
+- **Where does a user meet it?** TUI *and* web, unless it truly belongs to neither — then say
+  which and why in the commit. They are separate render layers and shipping one is not
+  shipping the other. A daemon capability nothing surfaces is invisible.
+- **Which doc already describes the old behaviour?** Grep for it and edit *that*, rather than
+  adding a note beside it. `docs/Help/` is what a user does, `docs/Meta/` is architecture.
+- **What did it change out from under the front ends?** A new id set or a widened type reaches
+  every renderer. Test it where it is *drawn*, not only where it is produced — a front end fed
+  unfamiliar data is where this breaks, and the producing side's tests all still pass.
+- **Which defaults still name the old thing?** Fallback lists, initial signals, seed constants.
+  These rarely fail a test, because a fallback only runs before the real answer arrives.
+
 ## Key Resources
 
 - [README.md](./README.md) — overview and quick start
