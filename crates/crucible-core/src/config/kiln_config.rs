@@ -50,6 +50,49 @@ name = "Test"
         assert_eq!(config.kiln.name, "Test");
     }
 
+    /// A kiln cannot nominate itself as a tree the daemon loads or executes.
+    ///
+    /// `KilnConfig` carries a name and nothing else. That is what makes a kiln
+    /// attach cheap and safe: the daemon reaches a kiln's Lua only when the
+    /// user names the kiln on the config `runtimepath`, which is a decision the
+    /// user makes in their own config file.
+    ///
+    /// The moment this type grows a field that names a directory —
+    /// `runtimepath`, `plugins`, `defaults` — an attach starts to mean "run
+    /// this kiln's code", and a kiln can arrive by clone, by sync, or by a lazy
+    /// attach the user never reviewed. Write protection does not cover that
+    /// case: it stops the agent from writing a plugin, not a person from
+    /// shipping one. Add such a field deliberately, or not at all.
+    #[test]
+    fn a_kiln_config_names_no_directory() {
+        let toml_src = r#"
+[kiln]
+name = "Work"
+runtimepath = ["/opt/planted"]
+plugins = ["/opt/planted/plugins"]
+"#;
+
+        let config: KilnConfig =
+            toml::from_str(toml_src).expect("unknown keys are ignored, not rejected");
+        assert_eq!(config.kiln.name, "Work");
+
+        let round_trip = toml::to_string(&config).expect("serialize");
+        let value: toml::Value = toml::from_str(&round_trip).expect("re-parse");
+        let top = value.as_table().expect("a table");
+        assert_eq!(
+            top.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["kiln"],
+            "a kiln config has one section: {top:?}"
+        );
+
+        let kiln = top["kiln"].as_table().expect("[kiln]");
+        assert_eq!(
+            kiln.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["name"],
+            "a new KilnConfig field lets a kiln point the daemon at code: {kiln:?}"
+        );
+    }
+
     #[test]
     fn kiln_config_backward_compat_workspace_section() {
         let toml = r#"

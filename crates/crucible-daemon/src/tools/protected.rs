@@ -17,9 +17,22 @@
 //! (agent-written git hooks).
 //!
 //! **We have this.** An agent with write access to a workspace or kiln can
-//! write `.crucible/project.toml`, `.crucible/kiln.toml`, a Lua plugin under
-//! `.crucible/plugins/`, an agent card, a skill, or a hook — every one of
-//! which the daemon loads on its next start, most of which it executes.
+//! write `.crucible/project.toml`, `.crucible/kiln.toml`, an agent card or a
+//! skill — every one of which the daemon loads on its next start, and some of
+//! which it executes.
+//!
+//! Lua is the sharper case, and it does not come through a kiln.
+//! [`crate::daemon_plugins::daemon_plugin_paths`] searches four trees:
+//! `$CRUCIBLE_PLUGIN_PATH`, the user's `plugins/`, `<runtimepath>/plugins`,
+//! and the shipped runtime. A kiln reaches that list only when the user names
+//! it on the config `runtimepath`, which is the case
+//! [`crate::execution_roots`] records and this module then refuses writes to.
+//!
+//! `<kiln>/.crucible/plugins/` is refused as well, and deliberately so even
+//! though no loader reads it today: `.crucible` is protected by name, and rule
+//! 2 below says a check runs on the name rather than on what is there. An
+//! extension point that arrives later lands inside a boundary that already
+//! holds.
 //!
 //! ## The rules
 //!

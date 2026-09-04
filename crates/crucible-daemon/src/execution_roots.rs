@@ -312,6 +312,77 @@ mod tests {
         );
     }
 
+    /// Attaching a kiln is not installing plugins.
+    ///
+    /// A kiln reaches the loaders through ONE route: the user names it on the
+    /// config `runtimepath`. Nothing a kiln CONTAINS puts it there —
+    /// `daemon_plugin_paths` never scans a kiln, and `KilnConfig` carries a
+    /// name and nothing else, so a kiln cannot nominate itself.
+    ///
+    /// This is the invariant lazy kiln attach rests on. If a session can attach
+    /// a kiln it did not start with, then "attach" must not mean "execute".
+    /// Write protection answers a different question: it stops the AGENT from
+    /// planting a plugin, not a person from shipping one inside a kiln that
+    /// someone else authored and the user cloned.
+    ///
+    /// Directories that a loader could plausibly want are all present here, so
+    /// a resolver that grows a kiln branch fails this rather than passing on an
+    /// empty tree.
+    #[test]
+    fn a_kiln_off_the_runtimepath_contributes_no_execution_root() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        for dir in ["plugins/evil", ".crucible/plugins/evil", "defaults"] {
+            std::fs::create_dir_all(kiln.join(dir)).unwrap();
+        }
+        std::fs::write(kiln.join("defaults").join("init.lua"), "-- planted").unwrap();
+        std::fs::write(kiln.join("plugins/evil/init.lua"), "-- planted").unwrap();
+        std::fs::write(kiln.join(".crucible/plugins/evil/init.lua"), "-- planted").unwrap();
+        std::fs::write(
+            kiln.join(".crucible").join("kiln.toml"),
+            "[kiln]\nname = \"work\"\n",
+        )
+        .unwrap();
+
+        // The kiln is attached, not nominated: the runtimepath is empty.
+        let searched = crate::daemon_plugins::daemon_plugin_paths(&[]);
+        for (dir, source) in &searched {
+            assert!(
+                !dir.starts_with(&kiln),
+                "the loader searched {} inside an unnominated kiln (source {source:?})",
+                dir.display()
+            );
+        }
+
+        let defaults = crate::runtime_defaults::defaults_candidates(&[], None);
+        for candidate in &defaults {
+            assert!(
+                !candidate.starts_with(&kiln),
+                "the session VM would execute {} out of an unnominated kiln",
+                candidate.display()
+            );
+        }
+
+        for tree in all() {
+            assert!(
+                !tree.starts_with(&kiln),
+                "{} was recorded as an execution root by an attach alone",
+                tree.display()
+            );
+        }
+
+        // Not vacuous: the SAME tree is searched once the user names it. What
+        // the assertions above measure is the runtimepath, not a typo in the
+        // fixture.
+        let nominated = crate::daemon_plugins::daemon_plugin_paths(std::slice::from_ref(&kiln));
+        assert!(
+            nominated
+                .iter()
+                .any(|(dir, _)| dir == &kiln.join("plugins")),
+            "precondition: a kiln ON the runtimepath is searched: {nominated:?}"
+        );
+    }
+
     /// Recording is idempotent: a resolver called once per session must not
     /// grow the set without bound.
     #[test]
