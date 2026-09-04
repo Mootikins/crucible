@@ -166,17 +166,21 @@ When you run `cru chat -a claude`, Crucible:
 6. **Streams** the conversation through the TUI or web UI
 7. **Routes** all tool calls through Crucible's MCP server, enforcing permissions
 
-After a daemon restart, Crucible sends `session/resume` to continue the agent session;
-when the agent refuses, Crucible falls back to `session/new`. To switch the model, Crucible
-sends `session/set_config_option` with the agent's `model_config` option. At shutdown,
-Crucible sends `session/close` when the agent advertises the capability. A `-32601` reply
-to `session/resume` or `session/close` is not an error.
+After a daemon restart, Crucible sends `session/resume` to continue the agent session.
+A `-32601` reply means the agent does not have the method: Crucible opens a new session
+instead and announces the fallback, because the agent kept none of the conversation. Any
+other error reply means the agent has the method and refuses this call — a stored session
+id that the agent no longer knows, most often — and the connect fails rather than starting
+a session that silently forgets. To switch the model, Crucible sends
+`session/set_config_option` with the agent's `model_config` option. At shutdown, Crucible
+sends `session/close` when the agent advertises the capability. A `-32601` reply to
+`session/close` is not an error.
 
 The agent never touches your kiln directly. Every file read, search, and write goes through Crucible's tool layer, giving you full control over what the agent can access.
 
 ### Precognition Integration
 
-Before each turn, Crucible runs [[Help/Concepts/Semantic Search|semantic search]] against your kiln using the user's message as a query. Relevant note fragments are injected into the agent's context alongside any loaded [[Help/Concepts/Agent Skills|skills]]. This means the agent has access to your knowledge without you manually searching for context.
+On the first message of a session, Crucible runs [[Help/Concepts/Semantic Search|semantic search]] against your kiln using that message as a query. Relevant note fragments are injected into the agent's context alongside any loaded [[Help/Concepts/Agent Skills|skills]]. This means the agent has access to your knowledge without you manually searching for context.
 
 ## Crucible as ACP Agent
 
