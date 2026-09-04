@@ -3,6 +3,7 @@ mod auth_e2e_helpers;
 
 use assert_cmd::Command;
 use auth_e2e_helpers::AuthTestEnv;
+use crucible_core::test_support::hermetic_env_pairs;
 use serial_test::serial;
 
 #[test]
@@ -312,6 +313,15 @@ fn auth_login_creates_file_with_restricted_permissions() {
 fn cru_with_pinned_socket() -> (Command, tempfile::TempDir) {
     let tmp = tempfile::tempdir().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
+    // Every home directory moves into the temp directory as well. One caller
+    // runs `cru chat`, which opens `~/.crucible/chat.log` before it validates
+    // the flags; without this, the test appends to the developer's real file.
+    // `AuthTestEnv::command` applies the same environment for the auth tests.
+    cmd.env_clear();
+    for (key, value) in hermetic_env_pairs(tmp.path()) {
+        cmd.env(key, value);
+    }
+    cmd.env("CRUCIBLE_LOG_FILE", tmp.path().join("chat.log"));
     cmd.env("CRUCIBLE_SOCKET", tmp.path().join("daemon.sock"));
     (cmd, tmp)
 }

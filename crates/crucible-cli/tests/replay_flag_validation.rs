@@ -7,6 +7,7 @@
 //! require a running daemon.
 
 use assert_cmd::Command;
+use crucible_core::test_support::hermetic_env_pairs;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
@@ -19,11 +20,32 @@ fn make_fake_replay() -> (TempDir, std::path::PathBuf) {
     (tmpdir, fake_replay)
 }
 
+/// A `cru` command with every home directory rooted at `home`.
+///
+/// `cru chat` opens a log file before it validates the flags, and the default
+/// path of that file is the developer's `~/.crucible/chat.log`. Without this
+/// environment each of the five tests below appends to that real file. The
+/// caller must keep `home` alive until the child process ends.
+fn hermetic_cru(home: &std::path::Path) -> Command {
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env_clear();
+    for (key, value) in hermetic_env_pairs(home) {
+        cmd.env(key, value);
+    }
+    // The log path follows `HOME` today. Pin it as well, so a later change to
+    // that default cannot send the log back to the developer's home directory.
+    cmd.env("CRUCIBLE_LOG_FILE", home.join("chat.log"));
+    // Keep the daemon socket inside the sandbox too: a daemon that another
+    // test leaked on the shared default socket must not answer this child.
+    cmd.env("CRUCIBLE_SOCKET", home.join("daemon.sock"));
+    cmd
+}
+
 #[test]
 fn replay_with_query_errors() {
-    let (_tmpdir, fake_replay) = make_fake_replay();
+    let (tmpdir, fake_replay) = make_fake_replay();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = hermetic_cru(tmpdir.path());
     cmd.arg("chat")
         .arg("--replay")
         .arg(&fake_replay)
@@ -36,11 +58,11 @@ fn replay_with_query_errors() {
 
 #[test]
 fn replay_with_record_errors() {
-    let (_tmpdir, fake_replay) = make_fake_replay();
+    let (tmpdir, fake_replay) = make_fake_replay();
     let tmpdir2 = TempDir::new().unwrap();
     let record_path = tmpdir2.path().join("record.jsonl");
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = hermetic_cru(tmpdir.path());
     cmd.arg("chat")
         .arg("--replay")
         .arg(&fake_replay)
@@ -54,9 +76,9 @@ fn replay_with_record_errors() {
 
 #[test]
 fn replay_with_resume_errors() {
-    let (_tmpdir, fake_replay) = make_fake_replay();
+    let (tmpdir, fake_replay) = make_fake_replay();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = hermetic_cru(tmpdir.path());
     cmd.arg("chat")
         .arg("--replay")
         .arg(&fake_replay)
@@ -70,9 +92,9 @@ fn replay_with_resume_errors() {
 
 #[test]
 fn replay_with_agent_errors() {
-    let (_tmpdir, fake_replay) = make_fake_replay();
+    let (tmpdir, fake_replay) = make_fake_replay();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = hermetic_cru(tmpdir.path());
     cmd.arg("chat")
         .arg("--replay")
         .arg(&fake_replay)
@@ -86,12 +108,11 @@ fn replay_with_agent_errors() {
 
 #[test]
 fn replay_with_nonexistent_file_errors() {
-    // Pick a path that almost certainly does not exist.
-    let missing = std::env::temp_dir().join("crucible-replay-does-not-exist-7f3a9b2c.jsonl");
-    // Ensure it is absent (in case a prior run somehow created it).
-    let _ = std::fs::remove_file(&missing);
+    let tmpdir = TempDir::new().unwrap();
+    // A path inside the sandbox that nothing creates.
+    let missing = tmpdir.path().join("crucible-replay-does-not-exist.jsonl");
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = hermetic_cru(tmpdir.path());
     cmd.arg("chat").arg("--replay").arg(&missing);
 
     cmd.assert()

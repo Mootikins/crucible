@@ -12,7 +12,7 @@ use std::fs;
 /// it, and return the socket path — so "no daemon spawned" is observable.
 fn hermetic_cru(home: &std::path::Path) -> (assert_cmd::Command, std::path::PathBuf) {
     let socket = home.join("daemon.sock");
-    let mut cmd = cru();
+    let mut cmd = cru_bare();
     cmd.env_clear();
     for (k, v) in hermetic_env_pairs(home) {
         cmd.env(k, v);
