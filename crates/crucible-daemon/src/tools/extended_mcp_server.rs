@@ -8,21 +8,21 @@
 //!
 //! ## Plugin Discovery
 //!
-//! Plugins are discovered from (using `DiscoveryPaths`):
-//! - Global personal: `~/.config/crucible/plugins/`
-//! - Kiln personal: `KILN/.crucible/plugins/` (gitignored)
-//! - Kiln shared: `KILN/plugins/` (version-controlled)
+//! This server discovers nothing. It serves the daemon's own
+//! [`crate::plugin_tools::PluginRegistry`] — the registry the internal agent
+//! dispatches through — so the two surfaces advertise one set of tools.
+//!
+//! The trees that registry is loaded from belong to
+//! [`crate::daemon_plugins::daemon_plugin_paths`]: `$CRUCIBLE_PLUGIN_PATH`,
+//! the user's `plugins/` directory, `<runtimepath>/plugins`, and the shipped
+//! runtime. **A kiln is not one of them.** A kiln contributes plugins only
+//! when the user names it on the config `runtimepath`, which is also what
+//! puts it in the write-protected set (see [`crate::execution_roots`]).
 //!
 //! ## Handler Discovery
 //!
-//! Event handlers are discovered from:
-//! - Global personal: `~/.config/crucible/handlers/`
-//! - Kiln personal: `KILN/.crucible/handlers/` (gitignored)
-//! - Kiln shared: `KILN/handlers/` (version-controlled)
-//!
-//! Lua plugins use `@tool` doc comments to register tools.
-//! Lua handlers register with `crucible.on` in a plugin; this server does
-//! not scan for them.
+//! None here either. Handlers used to be scraped out of a kiln by `-- @handler`
+//! doc comments; a plugin's `crucible.on` is the one registration route now.
 
 use super::helpers::{make_server_info, text_success, McpResultExt};
 use super::mcp_gateway::McpGatewayManager;

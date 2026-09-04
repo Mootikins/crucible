@@ -85,10 +85,11 @@ use std::path::{Path, PathBuf};
 /// code:
 ///
 /// - `.crucible` — `project.toml`, `kiln.toml`, and the `plugins/`, `agents/`,
-///   `skills/`, `hooks/`, `tools/`, `themes/` trees. `crucible-core`'s
-///   `discovery.rs` states the invariant this relies on: "Every directory
-///   Crucible auto-detects is now a `.crucible/` one." One name covers the
-///   whole extension surface, and any future extension point lands inside it.
+///   `skills/`, `hooks/`, `tools/`, `themes/` trees.
+///   [`crate::skills::discovery`] states the invariant this relies on: every
+///   directory Crucible auto-detects is a `.crucible/` one. One name covers
+///   the whole extension surface, and any future extension point lands inside
+///   it.
 /// - `.git` — hooks, `config` (`core.fsmonitor`, `core.pager`), and the object
 ///   store. Both Claude Code CVE-2026-55607 and Cursor CVE-2026-26268 live
 ///   here.

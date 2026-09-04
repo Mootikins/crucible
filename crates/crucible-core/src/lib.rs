@@ -6,7 +6,6 @@ pub mod background;
 pub mod bundled_docs;
 pub mod canvas;
 pub mod config;
-pub mod discovery;
 pub mod enrichment;
 pub mod error_utils;
 pub mod events;
@@ -40,7 +39,6 @@ pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
     AgentCardQuery, AgentCardRegistry,
 };
-pub use discovery::DiscoveryPaths;
 pub use error_utils::strip_tool_error_prefix;
 pub use kiln::{
     is_canvas_file, is_indexable_file, is_note_file, is_plain_text_file, KilnFileKind,
