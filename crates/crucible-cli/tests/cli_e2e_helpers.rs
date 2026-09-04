@@ -6,6 +6,7 @@
 use assert_cmd::Command;
 use crucible_core::test_support::hermetic_env_pairs;
 use std::fs;
+use std::ops::{Deref, DerefMut};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command as StdCommand, Stdio};
@@ -15,9 +16,63 @@ use std::time::{Duration, Instant};
 const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const DAEMON_READY_POLL: Duration = Duration::from_millis(25);
 
-/// Create a `cru` CLI command via assert_cmd.
-pub fn cru() -> Command {
+/// A `cru` CLI command with no environment of its own.
+///
+/// Only for a caller that applies its own hermetic environment straight
+/// afterwards, such as [`TestDaemon::command`]. Every other caller uses
+/// [`cru`], which is hermetic already.
+#[allow(dead_code)]
+pub fn cru_bare() -> Command {
     assert_cmd::cargo_bin_cmd!("cru")
+}
+
+/// A hermetic `cru` command together with the temporary home it writes into.
+///
+/// The directory must outlive the child process, so the guard owns it. `Deref`
+/// exposes the [`Command`] itself, which keeps the call sites unchanged: a
+/// temporary guard lives to the end of the statement, and `assert()` and
+/// `output()` both run the child before that point.
+#[allow(dead_code)]
+pub struct HermeticCru {
+    cmd: Command,
+    _home: tempfile::TempDir,
+}
+
+impl Deref for HermeticCru {
+    type Target = Command;
+
+    fn deref(&self) -> &Command {
+        &self.cmd
+    }
+}
+
+impl DerefMut for HermeticCru {
+    fn deref_mut(&mut self) -> &mut Command {
+        &mut self.cmd
+    }
+}
+
+/// Create a `cru` CLI command that cannot read or write the developer's home.
+///
+/// `cru chat`, `cru acp` and `cru mcp --stdio` open a log file under
+/// `~/.crucible/` before they parse anything else, and every command reads the
+/// real config and credential files. `env_clear` plus the allowlist from
+/// `hermetic_env_pairs` roots all of that in a temporary directory instead.
+#[allow(dead_code)]
+pub fn cru() -> HermeticCru {
+    let home = tempfile::tempdir().expect("create temp home for cru");
+    let mut cmd = cru_bare();
+    cmd.env_clear();
+    for (key, value) in hermetic_env_pairs(home.path()) {
+        cmd.env(key, value);
+    }
+    // The log path follows `HOME` today. Pin it as well, so a later change to
+    // that default cannot send the log back to the developer's home directory.
+    cmd.env("CRUCIBLE_LOG_FILE", home.path().join("cru.log"));
+    // Keep the daemon socket inside the sandbox too: a daemon that another
+    // test leaked on the shared default socket must not answer this child.
+    cmd.env("CRUCIBLE_SOCKET", home.path().join("daemon.sock"));
+    HermeticCru { cmd, _home: home }
 }
 
 /// Escape a path for embedding in TOML string values (Windows backslash handling).
@@ -170,7 +225,7 @@ impl TestDaemon {
     /// supplies its own (e.g. the root-mismatch refusal).
     #[allow(dead_code)]
     pub fn command_without_config(&self) -> Command {
-        let mut cmd = cru();
+        let mut cmd = cru_bare();
         cmd.env_clear();
         for (k, v) in hermetic_env_pairs(self._temp_dir.path()) {
             cmd.env(k, v);
@@ -183,7 +238,7 @@ impl TestDaemon {
     /// in the same hermetic environment as the daemon (no real credentials).
     #[allow(dead_code)]
     pub fn command(&self) -> Command {
-        let mut cmd = cru();
+        let mut cmd = cru_bare();
         cmd.env_clear();
         for (k, v) in hermetic_env_pairs(self._temp_dir.path()) {
             cmd.env(k, v);
