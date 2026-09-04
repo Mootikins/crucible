@@ -277,8 +277,12 @@ fn table(catalog: &EmbeddingCatalog) -> String {
                 marks(model, catalog.configured.as_deref()),
                 model.name.clone(),
                 model.dimensions.to_string(),
-                format!("{}M", model.parameter_millions),
-                model.max_input_tokens.to_string(),
+                model
+                    .parameter_millions
+                    .map_or_else(String::new, |m| format!("{m}M")),
+                model
+                    .max_input_tokens
+                    .map_or_else(String::new, |t| t.to_string()),
                 model
                     .retrieval_score
                     .map_or_else(String::new, |s| format!("{s:.2}")),
@@ -300,7 +304,7 @@ fn marks(model: &EmbeddingModelRow, configured: Option<&str>) -> String {
     } else {
         ' '
     });
-    marks.push(if model.recommended { '+' } else { ' ' });
+    marks.push(if model.curated { '+' } else { ' ' });
     marks.push(if model.downloaded { 'v' } else { ' ' });
     marks
 }
@@ -309,7 +313,8 @@ fn marks(model: &EmbeddingModelRow, configured: Option<&str>) -> String {
 fn print_footer(catalog: &EmbeddingCatalog) {
     println!(
         "{}",
-        "  * configured   + recommended   v in the cache   MTEB: v1 English retrieval, nDCG@10"
+        "  * configured   + curated, and downloadable   v in the cache   \
+         MTEB: v1 English retrieval, nDCG@10"
             .dimmed()
     );
     if let Some(dir) = &catalog.cache_dir {

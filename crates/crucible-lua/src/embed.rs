@@ -94,6 +94,10 @@ mod tests {
         fn model_name(&self) -> &str {
             "fixed"
         }
+
+        fn provider_kind(&self) -> &'static str {
+            "mock"
+        }
         fn dimensions(&self) -> usize {
             self.0.len()
         }

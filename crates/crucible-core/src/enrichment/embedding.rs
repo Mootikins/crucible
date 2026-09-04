@@ -79,6 +79,18 @@ pub trait EmbeddingProvider: Send + Sync {
     /// "text-embedding-3-small")
     fn model_name(&self) -> &str;
 
+    /// The backend this provider speaks to, such as `fastembed` or `ollama`.
+    ///
+    /// A stored vector records `<provider_kind>/<model_name>`, because a model
+    /// name alone is ambiguous across backends: Ollama's `nomic-embed-text`
+    /// and fastembed's `nomic-embed-text-v1.5` are different models, and two
+    /// backends may even serve the same name with different weights. The pair
+    /// is the reuse key, so a vector is only ever reused for the backend that
+    /// produced it.
+    ///
+    /// Required rather than defaulted: a new provider must answer for itself.
+    fn provider_kind(&self) -> &'static str;
+
     /// Get the dimensionality of embeddings produced by this provider
     ///
     /// # Returns

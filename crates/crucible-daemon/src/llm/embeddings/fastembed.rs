@@ -333,6 +333,10 @@ impl EmbeddingProvider for FastEmbedProvider {
         &self.model_info.name
     }
 
+    fn provider_kind(&self) -> &'static str {
+        "fastembed"
+    }
+
     fn dimensions(&self) -> usize {
         self.model_info.dimensions.unwrap_or(768)
     }
@@ -450,9 +454,15 @@ mod tests {
         let models = models.unwrap();
         assert!(!models.is_empty());
 
+        // `list_models` answers the curated set, which is what a user can
+        // download. Any other model the backend knows still runs from the
+        // config file; it is simply not offered here.
         assert!(models.contains(&"bge-small-en-v1.5".to_string()));
-        assert!(models.contains(&"all-MiniLM-L6-v2".to_string()));
-        assert!(models.contains(&"nomic-embed-text-v1.5".to_string()));
+        assert!(models.contains(&"arctic-embed-m".to_string()));
+        assert!(
+            !models.contains(&"all-MiniLM-L6-v2".to_string()),
+            "an uncurated model is not offered"
+        );
     }
 
     /// What the user configured is what the provider is built with.

@@ -82,6 +82,10 @@ impl EmbeddingProvider for EmptyEmbeddingProvider {
         "unavailable"
     }
 
+    fn provider_kind(&self) -> &'static str {
+        "none"
+    }
+
     fn dimensions(&self) -> usize {
         0
     }

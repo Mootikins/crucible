@@ -758,6 +758,10 @@ mod tests {
             "failing-mock"
         }
 
+        fn provider_kind(&self) -> &'static str {
+            "mock"
+        }
+
         fn dimensions(&self) -> usize {
             3
         }
@@ -1510,7 +1514,7 @@ mod tests {
         );
         assert_eq!(
             stored[1].embedding_model.as_deref(),
-            Some("mock-model#index:blocks"),
+            Some("mock/mock-model#index:blocks"),
             "a swapped vector is stored under its own model name, so the cache never serves it as the provider's"
         );
         assert_eq!(stored[3].embedding_model, untouched[3].embedding_model);

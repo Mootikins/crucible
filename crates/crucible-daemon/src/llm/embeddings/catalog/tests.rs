@@ -1,101 +1,104 @@
 //! What the compiler cannot check about the catalog.
 //!
-//! rustc proves that every `EmbeddingModel` variant has a row. It cannot prove
-//! that the row is complete, that two rows claim different names, or that a
-//! name parses back to the model it addresses. The walk therefore comes from
-//! `TextEmbedding::list_supported_models()` — the crate's own registry — and
-//! never from a list typed into this file.
+//! The curated set is small and hand-written, so these tests prove the three
+//! things a reader cannot see by eye: every curated row resolves by every name
+//! it claims, a model outside the set still resolves through the backend's own
+//! registry, and an unknown name is refused with the curated names in the
+//! message.
 //!
-//! A field the catalog copies out of that same registry is not asserted here.
-//! `dimensions` is `get_model_info(model).dim`, and the registry is where the
-//! expectation would come from, so the assertion would compare a value with
-//! itself. An independent oracle for it means writing 44 more literals, which
-//! is the hand-kept list this module exists to avoid.
+//! A field the catalog copies out of that registry is not asserted here.
+//! `dimensions` is `get_model_info(model).dim`, so the expectation would come
+//! from the same call and would compare a value with itself.
 
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
-/// One walk over fastembed's registry, asserting the catalog answers for each
-/// model it holds.
-///
-/// A model the crate adds arrives here with no edit to this test: the walk
-/// comes from the running system, and `facts` fails to compile until someone
-/// writes its row.
+/// Every curated row resolves by its canonical name and by each alias, and
+/// carries the numbers a user chooses on. Two rows never share a name.
 #[test]
-fn the_catalog_answers_for_every_model_fastembed_exposes() {
-    let registered = TextEmbedding::list_supported_models();
-    assert!(!registered.is_empty(), "fastembed registers no text model");
-
-    // Every name a user may write, mapped back to the model it addresses. A
-    // duplicate here means one of the two models is unreachable.
-    let mut names: BTreeMap<String, &'static str> = BTreeMap::new();
-
-    for info in &registered {
-        let entry = entry(&info.model);
-
-        assert!(
-            !entry.note.is_empty(),
-            "'{}' has no note, so a user reading the list learns nothing about it",
-            entry.canonical_name
-        );
-        assert!(
-            entry.parameter_millions > 0 && entry.max_input_tokens > 0,
-            "'{}' reports no size or no context length",
-            entry.canonical_name
-        );
-        if entry.recommended {
+fn every_curated_row_resolves_by_every_name_it_claims() {
+    let mut seen = BTreeSet::new();
+    for curated in CURATED {
+        let mut names = vec![curated.canonical_name];
+        names.extend(curated.aliases.iter().copied());
+        for name in names {
+            let lowered = name.to_lowercase();
             assert!(
-                entry.retrieval_score.is_some(),
-                "'{}' is recommended but publishes no retrieval score, so the \
-                 recommendation rests on nothing",
-                entry.canonical_name
+                seen.insert(lowered.clone()),
+                "two curated rows answer to {name}"
             );
-        }
-
-        assert_eq!(
-            parse_model_name(entry.canonical_name).ok().as_ref(),
-            Some(&info.model),
-            "'{}' does not parse back to its own model",
-            entry.canonical_name
-        );
-
-        for name in std::iter::once(entry.canonical_name).chain(entry.aliases.iter().copied()) {
-            let owned = name.to_ascii_lowercase();
-            if let Some(taken) = names.insert(owned, entry.canonical_name) {
-                panic!(
-                    "'{name}' addresses both '{taken}' and '{}'",
-                    entry.canonical_name
-                );
-            }
+            let model = parse_model_name(name)
+                .unwrap_or_else(|e| panic!("the curated name {name} does not resolve: {e}"));
+            assert_eq!(model, curated.model, "{name} reaches another model");
+            let entry = entry(&model);
+            assert!(entry.curated, "{name} must report itself as curated");
+            assert_eq!(entry.canonical_name, curated.canonical_name);
+            assert!(entry.retrieval_score.is_some(), "{name} needs a score");
+            assert!(entry.parameter_millions.is_some(), "{name} needs a size");
+            assert!(entry.max_input_tokens.is_some(), "{name} needs a context");
+            assert!(!entry.note.is_empty(), "{name} needs a note");
+            assert!(entry.dimensions > 0, "{name} needs a width");
         }
     }
+    assert_eq!(all().len(), CURATED.len(), "`all` lists the curated rows");
 }
 
-/// The two forms a user copies — the short name from our own list, and the
-/// HuggingFace name from a model card — reach one model.
-///
-/// Case is irrelevant in both, because a config file holds whatever the user
-/// pasted.
+/// A model Crucible does not curate still runs: the backend's registry
+/// resolves it by repository name, and the row carries no invented metadata.
 #[test]
-fn a_hugging_face_name_and_a_short_name_reach_one_model() {
-    let short = parse_model_name("bge-small-en-v1.5").expect("the short name parses");
-    let hugging_face = parse_model_name("BAAI/bge-small-en-v1.5").expect("the long name parses");
-    let shouted = parse_model_name("  BGE-Small-EN-V1.5  ").expect("case and space do not matter");
+fn a_model_outside_the_curated_set_resolves_through_the_registry() {
+    // The registry hosts this model under a mirror, so the name a user knows
+    // resolves through the leaf rather than the repository owner.
+    let model = parse_model_name("BAAI/bge-large-en-v1.5")
+        .expect("the backend knows bge-large by the name a user writes");
+    assert_eq!(model, EmbeddingModel::BGELargeENV15);
 
-    assert_eq!(short, EmbeddingModel::BGESmallENV15);
-    assert_eq!(short, hugging_face);
-    assert_eq!(short, shouted);
+    let entry = entry(&model);
+    assert!(!entry.curated, "bge-large is not one of the curated four");
+    assert_eq!(entry.canonical_name, "Xenova/bge-large-en-v1.5");
+    assert_eq!(entry.dimensions, 1024, "the width comes from the registry");
+    assert_eq!(entry.retrieval_score, None, "no score is invented");
+    assert_eq!(entry.parameter_millions, None);
+    assert_eq!(entry.max_input_tokens, None);
+    assert!(entry.note.is_empty());
 
-    let refused = parse_model_name("bge-small").expect_err("a partial name is not a model");
-    let message = refused.to_string();
+    // The Rust variant name resolves too, which is what fastembed's own
+    // `FromStr` accepts.
+    assert_eq!(parse_model_name("BGELargeENV15").unwrap(), model);
     assert!(
-        message.contains("bge-small-en-v1.5"),
-        "the error must name the closest catalog entries, but it said: {message}"
+        all().iter().all(|row| row.model != model),
+        "an uncurated model is not offered for download"
     );
 }
 
-/// The disk probe answers from the HuggingFace cache layout, and it answers
-/// `false` for an empty directory rather than starting a download.
+/// A name no backend model answers to is refused, and the message names the
+/// models Crucible can fetch.
+#[test]
+fn an_unknown_name_is_refused_and_names_the_curated_models() {
+    let error = parse_model_name("bge-enormous").expect_err("no such model");
+    let message = error.to_string();
+    for curated in CURATED {
+        assert!(
+            message.contains(curated.canonical_name),
+            "the refusal must name {}: {message}",
+            curated.canonical_name
+        );
+    }
+}
+
+/// A curated name matches whatever case and spacing the config file holds.
+#[test]
+fn a_curated_name_ignores_case_and_surrounding_space() {
+    let model = EmbeddingModel::BGESmallENV15;
+    for name in [
+        "bge-small-en-v1.5",
+        "  BGE-Small-EN-V1.5  ",
+        "BAAI/bge-small-en-v1.5",
+    ] {
+        assert_eq!(parse_model_name(name).unwrap(), model, "{name}");
+    }
+}
+
 #[test]
 fn the_probe_finds_a_model_that_is_already_in_the_cache() {
     let cache = tempfile::TempDir::new().expect("tempdir");

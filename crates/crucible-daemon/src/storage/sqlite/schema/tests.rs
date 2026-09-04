@@ -654,7 +654,7 @@ fn v8_renames_the_fastembed_models_and_leaves_another_provider_alone() {
     let rows = [
         ("a.md", 0, "BAAI/bge-small-en-v1.5"),
         ("b.md", 1, "BGELargeENV15"),
-        ("c.md", 2, "all-MiniLM-L6-v2"),
+        ("c.md", 2, "text-embedding-3-small"),
         ("d.md", 3, "nomic-embed-text"),
     ];
     for (path, span_start, model) in rows {
@@ -685,12 +685,20 @@ fn v8_renames_the_fastembed_models_and_leaves_another_provider_alone() {
         )
         .unwrap()
     };
-    assert_eq!(stored("a.md"), "bge-small-en-v1.5", "the named model");
-    assert_eq!(stored("b.md"), "bge-large-en-v1.5", "the Rust variant name");
+    assert_eq!(
+        stored("a.md"),
+        "fastembed/bge-small-en-v1.5",
+        "the named model"
+    );
+    assert_eq!(
+        stored("b.md"),
+        "fastembed/Xenova/bge-large-en-v1.5",
+        "the Rust variant name"
+    );
     assert_eq!(
         stored("c.md"),
-        "all-MiniLM-L6-v2",
-        "a name that did not move"
+        "text-embedding-3-small",
+        "a name no fastembed build ever wrote"
     );
     assert_eq!(
         stored("d.md"),
@@ -705,12 +713,15 @@ fn v8_renames_the_fastembed_models_and_leaves_another_provider_alone() {
 #[test]
 fn v8_renames_reach_the_catalog() {
     for (old, new) in V8_MODEL_RENAMES {
-        let entry = crate::llm::embeddings::catalog::find(new).unwrap_or_else(|| {
-            panic!("v8 renames {old} to {new}, which the catalog does not know")
+        let model = new
+            .strip_prefix("fastembed/")
+            .unwrap_or_else(|| panic!("v8 must qualify {new} with its backend"));
+        let entry = crate::llm::embeddings::catalog::find(model).unwrap_or_else(|| {
+            panic!("v8 renames {old} to {new}, which the backend does not know")
         });
         assert_eq!(
-            entry.canonical_name, *new,
-            "{new} must be the catalog's canonical name, not one of its aliases"
+            entry.canonical_name, model,
+            "{new} must hold the name the catalog reports, not one of its aliases"
         );
     }
 }

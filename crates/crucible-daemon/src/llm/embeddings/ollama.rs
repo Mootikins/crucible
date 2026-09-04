@@ -385,6 +385,10 @@ impl EmbeddingProvider for OllamaProvider {
         &self.model
     }
 
+    fn provider_kind(&self) -> &'static str {
+        "ollama"
+    }
+
     fn dimensions(&self) -> usize {
         self.expected_dimensions
     }

@@ -207,6 +207,10 @@ impl EmbeddingProvider for OpenAIProvider {
         self.config.model_name()
     }
 
+    fn provider_kind(&self) -> &'static str {
+        "openai"
+    }
+
     fn dimensions(&self) -> usize {
         super::config::expected_dimensions_for_model(
             &self.config.provider_type(),

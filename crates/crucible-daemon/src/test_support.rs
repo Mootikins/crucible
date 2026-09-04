@@ -221,6 +221,10 @@ impl EmbeddingProvider for MockEmbeddingProvider {
         "mock-model"
     }
 
+    fn provider_kind(&self) -> &'static str {
+        "mock"
+    }
+
     fn dimensions(&self) -> usize {
         self.dimensions
     }

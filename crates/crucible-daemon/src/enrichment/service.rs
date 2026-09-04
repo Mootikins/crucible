@@ -32,6 +32,18 @@ struct EmbedCandidate {
 use std::sync::Arc;
 use tracing::{debug, info};
 
+/// The name a stored vector records: the backend and the model, as
+/// `<provider_kind>/<model_name>`.
+///
+/// A model name alone is ambiguous across backends. Ollama's
+/// `nomic-embed-text` is not fastembed's `nomic-embed-text-v1.5`, and two
+/// backends may serve one name with different weights. The pair is the key
+/// `cached_vectors` matches on, so a vector is never reused for a backend
+/// that did not produce it.
+fn storage_key(provider: &dyn EmbeddingProvider) -> String {
+    format!("{}/{}", provider.provider_kind(), provider.model_name())
+}
+
 /// Enriches parsed notes with embeddings and metadata.
 pub struct Enricher {
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
@@ -133,7 +145,7 @@ impl Enricher {
         Ok(Some(BlockEmbedding::new(
             "note".to_string(),
             vector,
-            provider.model_name().to_string(),
+            storage_key(provider.as_ref()),
         )))
     }
 
@@ -158,7 +170,10 @@ impl Enricher {
             return Ok(Vec::new());
         }
 
-        let model_name = provider.model_name();
+        // The stored name is the backend and the model, so a vector is only
+        // ever reused for the backend that produced it.
+        let model_name = storage_key(provider.as_ref());
+        let model_name = model_name.as_str();
 
         info!(
             "Generating embeddings for {} blocks (batches of {})",
@@ -526,7 +541,9 @@ mod tests {
         let enriched = service.enrich(parsed, vec![]).await.unwrap();
 
         assert_eq!(enriched.embeddings.len(), 2);
-        assert_eq!(enriched.embeddings[0].model, "mock-model");
+        // The stored name carries the backend, so a vector is never reused
+        // for a provider that did not produce it.
+        assert_eq!(enriched.embeddings[0].model, "mock/mock-model");
     }
 
     #[tokio::test]

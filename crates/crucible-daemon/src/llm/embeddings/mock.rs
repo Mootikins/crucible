@@ -91,6 +91,10 @@ impl EmbeddingProvider for FixtureEmbeddingProvider {
         &self.model_name
     }
 
+    fn provider_kind(&self) -> &'static str {
+        "mock"
+    }
+
     fn dimensions(&self) -> usize {
         self.dimensions
     }

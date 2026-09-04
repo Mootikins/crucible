@@ -458,34 +458,51 @@ fn apply_migration_v7(conn: &Connection) -> StorageResult<()> {
 }
 
 /// Every name the deleted `FastEmbedProvider::get_model_info` could write,
-/// paired with the catalog name that replaces it.
+/// paired with the `<provider>/<model>` key that replaces it.
 ///
 /// The old code named five models and gave every other model its Rust
 /// variant name (`format!("{:?}", model)`). Its parser accepted twelve
 /// models, so this table is the complete history and can never grow: the
 /// code that wrote these strings is gone.
 const V8_MODEL_RENAMES: &[(&str, &str)] = &[
-    ("BAAI/bge-small-en-v1.5", "bge-small-en-v1.5"),
-    ("BGEBaseENV15", "bge-base-en-v1.5"),
-    ("BGELargeENV15", "bge-large-en-v1.5"),
-    ("AllMiniLML12V2", "all-MiniLM-L12-v2"),
-    ("NomicEmbedTextV1", "nomic-embed-text-v1"),
-    ("nomic-ai/nomic-embed-text-v1.5", "nomic-embed-text-v1.5"),
-    ("intfloat/multilingual-e5-large", "multilingual-e5-large"),
-    ("MultilingualE5Base", "multilingual-e5-base"),
-    ("MultilingualE5Small", "multilingual-e5-small"),
-    ("mixedbread-ai/mxbai-embed-large-v1", "mxbai-embed-large-v1"),
+    ("BAAI/bge-small-en-v1.5", "fastembed/bge-small-en-v1.5"),
+    ("BGEBaseENV15", "fastembed/bge-base-en-v1.5"),
+    ("BGELargeENV15", "fastembed/Xenova/bge-large-en-v1.5"),
+    ("all-MiniLM-L6-v2", "fastembed/Qdrant/all-MiniLM-L6-v2-onnx"),
+    ("AllMiniLML12V2", "fastembed/Xenova/all-MiniLM-L12-v2"),
+    ("NomicEmbedTextV1", "fastembed/nomic-ai/nomic-embed-text-v1"),
+    (
+        "nomic-ai/nomic-embed-text-v1.5",
+        "fastembed/nomic-ai/nomic-embed-text-v1.5",
+    ),
+    (
+        "intfloat/multilingual-e5-large",
+        "fastembed/Qdrant/multilingual-e5-large-onnx",
+    ),
+    (
+        "MultilingualE5Base",
+        "fastembed/intfloat/multilingual-e5-base",
+    ),
+    (
+        "MultilingualE5Small",
+        "fastembed/intfloat/multilingual-e5-small",
+    ),
+    (
+        "mixedbread-ai/mxbai-embed-large-v1",
+        "fastembed/mixedbread-ai/mxbai-embed-large-v1",
+    ),
     (
         "ParaphraseMLMiniLML12V2",
-        "paraphrase-multilingual-MiniLM-L12-v2",
+        "fastembed/Xenova/paraphrase-multilingual-MiniLM-L12-v2",
     ),
 ];
 
-/// v8 — rename the stored fastembed model names to the catalog names.
+/// v8 — qualify the stored fastembed model names with their backend.
 ///
 /// `embedding_model` is the reuse key: `cached_vectors` matches a block by
-/// its content hash AND this string, so a vector stored under the old name
-/// is never reused once the catalog renames the model. Search reads a
+/// its content hash AND this string, which is now `<provider>/<model>`. A
+/// vector stored under a bare model name is never reused again without this
+/// rename. Search reads a
 /// vector by its dimension and never by this column, so the rows keep
 /// serving search either way; without this rename the only cost is a
 /// silent re-embedding of every block on the next index pass.

@@ -202,15 +202,26 @@ async fn embedding_catalog(
         }
     }
 
-    let models: Vec<crate::rpc_client::EmbeddingModelRow> = catalog::all()
+    // The curated rows, plus the configured model when it sits outside the
+    // curated set: a user who names their own model must still see what the
+    // daemon resolved it to, and its width.
+    let mut rows = catalog::all();
+    if let Some(entry) = fastembed
+        .as_ref()
+        .and_then(|config| catalog::find(&config.model))
+        .filter(|entry| !entry.curated)
+    {
+        rows.push(entry);
+    }
+    let models: Vec<crate::rpc_client::EmbeddingModelRow> = rows
         .into_iter()
         .map(|entry| crate::rpc_client::EmbeddingModelRow {
-            name: entry.canonical_name.to_string(),
+            name: entry.canonical_name.clone(),
             dimensions: entry.dimensions,
             parameter_millions: entry.parameter_millions,
             max_input_tokens: entry.max_input_tokens,
             retrieval_score: entry.retrieval_score,
-            recommended: entry.recommended,
+            curated: entry.curated,
             note: entry.note.to_string(),
             downloaded: catalog::is_downloaded(&entry.model, &cache_dir),
         })

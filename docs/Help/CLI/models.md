@@ -47,7 +47,8 @@ cru models -f json
 
 ## `cru models embeddings`
 
-Prints one row for each model in the catalog.
+Prints one row for each model Crucible curates, plus the configured model when
+it sits outside that set.
 
 ```bash
 cru models embeddings
@@ -56,7 +57,7 @@ cru models embeddings -f json
 
 | Column | Meaning |
 |---|---|
-| marks | `*` configured · `+` recommended · `v` in the cache |
+| marks | `*` configured · `+` curated, so `download` can fetch it · `v` in the cache |
 | Model | The name to write in the config file |
 | Dims | The width of the vector |
 | Params | The parameter count, in millions |
@@ -64,30 +65,57 @@ cru models embeddings -f json
 | MTEB | MTEB v1 English retrieval, nDCG@10, as the model authors publish it |
 | Note | Why to pick this model, or why not |
 
-The MTEB column is empty for a model whose authors publish no score. Crucible
-never prints a guess there.
+The MTEB, Params and Context columns are empty for a model Crucible does not
+curate. Crucible never prints a guess there.
 
 The context column is a property of the model. fastembed truncates the input at
 512 tokens today, so a model that accepts 8192 tokens still sees 512.
 
-### The recommended models
+### The curated models
+
+These four are the models Crucible recommends and can download.
 
 | Model | Dims | MTEB | Why |
 |---|---|---|---|
 | `bge-small-en-v1.5` | 384 | 51.68 | The default. The smallest of the four. |
 | `bge-base-en-v1.5` | 768 | 53.25 | It retrieves better, and it costs more CPU time. |
-| `arctic-embed-m` | 768 | 54.90 | The best published score in the catalog. |
+| `arctic-embed-m` | 768 | 54.90 | The best published score of the four. |
 | `gte-base-en-v1.5` | 768 | 54.09 | A strong score, and the model accepts 8192 tokens. |
 
-The catalog also holds quantised builds, whose names end in `-q`. A quantised
-build makes the same vector width from a smaller file.
+### Any other model
+
+The set is curated, not closed. Name any model the backend supports in the
+config file and it runs:
+
+```toml
+[enrichment.provider]
+type = "fastembed"
+model = "BAAI/bge-large-en-v1.5"
+```
+
+Crucible resolves the name against the backend's own registry, so the name you
+know works even when the registry hosts the model under a mirror. It reports
+the width, and nothing else: no score, no size, no note, because Crucible has
+not measured that model. `download` does not offer it, so the daemon fetches it
+on first use instead.
+
+A name that addresses two models is refused, and the refusal names both. Write
+the full repository name to choose between them.
+
+### How a stored vector records its model
+
+A vector records `<backend>/<model>`, such as `fastembed/bge-small-en-v1.5` or
+`ollama/nomic-embed-text`. A model name alone is ambiguous across backends, and
+that pair is the key the block store reuses a vector by, so a vector is never
+reused for a backend that did not produce it. A kiln indexed before this rule
+is renamed once, on the next daemon start.
 
 ## `cru models embeddings download <NAME>`
 
 Fetches the model into the daemon's model cache, then prints the directory and
 the size. The daemon does the download, because the CLI links no ONNX runtime.
-The command refuses a name the catalog does not hold, and names the closest
-entries.
+The command refuses a name the backend does not know, and names the curated
+models.
 
 ```bash
 cru models embeddings download arctic-embed-m

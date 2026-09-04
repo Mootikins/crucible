@@ -187,15 +187,17 @@ pub struct EmbeddingModelRow {
     pub name: String,
     /// The width of the vector.
     pub dimensions: usize,
-    /// The parameter count in millions.
-    pub parameter_millions: u32,
-    /// The longest input the model accepts, in tokens.
-    pub max_input_tokens: u32,
+    /// The parameter count in millions, or `None` for a model Crucible does
+    /// not curate.
+    pub parameter_millions: Option<u32>,
+    /// The longest input the model accepts, or `None` for a model Crucible
+    /// does not curate.
+    pub max_input_tokens: Option<u32>,
     /// The MTEB v1 English retrieval score, or `None` when nobody published
     /// one. Never a guess.
     pub retrieval_score: Option<f32>,
-    /// Whether Crucible recommends this model.
-    pub recommended: bool,
+    /// Whether Crucible curates this model, so `download` can fetch it.
+    pub curated: bool,
     /// One sentence on why to pick this model, or why not.
     pub note: String,
     /// Whether the files are already in the cache.
