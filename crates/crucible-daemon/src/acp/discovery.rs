@@ -61,10 +61,10 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
     BuiltinAgent {
         name: "claude",
         command: "npx",
-        args: &["@zed-industries/claude-agent-acp"],
+        args: &["@agentclientprotocol/claude-agent-acp"],
         description: "Bridge to Claude Code",
         requires: Some("Claude Code CLI"),
-        install: "npm install -g @zed-industries/claude-agent-acp",
+        install: "npm install -g @agentclientprotocol/claude-agent-acp",
     },
     BuiltinAgent {
         name: "gemini",
@@ -77,18 +77,21 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
     BuiltinAgent {
         name: "codex",
         command: "npx",
-        args: &["@zed-industries/codex-acp"],
+        args: &["@agentclientprotocol/codex-acp"],
         description: "Bridge to OpenAI Codex",
         requires: Some("OpenAI Codex CLI"),
-        install: "npm install -g @zed-industries/codex-acp",
+        install: "npm install -g @agentclientprotocol/codex-acp",
     },
     BuiltinAgent {
         name: "cursor",
-        command: "cursor-acp",
-        args: &[],
-        description: "Bridge to Cursor's ACP agent",
-        requires: Some("Cursor CLI"),
-        install: "npm install -g cursor-acp",
+        command: "cursor-agent",
+        args: &["acp"],
+        description: "Cursor's CLI, speaks ACP directly",
+        // `cursor-agent acp` is a subcommand of the Cursor CLI, so the agent
+        // is standalone. The npm package `cursor-acp` this used to name is an
+        // unrelated third-party bridge, abandoned at 0.1.0.
+        requires: None,
+        install: "curl https://cursor.com/install -fsS | bash",
     },
     BuiltinAgent {
         name: "hermes",
@@ -316,9 +319,8 @@ pub fn reset_agent_cache() {
 /// - Package managers (npx) that handle resolution themselves
 /// - ACP agents that start servers and don't support --version
 const TRUST_PATH_COMMANDS: &[&str] = &[
-    "npx",        // Package manager, verifies packages at runtime
-    "cursor-acp", // ACP server, no --version support
-    "gemini",     // ACP server, no --version support
+    "npx",    // Package manager, verifies packages at runtime
+    "gemini", // ACP server, no --version support
 ];
 
 /// Check if an agent command is available (async, non-blocking)
@@ -327,9 +329,9 @@ const TRUST_PATH_COMMANDS: &[&str] = &[
 /// 1. Fast check with `which` to see if command exists in PATH
 /// 2. Only if found, verify with `--version` (with timeout)
 ///
-/// For certain commands (npx, cursor-acp, gemini-cli), we skip the
-/// --version check since they either handle verification at runtime
-/// or don't support --version.
+/// For certain commands (npx, gemini-cli), we skip the --version check
+/// since they either handle verification at runtime or don't support
+/// --version.
 pub async fn is_agent_available(command: &str) -> bool {
     // Phase 1: Fast PATH lookup using `which` (Unix) or `where` (Windows)
     // This is ~1ms vs ~300ms+ for spawning the actual command
@@ -792,7 +794,7 @@ mod tests {
         assert_eq!(agent.command, "npx");
         assert_eq!(
             agent.args,
-            vec!["@zed-industries/claude-agent-acp".to_string()]
+            vec!["@agentclientprotocol/claude-agent-acp".to_string()]
         );
     }
 

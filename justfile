@@ -671,7 +671,7 @@ record-acp-fixture agent prompt="say hello in exactly 3 words":
     cargo run -p crucible-cli -- daemon stop >/dev/null 2>&1 || true
     echo "Recording {{agent}} into $dir (agent binary must be installed and logged in)"
     export CRUCIBLE_ACP_RECORD_DIR="$dir" CRUCIBLE_ACP_RECORD_SCENARIO=basic-chat
-    session=$(cargo run -p crucible-cli -- session create -a {{agent}} --permissions allow -q)
+    session=$(cargo run -p crucible-cli -- session create --acp {{agent}} --permissions allow -q)
     cargo run -p crucible-cli -- session send "$session" "{{prompt}}" --permissions allow
     capture=$(ls -t "$dir"/{{agent}}-*.jsonl | head -n1)
     mkdir -p "$(dirname "$dest")"

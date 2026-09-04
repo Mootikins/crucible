@@ -37,7 +37,7 @@ pub(crate) fn build_client_config(
     // process, but it does not have to when that process is already confined.
     //
     // Prepending argv rather than building a shell string keeps the agent's own
-    // arguments unquoted and unsplit — `npx @zed-industries/claude-agent-acp`
+    // arguments unquoted and unsplit — `npx @agentclientprotocol/claude-agent-acp`
     // survives as two argv entries, not as something a shell re-parses.
     let (command, args) = match sandbox_exec {
         Some(exec) if !exec.is_empty() => {
@@ -240,7 +240,7 @@ mod tests {
         let config = test_session_agent("claude");
         let (cmd, args, _) = resolve_agent_command("claude", &config, None).unwrap();
         assert_eq!(cmd, "npx");
-        assert_eq!(args, vec!["@zed-industries/claude-agent-acp"]);
+        assert_eq!(args, vec!["@agentclientprotocol/claude-agent-acp"]);
     }
     /// Why `session.create`/`session.configure_agent` must keep `agent_name`
     /// set on an ACP agent: it is the only input to profile resolution, and its
@@ -349,7 +349,7 @@ mod tests {
     }
     /// A multi-word agent command is argv, not a shell string.
     ///
-    /// `claude` resolves to `npx @zed-industries/claude-agent-acp`. Joining
+    /// `claude` resolves to `npx @agentclientprotocol/claude-agent-acp`. Joining
     /// that into one string and letting a shell re-split it is how an argument
     /// containing a space silently becomes two.
     #[test]
@@ -363,7 +363,10 @@ mod tests {
         assert_eq!(config.agent_path, PathBuf::from("podman"));
         let args = config.agent_args.unwrap();
         assert_eq!(args[args.len() - 2], "npx");
-        assert_eq!(args[args.len() - 1], "@zed-industries/claude-agent-acp");
+        assert_eq!(
+            args[args.len() - 1],
+            "@agentclientprotocol/claude-agent-acp"
+        );
     }
     /// Configured environment must arrive INSIDE the container.
     ///

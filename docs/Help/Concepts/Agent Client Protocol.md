@@ -120,14 +120,17 @@ Crucible ships with profiles for common ACP-compatible agents:
 | Profile | Command | Install |
 |---------|---------|---------|
 | `opencode` | `opencode acp` | `npm install -g opencode-ai@latest` (or `curl -fsSL https://opencode.ai/install \| bash`) |
-| `claude` | `npx @zed-industries/claude-agent-acp` | `npm install -g @zed-industries/claude-agent-acp` (bridges to the Claude Code CLI) |
+| `claude` | `npx @agentclientprotocol/claude-agent-acp` | `npm install -g @agentclientprotocol/claude-agent-acp` (bridges to the Claude Code CLI) |
 | `gemini` | `gemini` | `npm install -g @google/gemini-cli` |
-| `codex` | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` (bridges to the OpenAI Codex CLI) |
-| `cursor` | `cursor-acp` | `npm install -g cursor-acp` (bridges to the Cursor CLI) |
+| `codex` | `npx @agentclientprotocol/codex-acp` | `npm install -g @agentclientprotocol/codex-acp` (bridges to the OpenAI Codex CLI) |
+| `cursor` | `cursor-agent acp` | `curl https://cursor.com/install -fsS \| bash` |
 | `hermes` | `hermes acp` | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` |
 
-`opencode`, `gemini` and `hermes` speak ACP directly; the other three are bridges that also
-need the underlying vendor CLI installed. Hermes notes: a polished tool's result arrives in
+`opencode`, `gemini`, `cursor` and `hermes` speak ACP directly; `claude` and `codex` are
+bridges that also need the underlying vendor CLI installed. The `@agentclientprotocol/*`
+packages are the renamed `@zed-industries/*` ones — npm warns and stops updating the old
+names. The Cursor bridge `cursor-acp` on npm is an unrelated third-party package abandoned
+at 0.1.0; `cursor-agent acp` is Cursor's own ACP server. Hermes notes: a polished tool's result arrives in
 `content` text blocks with no `rawOutput`; permission requests carry a fresh `perm-check-N`
 id that matches no announced tool call; `session/close` and `ping` answer `-32601`, which is
 not an error. `cru` prints the same install lines when no agent is

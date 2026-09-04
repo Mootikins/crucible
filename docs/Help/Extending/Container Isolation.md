@@ -417,7 +417,7 @@ cru.isolation.require{
 ```
 
 Given one, the daemon launches the agent *through* it — `podman exec -i …
-npx @zed-industries/claude-agent-acp` rather than `npx …` on the host. The
+npx @agentclientprotocol/claude-agent-acp` rather than `npx …` on the host. The
 agent's tools are then confined by where its process runs, and there is nothing
 left to intercept. The prefix is argv, not a shell string, so the agent's own
 arguments are never re-split.
