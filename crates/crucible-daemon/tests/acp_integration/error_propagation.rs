@@ -114,7 +114,17 @@ async fn test_error_invalid_json_rpc_shape_returns_session_error() {
     tokio::spawn(async move {
         let mut request_line = String::new();
         let _ = agent_reader.read_line(&mut request_line).await;
-        let _ = agent_writer.write_all(br#"{"jsonrpc":"2.0","id":1}"#).await;
+        // Echo the id the client actually minted. Request ids come from one
+        // process-wide counter, so a literal `1` is only this exchange's id
+        // when this happens to be the first call in the binary — and the
+        // reader now correlates on it, so a wrong id reads as a straggler
+        // from another call rather than as the malformed answer to this one.
+        let id = serde_json::from_str::<serde_json::Value>(&request_line)
+            .ok()
+            .and_then(|frame| frame.get("id").cloned())
+            .expect("the client's request carries an id");
+        let reply = format!(r#"{{"jsonrpc":"2.0","id":{id}}}"#);
+        let _ = agent_writer.write_all(reply.as_bytes()).await;
         let _ = agent_writer.write_all(b"\n").await;
         let _ = agent_writer.flush().await;
     });

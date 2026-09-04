@@ -5,6 +5,12 @@ use super::recording::Direction;
 use super::{CrucibleAcpClient, REQUEST_ID};
 use crate::acp::{ClientError, Result};
 
+/// How many frames a handshake call reads before it concludes the agent is
+/// never going to answer. Each read is separately bounded by the per-read
+/// timeout; this bounds a chatty agent that keeps the stream busy without
+/// ever responding.
+const MAX_FRAMES_BEFORE_RESPONSE: usize = 256;
+
 impl CrucibleAcpClient {
     /// Send a message to the agent
     ///
@@ -225,12 +231,83 @@ impl CrucibleAcpClient {
         // Write to agent stdin
         self.write_request(&json_request).await?;
 
-        // Read response from agent stdout
-        let response_line = self.read_response_line().await?;
+        self.read_response_for(id, method).await
+    }
 
-        // Parse JSON response
-        let response: serde_json::Value = serde_json::from_str(&response_line)?; // Auto-converts to ClientError::Serialization
+    /// Read frames until the one answering `id` arrives.
+    ///
+    /// The agent shares one stream between its answers and its own traffic, so
+    /// the next line is not necessarily the response. codex-acp announces MCP
+    /// server startup as a `session/update` *before* it answers `session/new`;
+    /// treating that first line as the response reports "missing result field"
+    /// and the session never opens.
+    ///
+    /// Four frame kinds arrive here, and only the first ends the wait:
+    ///
+    /// * a response carrying `id` — the answer,
+    /// * a notification (no `id`) — the agent talking, skipped; the streaming
+    ///   loop is what interprets those, and it is not running during a
+    ///   handshake call,
+    /// * an inbound request (an `id` we did not mint, plus a `method`) —
+    ///   answered `-32601`, because the agent blocks on a reply that never
+    ///   comes otherwise,
+    /// * a response carrying another `id` — a straggler from an exchange that
+    ///   already timed out, skipped. Returning it would hand the caller a
+    ///   different request's payload.
+    async fn read_response_for(&mut self, id: u64, method: &str) -> Result<serde_json::Value> {
+        for _ in 0..MAX_FRAMES_BEFORE_RESPONSE {
+            let line = self.read_response_line().await?;
+            let frame: serde_json::Value = serde_json::from_str(&line)?;
 
-        Ok(response)
+            // Classify by `method`, not by whether a result is present. A
+            // frame with no `method` is a response, and a malformed response
+            // carrying our id is still ours — skipping it would turn "the
+            // agent answered with nonsense" into a read timeout, which tells
+            // the caller far less. Validating the payload is the caller's
+            // job; correlating it is this one's.
+            let frame_id = frame.get("id");
+            match (frame.get("method"), frame_id) {
+                // An inbound request. The agent blocks until we answer.
+                (Some(inbound), Some(fid)) => {
+                    let inbound = inbound.as_str().unwrap_or_default().to_string();
+                    let fid = fid.clone();
+                    tracing::debug!(
+                        agent = %self.agent_name,
+                        awaiting = method,
+                        inbound = %inbound,
+                        "answering an inbound request that arrived mid-call"
+                    );
+                    self.respond_method_not_found(&fid, &inbound).await?;
+                }
+
+                // A notification. The streaming loop interprets those, and it
+                // is not running during a handshake call.
+                (Some(_), None) => {
+                    tracing::debug!(
+                        agent = %self.agent_name,
+                        awaiting = method,
+                        "skipping a notification that arrived mid-call"
+                    );
+                }
+
+                // A response. Ours if the id matches.
+                (None, Some(fid)) if fid.as_u64() == Some(id) => return Ok(frame),
+
+                // A straggler from an exchange that already gave up. Returning
+                // it would hand the caller a different request's payload.
+                (None, frame_id) => {
+                    tracing::debug!(
+                        agent = %self.agent_name,
+                        awaiting = method,
+                        frame_id = ?frame_id,
+                        "skipping a response that answers a different request"
+                    );
+                }
+            }
+        }
+
+        Err(ClientError::Session(format!(
+            "agent sent {MAX_FRAMES_BEFORE_RESPONSE} frames without answering `{method}`"
+        )))
     }
 }
