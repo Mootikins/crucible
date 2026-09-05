@@ -169,6 +169,16 @@ pub trait SessionKnobs: Send + Sync {
     /// Returns `Err(ChatError::NotSupported)` when the agent cannot switch.
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()>;
 
+    /// Set one of the settings the external agent advertised for itself.
+    ///
+    /// The value is the agent's own id for the choice, or `"true"`/`"false"`
+    /// for a toggle. The refusing default is the true answer for an agent
+    /// that advertises nothing: there is no option to set.
+    async fn set_agent_config_option(&mut self, id: &str, value: &str) -> ChatResult<()> {
+        let _ = (id, value);
+        Err(ChatError::NotSupported("set_agent_config_option".into()))
+    }
+
     /// The session settings the external agent advertised for itself.
     ///
     /// ACP agents list these in the `session/new` reply; the model selector
@@ -644,6 +654,27 @@ impl crate::turn::Agent for Box<dyn AgentHandle + Send + Sync> {
 impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         SessionKnobs::switch_model(&mut **self, model_id).await
+    }
+
+    // Every DEFAULTED method on the trait has to be repeated here, and the
+    // compiler does not say so. This impl shadows the defaults, so a defaulted
+    // method left out of it answers the default for every boxed handle in the
+    // daemon and the concrete impl underneath is never reached.
+    //
+    // That has now happened twice: `get_modes` shipped correct and
+    // unreachable, and these two read `&[]` and `NotSupported` for a live ACP
+    // agent until they were added here. Nothing enumerates a trait's defaulted
+    // methods, so there is no general guard — the test that catches this pair
+    // is `acp_session_knobs_e2e::the_agents_own_settings_reach_a_client`,
+    // which drives a real agent process and would see the default.
+    //
+    // Add a defaulted method to `SessionKnobs`, add it here too.
+    fn agent_config_options(&self) -> &[crate::types::acp::schema::SessionConfigOption] {
+        (**self).agent_config_options()
+    }
+
+    async fn set_agent_config_option(&mut self, id: &str, value: &str) -> ChatResult<()> {
+        (**self).set_agent_config_option(id, value).await
     }
 
     fn current_model(&self) -> Option<&str> {

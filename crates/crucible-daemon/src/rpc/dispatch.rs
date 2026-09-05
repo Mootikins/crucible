@@ -129,6 +129,8 @@ rpc_methods! {
     SessionListModels = "session.list_models",
     SessionListModes = "session.list_modes",
     SessionListKnobs = "session.list_knobs",
+    SessionListAgentOptions = "session.list_agent_options",
+    SessionSetAgentOption = "session.set_agent_option",
     SessionSetThinkingBudget = "session.set_thinking_budget",
     SessionGetThinkingBudget = "session.get_thinking_budget",
     SessionCacheStats = "session.cache_stats",
@@ -814,6 +816,20 @@ impl RpcDispatcher {
             RpcMethod::SessionListKnobs => forward!(
                 id,
                 crate::server::session::handle_session_list_knobs(req.clone(), &self.ctx.agents)
+            ),
+            RpcMethod::SessionListAgentOptions => forward!(
+                id,
+                crate::server::session::handle_session_list_agent_options(
+                    req.clone(),
+                    &self.ctx.agents
+                )
+            ),
+            RpcMethod::SessionSetAgentOption => forward!(
+                id,
+                crate::server::session::handle_session_set_agent_option(
+                    req.clone(),
+                    &self.ctx.agents
+                )
             ),
             RpcMethod::SessionAddNotification => {
                 forward!(

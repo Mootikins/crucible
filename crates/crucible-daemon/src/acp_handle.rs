@@ -454,6 +454,40 @@ impl SessionKnobs for AcpAgentHandle {
         &self.config_options
     }
 
+    async fn set_agent_config_option(&mut self, id: &str, value: &str) -> ChatResult<()> {
+        // Fail fast on an id the agent did not list, the way `switch_model`
+        // does: the agent would refuse it with a less clear message.
+        if !self.config_options.iter().any(|o| o.id.to_string() == id) {
+            return Err(ChatError::NotSupported(format!(
+                "this ACP agent advertises no '{id}' option"
+            )));
+        }
+
+        let Some(session_id) = self.session_id.clone() else {
+            return Err(ChatError::NotSupported("ACP agent not connected".into()));
+        };
+
+        let response = {
+            let mut guard = self.client.lock().await;
+            let client = guard.as_mut().ok_or_else(|| {
+                ChatError::AgentUnavailable("ACP client unavailable (busy streaming)".into())
+            })?;
+            client
+                .set_config_option(&session_id, id, value)
+                .await
+                .map_err(|e| {
+                    ChatError::ModeChange(format!("ACP agent rejected '{id}' = '{value}': {e}"))
+                })?
+        };
+
+        // The agent answers with its whole option list, which is the only
+        // report of what the value became — an agent may clamp or normalise
+        // what it was sent.
+        self.config_options = response.config_options.clone();
+        info!(option = %id, value = %value, "Set ACP agent config option");
+        Ok(())
+    }
+
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         let Some(model) = self.model.as_ref() else {
             return Err(ChatError::NotSupported(

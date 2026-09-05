@@ -43,6 +43,19 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 /// process costs the most, so the test fails loudly rather than recovering.
 fn logging_profile(log_path: &Path) -> AgentProfile {
     let mut env = BTreeMap::new();
+    // The agent advertises settings of its own, which Crucible has no knob
+    // for and passes through untouched.
+    env.insert(
+        "CRU_MOCK_ADVERTISE_AGENT_OPTIONS".to_string(),
+        "low".to_string(),
+    );
+    env.insert(
+        "CRU_MOCK_MODEL_CAPTURE".to_string(),
+        log_path
+            .with_extension("option")
+            .to_string_lossy()
+            .into_owned(),
+    );
     env.insert(
         "CRU_MOCK_STREAM_CHUNKS".to_string(),
         "acknowledged".to_string(),
@@ -332,5 +345,92 @@ async fn a_session_reports_which_settings_it_supports() {
         knobs.len(),
         crucible_core::types::SessionKnob::ALL.len(),
         "every knob must be answered for, or a client cannot tell absent from unsupported"
+    );
+}
+
+/// The agent's own settings reach a client, and Crucible does not pretend to
+/// understand them.
+///
+/// ACP's extensibility point is `configOptions`: an agent lists what it has,
+/// and a different agent lists different things. Crucible reads only the
+/// model selector out of that list, so a reasoning-level selector — a
+/// category the spec names — reached nobody. These are not knobs; they are
+/// the agent's, and a client renders them from what the agent said.
+#[tokio::test]
+async fn the_agents_own_settings_reach_a_client() {
+    let h = setup().await;
+
+    // Nothing before the handshake: an agent says what it has when the daemon
+    // connects to it, which does not happen until the first message.
+    assert!(
+        h.agent_manager
+            .agent_config_options(h.session_id.as_str())
+            .is_empty(),
+        "an agent that has not been connected to has advertised nothing"
+    );
+
+    run_a_turn(&h).await;
+
+    let options = h.agent_manager.agent_config_options(h.session_id.as_str());
+    let ids: Vec<&str> = options.iter().map(|o| o.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["thought_level", "verbose_logs"],
+        "the agent's own options must reach the client, and the model selector \
+         must not — it already has a control of its own"
+    );
+
+    let reasoning = &options[0];
+    assert_eq!(reasoning.name, "Reasoning", "the agent's label, not an id");
+    assert_eq!(reasoning.category.as_deref(), Some("thought_level"));
+    match &reasoning.kind {
+        crucible_core::types::AgentOptionKind::Select { current, choices } => {
+            assert_eq!(current, "low");
+            assert_eq!(
+                choices.iter().map(|c| c.value.as_str()).collect::<Vec<_>>(),
+                ["low", "high"]
+            );
+        }
+        other => panic!("a select must project as a select; got {other:?}"),
+    }
+
+    // A shape that is not a select still reaches the client, because an agent
+    // that offers a toggle means it.
+    match &options[1].kind {
+        crucible_core::types::AgentOptionKind::Toggle { current } => {
+            assert!(!current, "the agent reported it off");
+        }
+        other => panic!("a boolean must project as a toggle; got {other:?}"),
+    }
+}
+
+/// Setting one reaches the agent over the wire, and an id the agent never
+/// advertised is refused here rather than by the agent.
+#[tokio::test]
+async fn setting_an_agent_option_reaches_the_agent() {
+    let h = setup().await;
+    run_a_turn(&h).await;
+
+    h.agent_manager
+        .set_agent_config_option(h.session_id.as_str(), "thought_level", "high")
+        .await
+        .expect("the agent advertised this option");
+
+    let captured = std::fs::read_to_string(h.log_path.with_extension("option"))
+        .expect("the agent process must have received a session/set_config_option");
+    assert_eq!(
+        captured.trim(),
+        "thought_level=high",
+        "the option and its value must reach the agent unchanged"
+    );
+
+    let error = h
+        .agent_manager
+        .set_agent_config_option(h.session_id.as_str(), "invented", "1")
+        .await
+        .expect_err("an option the agent never advertised must be refused");
+    assert!(
+        error.to_string().contains("invented"),
+        "the refusal must name the option; got: {error}"
     );
 }

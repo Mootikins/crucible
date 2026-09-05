@@ -182,6 +182,41 @@ The agent never touches your kiln directly. Every file read, search, and write g
 
 On the first message of a session, Crucible runs [[Help/Concepts/Semantic Search|semantic search]] against your kiln using that message as a query. Relevant note fragments are injected into the agent's context alongside any loaded [[Help/Concepts/Agent Skills|skills]]. This means the agent has access to your knowledge without you manually searching for context.
 
+## Session Settings
+
+An ACP session does not have Crucible's settings. The protocol has no
+temperature, no token cap and no system prompt field, and the external agent
+runs its own turn loop and owns its own history — so a daemon-side iteration
+cap, context budget or compaction threshold governs work the daemon does not
+do. Crucible refuses those settings on an ACP session rather than storing a
+value the agent will never read.
+
+What stays: the mode, the model (when the agent advertises a selector), and
+Precognition. Retrieval is the daemon's own work and reaches the agent as
+injected prompt text, so it behaves exactly as it does for an internal agent.
+
+`session.list_knobs` reports which settings a session has, and the TUI and the
+web UI both draw their controls from it. Support is the session's answer, not
+the agent type's: two ACP sessions differ if one agent advertises a model
+selector and the other does not.
+
+Changing a setting does not restart the agent. It used to: the change evicted
+the cached handle, and dropping that handle sends `session/close` and then
+kills the agent process.
+
+### The Agent's Own Settings
+
+An agent advertises settings of its own in `configOptions` — a reasoning-level
+selector (`thought_level`), or anything else it invents. Crucible does not
+interpret these. `session.list_agent_options` reports them and
+`session.set_agent_option` sets one, which reaches the agent as
+`session/set_config_option`. A client renders whatever the agent listed, so an
+option Crucible has never heard of still gets a control.
+
+The reasoning level is deliberately **not** mapped onto Crucible's thinking
+budget. One is a select of names and the other is a token count, and the number
+that connects them does not exist.
+
 ## Crucible as ACP Agent
 
 Crucible also implements the *other* side of the protocol: the **agent** role. Run

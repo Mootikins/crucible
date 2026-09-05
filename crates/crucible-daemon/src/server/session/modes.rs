@@ -95,3 +95,66 @@ pub(crate) async fn handle_session_list_knobs(req: Request, am: &Arc<AgentManage
         Err(e) => Response::error(req.id, -32603, format!("failed to encode knobs: {e}")),
     }
 }
+
+/// The settings this session's external agent advertised for itself.
+///
+/// These are not Crucible's knobs. A different agent advertises different
+/// ones — a reasoning-level selector, whatever else it invented — and the
+/// daemon does not interpret them beyond dropping the model selector, which
+/// already has a control of its own. A client renders what it is given.
+///
+/// Empty until the first message, because an agent says nothing until the
+/// daemon connects to it, and empty for an internal agent always.
+pub(crate) async fn handle_session_list_agent_options(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
+
+    if let Err(crate::agent_manager::AgentError::SessionNotFound(id)) =
+        am.get_session_with_agent(session_id)
+    {
+        return session_not_found(req.id, &id);
+    }
+
+    match serde_json::to_value(am.agent_config_options(session_id)) {
+        Ok(options) => Response::success(
+            req.id,
+            serde_json::json!({ "session_id": session_id, "options": options }),
+        ),
+        Err(e) => Response::error(req.id, -32603, format!("failed to encode options: {e}")),
+    }
+}
+
+/// Set one of those settings on the live agent.
+pub(crate) async fn handle_session_set_agent_option(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    #[derive(serde::Deserialize)]
+    struct SetAgentOptionRequest {
+        session_id: String,
+        option_id: String,
+        value: String,
+    }
+
+    let params = match typed_params::<SetAgentOptionRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+
+    match am
+        .set_agent_config_option(&params.session_id, &params.option_id, &params.value)
+        .await
+    {
+        Ok(()) => Response::success(req.id, serde_json::json!({ "ok": true })),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(e) => Response::error(req.id, -32602, e.to_string()),
+    }
+}

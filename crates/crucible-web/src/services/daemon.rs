@@ -798,6 +798,40 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_list_agent_options(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.list_agent_options", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.session_list_agent_options(&session_id).await })
+        })
+        .await
+    }
+
+    pub async fn session_set_agent_option(
+        &self,
+        session_id: &str,
+        option_id: &str,
+        value: &str,
+    ) -> anyhow::Result<()> {
+        let session_id = session_id.to_string();
+        let option_id = option_id.to_string();
+        let value = value.to_string();
+        self.call_with_reconnect("session.set_agent_option", move |daemon| {
+            let session_id = session_id.clone();
+            let option_id = option_id.clone();
+            let value = value.clone();
+            Box::pin(async move {
+                daemon
+                    .session_set_agent_option(&session_id, &option_id, &value)
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn session_list_knobs(
         &self,
         session_id: &str,

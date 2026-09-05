@@ -12,9 +12,13 @@ import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
  * the old bug was visible and nowhere else.
  */
 const listKnobs = vi.fn();
+const listAgentOptions = vi.fn();
+const setAgentOption = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   listKnobs: (...a: unknown[]) => listKnobs(...a),
+  listAgentOptions: (...a: unknown[]) => listAgentOptions(...a),
+  setAgentOption: (...a: unknown[]) => setAgentOption(...a),
   getThinkingBudget: vi.fn(async () => 8192),
   setThinkingBudget: vi.fn(async () => {}),
   getTemperature: vi.fn(async () => 0.7),
@@ -61,6 +65,8 @@ const ACP_SESSION = {
 
 beforeEach(() => {
   listKnobs.mockResolvedValue(ALL_SUPPORTED);
+  listAgentOptions.mockResolvedValue({ options: [] });
+  setAgentOption.mockResolvedValue(undefined);
 });
 afterEach(() => {
   cleanup();
@@ -109,5 +115,64 @@ describe('ModelSettingsSection', () => {
     expect(screen.queryByText('Temperature')).toBeNull();
     expect(screen.queryByText('Max Tokens')).toBeNull();
     expect(screen.queryByText('Thinking Budget')).toBeNull();
+  });
+});
+
+/**
+ * The agent's own settings. Crucible has no knob for these — a different
+ * agent advertises different ones — so the panel renders what it is given
+ * rather than a set of named rows. That generality is the whole point: an
+ * option this file has never heard of has to draw and work.
+ */
+describe('ModelSettingsSection agent options', () => {
+  const REASONING = {
+    id: 'thought_level',
+    name: 'Reasoning',
+    description: 'How long the agent thinks',
+    category: 'thought_level',
+    kind: 'select' as const,
+    current: 'low',
+    choices: [
+      { value: 'low', name: 'Low' },
+      { value: 'high', name: 'High' },
+    ],
+  };
+
+  it('draws an option it has never heard of, and sends the choice back', async () => {
+    listAgentOptions.mockResolvedValue({ options: [REASONING] });
+    render(() => <ModelSettingsSection />);
+
+    await waitFor(() => expect(screen.getByText('Reasoning')).toBeTruthy());
+    const select = screen.getByTestId('agent-option-thought_level') as HTMLSelectElement;
+    expect(select.value).toBe('low');
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['low', 'high']);
+
+    select.value = 'high';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+
+    await waitFor(() =>
+      expect(setAgentOption).toHaveBeenCalledWith('s1', 'thought_level', 'high'),
+    );
+  });
+
+  it('draws a toggle for a boolean option', async () => {
+    listAgentOptions.mockResolvedValue({
+      options: [
+        { id: 'verbose', name: 'Verbose', description: null, category: null, kind: 'toggle', current: false },
+      ],
+    });
+    render(() => <ModelSettingsSection />);
+
+    await waitFor(() => expect(screen.getByTestId('agent-option-verbose')).toBeTruthy());
+  });
+
+  it('draws nothing when the agent advertised nothing', async () => {
+    listAgentOptions.mockResolvedValue({ options: [] });
+    render(() => <ModelSettingsSection />);
+
+    // Anchor on an ungated row so the absence is a decision, not a pending
+    // render.
+    await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
+    expect(screen.queryByText('Reasoning')).toBeNull();
   });
 });

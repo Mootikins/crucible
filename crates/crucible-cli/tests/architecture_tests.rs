@@ -398,6 +398,10 @@ const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
     ("temperature", "temperature"),
     ("thinking_budget", "thinking-budget"),
     ("validation_retries", "validation-retries"),
+    // Not a Crucible knob: the settings the external agent advertised for
+    // itself. One route serves both directions — GET lists them, POST sets one
+    // — because the value belongs to the agent and is read back from its list.
+    ("agent_option", "agent-options"),
 ];
 
 /// Knobs with no web route yet. REMOVE entries as routes land; never add.

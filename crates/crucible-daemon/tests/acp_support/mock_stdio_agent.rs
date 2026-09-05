@@ -539,6 +539,36 @@ impl MockStdioAgent {
         }])
     }
 
+    /// Options that are the AGENT's own rather than a projection of one of
+    /// Crucible's, gated on `CRU_MOCK_ADVERTISE_AGENT_OPTIONS`.
+    ///
+    /// A `thought_level` select and a plain toggle: the first is a spec
+    /// category Crucible has no knob for, the second is a shape a client has
+    /// to render without being told what it means. Together they are what an
+    /// agent-defined setting looks like.
+    fn agent_config_options(thought_level: &str) -> Vec<Value> {
+        vec![
+            json!({
+                "id": "thought_level",
+                "name": "Reasoning",
+                "description": "How long the agent thinks before answering",
+                "category": "thought_level",
+                "type": "select",
+                "currentValue": thought_level,
+                "options": [
+                    {"value": "low", "name": "Low"},
+                    {"value": "high", "name": "High"}
+                ]
+            }),
+            json!({
+                "id": "verbose_logs",
+                "name": "Verbose logs",
+                "type": "boolean",
+                "currentValue": false
+            }),
+        ]
+    }
+
     /// Handle initialize request
     fn handle_initialize(&self, request: &Value) -> Value {
         if self.config.inject_errors {
@@ -654,10 +684,20 @@ impl MockStdioAgent {
         // Advertise a model selector in `configOptions` when asked, the way
         // claude-agent-acp does. Without the flag the reply carries no
         // `configOptions` at all.
-        let config_options = if env::var("CRU_MOCK_ADVERTISE_MODELS").is_ok() {
-            Self::model_config_options("mock-sonnet")
-        } else {
+        let mut options: Vec<Value> = Vec::new();
+        if env::var("CRU_MOCK_ADVERTISE_MODELS").is_ok() {
+            if let Some(list) = Self::model_config_options("mock-sonnet").as_array() {
+                options.extend(list.iter().cloned());
+            }
+        }
+        if let Ok(level) = env::var("CRU_MOCK_ADVERTISE_AGENT_OPTIONS") {
+            let level = if level.is_empty() { "low" } else { &level };
+            options.extend(Self::agent_config_options(level));
+        }
+        let config_options = if options.is_empty() {
             Value::Null
+        } else {
+            Value::Array(options)
         };
 
         // Advertise a session mode set when asked, the way claude-agent-acp

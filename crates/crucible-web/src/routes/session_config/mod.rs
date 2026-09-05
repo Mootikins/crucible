@@ -33,8 +33,8 @@ mod tests;
 
 pub(super) use basic::{
     get_max_tokens, get_precognition, get_precognition_results, get_temperature,
-    get_thinking_budget, set_max_tokens, set_precognition, set_precognition_results,
-    set_temperature, set_thinking_budget,
+    get_thinking_budget, list_agent_options, set_agent_option, set_max_tokens, set_precognition,
+    set_precognition_results, set_temperature, set_thinking_budget,
 };
 pub(super) use context::{
     get_autocompact_threshold, get_context_budget, get_context_window, set_autocompact_threshold,
@@ -83,6 +83,17 @@ pub(super) fn config_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/precognition/results",
             put(set_precognition_results).get(get_precognition_results),
+        )
+        // Not one of Crucible's knobs: the settings the external agent
+        // advertised for itself. One path serves both directions because the
+        // value belongs to the agent — GET lists what it has, POST sets one,
+        // and the agent's own list is the only report of what the value
+        // became. It sits with the config routes because that is where the
+        // settings panel's calls belong, and because a route outside this
+        // group would stop inheriting the auth and limits above.
+        .route(
+            "/api/session/{id}/config/agent-options",
+            axum::routing::get(list_agent_options).post(set_agent_option),
         )
         // The nine knobs the daemon advertised that the web could not reach.
         // Gate A2e keeps the axis from drifting again; these close it.

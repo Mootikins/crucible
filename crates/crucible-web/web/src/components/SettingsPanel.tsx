@@ -9,6 +9,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
 import type { PluginInfo } from '@/lib/api';
+import type { AgentConfigOption } from '@/lib/types';
 import {
   login,
   getThinkingBudget,
@@ -25,6 +26,8 @@ import {
   reloadPlugin,
   getMcpStatus,
   listKnobs,
+  listAgentOptions,
+  setAgentOption as apiSetAgentOption,
 } from '@/lib/api';
 
 export const ModelSettingsSection: Component = () => {
@@ -51,6 +54,15 @@ export const ModelSettingsSection: Component = () => {
    */
   const [supported, setSupported] = createSignal<Set<string>>(new Set());
   const has = (id: string) => supported().has(id);
+  /**
+   * The settings the external agent advertised for itself.
+   *
+   * Not Crucible's, and not a fixed list: a reasoning-level selector, a
+   * toggle the agent invented. Empty for an internal agent and until the
+   * first message, because an agent says what it has when the daemon
+   * connects to it.
+   */
+  const [agentOptions, setAgentOptions] = createSignal<AgentConfigOption[]>([]);
 
   // Debounced API callers
   const budgetDebounce = createDebounce(async (...args: unknown[]) => {
@@ -86,8 +98,11 @@ export const ModelSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [knobs, budget, temp, tokens, precog, precogResults] = await Promise.all([
+      const [knobs, agentOpts, budget, temp, tokens, precog, precogResults] = await Promise.all([
         listKnobs(s.id),
+        // An older daemon has no such method; an empty list is the right
+        // answer there, and is what an internal session gives anyway.
+        listAgentOptions(s.id).catch(() => ({ options: [] as AgentConfigOption[] })),
         getThinkingBudget(s.id),
         getTemperature(s.id),
         getMaxTokens(s.id),
@@ -95,6 +110,7 @@ export const ModelSettingsSection: Component = () => {
         getPrecognitionResults(s.id),
       ]);
       setSupported(new Set(knobs.knobs.filter((k) => k.supported).map((k) => k.id)));
+      setAgentOptions(agentOpts.options);
       setThinkingBudget(budget);
       setTemperature(temp ?? 1.0);
       setMaxTokens(tokens);
@@ -111,6 +127,25 @@ export const ModelSettingsSection: Component = () => {
   onMount(loadSettings);
 
   const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
+
+  /**
+   * Send one of the agent's own settings back to it.
+   *
+   * The agent is the only authority on what the value became — it may clamp
+   * or normalise what it is sent — so the list is re-read rather than
+   * updated optimistically.
+   */
+  const handleAgentOption = async (option: AgentConfigOption, value: string) => {
+    const s = session.currentSession();
+    if (!s) return;
+    try {
+      await apiSetAgentOption(s.id, option.id, value);
+      const fresh = await listAgentOptions(s.id);
+      setAgentOptions(fresh.options);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to set ${option.name}`);
+    }
+  };
 
   const handleBudgetChange = (e: Event) => {
     const val = parseInt((e.target as HTMLInputElement).value, 10);
@@ -265,6 +300,48 @@ export const ModelSettingsSection: Component = () => {
           class={`${inputClass} w-20 text-right ${!precognition() ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
       </SettingRow>
+
+      {/*
+        The external agent's own settings. Crucible has no knob for these and
+        does not interpret them: the agent said it has a `thought_level`
+        selector, so one is drawn. A different agent lists different things,
+        which is why this is a loop and not a set of named rows.
+      */}
+      <For each={agentOptions()}>
+        {(option) => (
+          <SettingRow label={option.name} description={option.description ?? undefined}>
+            <Show
+              when={option.kind === 'select'}
+              fallback={
+                <button
+                  onClick={() => handleAgentOption(option, String(!option.current))}
+                  data-testid={`agent-option-${option.id}`}
+                  class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    option.current ? 'bg-primary' : 'bg-muted-dark'
+                  }`}
+                >
+                  <span
+                    class={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      option.current ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              }
+            >
+              <select
+                value={String(option.current)}
+                onChange={(e) => handleAgentOption(option, e.currentTarget.value)}
+                data-testid={`agent-option-${option.id}`}
+                class={`${inputClass} w-40`}
+              >
+                <For each={option.choices ?? []}>
+                  {(choice) => <option value={choice.value}>{choice.name}</option>}
+                </For>
+              </select>
+            </Show>
+          </SettingRow>
+        )}
+      </For>
     </SettingsSectionState>
   );
 };

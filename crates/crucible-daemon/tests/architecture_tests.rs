@@ -508,6 +508,19 @@ fn config_methods_table_covers_every_knob() {
         .map(str::to_string)
         .collect();
 
+    // Setters that are not session knobs, and so have no `get_` twin for this
+    // gate to pair them with. Named here rather than given a contrived getter,
+    // because the gate's contract — a set/get pair whose field names must
+    // agree — genuinely does not describe them.
+    //
+    // `agent_option` sets a setting the EXTERNAL AGENT advertised for itself.
+    // Crucible does not own the value and does not store it: the agent reports
+    // its whole option list back, which `session.list_agent_options` reads. A
+    // `session.get_agent_option` would be a second way to read one row of that
+    // list and a second thing to keep in step.
+    let not_a_knob: BTreeSet<String> = ["agent_option"].iter().map(|s| s.to_string()).collect();
+    let scope_owned = &scope_owned | &not_a_knob;
+
     let sides = [
         (
             "client set",

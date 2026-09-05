@@ -1049,6 +1049,48 @@ impl AgentManager {
             .collect()
     }
 
+    /// The settings the session's external agent advertised for itself.
+    ///
+    /// Empty for an internal agent, which advertises nothing: Crucible
+    /// defines its settings rather than discovering them. The model selector
+    /// is left out because it already has a control of its own.
+    pub fn agent_config_options(
+        &self,
+        session_id: &str,
+    ) -> Vec<crucible_core::types::AgentConfigOption> {
+        self.slot(session_id)
+            .agent_surface()
+            .config_options
+            .iter()
+            .filter_map(crucible_core::types::AgentConfigOption::from_acp)
+            .collect()
+    }
+
+    /// Set one of those settings on the live agent.
+    ///
+    /// Unlike Crucible's own knobs this is not persisted: the value belongs
+    /// to the agent's session, and the agent reports it back at the next
+    /// handshake. Storing a second copy here would be a second source of
+    /// truth for something the agent already owns.
+    pub async fn set_agent_config_option(
+        &self,
+        session_id: &str,
+        option_id: &str,
+        value: &str,
+    ) -> Result<(), AgentError> {
+        let handle = self.slot(session_id).cached_agent().ok_or_else(|| {
+            AgentError::NotSupported(
+                "the session has no running agent yet; send a message first".to_string(),
+            )
+        })?;
+
+        let mut guard = handle.lock().await;
+        guard
+            .set_agent_config_option(option_id, value)
+            .await
+            .map_err(|e| AgentError::NotSupported(e.to_string()))
+    }
+
     /// The permission stance a mode declares, if any.
     ///
     /// Test-only accessor. The gate deliberately reads the stance from the

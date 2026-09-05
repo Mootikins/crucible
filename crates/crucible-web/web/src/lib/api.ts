@@ -15,6 +15,7 @@ import type {
   FsEvent,
   SessionModes,
   SessionKnobSupport,
+  AgentConfigOptions,
 } from './types';
 
 export interface Config {
@@ -966,6 +967,33 @@ export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> 
     `/api/session/${encodeURIComponent(sessionId)}/knobs`,
     { errorMessage: 'Failed to list settings' },
   );
+}
+
+/**
+ * The settings this session's external agent advertised for itself.
+ *
+ * Empty until the first message: an agent says what it has when the daemon
+ * connects to it. Empty always for an internal agent.
+ */
+export async function listAgentOptions(sessionId: string): Promise<AgentConfigOptions> {
+  return request<AgentConfigOptions>(
+    'GET',
+    `/api/session/${encodeURIComponent(sessionId)}/config/agent-options`,
+    { errorMessage: 'Failed to list agent settings' },
+  );
+}
+
+/** Set one of the agent's own settings. */
+export async function setAgentOption(
+  sessionId: string,
+  optionId: string,
+  value: string,
+): Promise<void> {
+  await request<void>('POST', `/api/session/${encodeURIComponent(sessionId)}/config/agent-options`, {
+    errorMessage: 'Failed to set agent setting',
+    parseAs: 'none',
+    ...jsonRequest({ option_id: optionId, value }),
+  });
 }
 
 export async function listModes(sessionId: string): Promise<SessionModes> {

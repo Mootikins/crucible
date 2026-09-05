@@ -367,6 +367,34 @@ export interface SessionKnobSupport {
   knobs: KnobDescriptor[];
 }
 
+/** One choice in an agent's select option. */
+export interface AgentOptionChoice {
+  value: string;
+  name: string;
+}
+
+/**
+ * A setting an external agent advertised for itself.
+ *
+ * Not one of Crucible's: it belongs to the agent, a different agent
+ * advertises different ones, and the daemon does not interpret them. The
+ * panel renders what it is given and sends the chosen value back.
+ */
+export interface AgentConfigOption {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  kind: 'select' | 'toggle';
+  current: string | boolean;
+  choices?: AgentOptionChoice[];
+}
+
+export interface AgentConfigOptions {
+  session_id: string;
+  options: AgentConfigOption[];
+}
+
 /** Context window usage */
 export interface ContextUsage {
   used: number;

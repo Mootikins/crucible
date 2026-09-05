@@ -371,6 +371,43 @@ impl DaemonClient {
     ///
     /// The list is per-session because it is resolved from the session's Lua
     /// registry — two sessions in different projects can offer different modes.
+    /// The settings this session's external agent advertised for itself.
+    pub async fn session_list_agent_options(&self, session_id: &str) -> Result<serde_json::Value> {
+        self.typed_call_with_retry(
+            "session.list_agent_options",
+            SessionIdRequest {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Set one of the agent's own settings.
+    pub async fn session_set_agent_option(
+        &self,
+        session_id: &str,
+        option_id: &str,
+        value: &str,
+    ) -> Result<()> {
+        #[derive(serde::Serialize)]
+        struct Params<'a> {
+            session_id: &'a str,
+            option_id: &'a str,
+            value: &'a str,
+        }
+        let _: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.set_agent_option",
+                Params {
+                    session_id,
+                    option_id,
+                    value,
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
     /// Which settings this session can change.
     pub async fn session_list_knobs(
         &self,

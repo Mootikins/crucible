@@ -93,6 +93,61 @@ pub enum AcpKnob {
     Absent,
 }
 
+/// One choice in an agent's select option.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentOptionChoice {
+    /// The id to send back when this choice is picked.
+    pub value: String,
+    /// What to show for it.
+    pub name: String,
+}
+
+/// The shape of an agent option's control.
+///
+/// ACP's `SessionConfigKind` is `#[non_exhaustive]`; a kind this does not
+/// cover is dropped rather than guessed at, because a control rendered from a
+/// shape nobody understood is worse than no control.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentOptionKind {
+    /// Pick one of several values.
+    Select {
+        /// The value the agent reports as current.
+        current: String,
+        /// Every value it accepts, in the order it listed them. Grouped
+        /// options are flattened: the grouping is presentation, and this
+        /// projection carries no group headers.
+        choices: Vec<AgentOptionChoice>,
+    },
+    /// On or off.
+    Toggle {
+        /// The value the agent reports as current.
+        current: bool,
+    },
+}
+
+/// A setting an external agent advertised for itself.
+///
+/// Crucible has no knob for these: they belong to the agent, and a different
+/// agent advertises different ones. A client renders them from this
+/// description and sends the chosen value back; the daemon does not interpret
+/// them beyond the model selector, which has its own control.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentConfigOption {
+    /// The id to name in `session.set_agent_option`.
+    pub id: String,
+    /// What to label the control.
+    pub name: String,
+    /// Optional help text the agent supplied.
+    pub description: Option<String>,
+    /// The agent's own category string, when it sent one. UX only: it exists
+    /// so a client can place or icon a control, never for correctness.
+    pub category: Option<String>,
+    /// The control to draw.
+    #[serde(flatten)]
+    pub kind: AgentOptionKind,
+}
+
 /// One knob and whether this session can change it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KnobDescriptor {
@@ -211,6 +266,80 @@ impl SessionKnob {
             // `session/set_mode`.
             Self::Mode => AcpKnob::Wire,
         }
+    }
+}
+
+impl AgentConfigOption {
+    /// Project one ACP config option, or `None` for a shape this does not
+    /// cover.
+    ///
+    /// `None` also covers the model selector: Crucible has its own model
+    /// control fed by `session.list_models`, and rendering the agent's
+    /// selector beside it would put two controls on one setting.
+    pub fn from_acp(option: &crate::types::acp::schema::SessionConfigOption) -> Option<Self> {
+        use crate::types::acp::schema::{
+            SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
+        };
+
+        if matches!(
+            option.category,
+            Some(SessionConfigOptionCategory::Model)
+                | Some(SessionConfigOptionCategory::ModelConfig)
+        ) {
+            return None;
+        }
+
+        let kind = match &option.kind {
+            SessionConfigKind::Select(select) => {
+                let choices = match &select.options {
+                    SessionConfigSelectOptions::Ungrouped(list) => list
+                        .iter()
+                        .map(|c| AgentOptionChoice {
+                            value: c.value.to_string(),
+                            name: c.name.clone(),
+                        })
+                        .collect(),
+                    SessionConfigSelectOptions::Grouped(groups) => groups
+                        .iter()
+                        .flat_map(|g| {
+                            g.options.iter().map(|c| AgentOptionChoice {
+                                value: c.value.to_string(),
+                                name: c.name.clone(),
+                            })
+                        })
+                        .collect(),
+                    // The enum is `#[non_exhaustive]`; an unknown shape lists
+                    // nothing, which the emptiness check below then drops.
+                    _ => Vec::new(),
+                };
+                if choices.is_empty() {
+                    return None;
+                }
+                AgentOptionKind::Select {
+                    current: select.current_value.to_string(),
+                    choices,
+                }
+            }
+            SessionConfigKind::Boolean(toggle) => AgentOptionKind::Toggle {
+                current: toggle.current_value,
+            },
+            // A kind added to the protocol later. Dropping it is the honest
+            // answer: a control drawn from a shape nobody read is worse than
+            // no control.
+            _ => return None,
+        };
+
+        Some(Self {
+            id: option.id.to_string(),
+            name: option.name.clone(),
+            description: option.description.clone(),
+            category: option.category.as_ref().and_then(|c| {
+                serde_json::to_value(c)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+            }),
+            kind,
+        })
     }
 }
 

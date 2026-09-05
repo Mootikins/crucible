@@ -207,3 +207,39 @@ pub(crate) async fn get_precognition(
         precognition_enabled: enabled,
     }))
 }
+
+/// The settings this session's external agent advertised for itself.
+///
+/// These belong to the agent, not to Crucible: a reasoning-level selector, a
+/// toggle it invented. The daemon passes them through, so the browser renders
+/// whatever this particular agent happens to have.
+pub(crate) async fn list_agent_options(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let options = state
+        .daemon
+        .session_list_agent_options(&id)
+        .await
+        .daemon_err()?;
+    Ok(Json(options))
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SetAgentOptionRequest {
+    pub(crate) option_id: String,
+    pub(crate) value: String,
+}
+
+pub(crate) async fn set_agent_option(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<SetAgentOptionRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .session_set_agent_option(&id, &body.option_id, &body.value)
+        .await
+        .daemon_err()?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
