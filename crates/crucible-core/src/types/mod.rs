@@ -40,7 +40,7 @@ pub use crate::types::acp::schema::{
 };
 
 // Re-export mode descriptor types
-pub use crate::types::knob::{AcpKnob, SessionKnob};
+pub use crate::types::knob::{AcpKnob, KnobDescriptor, SessionKnob, SessionKnobSupport};
 pub use crate::types::mode::{canonical_mode_id, default_internal_modes, ModeDescriptor};
 
 // Re-export trait types (these are associated with traits but used as data)

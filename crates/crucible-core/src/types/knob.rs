@@ -93,6 +93,32 @@ pub enum AcpKnob {
     Absent,
 }
 
+/// One knob and whether this session can change it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnobDescriptor {
+    /// The wire id, matching the `session.set_*` suffix.
+    pub id: String,
+    /// Whether this session can change it. `false` means the control should
+    /// not be offered: the daemon refuses the call.
+    pub supported: bool,
+}
+
+/// What `session.list_knobs` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionKnobSupport {
+    /// Every knob Crucible has, answered for. A client that finds an id
+    /// missing is talking to an older daemon, not to a session without it.
+    pub knobs: Vec<KnobDescriptor>,
+}
+
+impl SessionKnobSupport {
+    /// Whether the session can change `id`. An unknown id is not supported,
+    /// which is the safe answer for a client newer than its daemon.
+    pub fn supports(&self, id: &str) -> bool {
+        self.knobs.iter().any(|k| k.id == id && k.supported)
+    }
+}
+
 impl SessionKnob {
     /// Every knob, in the order a settings panel reads best.
     ///

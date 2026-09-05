@@ -24,6 +24,7 @@ import {
   getPlugins,
   reloadPlugin,
   getMcpStatus,
+  listKnobs,
 } from '@/lib/api';
 
 export const ModelSettingsSection: Component = () => {
@@ -37,6 +38,19 @@ export const ModelSettingsSection: Component = () => {
   const [precognitionResults, setPrecognitionResults] = createSignal(5);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
+  /**
+   * Which settings this session actually has.
+   *
+   * Empty until the daemon answers, and a control is drawn only once it says
+   * so. An ACP session has no temperature and no token cap — the protocol has
+   * no field for either — and the panel used to render a slider and a number
+   * box for them anyway, which the daemon now refuses outright.
+   *
+   * Defaulting to "hidden" rather than "shown" is deliberate: a control that
+   * appears and then errors is worse than one that appears a moment late.
+   */
+  const [supported, setSupported] = createSignal<Set<string>>(new Set());
+  const has = (id: string) => supported().has(id);
 
   // Debounced API callers
   const budgetDebounce = createDebounce(async (...args: unknown[]) => {
@@ -72,13 +86,15 @@ export const ModelSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, temp, tokens, precog, precogResults] = await Promise.all([
+      const [knobs, budget, temp, tokens, precog, precogResults] = await Promise.all([
+        listKnobs(s.id),
         getThinkingBudget(s.id),
         getTemperature(s.id),
         getMaxTokens(s.id),
         getPrecognition(s.id),
         getPrecognitionResults(s.id),
       ]);
+      setSupported(new Set(knobs.knobs.filter((k) => k.supported).map((k) => k.id)));
       setThinkingBudget(budget);
       setTemperature(temp ?? 1.0);
       setMaxTokens(tokens);
@@ -171,6 +187,7 @@ export const ModelSettingsSection: Component = () => {
       hasSession={!!session.currentSession()}
       noSessionMessage="No active session — start a chat to configure model settings."
     >
+      <Show when={has('thinking_budget')}>
       <SettingRow label="Thinking Budget" description="0–32768 tokens">
         <input
           type="number"
@@ -183,7 +200,9 @@ export const ModelSettingsSection: Component = () => {
           placeholder="Auto"
         />
       </SettingRow>
+      </Show>
 
+      <Show when={has('temperature')}>
       <SettingRow
         label="Temperature"
         description={temperature().toFixed(1)}
@@ -201,7 +220,9 @@ export const ModelSettingsSection: Component = () => {
         />
         <span class="text-xs text-muted-dark">2</span>
       </SettingRow>
+      </Show>
 
+      <Show when={has('max_tokens')}>
       <SettingRow label="Max Tokens" description="Empty = unlimited">
         <input
           type="number"
@@ -213,6 +234,7 @@ export const ModelSettingsSection: Component = () => {
           placeholder="Unlimited"
         />
       </SettingRow>
+      </Show>
 
       <SettingRow label="Precognition" description="Auto-inject context">
         <button

@@ -351,6 +351,22 @@ export interface SessionModes {
   modes: ModeDescriptor[];
 }
 
+/** One session setting, and whether this session can change it. */
+export interface KnobDescriptor {
+  id: string;
+  supported: boolean;
+}
+
+/**
+ * Which settings a session can change.
+ *
+ * Not every agent has every setting: ACP has no temperature and no token cap,
+ * so a panel that draws a fixed list offers controls the daemon refuses.
+ */
+export interface SessionKnobSupport {
+  knobs: KnobDescriptor[];
+}
+
 /** Context window usage */
 export interface ContextUsage {
   used: number;

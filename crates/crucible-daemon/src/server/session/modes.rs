@@ -79,14 +79,19 @@ pub(crate) async fn handle_session_list_knobs(req: Request, am: &Arc<AgentManage
         return session_not_found(req.id, &id);
     }
 
-    let knobs: Vec<serde_json::Value> = am
-        .session_knobs(session_id)
-        .into_iter()
-        .map(|(knob, supported)| serde_json::json!({ "id": knob.id(), "supported": supported }))
-        .collect();
+    let support = crucible_core::types::SessionKnobSupport {
+        knobs: am
+            .session_knobs(session_id)
+            .into_iter()
+            .map(|(knob, supported)| crucible_core::types::KnobDescriptor {
+                id: knob.id().to_string(),
+                supported,
+            })
+            .collect(),
+    };
 
-    Response::success(
-        req.id,
-        serde_json::json!({ "session_id": session_id, "knobs": knobs }),
-    )
+    match serde_json::to_value(support) {
+        Ok(value) => Response::success(req.id, value),
+        Err(e) => Response::error(req.id, -32603, format!("failed to encode knobs: {e}")),
+    }
 }

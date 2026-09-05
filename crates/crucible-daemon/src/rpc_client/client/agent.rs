@@ -371,6 +371,20 @@ impl DaemonClient {
     ///
     /// The list is per-session because it is resolved from the session's Lua
     /// registry — two sessions in different projects can offer different modes.
+    /// Which settings this session can change.
+    pub async fn session_list_knobs(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::types::SessionKnobSupport> {
+        self.typed_call_with_retry(
+            "session.list_knobs",
+            SessionIdRequest {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
     pub async fn session_list_modes(
         &self,
         session_id: &str,

@@ -798,6 +798,18 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_list_knobs(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<crucible_core::types::SessionKnobSupport> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.list_knobs", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.session_list_knobs(&session_id).await })
+        })
+        .await
+    }
+
     pub async fn session_list_modes(
         &self,
         session_id: &str,

@@ -95,6 +95,7 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
         .route("/api/session/{id}/modes", get(list_modes))
+        .route("/api/session/{id}/knobs", get(list_knobs))
         .route("/api/session/{id}/status", get(session_status))
         .route("/api/session/{id}/kilns/connect", post(connect_kiln))
         .route("/api/session/{id}/kilns/disconnect", post(disconnect_kiln))
@@ -731,6 +732,21 @@ async fn list_modes(
 ) -> Result<Json<crucible_core::types::mode::SessionModes>, WebError> {
     let modes = state.daemon.session_list_modes(&id).await.daemon_err()?;
     Ok(Json(modes))
+}
+
+/// Which settings this session can change.
+///
+/// The browser drew a fixed set of controls, which was wrong for every ACP
+/// session: the protocol has no temperature and no token cap, so the panel
+/// offered a slider for each that changed nothing. As with modes, the web
+/// layer adds nothing — the answer is the daemon's, so the TUI and the
+/// browser cannot disagree about what a session can do.
+async fn list_knobs(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<crucible_core::types::SessionKnobSupport>, WebError> {
+    let knobs = state.daemon.session_list_knobs(&id).await.daemon_err()?;
+    Ok(Json(knobs))
 }
 
 #[derive(Debug, Deserialize)]

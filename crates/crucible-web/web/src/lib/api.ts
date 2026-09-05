@@ -14,6 +14,7 @@ import type {
   FsListing,
   FsEvent,
   SessionModes,
+  SessionKnobSupport,
 } from './types';
 
 export interface Config {
@@ -953,6 +954,20 @@ export async function getSessionStatus(sessionId: string): Promise<SessionStatus
 }
 
 /** List the modes a session may enter, and the one it is in. */
+/**
+ * Which settings this session can change.
+ *
+ * A settings panel asks before it draws: an ACP session has no temperature
+ * and no token cap, and offering one is a control that changes nothing.
+ */
+export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> {
+  return request<SessionKnobSupport>(
+    'GET',
+    `/api/session/${encodeURIComponent(sessionId)}/knobs`,
+    { errorMessage: 'Failed to list settings' },
+  );
+}
+
 export async function listModes(sessionId: string): Promise<SessionModes> {
   return request<SessionModes>('GET', `/api/session/${encodeURIComponent(sessionId)}/modes`, {
     errorMessage: 'Failed to list modes',
