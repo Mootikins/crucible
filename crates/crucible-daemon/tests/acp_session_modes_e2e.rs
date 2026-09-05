@@ -336,3 +336,121 @@ fn the_mock_agent_binary_is_available() {
     );
     assert!(Path::new(&path).is_file());
 }
+
+/// The mode set survives everything that evicts the handle without changing
+/// the agent.
+///
+/// A knob change, a model switch and a scope change all invalidate the
+/// cached handle, and the mode set used to be cleared with it. That left an
+/// ACP session offering Crucible's `ask`/`plan`/`auto` — and rejecting the
+/// agent's own ids — from the moment the user changed the temperature until
+/// the next message rebuilt the handle. None of those three changes which
+/// agent the session runs, so none of them can change which modes it has.
+#[tokio::test]
+async fn a_knob_change_does_not_take_the_agents_modes_away() {
+    let h = setup("acp", Some(AGENT_CURRENT_MODE)).await;
+    run_a_turn(&h).await;
+
+    h.agent_manager
+        .set_temperature(h.session_id.as_str(), 0.5, None)
+        .await
+        .expect("a knob change is accepted");
+
+    assert_eq!(
+        mode_ids(&h.agent_manager.session_modes(h.session_id.as_str())),
+        AGENT_MODE_IDS,
+        "the agent's modes must outlive an invalidation that keeps the agent"
+    );
+    h.agent_manager
+        .set_mode(h.session_id.as_str(), "acceptEdits", None)
+        .await
+        .expect("and the agent's own modes stay switchable");
+}
+
+/// An agent may name a current mode it does not offer. Reporting that id
+/// leaves a front end with a mode chip it cannot render and a cycle that
+/// goes nowhere, so the session falls back to the first mode the agent does
+/// offer — the same rule the Lua path applies to a mode that is no longer
+/// declared.
+#[tokio::test]
+async fn a_current_mode_the_agent_does_not_offer_falls_back_to_one_it_does() {
+    // `CRU_MOCK_ADVERTISE_MODES` names the current mode without adding it to
+    // the declared list, which is exactly the malformed shape.
+    let h = setup("acp", Some("a-mode-not-in-the-list")).await;
+    run_a_turn(&h).await;
+
+    let state = h.agent_manager.session_modes(h.session_id.as_str());
+    assert_eq!(mode_ids(&state), AGENT_MODE_IDS);
+    assert_eq!(
+        state.current_mode_id.0.as_ref(),
+        "default",
+        "the reported current mode must be one the agent actually offers"
+    );
+}
+
+/// A Crucible rename alias must not shadow an agent's own mode of the same
+/// name. `normal` was Crucible's old name for `ask`, so `set_mode("normal")`
+/// resolves to `ask` — but an ACP agent that declares a mode called `normal`
+/// means its own, and the session offers exactly what the agent declared.
+#[tokio::test]
+async fn an_agents_own_id_beats_a_crucible_rename_alias() {
+    let temp = TempDir::new().expect("temp dir");
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).expect("kiln dir");
+    let mode_capture = temp.path().join("set_mode.txt");
+
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
+    let (event_tx, _events) = broadcast::channel(256);
+
+    let mut agent_profile = profile(Some("normal"), &mode_capture);
+    agent_profile
+        .env
+        .insert("CRU_MOCK_MODE_IDS".to_string(), "normal,strict".to_string());
+
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: Some(AcpConfig {
+            default_agent: None,
+            streaming_timeout_minutes: 1,
+            agents: BTreeMap::from([("mock-acp".to_string(), agent_profile)]),
+        }),
+        context_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        card_roots: Default::default(),
+    }));
+
+    let session = session_manager
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .expect("session");
+    agent_manager
+        .configure_agent(&session.id, session_agent("acp"))
+        .await
+        .expect("configure the agent");
+
+    let (_id, done) = agent_manager
+        .send_message_notified(&session.id, "hello".to_string(), &event_tx, true, None)
+        .await
+        .expect("the turn is accepted");
+    let _ = timeout(TURN_TIMEOUT, done)
+        .await
+        .expect("the turn finished");
+
+    agent_manager
+        .set_mode(session.id.as_str(), "normal", None)
+        .await
+        .expect("the agent's own `normal` must be selectable");
+
+    assert_eq!(
+        std::fs::read_to_string(&mode_capture)
+            .expect("the agent received a session/set_mode")
+            .trim(),
+        "normal",
+        "the agent must be told `normal`, not the mode Crucible renames it to"
+    );
+}

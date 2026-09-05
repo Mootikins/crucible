@@ -926,14 +926,29 @@ impl AgentManager {
             // agent does not offer is ignored rather than advertised, because
             // `set_mode` would reject it. Then the snapshot's own current mode
             // stands, and it is accurate — nothing has switched.
+            let offers = |id: &str| {
+                agent_modes
+                    .available_modes
+                    .iter()
+                    .any(|d| d.id.0.as_ref() == id)
+            };
+            // The agent's own current mode is the last resort, not the first,
+            // and it is checked like any other: an agent may name a current
+            // mode it does not offer, and reporting that leaves a front end
+            // with a mode chip it cannot render and a cycle that goes nowhere.
+            // Falling back to the first offered mode is what the Lua branch
+            // below does with a mode that is no longer declared.
+            let declared_current = agent_modes.current_mode_id.0.to_string();
             let current = persisted
-                .filter(|m| {
+                .filter(|m| offers(m))
+                .or_else(|| offers(&declared_current).then_some(declared_current))
+                .or_else(|| {
                     agent_modes
                         .available_modes
-                        .iter()
-                        .any(|d| d.id.0.as_ref() == m)
+                        .first()
+                        .map(|m| m.id.0.to_string())
                 })
-                .unwrap_or_else(|| agent_modes.current_mode_id.0.to_string());
+                .unwrap_or_else(|| "ask".to_string());
             return SessionModeState::new(
                 SessionModeId::new(current.as_str()),
                 agent_modes.available_modes,

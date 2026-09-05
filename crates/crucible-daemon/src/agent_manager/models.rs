@@ -1228,13 +1228,18 @@ impl AgentManager {
         // that `set_mode` rejects would be a mode you can define and never use.
         // As in `set_mode_str`: an id from before a rename resolves to the
         // mode it names now, and the canonical spelling is what gets stored.
-        let mode_id = crucible_core::types::canonical_mode_id(mode_id);
         let modes = self.session_modes(session_id);
-        if !modes
-            .available_modes
-            .iter()
-            .any(|m| m.id.0.as_ref() == mode_id)
-        {
+        let offers = |id: &str| modes.available_modes.iter().any(|m| m.id.0.as_ref() == id);
+        // The rename alias resolves an id from before a Crucible rename, but
+        // an ACP session's ids belong to the external agent and it may use one
+        // of the old spellings for a mode of its own. What the session offers
+        // wins; the alias applies only to an id the session does not have.
+        let mode_id = if offers(mode_id) {
+            mode_id
+        } else {
+            crucible_core::types::canonical_mode_id(mode_id)
+        };
+        if !offers(mode_id) {
             let valid: Vec<&str> = modes
                 .available_modes
                 .iter()

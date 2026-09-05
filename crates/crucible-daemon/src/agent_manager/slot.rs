@@ -93,7 +93,7 @@ pub(crate) struct SessionSlot {
 struct BuildCache {
     agent: Option<Arc<tokio::sync::Mutex<BoxedAgentHandle>>>,
     dispatcher: Option<Arc<dyn ToolDispatcher>>,
-    /// The mode set the cached handle's agent declared, when it declared one.
+    /// The mode set the agent declared, when it declared one.
     ///
     /// Only an ACP agent answers this: its modes belong to the agent process
     /// and are not known until the handshake finishes, which is why they are
@@ -101,9 +101,15 @@ struct BuildCache {
     /// the handle's mutex for its whole loop, so asking the handle would make
     /// `session.list_modes` either block or answer a different list mid-turn.
     ///
-    /// It lives in `BuildCache` and not beside it because it has exactly the
-    /// handle's lifetime: every path that clears `agent` must clear this, and
-    /// one field cannot be forgotten in the way a second lock could.
+    /// It sits in `BuildCache` to share its lock, but NOT its lifetime: an
+    /// invalidation leaves it standing. The set describes the session's agent
+    /// PROFILE, and none of the three things that invalidate a handle changes
+    /// that profile — a model switch, a knob change and a scope change all
+    /// rebuild the same agent. Clearing it made `session.list_modes` revert to
+    /// Crucible's own modes after any of them, and `set_mode` reject the
+    /// agent's own ids, until the next message rebuilt the handle. Every
+    /// build overwrites it, including with `None` for an internal agent, so a
+    /// value never outlives the profile it describes.
     agent_modes: Option<crucible_core::types::acp::schema::SessionModeState>,
     /// Bumped on every invalidation. A build that started at generation N
     /// installs nothing if the generation moved while it was awaiting —
@@ -213,7 +219,6 @@ impl SessionSlot {
     pub(crate) fn invalidate_agent(&self) {
         let mut build = self.lock_build();
         build.agent = None;
-        build.agent_modes = None;
         build.generation += 1;
     }
 
@@ -224,7 +229,6 @@ impl SessionSlot {
     pub(crate) fn invalidate_build(&self) {
         let mut build = self.lock_build();
         build.agent = None;
-        build.agent_modes = None;
         build.dispatcher = None;
         build.generation += 1;
     }

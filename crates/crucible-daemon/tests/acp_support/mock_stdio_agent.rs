@@ -615,14 +615,29 @@ impl MockStdioAgent {
 
     /// A `SessionModeState` naming `current` among three modes, in the shape
     /// claude-agent-acp sends.
+    /// The mode set the mock declares. `current` names the current mode, and
+    /// `CRU_MOCK_MODE_IDS` replaces the offered list with its own
+    /// comma-separated ids (names are derived, since the point of the hook is
+    /// the ids).
+    ///
+    /// `current` is NOT added to the list. An agent whose current mode is not
+    /// among the ones it offers is malformed, and a client has to survive it,
+    /// so the mock must be able to say it.
     fn mode_state(current: &str) -> Value {
+        let available: Vec<Value> = match env::var("CRU_MOCK_MODE_IDS") {
+            Ok(ids) if !ids.is_empty() => ids
+                .split(',')
+                .map(|id| json!({"id": id, "name": id, "description": null}))
+                .collect(),
+            _ => vec![
+                json!({"id": "default", "name": "Manual", "description": "Always ask first"}),
+                json!({"id": "acceptEdits", "name": "Accept edits", "description": "Take file edits"}),
+                json!({"id": "plan", "name": "Plan", "description": "Plan before changing"}),
+            ],
+        };
         json!({
             "currentModeId": current,
-            "availableModes": [
-                {"id": "default", "name": "Manual", "description": "Always ask first"},
-                {"id": "acceptEdits", "name": "Accept edits", "description": "Take file edits"},
-                {"id": "plan", "name": "Plan", "description": "Plan before changing"}
-            ]
+            "availableModes": available,
         })
     }
 
