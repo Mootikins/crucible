@@ -363,6 +363,13 @@ impl AgentHandle for AcpAgentHandle {
         }
 
         self.mode_id = mode_id.to_string();
+        // The mode set carries its own current id, and `get_modes` hands the
+        // whole set out. Updating only `mode_id` left the two accessors on
+        // this handle disagreeing after every switch: `get_mode_id` said the
+        // new mode and `get_modes().current_mode_id` still said whatever the
+        // agent declared at the handshake.
+        self.mode_state.current_mode_id =
+            crucible_core::types::acp::schema::SessionModeId::new(mode_id);
         Ok(())
     }
 

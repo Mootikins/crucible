@@ -126,3 +126,39 @@ async fn an_agent_that_declares_no_modes_falls_back_to_the_internal_set() {
         handle.get_mode_id()
     );
 }
+
+/// After a switch, the handle's two mode accessors agree.
+///
+/// `get_mode_id` and `get_modes().current_mode_id` are both "the mode this
+/// session is in", read by different callers — the second is what the whole
+/// mode set hands out, and it is what a front end hydrates. `set_mode_str`
+/// used to move only the first, so every switch left the set naming whatever
+/// the agent declared at the handshake.
+#[tokio::test]
+async fn a_switch_moves_the_current_mode_in_the_reported_set_too() {
+    use crucible_core::traits::chat::AgentHandle;
+
+    let (mut handle, _workspace) = handle_with_modes(Some("default")).await;
+    assert_eq!(
+        handle.get_mode_id(),
+        "default",
+        "the declared starting mode"
+    );
+
+    handle
+        .set_mode_str("plan")
+        .await
+        .expect("the agent accepts a mode it declared");
+
+    assert_eq!(handle.get_mode_id(), "plan");
+    assert_eq!(
+        handle
+            .get_modes()
+            .expect("a session always reports some mode set")
+            .current_mode_id
+            .0
+            .as_ref(),
+        "plan",
+        "the reported set must name the mode the session actually switched to"
+    );
+}
