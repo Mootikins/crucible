@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-05
+
 ### Breaking
 
 - **The scripting runtime is Luau, and Fennel is removed.** A `.fnl` plugin,
@@ -21,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `package.loaded` and `package.preload` still work, and a plugin's
   `package.loaded[NAME] = plugin` line still makes `require` answer with that
   instance. An `init.lua` that wrote `package.path` must use `runtimepath`.
+
+- **The `normal` chat mode is now `ask`.** `normal` still resolves to it, so a
+  script or a Lua file that names the old id keeps working, but the mode
+  declares itself as `ask` and every front end shows that. An ACP session's
+  ids belong to the agent and are never rewritten by this alias.
+
+- **An ACP session refuses the settings the protocol has no field for.**
+  Temperature, max tokens, thinking budget, the system prompt, iteration and
+  timeout caps, the context budget/strategy/window, autocompact and output
+  validation now return an error naming the setting instead of being stored
+  where the agent would never read them. `session.list_knobs` says which
+  settings a session has, and both front ends draw their controls from it.
+  Precognition is unaffected: it is the daemon's own work and reaches an
+  external agent as injected prompt text.
 
 - **A tool parameter's declared type must be a type the host can read.**
   `string`, `number`, `boolean`, `any`, a name, `T?`, `T[]`, `array<T>`,
@@ -43,6 +59,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `io.popen` and no `os.execute`: `cru.shell` is the gated way to run a
   command.
 
+- **An ACP session's modes are the agent's own.** claude-agent-acp declares
+  five and codex-acp three, with ids Crucible does not share; the session used
+  to offer `ask`/`plan`/`auto`, all of which such an agent rejects. The set
+  arrives with the handshake, so it replaces Crucible's at the first message
+  and both front ends refresh themselves when it does.
+
+- **The settings an external agent advertises for itself now reach a client.**
+  ACP's `configOptions` is where an agent lists what it has — a reasoning-level
+  selector, or anything it invents. `session.list_agent_options` reports them
+  and `session.set_agent_option` sets one. The web renders the list rather than
+  named rows, so an option Crucible has never heard of still gets a control.
+  The reasoning level is deliberately not mapped onto the thinking budget: one
+  is a select of names and the other a token count.
+
+- A mode may declare the `label` a front end shows. Without one the id is
+  humanized — `acceptEdits` reads as "Accept edits" — so a mode you declare and
+  one an external agent advertises read alike in the same list.
+
 ### Fixed
 
 - `web-search`'s DuckDuckGo parser stripped tags with a quadratic pattern: a
@@ -55,6 +89,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A plugin reload re-reads the plugin's own `lua/` modules. The module cache
   is keyed by file, and the entry instance a user's boot `require` created
   survives, so activation still does not execute the file twice.
+
+- The ACP client read one line and called it the answer, so an agent that
+  streams a `session/update` before replying to `session/new` broke the
+  handshake — which is what codex-acp does. Replies are correlated by request
+  id, and a reply bearing another id is no longer accepted as this one's.
+
+- The built-in ACP profiles pointed at packages that do not exist: `cursor` at
+  an abandoned npm bridge, `claude` and `codex` at deprecated ones several
+  majors behind. They name the agents that ship today.
+
+- Changing a setting no longer kills an ACP agent. The change evicted the
+  session's cached handle, and dropping that handle sends `session/close` and
+  then terminates the agent process; the conversation came back only if that
+  agent answers `session/resume`.
+
+- The statusline humanizes a mode id before upper-casing it, so an external
+  agent's `acceptEdits` reads as ` ACCEPT EDITS ` rather than ` ACCEPTEDITS `.
+  A single-word id is unchanged.
+
+- A `-32601` reply to `session/resume` and any other error reply mean
+  different things and are no longer conflated: the first opens a new session
+  and announces the fallback, the second fails the connect rather than
+  starting a session that has silently forgotten the conversation.
 
 ## [0.29.0] - 2026-08-29
 
