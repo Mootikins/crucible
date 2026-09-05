@@ -337,29 +337,29 @@ fn the_mock_agent_binary_is_available() {
     assert!(Path::new(&path).is_file());
 }
 
-/// The mode set survives everything that evicts the handle without changing
-/// the agent.
+/// The mode set survives an eviction of the handle.
 ///
-/// A knob change, a model switch and a scope change all invalidate the
-/// cached handle, and the mode set used to be cleared with it. That left an
-/// ACP session offering Crucible's `ask`/`plan`/`auto` — and rejecting the
-/// agent's own ids — from the moment the user changed the temperature until
-/// the next message rebuilt the handle. None of those three changes which
-/// agent the session runs, so none of them can change which modes it has.
+/// A model switch and a scope change both invalidate the cached handle, and
+/// the mode set used to be cleared with it. That left an ACP session
+/// offering Crucible's `ask`/`plan`/`auto` — and rejecting the agent's own
+/// ids — until the next message rebuilt the handle. Neither change alters
+/// which agent the session runs, so neither can alter which modes it has.
+///
+/// The eviction is called directly rather than through a setting, because a
+/// setting is no longer allowed to evict an ACP handle at all (that would
+/// kill the agent process). The claim under test is about eviction itself.
 #[tokio::test]
-async fn a_knob_change_does_not_take_the_agents_modes_away() {
+async fn an_eviction_does_not_take_the_agents_modes_away() {
     let h = setup("acp", Some(AGENT_CURRENT_MODE)).await;
     run_a_turn(&h).await;
 
     h.agent_manager
-        .set_temperature(h.session_id.as_str(), 0.5, None)
-        .await
-        .expect("a knob change is accepted");
+        .invalidate_agent_cache(h.session_id.as_str());
 
     assert_eq!(
         mode_ids(&h.agent_manager.session_modes(h.session_id.as_str())),
         AGENT_MODE_IDS,
-        "the agent's modes must outlive an invalidation that keeps the agent"
+        "the agent's modes must outlive an eviction that keeps the agent"
     );
     h.agent_manager
         .set_mode(h.session_id.as_str(), "acceptEdits", None)

@@ -352,6 +352,7 @@ impl CrucibleAcpClient {
                         AcpSession::new(TransportConfig::default(), prior_id.to_string())
                             .with_model(model)
                             .with_modes(resume_response.modes.clone())
+                            .with_config_options(resume_response.config_options.clone())
                             .with_resume(ResumeDisposition::Resumed),
                     );
                 }
@@ -381,6 +382,7 @@ impl CrucibleAcpClient {
         )
         .with_model(model)
         .with_modes(session_response.modes.clone())
+        .with_config_options(session_response.config_options.clone())
         .with_resume(resume))
     }
 

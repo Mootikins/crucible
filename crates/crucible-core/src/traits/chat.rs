@@ -169,6 +169,17 @@ pub trait SessionKnobs: Send + Sync {
     /// Returns `Err(ChatError::NotSupported)` when the agent cannot switch.
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()>;
 
+    /// The session settings the external agent advertised for itself.
+    ///
+    /// ACP agents list these in the `session/new` reply; the model selector
+    /// is one of them, and `thought_level` is the other Crucible has a knob
+    /// for. The empty default is a true answer, not a stub: an internal
+    /// agent advertises nothing, because Crucible defines its settings
+    /// rather than discovering them.
+    fn agent_config_options(&self) -> &[crate::types::acp::schema::SessionConfigOption] {
+        &[]
+    }
+
     /// The current model identifier, if known.
     fn current_model(&self) -> Option<&str>;
 

@@ -34,6 +34,12 @@ pub mod schema {
     pub use agent_client_protocol_schema::v1::{
         AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
     };
+
+    // Session config options: the settings an agent advertises for itself.
+    pub use agent_client_protocol_schema::v1::{
+        SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelect,
+        SessionConfigSelectOptions,
+    };
 }
 
 /// File diff representing changes to a file

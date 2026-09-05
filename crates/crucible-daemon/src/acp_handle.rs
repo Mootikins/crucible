@@ -75,6 +75,10 @@ pub struct AcpAgentHandle {
     /// off the `model_switching` capability, `current_model` and
     /// `fetch_available_models`.
     model: Option<ModelChoice>,
+    /// Every config option the agent advertised, kept as it sent them. The
+    /// model selector is projected onto `model` above; these are the rest,
+    /// which a client renders and the daemon does not interpret.
+    config_options: Vec<crucible_core::types::acp::schema::SessionConfigOption>,
     session_id: Option<String>,
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
@@ -308,6 +312,7 @@ impl AcpAgentHandle {
             .unwrap_or_else(default_internal_modes);
         let mode_id = mode_state.current_mode_id.0.to_string();
         let model = session.model().cloned();
+        let config_options = session.config_options().to_vec();
 
         Ok(Self {
             client: Arc::new(Mutex::new(Some(client))),
@@ -316,6 +321,7 @@ impl AcpAgentHandle {
             mode_id,
             mode_state,
             model,
+            config_options,
             session_id: Some(session_id),
             cached_temperature: agent_config.temperature,
             cached_max_tokens: agent_config.max_tokens,
@@ -444,6 +450,10 @@ impl SessionKnobs for AcpAgentHandle {
     /// The agent keeps its history; only the selector value changes. The
     /// reply lists every option with its current value, so the local
     /// selector is read from the reply when the agent includes it.
+    fn agent_config_options(&self) -> &[crucible_core::types::acp::schema::SessionConfigOption] {
+        &self.config_options
+    }
+
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         let Some(model) = self.model.as_ref() else {
             return Err(ChatError::NotSupported(

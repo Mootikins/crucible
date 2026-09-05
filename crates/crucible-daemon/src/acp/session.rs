@@ -128,6 +128,14 @@ pub struct AcpSession {
     /// one. The modes belong to the agent — Crucible's own set is a stand-in
     /// for agents that declare none, not a default to merge with.
     modes: Option<SessionModeState>,
+    /// Every config option the agent advertised, in wire order.
+    ///
+    /// `model` is extracted above because Crucible has a typed model
+    /// selector to project it onto. The rest are kept as the agent sent
+    /// them: `thought_level` is the one Crucible has a knob for, and
+    /// `Other(_)` is whatever this particular agent invented. A client
+    /// renders them; the daemon does not interpret them.
+    config_options: Vec<SessionConfigOption>,
     /// How the connect flow obtained this session.
     resume: ResumeDisposition,
 }
@@ -144,6 +152,7 @@ impl AcpSession {
             session_id,
             model: None,
             modes: None,
+            config_options: Vec::new(),
             resume: ResumeDisposition::NotAttempted,
         }
     }
@@ -158,6 +167,17 @@ impl AcpSession {
     pub fn with_modes(mut self, modes: Option<SessionModeState>) -> Self {
         self.modes = modes;
         self
+    }
+
+    /// Attach every config option the agent advertised.
+    pub fn with_config_options(mut self, options: Option<Vec<SessionConfigOption>>) -> Self {
+        self.config_options = options.unwrap_or_default();
+        self
+    }
+
+    /// The config options the agent advertised, in wire order.
+    pub fn config_options(&self) -> &[SessionConfigOption] {
+        &self.config_options
     }
 
     /// Record how the connect flow obtained this session.

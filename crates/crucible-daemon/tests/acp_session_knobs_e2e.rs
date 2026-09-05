@@ -175,7 +175,7 @@ async fn changing_a_knob_does_not_restart_the_agent_process() {
     assert_eq!(handshakes(&h), 1, "the first turn starts one agent");
 
     h.agent_manager
-        .set_temperature(h.session_id.as_str(), 0.2, None)
+        .set_precognition(h.session_id.as_str(), true, None)
         .await
         .expect("the setting is accepted");
     run_a_turn(&h).await;
@@ -197,14 +197,6 @@ async fn no_knob_restarts_the_agent_process() {
     run_a_turn(&h).await;
 
     let id = h.session_id.as_str();
-    h.agent_manager
-        .set_thinking_budget(id, 4096, None)
-        .await
-        .expect("thinking budget");
-    h.agent_manager
-        .set_max_tokens(id, Some(2048), None)
-        .await
-        .expect("max tokens");
     h.agent_manager
         .set_precognition(id, true, None)
         .await
@@ -233,5 +225,112 @@ fn the_mock_agent_binary_is_available() {
         "mock-acp-agent is missing at {}; build it with \
          `cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent`",
         path.display()
+    );
+}
+
+/// A setting ACP cannot carry is refused rather than stored.
+///
+/// These setters never ask the handle: they write the session's config and
+/// stop. So an accepted `set_temperature` was a value the agent process would
+/// never see, reported back to the caller as though it had taken effect. The
+/// error names the setting, because "not supported" alone leaves a user
+/// guessing which control just failed.
+#[tokio::test]
+async fn a_setting_the_protocol_has_no_field_for_is_refused() {
+    let h = setup().await;
+    let id = h.session_id.as_str();
+
+    let attempts = [
+        (
+            "temperature",
+            h.agent_manager.set_temperature(id, 0.2, None).await,
+        ),
+        (
+            "max_tokens",
+            h.agent_manager.set_max_tokens(id, Some(2048), None).await,
+        ),
+        (
+            "thinking_budget",
+            h.agent_manager.set_thinking_budget(id, 4096, None).await,
+        ),
+        (
+            "system_prompt",
+            h.agent_manager
+                .set_system_prompt(id, "be brief", None)
+                .await,
+        ),
+    ];
+
+    for (name, result) in attempts {
+        let error = result
+            .expect_err(&format!("`{name}` must be refused on an ACP session"))
+            .to_string();
+        assert!(
+            error.contains(name),
+            "the refusal must name the setting that failed; `{name}` got: {error}"
+        );
+    }
+}
+
+/// The settings the daemon itself implements stay available. Refusing these
+/// would remove a control that demonstrably works: retrieval runs in the
+/// daemon and reaches the agent as injected prompt text.
+#[tokio::test]
+async fn a_setting_the_daemon_implements_is_still_accepted() {
+    let h = setup().await;
+    let id = h.session_id.as_str();
+
+    h.agent_manager
+        .set_precognition(id, true, None)
+        .await
+        .expect("precognition is the daemon's own work");
+    h.agent_manager
+        .set_precognition_results(id, 7, None)
+        .await
+        .expect("and so is how many notes it injects");
+}
+
+/// A client asks the session which settings it has, and gets an answer that
+/// depends on the session rather than on a fixed list.
+///
+/// This is what a settings panel draws from. Without it a front end has to
+/// guess, and the web guessed wrong for every ACP session — a temperature
+/// slider on an agent with no temperature.
+#[tokio::test]
+async fn a_session_reports_which_settings_it_supports() {
+    let h = setup().await;
+    let knobs = h.agent_manager.session_knobs(h.session_id.as_str());
+
+    let supported = |id: &str| {
+        knobs
+            .iter()
+            .find(|(knob, _)| knob.id() == id)
+            .map(|(_, ok)| *ok)
+            .unwrap_or_else(|| panic!("`{id}` is missing from the answer"))
+    };
+
+    assert!(!supported("temperature"), "ACP has no temperature");
+    assert!(!supported("max_tokens"), "ACP has no token cap");
+    assert!(
+        !supported("system_prompt"),
+        "ACP has no system prompt field"
+    );
+    assert!(supported("mode"), "session/set_mode carries the mode");
+    assert!(
+        supported("precognition"),
+        "retrieval is the daemon's own work"
+    );
+
+    // The mock advertises no model selector, so this session cannot switch
+    // model — and that is a property of the agent, not of ACP.
+    assert!(
+        !supported("model"),
+        "an agent that advertises no selector cannot switch model"
+    );
+
+    assert_eq!(
+        knobs.len(),
+        crucible_core::types::SessionKnob::ALL.len(),
+        "every knob must be answered for, or a client cannot tell absent from unsupported"
     );
 }

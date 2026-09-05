@@ -54,3 +54,39 @@ pub(crate) async fn handle_session_list_modes(req: Request, am: &Arc<AgentManage
         }),
     )
 }
+
+/// Which settings this session can change, and which it cannot.
+///
+/// A settings panel drew a fixed list of controls, which was wrong for every
+/// ACP session: the protocol has no temperature and no token cap, so the web
+/// rendered a slider for each that changed nothing an agent would ever read.
+/// The daemon now refuses those settings outright, and this is how a client
+/// learns which they are before offering them.
+///
+/// `supported` is the session's answer, not the agent type's: a model switch
+/// depends on whether that particular agent advertised a selector at the
+/// handshake, so two ACP sessions can answer differently.
+pub(crate) async fn handle_session_list_knobs(req: Request, am: &Arc<AgentManager>) -> Response {
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
+
+    if let Err(crate::agent_manager::AgentError::SessionNotFound(id)) =
+        am.get_session_with_agent(session_id)
+    {
+        return session_not_found(req.id, &id);
+    }
+
+    let knobs: Vec<serde_json::Value> = am
+        .session_knobs(session_id)
+        .into_iter()
+        .map(|(knob, supported)| serde_json::json!({ "id": knob.id(), "supported": supported }))
+        .collect();
+
+    Response::success(
+        req.id,
+        serde_json::json!({ "session_id": session_id, "knobs": knobs }),
+    )
+}

@@ -93,24 +93,25 @@ pub(crate) struct SessionSlot {
 struct BuildCache {
     agent: Option<Arc<tokio::sync::Mutex<BoxedAgentHandle>>>,
     dispatcher: Option<Arc<dyn ToolDispatcher>>,
-    /// The mode set the agent declared, when it declared one.
+    /// What the agent told the daemon about itself at the handshake.
     ///
-    /// Only an ACP agent answers this: its modes belong to the agent process
-    /// and are not known until the handshake finishes, which is why they are
-    /// cached here rather than read from the handle on demand. A turn holds
-    /// the handle's mutex for its whole loop, so asking the handle would make
-    /// `session.list_modes` either block or answer a different list mid-turn.
+    /// Only an ACP agent says anything: its modes and config options belong
+    /// to the agent process and are not known until the handshake finishes,
+    /// which is why they are cached here rather than read from the handle on
+    /// demand. A turn holds the handle's mutex for its whole loop, so asking
+    /// the handle would make `session.list_modes` either block or answer a
+    /// different list mid-turn.
     ///
     /// It sits in `BuildCache` to share its lock, but NOT its lifetime: an
-    /// invalidation leaves it standing. The set describes the session's agent
-    /// PROFILE, and none of the three things that invalidate a handle changes
-    /// that profile — a model switch, a knob change and a scope change all
-    /// rebuild the same agent. Clearing it made `session.list_modes` revert to
-    /// Crucible's own modes after any of them, and `set_mode` reject the
-    /// agent's own ids, until the next message rebuilt the handle. Every
-    /// build overwrites it, including with `None` for an internal agent, so a
-    /// value never outlives the profile it describes.
-    agent_modes: Option<crucible_core::types::acp::schema::SessionModeState>,
+    /// invalidation leaves it standing. It describes the session's agent
+    /// PROFILE, and neither thing that invalidates a handle changes that
+    /// profile — a model switch and a scope change both rebuild the same
+    /// agent. Clearing it made `session.list_modes` revert to Crucible's own
+    /// modes, and `set_mode` reject the agent's own ids, until the next
+    /// message rebuilt the handle. Every build overwrites it, including with
+    /// an empty surface for an internal agent, so a value never outlives the
+    /// profile it describes.
+    surface: AgentSurface,
     /// Bumped on every invalidation. A build that started at generation N
     /// installs nothing if the generation moved while it was awaiting —
     /// otherwise a `switch_model` landing mid-build is silently lost and the
@@ -122,6 +123,19 @@ struct BuildCache {
     /// comment has the interleaving step by step, and
     /// `tests/build_race.rs` reproduces it.
     generation: u64,
+}
+
+/// What an agent declared about itself when the daemon connected to it.
+///
+/// An internal agent declares nothing: Crucible defines its settings rather
+/// than discovering them, so the default is the honest answer and not a stub.
+/// An ACP agent sends both of these in its `session/new` reply.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AgentSurface {
+    /// The modes the agent offers, when it offers any.
+    pub(crate) modes: Option<crucible_core::types::acp::schema::SessionModeState>,
+    /// Every config option the agent advertised, in wire order.
+    pub(crate) config_options: Vec<crucible_core::types::acp::schema::SessionConfigOption>,
 }
 
 /// What a caller finds when it asks for the cached agent handle.
@@ -162,31 +176,28 @@ impl SessionSlot {
     /// the next turn rebuilds from the new config. Failing the turn instead would
     /// punish the user for switching models at an unlucky moment.
     ///
-    /// `modes` is what the handle's agent declares, or `None` for an agent
-    /// that declares none. It is installed with the handle because the two
-    /// are one fact: a mode set that outlived its handle would describe an
-    /// agent process that is gone.
+    /// `surface` is what the handle's agent declared about itself, empty for
+    /// an agent that declared nothing. It is installed with the handle
+    /// because a build is the only thing that learns it.
     #[must_use]
     pub(crate) fn install_agent(
         &self,
         generation: u64,
         agent: &Arc<tokio::sync::Mutex<BoxedAgentHandle>>,
-        modes: Option<crucible_core::types::acp::schema::SessionModeState>,
+        surface: AgentSurface,
     ) -> bool {
         let mut build = self.lock_build();
         if build.generation != generation {
             return false;
         }
         build.agent = Some(Arc::clone(agent));
-        build.agent_modes = modes;
+        build.surface = surface;
         true
     }
 
-    /// The mode set the cached handle's agent declared, if it declared one.
-    pub(crate) fn agent_modes(
-        &self,
-    ) -> Option<crucible_core::types::acp::schema::SessionModeState> {
-        self.lock_build().agent_modes.clone()
+    /// What the cached handle's agent said about itself at the handshake.
+    pub(crate) fn agent_surface(&self) -> AgentSurface {
+        self.lock_build().surface.clone()
     }
 
     /// The cached tool dispatcher, or the generation a build must install against.

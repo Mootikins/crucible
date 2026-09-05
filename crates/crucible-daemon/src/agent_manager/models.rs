@@ -401,6 +401,7 @@ impl AgentManager {
     async fn update_agent_config_and_emit<Mutate, OnUpdated>(
         &self,
         session_id: &str,
+        knob: crucible_core::types::SessionKnob,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
         event_type: &str,
         event_payload: serde_json::Value,
@@ -417,8 +418,22 @@ impl AgentManager {
         }
 
         let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
-        mutator(&mut agent_config)?;
         let is_acp = agent_config.agent_type == "acp";
+
+        // A setting the session's agent cannot carry is refused, not stored.
+        // `AcpAgentHandle` used to cache temperature, thinking budget and max
+        // tokens in fields nothing read, so the value was accepted, reported
+        // back, and never reached the agent process. Storing it here has the
+        // same effect one layer up, because these setters never ask the
+        // handle at all — they write the session's config and stop.
+        if is_acp && knob.on_acp() == crucible_core::types::AcpKnob::Absent {
+            return Err(AgentError::NotSupported(format!(
+                "the ACP agent for this session has no '{}' setting",
+                knob.id()
+            )));
+        }
+
+        mutator(&mut agent_config)?;
         session.agent = Some(agent_config);
 
         self.session_manager
@@ -463,6 +478,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::ThinkingBudget,
             event_tx,
             "thinking_budget_changed",
             serde_json::json!({ "budget": budget }),
@@ -505,6 +521,7 @@ impl AgentManager {
         }
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::SystemPrompt,
             event_tx,
             "system_prompt_changed",
             serde_json::json!({ "system_prompt": prompt }),
@@ -541,6 +558,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::Precognition,
             event_tx,
             "precognition_toggled",
             serde_json::json!({ "enabled": enabled }),
@@ -573,6 +591,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::PrecognitionResults,
             event_tx,
             "precognition_results_changed",
             serde_json::json!({ "precognition_results": count }),
@@ -605,6 +624,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::Temperature,
             event_tx,
             "temperature_changed",
             serde_json::json!({ "temperature": temperature }),
@@ -726,6 +746,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::MaxTokens,
             event_tx,
             "max_tokens_changed",
             serde_json::json!({ "max_tokens": max_tokens }),
@@ -758,6 +779,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::MaxIterations,
             event_tx,
             "max_iterations_changed",
             serde_json::json!({ "max_iterations": max_iterations }),
@@ -790,6 +812,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::ExecutionTimeout,
             event_tx,
             "execution_timeout_changed",
             serde_json::json!({ "timeout_secs": timeout_secs }),
@@ -822,6 +845,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::ContextBudget,
             event_tx,
             "context_budget_changed",
             serde_json::json!({ "context_budget": budget }),
@@ -861,6 +885,7 @@ impl AgentManager {
         }
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::AutocompactThreshold,
             event_tx,
             "autocompact_threshold_changed",
             serde_json::json!({ "autocompact_threshold": threshold }),
@@ -894,6 +919,7 @@ impl AgentManager {
         let strategy_str = strategy.to_string();
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::ContextStrategy,
             event_tx,
             "context_strategy_changed",
             serde_json::json!({ "context_strategy": strategy_str }),
@@ -926,6 +952,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::ContextWindow,
             event_tx,
             "context_window_changed",
             serde_json::json!({ "context_window": window }),
@@ -959,6 +986,7 @@ impl AgentManager {
         let validation_str = validation.to_string();
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::OutputValidation,
             event_tx,
             "output_validation_changed",
             serde_json::json!({ "output_validation": validation_str }),
@@ -991,6 +1019,7 @@ impl AgentManager {
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
+            crucible_core::types::SessionKnob::ValidationRetries,
             event_tx,
             "validation_retries_changed",
             serde_json::json!({ "validation_retries": retries }),

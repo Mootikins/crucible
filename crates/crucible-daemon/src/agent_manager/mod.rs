@@ -26,6 +26,7 @@ use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, 
 use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
+use crucible_core::types::{AcpKnob, SessionKnob};
 use crucible_lua::{
     execute_permission_hooks, register_cru_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHook, PermissionHookResult,
@@ -913,7 +914,8 @@ impl AgentManager {
         // reads the cache the handle build filled rather than the registry.
         if let Some(agent_modes) = self
             .slot(session_id)
-            .agent_modes()
+            .agent_surface()
+            .modes
             .filter(|m| !m.available_modes.is_empty())
         {
             // The persisted mode wins when the agent offers it, and it is not
@@ -992,6 +994,59 @@ impl AgentManager {
             })
             .collect();
         SessionModeState::new(SessionModeId::new(current.as_str()), available)
+    }
+
+    /// Which settings this session can actually change, and which it cannot.
+    ///
+    /// A front end draws a settings panel from this rather than from a fixed
+    /// list, because the fixed list was wrong for half the sessions: an ACP
+    /// agent has no temperature and no token cap, and the web rendered a
+    /// slider for both.
+    ///
+    /// An internal session supports every knob — Crucible defines them and
+    /// implements them. An ACP session supports what the protocol carries,
+    /// plus the two the daemon does on its own behalf, plus a model switch
+    /// when the agent advertised a selector.
+    pub fn session_knobs(&self, session_id: &str) -> Vec<(SessionKnob, bool)> {
+        use crucible_core::types::acp::schema::{SessionConfigKind, SessionConfigOptionCategory};
+        let is_acp = self
+            .session_manager
+            .get_session(session_id)
+            .and_then(|s| s.agent)
+            .is_some_and(|a| a.agent_type == "acp");
+
+        // Whether the agent listed a model selector. Same rule as
+        // `ModelChoice::from_config_options`: the `model` category, or
+        // `model_config` for an agent that spells it that way.
+        let advertises_model = self
+            .slot(session_id)
+            .agent_surface()
+            .config_options
+            .iter()
+            .any(|option| {
+                matches!(option.kind, SessionConfigKind::Select(_))
+                    && matches!(
+                        option.category,
+                        Some(SessionConfigOptionCategory::Model)
+                            | Some(SessionConfigOptionCategory::ModelConfig)
+                    )
+            });
+
+        SessionKnob::ALL
+            .iter()
+            .map(|&knob| {
+                let supported = if is_acp {
+                    match knob.on_acp() {
+                        AcpKnob::Daemon | AcpKnob::Wire => true,
+                        AcpKnob::AdvertisedModel => advertises_model,
+                        AcpKnob::Absent => false,
+                    }
+                } else {
+                    true
+                };
+                (knob, supported)
+            })
+            .collect()
     }
 
     /// The permission stance a mode declares, if any.

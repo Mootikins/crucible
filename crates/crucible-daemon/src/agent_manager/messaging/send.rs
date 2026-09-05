@@ -691,11 +691,15 @@ impl AgentManager {
             }
         }
 
-        // The agent's own mode set, read once here while nothing holds the
-        // handle. An ACP agent declares its modes in the `session/new` reply,
-        // so this is the first moment they exist; an internal agent answers
-        // `None` and the session keeps the Lua-declared set.
-        let agent_modes = agent.get_modes().cloned();
+        // What the agent declared about itself, read once here while nothing
+        // holds the handle. An ACP agent sends this in the `session/new`
+        // reply, so this is the first moment it exists; an internal agent
+        // declares nothing and the session keeps Crucible's own settings.
+        let surface = crate::agent_manager::slot::AgentSurface {
+            modes: agent.get_modes().cloned(),
+            config_options: agent.agent_config_options().to_vec(),
+        };
+        let agent_modes = surface.modes.clone();
 
         // Tell the clients when the agent's own mode set replaces the one they
         // are showing. An ACP agent's modes arrive with the handshake, so a
@@ -718,7 +722,7 @@ impl AgentManager {
         // (valid for the config it read) and simply goes uncached, so the next
         // turn rebuilds from the new config.
         let agent = Arc::new(Mutex::new(agent));
-        if !slot.install_agent(generation, &agent, agent_modes) {
+        if !slot.install_agent(generation, &agent, surface) {
             debug!(
                 session_id = %session_id,
                 "session config changed during agent build; serving this turn uncached"
