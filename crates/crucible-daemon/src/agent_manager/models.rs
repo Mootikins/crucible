@@ -418,6 +418,7 @@ impl AgentManager {
 
         let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
         mutator(&mut agent_config)?;
+        let is_acp = agent_config.agent_type == "acp";
         session.agent = Some(agent_config);
 
         self.session_manager
@@ -425,7 +426,21 @@ impl AgentManager {
             .await
             .map_err(AgentError::Session)?;
 
-        self.invalidate_agent_cache(session_id);
+        // Eviction exists so the next turn rebuilds a handle that baked the
+        // old value in. An ACP handle bakes in none of these fields — it is
+        // built from the agent name and its environment, which only
+        // `configure_agent` changes — so for an ACP session the rebuild would
+        // produce the same handle.
+        //
+        // And it would not be free. Dropping the last `Arc` to an
+        // `AcpAgentHandle` sends `session/close` and then SIGKILLs the agent
+        // process, so changing the temperature killed the agent. The
+        // conversation came back only if that agent answers `session/resume`;
+        // one that refuses with anything but `-32601` cannot reconnect at all.
+        // `set_mode` already refuses to evict for this reason.
+        if !is_acp {
+            self.invalidate_agent_cache(session_id);
+        }
         on_updated();
 
         if let Some(tx) = event_tx {
