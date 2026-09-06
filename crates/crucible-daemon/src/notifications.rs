@@ -300,7 +300,6 @@ mod tests {
     use crucible_lua::NotifyRequest;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
     use tokio::sync::broadcast;
 
     struct Fixture {
@@ -589,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn notify_refuses_a_full_queue_and_the_drain_empties_it() {
-        let f = fixture();
+        let mut f = fixture();
         let sink = f.hub.sink(None);
         for i in 0..NOTIFY_QUEUE {
             NotificationSink::notify(&*sink, request(&format!("m{i}"), None, None, None)).unwrap();
@@ -600,20 +599,25 @@ mod tests {
         assert_eq!(err, "notification queue full");
 
         f.hub.spawn_drain();
+        // Every stored notification syncs the ring file to disk, so the
+        // drain runs at the speed of the disk. A clock deadline measures the
+        // disk, not the drain: a slow CI disk failed it. Wait for the event
+        // of the last message instead. `add` stores before it fans out, so
+        // the ring is complete when that event arrives. The queue holds more
+        // than the event channel, so the receiver lags. That is not a fault.
         let last = format!("m{}", NOTIFY_QUEUE - 1);
-        let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let listed = f.hub.list(None, &[], true);
-            if listed.first().is_some_and(|n| n.message == last) {
-                assert_eq!(listed.len(), RING);
-                assert!(listed.iter().all(|n| n.message != "overflow"));
-                break;
+            match f.events.recv().await {
+                Ok(event) if event.data["notification"]["message"] == last => break,
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => {
+                    panic!("the event channel closed before the drain finished")
+                }
             }
-            assert!(
-                Instant::now() < deadline,
-                "the drain did not empty the queue"
-            );
-            tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        let listed = f.hub.list(None, &[], true);
+        assert_eq!(listed.len(), RING);
+        assert_eq!(listed[0].message, last, "newest first");
+        assert!(listed.iter().all(|n| n.message != "overflow"));
     }
 }
