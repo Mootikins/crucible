@@ -164,14 +164,20 @@ impl<W: Write> OutputBuffer<W> {
             .find(|&i| prev.lines[i] != next.lines[i])
             .unwrap_or(common);
 
-        // Bound the repaint to rows still on screen. A larger move would reach
-        // the top of the screen and paint over the wrong rows.
+        // Bound the repaint to rows still on screen. A larger move would
+        // reach the top of the screen and paint over the wrong rows.
+        //
+        // The bound is a degradation, not a repair. The terminal owns every
+        // row above the screen, so those keep the old text, and a change that
+        // moved the line count leaves the tail one row off with a blank below
+        // it. Only a transcript that appends above the tail avoids both. See
+        // `a_change_above_the_visible_window_still_leaves_the_screen_correct`.
         let floor = Self::first_addressable_line(&prev, self.terminal_height);
         if first_diff < floor {
-            tracing::debug!(
+            tracing::warn!(
                 first_diff,
                 floor,
-                "change sits above the visible window; the terminal keeps those rows"
+                "a written row changed above the visible window; the terminal keeps the old text"
             );
             first_diff = floor;
         }
@@ -457,6 +463,65 @@ mod tests {
             retained.lines.last().map(String::as_str),
             Some("line99"),
             "the cap must drop the oldest rows, not the newest"
+        );
+    }
+
+    /// What the renderer can and cannot repair when a caller rewrites a row
+    /// above the visible window.
+    ///
+    /// It repairs the screen: the visible rows end up holding the new tail.
+    /// It cannot repair the scrollback, because the terminal owns every row
+    /// that scrolled above the screen, and no escape sequence reaches them.
+    /// So the screen is right and the history above it is stale.
+    ///
+    /// That is why the transcript must be append-only above the tail. The
+    /// renderer degrades here. It does not correct.
+    #[test]
+    fn a_change_above_the_visible_window_still_leaves_the_screen_correct() {
+        let mut buffer = OutputBuffer::with_writer(Vec::new(), 80, 24);
+        buffer.set_max_transcript_rows(1000);
+
+        let first: Vec<String> = (0..50).map(|i| format!("line{i}")).collect();
+        buffer.render_with_overlays(&first.join("\n"), &[]).unwrap();
+        buffer.writer().clear();
+
+        // Remove a line far above the screen. Every line below it moves up.
+        let mut second = first.clone();
+        second.remove(1);
+        buffer
+            .render_with_overlays(&second.join("\n"), &[])
+            .unwrap();
+
+        let written = String::from_utf8_lossy(buffer.writer()).into_owned();
+        // It repaints only from the floor down, so it never reaches a row the
+        // terminal owns.
+        assert!(
+            !written.contains("line0\r\n") && !written.contains("line20\r\n"),
+            "the renderer must not try to repaint a row above the screen: {written:?}"
+        );
+        // The rows it does write hold the new content, in order, to the tail.
+        let painted: Vec<&str> = written
+            .split("\u{1b}[2K")
+            .skip(1)
+            .filter_map(|c| c.split(['\r', '\u{1b}']).next())
+            .collect();
+        assert_eq!(
+            painted.last(),
+            Some(&"line49"),
+            "the repaint must end at the tail: {painted:?}"
+        );
+        assert!(
+            painted.windows(2).all(|w| w[0] != w[1]),
+            "the repaint must not duplicate a row: {painted:?}"
+        );
+        // What it cannot do: the removed line shifted the tail by one, so the
+        // screen ends up one row high with a blank below, and the rows above
+        // the screen keep the old text. Only an append-only transcript avoids
+        // that, which is why the transcript is append-only above the tail.
+        assert_eq!(
+            painted.first(),
+            Some(&"line27"),
+            "the tail lands one row high after a removal: {painted:?}"
         );
     }
 
