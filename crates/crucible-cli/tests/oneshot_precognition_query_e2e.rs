@@ -10,6 +10,10 @@
 //! `user_message` and `precognition_complete` and is what `cru session show`
 //! replays; `meta.json` carries the agent config, which is where the two
 //! one-shot context flags have to land now that the daemon owns grounding.
+//!
+//! The daemon writes both files after the client is gone. To read them, a test
+//! first stops the daemon and waits for its process to exit; see
+//! [`stop_daemon_and_wait`].
 
 // Shared fixture module: this test binary needs only `TestDaemon`, so the rest
 // of the helpers are dead here and live in the files that do use them.
@@ -17,6 +21,8 @@
 mod cli_e2e_helpers;
 
 use cli_e2e_helpers::TestDaemon;
+use std::io::Read;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
@@ -43,8 +49,9 @@ const QUESTION: &str = "what is a kiln?";
 
 /// One `cru chat <flags> <question>` run against its own daemon.
 ///
-/// The daemon and the workspace TempDir are returned so the caller keeps them
-/// alive; dropping the daemon kills it and takes the kiln with it.
+/// The daemon process is already gone when this is returned. The `TestDaemon`
+/// is kept for its temp dir, which holds the session files the assertions
+/// read; dropping it deletes them.
 struct OneShotRun {
     /// The daemon's flat sessions root — sessions no longer live in the kiln.
     sessions: PathBuf,
@@ -82,6 +89,8 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
         .output()
         .expect("run cru chat");
 
+    stop_daemon_and_wait(&daemon);
+
     OneShotRun {
         sessions: daemon.sessions_root(),
         output,
@@ -90,38 +99,63 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
     }
 }
 
+/// Stop the daemon and block until its process exits. After this, every
+/// session file is complete.
+///
+/// `cru chat` exiting does not mean the daemon finished writing. The persist
+/// task (`server/mod.rs`) appends `session.jsonl` off the daemon's broadcast
+/// channel, and on the first event of a session it also rewrites `meta.json`
+/// through `update_last_activity`. That rewrite truncates the file before it
+/// writes, so a reader can see an empty `meta.json` — which is what failed on
+/// CI, as a parse error. Both writes happen after the client already has its
+/// reply. A poll with a wall-clock deadline was the previous answer; it moved
+/// the failure to a slower machine instead of removing it.
+///
+/// A graceful shutdown is the one ordered signal: `Server::run` drains the
+/// persist task before it returns, and the process exits behind it. The test
+/// cannot wait on the daemon's `Child` — `TestDaemon` keeps it private — so it
+/// holds an idle connection instead. The daemon never closes an idle client on
+/// its own; the connection closes when the process exits. EOF here is the exit
+/// itself, and no clock is involved.
+fn stop_daemon_and_wait(daemon: &TestDaemon) {
+    let mut sentinel =
+        UnixStream::connect(&daemon.socket_path).expect("open a sentinel connection to the daemon");
+    let stop = daemon
+        .command()
+        .args(["daemon", "stop"])
+        .output()
+        .expect("run cru daemon stop");
+    let stdout = String::from_utf8_lossy(&stop.stdout);
+    // `cru daemon stop` exits 0 when it finds no daemon. Without this check
+    // that case reads as "stopped" and the wait below never returns.
+    assert!(
+        stop.status.success() && stdout.contains("Daemon stopped"),
+        "cru daemon stop did not reach the daemon. exit {:?}, stdout:\n{stdout}\nstderr:\n{}",
+        stop.status.code(),
+        String::from_utf8_lossy(&stop.stderr)
+    );
+    let mut discard = Vec::new();
+    sentinel
+        .read_to_end(&mut discard)
+        .expect("read the sentinel connection to EOF");
+}
+
 /// The single session directory the run created. Each run gets a fresh daemon
 /// and kiln, so "the only one" is well defined — no timestamp guessing.
 ///
-/// Polled rather than read once: `cru chat -q` exiting does not mean the daemon
-/// has finished writing. The session log is written by the daemon's own
-/// `SessionWriter` task, so the directory can appear milliseconds after the
-/// client process is already gone. Read-once passed on a quiet box and failed
-/// intermittently under load with `got []` — which is how this landed as a flake
-/// in the new `just test gated` tier rather than being caught when it was
-/// written, since nothing ran it.
+/// Read once: the daemon already exited (see [`stop_daemon_and_wait`]), so a
+/// missing directory is a real failure, not an early read.
 fn sole_session_dir(run: &OneShotRun) -> PathBuf {
     let sessions = &run.sessions;
-    // 60s is a deadlock detector, not synchronisation: the loop leaves as soon as
-    // the directory appears, polling every 25ms, so a generous ceiling costs a
-    // fast box nothing. 10s was not generous enough — it failed at 10.86s in the
-    // first full `just ci` run that included the gated tier, where 72 tests
-    // contend and the daemon binary is cold, while passing in 0.56s alone.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    loop {
-        if let Ok(entries) = std::fs::read_dir(sessions) {
-            dirs = entries
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(sessions)
+        .map(|entries| {
+            entries
                 .filter_map(Result::ok)
                 .map(|e| e.path())
                 .filter(|p| p.join("session.jsonl").is_file())
-                .collect();
-        }
-        if dirs.len() == 1 || std::time::Instant::now() >= deadline {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
+                .collect()
+        })
+        .unwrap_or_default();
     dirs.sort();
     assert_eq!(
         dirs.len(),
