@@ -79,6 +79,7 @@ impl OilChatApp {
                     lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
                     diffs,
                     auto_approved,
+                    backgrounded: false,
                 };
                 self.container_list.add_tool_call(tool);
             }

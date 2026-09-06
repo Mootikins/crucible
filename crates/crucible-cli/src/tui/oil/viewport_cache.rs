@@ -71,6 +71,12 @@ pub struct CachedToolCall {
     pub diffs: Vec<FileDiff>,
     /// Which layer granted permission without asking, if any.
     pub auto_approved: Option<String>,
+    /// The call outran the split threshold, so its card is frozen.
+    ///
+    /// A frozen card never changes again. The live copy moves off the
+    /// transcript into `ContainerList::background`, and the finish node is
+    /// appended below. Nothing above the tail is rewritten.
+    pub backgrounded: bool,
 }
 
 impl CachedToolCall {
@@ -92,6 +98,7 @@ impl CachedToolCall {
             lua_primary_arg: None,
             diffs: Vec::new(),
             auto_approved: None,
+            backgrounded: false,
         }
     }
 

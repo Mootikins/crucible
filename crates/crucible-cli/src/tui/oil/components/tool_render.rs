@@ -62,6 +62,8 @@ impl CachedToolCall {
             self.render_error(&display_name, primary_arg, error, width)
         } else if self.complete {
             self.render_complete(&display_name, primary_arg, &result_str, width, show_diffs)
+        } else if self.backgrounded {
+            self.render_backgrounded(&display_name, primary_arg, width)
         } else {
             self.render_running(
                 now,
@@ -261,6 +263,40 @@ impl CachedToolCall {
         } else {
             col(children)
         }
+    }
+
+    /// A call that outran the split threshold, drawn where it was made.
+    ///
+    /// The card is frozen: no spinner, no elapsed time, no streamed output.
+    /// Nothing here reads a clock or changes again, so the row survives a
+    /// scroll out of the repaintable window. The finish node lands below.
+    fn render_backgrounded(&self, display_name: &str, primary_arg: &str, width: usize) -> Node {
+        let t = crate::tui::oil::theme::active();
+        let icon = styled("\u{25B8}", fg(t, t.colors.text_dim));
+        let badge_text = self.source_badge_text();
+        let source_badge = self.render_source_badge();
+        const SUFFIX: &str = "  started in the background";
+        let arg_budget = width.saturating_sub(
+            3 + visible_width(display_name)
+                + visible_width(&badge_text)
+                + 1
+                + visible_width(SUFFIX),
+        );
+        let fitted_arg = fit_arg_to_width(primary_arg, arg_budget);
+        let arg_node = if fitted_arg.is_empty() {
+            Node::Empty
+        } else {
+            styled(format!(" {}", fitted_arg), fg(t, t.colors.text_dim).dim())
+        };
+        row([
+            styled(" ", Style::new()),
+            icon,
+            styled(" ", Style::new()),
+            styled(display_name.to_string(), fg(t, t.colors.text_dim)),
+            source_badge,
+            arg_node,
+            styled(SUFFIX, fg(t, t.colors.text_muted).dim()),
+        ])
     }
 
     fn render_running(
