@@ -128,6 +128,21 @@ pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
         style.table_width(),
         style.blockquote_width(),
         style.margins(),
+        false,
+    )
+}
+
+/// Convert markdown that is still streaming, so a trailing table stays as
+/// source lines until its block closes. Laying that table out on every delta
+/// would reshape rows the terminal has already scrolled away.
+pub fn markdown_to_node_streaming(markdown: &str, style: RenderStyle) -> Node {
+    parse_and_render_internal(
+        markdown,
+        style.text_width(),
+        style.table_width(),
+        style.blockquote_width(),
+        style.margins(),
+        true,
     )
 }
 
@@ -140,5 +155,6 @@ pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_wid
         table_width,
         table_width,
         Margins::default(),
+        false,
     )
 }

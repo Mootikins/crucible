@@ -43,10 +43,7 @@ pub(super) fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
             let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
 
             let prefix = if show_bullet {
-                styled(ASSISTANT_BULLET, {
-                    let t = theme::active();
-                    Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
-                })
+                bullet_node()
             } else {
                 text(" ".repeat(margins.left))
             };
@@ -171,6 +168,41 @@ pub(super) fn render_children(node: &markdown_it::Node, ctx: &mut RenderContext)
     }
 }
 
+/// The ` ● ` that marks the first line of an assistant message.
+fn bullet_node() -> Node {
+    let t = theme::active();
+    styled(
+        ASSISTANT_BULLET,
+        Style::new().fg(t.resolve_color(t.colors.bullet_prefix)),
+    )
+}
+
+/// Render `source` verbatim, one node per line, inside the message margins.
+///
+/// A table that still streams arrives here, because its layout would reshape
+/// the rows already written. See [`super::table::open_table_start`].
+pub(super) fn render_source_lines(source: &str, ctx: &mut RenderContext) {
+    if source.is_empty() {
+        return;
+    }
+    ctx.flush_line();
+    ctx.ensure_block_spacing();
+
+    let margins = ctx.margins;
+    for line in source.lines() {
+        let bullet = margins.show_bullet && ctx.is_first_paragraph;
+        ctx.is_first_paragraph = false;
+        ctx.blocks.push(if bullet {
+            row([bullet_node(), text_node(line)])
+        } else if margins.left > 0 {
+            row([text(" ".repeat(margins.left)), text_node(line)])
+        } else {
+            text_node(line)
+        });
+    }
+    ctx.mark_block_end();
+}
+
 pub(super) fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
     ctx.ensure_block_spacing();
 
@@ -192,10 +224,7 @@ pub(super) fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext
 
     for (i, line) in wrapped.iter().enumerate() {
         let prefix = if i == 0 && show_bullet {
-            styled(ASSISTANT_BULLET, {
-                let t = theme::active();
-                Style::new().fg(t.resolve_color(t.colors.bullet_prefix))
-            })
+            bullet_node()
         } else {
             text(&indent)
         };

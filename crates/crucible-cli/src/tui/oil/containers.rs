@@ -14,7 +14,9 @@ use unicode_width::UnicodeWidthStr;
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
 use crate::tui::oil::components::{render_shell_execution, render_subagent};
-use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
+use crate::tui::oil::markdown::{
+    markdown_to_node_streaming, markdown_to_node_styled, Margins, RenderStyle,
+};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::utils::wrap_words;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
@@ -207,10 +209,16 @@ impl ChatNode {
             }
         }
 
-        // Then markdown content
+        // Then markdown content. While the message streams, a trailing table
+        // stays as source lines: laying it out again on every delta reshapes
+        // rows that may already sit above the repaintable window.
         if !content.is_empty() {
             let style = RenderStyle::natural_with_margins(ctx.width(), margins);
-            let md_node = markdown_to_node_styled(content, style);
+            let md_node = if is_complete {
+                markdown_to_node_styled(content, style)
+            } else {
+                markdown_to_node_streaming(content, style)
+            };
             items.push(md_node);
         }
 
@@ -614,6 +622,55 @@ mod tests {
             .map(|n| render_node(n, show_thinking))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn render_lines(list: &ContainerList) -> Vec<String> {
+        render_list(list, false)
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// A streaming table must not reshape the rows above it. The terminal owns
+    /// every transcript row that scrolled off the screen, so the transcript
+    /// only appends there. A table lays out from the widest cell in the whole
+    /// table, so each new row can rewrite every row before it.
+    #[test]
+    fn a_streaming_table_appends_lines_and_lays_out_when_complete() {
+        let deltas = [
+            "Here are the commands.\n\n",
+            "| Command | What it does |\n",
+            "|---|---|\n",
+            "| `cru chat` | Start a chat |\n",
+            "| `cru session list` | List every session in this project |\n",
+        ];
+
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.start_assistant_response();
+
+        let mut previous: Vec<String> = Vec::new();
+        for delta in deltas {
+            list.append_text(delta);
+            let lines = render_lines(&list);
+            assert!(
+                lines.starts_with(previous.as_slice()),
+                "a delta rewrote earlier lines\nbefore: {previous:#?}\nafter: {lines:#?}"
+            );
+            previous = lines;
+        }
+
+        assert!(
+            !previous.iter().any(|l| l.contains('┌')),
+            "the streaming table must stay as source lines: {previous:#?}"
+        );
+
+        list.complete_response();
+        let complete = render_lines(&list);
+        assert!(
+            complete.iter().any(|l| l.contains('┌')),
+            "the finished table must be laid out: {complete:#?}"
+        );
     }
 
     // ─── Live thinking rendering ───────────────────────────────────────

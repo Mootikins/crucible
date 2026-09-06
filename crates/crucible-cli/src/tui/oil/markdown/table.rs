@@ -19,6 +19,50 @@ mod box_chars {
     pub const CROSS: char = '┼';
 }
 
+/// Byte offset where a trailing table block starts, if that block can still grow.
+///
+/// Table layout is not incremental: one more row can widen a column and so
+/// reshape every row above it. The terminal owns the transcript rows that
+/// scrolled off the screen, so a reshape there cannot be repainted. While a
+/// table streams, the caller renders these source lines verbatim, and
+/// typesets the table when the block closes.
+pub(super) fn open_table_start(markdown: &str) -> Option<usize> {
+    let mut offset = 0;
+    let mut block_start = 0;
+    let mut block_lines = 0usize;
+    let mut has_delimiter = false;
+    let mut fences = 0usize;
+
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fences += 1;
+        }
+        if trimmed.is_empty() {
+            block_start = offset + line.len();
+            block_lines = 0;
+            has_delimiter = false;
+        } else {
+            block_lines += 1;
+            has_delimiter |= is_delimiter_row(trimmed);
+        }
+        offset += line.len();
+    }
+
+    // An odd fence count leaves an open code block. Its lines are literal
+    // already, and a blank line inside it does not start a new block.
+    let open_fence = fences % 2 == 1;
+    (!open_fence && has_delimiter && block_lines >= 2).then_some(block_start)
+}
+
+/// The `|---|:--|` line that separates a table header from its body. A row
+/// needs a pipe, so `---` alone stays a thematic break or a setext heading.
+fn is_delimiter_row(line: &str) -> bool {
+    line.contains('|')
+        && line.contains('-')
+        && line.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
+}
+
 pub(super) fn render_table(node: &markdown_it::Node, ctx: &mut RenderContext) {
     ctx.flush_line();
     ctx.ensure_block_spacing();
