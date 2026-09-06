@@ -155,12 +155,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set context strategy: {}", e))?;
             }
-            SetRpcAction::SetContextWindow(window) => {
-                client
-                    .session_set_context_window(&session_id, *window)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set context window: {}", e))?;
-            }
             SetRpcAction::SetOutputValidation(validation) => {
                 client
                     .session_set_output_validation(&session_id, validation)

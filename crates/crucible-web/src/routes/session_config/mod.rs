@@ -37,8 +37,7 @@ pub(super) use basic::{
     set_precognition_results, set_temperature, set_thinking_budget,
 };
 pub(super) use context::{
-    get_autocompact_threshold, get_context_budget, get_context_window, set_autocompact_threshold,
-    set_context_budget, set_context_window,
+    get_autocompact_threshold, get_context_budget, set_autocompact_threshold, set_context_budget,
 };
 pub(super) use execution::{
     get_execution_timeout, get_max_iterations, get_validation_retries, set_execution_timeout,
@@ -100,10 +99,6 @@ pub(super) fn config_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/context-budget",
             put(set_context_budget).get(get_context_budget),
-        )
-        .route(
-            "/api/session/{id}/config/context-window",
-            put(set_context_window).get(get_context_window),
         )
         .route(
             "/api/session/{id}/config/autocompact-threshold",

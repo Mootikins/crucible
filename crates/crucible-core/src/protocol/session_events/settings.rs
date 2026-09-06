@@ -82,10 +82,6 @@ pub enum SettingsPayload {
         #[serde(default)]
         context_strategy: String,
     },
-    ContextWindowChanged {
-        #[serde(default)]
-        context_window: Option<usize>,
-    },
     OutputValidationChanged {
         #[serde(default)]
         output_validation: String,

@@ -917,10 +917,6 @@ async fn apply_rpc_action(
                 Err(e) => Err(e),
             }
         }
-        SetRpcAction::SetContextWindow(window) => handle
-            .set_context_window(window)
-            .await
-            .map_err(|e| e.to_string()),
         SetRpcAction::SetOutputValidation(ref validation_str) => {
             match validation_str.parse::<crucible_core::session::OutputValidation>() {
                 Ok(validation) => handle

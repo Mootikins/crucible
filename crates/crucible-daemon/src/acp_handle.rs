@@ -591,14 +591,6 @@ impl SessionKnobs for AcpAgentHandle {
         crucible_core::session::ContextStrategy::default()
     }
 
-    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_window".into()))
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        None
-    }
-
     async fn set_output_validation(
         &mut self,
         _validation: crucible_core::session::OutputValidation,

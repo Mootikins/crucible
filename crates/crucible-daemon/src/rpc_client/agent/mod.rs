@@ -50,7 +50,6 @@ pub struct DaemonAgentHandle {
     pub(super) cached_system_prompt: Option<String>,
     pub(super) cached_context_budget: Option<usize>,
     pub(super) cached_context_strategy: Option<String>,
-    pub(super) cached_context_window: Option<usize>,
     pub(super) cached_output_validation: Option<String>,
     pub(super) cached_validation_retries: Option<u32>,
     pub(super) cached_autocompact_threshold: Option<f32>,
@@ -93,7 +92,6 @@ impl DaemonAgentHandle {
             cached_system_prompt: None,
             cached_context_budget: None,
             cached_context_strategy: None,
-            cached_context_window: None,
             cached_output_validation: None,
             cached_validation_retries: None,
             cached_autocompact_threshold: None,
@@ -249,11 +247,6 @@ impl DaemonAgentHandle {
             .flatten();
         self.cached_context_strategy = client
             .session_get_context_strategy(session_id)
-            .await
-            .ok()
-            .flatten();
-        self.cached_context_window = client
-            .session_get_context_window(session_id)
             .await
             .ok()
             .flatten();

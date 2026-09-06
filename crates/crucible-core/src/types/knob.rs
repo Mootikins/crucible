@@ -55,8 +55,6 @@ pub enum SessionKnob {
     ContextBudget,
     /// How context is assembled when it does not fit.
     ContextStrategy,
-    /// The model's context window, when it must be stated rather than known.
-    ContextWindow,
     /// What the turn's output is checked against.
     OutputValidation,
     /// How many times a failed validation is retried.
@@ -192,7 +190,6 @@ impl SessionKnob {
         Self::ExecutionTimeout,
         Self::ContextBudget,
         Self::ContextStrategy,
-        Self::ContextWindow,
         Self::OutputValidation,
         Self::ValidationRetries,
         Self::AutocompactThreshold,
@@ -211,7 +208,6 @@ impl SessionKnob {
             Self::ExecutionTimeout => "execution_timeout",
             Self::ContextBudget => "context_budget",
             Self::ContextStrategy => "context_strategy",
-            Self::ContextWindow => "context_window",
             Self::OutputValidation => "output_validation",
             Self::ValidationRetries => "validation_retries",
             Self::AutocompactThreshold => "autocompact_threshold",
@@ -240,10 +236,9 @@ impl SessionKnob {
 
             // The agent owns its history, so the daemon assembles no context
             // to budget, trim or compact.
-            Self::ContextBudget
-            | Self::ContextStrategy
-            | Self::ContextWindow
-            | Self::AutocompactThreshold => AcpKnob::Absent,
+            Self::ContextBudget | Self::ContextStrategy | Self::AutocompactThreshold => {
+                AcpKnob::Absent
+            }
 
             // Validation runs over a turn the daemon drives.
             Self::OutputValidation | Self::ValidationRetries => AcpKnob::Absent,

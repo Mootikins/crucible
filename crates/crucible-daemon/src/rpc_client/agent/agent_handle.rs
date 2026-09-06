@@ -335,20 +335,6 @@ impl SessionKnobs for DaemonAgentHandle {
             .unwrap_or_default()
     }
 
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, context_window = ?window, "Setting context_window via daemon");
-        self.client
-            .session_set_context_window(&self.session_id, window)
-            .await
-            .chat_comm()?;
-        self.cached_context_window = window;
-        Ok(())
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        self.cached_context_window
-    }
-
     async fn set_output_validation(
         &mut self,
         validation: crucible_core::session::OutputValidation,

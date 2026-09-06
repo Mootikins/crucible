@@ -152,7 +152,6 @@ These sync to the daemon and are session-scoped:
 |--------|------|-------------|
 | `contextbudget` | number/`none` | Context token budget (alias: `context_budget`) |
 | `contextstrategy` | enum | `truncate`, `sliding_window`, or `summarize` |
-| `contextwindow` | number/`none` | Sliding window size in message pairs |
 | `autocompact_threshold` | 0.0–1.0/`off`/`default` | Auto-compaction trigger as a fraction of the context budget |
 
 ### Precognition

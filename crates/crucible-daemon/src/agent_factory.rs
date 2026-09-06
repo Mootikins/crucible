@@ -797,7 +797,6 @@ pub async fn create_agent_from_session_config(
     .with_context_settings(
         agent_config.context_budget,
         agent_config.context_strategy.clone(),
-        agent_config.context_window,
     );
     let handle = match modes.clone() {
         Some(registry) => handle.with_modes(registry),

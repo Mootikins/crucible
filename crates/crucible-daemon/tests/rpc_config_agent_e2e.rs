@@ -128,7 +128,6 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
@@ -361,7 +360,6 @@ async fn test_configure_agent_sets_agent() {
         execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
@@ -598,12 +596,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         client.session_set_context_strategy(&sid, "sliding_window"),
         client.session_get_context_strategy(&sid),
         Some("sliding_window".to_string())
-    );
-    round_trip!(
-        "context_window",
-        client.session_set_context_window(&sid, Some(20)),
-        client.session_get_context_window(&sid),
-        Some(20)
     );
     round_trip!(
         "output_validation",

@@ -79,7 +79,6 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 #[test_case("executiontimeout=30" ; "execution timeout")]
 #[test_case("contextbudget=128000" ; "context budget")]
 #[test_case("contextstrategy=truncate" ; "context strategy")]
-#[test_case("contextwindow=20" ; "context window")]
 #[test_case("outputvalidation=off" ; "output validation")]
 #[test_case("validationretries=2" ; "validation retries")]
 #[test_case("precognition.results=8" ; "precognition results")]

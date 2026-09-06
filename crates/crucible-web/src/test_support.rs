@@ -573,8 +573,6 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // reads `null` instead of coincidentally matching.
         "session.set_context_budget" => json!(null),
         "session.get_context_budget" => json!({"context_budget": 111}),
-        "session.set_context_window" => json!(null),
-        "session.get_context_window" => json!({"context_window": 222}),
         "session.set_autocompact_threshold" => json!(null),
         "session.get_autocompact_threshold" => json!({"autocompact_threshold": 0.75}),
         "session.set_max_iterations" => json!(null),

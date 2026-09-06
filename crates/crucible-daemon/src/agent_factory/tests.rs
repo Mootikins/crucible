@@ -60,7 +60,6 @@ fn test_agent_config() -> SessionAgent {
         execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
         output_validation: Default::default(),
         validation_retries: 3,
         autocompact_threshold: None,
@@ -486,7 +485,6 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         // built with a default strategy would satisfy the assertion
         // without ever having read the session's choice.
         context_strategy: crucible_core::session::ContextStrategy::SlidingWindow,
-        context_window: Some(128_000),
         ..test_agent_config()
     };
 
@@ -525,7 +523,6 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         crucible_core::session::ContextStrategy::SlidingWindow,
         "context_strategy"
     );
-    assert_eq!(handle.get_context_window(), Some(128_000), "context_window");
 }
 
 #[tokio::test]

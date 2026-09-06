@@ -12,7 +12,6 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 // initialization" at import time, not at assert time.
 const mockSetters = vi.hoisted(() => ({
   setContextBudget: vi.fn(),
-  setContextWindow: vi.fn(),
   setAutocompactThreshold: vi.fn(),
   setMaxIterations: vi.fn(),
   setExecutionTimeout: vi.fn(),
@@ -24,7 +23,6 @@ const mockSetters = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   getContextBudget: vi.fn().mockResolvedValue(111),
-  getContextWindow: vi.fn().mockResolvedValue(222),
   getAutocompactThreshold: vi.fn().mockResolvedValue(0.75),
   getMaxIterations: vi.fn().mockResolvedValue(33),
   getExecutionTimeout: vi.fn().mockResolvedValue(44),
@@ -65,7 +63,6 @@ describe('AdvancedSessionSettings', () => {
     await waitFor(() =>
       expect((screen.getByTestId('context-budget-input') as HTMLInputElement).value).toBe('111'),
     );
-    expect((screen.getByTestId('context-window-input') as HTMLInputElement).value).toBe('222');
     expect((screen.getByTestId('autocompact-threshold-input') as HTMLInputElement).value).toBe(
       '0.75',
     );
@@ -89,7 +86,6 @@ describe('AdvancedSessionSettings', () => {
 
     const cases: [string, keyof typeof mockSetters, string, number][] = [
       ['context-budget-input', 'setContextBudget', '8000', 8000],
-      ['context-window-input', 'setContextWindow', '32000', 32000],
       ['max-iterations-input', 'setMaxIterations', '12', 12],
       ['execution-timeout-input', 'setExecutionTimeout', '300', 300],
       ['validation-retries-input', 'setValidationRetries', '3', 3],

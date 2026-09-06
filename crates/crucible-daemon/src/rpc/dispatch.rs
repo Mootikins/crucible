@@ -155,8 +155,6 @@ rpc_methods! {
     SessionGetContextBudget = "session.get_context_budget",
     SessionSetContextStrategy = "session.set_context_strategy",
     SessionGetContextStrategy = "session.get_context_strategy",
-    SessionSetContextWindow = "session.set_context_window",
-    SessionGetContextWindow = "session.get_context_window",
     SessionSetOutputValidation = "session.set_output_validation",
     SessionGetOutputValidation = "session.get_output_validation",
     SessionSetValidationRetries = "session.set_validation_retries",
@@ -366,7 +364,6 @@ impl RpcDispatcher {
             | RpcMethod::SessionSetExecutionTimeout
             | RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
-            | RpcMethod::SessionSetContextWindow
             | RpcMethod::SessionSetOutputValidation
             | RpcMethod::SessionSetValidationRetries
             | RpcMethod::SessionSetSystemPrompt
@@ -383,7 +380,6 @@ impl RpcDispatcher {
             | RpcMethod::SessionGetExecutionTimeout
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
-            | RpcMethod::SessionGetContextWindow
             | RpcMethod::SessionGetOutputValidation
             | RpcMethod::SessionGetValidationRetries
             | RpcMethod::SessionGetSystemPrompt
@@ -1331,7 +1327,6 @@ impl RpcDispatcher {
             "session.set_execution_timeout" => handle_session_set_execution_timeout,
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
-            "session.set_context_window" => handle_session_set_context_window,
             "session.set_output_validation" => handle_session_set_output_validation,
             "session.set_validation_retries" => handle_session_set_validation_retries,
             "session.set_system_prompt" => handle_session_set_system_prompt,
@@ -1355,7 +1350,6 @@ impl RpcDispatcher {
             "session.get_execution_timeout" => handle_session_get_execution_timeout,
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
-            "session.get_context_window" => handle_session_get_context_window,
             "session.get_output_validation" => handle_session_get_output_validation,
             "session.get_validation_retries" => handle_session_get_validation_retries,
             "session.get_system_prompt" => handle_session_get_system_prompt,

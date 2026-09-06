@@ -30,8 +30,18 @@ pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration
 const TOOL_SCHEMA_BUDGET_SHARE: f64 = 0.15;
 
 /// Effective-budget fallback used when a session sets neither `context_budget`
-/// nor `context_window`. A conservative modern context size.
+/// A conservative modern context size.
 const DEFAULT_ASSUMED_CONTEXT: usize = 128_000;
+
+/// Message pairs that `SlidingWindow` and `Summarize` keep.
+///
+/// This was a session knob, `context_window`, with two readers and two units:
+/// message pairs here, tokens in `visible_tools`. No value was right for both.
+/// `visible_tools` now reads `context_budget`, which is honestly a token
+/// count, and the pair count is the constant it already was — the knob only
+/// took effect when `context_budget` was also set, and nothing documented
+/// that combination.
+const KEEP_MESSAGE_PAIRS: usize = 10;
 
 /// Apply Anthropic prompt caching to a message list.
 ///
@@ -398,7 +408,6 @@ pub struct GenaiAgentHandle {
     max_tokens: Option<u32>,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
-    context_window: Option<usize>,
     output_validation: OutputValidation,
     validation_retries: u32,
     autocompact_threshold: Option<f32>,
@@ -550,7 +559,6 @@ fn enforce_context_budget(
     messages: &mut Vec<ChatMessage>,
     budget: Option<usize>,
     strategy: &ContextStrategy,
-    window: Option<usize>,
 ) -> BudgetAction {
     let Some(budget) = budget else {
         return BudgetAction::NoChange;
@@ -567,8 +575,7 @@ fn enforce_context_budget(
             BudgetAction::Mutated
         }
         ContextStrategy::SlidingWindow => {
-            let keep = window.unwrap_or(10);
-            let keep_count = keep * 2; // user + assistant pairs
+            let keep_count = KEEP_MESSAGE_PAIRS * 2; // user + assistant pairs
             let system_count = messages
                 .iter()
                 .take_while(|m| m.role == genai::chat::ChatRole::System)
@@ -585,8 +592,7 @@ fn enforce_context_budget(
             // can replace the placeholder with an LLM summary. Ignoring
             // the returned `NeedsSummarize` is safe — the placeholder
             // is itself a usable (if static) elision marker.
-            let keep = window.unwrap_or(10);
-            let keep_count = keep * 2;
+            let keep_count = KEEP_MESSAGE_PAIRS * 2;
             let system_count = messages
                 .iter()
                 .take_while(|m| m.role == genai::chat::ChatRole::System)
@@ -785,7 +791,6 @@ impl GenaiAgentHandle {
             max_tokens: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: 3,
             autocompact_threshold: None,
@@ -817,19 +822,16 @@ impl GenaiAgentHandle {
         self
     }
 
-    /// Context-window settings the session chose: the budget to keep under,
-    /// what to do when it is exceeded, and the model's window when the
-    /// provider does not report one.
+    /// Context settings the session chose: the budget to keep under, and what
+    /// to do when it is exceeded.
     #[must_use]
     pub fn with_context_settings(
         mut self,
         budget: Option<usize>,
         strategy: ContextStrategy,
-        window: Option<usize>,
     ) -> Self {
         self.context_budget = budget;
         self.context_strategy = strategy;
-        self.context_window = window;
         self
     }
 
@@ -996,10 +998,7 @@ impl GenaiAgentHandle {
             };
         }
 
-        let effective_budget = self
-            .context_budget
-            .or(self.context_window)
-            .unwrap_or(DEFAULT_ASSUMED_CONTEXT);
+        let effective_budget = self.context_budget.unwrap_or(DEFAULT_ASSUMED_CONTEXT);
         let threshold = (TOOL_SCHEMA_BUDGET_SHARE * effective_budget as f64) as usize;
         let over_budget = tool_schema_tokens(&write_filtered) > threshold;
 
@@ -1102,7 +1101,6 @@ impl GenaiAgentHandle {
         let max_tool_depth = self.max_tool_depth;
         let context_budget = self.context_budget;
         let context_strategy = self.context_strategy.clone();
-        let context_window = self.context_window;
 
         let stream = Box::pin(async_stream::stream! {
             // Budget enforcement happens here (inside async) so the
@@ -1112,7 +1110,6 @@ impl GenaiAgentHandle {
                 &mut messages,
                 context_budget,
                 &context_strategy,
-                context_window,
             );
             if let BudgetAction::NeedsSummarize { placeholder_idx, drained } = action {
                 match summarize_via_backend(&client, &model_name, &drained).await {
@@ -1598,15 +1595,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     fn get_context_strategy(&self) -> ContextStrategy {
         self.context_strategy.clone()
-    }
-
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
-        self.context_window = window;
-        Ok(())
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        self.context_window
     }
 
     async fn set_output_validation(
@@ -2590,6 +2578,45 @@ mod tests {
         );
     }
 
+    /// Tool deferral must read a token count, and only a token count.
+    ///
+    /// `context_window` used to feed this through `context_budget.or(..)`,
+    /// but its other reader treated it as message pairs. A user following
+    /// the documented usage — `:set contextwindow=10`, ten pairs — got
+    /// `threshold = 0.15 * 10 = 1` token here, so every deferrable tool
+    /// vanished from every request while the sliding window they asked for
+    /// never ran (its reader returns early with no `context_budget`).
+    ///
+    /// The knob is gone. This pins the two facts that replaced it: with no
+    /// `context_budget` the threshold is the 128k assumption, and a
+    /// pair-sized number can no longer reach this path at all.
+    #[test]
+    fn tool_deferral_reads_only_a_token_budget() {
+        let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+
+        // No context_budget: the 128k assumption applies, and six small
+        // gateway schemas are far under 15% of it.
+        let handle =
+            test_handle_with_tools(gateway.clone()).with_deferrable_tools(deferrable.clone());
+        let visible = handle.visible_tools();
+        assert_eq!(
+            visible.deferred_count, 0,
+            "with no token budget the assumption is {DEFAULT_ASSUMED_CONTEXT}, not a pair count"
+        );
+
+        // A pair-sized number is only meaningful to the window, and the
+        // window is a constant now. Setting the token budget that low is
+        // still honoured, which is the point: this path takes tokens.
+        let mut tight = test_handle_with_tools(gateway).with_deferrable_tools(deferrable);
+        tight.context_budget = Some(KEEP_MESSAGE_PAIRS);
+        assert!(
+            tight.visible_tools().deferred_count > 0,
+            "a 10-token budget defers; that is what a token budget means"
+        );
+    }
+
     #[test]
     fn visible_tools_under_budget_attaches_all_and_no_bridge() {
         let gateway: Vec<_> = (0..3).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
@@ -2970,20 +2997,14 @@ mod tests {
     #[test]
     fn summarize_returns_needs_summarize_action() {
         let long = "x".repeat(40);
-        let mut messages = vec![
-            sys("system"),
-            user(&long),
-            asst(&long),
-            user(&long),
-            asst(&long),
-            user("current"),
-        ];
-        let action = enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::Summarize,
-            Some(1),
-        );
+        // More pairs than the window keeps, so there is something to drain.
+        let mut messages = vec![sys("system")];
+        for _ in 0..KEEP_MESSAGE_PAIRS + 2 {
+            messages.push(user(&long));
+            messages.push(asst(&long));
+        }
+        messages.push(user("current"));
+        let action = enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
         match action {
             BudgetAction::NeedsSummarize {
                 placeholder_idx,
@@ -3009,22 +3030,14 @@ mod tests {
     fn truncate_and_window_do_not_request_summarization() {
         let long = "x".repeat(40);
         let mut messages = vec![sys("system"), user(&long), asst(&long), user("current")];
-        let action = enforce_context_budget(
-            &mut messages.clone(),
-            Some(12),
-            &ContextStrategy::Truncate,
-            None,
-        );
+        let action =
+            enforce_context_budget(&mut messages.clone(), Some(12), &ContextStrategy::Truncate);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange
         ));
-        let action = enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::SlidingWindow,
-            Some(1),
-        );
+        let action =
+            enforce_context_budget(&mut messages, Some(12), &ContextStrategy::SlidingWindow);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange
@@ -3054,24 +3067,15 @@ mod tests {
         // Use long messages so token estimates exceed the small budget;
         // estimate_message_tokens uses chars/4.
         let long = "x".repeat(40); // 10 tokens
-        let mut messages = vec![
-            sys("system"),
-            user(&long),
-            asst(&long),
-            user(&long),
-            asst(&long),
-            user(&long),
-            asst(&long),
-            user("current question"),
-        ];
-        // Budget=12 means the 80-token total triggers drainage; window=1
-        // keeps the last 2 messages.
-        enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::Summarize,
-            Some(1),
-        );
+        let mut messages = vec![sys("system")];
+        for _ in 0..KEEP_MESSAGE_PAIRS + 2 {
+            messages.push(user(&long));
+            messages.push(asst(&long));
+        }
+        messages.push(user("current question"));
+        // The total is far over budget, and there are more pairs than the
+        // window keeps, so the drain runs.
+        enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
 
         let placeholder_present = messages.iter().any(|m| {
             m.role == genai::chat::ChatRole::System
@@ -3092,12 +3096,7 @@ mod tests {
     fn summarize_noop_when_under_budget() {
         let mut messages = vec![sys("S"), user("hi"), asst("hello")];
         let before_len = messages.len();
-        enforce_context_budget(
-            &mut messages,
-            Some(10_000),
-            &ContextStrategy::Summarize,
-            None,
-        );
+        enforce_context_budget(&mut messages, Some(10_000), &ContextStrategy::Summarize);
         assert_eq!(messages.len(), before_len);
         assert!(!messages
             .iter()
@@ -3109,19 +3108,13 @@ mod tests {
     fn summarize_placeholder_reports_dropped_count() {
         let long = "x".repeat(40);
         let mut messages = vec![sys("S")];
-        // 8 long turns past the system prompt; window=1 keeps the last 2.
-        for _ in 0..4 {
+        for _ in 0..KEEP_MESSAGE_PAIRS + 4 {
             messages.push(user(&long));
             messages.push(asst(&long));
         }
         messages.push(user("current"));
 
-        enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::Summarize,
-            Some(1),
-        );
+        enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
 
         let placeholder = messages
             .iter()

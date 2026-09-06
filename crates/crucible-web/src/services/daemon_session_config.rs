@@ -54,35 +54,6 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_set_context_window(
-        &self,
-        session_id: &str,
-        context_window: Option<usize>,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_context_window", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_context_window(&session_id, context_window)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_context_window(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<usize>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_context_window", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_context_window(&session_id).await })
-        })
-        .await
-    }
-
     pub async fn session_set_autocompact_threshold(
         &self,
         session_id: &str,

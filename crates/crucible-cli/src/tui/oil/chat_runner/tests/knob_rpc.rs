@@ -82,10 +82,6 @@ impl SessionKnobs for KnobRecordingAgent {
         self.calls.push("set_context_strategy");
         Ok(())
     }
-    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
-        self.calls.push("set_context_window");
-        Ok(())
-    }
     async fn set_output_validation(
         &mut self,
         _validation: crucible_core::session::OutputValidation,
@@ -166,10 +162,6 @@ impl SessionKnobs for KnobRecordingAgent {
         crucible_core::session::ContextStrategy::default()
     }
 
-    fn get_context_window(&self) -> Option<usize> {
-        None
-    }
-
     fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
         &crucible_core::session::OutputValidation::None
     }
@@ -225,7 +217,6 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("executiontimeout=30", "set_execution_timeout" ; "execution timeout")]
 #[test_case("contextbudget=128000", "set_context_budget" ; "context budget")]
 #[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
-#[test_case("contextwindow=20", "set_context_window" ; "context window")]
 #[test_case("outputvalidation=json", "set_output_validation" ; "output validation")]
 #[test_case("validationretries=2", "set_validation_retries" ; "validation retries")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
@@ -431,14 +422,6 @@ impl SessionKnobs for ModeListingAgent {
 
     fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
         crucible_core::session::ContextStrategy::default()
-    }
-
-    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_window".into()))
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        None
     }
 
     async fn set_output_validation(

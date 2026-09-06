@@ -174,7 +174,6 @@ fn test_output_validation_serde_roundtrip() {
         execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
         output_validation: OutputValidation::Json,
         validation_retries: 5,
         autocompact_threshold: None,

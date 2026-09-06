@@ -195,14 +195,6 @@ session_config_setter!(
 );
 
 session_config_setter!(
-    handle_session_set_context_window,
-    req,
-    set_context_window,
-    "context_window",
-    optional_param!(req, "context_window", as_u64).map(|v| v as usize)
-);
-
-session_config_setter!(
     handle_session_set_validation_retries,
     req,
     set_validation_retries,
@@ -262,11 +254,6 @@ session_config_getter!(
     handle_session_get_context_budget,
     get_context_budget,
     "context_budget"
-);
-session_config_getter!(
-    handle_session_get_context_window,
-    get_context_window,
-    "context_window"
 );
 session_config_getter!(
     handle_session_get_validation_retries,

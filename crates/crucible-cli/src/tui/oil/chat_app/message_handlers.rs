@@ -208,7 +208,6 @@ impl OilChatApp {
             | ChatAppMsg::SetExecutionTimeout(_)
             | ChatAppMsg::SetContextBudget(_)
             | ChatAppMsg::SetContextStrategy(_)
-            | ChatAppMsg::SetContextWindow(_)
             | ChatAppMsg::SetOutputValidation(_)
             | ChatAppMsg::SetValidationRetries(_)
             | ChatAppMsg::SetPrecognition(_)

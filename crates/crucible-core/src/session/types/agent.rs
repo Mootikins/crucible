@@ -102,10 +102,6 @@ pub struct SessionAgent {
     #[serde(default)]
     pub context_strategy: ContextStrategy,
 
-    /// For SlidingWindow strategy: keep last N message pairs. None = 10 (default).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_window: Option<usize>,
-
     /// Output validation mode for agent text responses.
     #[serde(default)]
     pub output_validation: OutputValidation,
@@ -176,7 +172,6 @@ impl SessionAgent {
             execution_timeout_secs: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
             autocompact_threshold: None,
@@ -301,7 +296,6 @@ impl SessionAgent {
             execution_timeout_secs: base.execution_timeout_secs,
             context_budget: base.context_budget,
             context_strategy: base.context_strategy.clone(),
-            context_window: base.context_window,
             output_validation: base.output_validation.clone(),
             validation_retries: base.validation_retries,
             autocompact_threshold: base.autocompact_threshold,
@@ -395,7 +389,6 @@ impl SessionAgent {
             execution_timeout_secs: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
             autocompact_threshold: None,

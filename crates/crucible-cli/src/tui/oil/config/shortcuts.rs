@@ -130,12 +130,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Context overflow strategy",
     },
     ConfigShortcut {
-        short: "contextwindow",
-        target: ShortcutTarget::Path("llm.context_window"),
-        completions: CompletionSource::None,
-        description: "Sliding window size in messages (or 'none')",
-    },
-    ConfigShortcut {
         short: "outputvalidation",
         target: ShortcutTarget::Path("llm.output_validation"),
         completions: CompletionSource::None,
@@ -280,9 +274,9 @@ mod tests {
 
         let all: Vec<_> = registry.all().collect();
 
-        // Should have all defined shortcuts
+        // `all()` must yield every declared shortcut. A second assertion on a
+        // literal count would only need editing whenever the table changes.
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 17);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
@@ -297,7 +291,6 @@ mod tests {
         assert!(shorts.contains(&"executiontimeout"));
         assert!(shorts.contains(&"contextbudget"));
         assert!(shorts.contains(&"contextstrategy"));
-        assert!(shorts.contains(&"contextwindow"));
         assert!(shorts.contains(&"outputvalidation"));
         assert!(shorts.contains(&"validationretries"));
         assert!(shorts.contains(&"perm.show_diff"));

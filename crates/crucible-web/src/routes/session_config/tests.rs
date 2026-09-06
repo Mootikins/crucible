@@ -99,18 +99,6 @@ async fn context_budget_round_trips() {
     assert_get_returns("context-budget", "context_budget", json!(111)).await;
 }
 
-#[tokio::test]
-async fn context_window_round_trips() {
-    assert_put_reaches_daemon(
-        "context-window",
-        "session.set_context_window",
-        "context_window",
-        json!(32000),
-    )
-    .await;
-    assert_get_returns("context-window", "context_window", json!(222)).await;
-}
-
 /// Compared with a tolerance, not for equality: the daemon's setter takes
 /// `Option<f32>`, so `0.9` from the browser is narrowed to f32 and widened again
 /// for JSON, arriving as `0.8999999761581421`. That is the daemon's field type,
@@ -244,11 +232,6 @@ async fn clearing_an_optional_knob_never_sends_a_value() {
             "context-budget",
             "session.set_context_budget",
             "context_budget",
-        ),
-        (
-            "context-window",
-            "session.set_context_window",
-            "context_window",
         ),
         (
             "autocompact-threshold",

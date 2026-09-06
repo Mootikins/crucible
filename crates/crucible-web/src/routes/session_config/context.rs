@@ -50,41 +50,6 @@ pub(crate) async fn get_context_budget(
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ContextWindowResponse {
-    context_window: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetContextWindowRequest {
-    context_window: Option<usize>,
-}
-
-pub(crate) async fn set_context_window(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetContextWindowRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_context_window(&id, req.context_window)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_context_window(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ContextWindowResponse>, WebError> {
-    let context_window = state
-        .daemon
-        .session_get_context_window(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(ContextWindowResponse { context_window }))
-}
-
-#[derive(Debug, Serialize)]
 pub(crate) struct AutocompactThresholdResponse {
     autocompact_threshold: Option<f32>,
 }

@@ -118,14 +118,6 @@ pub struct SessionSetContextStrategyRequest {
     pub context_strategy: String,
 }
 
-/// Request for `session.set_context_window`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetContextWindowRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context_window: Option<usize>,
-}
-
 /// Request for `session.set_output_validation`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetOutputValidationRequest {
@@ -810,31 +802,6 @@ impl DaemonClient {
             session_id,
             "context_strategy",
             |v| v.as_str().map(String::from),
-        )
-        .await
-    }
-
-    pub async fn session_set_context_window(
-        &self,
-        session_id: &str,
-        context_window: Option<usize>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_context_window",
-            SessionSetContextWindowRequest {
-                session_id: session_id.to_string(),
-                context_window,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_context_window(&self, session_id: &str) -> Result<Option<usize>> {
-        self.get_session_option(
-            "session.get_context_window",
-            session_id,
-            "context_window",
-            |v| v.as_u64().map(|n| n as usize),
         )
         .await
     }

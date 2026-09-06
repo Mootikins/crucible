@@ -1280,26 +1280,6 @@ export async function setContextBudget(sessionId: string, budget: number | null)
   });
 }
 
-/** Get the context window size. */
-export async function getContextWindow(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ context_window: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/context-window`,
-      { errorMessage: 'Failed to get context window' },
-    )
-  ).context_window;
-}
-
-/** Set the context window size. `null` restores the daemon's default. */
-export async function setContextWindow(sessionId: string, window: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/context-window`, {
-    errorMessage: 'Failed to set context window',
-    parseAs: 'none',
-    ...jsonRequest({ context_window: window }),
-  });
-}
-
 /** Get the autocompact threshold (0..1 fraction of the window). */
 export async function getAutocompactThreshold(sessionId: string): Promise<number | null> {
   return (

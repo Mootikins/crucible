@@ -387,7 +387,6 @@ const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
     ("autocompact_threshold", "autocompact-threshold"),
     ("context_budget", "context-budget"),
     ("context_strategy", "context-strategy"),
-    ("context_window", "context-window"),
     ("execution_timeout", "execution-timeout"),
     ("max_iterations", "max-iterations"),
     ("max_tokens", "max-tokens"),

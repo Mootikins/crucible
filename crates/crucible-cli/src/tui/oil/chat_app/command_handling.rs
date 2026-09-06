@@ -81,7 +81,6 @@ fn help_text(category: Option<&str>) -> String {
             ":set thinkingbudget=medium    — Thinking budget preset\n\
              :set contextbudget=128000     — Context token budget (or 'none')\n\
              :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
-             :set contextwindow=20         — Sliding window size (message pairs)\n\
              :set precognition             — Toggle auto-RAG\n\
              :set thinking           — Show thinking blocks\n\
              :set model=<name>       — Switch LLM model\n\
@@ -499,11 +498,6 @@ impl OilChatApp {
                     .set_str(key, normalized, ModSource::Command);
                 self.send_setting_ack("context_strategy", normalized);
             }
-            SetRpcAction::SetContextWindow(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| n.to_string());
-                self.send_setting_ack("context_window", &display);
-            }
             SetRpcAction::SetOutputValidation(v) => {
                 self.runtime_config.set_str(key, v, ModSource::Command);
                 self.send_setting_ack("output_validation", v);
@@ -650,12 +644,6 @@ impl OilChatApp {
             .get("context_strategy")
             .unwrap_or(ConfigValue::String("truncate".to_string()));
         output.push_str(&format!("  context_strategy: {}\n", ctx_strategy));
-
-        let ctx_window = self
-            .runtime_config
-            .get("context_window")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  context_window: {}\n", ctx_window));
 
         let out_val = self
             .runtime_config

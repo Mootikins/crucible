@@ -173,7 +173,6 @@ impl Group {
             | "context_budget_changed"
             | "autocompact_threshold_changed"
             | "context_strategy_changed"
-            | "context_window_changed"
             | "output_validation_changed"
             | "validation_retries_changed" => Self::Settings,
             // Job (7)

@@ -260,12 +260,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Get the current context truncation strategy.
     fn get_context_strategy(&self) -> crate::session::ContextStrategy;
 
-    /// Set the sliding window size (message pairs to keep). None = default (10).
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()>;
-
-    /// Get the current sliding window size.
-    fn get_context_window(&self) -> Option<usize>;
-
     /// Set output validation mode for agent text responses.
     async fn set_output_validation(
         &mut self,
@@ -419,17 +413,6 @@ macro_rules! impl_unsupported_session_knobs {
             }
             fn get_context_strategy(&self) -> $crate::session::ContextStrategy {
                 $crate::session::ContextStrategy::default()
-            }
-            async fn set_context_window(
-                &mut self,
-                _window: Option<usize>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_context_window".into(),
-                ))
-            }
-            fn get_context_window(&self) -> Option<usize> {
-                None
             }
             async fn set_output_validation(
                 &mut self,
@@ -754,14 +737,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_context_strategy(&self) -> crate::session::ContextStrategy {
         (**self).get_context_strategy()
-    }
-
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
-        (**self).set_context_window(window).await
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        (**self).get_context_window()
     }
 
     async fn set_output_validation(

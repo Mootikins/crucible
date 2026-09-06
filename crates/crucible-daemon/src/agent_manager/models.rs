@@ -944,39 +944,6 @@ impl AgentManager {
         Ok(agent_config.context_strategy)
     }
 
-    pub async fn set_context_window(
-        &self,
-        session_id: &str,
-        window: Option<usize>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ContextWindow,
-            event_tx,
-            "context_window_changed",
-            serde_json::json!({ "context_window": window }),
-            "Failed to emit context_window_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.context_window = window;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    context_window = ?window,
-                    "Context window updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_context_window(&self, session_id: &str) -> Result<Option<usize>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.context_window)
-    }
-
     pub async fn set_output_validation(
         &self,
         session_id: &str,

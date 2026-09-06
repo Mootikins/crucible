@@ -370,23 +370,6 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::SetContextWindow(window) => {
-                        tracing::info!(context_window = ?window, "Setting context_window");
-                        match params.agent.set_context_window(*window).await {
-                            Ok(()) => {
-                                tracing::info!(context_window = ?window, "Context window set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(context_window = ?window, error = %e, "set_context_window failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set context_window failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetOutputValidation(ref validation_str) => {
                         tracing::info!(output_validation = %validation_str, "Setting output_validation");
                         match validation_str.parse::<crucible_core::session::OutputValidation>() {

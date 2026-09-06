@@ -217,11 +217,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             not_found(),
         ),
         (
-            "session.set_context_window",
-            json!({"context_window": 3}),
-            not_found(),
-        ),
-        (
             "session.set_context_strategy",
             json!({"context_strategy": "truncate"}),
             not_found(),

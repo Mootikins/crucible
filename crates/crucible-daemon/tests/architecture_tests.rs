@@ -278,11 +278,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "context_strategy",
     },
     ConfigMethod {
-        suffix: "context_window",
-        request_field: "context_window",
-        result_field: "context_window",
-    },
-    ConfigMethod {
         suffix: "output_validation",
         request_field: "output_validation",
         result_field: "output_validation",

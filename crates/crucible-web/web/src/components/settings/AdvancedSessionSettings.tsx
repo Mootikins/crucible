@@ -21,7 +21,6 @@ import {
   getAutocompactThreshold,
   getContextBudget,
   getContextStrategy,
-  getContextWindow,
   getExecutionTimeout,
   getMaxIterations,
   getOutputValidation,
@@ -30,7 +29,6 @@ import {
   setAutocompactThreshold,
   setContextBudget,
   setContextStrategy,
-  setContextWindow,
   setExecutionTimeout,
   setMaxIterations,
   setOutputValidation,
@@ -67,7 +65,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
 
   const [contextBudget, setContextBudgetSig] = createSignal('');
-  const [contextWindow, setContextWindowSig] = createSignal('');
   const [autocompact, setAutocompactSig] = createSignal('');
   const [maxIterations, setMaxIterationsSig] = createSignal('');
   const [executionTimeout, setExecutionTimeoutSig] = createSignal('');
@@ -103,10 +100,9 @@ export const AdvancedSessionSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, window, threshold, iterations, timeout, retries, strategy, validation, prompt] =
+      const [budget, threshold, iterations, timeout, retries, strategy, validation, prompt] =
         await Promise.all([
           getContextBudget(s.id),
-          getContextWindow(s.id),
           getAutocompactThreshold(s.id),
           getMaxIterations(s.id),
           getExecutionTimeout(s.id),
@@ -117,7 +113,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
         ]);
       const text = (v: number | null) => (v === null ? '' : String(v));
       setContextBudgetSig(text(budget));
-      setContextWindowSig(text(window));
       setAutocompactSig(threshold === null ? '' : String(threshold));
       setMaxIterationsSig(text(iterations));
       setExecutionTimeoutSig(text(timeout));
@@ -177,19 +172,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
           data-testid="context-budget-input"
           onInput={(e) => setContextBudgetSig((e.target as HTMLInputElement).value)}
           onBlur={commitOptionalInt(setContextBudgetSig, setContextBudget, 'context budget')}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Default"
-        />
-      </SettingRow>
-
-      <SettingRow label="Context Window" description="Model window override; empty = default">
-        <input
-          type="number"
-          min={0}
-          value={contextWindow()}
-          data-testid="context-window-input"
-          onInput={(e) => setContextWindowSig((e.target as HTMLInputElement).value)}
-          onBlur={commitOptionalInt(setContextWindowSig, setContextWindow, 'context window')}
           class={`${inputClass} w-28 text-right`}
           placeholder="Default"
         />

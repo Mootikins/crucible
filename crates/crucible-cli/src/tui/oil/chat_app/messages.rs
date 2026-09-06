@@ -172,7 +172,6 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Set context truncation strategy.
     SetContextStrategy(String),
     /// **Command** (TUI → daemon): Set sliding window size (message pairs).
-    SetContextWindow(Option<usize>),
     /// **Command** (TUI → daemon): Set output validation mode.
     SetOutputValidation(String),
     /// **Command** (TUI → daemon): Set validation retry count.
@@ -321,7 +320,6 @@ impl ChatAppMsg {
             | Self::SetExecutionTimeout(_)
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
-            | Self::SetContextWindow(_)
             | Self::SetOutputValidation(_)
             | Self::SetValidationRetries(_)
             | Self::SetPrecognition(_)

@@ -32,7 +32,6 @@ pub enum SetRpcAction {
     SetExecutionTimeout(Option<u64>),
     SetContextBudget(Option<usize>),
     SetContextStrategy(String),
-    SetContextWindow(Option<usize>),
     SetOutputValidation(String),
     SetValidationRetries(u32),
     SetPrecognition(bool),
@@ -234,26 +233,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 }),
             }
         }
-        "contextwindow" | "context_window" => {
-            let window = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
-            {
-                None
-            } else {
-                match value.parse::<usize>() {
-                    Ok(n) => Some(n),
-                    Err(_) => {
-                        return Err(SetError::InvalidValue {
-                            key,
-                            message: format!(
-                                "invalid context_window value: {} (use a number or 'none')",
-                                value
-                            ),
-                        });
-                    }
-                }
-            };
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(window)))
-        }
         "outputvalidation" | "output_validation" => {
             // Validate the value parses correctly
             value
@@ -377,7 +356,6 @@ impl SetRpcAction {
             SetRpcAction::SetExecutionTimeout(n) => Some(ChatAppMsg::SetExecutionTimeout(n)),
             SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
-            SetRpcAction::SetContextWindow(n) => Some(ChatAppMsg::SetContextWindow(n)),
             SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
             SetRpcAction::SetValidationRetries(n) => Some(ChatAppMsg::SetValidationRetries(n)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
@@ -438,8 +416,6 @@ fn is_daemon_rpc_key(key: &str) -> bool {
             | "context_budget"
             | "contextstrategy"
             | "context_strategy"
-            | "contextwindow"
-            | "context_window"
             | "autocompactthreshold"
             | "autocompact_threshold"
             | "precognition.results"
