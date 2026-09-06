@@ -268,6 +268,8 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
 mod tests {
     use super::*;
     use mlua::Lua;
+    #[cfg(feature = "send")]
+    use std::time::Duration;
 
     #[test]
     fn schedule_module_registers_on_cru() {
@@ -321,8 +323,21 @@ mod tests {
         assert!(result.is_err(), "negative interval should error");
     }
 
+    /// Move the virtual clock past one timer deadline, then let the
+    /// spawned schedule task run. `advance` wakes the timer; the extra
+    /// yields give the woken task its turn before the test continues.
     #[cfg(feature = "send")]
-    #[tokio::test]
+    async fn advance_one_tick() {
+        tokio::time::advance(Duration::from_millis(60)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+    }
+
+    // The clock is paused so the timer fires when the test says so, not
+    // when the host is fast enough. This keeps the test free of any
+    // hardware dependency.
+    #[cfg(feature = "send")]
+    #[tokio::test(start_paused = true)]
     async fn schedule_runs_and_can_be_cancelled() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
@@ -345,14 +360,16 @@ mod tests {
 
         assert!(handle > 0, "handle should be positive");
 
-        // Wait for a few ticks
-        tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+        // The spawned task must poll once to register its timer.
+        tokio::task::yield_now().await;
 
+        advance_one_tick().await;
         let count: i64 = lua.load("return _test_count").eval().unwrap();
-        assert!(
-            count >= 1,
-            "callback should have fired at least once, got {count}"
-        );
+        assert_eq!(count, 1, "callback should fire once per interval");
+
+        advance_one_tick().await;
+        let count: i64 = lua.load("return _test_count").eval().unwrap();
+        assert_eq!(count, 2, "callback should fire again on the next interval");
 
         // Cancel
         let cancelled: bool = lua
@@ -361,9 +378,14 @@ mod tests {
             .unwrap();
         assert!(cancelled, "cancel should return true");
 
-        // Record count, wait, confirm no more increments
+        // Let the task see the cancel before the next deadline arrives.
+        tokio::task::yield_now().await;
+
+        // Record count, advance past several deadlines, confirm no more increments
         let count_at_cancel: i64 = lua.load("return _test_count").eval().unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        advance_one_tick().await;
+        advance_one_tick().await;
+        advance_one_tick().await;
         let count_after: i64 = lua.load("return _test_count").eval().unwrap();
         assert_eq!(
             count_at_cancel, count_after,
@@ -372,7 +394,7 @@ mod tests {
     }
 
     #[cfg(feature = "send")]
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn schedule_accepts_table_spec() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
@@ -392,7 +414,9 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // The spawned task must poll once to register its timer.
+        tokio::task::yield_now().await;
+        advance_one_tick().await;
 
         let ran: bool = lua.load("return _table_spec_ran").eval().unwrap();
         assert!(ran, "callback should have fired with table spec");
