@@ -65,22 +65,6 @@ pub struct SessionUndoRequest {
     pub count: Option<usize>,
 }
 
-/// Request for `session.set_max_iterations`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetMaxIterationsRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_iterations: Option<u32>,
-}
-
-/// Request for `session.set_execution_timeout`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetExecutionTimeoutRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_secs: Option<u64>,
-}
-
 /// Request for `session.set_context_budget`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetContextBudgetRequest {
@@ -595,56 +579,6 @@ impl DaemonClient {
         self.get_session_option("session.get_mode", session_id, "mode", |v| {
             v.as_str().map(|s| s.to_string())
         })
-        .await
-    }
-
-    pub async fn session_set_max_iterations(
-        &self,
-        session_id: &str,
-        max_iterations: Option<u32>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_max_iterations",
-            SessionSetMaxIterationsRequest {
-                session_id: session_id.to_string(),
-                max_iterations,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_max_iterations(&self, session_id: &str) -> Result<Option<u32>> {
-        self.get_session_option(
-            "session.get_max_iterations",
-            session_id,
-            "max_iterations",
-            |v| v.as_u64().map(|n| n as u32),
-        )
-        .await
-    }
-
-    pub async fn session_set_execution_timeout(
-        &self,
-        session_id: &str,
-        timeout_secs: Option<u64>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_execution_timeout",
-            SessionSetExecutionTimeoutRequest {
-                session_id: session_id.to_string(),
-                timeout_secs,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_execution_timeout(&self, session_id: &str) -> Result<Option<u64>> {
-        self.get_session_option(
-            "session.get_execution_timeout",
-            session_id,
-            "timeout_secs",
-            |v| v.as_u64(),
-        )
         .await
     }
 

@@ -63,8 +63,6 @@ fn parent_agent(delegation: Option<DelegationConfig>) -> SessionAgent {
         delegation_config: delegation,
         precognition_enabled: false,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),
@@ -917,7 +915,7 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("researcher.md"),
-        "---\ndescription: Explores knowledge\nmodel: llama3.2-card\nmax_turns: 4\ntools:\n  bash: deny\n  semantic_search: true\n---\n\nYou are the researcher card prompt.\n",
+        "---\ndescription: Explores knowledge\nmodel: llama3.2-card\ntools:\n  bash: deny\n  semantic_search: true\n---\n\nYou are the researcher card prompt.\n",
     )
     .unwrap();
 
@@ -945,7 +943,6 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     assert_eq!(agent.agent_type, "internal");
     assert_eq!(agent.agent_card_name.as_deref(), Some("researcher"));
     assert_eq!(agent.model, "llama3.2-card");
-    assert_eq!(agent.max_iterations, Some(4));
     assert!(agent.system_prompt.contains("researcher card prompt"));
     let policy = agent.tool_policy.expect("card tool policy carried");
     assert_eq!(policy["bash"], crucible_core::agent::ToolPolicy::Deny);

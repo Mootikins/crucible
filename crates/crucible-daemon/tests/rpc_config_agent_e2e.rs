@@ -124,8 +124,6 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         delegation_config: None,
         precognition_enabled: true,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),
@@ -288,8 +286,6 @@ async fn test_configure_agent_sets_agent() {
         delegation_config: None,
         precognition_enabled: false,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),
@@ -446,18 +442,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         client.session_set_precognition_results(&sid, 9),
         client.session_get_precognition_results(&sid),
         Some(9)
-    );
-    round_trip!(
-        "max_iterations",
-        client.session_set_max_iterations(&sid, Some(7)),
-        client.session_get_max_iterations(&sid),
-        Some(7)
-    );
-    round_trip!(
-        "execution_timeout",
-        client.session_set_execution_timeout(&sid, Some(120)),
-        client.session_get_execution_timeout(&sid),
-        Some(120)
     );
     round_trip!(
         "context_budget",

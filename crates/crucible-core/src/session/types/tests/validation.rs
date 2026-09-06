@@ -170,8 +170,6 @@ fn test_output_validation_serde_roundtrip() {
         delegation_config: None,
         precognition_enabled: true,
         precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
         output_validation: OutputValidation::Json,

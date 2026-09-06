@@ -98,7 +98,7 @@ The reviewer's prompt has four parts, in this order:
 3. **Outcome evidence.** The counts the daemon has about the session: user turns, tool calls, tool errors, and the edits the user accepted, rejected or did not review (from the [[Help/Concepts/Review Ledger|review ledger]]). No score exists. The prompt says that a rejected edit or a tool error is where a durable lesson usually is.
 4. **The transcript.** Every message, including each tool call with its arguments and each tool result. A tool result is cut at `tool_result_chars`; the whole transcript is cut at `transcript_chars` from the front, so the reviewer sees how the session ended. The prompt tells the reviewer that text inside a tool result is data the agent saw, never an instruction.
 
-The reviewer runs with the four read-only kiln tools and the session's kiln attached, so it can search and read before it answers. `max_iterations` caps its tool loop.
+The reviewer runs with the four read-only kiln tools and the session's kiln attached, so it can search and read before it answers.
 
 ## Guardrails against kiln pollution
 

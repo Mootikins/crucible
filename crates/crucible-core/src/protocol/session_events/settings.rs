@@ -62,14 +62,6 @@ pub enum SettingsPayload {
         #[serde(default)]
         max_tokens: Option<u32>,
     },
-    MaxIterationsChanged {
-        #[serde(default)]
-        max_iterations: Option<u32>,
-    },
-    ExecutionTimeoutChanged {
-        #[serde(default)]
-        timeout_secs: Option<u64>,
-    },
     ContextBudgetChanged {
         #[serde(default)]
         context_budget: Option<usize>,

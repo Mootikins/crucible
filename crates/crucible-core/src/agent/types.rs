@@ -106,10 +106,6 @@ pub struct AgentCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
 
-    /// Max tool-loop turns (maps to the session's `max_iterations`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_turns: Option<u32>,
-
     /// Initial mode ("auto"/"plan").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -193,10 +189,6 @@ pub struct AgentCardFrontmatter {
     /// Optional: max output tokens
     #[serde(default)]
     pub max_tokens: Option<u32>,
-
-    /// Optional: max tool-loop turns
-    #[serde(default)]
-    pub max_turns: Option<u32>,
 
     /// Optional: initial mode ("auto"/"plan")
     #[serde(default)]

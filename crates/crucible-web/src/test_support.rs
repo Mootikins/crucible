@@ -571,12 +571,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.get_context_budget" => json!({"context_budget": 111}),
         "session.set_autocompact_threshold" => json!(null),
         "session.get_autocompact_threshold" => json!({"autocompact_threshold": 0.75}),
-        "session.set_max_iterations" => json!(null),
-        "session.get_max_iterations" => json!({"max_iterations": 33}),
-        "session.set_execution_timeout" => json!(null),
         // `timeout_secs`, NOT `execution_timeout` — the asymmetry the web
         // request/response structs have to honour.
-        "session.get_execution_timeout" => json!({"timeout_secs": 44}),
         "session.set_validation_retries" => json!(null),
         "session.get_validation_retries" => json!({"validation_retries": 5}),
         "session.set_context_strategy" => json!(null),

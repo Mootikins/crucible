@@ -143,10 +143,6 @@ rpc_methods! {
     NotificationDismiss = "notification.dismiss",
     SessionInteractionRespond = "session.interaction_respond",
     SessionPendingInteractions = "session.pending_interactions",
-    SessionSetMaxIterations = "session.set_max_iterations",
-    SessionGetMaxIterations = "session.get_max_iterations",
-    SessionSetExecutionTimeout = "session.set_execution_timeout",
-    SessionGetExecutionTimeout = "session.get_execution_timeout",
     SessionSetContextBudget = "session.set_context_budget",
     SessionGetContextBudget = "session.get_context_budget",
     SessionSetContextStrategy = "session.set_context_strategy",
@@ -352,8 +348,6 @@ impl RpcDispatcher {
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
             RpcMethod::SessionSetThinkingBudget
-            | RpcMethod::SessionSetMaxIterations
-            | RpcMethod::SessionSetExecutionTimeout
             | RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
             | RpcMethod::SessionSetOutputValidation
@@ -365,8 +359,6 @@ impl RpcDispatcher {
             }
             RpcMethod::SessionGetThinkingBudget
             | RpcMethod::SessionGetMode
-            | RpcMethod::SessionGetMaxIterations
-            | RpcMethod::SessionGetExecutionTimeout
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
             | RpcMethod::SessionGetOutputValidation
@@ -1309,8 +1301,6 @@ impl RpcDispatcher {
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
             "session.set_thinking_budget" => handle_session_set_thinking_budget,
-            "session.set_max_iterations" => handle_session_set_max_iterations,
-            "session.set_execution_timeout" => handle_session_set_execution_timeout,
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
             "session.set_output_validation" => handle_session_set_output_validation,
@@ -1329,8 +1319,6 @@ impl RpcDispatcher {
         let resp = dispatch_session_getter!(req, &self.ctx.agents, {
             "session.get_thinking_budget" => handle_session_get_thinking_budget,
             "session.get_mode" => handle_session_get_mode,
-            "session.get_max_iterations" => handle_session_get_max_iterations,
-            "session.get_execution_timeout" => handle_session_get_execution_timeout,
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
             "session.get_output_validation" => handle_session_get_output_validation,

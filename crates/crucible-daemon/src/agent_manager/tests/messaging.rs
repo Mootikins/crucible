@@ -641,12 +641,9 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
 }
 
 /// Mock handle that returns a scripted sequence of stream responses,
-/// one per top-level call to `Agent::turn`. Captures the prompt passed
-/// to each `turn` invocation so tests can assert the depth-cap prompt
-/// was replayed.
+/// one per top-level call to `Agent::turn`.
 struct ScriptedHandle {
     scripts: std::sync::Mutex<Vec<Vec<TurnEvent>>>,
-    captured_prompts: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 #[async_trait::async_trait]
@@ -659,19 +656,12 @@ impl crucible_core::turn::Agent for ScriptedHandle {
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
     ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
-        const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
-
-        self.captured_prompts
-            .lock()
-            .unwrap()
-            .push(ctx.content.clone());
         let scripts = std::mem::take(&mut *self.scripts.lock().unwrap());
         let mut scripts_iter = scripts.into_iter();
-        let captured_prompts = Arc::clone(&self.captured_prompts);
         let mut inbound = ctx.inbound;
 
         let body = async_stream::stream! {
-            'turn: loop {
+            loop {
                 let Some(script) = scripts_iter.next() else {
                     yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
                     return;
@@ -704,18 +694,8 @@ impl crucible_core::turn::Agent for ScriptedHandle {
                         yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
                         return;
                     };
-                    match event {
-                        TurnEvent::ToolResult { id, .. } => {
-                            pending_tool_ids.remove(&id);
-                        }
-                        TurnEvent::DepthCapHit { .. } => {
-                            captured_prompts
-                                .lock()
-                                .unwrap()
-                                .push(DEPTH_CAP_PROMPT.to_string());
-                            continue 'turn;
-                        }
-                        _ => {}
+                    if let TurnEvent::ToolResult { id, .. } = event {
+                        pending_tool_ids.remove(&id);
                     }
                 }
             }
@@ -733,10 +713,9 @@ impl crucible_core::turn::Agent for ScriptedHandle {
 }
 
 impl ScriptedHandle {
-    fn new(scripts: Vec<Vec<TurnEvent>>, captured: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+    fn new(scripts: Vec<Vec<TurnEvent>>) -> Self {
         Self {
             scripts: std::sync::Mutex::new(scripts),
-            captured_prompts: captured,
         }
     }
 }
@@ -764,51 +743,39 @@ fn tool_call_fixture(name: &str, id: &str) -> TurnEvent {
     script::tool_call(id, name, serde_json::json!({ "path": "fixtures/test.md" }))
 }
 
+/// A turn runs as many tool rounds as the model asks for.
+///
+/// There used to be a cap: `max_iterations`, defaulting to 10. On reaching it
+/// the runtime injected a "give your final answer" prompt, and a model that
+/// called a tool anyway failed the turn with `max_tool_depth exceeded`. Ten
+/// rounds is well inside a normal refactor, so the shipped default cut real
+/// work short. The cap is gone; this proves it.
 #[tokio::test]
-async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
-    // Scenario: the model keeps emitting tool calls until we exceed
-    // max_iterations. The runtime should send DepthCapHit on the inbound
-    // channel, the adapter restarts the inner stream with the depth-cap
-    // prompt, the mock replies with final text, and the turn finishes
-    // normally — no "error: max_tool_depth exceeded" ended event.
+async fn a_turn_runs_more_tool_rounds_than_the_old_cap() {
+    const ROUNDS: usize = 14; // the old default was 10
 
     let mut h = ReactorTestHarness::new().await;
-    let mut agent_cfg = test_agent();
-    agent_cfg.max_iterations = Some(2); // cap after 2 tool rounds
-    h.reconfigure(agent_cfg).await;
+    h.reconfigure(test_agent()).await;
 
-    let captured = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-    // Script (each entry = one `Agent::turn` iteration):
-    //   1. initial turn("test")                 → tool_call id=call-1
-    //   2. turn after tool result               → tool_call id=call-2
-    //   3. turn after tool result               → tool_call id=call-3 (would be depth=3, capped)
-    //   4. turn with DEPTH_CAP_PROMPT injection → terminal text "final"
-    h.inject_agent(Box::new(ScriptedHandle::new(
-        vec![
-            vec![tool_call_fixture("read_file", "call-1")],
-            vec![tool_call_fixture("read_file", "call-2")],
-            vec![tool_call_fixture("read_file", "call-3")],
-            vec![script::text("final answer"), script::done()],
-        ],
-        captured.clone(),
-    )));
+    let mut script: Vec<Vec<TurnEvent>> = (0..ROUNDS)
+        .map(|i| vec![tool_call_fixture("read_file", &format!("call-{i}"))])
+        .collect();
+    script.push(vec![script::text("final answer"), script::done()]);
+    h.inject_agent(Box::new(ScriptedHandle::new(script)));
 
     h.send("test").await;
-
     let _ = h.wait_for("user_message").await;
 
-    // Drain until message_complete; the response should contain the
-    // depth-prompt reply "final answer". No "error: max_tool_depth" ended.
     let mut saw_error_ended = false;
-    let complete = timeout(Duration::from_secs(5), async {
+    let complete = timeout(Duration::from_secs(10), async {
         loop {
             match h.event_rx.recv().await {
                 Ok(event) if event.event == "ended" => {
-                    let reason = event.data["reason"]
+                    if event.data["reason"]
                         .as_str()
                         .unwrap_or_default()
-                        .to_string();
-                    if reason.starts_with("error:") {
+                        .starts_with("error:")
+                    {
                         saw_error_ended = true;
                     }
                 }
@@ -824,23 +791,15 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
 
     assert!(
         !saw_error_ended,
-        "depth-cap flow must complete normally, not as error"
+        "{ROUNDS} tool rounds must complete normally, with no cap error"
     );
     assert!(
         complete.data["full_response"]
             .as_str()
             .unwrap_or_default()
             .contains("final answer"),
-        "final response missing depth-prompt reply: {:?}",
+        "the turn must reach the model's own final answer: {:?}",
         complete.data["full_response"]
-    );
-
-    // The runtime must have replayed the depth-cap prompt to the model.
-    let prompts = captured.lock().unwrap();
-    assert!(
-        prompts.iter().any(|p| p.contains("tool call limit")),
-        "depth-cap prompt was not replayed: captured = {:?}",
-        *prompts
     );
 }
 

@@ -67,14 +67,6 @@ impl SessionKnobs for KnobRecordingAgent {
         self.calls.push("set_thinking_budget");
         Ok(())
     }
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        self.calls.push("set_max_iterations");
-        Ok(())
-    }
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        self.calls.push("set_execution_timeout");
-        Ok(())
-    }
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
         self.calls.push("set_context_budget");
         Ok(())
@@ -123,14 +115,6 @@ impl SessionKnobs for KnobRecordingAgent {
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
         None
     }
 
@@ -193,8 +177,6 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 
 #[test_case("model=gpt-4o", "switch_model" ; "model")]
 #[test_case("thinkingbudget=high", "set_thinking_budget" ; "thinking budget")]
-#[test_case("maxiterations=5", "set_max_iterations" ; "max iterations")]
-#[test_case("executiontimeout=30", "set_execution_timeout" ; "execution timeout")]
 #[test_case("contextbudget=128000", "set_context_budget" ; "context budget")]
 #[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
 #[test_case("outputvalidation=json", "set_output_validation" ; "output validation")]
@@ -346,22 +328,6 @@ impl SessionKnobs for ModeListingAgent {
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
         None
     }
 

@@ -1241,11 +1241,6 @@ impl GenaiAgentHandle {
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
     ) -> futures::stream::BoxStream<'a, TurnEvent> {
-        /// Depth-cap prompt sent back to the agent when `max_iterations`
-        /// is reached. Kept in sync with
-        /// `agent_manager::messaging::TOOL_DEPTH_LIMIT_FINAL_PROMPT`.
-        const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
-
         let mut messages = self.context_messages_to_chat(&ctx.messages);
         let mut inbound = ctx.inbound;
 
@@ -1396,15 +1391,6 @@ impl GenaiAgentHandle {
                             // tool results we are still waiting on.
                             attached.push(content);
                         }
-                        TurnEvent::DepthCapHit { .. } => {
-                            drop(chat_stream);
-                            for attachment in attached.drain(..) {
-                                messages.push(ChatMessage::system(&attachment));
-                            }
-                            messages.push(ChatMessage::user(DEPTH_CAP_PROMPT));
-                            chat_stream = self.stream_chat_from_messages(messages.clone());
-                            continue 'turn;
-                        }
                         _ => {}
                     }
                 }
@@ -1511,11 +1497,11 @@ impl AgentHandle for GenaiAgentHandle {
 
 /// The knobs the genai handle does not hold return the empty answer.
 ///
-/// `max_iterations`, `execution_timeout` and `precognition` belong to the
-/// session's `AgentConfig`, not to the handle: the daemon turn loop in
-/// `agent_manager/messaging/send.rs` reads them from the config before it
-/// calls the handle. A value stored here would never reach that loop, so
-/// the handle refuses the setter. `DaemonAgentHandle` answers them by RPC.
+/// `precognition` belongs to the session's `AgentConfig`, not to the handle:
+/// the daemon turn loop in `agent_manager/messaging/send.rs` reads it from the
+/// config before it calls the handle. A value stored here would never reach
+/// that loop, so the handle refuses the setter. `DaemonAgentHandle` answers it
+/// by RPC.
 #[async_trait]
 impl SessionKnobs for GenaiAgentHandle {
     fn get_system_prompt(&self) -> Option<String> {
@@ -1600,22 +1586,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     fn get_autocompact_threshold(&self) -> Option<f32> {
         self.autocompact_threshold
-    }
-
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
     }
 
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {

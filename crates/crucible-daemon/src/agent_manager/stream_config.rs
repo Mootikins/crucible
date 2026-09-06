@@ -20,8 +20,6 @@ pub(crate) struct AgentStreamConfig {
     // copies here left them reaching nothing at all. Fixed in the factory
     // (`with_generation_settings`); the invariant this comment asserts is now
     // pinned by `generation_settings_reach_the_outgoing_chat_options`.
-    pub(crate) max_iterations: Option<u32>,
-    pub(crate) execution_timeout_secs: Option<u64>,
     /// Snapshot of the session's `context_budget` for auto-compaction.
     /// `None` disables auto-compaction (no budget to compare against).
     pub(crate) context_budget: Option<usize>,
@@ -129,8 +127,6 @@ impl AgentStreamConfig {
         } = env;
         Self {
             model: session_agent.model.clone(),
-            max_iterations: session_agent.max_iterations,
-            execution_timeout_secs: session_agent.execution_timeout_secs,
             context_budget: session_agent.context_budget,
             autocompact_threshold: session_agent.autocompact_threshold,
             output_validation: session_agent.output_validation.clone(),

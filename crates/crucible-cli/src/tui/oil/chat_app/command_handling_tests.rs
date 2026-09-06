@@ -75,8 +75,6 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 // multi-client state stays consistent (see AGENTS.md cross-layer checklist).
 #[test_case("model=gpt-4o" ; "model")]
 #[test_case("thinkingbudget=high" ; "thinking budget")]
-#[test_case("maxiterations=5" ; "max iterations")]
-#[test_case("executiontimeout=30" ; "execution timeout")]
 #[test_case("contextbudget=128000" ; "context budget")]
 #[test_case("contextstrategy=truncate" ; "context strategy")]
 #[test_case("outputvalidation=off" ; "output validation")]
@@ -175,7 +173,6 @@ fn set_then_query_round_trips() {
 
 // Invalid values surface a warning and do NOT emit a daemon sync.
 #[test_case("contextbudget=abc" ; "non-numeric budget")]
-#[test_case("maxiterations=xyz" ; "non-numeric iterations")]
 #[test_case("thinkingbudget=boguspreset" ; "unknown preset")]
 #[test_case("contextstrategy=nonsense" ; "unknown strategy")]
 #[test_case("validationretries=-1" ; "negative retries")]

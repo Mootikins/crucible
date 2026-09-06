@@ -164,9 +164,7 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Set LLM thinking budget (extended thinking).
     SetThinkingBudget(i64),
     /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.
-    SetMaxIterations(Option<u32>),
     /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
-    SetExecutionTimeout(Option<u64>),
     /// **Command** (TUI → daemon): Set context token budget.
     SetContextBudget(Option<usize>),
     /// **Command** (TUI → daemon): Set context truncation strategy.
@@ -316,8 +314,6 @@ impl ChatAppMsg {
             | Self::FetchModes
             | Self::ModesLoaded(_)
             | Self::SetThinkingBudget(_)
-            | Self::SetMaxIterations(_)
-            | Self::SetExecutionTimeout(_)
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
             | Self::SetOutputValidation(_)

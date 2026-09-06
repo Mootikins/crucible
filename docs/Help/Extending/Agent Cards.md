@@ -22,7 +22,6 @@ Agent cards define specialized AI agents. Each card is a markdown file: YAML fro
 - **Who is this agent?** — Name, description, system prompt
 - **What can it do?** — Per-tool permissions and MCP servers
 - **What model?** — Optional provider/model override (omit to inherit the spawning context's model)
-- **How long may it run?** — `max_turns` caps the tool loop
 
 ## File Locations
 
@@ -84,7 +83,6 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 | `model` | No | Model override; omit to inherit (better portability) |
 | `temperature` | No | Sampling temperature override |
 | `max_tokens` | No | Max output tokens override |
-| `max_turns` | No | Max tool-loop turns per message |
 | `mode` | No | Initial mode (`auto`/`plan`) |
 | `specialty` | No | Model category resolved via `[llm.models]` (see below) |
 | `tags` | No | Tags for discovery |

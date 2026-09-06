@@ -141,8 +141,6 @@ These sync to the daemon and are session-scoped:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `maxiterations` | number/`none` | Cap on agent loop iterations per turn |
-| `executiontimeout` | seconds/`none` | Tool execution timeout |
 | `outputvalidation` | string | Output validation mode |
 | `validationretries` | number | Retries when output validation fails |
 

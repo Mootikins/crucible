@@ -85,69 +85,6 @@ impl ReconnectingDaemon {
 
     // ── Execution ─────────────────────────────────────────────────────────
 
-    pub async fn session_set_max_iterations(
-        &self,
-        session_id: &str,
-        max_iterations: Option<u32>,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_max_iterations", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_max_iterations(&session_id, max_iterations)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_max_iterations(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<u32>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_max_iterations", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_max_iterations(&session_id).await })
-        })
-        .await
-    }
-
-    /// `timeout_secs`, not `execution_timeout`: the knob is
-    /// `session.set_execution_timeout` but its wire field has always been
-    /// `timeout_secs`, recorded deliberately in the daemon's `CONFIG_METHODS`
-    /// table. Naming the parameter after the knob is how the value gets
-    /// silently dropped.
-    pub async fn session_set_execution_timeout(
-        &self,
-        session_id: &str,
-        timeout_secs: Option<u64>,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_execution_timeout", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_execution_timeout(&session_id, timeout_secs)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_execution_timeout(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<u64>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_execution_timeout", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_execution_timeout(&session_id).await })
-        })
-        .await
-    }
-
     pub async fn session_set_validation_retries(
         &self,
         session_id: &str,

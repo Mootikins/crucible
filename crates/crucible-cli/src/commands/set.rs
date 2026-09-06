@@ -131,18 +131,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set thinking budget: {}", e))?;
             }
-            SetRpcAction::SetMaxIterations(max_iterations) => {
-                client
-                    .session_set_max_iterations(&session_id, *max_iterations)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set max iterations: {}", e))?;
-            }
-            SetRpcAction::SetExecutionTimeout(timeout_secs) => {
-                client
-                    .session_set_execution_timeout(&session_id, *timeout_secs)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set execution timeout: {}", e))?;
-            }
             SetRpcAction::SetContextBudget(budget) => {
                 client
                     .session_set_context_budget(&session_id, *budget)

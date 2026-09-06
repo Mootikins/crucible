@@ -3,17 +3,14 @@
 //! Drives an `Agent::turn()` stream, emits session events, dispatches
 //! tool calls, and steers the agent's continuation via the inbound
 //! `mpsc<TurnEvent>` channel. The plan's "one channel topology, not
-//! three" rule: `ToolResult`, `HandlerInjection`, and `DepthCapHit`
-//! all arrive on the same inbound channel and drive matching
-//! adapter-side behaviour.
+//! three" rule: `ToolResult` and `HandlerInjection` both arrive on the
+//! same inbound channel and drive matching adapter-side behaviour.
 //!
-//! Three tool-loop re-entry points all share the inbound channel:
+//! Two tool-loop re-entry points share the inbound channel:
 //!
 //! 1. **Tool continuation** — runtime sends `ToolResult` after
 //!    dispatching the agent's `ToolCall`.
-//! 2. **Depth-cap exhaustion** — runtime sends `DepthCapHit`; adapter
-//!    restarts the inner stream with the depth-cap final-answer prompt.
-//! 3. **Handler injection** — runtime's `turn:complete` handler returns
+//! 2. **Handler injection** — runtime's `turn:complete` handler returns
 //!    injected content; runtime re-enters `execute_agent_stream`
 //!    recursively with `is_continuation = true`. (The inbound channel
 //!    handles this within a single adapter turn, but handler
@@ -238,8 +235,6 @@ impl AgentManager {
         stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
         is_continuation: bool,
-        mut tool_depth: usize,
-        max_tool_depth: usize,
         validation_attempts: u32,
     ) -> StreamOutcome {
         let ttft_local = Instant::now();
@@ -322,9 +317,6 @@ impl AgentManager {
         // pass-through, which `continue`s before ever reaching the dispatch
         // site. Reading it as "dispatched" made the empty-response guard fire
         // on every delegated turn that ran tools and narrated nothing.
-        // Depth-capped calls deliberately do not count: they are dropped
-        // undispatched, and the guard's `depth_cap_triggered` arm is what
-        // should report them.
         let mut saw_tool_activity = false;
         // Args of tool calls an ACP-style agent announced but executed itself,
         // kept so the pass-through `tool_result` below can hand handlers the
@@ -332,16 +324,6 @@ impl AgentManager {
         // call id; entries are removed when the matching result arrives.
         let mut acp_tool_args: HashMap<String, serde_json::Value> = HashMap::new();
 
-        // Batch detection: true once a ToolCall is seen in this batch,
-        // reset on the next non-ToolCall event from the agent.
-        let mut in_tool_batch = false;
-        // When true, the current batch exceeded max_tool_depth — skip
-        // dispatching its remaining ToolCalls and let the adapter restart
-        // on the depth-cap prompt.
-        let mut capped_this_batch = false;
-        // Set once the runtime sent DepthCapHit, so the empty-response
-        // branch below can surface the right error reason.
-        let mut depth_cap_triggered = false;
         // Conjunctive early-stop signals collected per batch. The loop
         // ends after the batch only when every result in this vec is
         // true (and the vec is non-empty) — one tool can't unilaterally
@@ -515,63 +497,6 @@ impl AgentManager {
                         continue;
                     }
 
-                    // New batch? increment depth, possibly cap.
-                    if !in_tool_batch {
-                        // If the depth cap already fired once and the
-                        // model is *still* calling tools, hard-stop.
-                        // Otherwise we'd ping-pong DepthCapHit → restart
-                        // → ToolCall → DepthCapHit forever.
-                        if depth_cap_triggered {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                "tool call emitted after depth-cap response; hard-stopping"
-                            );
-                            if !emit_event(
-                                &stream_ctx.event_tx,
-                                SessionEventMessage::ended(
-                                    &stream_ctx.session_id,
-                                    "error: max_tool_depth exceeded".to_string(),
-                                ),
-                            ) {
-                                warn!(
-                                    session_id = %stream_ctx.session_id,
-                                    "No subscribers for hard-stop ended event"
-                                );
-                            }
-                            return StreamOutcome::Failed("max_tool_depth exceeded".into());
-                        }
-
-                        in_tool_batch = true;
-                        if tool_depth >= max_tool_depth {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                max_tool_depth = max_tool_depth,
-                                "max_tool_depth reached, forcing final response without tools"
-                            );
-                            if inbound_tx
-                                .send(TurnEvent::DepthCapHit {
-                                    max_depth: max_tool_depth,
-                                })
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                            capped_this_batch = true;
-                            depth_cap_triggered = true;
-                            continue;
-                        }
-                        tool_depth += 1;
-                        capped_this_batch = false;
-                    }
-
-                    if capped_this_batch {
-                        // Remaining ToolCalls in a capped batch are
-                        // dropped; the adapter has already been told to
-                        // restart and will discard them.
-                        continue;
-                    }
-
                     saw_tool_activity = true;
 
                     // Commit to scheduler-owned conversation tree
@@ -685,13 +610,6 @@ impl AgentManager {
                         } else {
                             last_failure_key = None;
                             consecutive_failure_count = 0;
-
-                            if tool_depth == max_tool_depth.saturating_sub(2) {
-                                tool_result.result.push_str(&format!(
-                                    " [Note: You have used {} of {} available tool turns.]",
-                                    tool_depth, max_tool_depth
-                                ));
-                            }
                         }
                     }
 
@@ -892,13 +810,6 @@ impl AgentManager {
                     }
                 }
                 TurnEvent::ToolBatchEnd => {
-                    // Adapter has finished emitting all tool calls for
-                    // this batch and is about to wait for ToolResults.
-                    // Reset batch tracking so the next ToolCall counts
-                    // as a new batch and re-checks the depth cap.
-                    in_tool_batch = false;
-                    capped_this_batch = false;
-
                     // Conjunctive early-stop: if every result in this
                     // batch set terminate=true, end the turn now instead
                     // of looping back to the model. Empty batches are
@@ -984,9 +895,7 @@ impl AgentManager {
                         });
                     }
                 }
-                TurnEvent::HandlerInjection { .. }
-                | TurnEvent::DepthCapHit { .. }
-                | TurnEvent::ContextAttach { .. } => {
+                TurnEvent::HandlerInjection { .. } | TurnEvent::ContextAttach { .. } => {
                     // Inbound-only variants. Adapter should not echo
                     // them, but tolerate if it ever does.
                 }
@@ -1020,14 +929,10 @@ impl AgentManager {
 
         // Empty response handling.
         if accumulated_response.trim().is_empty() && !saw_tool_activity {
-            let error_reason = if depth_cap_triggered {
-                "error: max_tool_depth exceeded".to_string()
-            } else {
-                format!(
-                    "error: {}",
-                    crate::provider::genai_handle::EMPTY_RESPONSE_ERROR
-                )
-            };
+            let error_reason = format!(
+                "error: {}",
+                crate::provider::genai_handle::EMPTY_RESPONSE_ERROR
+            );
             error!(
                 session_id = %stream_ctx.session_id,
                 "LLM stream completed with no content and no tool calls"
@@ -1136,8 +1041,6 @@ impl AgentManager {
                 stream_config.clone(),
                 accumulated_response,
                 true,
-                tool_depth,
-                max_tool_depth,
                 next_validation_attempts,
             ))
             .await;

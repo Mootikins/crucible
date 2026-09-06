@@ -28,8 +28,6 @@ pub enum SetCommand {
 pub enum SetRpcAction {
     SwitchModel(String),
     SetThinkingBudget(Option<i64>),
-    SetMaxIterations(Option<u32>),
-    SetExecutionTimeout(Option<u64>),
     SetContextBudget(Option<usize>),
     SetContextStrategy(String),
     SetOutputValidation(String),
@@ -106,52 +104,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                     message: format!("unknown preset '{}'. Valid: {}", value, valid),
                 })
             }
-        }
-        "maxiterations" => {
-            let max_iterations =
-                if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                    None
-                } else {
-                    match value.parse::<u32>() {
-                        Ok(n) => Some(n),
-                        Err(_) => {
-                            return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "invalid maxiterations value: {} (use a number or 'none')",
-                                    value
-                                ),
-                            });
-                        }
-                    }
-                };
-
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxIterations(
-                max_iterations,
-            )))
-        }
-        "executiontimeout" => {
-            let timeout_secs =
-                if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                    None
-                } else {
-                    match value.parse::<u64>() {
-                        Ok(n) => Some(n),
-                        Err(_) => {
-                            return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "invalid executiontimeout value: {} (use seconds or 'none')",
-                                    value
-                                ),
-                            });
-                        }
-                    }
-                };
-
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetExecutionTimeout(
-                timeout_secs,
-            )))
         }
         "contextbudget" | "context_budget" => {
             let budget = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
@@ -352,8 +304,6 @@ impl SetRpcAction {
             SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
             SetRpcAction::SetThinkingBudget(Some(b)) => Some(ChatAppMsg::SetThinkingBudget(b)),
             SetRpcAction::SetThinkingBudget(None) => None,
-            SetRpcAction::SetMaxIterations(n) => Some(ChatAppMsg::SetMaxIterations(n)),
-            SetRpcAction::SetExecutionTimeout(n) => Some(ChatAppMsg::SetExecutionTimeout(n)),
             SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
             SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
@@ -410,8 +360,6 @@ fn is_daemon_rpc_key(key: &str) -> bool {
         key,
         "model"
             | "thinkingbudget"
-            | "maxiterations"
-            | "executiontimeout"
             | "contextbudget"
             | "context_budget"
             | "contextstrategy"

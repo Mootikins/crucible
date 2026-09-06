@@ -1,9 +1,8 @@
 // src/components/settings/AdvancedSessionSettings.tsx
 //
-// The nine session config knobs the daemon has always advertised and the web
-// could not reach: context budget/window, autocompact threshold, iteration cap,
-// execution timeout, validation retries, context strategy, output validation and
-// the system prompt override.
+// The session config knobs the daemon advertises that do not belong in the
+// model panel: context budget, autocompact threshold, validation retries,
+// context strategy and output validation.
 //
 // Its own file rather than a tenth section inside SettingsPanel.tsx, which was
 // already 961 lines — the same reason the Rust routes became
@@ -21,15 +20,11 @@ import {
   getAutocompactThreshold,
   getContextBudget,
   getContextStrategy,
-  getExecutionTimeout,
-  getMaxIterations,
   getOutputValidation,
   getValidationRetries,
   setAutocompactThreshold,
   setContextBudget,
   setContextStrategy,
-  setExecutionTimeout,
-  setMaxIterations,
   setOutputValidation,
   setValidationRetries,
 } from '@/lib/api';
@@ -64,8 +59,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
 
   const [contextBudget, setContextBudgetSig] = createSignal('');
   const [autocompact, setAutocompactSig] = createSignal('');
-  const [maxIterations, setMaxIterationsSig] = createSignal('');
-  const [executionTimeout, setExecutionTimeoutSig] = createSignal('');
   const [validationRetries, setValidationRetriesSig] = createSignal('');
   const [contextStrategy, setContextStrategySig] = createSignal('');
   const [outputValidation, setOutputValidationSig] = createSignal('');
@@ -85,12 +78,10 @@ export const AdvancedSessionSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, threshold, iterations, timeout, retries, strategy, validation] =
+      const [budget, threshold, retries, strategy, validation] =
         await Promise.all([
           getContextBudget(s.id),
           getAutocompactThreshold(s.id),
-          getMaxIterations(s.id),
-          getExecutionTimeout(s.id),
           getValidationRetries(s.id),
           getContextStrategy(s.id),
           getOutputValidation(s.id),
@@ -98,8 +89,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
       const text = (v: number | null) => (v === null ? '' : String(v));
       setContextBudgetSig(text(budget));
       setAutocompactSig(threshold === null ? '' : String(threshold));
-      setMaxIterationsSig(text(iterations));
-      setExecutionTimeoutSig(text(timeout));
       setValidationRetriesSig(text(retries));
       setContextStrategySig(strategy ?? '');
       setOutputValidationSig(validation ?? '');
@@ -181,32 +170,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
               fail('autocompact threshold')(err);
             }
           }}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Default"
-        />
-      </SettingRow>
-
-      <SettingRow label="Max Iterations" description="Agent-loop cap; empty = default">
-        <input
-          type="number"
-          min={1}
-          value={maxIterations()}
-          data-testid="max-iterations-input"
-          onInput={(e) => setMaxIterationsSig((e.target as HTMLInputElement).value)}
-          onBlur={commitOptionalInt(setMaxIterationsSig, setMaxIterations, 'max iterations')}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Default"
-        />
-      </SettingRow>
-
-      <SettingRow label="Execution Timeout" description="Seconds per turn; empty = default">
-        <input
-          type="number"
-          min={1}
-          value={executionTimeout()}
-          data-testid="execution-timeout-input"
-          onInput={(e) => setExecutionTimeoutSig((e.target as HTMLInputElement).value)}
-          onBlur={commitOptionalInt(setExecutionTimeoutSig, setExecutionTimeout, 'execution timeout')}
           class={`${inputClass} w-28 text-right`}
           placeholder="Default"
         />

@@ -387,8 +387,6 @@ const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
     ("autocompact_threshold", "autocompact-threshold"),
     ("context_budget", "context-budget"),
     ("context_strategy", "context-strategy"),
-    ("execution_timeout", "execution-timeout"),
-    ("max_iterations", "max-iterations"),
     ("output_validation", "output-validation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition/results"),
@@ -436,11 +434,14 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
     let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
     let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
 
+    // Sanity check on the scan, not on the knob count — the count is meant to
+    // shrink. `precognition` is Crucible's own retrieval knob and is not going
+    // anywhere, so its absence means the regex broke rather than that a knob
+    // was deleted.
     assert!(
-        advertised.len() >= 12,
-        "extraction sanity check: expected 12+ session.set_* knobs in METHODS, \
-         found {} — the scan regex probably broke, fix the test",
-        advertised.len()
+        advertised.contains("precognition"),
+        "the scan found no `session.set_precognition`, so the regex probably \
+         broke; it found: {advertised:?}"
     );
 
     let mapped: BTreeSet<String> = WEB_CONFIG_ROUTES
@@ -508,8 +509,6 @@ const TUI_SET_KEYS: &[(&str, &str)] = &[
     ("autocompact_threshold", "autocompactthreshold"),
     ("context_budget", "contextbudget"),
     ("context_strategy", "contextstrategy"),
-    ("execution_timeout", "executiontimeout"),
-    ("max_iterations", "maxiterations"),
     ("output_validation", "outputvalidation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition.results"),
@@ -550,11 +549,12 @@ fn every_rpc_session_knob_is_reachable_from_the_tui() {
     let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
     let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
 
+    // See the web gate: a count assertion would fail every time a knob is
+    // deliberately removed. `precognition` staying is the real signal.
     assert!(
-        advertised.len() >= 10,
-        "extraction sanity check: expected 10+ session.set_* knobs, found {} — \
-         the scan regex probably broke, fix the test",
-        advertised.len()
+        advertised.contains("precognition"),
+        "the scan found no `session.set_precognition`, so the regex probably \
+         broke; it found: {advertised:?}"
     );
 
     let mapped: BTreeSet<String> = TUI_SET_KEYS.iter().map(|(k, _)| k.to_string()).collect();

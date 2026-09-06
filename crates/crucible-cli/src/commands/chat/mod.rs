@@ -896,14 +896,6 @@ async fn apply_rpc_action(
             .await
             .map_err(|e| e.to_string()),
         SetRpcAction::SetThinkingBudget(None) => Ok(()),
-        SetRpcAction::SetMaxIterations(max) => handle
-            .set_max_iterations(max)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetExecutionTimeout(timeout) => handle
-            .set_execution_timeout(timeout)
-            .await
-            .map_err(|e| e.to_string()),
         SetRpcAction::SetContextBudget(budget) => handle
             .set_context_budget(budget)
             .await

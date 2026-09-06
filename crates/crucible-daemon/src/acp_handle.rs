@@ -404,11 +404,10 @@ impl AgentHandle for AcpAgentHandle {
 /// The ACP agent runs its own model loop. The handle caches the three
 /// knobs the ACP wire can carry; the rest return the empty answer.
 ///
-/// `max_iterations`, `execution_timeout` and `precognition` belong to the
-/// session's `AgentConfig`: the daemon turn loop reads them from the config
-/// before it calls the handle, and the ACP wire has no field for them. A
-/// value stored here would reach nothing, so the handle refuses the setter.
-/// `DaemonAgentHandle` answers them by RPC.
+/// `precognition` belongs to the session's `AgentConfig`: the daemon turn
+/// loop reads it from the config before it calls the handle, and the ACP wire
+/// has no field for it. A value stored here would reach nothing, so the
+/// handle refuses the setter. `DaemonAgentHandle` answers it by RPC.
 #[async_trait]
 impl SessionKnobs for AcpAgentHandle {
     /// ACP carries no system prompt; the agent owns its own.
@@ -527,22 +526,6 @@ impl SessionKnobs for AcpAgentHandle {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
     }
 
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {

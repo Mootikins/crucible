@@ -34,7 +34,6 @@ local defaults = {
     min_turns = 2,
     session_chars = 15000,
     timeout = 240,
-    max_iterations = 12,
     rejection_memory = 20,
 }
 

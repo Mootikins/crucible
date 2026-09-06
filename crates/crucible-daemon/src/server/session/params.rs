@@ -144,24 +144,7 @@ session_config_setter!(
 );
 
 // max_tokens can be null to clear the limit, so we use optional.
-// max_iterations can be null to clear the limit (unlimited), so we use optional.
-session_config_setter!(
-    handle_session_set_max_iterations,
-    req,
-    set_max_iterations,
-    "max_iterations",
-    optional_param!(req, "max_iterations", as_u64).map(|v| v as u32)
-);
-
 // timeout_secs can be null to clear the timeout, so we use optional.
-session_config_setter!(
-    handle_session_set_execution_timeout,
-    req,
-    set_execution_timeout,
-    "timeout_secs",
-    optional_param!(req, "timeout_secs", as_u64)
-);
-
 session_config_setter!(
     handle_session_set_context_budget,
     req,
@@ -204,16 +187,6 @@ session_config_getter!(
     "precognition_results"
 );
 session_config_getter!(handle_session_get_mode, get_mode, "mode");
-session_config_getter!(
-    handle_session_get_max_iterations,
-    get_max_iterations,
-    "max_iterations"
-);
-session_config_getter!(
-    handle_session_get_execution_timeout,
-    get_execution_timeout,
-    "timeout_secs"
-);
 session_config_getter!(
     handle_session_get_context_budget,
     get_context_budget,

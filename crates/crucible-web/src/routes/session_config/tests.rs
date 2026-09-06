@@ -134,33 +134,6 @@ async fn autocompact_threshold_round_trips() {
 // ── Execution ─────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn max_iterations_round_trips() {
-    assert_put_reaches_daemon(
-        "max-iterations",
-        "session.set_max_iterations",
-        "max_iterations",
-        json!(12),
-    )
-    .await;
-    assert_get_returns("max-iterations", "max_iterations", json!(33)).await;
-}
-
-/// The knob is `execution_timeout`; the wire field is `timeout_secs`. This is
-/// the test that fails if the web structs are named after the knob — which is
-/// exactly what a reviewer reading `session.set_execution_timeout` would write.
-#[tokio::test]
-async fn execution_timeout_round_trips_under_timeout_secs_not_execution_timeout() {
-    assert_put_reaches_daemon(
-        "execution-timeout",
-        "session.set_execution_timeout",
-        "timeout_secs",
-        json!(300),
-    )
-    .await;
-    assert_get_returns("execution-timeout", "timeout_secs", json!(44)).await;
-}
-
-#[tokio::test]
 async fn validation_retries_round_trips() {
     assert_put_reaches_daemon(
         "validation-retries",
@@ -225,16 +198,6 @@ async fn clearing_an_optional_knob_never_sends_a_value() {
             "autocompact-threshold",
             "session.set_autocompact_threshold",
             "autocompact_threshold",
-        ),
-        (
-            "max-iterations",
-            "session.set_max_iterations",
-            "max_iterations",
-        ),
-        (
-            "execution-timeout",
-            "session.set_execution_timeout",
-            "timeout_secs",
         ),
     ] {
         let uri = format!("/api/session/s1/config/{tail}");

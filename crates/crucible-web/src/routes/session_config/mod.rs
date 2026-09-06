@@ -38,10 +38,7 @@ pub(super) use basic::{
 pub(super) use context::{
     get_autocompact_threshold, get_context_budget, set_autocompact_threshold, set_context_budget,
 };
-pub(super) use execution::{
-    get_execution_timeout, get_max_iterations, get_validation_retries, set_execution_timeout,
-    set_max_iterations, set_validation_retries,
-};
+pub(super) use execution::{get_validation_retries, set_validation_retries};
 pub(super) use prompt::{
     get_context_strategy, get_output_validation, set_context_strategy, set_output_validation,
 };
@@ -93,14 +90,6 @@ pub(super) fn config_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/autocompact-threshold",
             put(set_autocompact_threshold).get(get_autocompact_threshold),
-        )
-        .route(
-            "/api/session/{id}/config/max-iterations",
-            put(set_max_iterations).get(get_max_iterations),
-        )
-        .route(
-            "/api/session/{id}/config/execution-timeout",
-            put(set_execution_timeout).get(get_execution_timeout),
         )
         .route(
             "/api/session/{id}/config/validation-retries",

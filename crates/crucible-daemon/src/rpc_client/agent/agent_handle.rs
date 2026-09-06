@@ -113,8 +113,6 @@ impl AgentHandle for DaemonAgentHandle {
                 config.model = model.clone();
             }
             config.thinking_budget = self.cached_thinking_budget;
-            config.max_iterations = self.cached_max_iterations;
-            config.execution_timeout_secs = self.cached_execution_timeout;
             if let Some(count) = self.cached_precognition_results {
                 config.precognition_results = count;
             }
@@ -228,34 +226,6 @@ impl SessionKnobs for DaemonAgentHandle {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         self.cached_thinking_budget
-    }
-
-    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, max_iterations = ?max_iterations, "Setting max_iterations via daemon");
-        self.client
-            .session_set_max_iterations(&self.session_id, max_iterations)
-            .await
-            .chat_comm()?;
-        self.cached_max_iterations = max_iterations;
-        Ok(())
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        self.cached_max_iterations
-    }
-
-    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, timeout_secs = ?timeout_secs, "Setting execution_timeout via daemon");
-        self.client
-            .session_set_execution_timeout(&self.session_id, timeout_secs)
-            .await
-            .chat_comm()?;
-        self.cached_execution_timeout = timeout_secs;
-        Ok(())
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        self.cached_execution_timeout
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {

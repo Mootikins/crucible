@@ -106,18 +106,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Number of context results to inject (1-20)",
     },
     ConfigShortcut {
-        short: "maxiterations",
-        target: ShortcutTarget::Path("llm.max_iterations"),
-        completions: CompletionSource::None,
-        description: "Max agent iterations per turn (number or 'none')",
-    },
-    ConfigShortcut {
-        short: "executiontimeout",
-        target: ShortcutTarget::Path("llm.execution_timeout"),
-        completions: CompletionSource::None,
-        description: "Tool execution timeout in seconds (or 'none')",
-    },
-    ConfigShortcut {
         short: "contextbudget",
         target: ShortcutTarget::Path("llm.context_budget"),
         completions: CompletionSource::None,
@@ -287,8 +275,6 @@ mod tests {
         assert!(shorts.contains(&"syntax_theme"));
         assert!(shorts.contains(&"precognition"));
         assert!(shorts.contains(&"precognition.results"));
-        assert!(shorts.contains(&"maxiterations"));
-        assert!(shorts.contains(&"executiontimeout"));
         assert!(shorts.contains(&"contextbudget"));
         assert!(shorts.contains(&"contextstrategy"));
         assert!(shorts.contains(&"outputvalidation"));

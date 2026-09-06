@@ -190,16 +190,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ),
         ("session.get_thinking_budget", json!({}), not_found()),
         (
-            "session.set_max_iterations",
-            json!({"max_iterations": 3}),
-            not_found(),
-        ),
-        (
-            "session.set_execution_timeout",
-            json!({"execution_timeout": 3}),
-            not_found(),
-        ),
-        (
             "session.set_context_budget",
             json!({"context_budget": 3}),
             not_found(),

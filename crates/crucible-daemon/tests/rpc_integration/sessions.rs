@@ -190,8 +190,6 @@ async fn test_session_configure_agent() {
         delegation_config: None,
         precognition_enabled: true,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),

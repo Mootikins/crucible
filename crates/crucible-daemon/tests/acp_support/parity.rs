@@ -162,9 +162,7 @@ impl ShapeProjector {
             // being silently dropped from every parity assertion — the same
             // intent as `_terminal_variant_check` in
             // `crucible-daemon/src/rpc_client/agent/native_agent.rs:112-128`.
-            TurnEvent::HandlerInjection { .. }
-            | TurnEvent::ContextAttach { .. }
-            | TurnEvent::DepthCapHit { .. } => return None,
+            TurnEvent::HandlerInjection { .. } | TurnEvent::ContextAttach { .. } => return None,
         })
     }
 }
@@ -385,7 +383,9 @@ mod tests {
             TurnEvent::TextDelta("Reading".into()),
             TurnEvent::TextDelta(" now".into()),
             // Inbound-only: must not appear in the projection.
-            TurnEvent::DepthCapHit { max_depth: 4 },
+            TurnEvent::ContextAttach {
+                content: "reference material".into(),
+            },
             tool_call("toolu_01ABC", "read_file", Vec::new()),
             TurnEvent::ToolResult {
                 id: "toolu_01ABC".into(),
@@ -544,9 +544,6 @@ mod tests {
     #[test]
     fn inbound_only_variants_project_to_none() {
         let mut p = ShapeProjector::new();
-        assert!(p
-            .project(&TurnEvent::DepthCapHit { max_depth: 3 })
-            .is_none());
         assert!(p
             .project(&TurnEvent::ContextAttach {
                 content: "note".into()

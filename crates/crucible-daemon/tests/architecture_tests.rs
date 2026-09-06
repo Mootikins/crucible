@@ -243,16 +243,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "precognition_results",
     },
     ConfigMethod {
-        suffix: "max_iterations",
-        request_field: "max_iterations",
-        result_field: "max_iterations",
-    },
-    ConfigMethod {
-        suffix: "execution_timeout",
-        request_field: "timeout_secs",
-        result_field: "timeout_secs",
-    },
-    ConfigMethod {
         suffix: "context_budget",
         request_field: "context_budget",
         result_field: "context_budget",

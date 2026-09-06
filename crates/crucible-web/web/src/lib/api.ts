@@ -1267,55 +1267,6 @@ export async function setAutocompactThreshold(
   );
 }
 
-/** Get the agent-loop iteration cap. */
-export async function getMaxIterations(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ max_iterations: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/max-iterations`,
-      { errorMessage: 'Failed to get max iterations' },
-    )
-  ).max_iterations;
-}
-
-/** Set the agent-loop iteration cap. `null` restores the daemon's default. */
-export async function setMaxIterations(sessionId: string, max: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/max-iterations`, {
-    errorMessage: 'Failed to set max iterations',
-    parseAs: 'none',
-    ...jsonRequest({ max_iterations: max }),
-  });
-}
-
-/**
- * Get the per-turn execution timeout, in seconds.
- *
- * The field is `timeout_secs`, not `execution_timeout`: the RPC method is
- * `session.set_execution_timeout` but its wire field never matched its name.
- */
-export async function getExecutionTimeout(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ timeout_secs: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/execution-timeout`,
-      { errorMessage: 'Failed to get execution timeout' },
-    )
-  ).timeout_secs;
-}
-
-/** Set the per-turn execution timeout. `null` restores the daemon's default. */
-export async function setExecutionTimeout(sessionId: string, secs: number | null): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/execution-timeout`,
-    {
-      errorMessage: 'Failed to set execution timeout',
-      parseAs: 'none',
-      ...jsonRequest({ timeout_secs: secs }),
-    },
-  );
-}
-
 /** Get how many times a failed output validation is retried. */
 export async function getValidationRetries(sessionId: string): Promise<number | null> {
   return (

@@ -86,14 +86,6 @@ pub struct SessionAgent {
     #[serde(default = "default_precognition_results")]
     pub precognition_results: usize,
 
-    /// Maximum tool-call iterations per turn. None = unlimited (default for interactive sessions).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_iterations: Option<u32>,
-
-    /// Execution timeout in seconds per turn. None = no timeout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution_timeout_secs: Option<u64>,
-
     /// Context window token budget. None = no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_budget: Option<usize>,
@@ -168,8 +160,6 @@ impl SessionAgent {
             delegation_config: profile.delegation.clone(),
             precognition_enabled: true,
             precognition_results: default_precognition_results(),
-            max_iterations: None,
-            execution_timeout_secs: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
             output_validation: OutputValidation::default(),
@@ -194,8 +184,7 @@ impl SessionAgent {
     ///
     /// Other card fields override the base where present: system prompt (the
     /// card body — finally populating the "inlined from agent card" field),
-    /// temperature, max_tokens, max_turns → max_iterations, mode,
-    /// mcp_servers, and the per-tool policy. Everything else (endpoint
+    /// mode, mcp_servers, and the per-tool policy. Everything else (endpoint
     /// resolution, precognition, context budget, validation) inherits from
     /// the base. An unrecognized `provider:` string falls back to the base
     /// provider (validated at use, not load).
@@ -292,8 +281,6 @@ impl SessionAgent {
             delegation_config: base.delegation_config.clone(),
             precognition_enabled: base.precognition_enabled,
             precognition_results: base.precognition_results,
-            max_iterations: card.max_turns.or(base.max_iterations),
-            execution_timeout_secs: base.execution_timeout_secs,
             context_budget: base.context_budget,
             context_strategy: base.context_strategy.clone(),
             output_validation: base.output_validation.clone(),
@@ -385,8 +372,6 @@ impl SessionAgent {
             delegation_config: None,
             precognition_enabled: true,
             precognition_results: default_precognition_results(),
-            max_iterations: None,
-            execution_timeout_secs: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
             output_validation: OutputValidation::default(),
@@ -522,7 +507,6 @@ mod narrowing_tests {
             model: None,
             temperature: None,
             max_tokens: None,
-            max_turns: None,
             mode: None,
             tools,
             config: HashMap::new(),

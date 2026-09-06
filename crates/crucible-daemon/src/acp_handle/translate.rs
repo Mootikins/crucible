@@ -26,10 +26,6 @@
 /// `#[non_exhaustive]` variant lands in the wildcard as an unreviewed default
 /// instead of being quietly folded into this set.
 ///
-/// `MaxToolDepth` stays unreachable on this path: the daemon does not dispatch a
-/// delegated agent's tools, so it never counts their depth
-/// (`crucible-core/src/traits/chat.rs`).
-///
 /// `produced_anything` is "the turn yielded text, thinking or a tool call". It
 /// outranks the budget reasons: a refusal or a token cap that produced nothing
 /// is still a turn the user saw nothing from, and `Empty` is the variant that

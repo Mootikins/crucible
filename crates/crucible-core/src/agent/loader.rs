@@ -115,7 +115,6 @@ impl AgentCardLoader {
             model: frontmatter.model,
             temperature: frontmatter.temperature,
             max_tokens: frontmatter.max_tokens,
-            max_turns: frontmatter.max_turns,
             mode: frontmatter.mode,
             tools: frontmatter.tools,
             config: frontmatter.config.unwrap_or_default(),

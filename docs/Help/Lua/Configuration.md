@@ -85,7 +85,6 @@ default; without it the plugin skips every session.
 | `min_turns` | `3` | The fewest user turns a session needs before it is reviewed |
 | `max_proposals` | `5` | The most proposals one session may stage |
 | `timeout` | `120` | Seconds to wait for the reviewer |
-| `max_iterations` | `12` | The cap on the reviewer's tool-loop turns |
 | `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
 | `tool_result_chars` | `2000` | Characters kept from each tool result in the transcript |
 | `transcript_chars` | `60000` | Characters kept from the whole transcript, cut from the front |
@@ -114,7 +113,6 @@ require("consolidation").setup({
 | `min_turns` | `2` | The fewest user turns a session needs before the pass reads it |
 | `session_chars` | `15000` | Characters kept from each session's transcript |
 | `timeout` | `240` | Seconds to wait for the reviewer |
-| `max_iterations` | `12` | The cap on the reviewer's tool-loop turns |
 | `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
 
 These two tables are the one place the keys are documented. The plugin

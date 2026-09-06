@@ -484,7 +484,7 @@ impl ReactorTestHarness {
     }
 
     /// Re-run `configure_agent` with a non-default `SessionAgent` (e.g. a
-    /// custom `max_iterations` or `output_validation`). Safe to call after
+    /// custom `output_validation`). Safe to call after
     /// `new()`'s default configuration — it's an idempotent overwrite.
     async fn reconfigure(&self, agent: SessionAgent) {
         self.agent_manager
@@ -608,8 +608,6 @@ fn test_agent() -> SessionAgent {
         delegation_config: None,
         precognition_enabled: false,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),

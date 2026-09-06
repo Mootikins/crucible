@@ -1,5 +1,4 @@
 use super::super::*;
-use super::DEFAULT_MAX_TOOL_DEPTH;
 use crucible_core::config::components::permissions::PermissionMode;
 
 /// Map the stream driver's outcome to the completion-channel status pair.
@@ -409,11 +408,6 @@ impl AgentManager {
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
             let stream_config = stream_ctx.agent_stream_config.clone();
-            // Use session-configured max_iterations, falling back to the default
-            let max_tool_depth = stream_config
-                .max_iterations
-                .map(|n| n as usize)
-                .unwrap_or(DEFAULT_MAX_TOOL_DEPTH);
 
             let stream_future = Self::execute_agent_stream(
                 agent,
@@ -423,48 +417,7 @@ impl AgentManager {
                 &mut accumulated_response,
                 false,
                 0,
-                max_tool_depth,
-                0,
             );
-
-            // Wrap in execution timeout if configured
-            let timed_future = async {
-                if let Some(timeout_secs) = stream_ctx.agent_stream_config.execution_timeout_secs {
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(timeout_secs),
-                        stream_future,
-                    )
-                    .await
-                    {
-                        Ok(outcome) => outcome_to_status(outcome),
-                        Err(_) => {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                timeout_secs = timeout_secs,
-                                "Execution timeout reached"
-                            );
-                            if !emit_event(
-                                &stream_ctx.event_tx,
-                                SessionEventMessage::ended(
-                                    &stream_ctx.session_id,
-                                    "error: execution timeout reached",
-                                ),
-                            ) {
-                                warn!(
-                                    session_id = %stream_ctx.session_id,
-                                    "No subscribers for execution timeout ended event"
-                                );
-                            }
-                            (
-                                TurnStatus::TimedOut,
-                                Some("execution timeout reached".to_string()),
-                            )
-                        }
-                    }
-                } else {
-                    outcome_to_status(stream_future.await)
-                }
-            };
 
             let (status, error) = tokio::select! {
                 _ = cancel_rx => {
@@ -477,7 +430,7 @@ impl AgentManager {
                     }
                     (TurnStatus::Cancelled, None)
                 }
-                outcome = timed_future => outcome,
+                outcome = stream_future => outcome_to_status(outcome),
             };
 
             // Single convergence point for ALL exit paths — this send must

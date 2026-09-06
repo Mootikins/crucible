@@ -220,18 +220,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Get the current thinking budget.
     fn get_thinking_budget(&self) -> Option<i64>;
 
-    /// Set maximum tool-call iterations per turn. None = unlimited.
-    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()>;
-
-    /// Get the current max iterations setting.
-    fn get_max_iterations(&self) -> Option<u32>;
-
-    /// Set execution timeout in seconds per turn. None = no timeout.
-    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()>;
-
-    /// Get the current execution timeout setting.
-    fn get_execution_timeout(&self) -> Option<u64>;
-
     /// Set the context token budget. None = no limit.
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()>;
 
@@ -322,28 +310,6 @@ macro_rules! impl_unsupported_session_knobs {
                 ))
             }
             fn get_thinking_budget(&self) -> Option<i64> {
-                None
-            }
-            async fn set_max_iterations(
-                &mut self,
-                _max_iterations: Option<u32>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_max_iterations".into(),
-                ))
-            }
-            fn get_max_iterations(&self) -> Option<u32> {
-                None
-            }
-            async fn set_execution_timeout(
-                &mut self,
-                _timeout_secs: Option<u64>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_execution_timeout".into(),
-                ))
-            }
-            fn get_execution_timeout(&self) -> Option<u64> {
                 None
             }
             async fn set_context_budget(
@@ -635,22 +601,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         (**self).get_thinking_budget()
-    }
-
-    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
-        (**self).set_max_iterations(max_iterations).await
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        (**self).get_max_iterations()
-    }
-
-    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()> {
-        (**self).set_execution_timeout(timeout_secs).await
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        (**self).get_execution_timeout()
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {

@@ -41,10 +41,6 @@ use serde::{Deserialize, Serialize};
 pub enum SessionKnob {
     /// Reasoning-token budget.
     ThinkingBudget,
-    /// Cap on tool-call rounds in one turn.
-    MaxIterations,
-    /// Wall-clock cap on one turn.
-    ExecutionTimeout,
     /// Token budget for assembled context.
     ContextBudget,
     /// How context is assembled when it does not fit.
@@ -177,8 +173,6 @@ impl SessionKnob {
         Self::Model,
         Self::Mode,
         Self::ThinkingBudget,
-        Self::MaxIterations,
-        Self::ExecutionTimeout,
         Self::ContextBudget,
         Self::ContextStrategy,
         Self::OutputValidation,
@@ -192,8 +186,6 @@ impl SessionKnob {
     pub fn id(self) -> &'static str {
         match self {
             Self::ThinkingBudget => "thinking_budget",
-            Self::MaxIterations => "max_iterations",
-            Self::ExecutionTimeout => "execution_timeout",
             Self::ContextBudget => "context_budget",
             Self::ContextStrategy => "context_strategy",
             Self::OutputValidation => "output_validation",
@@ -215,10 +207,6 @@ impl SessionKnob {
     /// daemon does not do.
     pub fn on_acp(self) -> AcpKnob {
         match self {
-            // The agent runs its own turn loop, so a daemon-side cap on
-            // rounds or wall-clock governs nothing it does.
-            Self::MaxIterations | Self::ExecutionTimeout => AcpKnob::Absent,
-
             // The agent owns its history, so the daemon assembles no context
             // to budget, trim or compact.
             Self::ContextBudget | Self::ContextStrategy | Self::AutocompactThreshold => {

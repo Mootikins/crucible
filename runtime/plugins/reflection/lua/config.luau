@@ -29,7 +29,6 @@ local defaults = {
     min_turns = 3,
     max_proposals = 5,
     timeout = 120,
-    max_iterations = 12,
     rejection_memory = 20,
     tool_result_chars = 2000,
     transcript_chars = 60000,

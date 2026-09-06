@@ -85,22 +85,6 @@ impl SessionKnobs for RpcCountingAgent {
         None
     }
 
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
-    }
-
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_context_budget".into()))
     }

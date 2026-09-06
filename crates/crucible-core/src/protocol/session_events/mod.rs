@@ -168,8 +168,6 @@ impl Group {
             | "precognition_results_changed"
             | "temperature_changed"
             | "max_tokens_changed"
-            | "max_iterations_changed"
-            | "execution_timeout_changed"
             | "context_budget_changed"
             | "autocompact_threshold_changed"
             | "context_strategy_changed"

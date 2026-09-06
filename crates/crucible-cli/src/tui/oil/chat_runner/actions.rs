@@ -289,40 +289,6 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::SetMaxIterations(max_iterations) => {
-                        tracing::info!(max_iterations = ?max_iterations, "Setting max_iterations");
-                        match params.agent.set_max_iterations(*max_iterations).await {
-                            Ok(()) => {
-                                tracing::info!(max_iterations = ?max_iterations, "Max iterations set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(max_iterations = ?max_iterations, error = %e, "set_max_iterations failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set max_iterations failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetExecutionTimeout(timeout_secs) => {
-                        tracing::info!(timeout_secs = ?timeout_secs, "Setting execution_timeout");
-                        match params.agent.set_execution_timeout(*timeout_secs).await {
-                            Ok(()) => {
-                                tracing::info!(timeout_secs = ?timeout_secs, "Execution timeout set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(timeout_secs = ?timeout_secs, error = %e, "set_execution_timeout failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set execution_timeout failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetContextBudget(budget) => {
                         tracing::info!(context_budget = ?budget, "Setting context_budget");
                         match params.agent.set_context_budget(*budget).await {

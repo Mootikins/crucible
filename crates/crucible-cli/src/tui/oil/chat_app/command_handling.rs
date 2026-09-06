@@ -478,16 +478,6 @@ impl OilChatApp {
                 let budget = budget.unwrap_or_default();
                 self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
             }
-            SetRpcAction::SetMaxIterations(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| n.to_string());
-                self.send_setting_ack("maxiterations", &display);
-            }
-            SetRpcAction::SetExecutionTimeout(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| format!("{}s", n));
-                self.send_setting_ack("executiontimeout", &display);
-            }
             SetRpcAction::SetContextBudget(n) => {
                 self.runtime_config.set_str(key, value, ModSource::Command);
                 let display = n.map_or("none".to_string(), |n| n.to_string());

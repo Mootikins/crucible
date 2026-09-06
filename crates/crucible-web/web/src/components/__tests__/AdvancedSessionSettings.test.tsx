@@ -13,8 +13,6 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 const mockSetters = vi.hoisted(() => ({
   setContextBudget: vi.fn(),
   setAutocompactThreshold: vi.fn(),
-  setMaxIterations: vi.fn(),
-  setExecutionTimeout: vi.fn(),
   setValidationRetries: vi.fn(),
   setContextStrategy: vi.fn(),
   setOutputValidation: vi.fn(),
@@ -23,8 +21,6 @@ const mockSetters = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   getContextBudget: vi.fn().mockResolvedValue(111),
   getAutocompactThreshold: vi.fn().mockResolvedValue(0.75),
-  getMaxIterations: vi.fn().mockResolvedValue(33),
-  getExecutionTimeout: vi.fn().mockResolvedValue(44),
   getValidationRetries: vi.fn().mockResolvedValue(5),
   getContextStrategy: vi.fn().mockResolvedValue('recent'),
   getOutputValidation: vi.fn().mockResolvedValue('strict'),
@@ -64,8 +60,6 @@ describe('AdvancedSessionSettings', () => {
     expect((screen.getByTestId('autocompact-threshold-input') as HTMLInputElement).value).toBe(
       '0.75',
     );
-    expect((screen.getByTestId('max-iterations-input') as HTMLInputElement).value).toBe('33');
-    expect((screen.getByTestId('execution-timeout-input') as HTMLInputElement).value).toBe('44');
     expect((screen.getByTestId('validation-retries-input') as HTMLInputElement).value).toBe('5');
     expect((screen.getByTestId('context-strategy-select') as HTMLSelectElement).value).toBe(
       'recent',
@@ -81,8 +75,6 @@ describe('AdvancedSessionSettings', () => {
 
     const cases: [string, keyof typeof mockSetters, string, number][] = [
       ['context-budget-input', 'setContextBudget', '8000', 8000],
-      ['max-iterations-input', 'setMaxIterations', '12', 12],
-      ['execution-timeout-input', 'setExecutionTimeout', '300', 300],
       ['validation-retries-input', 'setValidationRetries', '3', 3],
     ];
 

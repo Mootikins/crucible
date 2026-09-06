@@ -51,10 +51,6 @@ config:
       type: number
       description: Seconds to wait for the consolidation reviewer
       default: 240
-    max_iterations:
-      type: number
-      description: Upper bound on the reviewer's tool-loop turns
-      default: 12
     rejection_memory:
       type: number
       description: How many recent rejections the reviewer is told about

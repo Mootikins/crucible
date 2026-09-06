@@ -103,8 +103,6 @@ fn internal_parent(delegation: DelegationConfig) -> SessionAgent {
         delegation_config: Some(delegation),
         precognition_enabled: false,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),

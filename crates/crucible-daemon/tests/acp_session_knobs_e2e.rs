@@ -95,8 +95,6 @@ fn acp_agent() -> SessionAgent {
         delegation_config: None,
         precognition_enabled: false,
         precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
         output_validation: OutputValidation::default(),
@@ -258,8 +256,10 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
             h.agent_manager.set_thinking_budget(id, 4096, None).await,
         ),
         (
-            "max_iterations",
-            h.agent_manager.set_max_iterations(id, Some(3), None).await,
+            "output_validation",
+            h.agent_manager
+                .set_output_validation(id, crucible_core::session::OutputValidation::Json, None)
+                .await,
         ),
         (
             "context_budget",
