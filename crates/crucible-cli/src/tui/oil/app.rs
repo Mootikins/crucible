@@ -1,10 +1,16 @@
 use crate::tui::oil::theme::{self, ThemeConfig};
 use crucible_oil::focus::FocusContext;
+use std::time::Instant;
 
 pub struct ViewContext<'a> {
     pub focus: &'a FocusContext,
     pub theme: &'a ThemeConfig,
     pub terminal_size: (u16, u16),
+    /// The frame clock. Every elapsed time in the frame is measured against
+    /// this one instant, never against `Instant::now()`, so the frame does not
+    /// depend on how long it took to build. `OilChatApp::view` overwrites it
+    /// with the app's own frame time.
+    pub frame_time: Instant,
     pub spinner_frame: usize,
     pub show_thinking: bool,
     pub show_diffs: bool,
@@ -16,6 +22,7 @@ impl<'a> ViewContext<'a> {
             focus,
             theme: theme::active(),
             terminal_size: (80, 24),
+            frame_time: Instant::now(),
             spinner_frame: 0,
             show_thinking: false,
             show_diffs: true,
@@ -27,6 +34,7 @@ impl<'a> ViewContext<'a> {
             focus,
             theme,
             terminal_size: (80, 24),
+            frame_time: Instant::now(),
             spinner_frame: 0,
             show_thinking: false,
             show_diffs: true,
@@ -42,6 +50,7 @@ impl<'a> ViewContext<'a> {
             focus,
             theme,
             terminal_size,
+            frame_time: Instant::now(),
             spinner_frame: 0,
             show_thinking: false,
             show_diffs: true,

@@ -134,8 +134,12 @@ impl CachedToolCall {
         self.output_path = Some(path);
     }
 
-    pub fn elapsed(&self) -> std::time::Duration {
-        self.started_at.elapsed()
+    /// Time this call ran, measured against the frame clock.
+    ///
+    /// The frame clock, not `Instant::now()`, so a frame renders the same
+    /// wherever and whenever it is built. See `OilChatApp::set_frame_time`.
+    pub fn elapsed_at(&self, now: std::time::Instant) -> std::time::Duration {
+        now.saturating_duration_since(self.started_at)
     }
 
     pub fn result(&self) -> String {
@@ -197,14 +201,19 @@ pub struct CachedSubagent {
 }
 
 impl CachedSubagent {
-    pub fn new(id: impl Into<String>, prompt: impl AsRef<str>, label: &'static str) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        prompt: impl AsRef<str>,
+        label: &'static str,
+        started_at: std::time::Instant,
+    ) -> Self {
         Self {
             id: Arc::from(id.into().as_str()),
             prompt: Arc::from(prompt.as_ref()),
             status: SubagentStatus::Running,
             summary: None,
             error: None,
-            started_at: std::time::Instant::now(),
+            started_at,
             label,
             target_agent: None,
         }
@@ -220,8 +229,9 @@ impl CachedSubagent {
         self.error = Some(Arc::from(error));
     }
 
-    pub fn elapsed(&self) -> std::time::Duration {
-        self.started_at.elapsed()
+    /// Time this agent ran, measured against the frame clock.
+    pub fn elapsed_at(&self, now: std::time::Instant) -> std::time::Duration {
+        now.saturating_duration_since(self.started_at)
     }
 
     /// Whether the subagent has reached a terminal state (completed or failed).

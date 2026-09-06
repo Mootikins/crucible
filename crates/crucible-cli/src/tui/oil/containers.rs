@@ -8,7 +8,7 @@
 
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::{Gap, Style};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
@@ -26,7 +26,11 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackgroundPhase {
     Started,
-    Finished,
+    /// `ran_for` is fixed when the finish node is written. Reading the clock
+    /// at render time would make the row change on every frame.
+    Finished {
+        ran_for: Duration,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -97,10 +101,16 @@ impl ChatNode {
                 );
                 Self::render_assistant_response(text, thinking, is_continuation, *complete, ctx)
             }
-            Self::ToolGroup { tools } => {
-                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width(), ctx.show_diffs)
+            Self::ToolGroup { tools } => Self::render_tool_group(
+                tools,
+                ctx.frame_time,
+                ctx.spinner_frame,
+                ctx.width(),
+                ctx.show_diffs,
+            ),
+            Self::SubagentTask { agent } => {
+                render_subagent(agent, ctx.spinner_frame, ctx.frame_time, ctx.width())
             }
-            Self::SubagentTask { agent } => render_subagent(agent, ctx.spinner_frame, ctx.width()),
             Self::ShellExecution { shell } => render_shell_execution(shell),
             Self::BackgroundTool { tool, phase } => Self::render_background_tool(tool, *phase, ctx),
             Self::SystemMessage { text } => Self::render_system_message(text),
@@ -127,12 +137,11 @@ impl ChatNode {
                 styled(tool.name.to_string(), dim),
                 styled(" started in the background", muted),
             ]),
-            BackgroundPhase::Finished => {
-                let elapsed = tool.started_at.elapsed();
+            BackgroundPhase::Finished { ran_for } => {
                 let summary = if let Some(error) = tool.error.as_ref() {
-                    format!(" failed after {:.1}s: {error}", elapsed.as_secs_f32())
+                    format!(" failed after {:.1}s: {error}", ran_for.as_secs_f32())
                 } else {
-                    format!(" finished after {:.1}s", elapsed.as_secs_f32())
+                    format!(" finished after {:.1}s", ran_for.as_secs_f32())
                 };
                 row([
                     styled(" \u{25AA} ", dim),
@@ -233,13 +242,14 @@ impl ChatNode {
     /// Tool group: renders each tool via the existing tool renderer.
     fn render_tool_group(
         tools: &[CachedToolCall],
+        now: Instant,
         spinner_frame: usize,
         width: usize,
         show_diffs: bool,
     ) -> Node {
         let items: Vec<Node> = tools
             .iter()
-            .map(|tool| tool.render_compact_with(spinner_frame, width, show_diffs))
+            .map(|tool| tool.render_compact_with(now, spinner_frame, width, show_diffs))
             .filter(|n| !matches!(n, Node::Empty))
             .collect();
 
@@ -386,8 +396,12 @@ impl ContainerList {
     /// node that mutates for as long as the tool runs. A fast tool is never
     /// split, so the common case stays a single node.
     ///
+    /// `now` is the frame clock. A replay that never advances it never
+    /// splits, so a slow test machine renders the same transcript as a fast
+    /// one.
+    ///
     /// Returns whether anything moved, so the caller can request a frame.
-    pub fn split_slow_tools(&mut self, threshold: Duration) -> bool {
+    pub fn split_slow_tools(&mut self, now: Instant, threshold: Duration) -> bool {
         let mut started: Vec<CachedToolCall> = Vec::new();
         for node in self.nodes.iter_mut() {
             let ChatNode::ToolGroup { tools } = node else {
@@ -395,7 +409,7 @@ impl ContainerList {
             };
             let mut index = 0;
             while index < tools.len() {
-                let slow = !tools[index].complete && tools[index].started_at.elapsed() >= threshold;
+                let slow = !tools[index].complete && tools[index].elapsed_at(now) >= threshold;
                 if slow {
                     started.push(tools.remove(index));
                 } else {
@@ -450,8 +464,15 @@ impl ContainerList {
 
     /// Write the finish node for a split tool and drop its live copy.
     ///
+    /// `now` is the frame clock; the finish node records the run time from it.
+    ///
     /// Returns whether this call belonged to a split tool.
-    pub fn finish_background_tool(&mut self, name: &str, call_id: Option<&str>) -> bool {
+    pub fn finish_background_tool(
+        &mut self,
+        name: &str,
+        call_id: Option<&str>,
+        now: Instant,
+    ) -> bool {
         let position = match call_id {
             Some(cid) => self
                 .background
@@ -467,9 +488,10 @@ impl ContainerList {
         };
         let mut tool = self.background.remove(position);
         tool.complete = true;
+        let ran_for = tool.elapsed_at(now);
         self.nodes.push(ChatNode::BackgroundTool {
             tool,
-            phase: BackgroundPhase::Finished,
+            phase: BackgroundPhase::Finished { ran_for },
         });
         true
     }
@@ -806,7 +828,7 @@ mod tests {
         list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
         list.update_tool("read_file", None, |t| t.mark_complete());
 
-        assert!(!list.split_slow_tools(Duration::from_millis(500)));
+        assert!(!list.split_slow_tools(Instant::now(), Duration::from_millis(500)));
         assert_eq!(list.len(), 1, "the tool stays one grouped node");
         assert_eq!(list.background_task_count(), 0);
     }
@@ -818,7 +840,7 @@ mod tests {
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
 
         // Zero threshold: the tool is already past it.
-        assert!(list.split_slow_tools(Duration::ZERO));
+        assert!(list.split_slow_tools(Instant::now(), Duration::ZERO));
         assert_eq!(list.len(), 1, "the emptied group must not linger");
         assert!(matches!(
             list.nodes()[0],
@@ -835,14 +857,14 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.split_slow_tools(Duration::ZERO);
+        list.split_slow_tools(Instant::now(), Duration::ZERO);
 
-        assert!(list.finish_background_tool("bash", None));
+        assert!(list.finish_background_tool("bash", None, Instant::now()));
         assert_eq!(list.len(), 2, "start and finish are separate nodes");
         assert!(matches!(
             list.nodes()[1],
             ChatNode::BackgroundTool {
-                phase: BackgroundPhase::Finished,
+                phase: BackgroundPhase::Finished { .. },
                 ..
             }
         ));
@@ -858,7 +880,7 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.split_slow_tools(Duration::ZERO);
+        list.split_slow_tools(Instant::now(), Duration::ZERO);
 
         // Output arriving after the split must not reach a transcript node.
         assert!(list.update_background_tool("bash", None, |t| t.append_output("line\n")));
@@ -879,8 +901,8 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.split_slow_tools(Duration::ZERO);
-        list.finish_background_tool("bash", None);
+        list.split_slow_tools(Instant::now(), Duration::ZERO);
+        list.finish_background_tool("bash", None, Instant::now());
 
         for node in list.nodes() {
             assert!(node.is_complete(), "background nodes must be immutable");

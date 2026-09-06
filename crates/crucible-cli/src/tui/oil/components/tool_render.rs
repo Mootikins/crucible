@@ -11,7 +11,7 @@ use crucible_oil::ansi::visible_width;
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::{AdaptiveColor, Style};
 use crucible_oil::truncate_to_width;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Foreground-only style from a theme-resolved adaptive color. Condenses the
 /// pervasive `Style::new().fg(t.resolve_color(...))` call sites.
@@ -21,19 +21,26 @@ fn fg(t: &ThemeConfig, color: AdaptiveColor) -> Style {
 
 impl CachedToolCall {
     /// Render a compact tool call with default spinner frame (0) and diffs visible.
+    ///
+    /// The frame clock is the call's own start, so the card shows no elapsed
+    /// time. Only tests use this; the transcript passes the real frame clock.
     pub fn render_compact(&self, width: usize) -> Node {
-        self.render_compact_with(0, width, true)
+        self.render_compact_with(self.started_at, 0, width, true)
     }
 
     /// Render a compact tool call with specified spinner frame; diffs visible.
     pub fn render_compact_with_frame(&self, spinner_frame: usize, width: usize) -> Node {
-        self.render_compact_with(spinner_frame, width, true)
+        self.render_compact_with(self.started_at, spinner_frame, width, true)
     }
 
     /// Render a compact tool call. `show_diffs` gates the diff body for
     /// Edit/Write tool calls; the rest of the result still renders.
+    ///
+    /// `now` is the frame clock. A running card reads its elapsed time from
+    /// it, so the same state renders the same card on any machine.
     pub fn render_compact_with(
         &self,
+        now: Instant,
         spinner_frame: usize,
         width: usize,
         show_diffs: bool,
@@ -57,6 +64,7 @@ impl CachedToolCall {
             self.render_complete(&display_name, primary_arg, &result_str, width, show_diffs)
         } else {
             self.render_running(
+                now,
                 &display_name,
                 primary_arg,
                 &result_str,
@@ -257,13 +265,14 @@ impl CachedToolCall {
 
     fn render_running(
         &self,
+        now: Instant,
         display_name: &str,
         primary_arg: &str,
         result_str: &str,
         spinner_frame: usize,
         width: usize,
     ) -> Node {
-        let elapsed = self.elapsed();
+        let elapsed = self.elapsed_at(now);
         let show_elapsed = elapsed >= Duration::from_secs(2);
 
         let t = crate::tui::oil::theme::active();

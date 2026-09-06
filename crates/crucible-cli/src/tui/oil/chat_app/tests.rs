@@ -475,3 +475,56 @@ fn one_kiln_reads_as_one() {
         "singular missing: {rendered}"
     );
 }
+
+// ─── Frame clock ────────────────────────────────────────────────────────────
+
+fn running_tool_call() -> ChatAppMsg {
+    ChatAppMsg::ToolCall {
+        name: "bash".into(),
+        args: "{}".into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+        diffs: Vec::new(),
+        auto_approved: None,
+    }
+}
+
+#[test]
+fn a_slow_tool_split_follows_the_frame_clock() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("run it".into()));
+    app.on_message(running_tool_call());
+    let start = app.frame_time();
+
+    assert!(!app.split_slow_tools(), "no time passed on the frame clock");
+
+    app.set_frame_time(start + BACKGROUND_TOOL_SPLIT_THRESHOLD);
+    assert!(
+        app.split_slow_tools(),
+        "the threshold passed on the frame clock"
+    );
+    assert_eq!(app.container_list().background_task_count(), 1);
+}
+
+/// The transcript must not read the wall clock. A replay test feeds a
+/// recording through `render_frame` with the frame clock frozen; on a slow CI
+/// runner the replay itself outran the split threshold, an incomplete tool
+/// left its group above the viewport, and the answer below it scrolled out of
+/// the assertion. The sleep here is deliberate: it is the only way to prove
+/// that real elapsed time changes nothing.
+#[test]
+fn the_wall_clock_alone_never_splits_a_tool() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("run it".into()));
+    app.on_message(running_tool_call());
+
+    std::thread::sleep(BACKGROUND_TOOL_SPLIT_THRESHOLD + std::time::Duration::from_millis(50));
+
+    assert!(
+        !app.split_slow_tools(),
+        "the frame clock did not move, so the tool must stay in its group"
+    );
+    assert_eq!(app.container_list().background_task_count(), 0);
+}

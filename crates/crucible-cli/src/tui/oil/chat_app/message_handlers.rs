@@ -2,7 +2,6 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall, ToolSourceDisplay};
@@ -72,7 +71,7 @@ impl OilChatApp {
                     output_path: None,
                     output_total_bytes: 0,
                     error: None,
-                    started_at: Instant::now(),
+                    started_at: self.frame_time(),
                     complete: false,
                     superseded: false,
                     description: description.map(|d| Arc::from(d.as_str())),
@@ -108,10 +107,11 @@ impl OilChatApp {
             }
             ChatAppMsg::ToolResultComplete { name, call_id } => {
                 // Finishing a split tool writes its second immutable node.
-                if !self
-                    .container_list
-                    .finish_background_tool(&name, call_id.as_deref())
-                {
+                if !self.container_list.finish_background_tool(
+                    &name,
+                    call_id.as_deref(),
+                    self.frame_time(),
+                ) {
                     self.container_list
                         .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
                 }
@@ -127,8 +127,11 @@ impl OilChatApp {
                         t.set_error(error.clone())
                     })
                 {
-                    self.container_list
-                        .finish_background_tool(&name, call_id.as_deref());
+                    self.container_list.finish_background_tool(
+                        &name,
+                        call_id.as_deref(),
+                        self.frame_time(),
+                    );
                 } else {
                     self.container_list
                         .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
@@ -221,7 +224,7 @@ impl OilChatApp {
     pub(super) fn handle_delegation_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::SubagentSpawned { id, prompt } => {
-                let agent = CachedSubagent::new(id, prompt, "subagent");
+                let agent = CachedSubagent::new(id, prompt, "subagent", self.frame_time());
                 self.container_list.add_agent_task(agent);
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
@@ -241,7 +244,7 @@ impl OilChatApp {
                 if self.pending_delegate_supersessions.contains(&id) {
                     self.pending_delegate_supersessions.remove(&id);
                 }
-                let mut agent = CachedSubagent::new(&id, prompt, "delegation");
+                let mut agent = CachedSubagent::new(&id, prompt, "delegation", self.frame_time());
                 agent.target_agent = target_agent;
                 self.container_list.add_agent_task(agent);
             }
