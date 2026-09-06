@@ -389,12 +389,9 @@ const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
     ("context_strategy", "context-strategy"),
     ("execution_timeout", "execution-timeout"),
     ("max_iterations", "max-iterations"),
-    ("max_tokens", "max-tokens"),
     ("output_validation", "output-validation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition/results"),
-    ("system_prompt", "system-prompt"),
-    ("temperature", "temperature"),
     ("thinking_budget", "thinking-budget"),
     ("validation_retries", "validation-retries"),
     // Not a Crucible knob: the settings the external agent advertised for

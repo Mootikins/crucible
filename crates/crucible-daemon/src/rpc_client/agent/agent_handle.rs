@@ -112,12 +112,6 @@ impl AgentHandle for DaemonAgentHandle {
             if let Some(model) = &self.cached_model {
                 config.model = model.clone();
             }
-            if let Some(temp) = self.cached_temperature {
-                config.temperature = Some(temp);
-            }
-            if let Some(max) = self.cached_max_tokens {
-                config.max_tokens = Some(max);
-            }
             config.thinking_budget = self.cached_thinking_budget;
             config.max_iterations = self.cached_max_iterations;
             config.execution_timeout_secs = self.cached_execution_timeout;
@@ -180,6 +174,12 @@ impl AgentHandle for DaemonAgentHandle {
 
 #[async_trait]
 impl SessionKnobs for DaemonAgentHandle {
+    /// A proxy handle was not built with a prompt; the daemon's own handle
+    /// holds it. There is no RPC to read it back, and nothing needs one.
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, model = %model_id, "Switching model via daemon");
         self.client
@@ -228,48 +228,6 @@ impl SessionKnobs for DaemonAgentHandle {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         self.cached_thinking_budget
-    }
-
-    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
-        tracing::debug!(session_id = %self.session_id, "Setting system prompt via daemon");
-        self.client
-            .session_set_system_prompt(&self.session_id, prompt)
-            .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set system prompt: {}", e)))?;
-        self.cached_system_prompt = Some(prompt.to_string());
-        Ok(())
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        self.cached_system_prompt.clone()
-    }
-
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, temperature = temperature, "Setting temperature via daemon");
-        self.client
-            .session_set_temperature(&self.session_id, temperature)
-            .await
-            .chat_comm()?;
-        self.cached_temperature = Some(temperature);
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.cached_temperature
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, max_tokens = ?max_tokens, "Setting max_tokens via daemon");
-        self.client
-            .session_set_max_tokens(&self.session_id, max_tokens)
-            .await
-            .chat_comm()?;
-        self.cached_max_tokens = max_tokens;
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.cached_max_tokens
     }
 
     async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {

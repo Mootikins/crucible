@@ -128,14 +128,6 @@ pub(crate) async fn handle_session_set_mode(
 }
 
 session_config_setter!(
-    handle_session_set_system_prompt,
-    req,
-    set_system_prompt,
-    "system_prompt",
-    require_param!(req, "system_prompt", as_str)
-);
-
-session_config_setter!(
     handle_session_set_precognition,
     req,
     set_precognition,
@@ -151,23 +143,7 @@ session_config_setter!(
     optional_param!(req, "precognition_results", as_u64).unwrap_or(5) as usize
 );
 
-session_config_setter!(
-    handle_session_set_temperature,
-    req,
-    set_temperature,
-    "temperature",
-    require_param!(req, "temperature", as_f64)
-);
-
 // max_tokens can be null to clear the limit, so we use optional.
-session_config_setter!(
-    handle_session_set_max_tokens,
-    req,
-    set_max_tokens,
-    "max_tokens",
-    optional_param!(req, "max_tokens", as_u64).map(|v| v as u32)
-);
-
 // max_iterations can be null to clear the limit (unlimited), so we use optional.
 session_config_setter!(
     handle_session_set_max_iterations,
@@ -218,11 +194,6 @@ session_config_getter!(
     "thinking_budget"
 );
 session_config_getter!(
-    handle_session_get_system_prompt,
-    get_system_prompt,
-    "system_prompt"
-);
-session_config_getter!(
     handle_session_get_precognition,
     get_precognition,
     "precognition_enabled"
@@ -232,14 +203,7 @@ session_config_getter!(
     get_precognition_results,
     "precognition_results"
 );
-session_config_getter!(
-    handle_session_get_temperature,
-    get_temperature,
-    "temperature"
-);
-
 session_config_getter!(handle_session_get_mode, get_mode, "mode");
-session_config_getter!(handle_session_get_max_tokens, get_max_tokens, "max_tokens");
 session_config_getter!(
     handle_session_get_max_iterations,
     get_max_iterations,

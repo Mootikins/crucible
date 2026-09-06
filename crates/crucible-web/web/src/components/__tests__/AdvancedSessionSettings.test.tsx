@@ -18,7 +18,6 @@ const mockSetters = vi.hoisted(() => ({
   setValidationRetries: vi.fn(),
   setContextStrategy: vi.fn(),
   setOutputValidation: vi.fn(),
-  setSystemPrompt: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -29,7 +28,6 @@ vi.mock('@/lib/api', () => ({
   getValidationRetries: vi.fn().mockResolvedValue(5),
   getContextStrategy: vi.fn().mockResolvedValue('recent'),
   getOutputValidation: vi.fn().mockResolvedValue('strict'),
-  getSystemPrompt: vi.fn().mockResolvedValue('be terse'),
   ...mockSetters,
 }));
 
@@ -74,9 +72,6 @@ describe('AdvancedSessionSettings', () => {
     );
     expect((screen.getByTestId('output-validation-select') as HTMLSelectElement).value).toBe(
       'strict',
-    );
-    expect((screen.getByTestId('system-prompt-input') as HTMLTextAreaElement).value).toBe(
-      'be terse',
     );
   });
 
@@ -156,25 +151,5 @@ describe('AdvancedSessionSettings', () => {
         'some-future-strategy',
       ),
     );
-  });
-
-  it('debounces the system prompt instead of firing a PUT per keystroke', async () => {
-    vi.useFakeTimers();
-    try {
-      renderSection();
-      await vi.waitFor(() => screen.getByTestId('system-prompt-input'));
-
-      const box = screen.getByTestId('system-prompt-input');
-      for (const text of ['a', 'ab', 'abc']) {
-        fireEvent.input(box, { target: { value: text } });
-      }
-      expect(mockSetters.setSystemPrompt).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(500);
-      expect(mockSetters.setSystemPrompt).toHaveBeenCalledTimes(1);
-      expect(mockSetters.setSystemPrompt).toHaveBeenCalledWith('s1', 'abc');
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

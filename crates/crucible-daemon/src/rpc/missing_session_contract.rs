@@ -190,18 +190,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ),
         ("session.get_thinking_budget", json!({}), not_found()),
         (
-            "session.set_temperature",
-            json!({"temperature": 0.5}),
-            not_found(),
-        ),
-        ("session.get_temperature", json!({}), not_found()),
-        (
-            "session.set_max_tokens",
-            json!({"max_tokens": 10}),
-            not_found(),
-        ),
-        ("session.get_max_tokens", json!({}), not_found()),
-        (
             "session.set_max_iterations",
             json!({"max_iterations": 3}),
             not_found(),
@@ -233,12 +221,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             json!({"validation_retries": 3}),
             not_found(),
         ),
-        (
-            "session.set_system_prompt",
-            json!({"system_prompt": "x"}),
-            not_found(),
-        ),
-        ("session.get_system_prompt", json!({}), not_found()),
         (
             "session.set_precognition",
             json!({"precognition": true}),

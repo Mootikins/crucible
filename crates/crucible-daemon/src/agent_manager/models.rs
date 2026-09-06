@@ -508,48 +508,6 @@ impl AgentManager {
         Ok(agent_config.thinking_budget)
     }
 
-    pub async fn set_system_prompt(
-        &self,
-        session_id: &str,
-        prompt: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        if self.slot(session_id).has_agent() {
-            return Err(AgentError::InvalidConfig(
-                "system_prompt is locked after the first message has been sent".to_string(),
-            ));
-        }
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::SystemPrompt,
-            event_tx,
-            "system_prompt_changed",
-            serde_json::json!({ "system_prompt": prompt }),
-            "Failed to emit system_prompt_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.system_prompt = prompt.to_string();
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    "System prompt updated"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_system_prompt(&self, session_id: &str) -> Result<Option<String>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        let prompt = &agent_config.system_prompt;
-        if prompt.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(prompt.clone()))
-        }
-    }
-
     pub async fn set_precognition(
         &self,
         session_id: &str,
@@ -614,39 +572,6 @@ impl AgentManager {
     pub fn get_precognition_results(&self, session_id: &str) -> Result<usize, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.precognition_results)
-    }
-
-    pub async fn set_temperature(
-        &self,
-        session_id: &str,
-        temperature: f64,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::Temperature,
-            event_tx,
-            "temperature_changed",
-            serde_json::json!({ "temperature": temperature }),
-            "Failed to emit temperature_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.temperature = Some(temperature);
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    temperature = temperature,
-                    "Temperature updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_temperature(&self, session_id: &str) -> Result<Option<f64>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.temperature)
     }
 
     pub async fn add_notification(
@@ -736,39 +661,6 @@ impl AgentManager {
         }
 
         Ok(success)
-    }
-
-    pub async fn set_max_tokens(
-        &self,
-        session_id: &str,
-        max_tokens: Option<u32>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::MaxTokens,
-            event_tx,
-            "max_tokens_changed",
-            serde_json::json!({ "max_tokens": max_tokens }),
-            "Failed to emit max_tokens_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.max_tokens = max_tokens;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    max_tokens = ?max_tokens,
-                    "Max tokens updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_max_tokens(&self, session_id: &str) -> Result<Option<u32>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.max_tokens)
     }
 
     pub async fn set_max_iterations(

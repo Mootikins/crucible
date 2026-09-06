@@ -198,18 +198,6 @@ async fn output_validation_round_trips_its_string_spelling() {
     assert_get_returns("output-validation", "output_validation", json!("strict")).await;
 }
 
-#[tokio::test]
-async fn system_prompt_round_trips() {
-    assert_put_reaches_daemon(
-        "system-prompt",
-        "session.set_system_prompt",
-        "system_prompt",
-        json!("you are a librarian"),
-    )
-    .await;
-    assert_get_returns("system-prompt", "system_prompt", json!("be terse")).await;
-}
-
 // ── Nullable knobs ────────────────────────────────────────────────────────
 
 /// Clearing an optional knob must never reach the daemon as a *value*.

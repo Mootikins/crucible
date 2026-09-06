@@ -143,10 +143,6 @@ rpc_methods! {
     NotificationDismiss = "notification.dismiss",
     SessionInteractionRespond = "session.interaction_respond",
     SessionPendingInteractions = "session.pending_interactions",
-    SessionSetTemperature = "session.set_temperature",
-    SessionGetTemperature = "session.get_temperature",
-    SessionSetMaxTokens = "session.set_max_tokens",
-    SessionGetMaxTokens = "session.get_max_tokens",
     SessionSetMaxIterations = "session.set_max_iterations",
     SessionGetMaxIterations = "session.get_max_iterations",
     SessionSetExecutionTimeout = "session.set_execution_timeout",
@@ -159,8 +155,6 @@ rpc_methods! {
     SessionGetOutputValidation = "session.get_output_validation",
     SessionSetValidationRetries = "session.set_validation_retries",
     SessionGetValidationRetries = "session.get_validation_retries",
-    SessionSetSystemPrompt = "session.set_system_prompt",
-    SessionGetSystemPrompt = "session.get_system_prompt",
     SessionSetPrecognition = "session.set_precognition",
     SessionGetPrecognition = "session.get_precognition",
     SessionSetPrecognitionResults = "session.set_precognition_results",
@@ -358,31 +352,25 @@ impl RpcDispatcher {
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
             RpcMethod::SessionSetThinkingBudget
-            | RpcMethod::SessionSetTemperature
-            | RpcMethod::SessionSetMaxTokens
             | RpcMethod::SessionSetMaxIterations
             | RpcMethod::SessionSetExecutionTimeout
             | RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
             | RpcMethod::SessionSetOutputValidation
             | RpcMethod::SessionSetValidationRetries
-            | RpcMethod::SessionSetSystemPrompt
             | RpcMethod::SessionSetPrecognition
             | RpcMethod::SessionSetPrecognitionResults
             | RpcMethod::SessionSetAutocompactThreshold => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             RpcMethod::SessionGetThinkingBudget
-            | RpcMethod::SessionGetTemperature
             | RpcMethod::SessionGetMode
-            | RpcMethod::SessionGetMaxTokens
             | RpcMethod::SessionGetMaxIterations
             | RpcMethod::SessionGetExecutionTimeout
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
             | RpcMethod::SessionGetOutputValidation
             | RpcMethod::SessionGetValidationRetries
-            | RpcMethod::SessionGetSystemPrompt
             | RpcMethod::SessionGetPrecognition
             | RpcMethod::SessionGetPrecognitionResults
             | RpcMethod::SessionGetAutocompactThreshold => {
@@ -1321,15 +1309,12 @@ impl RpcDispatcher {
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
             "session.set_thinking_budget" => handle_session_set_thinking_budget,
-            "session.set_temperature" => handle_session_set_temperature,
-            "session.set_max_tokens" => handle_session_set_max_tokens,
             "session.set_max_iterations" => handle_session_set_max_iterations,
             "session.set_execution_timeout" => handle_session_set_execution_timeout,
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
             "session.set_output_validation" => handle_session_set_output_validation,
             "session.set_validation_retries" => handle_session_set_validation_retries,
-            "session.set_system_prompt" => handle_session_set_system_prompt,
             "session.set_precognition" => handle_session_set_precognition,
             "session.set_precognition_results" => handle_session_set_precognition_results,
             "session.set_autocompact_threshold" => handle_session_set_autocompact_threshold,
@@ -1343,16 +1328,13 @@ impl RpcDispatcher {
     async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_getter!(req, &self.ctx.agents, {
             "session.get_thinking_budget" => handle_session_get_thinking_budget,
-            "session.get_temperature" => handle_session_get_temperature,
             "session.get_mode" => handle_session_get_mode,
-            "session.get_max_tokens" => handle_session_get_max_tokens,
             "session.get_max_iterations" => handle_session_get_max_iterations,
             "session.get_execution_timeout" => handle_session_get_execution_timeout,
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
             "session.get_output_validation" => handle_session_get_output_validation,
             "session.get_validation_retries" => handle_session_get_validation_retries,
-            "session.get_system_prompt" => handle_session_get_system_prompt,
             "session.get_precognition" => handle_session_get_precognition,
             "session.get_precognition_results" => handle_session_get_precognition_results,
             "session.get_autocompact_threshold" => handle_session_get_autocompact_threshold,

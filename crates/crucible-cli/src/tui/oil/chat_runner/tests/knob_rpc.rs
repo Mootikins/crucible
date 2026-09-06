@@ -55,6 +55,10 @@ impl AgentHandle for KnobRecordingAgent {
 /// answer, written out so the compiler sees the choice.
 #[async_trait::async_trait]
 impl SessionKnobs for KnobRecordingAgent {
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
         self.calls.push("switch_model");
         Ok(())
@@ -119,30 +123,6 @@ impl SessionKnobs for KnobRecordingAgent {
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_temperature".into()))
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-
-    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_tokens".into()))
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
         None
     }
 
@@ -340,6 +320,10 @@ impl AgentHandle for ModeListingAgent {
 /// Only the mode list is live; every knob is the empty answer.
 #[async_trait::async_trait]
 impl SessionKnobs for ModeListingAgent {
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         *self.fetches.lock().unwrap() += 1;
         self.modes.clone()
@@ -362,30 +346,6 @@ impl SessionKnobs for ModeListingAgent {
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_temperature".into()))
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-
-    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_tokens".into()))
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
         None
     }
 

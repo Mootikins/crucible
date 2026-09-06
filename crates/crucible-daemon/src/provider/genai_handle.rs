@@ -1518,6 +1518,14 @@ impl AgentHandle for GenaiAgentHandle {
 /// the handle refuses the setter. `DaemonAgentHandle` answers them by RPC.
 #[async_trait]
 impl SessionKnobs for GenaiAgentHandle {
+    fn get_system_prompt(&self) -> Option<String> {
+        Some(if self.session_context.is_empty() {
+            self.system_prompt.clone()
+        } else {
+            format!("{}\n\n{}", self.system_prompt, self.session_context)
+        })
+    }
+
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         self.model = self.model.from_name(model_id.to_string());
         Ok(())
@@ -1544,39 +1552,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         self.thinking_budget
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    /// The prompt this handle will actually send, after the factory's
-    /// enrichment (workspace header, rules files, skills catalog) — not the
-    /// agent card's `system_prompt` the session config stores.
-    fn get_system_prompt(&self) -> Option<String> {
-        Some(if self.session_context.is_empty() {
-            self.system_prompt.clone()
-        } else {
-            format!("{}\n\n{}", self.system_prompt, self.session_context)
-        })
-    }
-
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        self.temperature = Some(temperature);
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.temperature
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        self.max_tokens = max_tokens;
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.max_tokens
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {

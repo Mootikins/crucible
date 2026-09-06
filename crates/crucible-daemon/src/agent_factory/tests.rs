@@ -515,8 +515,10 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     .await
     .expect("agent creation should succeed");
 
-    assert_eq!(handle.get_temperature(), Some(0.2), "temperature");
-    assert_eq!(handle.get_max_tokens(), Some(512), "max_tokens");
+    // `temperature` and `max_tokens` are config-only now, with no getter to
+    // read back. `generation_settings_reach_the_outgoing_chat_options` in
+    // `provider::genai_handle` asserts them on `ChatOptions` — the object
+    // that goes on the wire — which is the stronger claim anyway.
     assert_eq!(handle.get_context_budget(), Some(64_000), "context_budget");
     assert_eq!(
         handle.get_context_strategy(),

@@ -233,11 +233,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "thinking_budget",
     },
     ConfigMethod {
-        suffix: "system_prompt",
-        request_field: "system_prompt",
-        result_field: "system_prompt",
-    },
-    ConfigMethod {
         suffix: "precognition",
         request_field: "precognition_enabled",
         result_field: "precognition_enabled",
@@ -246,16 +241,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         suffix: "precognition_results",
         request_field: "precognition_results",
         result_field: "precognition_results",
-    },
-    ConfigMethod {
-        suffix: "temperature",
-        request_field: "temperature",
-        result_field: "temperature",
-    },
-    ConfigMethod {
-        suffix: "max_tokens",
-        request_field: "max_tokens",
-        result_field: "max_tokens",
     },
     ConfigMethod {
         suffix: "max_iterations",

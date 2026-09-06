@@ -205,6 +205,13 @@ pub trait SessionKnobs: Send + Sync {
     /// had rather than dropping to zero modes.
     async fn fetch_available_modes(&mut self) -> Vec<String>;
 
+    /// The system prompt the handle was built with.
+    ///
+    /// Read-only: the prompt comes from config, an agent card or Lua, never
+    /// from a runtime setter. It stays on the trait because it is the one
+    /// place a test can prove that AGENTS.md rules reached the model.
+    fn get_system_prompt(&self) -> Option<String>;
+
     /// Set the thinking budget for reasoning models.
     ///
     /// Values: -1 = unlimited, 0 = disabled, >0 = max tokens
@@ -212,26 +219,6 @@ pub trait SessionKnobs: Send + Sync {
 
     /// Get the current thinking budget.
     fn get_thinking_budget(&self) -> Option<i64>;
-
-    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()>;
-
-    fn get_system_prompt(&self) -> Option<String>;
-
-    /// Set the temperature for response generation.
-    ///
-    /// Values: 0.0 = deterministic, 1.0 = balanced, 2.0 = maximum randomness
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()>;
-
-    /// Get the current temperature setting.
-    fn get_temperature(&self) -> Option<f64>;
-
-    /// Set the maximum tokens for response generation.
-    ///
-    /// Values: None = provider default, Some(n) = limit to n tokens
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()>;
-
-    /// Get the current max tokens setting.
-    fn get_max_tokens(&self) -> Option<u32>;
 
     /// Set maximum tool-call iterations per turn. None = unlimited.
     async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()>;
@@ -337,39 +324,6 @@ macro_rules! impl_unsupported_session_knobs {
             fn get_thinking_budget(&self) -> Option<i64> {
                 None
             }
-            async fn set_system_prompt(
-                &mut self,
-                _prompt: &str,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_system_prompt".into(),
-                ))
-            }
-            fn get_system_prompt(&self) -> Option<String> {
-                None
-            }
-            async fn set_temperature(
-                &mut self,
-                _temperature: f64,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_temperature".into(),
-                ))
-            }
-            fn get_temperature(&self) -> Option<f64> {
-                None
-            }
-            async fn set_max_tokens(
-                &mut self,
-                _max_tokens: Option<u32>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_max_tokens".into(),
-                ))
-            }
-            fn get_max_tokens(&self) -> Option<u32> {
-                None
-            }
             async fn set_max_iterations(
                 &mut self,
                 _max_iterations: Option<u32>,
@@ -410,6 +364,9 @@ macro_rules! impl_unsupported_session_knobs {
                 Err($crate::traits::chat::ChatError::NotSupported(
                     "set_context_strategy".into(),
                 ))
+            }
+            fn get_system_prompt(&self) -> Option<String> {
+                None
             }
             fn get_context_strategy(&self) -> $crate::session::ContextStrategy {
                 $crate::session::ContextStrategy::default()
@@ -680,30 +637,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
         (**self).get_thinking_budget()
     }
 
-    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
-        (**self).set_system_prompt(prompt).await
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        (**self).get_system_prompt()
-    }
-
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        (**self).set_temperature(temperature).await
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        (**self).get_temperature()
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        (**self).set_max_tokens(max_tokens).await
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        (**self).get_max_tokens()
-    }
-
     async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
         (**self).set_max_iterations(max_iterations).await
     }
@@ -733,6 +666,10 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
         strategy: crate::session::ContextStrategy,
     ) -> ChatResult<()> {
         (**self).set_context_strategy(strategy).await
+    }
+
+    fn get_system_prompt(&self) -> Option<String> {
+        (**self).get_system_prompt()
     }
 
     fn get_context_strategy(&self) -> crate::session::ContextStrategy {

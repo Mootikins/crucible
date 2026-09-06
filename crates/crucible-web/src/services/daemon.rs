@@ -916,54 +916,6 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_set_temperature(
-        &self,
-        session_id: &str,
-        temperature: f64,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_temperature", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_temperature(&session_id, temperature)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_temperature(&self, session_id: &str) -> anyhow::Result<Option<f64>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_temperature", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_temperature(&session_id).await })
-        })
-        .await
-    }
-
-    pub async fn session_set_max_tokens(
-        &self,
-        session_id: &str,
-        max_tokens: Option<u32>,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_max_tokens", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_set_max_tokens(&session_id, max_tokens).await })
-        })
-        .await
-    }
-
-    pub async fn session_get_max_tokens(&self, session_id: &str) -> anyhow::Result<Option<u32>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_max_tokens", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_max_tokens(&session_id).await })
-        })
-        .await
-    }
-
     pub async fn session_set_precognition(
         &self,
         session_id: &str,

@@ -13,7 +13,7 @@
 // backend route; `routes/session_config/tests.rs` proves each route round-trips
 // its value under the daemon's field name. This file is the last leg: without it
 // the API is wider than the UI, which is reachable-but-unreachable.
-import { Component, createSignal, onCleanup, onMount } from 'solid-js';
+import { Component, createSignal, onMount } from 'solid-js';
 
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
@@ -24,7 +24,6 @@ import {
   getExecutionTimeout,
   getMaxIterations,
   getOutputValidation,
-  getSystemPrompt,
   getValidationRetries,
   setAutocompactThreshold,
   setContextBudget,
@@ -32,11 +31,10 @@ import {
   setExecutionTimeout,
   setMaxIterations,
   setOutputValidation,
-  setSystemPrompt,
   setValidationRetries,
 } from '@/lib/api';
 
-import { createDebounce, SettingRow, SettingsSectionState } from './primitives';
+import { SettingRow, SettingsSectionState } from './primitives';
 
 const inputClass =
   'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
@@ -71,25 +69,12 @@ export const AdvancedSessionSettingsSection: Component = () => {
   const [validationRetries, setValidationRetriesSig] = createSignal('');
   const [contextStrategy, setContextStrategySig] = createSignal('');
   const [outputValidation, setOutputValidationSig] = createSignal('');
-  const [systemPrompt, setSystemPromptSig] = createSignal('');
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
 
   const fail = (what: string) => (err: unknown) =>
     setError(err instanceof Error ? err.message : `Failed to set ${what}`);
 
-  // The system prompt is a textarea, so it debounces rather than firing a PUT
-  // per keystroke. The numeric fields commit on blur/change instead.
-  const promptDebounce = createDebounce(async (...args: unknown[]) => {
-    const [sid, text] = args as [string, string];
-    try {
-      await setSystemPrompt(sid, text);
-    } catch (err) {
-      fail('system prompt')(err);
-    }
-  }, 400);
-
-  onCleanup(() => promptDebounce.cleanup());
 
   const loadSettings = async () => {
     const s = session.currentSession();
@@ -100,7 +85,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, threshold, iterations, timeout, retries, strategy, validation, prompt] =
+      const [budget, threshold, iterations, timeout, retries, strategy, validation] =
         await Promise.all([
           getContextBudget(s.id),
           getAutocompactThreshold(s.id),
@@ -109,7 +94,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
           getValidationRetries(s.id),
           getContextStrategy(s.id),
           getOutputValidation(s.id),
-          getSystemPrompt(s.id),
         ]);
       const text = (v: number | null) => (v === null ? '' : String(v));
       setContextBudgetSig(text(budget));
@@ -119,7 +103,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
       setValidationRetriesSig(text(retries));
       setContextStrategySig(strategy ?? '');
       setOutputValidationSig(validation ?? '');
-      setSystemPromptSig(prompt ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load advanced settings');
     } finally {
@@ -300,25 +283,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
         </select>
       </SettingRow>
 
-      <SettingRow
-        label="System Prompt"
-        description="Overrides the agent's default; empty to clear"
-        controlClass="py-3"
-      >
-        <textarea
-          rows={4}
-          value={systemPrompt()}
-          data-testid="system-prompt-input"
-          onInput={(e) => {
-            const val = (e.target as HTMLTextAreaElement).value;
-            setSystemPromptSig(val);
-            const s = session.currentSession();
-            if (s) promptDebounce.debounced(s.id, val);
-          }}
-          class={`${inputClass} w-full font-mono text-xs`}
-          placeholder="Agent default"
-        />
-      </SettingRow>
     </SettingsSectionState>
   );
 };

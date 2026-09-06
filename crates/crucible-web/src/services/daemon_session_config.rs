@@ -240,31 +240,4 @@ impl ReconnectingDaemon {
         })
         .await
     }
-
-    pub async fn session_set_system_prompt(
-        &self,
-        session_id: &str,
-        prompt: &str,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let prompt = prompt.to_string();
-        self.call_with_reconnect("session.set_system_prompt", move |daemon| {
-            let session_id = session_id.clone();
-            let prompt = prompt.clone();
-            Box::pin(async move { daemon.session_set_system_prompt(&session_id, &prompt).await })
-        })
-        .await
-    }
-
-    pub async fn session_get_system_prompt(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<String>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_system_prompt", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_system_prompt(&session_id).await })
-        })
-        .await
-    }
 }

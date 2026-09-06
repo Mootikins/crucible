@@ -43,13 +43,6 @@ pub struct SessionSetThinkingBudgetRequest {
     pub thinking_budget: Option<i64>,
 }
 
-/// Request for `session.set_system_prompt`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetSystemPromptRequest {
-    pub session_id: String,
-    pub system_prompt: String,
-}
-
 /// Request for `session.set_precognition`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetPrecognitionRequest {
@@ -70,21 +63,6 @@ pub struct SessionUndoRequest {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<usize>,
-}
-
-/// Request for `session.set_temperature`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetTemperatureRequest {
-    pub session_id: String,
-    pub temperature: f64,
-}
-
-/// Request for `session.set_max_tokens`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetMaxTokensRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
 }
 
 /// Request for `session.set_max_iterations`.
@@ -552,27 +530,6 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_set_system_prompt(&self, session_id: &str, prompt: &str) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_system_prompt",
-            SessionSetSystemPromptRequest {
-                session_id: session_id.to_string(),
-                system_prompt: prompt.to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_system_prompt(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option(
-            "session.get_system_prompt",
-            session_id,
-            "system_prompt",
-            |v| v.as_str().map(|s| s.to_string()),
-        )
-        .await
-    }
-
     /// Set whether Precognition (auto-RAG) is enabled for a session.
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
         self.typed_unit_call_with_retry(
@@ -634,49 +591,9 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_temperature",
-            SessionSetTemperatureRequest {
-                session_id: session_id.to_string(),
-                temperature,
-            },
-        )
-        .await
-    }
-
     pub async fn session_get_mode(&self, session_id: &str) -> Result<Option<String>> {
         self.get_session_option("session.get_mode", session_id, "mode", |v| {
             v.as_str().map(|s| s.to_string())
-        })
-        .await
-    }
-
-    pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
-        self.get_session_option("session.get_temperature", session_id, "temperature", |v| {
-            v.as_f64()
-        })
-        .await
-    }
-
-    pub async fn session_set_max_tokens(
-        &self,
-        session_id: &str,
-        max_tokens: Option<u32>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_max_tokens",
-            SessionSetMaxTokensRequest {
-                session_id: session_id.to_string(),
-                max_tokens,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_max_tokens(&self, session_id: &str) -> Result<Option<u32>> {
-        self.get_session_option("session.get_max_tokens", session_id, "max_tokens", |v| {
-            v.as_u64().map(|n| n as u32)
         })
         .await
     }

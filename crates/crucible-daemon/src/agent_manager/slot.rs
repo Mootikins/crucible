@@ -261,8 +261,12 @@ impl SessionSlot {
         }
     }
 
-    /// Whether a handle is cached. `system_prompt` is locked once one is (it is
-    /// baked into the handle), and tests assert on eviction.
+    /// Whether a handle is cached.
+    ///
+    /// Test-only since `set_system_prompt` went away — that setter refused a
+    /// change once a handle existed, because the prompt is baked into it.
+    /// Eviction tests are the remaining reader.
+    #[cfg(test)]
     pub(crate) fn has_agent(&self) -> bool {
         self.lock_build().agent.is_some()
     }

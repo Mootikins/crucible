@@ -243,10 +243,10 @@ fn the_mock_agent_binary_is_available() {
 /// A setting ACP cannot carry is refused rather than stored.
 ///
 /// These setters never ask the handle: they write the session's config and
-/// stop. So an accepted `set_temperature` was a value the agent process would
-/// never see, reported back to the caller as though it had taken effect. The
-/// error names the setting, because "not supported" alone leaves a user
-/// guessing which control just failed.
+/// stop. So an accepted `set_thinking_budget` was a value the agent process
+/// would never see, reported back to the caller as though it had taken
+/// effect. The error names the setting, because "not supported" alone leaves
+/// a user guessing which control just failed.
 #[tokio::test]
 async fn a_setting_the_protocol_has_no_field_for_is_refused() {
     let h = setup().await;
@@ -254,21 +254,17 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
 
     let attempts = [
         (
-            "temperature",
-            h.agent_manager.set_temperature(id, 0.2, None).await,
-        ),
-        (
-            "max_tokens",
-            h.agent_manager.set_max_tokens(id, Some(2048), None).await,
-        ),
-        (
             "thinking_budget",
             h.agent_manager.set_thinking_budget(id, 4096, None).await,
         ),
         (
-            "system_prompt",
+            "max_iterations",
+            h.agent_manager.set_max_iterations(id, Some(3), None).await,
+        ),
+        (
+            "context_budget",
             h.agent_manager
-                .set_system_prompt(id, "be brief", None)
+                .set_context_budget(id, Some(32_000), None)
                 .await,
         ),
     ];
@@ -321,11 +317,13 @@ async fn a_session_reports_which_settings_it_supports() {
             .unwrap_or_else(|| panic!("`{id}` is missing from the answer"))
     };
 
-    assert!(!supported("temperature"), "ACP has no temperature");
-    assert!(!supported("max_tokens"), "ACP has no token cap");
     assert!(
-        !supported("system_prompt"),
-        "ACP has no system prompt field"
+        !supported("thinking_budget"),
+        "ACP's reasoning control is a select of names, not a token count"
+    );
+    assert!(
+        !supported("context_budget"),
+        "the agent owns its history, so the daemon budgets nothing"
     );
     assert!(supported("mode"), "session/set_mode carries the mode");
     assert!(

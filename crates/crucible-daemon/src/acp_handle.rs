@@ -80,8 +80,6 @@ pub struct AcpAgentHandle {
     /// which a client renders and the daemon does not interpret.
     config_options: Vec<crucible_core::types::acp::schema::SessionConfigOption>,
     session_id: Option<String>,
-    cached_temperature: Option<f64>,
-    cached_max_tokens: Option<u32>,
     cached_thinking_budget: Option<i64>,
 }
 
@@ -323,8 +321,6 @@ impl AcpAgentHandle {
             model,
             config_options,
             session_id: Some(session_id),
-            cached_temperature: agent_config.temperature,
-            cached_max_tokens: agent_config.max_tokens,
             cached_thinking_budget: agent_config.thinking_budget,
         })
     }
@@ -415,14 +411,9 @@ impl AgentHandle for AcpAgentHandle {
 /// `DaemonAgentHandle` answers them by RPC.
 #[async_trait]
 impl SessionKnobs for AcpAgentHandle {
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        debug!(temperature, "Caching temperature for ACP agent");
-        self.cached_temperature = Some(temperature);
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.cached_temperature
+    /// ACP carries no system prompt; the agent owns its own.
+    fn get_system_prompt(&self) -> Option<String> {
+        None
     }
 
     async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
@@ -433,16 +424,6 @@ impl SessionKnobs for AcpAgentHandle {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         self.cached_thinking_budget
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        debug!(?max_tokens, "Caching max tokens for ACP agent");
-        self.cached_max_tokens = max_tokens;
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.cached_max_tokens
     }
 
     /// Switch the agent's model through `session/set_config_option`.
@@ -546,14 +527,6 @@ impl SessionKnobs for AcpAgentHandle {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
     }
 
     async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {

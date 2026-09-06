@@ -39,14 +39,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum SessionKnob {
-    /// Sampling temperature.
-    Temperature,
-    /// Cap on the tokens one reply may use.
-    MaxTokens,
     /// Reasoning-token budget.
     ThinkingBudget,
-    /// The instruction block that opens the conversation.
-    SystemPrompt,
     /// Cap on tool-call rounds in one turn.
     MaxIterations,
     /// Wall-clock cap on one turn.
@@ -182,10 +176,7 @@ impl SessionKnob {
     pub const ALL: &'static [SessionKnob] = &[
         Self::Model,
         Self::Mode,
-        Self::Temperature,
-        Self::MaxTokens,
         Self::ThinkingBudget,
-        Self::SystemPrompt,
         Self::MaxIterations,
         Self::ExecutionTimeout,
         Self::ContextBudget,
@@ -200,10 +191,7 @@ impl SessionKnob {
     /// The wire id, which is also the `session.set_*` suffix.
     pub fn id(self) -> &'static str {
         match self {
-            Self::Temperature => "temperature",
-            Self::MaxTokens => "max_tokens",
             Self::ThinkingBudget => "thinking_budget",
-            Self::SystemPrompt => "system_prompt",
             Self::MaxIterations => "max_iterations",
             Self::ExecutionTimeout => "execution_timeout",
             Self::ContextBudget => "context_budget",
@@ -222,14 +210,11 @@ impl SessionKnob {
     ///
     /// Exhaustive by construction. The reasoning behind the `Absent` arms is
     /// one of two facts about ACP: the protocol has no field for the value
-    /// (temperature, token caps, the system prompt), or the external agent
-    /// runs its own turn loop and owns its own history, which makes a
-    /// daemon-side cap or context policy describe work the daemon does not do.
+    /// the external agent runs its own turn loop and owns its own history,
+    /// which makes a daemon-side cap or context policy describe work the
+    /// daemon does not do.
     pub fn on_acp(self) -> AcpKnob {
         match self {
-            // No field anywhere in the protocol.
-            Self::Temperature | Self::MaxTokens | Self::SystemPrompt => AcpKnob::Absent,
-
             // The agent runs its own turn loop, so a daemon-side cap on
             // rounds or wall-clock governs nothing it does.
             Self::MaxIterations | Self::ExecutionTimeout => AcpKnob::Absent,
@@ -378,18 +363,6 @@ mod tests {
             "two knobs share an id, so one of them is unreachable over RPC: {ids:?}"
         );
         assert!(ids.iter().all(|id| !id.is_empty()));
-    }
-
-    /// The three knobs this table exists for.
-    ///
-    /// An `AcpAgentHandle` cached these and reported them back, so a user set
-    /// a temperature the agent never heard. Naming them here means a later
-    /// edit that quietly reclassifies one has to say so.
-    #[test]
-    fn the_knobs_acp_cannot_carry_are_absent() {
-        assert_eq!(SessionKnob::Temperature.on_acp(), AcpKnob::Absent);
-        assert_eq!(SessionKnob::MaxTokens.on_acp(), AcpKnob::Absent);
-        assert_eq!(SessionKnob::SystemPrompt.on_acp(), AcpKnob::Absent);
     }
 
     /// Retrieval is the daemon's work, not the agent's, and reaches an

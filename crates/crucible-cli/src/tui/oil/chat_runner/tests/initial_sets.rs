@@ -56,6 +56,10 @@ impl AgentHandle for RpcCountingAgent {
 /// The two startup knobs count. The rest is the empty answer.
 #[async_trait::async_trait]
 impl SessionKnobs for RpcCountingAgent {
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
         self.thinking_budget_calls.fetch_add(1, Ordering::Relaxed);
         Ok(())
@@ -78,30 +82,6 @@ impl SessionKnobs for RpcCountingAgent {
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_temperature".into()))
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-
-    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_tokens".into()))
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
         None
     }
 

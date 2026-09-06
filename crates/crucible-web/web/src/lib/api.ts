@@ -958,8 +958,8 @@ export async function getSessionStatus(sessionId: string): Promise<SessionStatus
 /**
  * Which settings this session can change.
  *
- * A settings panel asks before it draws: an ACP session has no temperature
- * and no token cap, and offering one is a control that changes nothing.
+ * A settings panel asks before it draws: an ACP session runs its own turn
+ * loop, so the daemon's caps and context policy, and offering one is a control that changes nothing.
  */
 export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> {
   return request<SessionKnobSupport>(
@@ -1162,46 +1162,6 @@ export async function setThinkingBudget(sessionId: string, budget: number | null
     errorMessage: 'Failed to set thinking budget',
     parseAs: 'none',
     ...jsonRequest({ thinking_budget: budget }),
-  });
-}
-
-/** Get the temperature for a session. */
-export async function getTemperature(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ temperature: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/temperature`,
-      { errorMessage: 'Failed to get temperature' },
-    )
-  ).temperature;
-}
-
-/** Set the temperature for a session. */
-export async function setTemperature(sessionId: string, temperature: number): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/temperature`, {
-    errorMessage: 'Failed to set temperature',
-    parseAs: 'none',
-    ...jsonRequest({ temperature }),
-  });
-}
-
-/** Get the max tokens for a session. */
-export async function getMaxTokens(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ max_tokens: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`,
-      { errorMessage: 'Failed to get max tokens' },
-    )
-  ).max_tokens;
-}
-
-/** Set the max tokens for a session (null = unlimited). */
-export async function setMaxTokens(sessionId: string, maxTokens: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`, {
-    errorMessage: 'Failed to set max tokens',
-    parseAs: 'none',
-    ...jsonRequest({ max_tokens: maxTokens }),
   });
 }
 
@@ -1432,26 +1392,6 @@ export async function setOutputValidation(sessionId: string, validation: string)
       ...jsonRequest({ output_validation: validation }),
     },
   );
-}
-
-/** Get the session's system prompt override. */
-export async function getSystemPrompt(sessionId: string): Promise<string | null> {
-  return (
-    await request<{ system_prompt: string | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/system-prompt`,
-      { errorMessage: 'Failed to get system prompt' },
-    )
-  ).system_prompt;
-}
-
-/** Set the session's system prompt override. */
-export async function setSystemPrompt(sessionId: string, prompt: string): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/system-prompt`, {
-    errorMessage: 'Failed to set system prompt',
-    parseAs: 'none',
-    ...jsonRequest({ system_prompt: prompt }),
-  });
 }
 
 /**

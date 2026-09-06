@@ -1,6 +1,6 @@
 //! Integration tests for config + agent + model RPC methods.
 //!
-//! Tests set/get round-trips for thinking_budget, temperature, max_tokens,
+//! Tests set/get round-trips for thinking_budget,
 //! precognition, and session.configure_agent / session.list_models.
 
 use anyhow::Result;
@@ -196,77 +196,9 @@ async fn test_thinking_budget_round_trip() {
 // 2. Temperature round-trip
 // =============================================================================
 
-#[tokio::test]
-async fn test_temperature_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Set temperature to 0.3
-    client
-        .session_set_temperature(&session_id, 0.3)
-        .await
-        .expect("set_temperature failed");
-
-    let temp = client
-        .session_get_temperature(&session_id)
-        .await
-        .expect("get_temperature failed");
-
-    assert_eq!(temp, Some(0.3), "Temperature should round-trip to 0.3");
-
-    // Set temperature to 1.5
-    client
-        .session_set_temperature(&session_id, 1.5)
-        .await
-        .expect("set_temperature failed");
-
-    let temp = client
-        .session_get_temperature(&session_id)
-        .await
-        .expect("get_temperature failed");
-
-    assert_eq!(temp, Some(1.5), "Temperature should round-trip to 1.5");
-
-    server.shutdown().await;
-}
-
 // =============================================================================
 // 3. Max tokens round-trip
 // =============================================================================
-
-#[tokio::test]
-async fn test_max_tokens_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Set max_tokens to 8192
-    client
-        .session_set_max_tokens(&session_id, Some(8192))
-        .await
-        .expect("set_max_tokens failed");
-
-    let tokens = client
-        .session_get_max_tokens(&session_id)
-        .await
-        .expect("get_max_tokens failed");
-
-    assert_eq!(tokens, Some(8192), "Max tokens should round-trip to 8192");
-
-    // Clear max_tokens (set to None)
-    client
-        .session_set_max_tokens(&session_id, None)
-        .await
-        .expect("set_max_tokens None failed");
-
-    let tokens = client
-        .session_get_max_tokens(&session_id)
-        .await
-        .expect("get_max_tokens failed");
-
-    assert_eq!(tokens, None, "Max tokens should be None after clearing");
-
-    server.shutdown().await;
-}
 
 // =============================================================================
 // 4. Precognition round-trip
@@ -444,49 +376,9 @@ async fn test_thinking_budget_default_value() {
 // 8. Temperature default value
 // =============================================================================
 
-#[tokio::test]
-async fn test_temperature_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Agent was configured with temperature: Some(0.7) — get should return 0.7
-    let temp = client
-        .session_get_temperature(&session_id)
-        .await
-        .expect("get_temperature failed");
-
-    assert_eq!(
-        temp,
-        Some(0.7),
-        "Temperature should be 0.7 from the initial agent configuration"
-    );
-
-    server.shutdown().await;
-}
-
 // =============================================================================
 // 9. Max tokens default value (bonus)
 // =============================================================================
-
-#[tokio::test]
-async fn test_max_tokens_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Agent was configured with max_tokens: Some(4096) — get should return 4096
-    let tokens = client
-        .session_get_max_tokens(&session_id)
-        .await
-        .expect("get_max_tokens failed");
-
-    assert_eq!(
-        tokens,
-        Some(4096),
-        "Max tokens should be 4096 from the initial agent configuration"
-    );
-
-    server.shutdown().await;
-}
 
 // =============================================================================
 // 10. Precognition default value (bonus)
@@ -550,28 +442,10 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         Some(1024)
     );
     round_trip!(
-        "system_prompt",
-        client.session_set_system_prompt(&sid, "Round-trip prompt."),
-        client.session_get_system_prompt(&sid),
-        Some("Round-trip prompt.".to_string())
-    );
-    round_trip!(
         "precognition_results",
         client.session_set_precognition_results(&sid, 9),
         client.session_get_precognition_results(&sid),
         Some(9)
-    );
-    round_trip!(
-        "temperature",
-        client.session_set_temperature(&sid, 0.3),
-        client.session_get_temperature(&sid),
-        Some(0.3)
-    );
-    round_trip!(
-        "max_tokens",
-        client.session_set_max_tokens(&sid, Some(8192)),
-        client.session_get_max_tokens(&sid),
-        Some(8192)
     );
     round_trip!(
         "max_iterations",
@@ -655,14 +529,6 @@ async fn test_config_get_on_nonexistent_session_fails() {
     assert!(
         result.is_err(),
         "get_thinking_budget should fail for nonexistent session"
-    );
-
-    let result = client
-        .session_get_temperature("nonexistent-session-id")
-        .await;
-    assert!(
-        result.is_err(),
-        "get_temperature should fail for nonexistent session"
     );
 
     server.shutdown().await;

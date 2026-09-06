@@ -32,9 +32,8 @@ pub(super) mod prompt;
 mod tests;
 
 pub(super) use basic::{
-    get_max_tokens, get_precognition, get_precognition_results, get_temperature,
-    get_thinking_budget, list_agent_options, set_agent_option, set_max_tokens, set_precognition,
-    set_precognition_results, set_temperature, set_thinking_budget,
+    get_precognition, get_precognition_results, get_thinking_budget, list_agent_options,
+    set_agent_option, set_precognition, set_precognition_results, set_thinking_budget,
 };
 pub(super) use context::{
     get_autocompact_threshold, get_context_budget, set_autocompact_threshold, set_context_budget,
@@ -44,8 +43,7 @@ pub(super) use execution::{
     set_max_iterations, set_validation_retries,
 };
 pub(super) use prompt::{
-    get_context_strategy, get_output_validation, get_system_prompt, set_context_strategy,
-    set_output_validation, set_system_prompt,
+    get_context_strategy, get_output_validation, set_context_strategy, set_output_validation,
 };
 
 /// Every `/api/session/{id}/config/...` route, as a standalone router the session
@@ -66,14 +64,6 @@ pub(super) fn config_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/thinking-budget",
             put(set_thinking_budget).get(get_thinking_budget),
-        )
-        .route(
-            "/api/session/{id}/config/temperature",
-            put(set_temperature).get(get_temperature),
-        )
-        .route(
-            "/api/session/{id}/config/max-tokens",
-            put(set_max_tokens).get(get_max_tokens),
         )
         .route(
             "/api/session/{id}/config/precognition",
@@ -123,9 +113,5 @@ pub(super) fn config_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/output-validation",
             put(set_output_validation).get(get_output_validation),
-        )
-        .route(
-            "/api/session/{id}/config/system-prompt",
-            put(set_system_prompt).get(get_system_prompt),
         )
 }

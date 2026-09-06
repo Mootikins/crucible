@@ -87,38 +87,3 @@ pub(crate) async fn get_output_validation(
         .daemon_err()?;
     Ok(Json(OutputValidationResponse { output_validation }))
 }
-
-#[derive(Debug, Serialize)]
-pub(crate) struct SystemPromptResponse {
-    system_prompt: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetSystemPromptRequest {
-    system_prompt: String,
-}
-
-pub(crate) async fn set_system_prompt(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetSystemPromptRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_system_prompt(&id, &req.system_prompt)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_system_prompt(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<SystemPromptResponse>, WebError> {
-    let system_prompt = state
-        .daemon
-        .session_get_system_prompt(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(SystemPromptResponse { system_prompt }))
-}

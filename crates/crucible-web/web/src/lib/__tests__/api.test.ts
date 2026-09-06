@@ -28,10 +28,6 @@ import {
   cancelSession,
   setSessionTitle,
   getSessionHistory,
-  getTemperature,
-  setTemperature,
-  getMaxTokens,
-  setMaxTokens,
   getPrecognition,
   setPrecognition,
   getPrecognitionResults,
@@ -834,47 +830,10 @@ describe('getSessionHistory', () => {
 });
 
 // =============================================================================
-// Per-session config: temperature, max-tokens, precognition
+// Per-session config: precognition
 // =============================================================================
 
-describe('temperature / max-tokens / precognition endpoints', () => {
-  it('getTemperature returns the current value', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/temperature': { body: { temperature: 0.7 } },
-    });
-    expect(await getTemperature('ses-1')).toBe(0.7);
-  });
-
-  it('getTemperature returns null when unset', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/temperature': { body: { temperature: null } },
-    });
-    expect(await getTemperature('ses-1')).toBeNull();
-  });
-
-  it('setTemperature PUTs the value', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/temperature': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await setTemperature('ses-1', 0.3);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ temperature: 0.3 });
-  });
-
-  it('getMaxTokens / setMaxTokens roundtrip with null', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/max-tokens': { body: { max_tokens: null } },
-    });
-    expect(await getMaxTokens('ses-1')).toBeNull();
-
-    const setFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/max-tokens': { body: {} },
-    });
-    global.fetch = setFetch;
-    await setMaxTokens('ses-1', 4096);
-    expect(JSON.parse(setFetch.mock.calls[0][1]!.body as string)).toEqual({ max_tokens: 4096 });
-  });
-
+describe('precognition endpoints', () => {
   it('getPrecognition returns the flag', async () => {
     global.fetch = createMockFetch({
       'GET /api/session/ses-1/config/precognition': { body: { precognition_enabled: true } },
@@ -905,13 +864,6 @@ describe('temperature / max-tokens / precognition endpoints', () => {
     global.fetch = mockFetch;
     await setPrecognitionResults('ses-1', 10);
     expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ count: 10 });
-  });
-
-  it('getMaxTokens throws on error', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/max-tokens': { status: 500 },
-    });
-    await expect(getMaxTokens('ses-1')).rejects.toThrow('Failed to get max tokens');
   });
 });
 

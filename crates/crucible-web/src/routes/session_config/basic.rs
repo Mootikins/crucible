@@ -20,18 +20,6 @@ pub(crate) struct ThinkingBudgetResponse {
     thinking_budget: Option<i64>,
 }
 
-/// Response for temperature config.
-#[derive(Debug, Serialize)]
-pub(crate) struct TemperatureResponse {
-    temperature: Option<f64>,
-}
-
-/// Response for max tokens config.
-#[derive(Debug, Serialize)]
-pub(crate) struct MaxTokensResponse {
-    max_tokens: Option<u32>,
-}
-
 /// Response for precognition config.
 #[derive(Debug, Serialize)]
 pub(crate) struct PrecognitionResponse {
@@ -77,66 +65,6 @@ pub(crate) async fn get_thinking_budget(
         .await
         .daemon_err()?;
     Ok(Json(ThinkingBudgetResponse { thinking_budget }))
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetTemperatureRequest {
-    temperature: f64,
-}
-
-pub(crate) async fn set_temperature(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetTemperatureRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_temperature(&id, req.temperature)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_temperature(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<TemperatureResponse>, WebError> {
-    let temperature = state
-        .daemon
-        .session_get_temperature(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(TemperatureResponse { temperature }))
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetMaxTokensRequest {
-    max_tokens: Option<u32>,
-}
-
-pub(crate) async fn set_max_tokens(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetMaxTokensRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_max_tokens(&id, req.max_tokens)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_max_tokens(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<MaxTokensResponse>, WebError> {
-    let max_tokens = state
-        .daemon
-        .session_get_max_tokens(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(MaxTokensResponse { max_tokens }))
 }
 
 #[derive(Debug, Deserialize)]

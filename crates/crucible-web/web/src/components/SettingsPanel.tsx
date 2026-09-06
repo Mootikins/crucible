@@ -14,10 +14,6 @@ import {
   login,
   getThinkingBudget,
   setThinkingBudget as apiSetThinkingBudget,
-  getTemperature,
-  setTemperature as apiSetTemperature,
-  getMaxTokens,
-  setMaxTokens as apiSetMaxTokens,
   getPrecognition,
   setPrecognition as apiSetPrecognition,
   getPrecognitionResults,
@@ -34,9 +30,6 @@ export const ModelSettingsSection: Component = () => {
   const session = useSessionSafe();
 
   const [thinkingBudget, setThinkingBudget] = createSignal<number | null>(null);
-  const [temperature, setTemperature] = createSignal<number>(1.0);
-  const [, setMaxTokens] = createSignal<number | null>(null);
-  const [maxTokensText, setMaxTokensText] = createSignal('');
   const [precognition, setPrecognition] = createSignal(true);
   const [precognitionResults, setPrecognitionResults] = createSignal(5);
   const [loading, setLoading] = createSignal(true);
@@ -45,9 +38,9 @@ export const ModelSettingsSection: Component = () => {
    * Which settings this session actually has.
    *
    * Empty until the daemon answers, and a control is drawn only once it says
-   * so. An ACP session has no temperature and no token cap — the protocol has
-   * no field for either — and the panel used to render a slider and a number
-   * box for them anyway, which the daemon now refuses outright.
+   * so. An ACP session runs its own turn loop, so the daemon's caps and
+   * context policy describe work it does not do, and the daemon refuses
+   * those settings outright.
    *
    * Defaulting to "hidden" rather than "shown" is deliberate: a control that
    * appears and then errors is worse than one that appears a moment late.
@@ -74,18 +67,8 @@ export const ModelSettingsSection: Component = () => {
     }
   }, 300);
 
-  const tempDebounce = createDebounce(async (...args: unknown[]) => {
-    const [sid, val] = args as [string, number];
-    try {
-      await apiSetTemperature(sid, val);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set temperature');
-    }
-  }, 300);
-
   onCleanup(() => {
     budgetDebounce.cleanup();
-    tempDebounce.cleanup();
   });
 
   const loadSettings = async () => {
@@ -98,23 +81,18 @@ export const ModelSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [knobs, agentOpts, budget, temp, tokens, precog, precogResults] = await Promise.all([
+      const [knobs, agentOpts, budget, precog, precogResults] = await Promise.all([
         listKnobs(s.id),
         // An older daemon has no such method; an empty list is the right
         // answer there, and is what an internal session gives anyway.
         listAgentOptions(s.id).catch(() => ({ options: [] as AgentConfigOption[] })),
         getThinkingBudget(s.id),
-        getTemperature(s.id),
-        getMaxTokens(s.id),
         getPrecognition(s.id),
         getPrecognitionResults(s.id),
       ]);
       setSupported(new Set(knobs.knobs.filter((k) => k.supported).map((k) => k.id)));
       setAgentOptions(agentOpts.options);
       setThinkingBudget(budget);
-      setTemperature(temp ?? 1.0);
-      setMaxTokens(tokens);
-      setMaxTokensText(tokens !== null ? String(tokens) : '');
       setPrecognition(precog);
       setPrecognitionResults(precogResults);
     } catch (err) {
@@ -153,32 +131,6 @@ export const ModelSettingsSection: Component = () => {
     setThinkingBudget(budget);
     const s = session.currentSession();
     if (s) budgetDebounce.debounced(s.id, budget);
-  };
-
-  const handleTemperatureChange = (e: Event) => {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    if (!isNaN(val)) {
-      setTemperature(val);
-      const s = session.currentSession();
-      if (s) tempDebounce.debounced(s.id, val);
-    }
-  };
-
-  const handleMaxTokensChange = async (e: Event) => {
-    const raw = (e.target as HTMLInputElement).value.trim();
-    setMaxTokensText(raw);
-    const s = session.currentSession();
-    if (!s) return;
-
-    const val = raw === '' ? null : parseInt(raw, 10);
-    if (raw !== '' && isNaN(val as number)) return;
-
-    setMaxTokens(val);
-    try {
-      await apiSetMaxTokens(s.id, val);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set max tokens');
-    }
   };
 
   const handlePrecognitionToggle = async () => {
@@ -233,40 +185,6 @@ export const ModelSettingsSection: Component = () => {
           onInput={handleBudgetChange}
           class={`${inputClass} w-28 text-right`}
           placeholder="Auto"
-        />
-      </SettingRow>
-      </Show>
-
-      <Show when={has('temperature')}>
-      <SettingRow
-        label="Temperature"
-        description={temperature().toFixed(1)}
-        controlClass="py-3 text-right flex items-center justify-end gap-2"
-      >
-        <span class="text-xs text-muted-dark">0</span>
-        <input
-          type="range"
-          min={0}
-          max={2}
-          step={0.1}
-          value={temperature()}
-          onInput={handleTemperatureChange}
-          class="w-32 accent-primary"
-        />
-        <span class="text-xs text-muted-dark">2</span>
-      </SettingRow>
-      </Show>
-
-      <Show when={has('max_tokens')}>
-      <SettingRow label="Max Tokens" description="Empty = unlimited">
-        <input
-          type="number"
-          min={1}
-          value={maxTokensText()}
-          onBlur={handleMaxTokensChange}
-          onInput={(e) => setMaxTokensText((e.target as HTMLInputElement).value)}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Unlimited"
         />
       </SettingRow>
       </Show>

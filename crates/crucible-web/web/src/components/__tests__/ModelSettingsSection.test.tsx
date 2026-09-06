@@ -21,10 +21,6 @@ vi.mock('@/lib/api', () => ({
   setAgentOption: (...a: unknown[]) => setAgentOption(...a),
   getThinkingBudget: vi.fn(async () => 8192),
   setThinkingBudget: vi.fn(async () => {}),
-  getTemperature: vi.fn(async () => 0.7),
-  setTemperature: vi.fn(async () => {}),
-  getMaxTokens: vi.fn(async () => 4096),
-  setMaxTokens: vi.fn(async () => {}),
   getPrecognition: vi.fn(async () => true),
   setPrecognition: vi.fn(async () => {}),
   getPrecognitionResults: vi.fn(async () => 5),
@@ -47,8 +43,6 @@ import { ModelSettingsSection } from '../SettingsPanel';
 const ALL_SUPPORTED = {
   knobs: [
     { id: 'thinking_budget', supported: true },
-    { id: 'temperature', supported: true },
-    { id: 'max_tokens', supported: true },
     { id: 'precognition', supported: true },
   ],
 };
@@ -57,8 +51,6 @@ const ALL_SUPPORTED = {
 const ACP_SESSION = {
   knobs: [
     { id: 'thinking_budget', supported: false },
-    { id: 'temperature', supported: false },
-    { id: 'max_tokens', supported: false },
     { id: 'precognition', supported: true },
   ],
 };
@@ -78,9 +70,10 @@ describe('ModelSettingsSection', () => {
     render(() => <ModelSettingsSection />);
 
     await waitFor(() => expect(listKnobs).toHaveBeenCalledWith('s1'));
-    await waitFor(() => expect(screen.getByText('Temperature')).toBeTruthy());
-    expect(screen.getByText('Thinking Budget')).toBeTruthy();
-    expect(screen.getByText('Max Tokens')).toBeTruthy();
+    // `waitFor`, not a bare assertion: the call landing is not the render
+    // landing, and asserting between the two passes against a panel that
+    // never drew anything.
+    await waitFor(() => expect(screen.getByText('Thinking Budget')).toBeTruthy());
   });
 
   it('draws no control for a setting the session does not have', async () => {
@@ -92,9 +85,7 @@ describe('ModelSettingsSection', () => {
     // — without it this could pass against a panel that never rendered at all.
     await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
 
-    expect(screen.queryByText('Temperature')).toBeNull();
     expect(screen.queryByText('Thinking Budget')).toBeNull();
-    expect(screen.queryByText('Max Tokens')).toBeNull();
   });
 
   it('draws nothing rather than guessing when the answer lists nothing', async () => {
@@ -112,8 +103,7 @@ describe('ModelSettingsSection', () => {
     // and not a render that has yet to happen. Asserting straight after the
     // call was made passed against a panel with no gating at all.
     await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
-    expect(screen.queryByText('Temperature')).toBeNull();
-    expect(screen.queryByText('Max Tokens')).toBeNull();
+
     expect(screen.queryByText('Thinking Budget')).toBeNull();
   });
 });
