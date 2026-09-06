@@ -29,3 +29,8 @@ serde_json = { workspace = true }
 test-case = "3.3"
 proptest = "1.11"
 vt100 = "0.15"  # Terminal emulation for byte-stream round-trip in sequencing proofs
+
+# `disallowed_methods` is only a warning by default, so it would not fail
+# `just lint clippy`. The list itself lives in this crate's `clippy.toml`.
+[lints.clippy]
+disallowed_methods = "deny"
