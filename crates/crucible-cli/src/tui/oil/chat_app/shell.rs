@@ -18,10 +18,9 @@ impl OilChatApp {
     pub(super) fn handle_shell_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let shell_cmd = cmd[1..].trim().to_string();
         if shell_cmd.is_empty() {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(
-                    "Empty shell command".to_string(),
-                ));
+            self.add_notification(crucible_core::types::Notification::warning(
+                "Empty shell command".to_string(),
+            ));
             return Action::Continue;
         }
 
@@ -43,8 +42,7 @@ impl OilChatApp {
                 self.shell_modal = Some(modal);
             }
             Err(e) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(e));
+                self.add_notification(crucible_core::types::Notification::warning(e));
             }
         }
 
@@ -219,7 +217,6 @@ impl OilChatApp {
     }
 
     pub(super) fn notify_toast(&mut self, msg: impl Into<String>) {
-        self.notification_area
-            .add(crucible_core::types::Notification::toast(msg));
+        self.add_notification(crucible_core::types::Notification::toast(msg));
     }
 }

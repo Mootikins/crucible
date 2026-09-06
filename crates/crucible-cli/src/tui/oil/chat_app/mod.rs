@@ -422,7 +422,7 @@ impl OilChatApp {
             .streaming(self.container_list.is_streaming())
             .background_tasks(self.container_list.background_task_count())
             .status(&self.status);
-        if let Some((text, kind)) = self.notification_area.active_toast() {
+        if let Some((text, kind)) = self.notification_area.active_toast(self.frame_time) {
             status = status.toast(text, kind);
         }
         let counts = self.notification_area.warning_counts();
@@ -614,7 +614,7 @@ impl OilChatApp {
     /// Expires stale toasts and ticks shell modal.
     pub fn expire_toasts(&mut self) {
         self.tick_shell_modal();
-        self.notification_area.expire_toasts();
+        self.notification_area.expire_toasts(self.frame_time);
         if self.notification_area.is_empty() {
             self.notification_area.hide();
         }
@@ -639,7 +639,7 @@ impl OilChatApp {
     }
 
     pub(crate) fn add_notification(&mut self, notification: crucible_core::types::Notification) {
-        self.notification_area.add(notification);
+        self.notification_area.add(notification, self.frame_time);
     }
 
     /// Open the notification panel, so a story can assert on its content.

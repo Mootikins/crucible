@@ -75,11 +75,10 @@ impl OilChatApp {
     pub(super) fn toggle_thinking_with_toast(&mut self) {
         self.show_thinking = !self.show_thinking;
         let state = if self.show_thinking { "on" } else { "off" };
-        self.notification_area
-            .add(crucible_core::types::Notification::toast(format!(
-                "Thinking display: {}",
-                state
-            )));
+        self.add_notification(crucible_core::types::Notification::toast(format!(
+            "Thinking display: {}",
+            state
+        )));
     }
 
     pub(super) fn handle_ctrl_c(&mut self) -> Action<ChatAppMsg> {
@@ -96,10 +95,9 @@ impl OilChatApp {
             }
         }
         self.message_queue.last_ctrl_c = Some(now);
-        self.notification_area
-            .add(crucible_core::types::Notification::toast(
-                "Ctrl+C again to quit",
-            ));
+        self.add_notification(crucible_core::types::Notification::toast(
+            "Ctrl+C again to quit",
+        ));
         Action::Continue
     }
 
@@ -147,10 +145,9 @@ impl OilChatApp {
                 // queue was removed). Keep the draft instead of clearing it
                 // into an unhandled message — that silently lost the text.
                 if !trimmed.is_empty() {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::toast(
-                            "Turn in progress — Esc cancels, then Enter to send",
-                        ));
+                    self.add_notification(crucible_core::types::Notification::toast(
+                        "Turn in progress — Esc cancels, then Enter to send",
+                    ));
                 }
                 Action::Continue
             }

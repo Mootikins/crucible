@@ -278,11 +278,10 @@ impl OilChatApp {
             }
             ChatAppMsg::LuaEvaled { output, is_error } => {
                 if is_error {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::warning(format!(
-                            "lua: {}",
-                            output
-                        )));
+                    self.add_notification(crucible_core::types::Notification::warning(format!(
+                        "lua: {}",
+                        output
+                    )));
                 } else {
                     self.add_system_message(output);
                 }

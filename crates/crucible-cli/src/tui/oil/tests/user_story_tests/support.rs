@@ -98,6 +98,18 @@ impl StoryRuntime {
         &mut self.app
     }
 
+    /// Move the frame clock forward by `by`.
+    ///
+    /// The runner reads the wall clock once per loop iteration and stores it
+    /// on the app. A story never runs the runner, so its clock stands still
+    /// unless a test moves it. That is what makes a story deterministic: it
+    /// asserts on an exact elapsed time, not on how fast the machine ran.
+    pub(crate) fn advance(&mut self, by: std::time::Duration) -> &mut Self {
+        let now = self.app.frame_time() + by;
+        self.app.set_frame_time(now);
+        self
+    }
+
     /// Feed a daemon → TUI message through the real `on_message` path.
     pub(crate) fn send(&mut self, msg: ChatAppMsg) -> &mut Self {
         self.app.on_message(msg);

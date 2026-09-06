@@ -196,8 +196,7 @@ impl OilChatApp {
             if let Some(suggestion) = suggest_command(word, ReplCommand::ALL) {
                 msg.push_str(&format!(" Did you mean :{} ?", suggestion.name()));
             }
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(msg));
+            self.add_notification(crucible_core::types::Notification::warning(msg));
             return Action::Continue;
         };
 
@@ -237,10 +236,9 @@ impl OilChatApp {
             ReplCommand::Export => match arg {
                 Some(path) => self.handle_export_command(path),
                 None => {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::warning(
-                            "Usage: :export <path>".to_string(),
-                        ));
+                    self.add_notification(crucible_core::types::Notification::warning(
+                        "Usage: :export <path>".to_string(),
+                    ));
                     Action::Continue
                 }
             },
@@ -256,10 +254,9 @@ impl OilChatApp {
         match code {
             Some(code) => Action::Send(ChatAppMsg::EvalLua(code.to_string())),
             None => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :lua <expr>  (or := <expr>)".to_string(),
-                    ));
+                self.add_notification(crucible_core::types::Notification::warning(
+                    "Usage: :lua <expr>  (or := <expr>)".to_string(),
+                ));
                 Action::Continue
             }
         }
@@ -289,10 +286,9 @@ impl OilChatApp {
     fn handle_model_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
         if let Some(model_name) = name {
             if model_name.is_empty() {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :model <name>".to_string(),
-                    ));
+                self.add_notification(crucible_core::types::Notification::warning(
+                    "Usage: :model <name>".to_string(),
+                ));
                 return Action::Continue;
             }
             return self.handle_set_command(&format!("set model {}", model_name));
@@ -322,10 +318,9 @@ impl OilChatApp {
     fn handle_reload_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
         match name {
             Some("") => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :reload <plugin_name>".to_string(),
-                    ));
+                self.add_notification(crucible_core::types::Notification::warning(
+                    "Usage: :reload <plugin_name>".to_string(),
+                ));
                 Action::Continue
             }
             Some(plugin_name) => Action::Send(ChatAppMsg::ReloadPlugin(plugin_name.to_string())),
@@ -338,10 +333,9 @@ impl OilChatApp {
 
     pub(super) fn handle_export_command(&mut self, path: &str) -> Action<ChatAppMsg> {
         if path.is_empty() {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(
-                    "Usage: :export <path>".to_string(),
-                ));
+            self.add_notification(crucible_core::types::Notification::warning(
+                "Usage: :export <path>".to_string(),
+            ));
             return Action::Continue;
         }
 
@@ -355,20 +349,18 @@ impl OilChatApp {
 
         if let Some(parent) = export_path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Parent directory does not exist: {}",
-                        parent.display()
-                    )));
+                self.add_notification(crucible_core::types::Notification::warning(format!(
+                    "Parent directory does not exist: {}",
+                    parent.display()
+                )));
                 return Action::Continue;
             }
         }
 
         if self.session_dir.is_none() {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(
-                    "No active session — nothing to export".to_string(),
-                ));
+            self.add_notification(crucible_core::types::Notification::warning(
+                "No active session — nothing to export".to_string(),
+            ));
             return Action::Continue;
         }
 
@@ -615,8 +607,7 @@ impl OilChatApp {
 
     /// Adds a warning notification for invalid input.
     fn warn_invalid(&mut self, msg: impl Into<String>) {
-        self.notification_area
-            .add(crucible_core::types::Notification::warning(msg.into()));
+        self.add_notification(crucible_core::types::Notification::warning(msg.into()));
     }
 
     /// Acknowledges a setting change with a formatted system message.
@@ -690,23 +681,21 @@ impl OilChatApp {
         ];
 
         if !valid_keys.contains(&key) {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(format!(
-                    "Unknown permission setting: {}. Valid: {}",
-                    key,
-                    valid_keys.join(", ")
-                )));
+            self.add_notification(crucible_core::types::Notification::warning(format!(
+                "Unknown permission setting: {}. Valid: {}",
+                key,
+                valid_keys.join(", ")
+            )));
             return Action::Continue;
         }
 
         let bool_value = match crate::tui::oil::commands::parse_bool(value) {
             Ok(b) => b,
             Err(message) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "{}: {}",
-                        key, message
-                    )));
+                self.add_notification(crucible_core::types::Notification::warning(format!(
+                    "{}: {}",
+                    key, message
+                )));
                 return Action::Continue;
             }
         };
@@ -715,11 +704,10 @@ impl OilChatApp {
             .set(key, ConfigValue::Bool(bool_value), ModSource::Command);
         self.sync_runtime_to_fields(key);
 
-        self.notification_area
-            .add(crucible_core::types::Notification::toast(format!(
-                "Permission setting updated: {}={}",
-                key, bool_value
-            )));
+        self.add_notification(crucible_core::types::Notification::toast(format!(
+            "Permission setting updated: {}={}",
+            key, bool_value
+        )));
 
         Action::Continue
     }
@@ -850,11 +838,10 @@ impl OilChatApp {
             Some("commands" | "command" | "cmd") => PickSource::Commands,
             Some("files" | "file") => PickSource::Files,
             Some(unknown) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Unknown pick source: '{}'. Valid: notes, commands, files, all",
-                        unknown
-                    )));
+                self.add_notification(crucible_core::types::Notification::warning(format!(
+                    "Unknown pick source: '{}'. Valid: notes, commands, files, all",
+                    unknown
+                )));
                 return Action::Continue;
             }
         };
