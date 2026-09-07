@@ -41,8 +41,6 @@ fn make_session_agent(
         provider,
         model: "test-model".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,

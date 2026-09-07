@@ -42,8 +42,6 @@ Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label 
 | `default_model` | string | no | Model to use (falls back to provider default) |
 | `endpoint` | string | no | API endpoint (falls back to provider default) |
 | `api_key` | string | no | API key, or `{env:VAR_NAME}` to read from environment |
-| `temperature` | float | no | Randomness 0.0–2.0 (default: 0.7) |
-| `max_tokens` | integer | no | Max response tokens (default: 4096) |
 | `available_models` | list | no | Models to advertise for this provider (otherwise discovered dynamically) |
 | `trust_level` | string | no | Override the backend's default trust level — see [[Help/Concepts/Trust and Classification]] |
 | `name` | string | no | Custom display name shown in model lists/UI |
@@ -125,30 +123,10 @@ Additional provider types are supported for chat: `openrouter`, `zai`, `github-c
 
 ## Parameters
 
-### temperature
-
-Controls randomness in responses (0.0–2.0):
-
-```toml
-[llm.providers.local]
-type = "ollama"
-temperature = 0.7
-```
-
-- `0.0` — Deterministic, focused
-- `0.7` — Balanced (default)
-- `1.0+` — More creative, varied
-
-### max_tokens
-
-Maximum tokens in response:
-
-```toml
-[llm.providers.openai]
-type = "openai"
-default_model = "gpt-4o"
-max_tokens = 4096
-```
+> **No `temperature` and no `max_tokens`.** Both are per-model inference
+> settings, so Crucible leaves them to the provider — genai picks the right
+> default for the model actually being called. Crucible's own 4096 cap used to
+> truncate every Anthropic reply that genai would have allowed 64000.
 
 ### endpoint
 
@@ -217,7 +195,6 @@ default = "local"
 [llm.providers.local]
 type = "ollama"
 default_model = "llama3.2"
-temperature = 0.7
 ```
 
 ### Production with OpenAI
@@ -230,7 +207,6 @@ default = "openai"
 type = "openai"
 default_model = "gpt-4o"
 api_key = "{env:OPENAI_API_KEY}"
-max_tokens = 4096
 ```
 
 ### Cost-Conscious
@@ -243,8 +219,6 @@ default = "openai-mini"
 type = "openai"
 default_model = "gpt-4o-mini"
 api_key = "{env:OPENAI_API_KEY}"
-temperature = 0.5
-max_tokens = 2048
 ```
 
 ## Troubleshooting

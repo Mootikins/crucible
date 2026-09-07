@@ -156,8 +156,6 @@ async fn test_tui_daemon_agent_full_flow() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),

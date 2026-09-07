@@ -211,7 +211,7 @@ See the [plugin guide](./docs/Help/Extending/Creating%20Plugins.md) for the full
 | `cru session end <id>` | | End a daemon session |
 | `cru session export <id>` | | Export session to markdown |
 | `cru session search <q>` | | Search sessions by title |
-| `cru set <id> key=val` | | Tweak runtime settings (model, temperature, etc.) |
+| `cru set <id> key=val` | | Tweak runtime settings (model, mode, etc.) |
 | `cru stats` | | Display kiln statistics |
 | `cru status` | | Storage status and metrics |
 | `cru models` | | List available LLM models |

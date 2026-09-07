@@ -2,7 +2,6 @@
 //!
 //! ```lua
 //! cru.defaults.system_prompt = "You are Crucible…"
-//! cru.defaults.temperature   = 0.3
 //! ```
 //!
 //! ## Why this is not `cru.o`
@@ -48,8 +47,6 @@ use crate::session_api::{SessionConfigRpc, SessionVariables, UnsupportedSessionR
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionDefaultValues {
     pub system_prompt: Option<String>,
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<u32>,
     pub thinking_budget: Option<i64>,
     /// Starting mode. Settable from an `on_session_start` hook, which is why
     /// it lives here rather than only on `SessionAgent`: the hook runs before
@@ -104,11 +101,6 @@ impl UserData for SessionDefaults {
                     Some(s) => lua.create_string(&s).map(Value::String),
                     None => Ok(Value::Nil),
                 },
-                "temperature" => Ok(values.temperature.map(Value::Number).unwrap_or(Value::Nil)),
-                "max_tokens" => Ok(values
-                    .max_tokens
-                    .map(|n| Value::Integer(n as i64))
-                    .unwrap_or(Value::Nil)),
                 "thinking_budget" => Ok(values
                     .thinking_budget
                     .map(Value::Integer)
@@ -123,61 +115,26 @@ impl UserData for SessionDefaults {
 
         methods.add_meta_method(
             MetaMethod::NewIndex,
-            |lua, this, (key, val): (String, Value)| {
-                match key.as_str() {
-                    "system_prompt" => {
-                        let prompt = match val {
-                            Value::Nil => None,
-                            other => Some(lua.unpack::<String>(other)?),
-                        };
-                        this.update(|v| v.system_prompt = prompt);
-                        Ok(())
-                    }
-                    // Bounds mirror `session.temperature` exactly. A default
-                    // that accepts what the per-session setter rejects would
-                    // fail later, at the provider, with a worse message.
-                    "temperature" => {
-                        let temp = match val {
-                            Value::Nil => None,
-                            other => {
-                                let t: f64 = lua.unpack(other)?;
-                                if !(0.0..=2.0).contains(&t) {
-                                    return Err(mlua::Error::runtime(
-                                        "temperature must be 0.0-2.0",
-                                    ));
-                                }
-                                Some(t)
-                            }
-                        };
-                        this.update(|v| v.temperature = temp);
-                        Ok(())
-                    }
-                    "max_tokens" => {
-                        let tokens = match val {
-                            Value::Nil => None,
-                            Value::Integer(n) if n > 0 => Some(n as u32),
-                            Value::Number(n) if n > 0.0 => Some(n as u32),
-                            _ => {
-                                return Err(mlua::Error::runtime(
-                                    "max_tokens must be positive or nil",
-                                ))
-                            }
-                        };
-                        this.update(|v| v.max_tokens = tokens);
-                        Ok(())
-                    }
-                    "thinking_budget" => {
-                        let budget = match val {
-                            Value::Nil => None,
-                            other => Some(lua.unpack::<i64>(other)?),
-                        };
-                        this.update(|v| v.thinking_budget = budget);
-                        Ok(())
-                    }
-                    _ => Err(mlua::Error::runtime(format!(
-                        "unknown default: cru.defaults.{key}"
-                    ))),
+            |lua, this, (key, val): (String, Value)| match key.as_str() {
+                "system_prompt" => {
+                    let prompt = match val {
+                        Value::Nil => None,
+                        other => Some(lua.unpack::<String>(other)?),
+                    };
+                    this.update(|v| v.system_prompt = prompt);
+                    Ok(())
                 }
+                "thinking_budget" => {
+                    let budget = match val {
+                        Value::Nil => None,
+                        other => Some(lua.unpack::<i64>(other)?),
+                    };
+                    this.update(|v| v.thinking_budget = budget);
+                    Ok(())
+                }
+                _ => Err(mlua::Error::runtime(format!(
+                    "unknown default: cru.defaults.{key}"
+                ))),
             },
         );
     }
@@ -229,24 +186,6 @@ impl SessionConfigRpc for SessionDefaultsRpc {
     fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
         self.store
             .update(|v| v.system_prompt = Some(prompt.to_string()));
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.store.get().temperature
-    }
-
-    fn set_temperature(&self, temp: f64) -> Result<(), String> {
-        self.store.update(|v| v.temperature = Some(temp));
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.store.get().max_tokens
-    }
-
-    fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String> {
-        self.store.update(|v| v.max_tokens = tokens);
         Ok(())
     }
 
@@ -314,15 +253,14 @@ impl SessionConfigRpc for SessionDefaultsRpc {
 pub fn register_session_defaults(lua: &Lua, defaults: SessionDefaults) -> LuaResult<()> {
     crate::lua_util::get_or_create_namespace(lua, "cru")?.set("defaults", defaults)?;
     // A CLOSED record, unlike `cru.modes`: the `__index` above raises on a key
-    // it does not know, so the four names here are the whole surface. Luau
+    // it does not know, so the two names here are the whole surface. Luau
     // therefore catches a misspelled default at check time, which is the one
     // place in `cru.*` where a typo in an all-optional table IS caught — the
     // record is exact, so an unknown key reads as absent from the type.
     crate::host_registry::declare_value(
         lua,
         "cru.defaults",
-        "{ system_prompt: string?, temperature: number?, max_tokens: number?, \
-         thinking_budget: number? }",
+        "{ system_prompt: string?, thinking_budget: number? }",
     )
     .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
@@ -377,13 +315,13 @@ mod tests {
     #[test]
     fn last_write_wins() {
         let (lua, defaults) = lua_with_defaults();
-        lua.load(r#"cru.defaults.temperature = 0.1"#)
+        lua.load(r#"cru.defaults.thinking_budget = 100"#)
             .exec()
             .unwrap();
-        lua.load(r#"cru.defaults.temperature = 0.9"#)
+        lua.load(r#"cru.defaults.thinking_budget = 900"#)
             .exec()
             .unwrap();
-        assert_eq!(defaults.get().temperature, Some(0.9));
+        assert_eq!(defaults.get().thinking_budget, Some(900));
     }
 
     #[test]
@@ -396,16 +334,6 @@ mod tests {
             .exec()
             .unwrap();
         assert_eq!(defaults.get().system_prompt, None);
-    }
-
-    #[test]
-    fn temperature_bounds_match_the_per_session_setter() {
-        let (lua, _) = lua_with_defaults();
-        let err = lua
-            .load(r#"cru.defaults.temperature = 5.0"#)
-            .exec()
-            .unwrap_err();
-        assert!(err.to_string().contains("0.0-2.0"), "got: {err}");
     }
 
     /// A typo must not be a silently-inert config line.

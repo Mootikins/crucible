@@ -113,8 +113,6 @@ impl AgentCardLoader {
             mcp_servers: frontmatter.mcp_servers,
             provider: frontmatter.provider,
             model: frontmatter.model,
-            temperature: frontmatter.temperature,
-            max_tokens: frontmatter.max_tokens,
             mode: frontmatter.mode,
             tools: frontmatter.tools,
             config: frontmatter.config.unwrap_or_default(),

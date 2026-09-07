@@ -181,7 +181,6 @@ async fn configured_agent(
 fn bare_agent() -> SessionAgent {
     let mut agent = test_agent();
     agent.system_prompt = String::new();
-    agent.temperature = None;
     agent
 }
 
@@ -268,7 +267,6 @@ async fn on_session_start_fires_and_can_set_this_sessions_values() {
     let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.on_session_start(function(session)
              session.system_prompt = "per-session prompt"
-             session.temperature = 0.25
            end)"#,
     )
     .await;
@@ -276,7 +274,6 @@ async fn on_session_start_fires_and_can_set_this_sessions_values() {
     let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
     assert_eq!(agent.system_prompt, "per-session prompt");
-    assert_eq!(agent.temperature, Some(0.25));
 }
 
 /// A hook can choose the model the agent starts with. The hook runs after

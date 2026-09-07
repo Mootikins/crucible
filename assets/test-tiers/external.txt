@@ -38,7 +38,6 @@ test_fastembed_basic
 test_fastembed_batch
 test_fastembed_semantic_similarity
 test_get_by_name_returns_highest_priority
-test_init_lua_hook_sets_temperature
 test_list_skills_by_scope
 test_ollama_basic
 test_ollama_batch_throughput

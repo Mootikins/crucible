@@ -91,8 +91,6 @@ fn internal_parent(delegation: DelegationConfig) -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,

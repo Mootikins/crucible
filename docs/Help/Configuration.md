@@ -149,8 +149,6 @@ Controls the chat interface and LLM settings for internal agents.
 | `model` | string | provider default | Model to use (e.g., "llama3.2", "gpt-4o") |
 | `agent_preference` | string | `"crucible"` | Prefer `acp` (external) or `crucible` (internal) agents |
 | `endpoint` | string | provider default | Custom API endpoint URL |
-| `temperature` | float | `0.7` | Generation temperature (0.0-2.0) |
-| `max_tokens` | int | `2048` | Maximum tokens to generate |
 | `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
 | `show_diffs` | bool | `true` | Render diff bodies under edit/write tool calls |
 
@@ -232,8 +230,6 @@ cru.config.set({
         type = "openai",
         default_model = "gpt-4o",
         api_key = os.getenv("OPENAI_API_KEY"),
-        temperature = 0.9,
-        max_tokens = 8192,
       },
     },
   },

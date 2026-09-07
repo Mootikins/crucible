@@ -608,8 +608,6 @@ fn test_agent() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,

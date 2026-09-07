@@ -83,8 +83,6 @@ fn acp_agent() -> SessionAgent {
         provider: BackendType::Custom,
         model: "mock-acp".to_string(),
         system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,

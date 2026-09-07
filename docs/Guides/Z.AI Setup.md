@@ -58,8 +58,6 @@ type = "zai"
 endpoint = "https://api.z.ai/api/coding/paas/v4"
 api_key = "{env:GLM_AUTH_TOKEN}"
 default_model = "GLM-4.7"
-temperature = 0.7
-max_tokens = 4096
 ```
 
 **Anthropic proxy (alternative):**

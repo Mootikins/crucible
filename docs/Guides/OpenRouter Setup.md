@@ -52,8 +52,6 @@ default = "openrouter"
 type = "openrouter"
 api_key = "{env:OPENROUTER_API_KEY}"
 default_model = "openai/gpt-4o"
-temperature = 0.7
-max_tokens = 4096
 ```
 
 The `{env:OPENROUTER_API_KEY}` syntax reads the key from your environment variable at runtime, keeping secrets out of config files.
@@ -91,14 +89,11 @@ You can define multiple OpenRouter instances with different default models:
 type = "openrouter"
 api_key = "{env:OPENROUTER_API_KEY}"
 default_model = "openai/gpt-4o-mini"
-temperature = 0.3
 
 [llm.providers.or-smart]
 type = "openrouter"
 api_key = "{env:OPENROUTER_API_KEY}"
 default_model = "anthropic/claude-3.5-sonnet"
-temperature = 0.7
-max_tokens = 8192
 ```
 
 ## Usage

@@ -27,10 +27,6 @@ pub struct ChatConfig {
     pub agent_preference: AgentPreference,
     /// LLM endpoint URL (for Ollama/compatible providers)
     pub endpoint: Option<String>,
-    /// Temperature for generation (0.0-2.0)
-    pub temperature: Option<f32>,
-    /// Maximum tokens to generate
-    pub max_tokens: Option<u32>,
     /// Show thinking/reasoning tokens from models that support it
     ///
     /// When enabled, thinking tokens are streamed in a quote block below the
@@ -53,8 +49,6 @@ impl Default for ChatConfig {
             model: None,
             agent_preference: AgentPreference::default(),
             endpoint: None,
-            temperature: None,
-            max_tokens: None,
             show_thinking: false,
             show_diffs: true,
         }
@@ -67,18 +61,6 @@ impl ChatConfig {
         self.model
             .clone()
             .unwrap_or_else(|| super::defaults::DEFAULT_CHAT_MODEL.to_string())
-    }
-
-    /// Get the temperature, using default if not specified
-    pub fn temperature(&self) -> f32 {
-        self.temperature
-            .unwrap_or(super::defaults::DEFAULT_TEMPERATURE)
-    }
-
-    /// Get max tokens, using default if not specified
-    pub fn max_tokens(&self) -> u32 {
-        self.max_tokens
-            .unwrap_or(super::defaults::DEFAULT_CHAT_MAX_TOKENS)
     }
 }
 

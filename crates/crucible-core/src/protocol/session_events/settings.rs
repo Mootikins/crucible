@@ -54,14 +54,6 @@ pub enum SettingsPayload {
         #[serde(default)]
         precognition_results: usize,
     },
-    TemperatureChanged {
-        #[serde(default)]
-        temperature: f64,
-    },
-    MaxTokensChanged {
-        #[serde(default)]
-        max_tokens: Option<u32>,
-    },
     ContextBudgetChanged {
         #[serde(default)]
         context_budget: Option<usize>,

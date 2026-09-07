@@ -102,7 +102,7 @@ between crates** — one canonical location, then re-export. Result aliases foll
 
 ### Session-scoped vs TUI-local
 
-Multi-client state (model, thinking budget, temperature) lives in the daemon's `SessionAgent`
+Multi-client state (model, thinking budget, mode) lives in the daemon's `SessionAgent`
 and syncs via RPC; pure display state (theme, show_thinking) stays in `OilChatApp`.
 Session-scoped needs the full chain: `AgentHandle` → `DaemonAgentHandle` → `ChatAppMsg` →
 `chat_runner` handler → TUI command. TUI-only breaks multi-client, and mismatched JSON field

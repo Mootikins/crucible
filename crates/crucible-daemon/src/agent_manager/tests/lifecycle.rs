@@ -259,7 +259,6 @@ async fn test_switch_model_preserves_other_agent_config() {
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
     let mut agent = test_agent();
-    agent.temperature = Some(0.9);
     agent.system_prompt = "Custom prompt".to_string();
     agent.provider = BackendType::Custom;
 
@@ -277,7 +276,6 @@ async fn test_switch_model_preserves_other_agent_config() {
     let updated_agent = updated.agent.as_ref().unwrap();
 
     assert_eq!(updated_agent.model, "new-model");
-    assert_eq!(updated_agent.temperature, Some(0.9));
     assert_eq!(updated_agent.system_prompt, "Custom prompt");
     assert_eq!(updated_agent.provider, BackendType::Custom);
 }

@@ -10,8 +10,6 @@ const TRACKED_FIELDS: &[(&str, &str)] = &[
     ("acp.default_agent", "ACP"),
     ("chat.model", "Chat"),
     ("chat.endpoint", "Chat"),
-    ("chat.temperature", "Chat"),
-    ("chat.max_tokens", "Chat"),
     ("logging.level", "Logging"),
 ];
 
@@ -1040,8 +1038,6 @@ mod tests {
         config.acp.default_agent = Some("claude".into());
         config.chat.model = Some("test-model".into());
         config.chat.endpoint = Some("http://localhost:11434".into());
-        config.chat.temperature = Some(0.7);
-        config.chat.max_tokens = Some(2048);
         config
     }
 

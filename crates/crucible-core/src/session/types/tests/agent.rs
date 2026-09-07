@@ -14,8 +14,6 @@ fn test_session_agent_serialization() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: Some(8192),
         thinking_budget: None,
         endpoint: None,
@@ -38,11 +36,9 @@ fn test_session_agent_serialization() {
     let json = serde_json::to_string(&agent).unwrap();
     assert!(json.contains("\"agent_type\":\"internal\""));
     assert!(json.contains("\"model\":\"llama3.2\""));
-    assert!(json.contains("\"temperature\":0.7"));
 
     let parsed: SessionAgent = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.model, "llama3.2");
-    assert_eq!(parsed.temperature, Some(0.7));
     assert_eq!(parsed.mcp_servers, vec!["filesystem"]);
 }
 
@@ -60,8 +56,6 @@ fn test_session_agent_typed_provider_serialization() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "Test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
@@ -109,8 +103,6 @@ fn test_session_agent_typed_provider_round_trip() {
         provider: BackendType::OpenAI,
         model: "gpt-4o".to_string(),
         system_prompt: "Test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
@@ -151,8 +143,6 @@ fn test_session_agent_with_capabilities() {
         provider: BackendType::Custom,
         model: "opencode".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
@@ -187,8 +177,6 @@ fn test_session_agent_with_agent_description() {
         provider: BackendType::Custom,
         model: "claude".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
@@ -240,8 +228,6 @@ fn test_session_agent_with_delegation_config() {
         provider: BackendType::Custom,
         model: "delegating-agent".to_string(),
         system_prompt: "You can delegate.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
@@ -290,7 +276,6 @@ fn test_session_agent_backward_compat_without_new_fields() {
 
     let agent: SessionAgent = serde_json::from_str(old_json).unwrap();
     assert_eq!(agent.model, "llama3.2");
-    assert_eq!(agent.temperature, Some(0.7));
     assert!(agent.agent_description.is_none());
     assert!(agent.delegation_config.is_none());
 }
@@ -316,8 +301,6 @@ fn test_session_agent_round_trip_with_all_fields() {
         provider: BackendType::Custom,
         model: "full-agent".to_string(),
         system_prompt: "Full agent.".to_string(),
-        temperature: Some(0.8),
-        max_tokens: Some(8192),
         max_context_tokens: Some(16384),
         thinking_budget: Some(10000),
         endpoint: Some("http://localhost:8000".to_string()),

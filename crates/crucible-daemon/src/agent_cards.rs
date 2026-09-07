@@ -174,7 +174,7 @@ mod tests {
         write_card(
             &kiln.path().join(".crucible").join("agents"),
             "worker.md",
-            "---\nname: worker\nversion: 1.2.3\ndescription: base\nmodel: llama3.2\nprovider: ollama\ntemperature: 0.2\nmax_tokens: 1000\nmode: plan\ntools:\n  bash: deny\n---\n\nBase prompt.\n",
+            "---\nname: worker\nversion: 1.2.3\ndescription: base\nmodel: llama3.2\nprovider: ollama\nmode: plan\ntools:\n  bash: deny\n---\n\nBase prompt.\n",
         );
 
         let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
@@ -183,8 +183,6 @@ mod tests {
         assert_eq!(card.version, "1.2.3");
         assert_eq!(card.model.as_deref(), Some("llama3.2"));
         assert_eq!(card.provider.as_deref(), Some("ollama"));
-        assert_eq!(card.temperature, Some(0.2));
-        assert_eq!(card.max_tokens, Some(1000));
         assert_eq!(card.mode.as_deref(), Some("plan"));
         assert_eq!(
             card.tools.as_ref().unwrap()["bash"],

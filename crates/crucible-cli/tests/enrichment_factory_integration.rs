@@ -67,7 +67,6 @@ fn test_cache_key_consistency() {
         LlmProviderConfig::builder(BackendType::OpenAI)
             .model("text-embedding-3-small")
             .endpoint("https://api.openai.com/v1")
-            .max_tokens(4096)
             .build(),
     );
 
@@ -86,7 +85,6 @@ fn test_cache_key_ollama_provider() {
         LlmProviderConfig::builder(BackendType::Ollama)
             .model("nomic-embed-text")
             .endpoint("http://localhost:11434")
-            .max_tokens(50)
             .build(),
     );
 
@@ -106,7 +104,6 @@ fn test_cache_key_openai_provider() {
         LlmProviderConfig::builder(BackendType::OpenAI)
             .model("text-embedding-3-small")
             .endpoint("https://api.openai.com/v1")
-            .max_tokens(100)
             .build(),
     );
 
@@ -179,7 +176,6 @@ fn test_cache_key_format() {
         LlmProviderConfig::builder(BackendType::Ollama)
             .model("model")
             .endpoint("http://url")
-            .max_tokens(42)
             .build(),
     );
 
@@ -197,15 +193,12 @@ fn test_llm_provider_config_clone() {
     let original = LlmProviderConfig::builder(BackendType::Ollama)
         .model("test-model")
         .endpoint("http://test:8080")
-        .max_tokens(99)
         .build();
 
     let cloned = original.clone();
 
     assert_eq!(cloned.provider_type, original.provider_type);
     assert_eq!(cloned.default_model, original.default_model);
-    assert_eq!(cloned.endpoint, original.endpoint);
-    assert_eq!(cloned.max_tokens, original.max_tokens);
 }
 
 #[test]

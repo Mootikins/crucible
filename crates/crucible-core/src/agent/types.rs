@@ -98,14 +98,6 @@ pub struct AgentCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
-    /// Sampling temperature override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f32>,
-
-    /// Max output tokens override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
-
     /// Initial mode ("auto"/"plan").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -181,14 +173,6 @@ pub struct AgentCardFrontmatter {
     /// Optional: model override
     #[serde(default)]
     pub model: Option<String>,
-
-    /// Optional: sampling temperature
-    #[serde(default)]
-    pub temperature: Option<f32>,
-
-    /// Optional: max output tokens
-    #[serde(default)]
-    pub max_tokens: Option<u32>,
 
     /// Optional: initial mode ("auto"/"plan")
     #[serde(default)]

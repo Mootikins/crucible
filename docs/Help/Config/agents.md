@@ -39,8 +39,6 @@ agent_preference = "crucible"
 # endpoint = "http://localhost:11434"
 
 # Generation controls (optional)
-# temperature = 0.7
-# max_tokens = 4096
 
 # Stream thinking/reasoning tokens below the spinner
 show_thinking = false

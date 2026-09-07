@@ -81,8 +81,6 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 | `mcps` | No | MCP servers this agent can use (alias: `mcp_servers`) |
 | `provider` | No | Provider override (`ollama`, `anthropic`, …); omit to inherit |
 | `model` | No | Model override; omit to inherit (better portability) |
-| `temperature` | No | Sampling temperature override |
-| `max_tokens` | No | Max output tokens override |
 | `mode` | No | Initial mode (`auto`/`plan`) |
 | `specialty` | No | Model category resolved via `[llm.models]` (see below) |
 | `tags` | No | Tags for discovery |

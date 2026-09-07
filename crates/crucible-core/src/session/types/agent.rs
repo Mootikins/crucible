@@ -37,14 +37,6 @@ pub struct SessionAgent {
     /// System prompt (full text, inlined from agent card if applicable)
     pub system_prompt: String,
 
-    /// Generation temperature (0.0 - 2.0)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f64>,
-
-    /// Maximum output tokens
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
-
     /// Maximum context window tokens
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_context_tokens: Option<usize>,
@@ -146,8 +138,6 @@ impl SessionAgent {
             provider: BackendType::Custom,
             model: agent_name.to_string(),
             system_prompt: String::new(),
-            temperature: None,
-            max_tokens: None,
             max_context_tokens: None,
             thinking_budget: None,
             endpoint: None,
@@ -248,8 +238,6 @@ impl SessionAgent {
                 .or(mapped_model)
                 .unwrap_or_else(|| base.model.clone()),
             system_prompt: card.system_prompt.clone(),
-            temperature: card.temperature.map(|t| t as f64).or(base.temperature),
-            max_tokens: card.max_tokens.or(base.max_tokens),
             max_context_tokens: base.max_context_tokens,
             thinking_budget: base.thinking_budget,
             // Endpoint follows the provider: a card that switches provider
@@ -306,7 +294,7 @@ impl SessionAgent {
     ///
     /// Every surface that configures a session agent from config (CLI chat,
     /// ACP bridge, web session create) goes through this one builder so they
-    /// all get identical provider/model/temperature/MCP defaults. The
+    /// all get identical provider/model/MCP defaults. The
     /// `[chat]` values fill the gaps only when no default provider exists.
     pub fn internal_from_config(config: &crate::config::CliAppConfig) -> Self {
         let mut agent = Self::internal_defaults(Some(&config.llm), Some(&config.mcp));
@@ -314,8 +302,6 @@ impl SessionAgent {
             if let Some(model) = config.chat.model.clone() {
                 agent.model = model;
             }
-            agent.temperature = config.chat.temperature.map(|t| t as f64);
-            agent.max_tokens = config.chat.max_tokens;
             agent.endpoint = config.chat.endpoint.clone();
         }
         agent
@@ -325,27 +311,23 @@ impl SessionAgent {
     /// server list alone. The daemon holds these two sections without a full
     /// `CliAppConfig`, so it starts here and applies request overrides on top.
     /// Without a default provider the agent points at Ollama with
-    /// `DEFAULT_CHAT_MODEL`, no endpoint, no temperature and no token cap.
+    /// `DEFAULT_CHAT_MODEL` and no endpoint.
+    ///
+    /// Neither temperature nor a token cap is set here, or anywhere: both are
+    /// per-model inference settings, so genai picks the right default for the
+    /// model actually being called. Crucible's own 4096 cap silently truncated
+    /// every Anthropic reply that genai would have allowed 64000.
     pub fn internal_defaults(
         llm: Option<&crate::config::LlmConfig>,
         mcp: Option<&crate::config::McpConfig>,
     ) -> Self {
         let default = llm.and_then(|c| c.default_provider());
-        let (provider, model, provider_key, endpoint, temperature, max_tokens) = match default {
-            Some((key, p)) => (
-                p.provider_type,
-                p.model(),
-                key.clone(),
-                Some(p.endpoint()),
-                Some(p.temperature() as f64),
-                Some(p.max_tokens()),
-            ),
+        let (provider, model, provider_key, endpoint) = match default {
+            Some((key, p)) => (p.provider_type, p.model(), key.clone(), Some(p.endpoint())),
             None => (
                 BackendType::Ollama,
                 crate::config::DEFAULT_CHAT_MODEL.to_string(),
                 BackendType::Ollama.as_str().to_string(),
-                None,
-                None,
                 None,
             ),
         };
@@ -360,8 +342,6 @@ impl SessionAgent {
             provider,
             model,
             system_prompt: String::new(),
-            temperature,
-            max_tokens,
             max_context_tokens: None,
             thinking_budget: None,
             endpoint,
@@ -505,8 +485,6 @@ mod narrowing_tests {
             mcp_servers: Vec::new(),
             provider: None,
             model: None,
-            temperature: None,
-            max_tokens: None,
             mode: None,
             tools,
             config: HashMap::new(),
@@ -687,8 +665,6 @@ mod internal_defaults_tests {
         assert_eq!(agent.provider_key.as_deref(), Some("ollama"));
         assert_eq!(agent.model, DEFAULT_CHAT_MODEL);
         assert_eq!(agent.endpoint, None);
-        assert_eq!(agent.temperature, None);
-        assert_eq!(agent.max_tokens, None);
         assert!(agent.mcp_servers.is_empty());
         assert_eq!(agent.delegation_config, None);
     }
@@ -712,8 +688,6 @@ mod internal_defaults_tests {
         assert_eq!(agent.provider_key.as_deref(), Some("anthropic"));
         assert_eq!(agent.model, "claude-x");
         assert!(agent.endpoint.is_some());
-        assert!(agent.temperature.is_some());
-        assert!(agent.max_tokens.is_some());
     }
 
     #[test]
@@ -721,7 +695,6 @@ mod internal_defaults_tests {
         let config = CliAppConfig {
             chat: crate::config::ChatConfig {
                 model: Some("chat-model".to_string()),
-                temperature: Some(0.25),
                 endpoint: Some("http://chat".to_string()),
                 ..Default::default()
             },
@@ -731,7 +704,6 @@ mod internal_defaults_tests {
         let agent = SessionAgent::internal_from_config(&config);
 
         assert_eq!(agent.model, "chat-model");
-        assert_eq!(agent.temperature, Some(0.25));
         assert_eq!(agent.endpoint.as_deref(), Some("http://chat"));
         assert_eq!(agent.provider, BackendType::Ollama);
     }

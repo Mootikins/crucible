@@ -203,8 +203,6 @@ mod tests {
             provider: BackendType::Custom,
             model: "acp".to_string(),
             system_prompt: String::new(),
-            temperature: None,
-            max_tokens: None,
             max_context_tokens: None,
             thinking_budget: None,
             endpoint: None,

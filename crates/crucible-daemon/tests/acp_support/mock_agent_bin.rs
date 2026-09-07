@@ -53,8 +53,6 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         provider: BackendType::Mock,
         model: "mock-model".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,

@@ -400,12 +400,6 @@ pub struct GenaiAgentHandle {
     mode_context_sent: bool,
     max_tool_depth: usize,
     thinking_budget: Option<i64>,
-    /// Sampling temperature for every request this handle issues. `None`
-    /// leaves it to the provider's own default rather than picking one here —
-    /// providers disagree on what neutral means.
-    temperature: Option<f64>,
-    /// Cap on generated tokens per response. `None` leaves it to the provider.
-    max_tokens: Option<u32>,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
     output_validation: OutputValidation,
@@ -787,8 +781,6 @@ impl GenaiAgentHandle {
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
             thinking_budget,
-            temperature: None,
-            max_tokens: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
             output_validation: OutputValidation::default(),
@@ -806,19 +798,6 @@ impl GenaiAgentHandle {
     /// names; kiln and workspace tools are never deferrable.
     pub fn with_deferrable_tools(mut self, names: std::collections::HashSet<String>) -> Self {
         self.deferrable_tool_names = names;
-        self
-    }
-
-    /// Sampling settings the session chose. `None` for either leaves that one
-    /// to the provider's default.
-    #[must_use]
-    pub fn with_generation_settings(
-        mut self,
-        temperature: Option<f64>,
-        max_tokens: Option<u32>,
-    ) -> Self {
-        self.temperature = temperature;
-        self.max_tokens = max_tokens;
         self
     }
 
@@ -851,12 +830,10 @@ impl GenaiAgentHandle {
                 budget.clamp(0, u32::MAX as i64) as u32,
             ));
         }
-        if let Some(temperature) = self.temperature {
-            options = options.with_temperature(temperature);
-        }
-        if let Some(max_tokens) = self.max_tokens {
-            options = options.with_max_tokens(max_tokens);
-        }
+        // No temperature and no max_tokens. Both are per-model inference
+        // settings, so genai picks the right default for the model actually
+        // being called — Crucible's own 4096 cap truncated every Anthropic
+        // reply that genai would have allowed 64000.
         options
     }
 
@@ -2273,29 +2250,20 @@ mod tests {
         assert_eq!(clamped_negative, 0);
         assert_eq!(clamped_overflow, u32::MAX);
     }
-
-    /// The settings must reach the outgoing request, not merely the handle.
+    /// The request carries no temperature and no token cap.
     ///
-    /// A getter returning what a setter stored proves nothing here: that is
-    /// exactly what `SessionAgent.temperature` did for months while no request
-    /// ever carried it. `ChatOptions` is what genai puts on the wire.
+    /// Both were removed: they are per-model inference settings, so genai
+    /// picks the right default for the model actually being called. Crucible's
+    /// own 4096 cap truncated every Anthropic reply that genai would have
+    /// allowed 64000. `ChatOptions` is what genai puts on the wire, so this
+    /// asserts there rather than on a field.
     #[test]
-    fn generation_settings_reach_the_outgoing_chat_options() {
-        let mut handle = test_handle_with_tools(Vec::new());
-
-        let untouched = handle.build_chat_options();
-        assert_eq!(
-            (untouched.temperature, untouched.max_tokens),
-            (None, None),
-            "unset means the provider's default, not a value chosen here"
-        );
-
-        handle.temperature = Some(0.15);
-        handle.max_tokens = Some(1_024);
-
+    fn the_request_leaves_sampling_to_the_provider() {
+        let handle = test_handle_with_tools(Vec::new());
         let options = handle.build_chat_options();
-        assert_eq!(options.temperature, Some(0.15));
-        assert_eq!(options.max_tokens, Some(1_024));
+
+        assert_eq!(options.temperature, None);
+        assert_eq!(options.max_tokens, None);
         // The capture flags the stream loop depends on must survive.
         assert_eq!(options.capture_tool_calls, Some(true));
         assert_eq!(options.capture_usage, Some(true));

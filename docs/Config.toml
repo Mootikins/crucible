@@ -98,8 +98,6 @@ default = "local"
 type = "ollama"
 endpoint = "http://localhost:11434"
 default_model = "llama3.2"
-temperature = 0.7
-max_tokens = 4096
 
 # [llm.providers.cloud]
 # type = "openai"
@@ -151,8 +149,6 @@ show_diffs = true
 agent_preference = "crucible"         # "crucible" (default) or "acp"
 # model = "llama3.2"
 # endpoint = "http://localhost:11434"
-# temperature = 0.7
-# max_tokens = 2048
 
 # =============================================================================
 # [acp] - External agents over the Agent Client Protocol

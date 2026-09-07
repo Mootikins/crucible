@@ -789,11 +789,9 @@ pub async fn create_agent_from_session_config(
     // the only hop where it can arrive: every setter that writes these to
     // `SessionAgent` — RPC, `cru.defaults`, an agent card, `[llm]` config —
     // invalidates the agent cache, so the handle is always rebuilt here.
-    // Omitting them left `context_budget` permanently `None` (so every
+    // Omitting them left `context_budget` permanently `None`, so every
     // context strategy was dead and tool-schema deferral guessed at the
-    // window) and dropped `temperature`/`max_tokens` before they ever
-    // reached a request.
-    .with_generation_settings(agent_config.temperature, agent_config.max_tokens)
+    // window.
     .with_context_settings(
         agent_config.context_budget,
         agent_config.context_strategy.clone(),

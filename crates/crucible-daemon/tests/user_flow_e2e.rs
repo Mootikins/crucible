@@ -105,8 +105,6 @@ fn mock_agent_config() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "test-model".to_string(),
         system_prompt: "You are a helpful test assistant.".to_string(),
-        temperature: Some(0.5),
-        max_tokens: Some(1024),
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),

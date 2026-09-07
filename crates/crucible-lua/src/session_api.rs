@@ -4,8 +4,6 @@
 //!
 //! ```lua
 //! local s = cru.get_session()
-//! s.temperature = 0.7
-//! s.max_tokens = 4096
 //! s.thinking_budget = 1024
 //! s.model = "claude-sonnet-4"  -- in an on_session_start hook
 //! ```
@@ -62,10 +60,6 @@ fn unsupported(field: &str) -> String {
 /// Getters return `None`, because an absent value is honestly `nil` in Lua,
 /// and an error on a read would break `session.x or fallback`.
 pub trait SessionConfigRpc: Send + Sync {
-    fn get_temperature(&self) -> Option<f64>;
-    fn set_temperature(&self, temp: f64) -> Result<(), String>;
-    fn get_max_tokens(&self) -> Option<u32>;
-    fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String>;
     fn get_thinking_budget(&self) -> Option<i64>;
     fn set_thinking_budget(&self, budget: i64) -> Result<(), String>;
     fn get_model(&self) -> Option<String>;
@@ -94,18 +88,6 @@ pub trait SessionConfigRpc: Send + Sync {
 pub struct UnsupportedSessionRpc;
 
 impl SessionConfigRpc for UnsupportedSessionRpc {
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-    fn set_temperature(&self, _temp: f64) -> Result<(), String> {
-        Err(unsupported("temperature"))
-    }
-    fn get_max_tokens(&self) -> Option<u32> {
-        None
-    }
-    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> {
-        Err(unsupported("max_tokens"))
-    }
     fn get_thinking_budget(&self) -> Option<i64> {
         None
     }
@@ -389,12 +371,6 @@ impl UserData for Session {
                     Some(v) => lua.to_value(v),
                     None => Ok(Value::Nil),
                 },
-                "temperature" => this
-                    .with_rpc(|r| Ok(r.get_temperature()))
-                    .map(|v| v.map(Value::Number).unwrap_or(Value::Nil)),
-                "max_tokens" => this
-                    .with_rpc(|r| Ok(r.get_max_tokens()))
-                    .map(|v| v.map(|n| Value::Integer(n as i64)).unwrap_or(Value::Nil)),
                 "thinking_budget" => this
                     .with_rpc(|r| Ok(r.get_thinking_budget()))
                     .map(|v| v.map(Value::Integer).unwrap_or(Value::Nil)),
@@ -445,24 +421,6 @@ impl UserData for Session {
                 "model" => {
                     let model: String = lua.unpack(val)?;
                     this.with_rpc(|r| r.switch_model(&model))
-                }
-                "temperature" => {
-                    let temp: f64 = lua.unpack(val)?;
-                    if !(0.0..=2.0).contains(&temp) {
-                        return Err(mlua::Error::runtime("temperature must be 0.0-2.0"));
-                    }
-                    this.with_rpc(|r| r.set_temperature(temp))
-                }
-                "max_tokens" => {
-                    let tokens = match val {
-                        Value::Nil => None,
-                        Value::Integer(n) if n > 0 => Some(n as u32),
-                        Value::Number(n) if n > 0.0 => Some(n as u32),
-                        _ => {
-                            return Err(mlua::Error::runtime("max_tokens must be positive or nil"))
-                        }
-                    };
-                    this.with_rpc(|r| r.set_max_tokens(tokens))
                 }
                 "thinking_budget" => {
                     let budget: i64 = lua.unpack(val)?;
@@ -652,7 +610,6 @@ pub mod tests {
 
     #[derive(Clone)]
     pub struct MockRpc {
-        temperature: Arc<std::sync::RwLock<Option<f64>>>,
         model: Arc<std::sync::RwLock<Option<String>>>,
         system_prompt: Arc<std::sync::RwLock<String>>,
         first_message_sent: Arc<std::sync::RwLock<bool>>,
@@ -668,7 +625,6 @@ pub mod tests {
     impl MockRpc {
         pub fn new() -> Self {
             Self {
-                temperature: Arc::new(std::sync::RwLock::new(Some(0.7))),
                 model: Arc::new(std::sync::RwLock::new(Some("test-model".to_string()))),
                 system_prompt: Arc::new(std::sync::RwLock::new(
                     crucible_core::prompts::DEFAULT_SYSTEM_PROMPT.to_string(),
@@ -680,13 +636,6 @@ pub mod tests {
     }
 
     impl SessionConfigRpc for MockRpc {
-        fn get_temperature(&self) -> Option<f64> {
-            *self.temperature.read().unwrap()
-        }
-        fn set_temperature(&self, temp: f64) -> Result<(), String> {
-            *self.temperature.write().unwrap() = Some(temp);
-            Ok(())
-        }
         fn get_model(&self) -> Option<String> {
             self.model.read().unwrap().clone()
         }
@@ -722,12 +671,6 @@ pub mod tests {
         }
         fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
             self.variables.read().unwrap().get(key).cloned()
-        }
-        fn get_max_tokens(&self) -> Option<u32> {
-            UnsupportedSessionRpc.get_max_tokens()
-        }
-        fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String> {
-            UnsupportedSessionRpc.set_max_tokens(tokens)
         }
         fn get_thinking_budget(&self) -> Option<i64> {
             UnsupportedSessionRpc.get_thinking_budget()
@@ -768,18 +711,18 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let (current_id, deprecated_id, temp): (String, String, f64) = lua
+        let (current_id, deprecated_id, model): (String, String, String) = lua
             .load(
                 r#"
                 local cur = cru.session.current()
-                return cur.id, cru.get_session().id, cur.temperature
+                return cur.id, cru.get_session().id, cur.model
                 "#,
             )
             .eval()
             .unwrap();
         assert_eq!(current_id, "s-current");
         assert_eq!(deprecated_id, "s-current");
-        assert!((temp - 0.7).abs() < 0.001);
+        assert_eq!(model, "test-model");
     }
 
     #[test]
@@ -790,11 +733,8 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let temp: f64 = lua
-            .load("return cru.get_session().temperature")
-            .eval()
-            .unwrap();
-        assert!((temp - 0.7).abs() < 0.001);
+        let model: String = lua.load("return cru.get_session().model").eval().unwrap();
+        assert_eq!(model, "test-model");
     }
 
     #[test]
@@ -805,15 +745,15 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("local s = cru.get_session(); s.temperature = 0.3")
+        lua.load(r#"local s = cru.get_session(); s.system_prompt = "rewritten""#)
             .exec()
             .unwrap();
 
-        let temp: f64 = lua
-            .load("return cru.get_session().temperature")
+        let prompt: String = lua
+            .load("return cru.get_session().system_prompt")
             .eval()
             .unwrap();
-        assert!((temp - 0.3).abs() < 0.001);
+        assert_eq!(prompt, "rewritten");
     }
 
     /// `session.model = "x"` is how a hook picks the model; it lands in
@@ -847,19 +787,6 @@ pub mod tests {
             .unwrap_err()
             .to_string()
             .contains("No active session"));
-    }
-
-    #[test]
-    fn test_temperature_validation() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
-
-        let session = Session::new("s1".to_string());
-        session.bind(Box::new(MockRpc::new()));
-        mgr.set_current(session);
-
-        let result: mlua::Result<()> = lua.load("cru.get_session().temperature = 3.0").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("0.0-2.0"));
     }
 
     #[test]
@@ -1005,8 +932,6 @@ mod unsupported_rpc_tests {
         let rpc = UnsupportedSessionRpc;
 
         for (name, result) in [
-            ("temperature", rpc.set_temperature(0.5)),
-            ("max_tokens", rpc.set_max_tokens(Some(128))),
             ("thinking_budget", rpc.set_thinking_budget(4096)),
             ("model", rpc.switch_model("gpt-4o")),
             ("mode", rpc.set_mode("plan")),
@@ -1026,8 +951,6 @@ mod unsupported_rpc_tests {
     #[test]
     fn unsupported_getters_stay_silent() {
         let rpc = UnsupportedSessionRpc;
-        assert_eq!(rpc.get_temperature(), None);
-        assert_eq!(rpc.get_max_tokens(), None);
         assert_eq!(rpc.get_model(), None);
         assert_eq!(rpc.get_thinking_budget(), None);
     }

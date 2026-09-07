@@ -216,7 +216,6 @@ session_timeout_minutes = 45
 
 [chat]
 model = "claude-3-sonnet"
-temperature = 0.8
 streaming = false
 "#,
     )

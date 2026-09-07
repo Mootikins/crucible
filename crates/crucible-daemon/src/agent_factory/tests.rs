@@ -44,8 +44,6 @@ fn test_agent_config() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
@@ -476,8 +474,6 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     let ws = tempfile::tempdir().unwrap();
 
     let config = SessionAgent {
-        temperature: Some(0.2),
-        max_tokens: Some(512),
         context_budget: Some(64_000),
         // Deliberately not `Truncate`: that is the default, so a handle
         // built with a default strategy would satisfy the assertion

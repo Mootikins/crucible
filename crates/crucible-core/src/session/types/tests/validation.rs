@@ -158,8 +158,6 @@ fn test_output_validation_serde_roundtrip() {
         provider: BackendType::Ollama,
         model: "test".to_string(),
         system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: None,
