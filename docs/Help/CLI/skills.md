@@ -24,7 +24,11 @@ cru skills search <query> [-n <limit>]
 ## `cru skills list`
 
 Lists every discovered skill, sorted by name, with its scope and description. A skill that
-shadows a same-named skill from a lower scope is annotated with the number it shadows.
+shadows a same-named skill from a lower-priority root is annotated with the number it shadows.
+
+Scope is a *label* for where a skill came from, not the precedence mechanism.
+Precedence is position on the runtimepath, and `cru doctor` prints that list
+per asset kind — start there when a skill you expect is not listed.
 
 | Option | Default | Description |
 |--------|---------|-------------|

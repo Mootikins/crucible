@@ -6,7 +6,9 @@ kiln_path = "/home/user/Documents/my-vault"
 
 # Additional directories to search for agent cards (optional)
 # Paths can be absolute or relative to this config file location
+# Deprecated; prefer runtimepath, which serves every asset kind.
 # agent_directories = ["/home/user/shared-agents", "./docs/agents"]
+# runtimepath = ["/home/user/team-kit"]
 
 # Embedding configuration
 [embedding]

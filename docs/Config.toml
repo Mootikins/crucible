@@ -68,7 +68,9 @@ docs = "."
 # data_home = "~/.crucible"
 
 # Extra directories to search for agent cards, beyond the built-in locations.
+# Deprecated; prefer runtimepath, which serves every asset kind.
 # agent_directories = ["~/shared-agents"]
+# runtimepath = ["~/team-kit"]
 
 # Extra directories to search for plugins and themes. This is the list of
 # *additional* roots; the well-known ones always apply.

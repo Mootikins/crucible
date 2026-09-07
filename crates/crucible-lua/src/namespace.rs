@@ -67,6 +67,14 @@ pub enum CruNamespace {
     Plugin,
     Ratelimit,
     Retry,
+    /// `cru.rtp.append/prepend/get` — sugar over a `runtimepath` write.
+    ///
+    /// Registered beside `cru.config`, so it lands wherever that does. It
+    /// needs no VM restriction of its own: `runtimepath` is a location key,
+    /// and `ConfigStore`'s policy accepts one only during the boot phase, so
+    /// a call from a plugin after boot is withheld exactly as a direct
+    /// `cru.config.set` would be.
+    Rtp,
     Schedule,
     Service,
     /// The canonical session module: lifecycle verbs plus `current`.
@@ -134,6 +142,7 @@ impl CruNamespace {
             | Self::Plugin
             | Self::Ratelimit
             | Self::Retry
+            | Self::Rtp
             | Self::Schedule
             | Self::Service
             | Self::Session

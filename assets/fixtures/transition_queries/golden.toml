@@ -279,11 +279,11 @@ expect_text = ["Even if you trust the parent agent completely, the child agent s
 
 # TRANSITION Help/Concepts/Agent Skills.md
 #   "## Progressive Disclosure" — "A 200-line `SKILL.md` that links to 2,000 lines of reference is far more effective than a 2,200-line monolith."
-#   "## Discovery" — "Crucible discovers skills from three scopes, in priority order:"
+#   "## Discovery" — "Crucible resolves skills over **one ordered root list** — the runtimepath —"
 [[queries]]
 question = "why keep the skill entry file short, and which directories get scanned for skills?"
 expect_note = "Agent Skills"
-expect_text = ["A 200-line `SKILL.md` that links to 2,000 lines of reference is far more effective than a 2,200-line monolith.", "Crucible discovers skills from three scopes, in priority order:"]
+expect_text = ["A 200-line `SKILL.md` that links to 2,000 lines of reference is far more effective than a 2,200-line monolith.", "Crucible resolves skills over **one ordered root list** — the runtimepath —"]
 
 # TRANSITION Help/Concepts/Agent Skills.md
 #   "### Content Hashing" — "Each discovered skill gets a SHA-256 content hash for change detection."

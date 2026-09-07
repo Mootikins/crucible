@@ -25,11 +25,22 @@ Agent cards define specialized AI agents. Each card is a markdown file: YAML fro
 
 ## File Locations
 
-Discovery order (later locations shadow earlier ones, by card name):
+Cards resolve over the same runtimepath every asset kind uses, **highest
+priority first**, and the first match by card name wins:
 
-1. `~/.config/crucible/agents/` — personal cards
+1. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
 2. `KILN/.crucible/agents/` — kiln-scoped cards
-3. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
+3. each `agent_directories` entry (deprecated; see below)
+4. `~/.config/crucible/agents/` — personal cards
+
+A project card beats a kiln card. Note that **skills go the other way** — a
+kiln's skills beat a workspace's, because a kiln is where knowledge lives
+while a workspace is where work happens. Both have always behaved this way.
+
+To add a directory, put it on `runtimepath` rather than in
+`agent_directories`: one entry there supplies `agents/`, `skills/`, `plugins/`
+and `themes/` together, where `agent_directories` supplies cards alone. The old
+knob still works and warns once.
 
 Only `.crucible/` directories. A kiln's visible tree is **not** searched:
 `KILN/agents/` and `KILN/Agents/` used to be, which meant any kiln you cloned,
