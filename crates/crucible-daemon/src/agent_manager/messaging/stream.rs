@@ -30,7 +30,7 @@ use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 
-use crate::agent_manager::vm_pass::{fold_vms, PluginHandlers};
+use crate::agent_manager::vm_pass::{run_handlers, PluginHandlers};
 use tokio::sync::mpsc;
 
 /// Outcome of running output validation on an accumulated response.
@@ -118,7 +118,6 @@ impl AgentManager {
             &stream_ctx.session_id,
             &stream_ctx.message_id,
             accumulated_response,
-            &stream_ctx.session_state,
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             is_continuation,
         )
@@ -1085,11 +1084,10 @@ impl AgentManager {
                 "duration_ms": duration_ms,
             }),
         };
-        fold_vms(
-            &stream_ctx.session_state,
+        run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             (),
-            |_, registry, lua, ()| {
+            |registry, lua, ()| {
                 let post_llm_event = &post_llm_event;
                 let session_id = stream_ctx.session_id.as_str();
                 Box::pin(async move {
@@ -1129,7 +1127,6 @@ impl AgentManager {
         session_id: &str,
         message_id: &str,
         response: &str,
-        session_state: &Arc<Mutex<SessionEventState>>,
         plugin_handlers: Option<&PluginHandlers>,
         is_continuation: bool,
     ) -> Option<(String, String)> {
@@ -1149,25 +1146,20 @@ impl AgentManager {
         // win can use priority within its own registry, but cross-registry
         // the later (plugin) pass acts last by the same rule that lets
         // plugin transforms see session transforms' output.
-        fold_vms(
-            session_state,
-            plugin_handlers,
-            None,
-            |_, registry, lua, pending_injection| {
-                let event = &event;
-                Box::pin(async move {
-                    let injection = Self::run_turn_complete_handlers(
-                        session_id,
-                        &registry,
-                        &lua,
-                        event,
-                        is_continuation,
-                    )
-                    .await;
-                    ControlFlow::Continue(injection.or(pending_injection))
-                })
-            },
-        )
+        run_handlers(plugin_handlers, None, |registry, lua, pending_injection| {
+            let event = &event;
+            Box::pin(async move {
+                let injection = Self::run_turn_complete_handlers(
+                    session_id,
+                    &registry,
+                    &lua,
+                    event,
+                    is_continuation,
+                )
+                .await;
+                ControlFlow::Continue(injection.or(pending_injection))
+            })
+        })
         .await
     }
 

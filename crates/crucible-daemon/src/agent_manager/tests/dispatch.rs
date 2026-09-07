@@ -216,7 +216,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&state.handlers()),
             false, // is_continuation
         )
@@ -262,7 +261,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&plugin_pair),
             false,
         )
@@ -321,7 +319,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&plugin_pair),
             false,
         )
@@ -357,7 +354,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&state.handlers()),
             false,
         )
@@ -390,7 +386,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&state.handlers()),
             false,
         )
@@ -431,7 +426,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&state.handlers()),
             true, // is_continuation
         )
@@ -477,7 +471,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &empty_session_state(),
             Some(&state.handlers()),
             false,
         )

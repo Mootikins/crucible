@@ -21,12 +21,12 @@ impl Server {
             }
             // `cru.log.notify` on the plugin VM goes to the hub unstamped;
             // the hub reads `opts.workspace` / `opts.kiln` or goes global.
-            // Session VMs get their own stamped sink when they are built.
+            // One VM, one sink. A handler that wants a notification scoped to
+            // its session passes the scope — it has `ctx.session_id`.
             let notifications = self.rpc_context.notifications.clone();
             if let Err(e) = loader.upgrade_with_notify_sink(notifications.sink(None)) {
                 warn!("Failed to upgrade the Lua notify sink: {}", e);
             }
-            self.agent_manager.set_notification_hub(notifications);
 
             // Hand the validator registry + plugin Lua handle to the
             // agent manager so the stream loop can dispatch

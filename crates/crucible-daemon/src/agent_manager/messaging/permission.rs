@@ -6,7 +6,7 @@ use crucible_lua::StageId;
 use std::future::Future;
 use std::ops::ControlFlow;
 
-use crate::agent_manager::vm_pass::fold_vms;
+use crate::agent_manager::vm_pass::run_handlers;
 
 /// The name the permission engine matches an ACP tool call against.
 ///
@@ -353,11 +353,10 @@ impl AgentManager {
         // lock; then plugin handlers with the lock RELEASED — plugin Lua can
         // call `cru.shell`/`cru.http` for seconds, and holding the session's
         // whole state across that starves everything else on the session.
-        let (current_content, cancelled) = fold_vms(
-            &stream_ctx.session_state,
+        let (current_content, cancelled) = run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             (content, false),
-            |_, registry, lua, (content, _)| {
+            |registry, lua, (content, _)| {
                 Box::pin(async move {
                     let (content, cancelled) = Self::run_pre_llm_call_handlers(
                         stream_ctx,
@@ -515,11 +514,10 @@ impl AgentManager {
         // returning `{ messages = ... }`. Session-scoped handlers first,
         // under the state lock; then plugin handlers with the lock released
         // (same rationale as `apply_pre_llm_call_handlers`).
-        current = fold_vms(
-            &stream_ctx.session_state,
+        current = run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             current,
-            |_, registry, lua, current| {
+            |registry, lua, current| {
                 Box::pin(async move {
                     match Self::run_transform_context_handlers(
                         stream_ctx,

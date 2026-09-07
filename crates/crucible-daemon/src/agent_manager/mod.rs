@@ -387,10 +387,6 @@ pub struct AgentManager {
     /// The service holds a `Weak` back-reference (bound at startup), so this
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
-    /// Where a session VM's `cru.log.notify` goes. Bound once at boot beside
-    /// `session_api`; `None` in tests and boots that never wired it, where
-    /// the VM queues the call instead.
-    notification_hub: std::sync::OnceLock<Arc<crate::notifications::NotificationHub>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     card_roots: crate::agent_cards::CardRoots,
     llm_config: crate::llm_state::LiveLlmConfig,
@@ -526,7 +522,6 @@ impl AgentManager {
             session_manager: params.session_manager,
             background_manager: params.background_manager,
             delegation_service,
-            notification_hub: std::sync::OnceLock::new(),
             mcp_gateway: params.mcp_gateway,
             llm_config: crate::llm_state::LiveLlmConfig::new(params.llm_config),
             acp_config: params.acp_config,
@@ -1379,16 +1374,6 @@ impl AgentManager {
     /// Access the delegation service (child-session spawning).
     pub fn delegation_service(&self) -> &Arc<DelegationService> {
         &self.delegation_service
-    }
-
-    /// Bind the notification hub session VMs send `cru.log.notify` to.
-    /// Idempotent; first binder wins.
-    pub fn set_notification_hub(&self, hub: Arc<crate::notifications::NotificationHub>) {
-        let _ = self.notification_hub.set(hub);
-    }
-
-    pub fn notification_hub(&self) -> Option<&Arc<crate::notifications::NotificationHub>> {
-        self.notification_hub.get()
     }
 
     /// The provider table as it stands.

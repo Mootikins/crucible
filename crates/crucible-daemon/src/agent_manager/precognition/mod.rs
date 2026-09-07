@@ -11,7 +11,7 @@ struct ExecuteMultiKilnSearchParams<'a> {
 }
 
 use super::*;
-use crate::agent_manager::vm_pass::{fold_vms_locked, PluginHandlers};
+use crate::agent_manager::vm_pass::{run_handlers, PluginHandlers};
 use crate::multi_kiln_search::{search_across_kilns_with_stage, RerankStage};
 use crucible_lua::StageId;
 use std::ops::ControlFlow;
@@ -81,7 +81,6 @@ impl AgentManager {
         original_content: &str,
         results: &[crucible_core::SearchResult],
         label_kilns: bool,
-        state: &SessionEventState,
         plugin_handlers: Option<&PluginHandlers>,
     ) -> String {
         if results.is_empty() {
@@ -91,7 +90,6 @@ impl AgentManager {
             session_id,
             original_content,
             results,
-            state,
             plugin_handlers,
         )
         .await;
@@ -166,7 +164,6 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
-        state: &SessionEventState,
         plugin_handlers: Option<&PluginHandlers>,
     ) -> Option<String> {
         let results_payload: Vec<serde_json::Value> = results
@@ -185,9 +182,7 @@ impl AgentManager {
 
         // First Transform wins, session VM before plugin VM: a session's
         // custom formatter overrides a plugin's default. Formatters run
-        // pre-turn and are expected to be quick, so the plugin pass runs
-        // under the same caller-held state lock rather than after it.
-        fold_vms_locked(state, plugin_handlers, None, |_, registry, lua, _| {
+        run_handlers(plugin_handlers, None, |registry, lua, _| {
             let event = &event;
             Box::pin(async move {
                 match Self::run_precognition_format_pass(session_id, &registry, &lua, event).await {
@@ -248,7 +243,6 @@ impl AgentManager {
         original_content: &str,
         results: &[crucible_core::SearchResult],
         char_budget: usize,
-        state: &SessionEventState,
         plugin_handlers: Option<&PluginHandlers>,
     ) -> Option<Vec<crucible_core::SearchResult>> {
         let results_payload: Vec<serde_json::Value> = results
@@ -272,7 +266,7 @@ impl AgentManager {
 
         // Session VM before plugin VM, first Transform wins — same precedence
         // as `precognition_format`, so a session's policy overrides a plugin's.
-        fold_vms_locked(state, plugin_handlers, None, |_, registry, lua, _| {
+        run_handlers(plugin_handlers, None, |registry, lua, _| {
             let event = &event;
             Box::pin(async move {
                 match Self::run_precognition_select_pass(
@@ -513,14 +507,11 @@ impl AgentManager {
         // two passes seeing the same registry snapshot.
         if let Some(selected) = {
             let plugin_pair = self.plugin_handlers();
-            let session_state = self.get_or_create_session_state(session_id);
-            let state = session_state.lock().await;
             Self::execute_precognition_select_handlers(
                 session_id,
                 original_content,
                 &results,
                 char_budget,
-                &state,
                 plugin_pair.as_ref(),
             )
             .await
@@ -534,14 +525,11 @@ impl AgentManager {
 
         let context_block = {
             let plugin_pair = self.plugin_handlers();
-            let session_state = self.get_or_create_session_state(session_id);
-            let state = session_state.lock().await;
             Self::format_precognition_context_block(
                 session_id,
                 original_content,
                 &results,
                 label_kilns,
-                &state,
                 plugin_pair.as_ref(),
             )
             .await

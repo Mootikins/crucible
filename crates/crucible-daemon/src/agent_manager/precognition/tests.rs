@@ -223,16 +223,9 @@ mod precognition_format_hook_tests {
         (registry, lua)
     }
 
-    fn empty_state() -> SessionEventState {
-        SessionEventState {
-            spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }
-    }
-
     #[tokio::test]
     async fn precognition_format_hook_customizes_output() {
         let vm = make_handler_vm();
-        let state = empty_state();
         vm.1
             .load(
                 r###"
@@ -260,7 +253,6 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
             Some(&vm),
         )
         .await;
@@ -273,7 +265,6 @@ mod precognition_format_hook_tests {
     #[tokio::test]
     async fn precognition_format_no_handler_uses_default() {
         let vm = make_handler_vm();
-        let state = empty_state();
         let results = vec![make_result(
             "notes/Rust.md",
             0.85,
@@ -286,7 +277,6 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
             Some(&vm),
         )
         .await;
@@ -309,7 +299,6 @@ mod precognition_format_hook_tests {
     #[tokio::test]
     async fn precognition_format_names_the_kiln_and_withholds_its_directory() {
         let vm = make_handler_vm();
-        let state = empty_state();
         vm.1.load(
             r###"
                 cru.on("precognition_format", function(ctx, event)
@@ -337,7 +326,6 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
             Some(&vm),
         )
         .await;
@@ -351,7 +339,6 @@ mod precognition_format_hook_tests {
     #[tokio::test]
     async fn precognition_format_omits_the_kiln_when_no_entry_claims_it() {
         let vm = make_handler_vm();
-        let state = empty_state();
         vm.1.load(
             r###"
                 cru.on("precognition_format", function(ctx, event)
@@ -369,7 +356,6 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
             Some(&vm),
         )
         .await;
@@ -458,12 +444,6 @@ mod precognition_select_hook_tests {
         (registry, lua)
     }
 
-    fn empty_state() -> SessionEventState {
-        SessionEventState {
-            spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }
-    }
-
     /// The registry name every fixture hit is attributed to. It is a NAME, not
     /// a directory: `SearchResult` cannot hold a directory any more, which is
     /// what `precognition_select_names_the_kiln_and_withholds_its_directory`
@@ -506,7 +486,6 @@ mod precognition_select_hook_tests {
             "what is alpha?",
             results,
             char_budget,
-            &empty_state(),
             vm,
         )
         .await

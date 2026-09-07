@@ -665,13 +665,6 @@ pub(crate) fn handler_vm() -> HandlerVm {
     HandlerVm { lua, registry }
 }
 
-/// A session state with no VM in it — all that is left of one.
-pub(crate) fn empty_session_state() -> Arc<Mutex<crate::agent_manager::SessionEventState>> {
-    Arc::new(Mutex::new(crate::agent_manager::SessionEventState {
-        spill_counter: std::sync::atomic::AtomicU32::new(1),
-    }))
-}
-
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));

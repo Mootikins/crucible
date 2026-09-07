@@ -5,7 +5,7 @@ use crucible_lua::StageId;
 use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
 use std::ops::ControlFlow;
 
-use crate::agent_manager::vm_pass::fold_vms;
+use crate::agent_manager::vm_pass::run_handlers;
 
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
 /// hand the agent loop an errored result.
@@ -364,11 +364,10 @@ impl AgentManager {
         // holding the session's whole state across that starves every other
         // operation on the session (and deadlocks a handler that calls back
         // into an API needing the same lock).
-        let (args, intercepted) = fold_vms(
-            &stream_ctx.session_state,
+        let (args, intercepted) = run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             (args, None),
-            |_, registry, lua, (mut args, _)| {
+            |registry, lua, (mut args, _)| {
                 let call_id = &call_id;
                 Box::pin(async move {
                     let hit = run_pre_tool_call_handlers(

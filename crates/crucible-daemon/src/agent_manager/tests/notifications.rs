@@ -14,7 +14,6 @@ struct HubFixture {
     _data_home: TempDir,
     _workspace: TempDir,
     session_id: String,
-    _agent_manager: AgentManager,
     hub: Arc<NotificationHub>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
 }
@@ -35,13 +34,10 @@ async fn hub_fixture() -> HubFixture {
         event_tx,
     ));
     hub.spawn_drain();
-    let agent_manager = create_test_agent_manager(session_manager);
-    agent_manager.set_notification_hub(hub.clone());
     HubFixture {
         _data_home: data_home,
         _workspace: workspace,
         session_id: session.id.to_string(),
-        _agent_manager: agent_manager,
         hub,
         event_rx,
     }
