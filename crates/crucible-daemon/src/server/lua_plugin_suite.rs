@@ -534,7 +534,7 @@ mod shipped_plugin_tests {
         // another.
         const PROFILES: &[(&str, VmProfile)] = &[
             // The shipped defaults and a workspace `init.lua`: session VM.
-            ("runtime/defaults/", VmProfile::Session),
+            ("runtime/defaults/", VmProfile::Daemon),
             // A statusline layout evaluates on a VM with `cru.statusline` and
             // NOTHING else; a theme evaluates on a bare VM with no `cru` at
             // all. Both were mapped to the config profile, which is strictly

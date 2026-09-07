@@ -25,22 +25,28 @@ pub(crate) fn surface(lua: &Lua) -> Vec<String> {
     out
 }
 
-/// The config profile must not reach the network or the filesystem. `cru config`
-/// and `cru doctor` evaluate a config file to READ values out of it.
+/// A statusline layout is evaluated with `cru.statusline` and nothing else.
+///
+/// It used to be checked against the config profile, which also carried
+/// `cru.colorscheme`, `cru.hl` and `cru.syntax`: the gate proved a property of
+/// a strictly more permissive VM, so a layout reaching for `cru.hl` passed the
+/// check and failed to load.
 #[test]
-fn the_config_profile_has_no_network_or_filesystem() {
-    let lua = config_vm().expect("the config profile must build");
+fn the_statusline_profile_carries_only_the_statusline() {
+    let lua = statusline_vm().expect("the statusline profile must build");
     let paths = surface(&lua);
-    for forbidden in ["cru.http", "cru.fs", "cru.shell", "cru.ws", "cru.storage"] {
-        assert!(
-            !paths.contains(&forbidden.to_string()),
-            "{forbidden} must not be on the config VM: {paths:?}"
-        );
-    }
+    assert!(
+        paths.iter().all(|p| p.starts_with("cru.statusline")),
+        "the statusline VM must carry nothing else: {paths:?}"
+    );
+    assert!(
+        paths.len() > 1,
+        "and it must carry the item constructors: {paths:?}"
+    );
 }
 
-/// The three profiles must not render to the same file, or one silently
-/// overwrites another and two of the three shapes go undescribed.
+/// No two profiles may render to the same file, or one silently overwrites
+/// another and a shape goes undescribed.
 #[test]
 fn every_profile_renders_to_its_own_file() {
     let mut seen = std::collections::HashSet::new();

@@ -418,8 +418,6 @@ async fn every_function_is_signed_or_listed() {
     for profile in VmProfile::all() {
         let lua = match profile {
             VmProfile::Daemon => loader.executor().lua().clone(),
-            VmProfile::Session => crucible_daemon::vm_profiles::session_vm().expect("session vm"),
-            VmProfile::Config => crucible_daemon::vm_profiles::config_vm().expect("config vm"),
             VmProfile::Statusline => {
                 crucible_daemon::vm_profiles::statusline_vm().expect("statusline vm")
             }
