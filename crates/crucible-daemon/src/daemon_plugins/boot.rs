@@ -300,19 +300,7 @@ pub async fn evaluate_boot_config_with_paths(
         // the default prompt, the precognition formatter and the plan-mode
         // permission hook. `init.lua` runs after it, so overriding is
         // ordinary assignment and `cru.modes.auto = nil` removes.
-        //
-        // Fail open: a broken defaults file must not stop the boot. It is not
-        // covered by the rollback below, which restores the state as it was
-        // when this evaluation started — that includes this file's writes.
-        let (defaults_src, defaults_origin) = crate::runtime_defaults::load_defaults(&seed_rtp);
-        debug!(source = %defaults_origin, "Loading Lua defaults");
-        if let Err(e) = lua
-            .load(&defaults_src)
-            .set_name(defaults_origin.to_string())
-            .exec()
-        {
-            warn!(source = %defaults_origin, error = %e, "Failed to load Lua defaults (fail-open)");
-        }
+        load_shipped_defaults(lua, &seed_rtp);
 
         // Step 4: evaluate init.lua once, top to bottom, under the boot
         // deadline. Errors fail open onto the seed — ENTIRELY: the state
@@ -374,6 +362,12 @@ pub async fn evaluate_boot_config_with_paths(
         let lua = loader.executor().lua();
         let modules = loader.executor().modules().clone();
         seed_boot_search_path(lua, &modules, &config_root, &plugin_paths(&seed_rtp))?;
+        // The rollback drops the VM the defaults file ran in, so re-run it
+        // here. Without this, ONE syntax error in a user's `init.lua` leaves
+        // every session with no system prompt, no declared modes and no
+        // plan-mode deny hook — the defaults file is the only definition of
+        // all three, and nothing else loads it.
+        load_shipped_defaults(lua, &seed_rtp);
         if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
             state.active = false;
         }
@@ -416,6 +410,20 @@ pub async fn evaluate_boot_config_with_paths(
         boot_hash,
         eval_error,
     })
+}
+
+/// Run the runtimepath's defaults file on `lua`.
+///
+/// Fail-open: a broken defaults file must not stop the boot. Called twice —
+/// once before `init.lua`, and again on the fresh VM the rollback builds when
+/// `init.lua` fails — because this file is the only definition of the default
+/// prompt, the shipped modes and the plan-mode deny hook.
+fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf]) {
+    let (src, origin) = crate::runtime_defaults::load_defaults(runtimepath);
+    debug!(source = %origin, "Loading Lua defaults");
+    if let Err(e) = lua.load(&src).set_name(origin.to_string()).exec() {
+        warn!(source = %origin, error = %e, "Failed to load Lua defaults (fail-open)");
+    }
 }
 
 /// Evaluate one init.lua in the boot VM: guards on, budget armed. `Err`
@@ -860,12 +868,26 @@ error("boom")
         let store = crucible_lua::get_app_config().expect("store is live");
         assert_eq!(store["default_kiln"], json!("seeded"));
 
-        // The registrations from before the error line are gone with the VM.
+        // The USER's registrations from before the error line are gone with
+        // the VM. The shipped defaults file is re-run onto the fresh VM, so
+        // its handlers are the ones that remain.
         let handlers = boot.loader.plugin_handlers();
-        assert_eq!(
-            handlers.runtime_handlers().lock().unwrap().len(),
-            0,
-            "a hook registered before the error must not survive the rollback"
+        let names: Vec<String> = handlers
+            .runtime_handlers()
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|h| h.event_type.clone())
+            .collect();
+        assert!(
+            !names.contains(&"turn:complete".to_string()),
+            "a hook registered before the error must not survive the rollback: {names:?}"
+        );
+        assert!(
+            names.contains(&"precognition_format".to_string()),
+            "the shipped defaults must be re-run onto the rollback VM, or one \
+             typo in init.lua costs the user their prompt, modes and plan-mode \
+             deny hook: {names:?}"
         );
         assert_ne!(
             crucible_lua::get_theme_config().map(|t| t.name),

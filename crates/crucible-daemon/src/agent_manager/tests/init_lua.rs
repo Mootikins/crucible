@@ -20,6 +20,26 @@ fn daemon_vm(extra: &str) -> crate::daemon_plugins::DaemonPluginLoader {
     loader
 }
 
+/// Fire `on_session_start` the way `SessionLifecycle` does at session create.
+///
+/// The production call, not a copy of it: a harness that reimplements the
+/// binding is a second thing to keep in step with it.
+async fn fire(
+    vm: &mut crate::daemon_plugins::DaemonPluginLoader,
+    agent_manager: &AgentManager,
+    session_manager: &SessionManager,
+    session_id: &str,
+) {
+    crate::session_lifecycle::fire_start_hooks(
+        vm,
+        Some(agent_manager),
+        session_manager,
+        session_id,
+    )
+    .await
+    .expect("start hooks must not refuse the session");
+}
+
 /// `session.isolation` must read the same in a user's `cru.on_session_start`
 /// as in a plugin's `cru.on_session_start`.
 ///
@@ -29,7 +49,7 @@ fn daemon_vm(extra: &str) -> crate::daemon_plugins::DaemonPluginLoader {
 #[tokio::test]
 async fn a_session_start_hook_sees_the_sessions_isolation_param() {
     let tmp = TempDir::new().unwrap();
-    let vm = daemon_vm(
+    let mut vm = daemon_vm(
         r#"
         cru.on_session_start(function(session)
           seen_isolation = session.isolation
@@ -54,7 +74,7 @@ async fn a_session_start_hook_sees_the_sessions_isolation_param() {
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager.set_plugin_handlers(vm.plugin_handlers(), vm.plugin_lua());
-    let _state = agent_manager.get_or_create_session_state(&session.id);
+    fire(&mut vm, &agent_manager, &session_manager, &session.id).await;
 
     assert_eq!(
         vm.plugin_lua()
@@ -85,7 +105,7 @@ async fn a_session_start_hook_sees_the_sessions_isolation_param() {
 #[tokio::test]
 async fn a_session_variable_set_by_a_start_hook_survives_a_resume() {
     let tmp = TempDir::new().unwrap();
-    let vm = daemon_vm(
+    let mut vm = daemon_vm(
         r#"
         cru.on_session_start(function(session)
           seen_before = session:get_variable("visits")
@@ -110,7 +130,7 @@ async fn a_session_variable_set_by_a_start_hook_survives_a_resume() {
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager.set_plugin_handlers(vm.plugin_handlers(), vm.plugin_lua());
     {
-        let _state = agent_manager.get_or_create_session_state(&session.id);
+        fire(&mut vm, &agent_manager, &session_manager, &session.id).await;
         assert!(
             vm.plugin_lua()
                 .globals()
@@ -152,7 +172,7 @@ async fn a_session_variable_set_by_a_start_hook_survives_a_resume() {
     // A second manager has fresh slots, so its VM seeds from the session.
     let second = create_test_agent_manager(session_manager.clone());
     second.set_plugin_handlers(vm.plugin_handlers(), vm.plugin_lua());
-    let _state = second.get_or_create_session_state(&session.id);
+    fire(&mut vm, &second, &session_manager, &session.id).await;
     assert_eq!(
         vm.plugin_lua().globals().get::<i64>("seen_before").ok(),
         Some(1),

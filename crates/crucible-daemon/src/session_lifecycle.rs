@@ -214,26 +214,66 @@ impl SessionLifecycle {
         let Some(loader) = guard.as_mut() else {
             return Ok(());
         };
-        // The real workspace, not a placeholder: `oci` bind-mounts it, so a
-        // wrong or absent path means it isolates the wrong directory — and it
-        // is also the key the plugin containers by, so a child sharing its
-        // parent's workspace registers against the parent's container instead
-        // of paying a second cold start.
-        let mut session = crucible_lua::Session::new(session_id.to_string());
-        if let Some(daemon_session) = self.sessions.get_session(session_id) {
-            if let Some(workspace) = &daemon_session.workspace {
-                session = session.with_workspace(workspace.to_string_lossy());
-            }
-            // The per-session opt-in, forwarded untouched. This is the whole
-            // delivery mechanism: no new Lua API, just a field on the object
-            // the plugin already gets.
-            if let Some(isolation) = daemon_session.isolation {
-                session = session.with_isolation(isolation);
-            }
-        }
-        session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
-        loader.fire_session_start(&session).await
+        fire_start_hooks(loader, self.agents().as_deref(), &self.sessions, session_id).await
     }
+}
+
+/// Fire `on_session_start` for one session. The ONE fire site.
+///
+/// It used to fire here AND at the session's first turn, once the two VMs
+/// became one — so every hook ran twice, with a different session binding each
+/// time, and `session.system_prompt = session.system_prompt .. "…"` (the idiom
+/// the shipped defaults file documents) raised on `nil` at this one.
+///
+/// A free function rather than a method because the tests drive it too: a
+/// second copy of this wiring in a test harness is a second thing to keep in
+/// step with the plugin loader's `required = true` refusal.
+pub(crate) async fn fire_start_hooks(
+    loader: &mut DaemonPluginLoader,
+    agents: Option<&AgentManager>,
+    sessions: &SessionManager,
+    session_id: &str,
+) -> anyhow::Result<()> {
+    // The real workspace, not a placeholder: `oci` bind-mounts it, so a wrong
+    // or absent path means it isolates the wrong directory — and it is also
+    // the key the plugin containers by, so a child sharing its parent's
+    // workspace registers against the parent's container instead of paying a
+    // second cold start.
+    let mut session = crucible_lua::Session::new(session_id.to_string());
+    if let Some(daemon_session) = sessions.get_session(session_id) {
+        if let Some(workspace) = &daemon_session.workspace {
+            session = session.with_workspace(workspace.to_string_lossy());
+        }
+        // The per-session opt-in, forwarded untouched. This is the whole
+        // delivery mechanism: no new Lua API, just a field on the object the
+        // plugin already gets.
+        if let Some(isolation) = daemon_session.isolation {
+            session = session.with_isolation(isolation);
+        }
+    }
+
+    // The scope the hooks write into. `apply_session_defaults` reads it back.
+    let scope = agents.map(|agents| {
+        let (scope, variables) = agents.start_hook_scope(session_id);
+        session.bind(Box::new(
+            crucible_lua::SessionDefaultsRpc::new(scope.clone()).with_variables(variables),
+        ));
+        scope
+    });
+    if scope.is_none() {
+        // No manager bound: nothing reads the scope, so a hook that writes
+        // `session.x` should say so rather than appear to work.
+        session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
+    }
+
+    let result = loader.fire_session_start(&session).await;
+
+    // Record what the hooks chose even when one of them failed: the others
+    // ran, and their writes are as real as a clean run's.
+    if let (Some(scope), Some(agents)) = (scope, agents) {
+        agents.commit_start_hook_scope(session_id, &scope);
+    }
+    result
 }
 
 /// Whether a claim can actually be enforced for an agent of this type.

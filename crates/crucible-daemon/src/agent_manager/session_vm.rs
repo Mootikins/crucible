@@ -20,75 +20,45 @@
 use super::*;
 
 impl AgentManager {
-    /// Run `cru.on_session_start` hooks against a defaults scope.
+    /// The scope a session's `on_session_start` hooks write into, and the
+    /// variables they read.
     ///
-    /// Sync, like the permission hooks and for the same reason: this runs
-    /// inside session-VM construction, which is not async, and a start hook
-    /// deciding a session's opening configuration has no business awaiting.
+    /// Seeded from the global defaults so `session.x` reads the inherited
+    /// value — `session.system_prompt = session.system_prompt .. "…"` extends
+    /// the default instead of clobbering it.
     ///
-    /// Fails open per hook — one plugin's broken hook must not stop another's
-    /// from running, nor block the session. (The `required = true` escalation
-    /// that `LuaExecutor` honours is about isolation boundaries owning session
-    /// refusal; that path stays with the plugin loader, which is where
-    /// isolation claims live.)
-    fn fire_session_start_hooks(
+    /// Paired with [`Self::commit_start_hook_scope`]. `SessionLifecycle` runs
+    /// the hooks between the two, because that is where the plugin loader and
+    /// the `required = true` refusal live.
+    pub(crate) fn start_hook_scope(
         &self,
-        lua: &Lua,
+        session_id: &str,
+    ) -> (
+        crucible_lua::SessionDefaults,
+        crucible_lua::SessionVariables,
+    ) {
+        let scope = crucible_lua::SessionDefaults::new();
+        scope.set(self.session_defaults.get());
+
+        // Seed the variables from storage before the hooks run, so
+        // `session:get_variable` reads what an earlier life of this session
+        // stored. A fresh manager over the same storage — a resume — has an
+        // empty slot until this happens.
+        let variables = self.slot(session_id).variables();
+        if let Some(stored) = self.session_manager.get_session(session_id) {
+            variables.replace(stored.variables);
+        }
+        (scope, variables)
+    }
+
+    /// Record what the start hooks chose. `apply_session_defaults` reads it.
+    pub(crate) fn commit_start_hook_scope(
+        &self,
         session_id: &str,
         scope: &crucible_lua::SessionDefaults,
     ) {
-        let hooks = match crucible_lua::get_session_start_hooks(lua) {
-            Ok(hooks) => hooks,
-            Err(e) => {
-                warn!(session_id = %session_id, error = %e, "Could not read on_session_start hooks");
-                return;
-            }
-        };
-        if hooks.is_empty() {
-            return;
-        }
-
-        // The same object plugins get, so `session.isolation` reads the same
-        // from a user's `cru.on_session_start` as from a plugin's. Two surfaces
-        // for one documented field that disagreed would be worse than the field
-        // not existing on one of them.
-        let daemon_session = self.session_manager.get_session(session_id);
-        let variables = self.slot(session_id).variables();
-        let mut lua_session = crucible_lua::Session::new(session_id.to_string());
-        if let Some(daemon_session) = daemon_session {
-            // Only when there IS one: `session.workspace` reads `nil` in
-            // Lua for a workspace-less session rather than a wrong path.
-            if let Some(workspace) = &daemon_session.workspace {
-                lua_session = lua_session.with_workspace(workspace.to_string_lossy().into_owned());
-            }
-            if let Some(isolation) = daemon_session.isolation {
-                lua_session = lua_session.with_isolation(isolation);
-            }
-            // Seed before the hooks run, so `get_variable` reads what an
-            // earlier life of this session stored.
-            variables.replace(daemon_session.variables);
-        }
-        lua_session.bind(Box::new(
-            crucible_lua::SessionDefaultsRpc::new(scope.clone()).with_variables(variables),
-        ));
-
-        for key in &hooks {
-            match lua.registry_value::<mlua::Function>(key) {
-                Ok(func) => {
-                    if let Err(e) = func.call::<()>(lua_session.clone()) {
-                        warn!(
-                            session_id = %session_id,
-                            error = %e,
-                            "on_session_start hook failed (fail-open)"
-                        );
-                    }
-                }
-                Err(e) => {
-                    warn!(session_id = %session_id, error = %e, "on_session_start hook missing from registry");
-                }
-            }
-        }
-        debug!(session_id = %session_id, hooks = hooks.len(), "Fired on_session_start hooks");
+        self.slot(session_id).set_overrides(scope.get());
+        self.schedule_variable_persist(session_id);
     }
 
     pub(in crate::agent_manager) fn get_or_create_session_state(
@@ -112,24 +82,11 @@ impl AgentManager {
     /// argument rather than by living in a VM that belongs to it. What is
     /// genuinely per session is the starting values `on_session_start`
     /// chooses, so that is what this builds.
-    fn build_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
-        // The hooks live on the daemon VM, which ran every file at boot.
-        // Fire them here rather than at session.create, because this is where
-        // the per-session scope they write into is created.
-        //
-        // Seeded from the global defaults so `session.x` reads the inherited
-        // value — `session.system_prompt = session.system_prompt .. "…"`
-        // extends the default instead of clobbering it. The result is this
-        // session's starting values; `apply_session_defaults` reads it.
-        let scope = crucible_lua::SessionDefaults::new();
-        scope.set(self.session_defaults.get());
-        // No daemon VM bound is a test manager: nothing registered hooks.
-        if let Some((_, daemon_lua)) = self.plugin_handlers() {
-            self.fire_session_start_hooks(&daemon_lua, session_id, &scope);
-        }
-        self.slot(session_id).set_overrides(scope.get());
-        self.schedule_variable_persist(session_id);
-
+    fn build_session_state(&self, _session_id: &str) -> Arc<Mutex<SessionEventState>> {
+        // `on_session_start` does NOT fire here. `SessionLifecycle` fires it
+        // once, at session create, against the same daemon VM — firing again
+        // here ran every hook twice, with a different session binding each
+        // time. This builds only what a session owns.
         Arc::new(Mutex::new(SessionEventState {
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }))

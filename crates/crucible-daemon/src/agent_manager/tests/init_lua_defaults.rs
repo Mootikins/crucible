@@ -31,8 +31,9 @@ async fn session_with_lua(
     Arc<SessionManager>,
     String,
 ) {
-    let loader = crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
-        .expect("daemon VM");
+    let mut loader =
+        crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+            .expect("daemon VM");
     let src = format!("{}\n{}", crucible_lua::BUILTIN_INIT_LUA, extra);
     loader
         .executor()
@@ -53,6 +54,18 @@ async fn session_with_lua(
     );
     agent_manager.set_daemon_permissions(loader.permission_registry());
     agent_manager.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+    // The same call `SessionLifecycle` makes at session create — the one fire
+    // site. Driving it here rather than reimplementing it keeps the harness
+    // from drifting away from what production does.
+    crate::session_lifecycle::fire_start_hooks(
+        &mut loader,
+        Some(&agent_manager),
+        &session_manager,
+        &session.id,
+    )
+    .await
+    .expect("start hooks must not refuse the session");
+
     let id = session.id.to_string();
     (loader, agent_manager, session_manager, id)
 }
@@ -746,13 +759,12 @@ async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
 /// that reaches `cru.defaults` and not `SessionAgent` is the failure mode.
 #[tokio::test]
 async fn a_mode_set_in_a_session_start_hook_reaches_the_agent() {
-    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
-    let session_manager = agent_manager.session_manager.clone();
-
-    let defaults = agent_manager.session_defaults();
-    let mut values = defaults.get();
-    values.mode = Some("plan".to_string());
-    defaults.set(values);
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
+        r#"cru.on_session_start(function(session)
+             session.mode = "plan"
+           end)"#,
+    )
+    .await;
 
     let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
@@ -780,4 +792,35 @@ async fn an_agents_own_mode_outranks_the_default() {
     let agent = configured_agent(&agent_manager, &session_manager, &session_id, agent).await;
 
     assert_eq!(agent.mode.as_deref(), Some("ask"));
+}
+
+/// A start hook runs ONCE per session.
+///
+/// It briefly ran twice. Once the two VMs became one, `SessionLifecycle` fired
+/// the hooks at session create and `build_session_state` fired the same table
+/// again at the session's first turn — so a plugin that builds a container in
+/// `on_session_start` built two, and the two sites bound the session
+/// differently, so the same hook body could succeed at one and raise at the
+/// other. Counting in Lua is the only assertion that catches it: every
+/// observable EFFECT of firing twice is idempotent.
+#[tokio::test]
+async fn a_start_hook_runs_once_per_session() {
+    let (vm, agent_manager, session_manager, session_id) = session_with_lua(
+        r#"fired = 0
+           cru.on_session_start(function(session)
+             fired = fired + 1
+           end)"#,
+    )
+    .await;
+
+    // Everything a turn does that used to re-fire.
+    let _ = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
+    let _ = agent_manager.session_modes(&session_id);
+    agent_manager.get_or_create_session_state(&session_id);
+
+    let fired: i64 = vm.plugin_lua().globals().get("fired").unwrap();
+    assert_eq!(
+        fired, 1,
+        "the hook must fire once per session, not once per site"
+    );
 }
