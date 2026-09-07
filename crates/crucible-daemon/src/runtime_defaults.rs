@@ -68,29 +68,57 @@ fn defaults_candidates_from(
     env_runtime: Option<&str>,
     exe_roots: &[PathBuf],
 ) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
+    use crucible_core::runtime_path::{
+        search_paths, EntryShape, Origin, RuntimeAsset, RuntimeEntry,
+    };
+
+    // The roots, in the order this resolver has always used: configured
+    // entries, then `$CRUCIBLE_RUNTIME`, then exe-relative and bundled.
+    //
+    // Built here rather than through `runtime_path::daemon_path` because that
+    // one carries `~/.config/crucible` as a `UserConfig` root, and
+    // `Defaults::reaches` refuses it — `defaults/` names Crucible's own
+    // defaults, and the user's entry point is `init.lua` beside it.
+    let mut path: Vec<RuntimeEntry> = runtimepath
+        .iter()
+        .enumerate()
+        .map(|(i, root)| RuntimeEntry::root(root.clone(), Origin::Config(i)))
+        .collect();
+    if let Some(base) = env_runtime {
+        path.push(RuntimeEntry::root(PathBuf::from(base), Origin::Env));
+    }
+    path.extend(
+        exe_roots
+            .iter()
+            .map(|root| RuntimeEntry::root(root.clone(), Origin::Bundled)),
+    );
 
     // Both entry-point names at every root, preferred first: a copied-out
-    // `defaults/init.luau` was invisible while this looked for one name.
-    let names = crucible_lua::source_files::init_file_names();
-
-    for rtp in runtimepath {
-        for name in &names {
-            candidates.push(rtp.join("defaults").join(name));
+    // `defaults/init.luau` was invisible while this looked for one name. The
+    // names come from the shape rather than being spelled here, so the table
+    // and this resolver cannot disagree about what an entry file is called.
+    let names: Vec<String> = match RuntimeAsset::Defaults.shape() {
+        EntryShape::LuaEntryFile => crucible_lua::source_files::init_file_names().to_vec(),
+        EntryShape::DirWithMarker(_)
+        | EntryShape::PluginDir
+        | EntryShape::NoteFiles
+        | EntryShape::LuaSourceFiles => {
+            unreachable!("Defaults is a LuaEntryFile; the table changed under this resolver")
         }
-    }
+    };
 
-    if let Some(base) = env_runtime {
-        for name in &names {
-            candidates.push(PathBuf::from(base).join("defaults").join(name));
-        }
-    }
-
-    for root in exe_roots {
-        for name in &names {
-            candidates.push(root.join("defaults").join(name));
-        }
-    }
+    // `search_paths` consults no filesystem, which is what this resolver needs:
+    // it records candidates that do NOT exist, because the file an agent plants
+    // is by definition the file that was not there.
+    let candidates: Vec<PathBuf> = search_paths(RuntimeAsset::Defaults, &path)
+        .into_iter()
+        .flat_map(|dir| {
+            names
+                .iter()
+                .map(move |name| dir.path.join(name))
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     // Each candidate is Lua the daemon VM executes before the user's config,
     // so the write-protected set has to name it — including the ones that do

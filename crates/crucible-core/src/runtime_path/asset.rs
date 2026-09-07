@@ -177,9 +177,22 @@ impl RuntimeAsset {
                 origin,
                 Origin::Workspace | Origin::Kiln | Origin::Plugin | Origin::Harness
             ),
-            RuntimeAsset::Themes | RuntimeAsset::Defaults => {
+            RuntimeAsset::Themes => {
                 !matches!(origin, Origin::Workspace | Origin::Kiln | Origin::Harness)
             }
+            // Defaults additionally refuse `UserConfig`. `defaults/` names
+            // CRUCIBLE's own shipped defaults, and the user's entry point is
+            // already `~/.config/crucible/init.lua`. A second hook at
+            // `~/.config/crucible/defaults/init.luau` would sit beside it
+            // under a name that says the opposite of what it does.
+            //
+            // Overriding the shipped defaults already has a route: `cru setup`
+            // copies them to `~/.config/crucible/runtime/defaults/`, which is
+            // `UserRuntime` and is reached.
+            RuntimeAsset::Defaults => !matches!(
+                origin,
+                Origin::Workspace | Origin::Kiln | Origin::Harness | Origin::UserConfig
+            ),
             RuntimeAsset::Skills | RuntimeAsset::Cards => true,
         }
     }
