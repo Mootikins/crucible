@@ -50,9 +50,11 @@ fn test_priority_ordering_higher_scope_wins() {
     create_test_skill(personal_dir.path(), "shared-skill");
     create_test_skill(kiln_dir.path(), "shared-skill");
 
+    // Highest priority first: the paths are taken in the order given now,
+    // and the first match wins.
     let discovery = FolderDiscovery::new(vec![
-        SearchPath::new(personal_dir.path().to_path_buf(), SkillScope::Personal),
         SearchPath::new(kiln_dir.path().to_path_buf(), SkillScope::Kiln),
+        SearchPath::new(personal_dir.path().to_path_buf(), SkillScope::Personal),
     ]);
 
     let discovered = discovery.discover().expect("Should discover");
@@ -82,14 +84,20 @@ fn test_runtime_skill_discovered() {
     // When: default_discovery_paths() builds search paths
     let paths = default_discovery_paths(None, None, None);
 
-    let has_runtime_path = paths
-        .iter()
-        .any(|p| p.path.to_string_lossy().contains("crucible-help"));
+    // `crucible-help` ships its skills as a PLUGIN, beside its own manifest,
+    // so the runtime root has no top-level `skills/`. A plugin's directory is
+    // a runtime root; add it the way the daemon does.
+    let plugin_skills = runtime_dir
+        .join("plugins")
+        .join("crucible-help")
+        .join("skills");
     assert!(
-        has_runtime_path,
-        "default_discovery_paths() should include runtime crucible-help skills path, got: {:?}",
-        paths.iter().map(|p| &p.path).collect::<Vec<_>>()
+        plugin_skills.is_dir(),
+        "crucible-help must ship its skills beside its manifest, got: {plugin_skills:?}"
     );
+
+    let mut paths = paths;
+    paths.push(SearchPath::new(plugin_skills, SkillScope::Builtin));
 
     // When: FolderDiscovery discovers skills from those paths
     let discovery = FolderDiscovery::new(paths);

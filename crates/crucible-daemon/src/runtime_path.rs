@@ -35,7 +35,7 @@ fn runtime_roots() -> Vec<PathBuf> {
 pub fn daemon_path(runtimepath: &[PathBuf]) -> Vec<RuntimeEntry> {
     let expanded: Vec<PathBuf> = runtimepath
         .iter()
-        .map(|p| crate::kiln_manager::expand_tilde_path(p))
+        .map(|p| crate::kiln_manager::expand_tilde_path(p.as_path()))
         .collect();
     let env_plugin_dirs = crucible_core::paths::env_plugin_paths();
     let config_home = dirs::config_dir().map(|d| d.join("crucible"));

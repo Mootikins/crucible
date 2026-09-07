@@ -114,7 +114,7 @@ fn on_disk_roots() -> Vec<PathBuf> {
 /// is routinely created empty by a half-finished `cru setup`, and an empty
 /// directory that counts as a runtime would shadow the bundled tree with nothing.
 pub fn looks_like_runtime(dir: &Path) -> bool {
-    ["plugins", "themes", "defaults", "crucible-help"]
+    ["plugins", "themes", "defaults", "skills"]
         .iter()
         .any(|marker| dir.join(marker).is_dir())
 }
@@ -319,7 +319,7 @@ mod tests {
             "plugins/reflection/plugin.yaml",
             "plugins/worktree/init.luau",
             "plugins/worktree/lua/git.luau",
-            "crucible-help/skills/crucible-help/SKILL.md",
+            "plugins/crucible-help/skills/crucible-help/SKILL.md",
         ] {
             assert!(
                 tmp.path().join(needed).is_file(),

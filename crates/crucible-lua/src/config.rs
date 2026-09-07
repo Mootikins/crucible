@@ -974,7 +974,7 @@ mod tests {
         std::fs::write(themes_dir.join("light.lua"), "return {}").unwrap();
         std::fs::write(themes_dir.join("not_a_theme.txt"), "").unwrap();
 
-        let themes = list_available_themes(&[themes_dir.clone()]);
+        let themes = list_available_themes(std::slice::from_ref(&themes_dir));
         assert_eq!(themes, vec!["dark".to_string(), "light".to_string()]);
     }
 

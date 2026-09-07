@@ -4,7 +4,7 @@ description: Registers Crucible documentation as agent skill context
 author: Crucible Team
 license: MIT
 
-main: init.lua
+main: init.luau
 
 capabilities:
   - kiln

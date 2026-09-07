@@ -262,6 +262,7 @@ mod tests {
             .join("plugin.yaml")
             .is_file());
         assert!(target
+            .join("plugins")
             .join("crucible-help")
             .join("skills")
             .join("crucible-help")

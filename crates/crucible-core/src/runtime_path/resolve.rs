@@ -1,7 +1,7 @@
 //! Joining the asset table to the path: `search_paths`.
 
 use super::asset::RuntimeAsset;
-use super::entry::{EntryKind, RuntimeEntry, SearchPath};
+use super::entry::{EntryKind, Origin, RuntimeEntry, SearchPath};
 
 /// Every candidate directory for `asset`, highest priority first.
 ///
@@ -27,7 +27,20 @@ use super::entry::{EntryKind, RuntimeEntry, SearchPath};
 /// leaf belonging to a different asset. Both are containment, not tidiness:
 /// the origin check is what keeps a cloned kiln from becoming a plugin root.
 pub fn search_paths(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<SearchPath> {
-    path.iter()
+    // Skills rank a kiln above a workspace; cards rank a workspace above a
+    // kiln. See `RuntimeAsset::kiln_outranks_workspace` for why that is
+    // preserved rather than unified.
+    let mut ordered: Vec<&RuntimeEntry> = path.iter().collect();
+    if asset.kiln_outranks_workspace() {
+        ordered.sort_by_key(|e| match e.origin {
+            Origin::Workspace => Origin::Kiln,
+            Origin::Kiln => Origin::Workspace,
+            other => other,
+        });
+    }
+
+    ordered
+        .into_iter()
         .filter(|entry| asset.reaches(entry.origin))
         .filter_map(|entry| {
             let dir = match &entry.kind {
@@ -60,19 +73,25 @@ mod tests {
         ]
     }
 
-    /// Root order is the returned order, for every kind.
+    /// Root order is the returned order, for every kind that reaches both.
+    ///
+    /// `Defaults` refuses `UserConfig` — `defaults/` names Crucible's own
+    /// defaults, and the user's entry point is `~/.config/crucible/init.lua`
+    /// beside it — so it sees only the bundled root.
     #[test]
     fn root_order_is_precedence_for_every_asset() {
         for asset in RuntimeAsset::ALL {
-            let found = search_paths(asset, &roots());
-            assert_eq!(
-                found.iter().map(|s| s.path.clone()).collect::<Vec<_>>(),
-                vec![
-                    PathBuf::from("/user").join(asset.subdir()),
-                    PathBuf::from("/bundled").join(asset.subdir()),
-                ],
-                "{asset:?} did not preserve root order"
-            );
+            let found: Vec<PathBuf> = search_paths(asset, &roots())
+                .into_iter()
+                .map(|s| s.path)
+                .collect();
+            let expected: Vec<PathBuf> =
+                [(Origin::UserConfig, "/user"), (Origin::Bundled, "/bundled")]
+                    .iter()
+                    .filter(|(origin, _)| asset.reaches(*origin))
+                    .map(|(_, root)| PathBuf::from(root).join(asset.subdir()))
+                    .collect();
+            assert_eq!(found, expected, "{asset:?} did not preserve root order");
         }
     }
 

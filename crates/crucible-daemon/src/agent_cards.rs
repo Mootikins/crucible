@@ -119,16 +119,11 @@ pub fn card_directories(roots: &CardRoots, workspace: &Path, kiln: Option<&Path>
     // twice. The kiln entry is the one kept, because a session with no
     // separate workspace is a kiln session.
     let workspace_roots = [".crucible".to_string()];
-    let distinct_workspace =
-        workspace
-            .as_os_str()
-            .is_empty()
-            .then_some(None)
-            .unwrap_or(if kiln == Some(workspace) {
-                None
-            } else {
-                Some(workspace)
-            });
+    let distinct_workspace = if workspace.as_os_str().is_empty() || kiln == Some(workspace) {
+        None
+    } else {
+        Some(workspace)
+    };
 
     // `CardRoots::config_home` is the raw config dir (`dirs::config_dir()`),
     // so the `crucible` segment is added here to make it a runtime root.

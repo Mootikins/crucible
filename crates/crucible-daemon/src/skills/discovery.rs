@@ -3,8 +3,11 @@
 use crate::skills::error::{SkillError, SkillResult};
 use crate::skills::parser::SkillParser;
 use crate::skills::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
+use crucible_core::runtime_path::{
+    build_path, search_paths, Origin, PathInputs, RuntimeAsset, RuntimeEntry,
+};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 
@@ -37,6 +40,12 @@ impl SearchPath {
         self.agent = Some(agent.into());
         self
     }
+
+    /// Tag with a harness name when there is one; leave untagged otherwise.
+    pub fn with_agent_opt(mut self, agent: Option<String>) -> Self {
+        self.agent = agent;
+        self
+    }
 }
 
 /// Folder-based discovery with priority ordering
@@ -46,11 +55,15 @@ pub struct FolderDiscovery {
 }
 
 impl FolderDiscovery {
+    /// `search_paths` is taken in the order given, **highest priority first**.
+    ///
+    /// It used to be sorted by `SkillScope` here, which made vector position
+    /// meaningless and forced `runtime_skill_paths` to walk its roots in
+    /// reverse to compensate. Position is precedence now, as it is for
+    /// plugins, cards, themes and defaults.
     pub fn new(search_paths: Vec<SearchPath>) -> Self {
-        let mut paths = search_paths;
-        paths.sort_by_key(|p| p.scope);
         Self {
-            search_paths: paths,
+            search_paths,
             parser: SkillParser::new(),
         }
     }
@@ -80,18 +93,19 @@ impl FolderDiscovery {
 
             for skill in self.discover_in_path(search_path)? {
                 let name = skill.name.clone();
-                resolved
-                    .entry(name)
-                    .and_modify(|existing| {
-                        if skill.source.scope >= existing.skill.source.scope {
-                            existing.shadowed.push(existing.skill.source.path.clone());
-                            existing.skill = skill.clone();
-                        }
-                    })
-                    .or_insert_with(|| ResolvedSkill {
-                        skill,
-                        shadowed: vec![],
-                    });
+                match resolved.entry(name) {
+                    std::collections::hash_map::Entry::Occupied(mut held) => {
+                        // FIRST wins: the paths are highest-priority first, so
+                        // anything found later is shadowed by what is held.
+                        held.get_mut().shadowed.push(skill.source.path.clone());
+                    }
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        slot.insert(ResolvedSkill {
+                            skill,
+                            shadowed: vec![],
+                        });
+                    }
+                }
             }
         }
         Ok(resolved)
@@ -186,46 +200,11 @@ impl FolderDiscovery {
     }
 }
 
-/// Add skill paths from other coding-agent harnesses' home directories.
-///
-/// Pi explicitly cross-discovers other harnesses' skill libraries (see
-/// `pi-mono/packages/coding-agent/docs/skills.md` § "Using Skills from
-/// Other Harnesses"). We do the same: users invest in skill collections
-/// inside `~/.claude/skills`, `~/.codex/skills`, etc.; refusing to read
-/// them deepens ecosystem fragmentation for no real benefit.
-///
-/// Known harness shapes:
-/// - `claude`, `codex`, `opencode` → `~/.<harness>/skills/`
-/// - `pi`                          → `~/.pi/agent/skills/`
-///
-/// Unknown harness names are ignored (the helper only knows shapes it
-/// has been taught). Missing directories are silently skipped.
-///
-/// All cross-harness paths get `SkillScope::Personal` — they sit at the
-/// same priority as `~/.config/crucible/skills`, lower than workspace
-/// and kiln. The `agent` tag records the source harness so callers can
-/// disambiguate name clashes (`commit` from Claude vs Crucible) and
-/// show provenance.
-pub fn cross_harness_home_paths(home: &Path, harnesses: &[&str]) -> Vec<SearchPath> {
-    let mut paths = Vec::new();
-    for harness in harnesses {
-        let candidate = match *harness {
-            "claude" | "codex" | "opencode" => home.join(format!(".{harness}")).join("skills"),
-            "pi" => home.join(".pi").join("agent").join("skills"),
-            _ => continue,
-        };
-        if candidate.exists() {
-            paths.push(SearchPath::new(candidate, SkillScope::Personal).with_agent(*harness));
-        }
-    }
-    paths
-}
-
-/// Build default discovery paths for Crucible.
+/// Build default discovery paths for Crucible, highest priority first.
 ///
 /// In production, callers pass `dirs::home_dir().as_deref()` for `home`.
 /// Tests inject a tempdir so they don't depend on the host's real
-/// `~/.claude/skills` / `~/.codex/skills` / `~/.pi/agent/skills` contents.
+/// `~/.claude/skills` / `~/.codex/skills` contents.
 pub fn default_discovery_paths(
     workspace: Option<&Path>,
     kiln: Option<&Path>,
@@ -235,117 +214,141 @@ pub fn default_discovery_paths(
         Ok(base) => vec![PathBuf::from(base)],
         Err(_) => crucible_core::runtime_roots::for_current_exe(),
     };
-    default_discovery_paths_from(workspace, kiln, home, &runtime_roots)
+    default_discovery_paths_from(workspace, kiln, home, &runtime_roots, &[])
 }
 
-/// `default_discovery_paths` with the runtime roots supplied rather than
-/// discovered from `current_exe()`.
+/// The harness home directories to read skills from, by name.
 ///
-/// Tests must use this. The discovering version always appends the installed
-/// runtime's bundled-skill directories, so a test asserting "no skills are
-/// found" passes on CI and fails on any machine where `cru` has been installed
-/// and run — which is every developer's machine. `runtime_skill_paths` was
-/// already split out for exactly this reason; its caller had not been.
-fn default_discovery_paths_from(
+/// **Every row is an opt-in.** Skill text becomes LLM instructions, so
+/// silently sourcing prompts from another tool's config directory is a real
+/// attack surface: any installer that legitimately drops a file into
+/// `~/.claude/skills` would be writing into Crucible's system prompt.
+///
+/// This replaces a hardcoded `match` on four harness names plus a separate
+/// hardcoded workspace loop, which disagreed — `pi` resolved at home scope
+/// only and `crucible` at workspace scope only. A harness is a config row now,
+/// which is also how `.agents` (the convention seventeen agent products read)
+/// arrives without a code change.
+pub fn harness_roots(home: &Path, harnesses: &BTreeMap<String, PathBuf>) -> Vec<RuntimeEntry> {
+    harnesses
+        .iter()
+        .map(|(name, rel)| {
+            let root = if rel.is_absolute() {
+                rel.clone()
+            } else {
+                home.join(rel)
+            };
+            RuntimeEntry::root(root, Origin::Harness).with_harness(name.clone())
+        })
+        .collect()
+}
+
+/// `default_discovery_paths` with the runtime roots and harness table supplied
+/// rather than discovered.
+///
+/// Tests must use this. The discovering version appends the installed
+/// runtime's skill directories, so a test asserting "no skills are found"
+/// passes on CI and fails on any machine where `cru` has been installed and
+/// run — which is every developer's.
+pub fn default_discovery_paths_from(
     workspace: Option<&Path>,
     kiln: Option<&Path>,
     home: Option<&Path>,
     runtime_roots: &[PathBuf],
+    plugin_dirs: &[PathBuf],
 ) -> Vec<SearchPath> {
-    let mut paths = Vec::new();
+    let config_home = dirs::config_dir().map(|d| d.join("crucible"));
+    let workspace_roots = workspace_root_names();
+    let harnesses = home.map(enabled_harnesses).unwrap_or_default();
 
-    if let Some(config_dir) = dirs::config_dir() {
-        paths.push(
-            SearchPath::new(
-                config_dir.join("crucible").join("skills"),
-                SkillScope::Personal,
-            )
-            .with_agent("crucible"),
-        );
-    }
+    let path = build_path(&PathInputs {
+        workspace,
+        workspace_roots: &workspace_roots,
+        kiln,
+        harnesses: &harnesses,
+        config_home: config_home.as_deref(),
+        runtime_roots,
+        plugin_dirs,
+        ..PathInputs::default()
+    });
 
-    if let Some(home) = home {
-        // Cross-harness discovery (reading skills from `~/.claude/skills`,
-        // `~/.codex/skills`, `~/.pi/agent/skills`, `~/.opencode/skills`) is
-        // **opt-in**. Skill contents become LLM instructions, so silently
-        // sourcing prompts from another tool's config dir is a meaningful
-        // attack surface: any installer that drops a file into those paths
-        // (legitimately for the other tool) can inject into Crucible.
-        //
-        // Set `CRUCIBLE_CROSS_HARNESS_SKILLS=1` (or `true`/`on`) to enable.
-        let enabled = matches!(
-            std::env::var("CRUCIBLE_CROSS_HARNESS_SKILLS").as_deref(),
-            Ok("1") | Ok("true") | Ok("on")
-        );
-        if enabled {
-            let extras = cross_harness_home_paths(home, &["claude", "codex", "opencode", "pi"]);
-            if !extras.is_empty() {
-                let names: Vec<&str> = extras.iter().filter_map(|p| p.agent.as_deref()).collect();
-                tracing::info!(
-                    harnesses = ?names,
-                    "Discovered skill libraries from other coding-agent harnesses (CRUCIBLE_CROSS_HARNESS_SKILLS opt-in is set)"
-                );
-            }
-            paths.extend(extras);
-        }
-    }
-
-    if let Some(ws) = workspace {
-        for agent in &["claude", "codex", "opencode", "crucible"] {
-            let agent_path = ws.join(format!(".{}", agent)).join("skills");
-            if agent_path.exists() {
-                paths.push(SearchPath::new(agent_path, SkillScope::Workspace).with_agent(*agent));
-            }
-        }
-    }
-
-    // `.crucible/skills`, not the kiln's visible `skills/`. Every directory
-    // Crucible auto-detects is a `.crucible/` one — the same rule that governs
-    // plugins and agent cards. A kiln's top level belongs to notes, and a
-    // cloned or synced kiln must not introduce skills into an agent's system
-    // prompt just by containing a directory. A kiln that is a skill library
-    // adds itself at load rather than being scanned.
-    if let Some(k) = kiln {
-        paths.push(
-            SearchPath::new(k.join(".crucible").join("skills"), SkillScope::Kiln)
-                .with_agent("crucible"),
-        );
-    }
-
-    paths.extend(runtime_skill_paths(runtime_roots));
-
-    paths
+    search_paths(RuntimeAsset::Skills, &path)
+        .into_iter()
+        .map(|c| SearchPath::new(c.path, scope_for(c.origin)).with_agent_opt(c.harness))
+        .collect()
 }
 
-/// The `<root>/<bundle>/skills` directories under any of `roots`.
+/// The relative roots searched inside a workspace and a kiln.
 ///
-/// Separate from [`default_discovery_paths`] so the layout question — which
-/// roots exist, in what order — is testable without `current_exe()`. That is
-/// the half that was wrong: only the dev tree was ever scanned, so an
-/// installed `cru` found no bundled skills and said nothing about it.
-fn runtime_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
-    let mut paths = Vec::new();
-    // Lowest-priority root first. Every runtime path shares `Builtin` scope,
-    // and `discover` replaces on `>=`, so among equal scopes the **last** one
-    // seen wins. Walking `roots` in its own order — highest priority first —
-    // therefore inverted it: the shipped tree beat `~/.config/crucible/runtime`,
-    // which is the opposite of what making that a root was for.
-    for root in roots.iter().rev() {
-        for entry in std::fs::read_dir(root).ok().into_iter().flatten().flatten() {
-            let skills_path = entry.path().join("skills");
-            if entry.path().is_dir() && skills_path.exists() {
-                debug!("Adding runtime skills path: {:?}", skills_path);
-                paths
-                    .push(SearchPath::new(skills_path, SkillScope::Builtin).with_agent("crucible"));
-            }
-        }
+/// `.agents` is the cross-vendor convention; the rest are the harnesses whose
+/// project-local directory shape is `.<name>/skills`.
+fn workspace_root_names() -> Vec<String> {
+    [".crucible", ".agents", ".claude", ".codex", ".opencode"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// The harness rows in force. Empty unless the user opts in.
+///
+/// `CRUCIBLE_CROSS_HARNESS_SKILLS=1` remains the switch for one release, and
+/// now turns on a NAMED table rather than a hardcoded list, so the shapes that
+/// differ — `pi` keeps its skills under `~/.pi/agent` — are data.
+fn enabled_harnesses(_home: &Path) -> BTreeMap<String, PathBuf> {
+    let enabled = matches!(
+        std::env::var("CRUCIBLE_CROSS_HARNESS_SKILLS").as_deref(),
+        Ok("1") | Ok("true") | Ok("on")
+    );
+    if !enabled {
+        return BTreeMap::new();
     }
-    paths
+    [
+        ("agents", ".agents"),
+        ("claude", ".claude"),
+        ("codex", ".codex"),
+        ("opencode", ".opencode"),
+        ("pi", ".pi/agent"),
+    ]
+    .iter()
+    .map(|(name, rel)| (name.to_string(), PathBuf::from(rel)))
+    .collect()
+}
+
+/// The reported scope for a root's provenance.
+///
+/// `SkillScope` is what `cru skills list` prints and what the web route
+/// filters on, so it stays exactly as it was; it is derived from `Origin`
+/// rather than being a second precedence mechanism.
+fn scope_for(origin: Origin) -> SkillScope {
+    match origin {
+        Origin::Workspace => SkillScope::Workspace,
+        Origin::Kiln => SkillScope::Kiln,
+        Origin::Env | Origin::Config(_) | Origin::Harness | Origin::UserConfig => {
+            SkillScope::Personal
+        }
+        Origin::UserRuntime | Origin::Plugin | Origin::Bundled => SkillScope::Builtin,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The skill directories of `roots` alone, through the real resolver.
+    ///
+    /// Replaces `runtime_skill_paths`, which globbed `<root>/*/skills` and
+    /// needed `.rev()` to undo the scope sort. Bundled skills now live at
+    /// `<root>/skills` like every other kind, and position is precedence.
+    fn bundled_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
+        default_discovery_paths_from(None, None, None, roots, &[])
+            .into_iter()
+            .filter(|p| {
+                p.path
+                    .starts_with(roots.first().cloned().unwrap_or_default())
+                    || roots.iter().any(|r| p.path.starts_with(r))
+            })
+            .collect()
+    }
     use tempfile::TempDir;
 
     fn write_skill(dir: &Path, skill_name: &str, description: &str) {
@@ -381,12 +384,12 @@ mod tests {
         let bin = prefix.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
 
-        let bundle = prefix.join("share/crucible/runtime/crucible-help/skills");
+        let bundle = prefix.join("share/crucible/runtime/skills");
         std::fs::create_dir_all(&bundle).unwrap();
         write_skill(&bundle, "cru-help", "Explains Crucible commands");
 
         let roots = crucible_core::runtime_roots::exe_relative(&bin);
-        let found = runtime_skill_paths(&roots);
+        let found = bundled_skill_paths(&roots);
 
         assert!(
             found.iter().any(|p| same_dir(&p.path, &bundle)),
@@ -409,13 +412,33 @@ mod tests {
         let extracted = tmp.path().join("runtime-x.y.z");
         crucible_core::runtime_roots::write_bundled_runtime(&extracted).unwrap();
 
-        let found = runtime_skill_paths(std::slice::from_ref(&extracted));
-
-        let skills = extracted.join("crucible-help").join("skills");
+        // `crucible-help` ships its skills as a PLUGIN, beside its own
+        // manifest — which is why the shipped tree has no top-level `skills/`.
+        // A plugin's directory is a runtime root, so its `skills/` resolves
+        // through the same table as everything else.
+        let plugin_dir = extracted.join("plugins").join("crucible-help");
         assert!(
-            found.iter().any(|p| same_dir(&p.path, &skills)),
-            "extracted help skills must be discovered, got: {:?}",
-            found.iter().map(|p| &p.path).collect::<Vec<_>>()
+            plugin_dir.join("plugin.yaml").is_file(),
+            "the extracted tree must carry crucible-help as a plugin"
+        );
+
+        let path = build_path(&PathInputs {
+            plugin_dirs: std::slice::from_ref(&plugin_dir),
+            ..PathInputs::default()
+        });
+        let found: Vec<PathBuf> = search_paths(RuntimeAsset::Skills, &path)
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
+
+        let skills = plugin_dir.join("skills");
+        assert!(
+            found.iter().any(|p| same_dir(p, &skills)),
+            "extracted help skills must be discovered, got: {found:?}"
+        );
+        assert!(
+            skills.join("crucible-help").join("SKILL.md").is_file(),
+            "and the skill itself must have travelled with the plugin"
         );
     }
 
@@ -428,11 +451,11 @@ mod tests {
         let exe_dir = repo.join("target/debug");
         std::fs::create_dir_all(&exe_dir).unwrap();
 
-        let bundle = repo.join("runtime/crucible-help/skills");
+        let bundle = repo.join("runtime/skills");
         std::fs::create_dir_all(&bundle).unwrap();
         write_skill(&bundle, "cru-help", "Explains Crucible commands");
 
-        let found = runtime_skill_paths(&crucible_core::runtime_roots::exe_relative(&exe_dir));
+        let found = bundled_skill_paths(&crucible_core::runtime_roots::exe_relative(&exe_dir));
 
         assert!(
             found.iter().any(|p| same_dir(&p.path, &bundle)),
@@ -441,77 +464,67 @@ mod tests {
         );
     }
 
+    /// Every harness row resolves at its own shape, including the odd ones.
+    ///
+    /// `pi` keeps its skills one level deeper. That used to need a `match` arm
+    /// in Rust; it is a table row now, which is the whole point.
     #[test]
-    fn cross_harness_home_paths_includes_known_harness_skill_dirs() {
+    fn a_harness_row_resolves_at_its_own_shape() {
         let tmp = TempDir::new().unwrap();
         let home = tmp.path();
 
-        let claude_skills = home.join(".claude").join("skills");
-        std::fs::create_dir_all(&claude_skills).unwrap();
-        write_skill(&claude_skills, "claude-commit", "Claude commit skill");
+        let mut harnesses = BTreeMap::new();
+        for (name, rel) in [
+            ("agents", ".agents"),
+            ("claude", ".claude"),
+            ("codex", ".codex"),
+            ("pi", ".pi/agent"),
+        ] {
+            harnesses.insert(name.to_string(), PathBuf::from(rel));
+        }
 
-        let codex_skills = home.join(".codex").join("skills");
-        std::fs::create_dir_all(&codex_skills).unwrap();
-        write_skill(&codex_skills, "codex-review", "Codex review skill");
-
-        let opencode_skills = home.join(".opencode").join("skills");
-        std::fs::create_dir_all(&opencode_skills).unwrap();
-        write_skill(&opencode_skills, "opencode-debug", "OpenCode debug skill");
-
-        // Pi's home-skill path is one level deeper than the others.
-        let pi_skills = home.join(".pi").join("agent").join("skills");
-        std::fs::create_dir_all(&pi_skills).unwrap();
-        write_skill(&pi_skills, "pi-plan", "Pi plan skill");
-
-        let paths = cross_harness_home_paths(home, &["claude", "codex", "opencode", "pi"]);
-        let by_agent: HashMap<String, &SearchPath> = paths
-            .iter()
-            .map(|p| (p.agent.clone().unwrap_or_default(), p))
+        let entries = harness_roots(home, &harnesses);
+        let dirs: Vec<PathBuf> = search_paths(RuntimeAsset::Skills, &entries)
+            .into_iter()
+            .map(|c| c.path)
             .collect();
 
-        assert_eq!(
-            paths.len(),
-            4,
-            "expected one path per harness, got {paths:?}"
-        );
-        assert_eq!(by_agent["claude"].path, claude_skills);
-        assert_eq!(by_agent["codex"].path, codex_skills);
-        assert_eq!(by_agent["opencode"].path, opencode_skills);
-        assert_eq!(by_agent["pi"].path, pi_skills);
-
-        // All cross-harness home paths are Personal scope (user-level
-        // libraries, lower priority than workspace/kiln).
-        for p in &paths {
-            assert_eq!(p.scope, SkillScope::Personal);
-        }
-    }
-
-    #[test]
-    fn cross_harness_home_paths_skips_missing_dirs() {
-        let tmp = TempDir::new().unwrap();
-        let home = tmp.path();
-
-        let claude_skills = home.join(".claude").join("skills");
-        std::fs::create_dir_all(&claude_skills).unwrap();
-        // Intentionally do not create codex or pi dirs.
-
-        let paths = cross_harness_home_paths(home, &["claude", "codex", "pi"]);
-        assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].agent.as_deref(), Some("claude"));
-    }
-
-    #[test]
-    fn cross_harness_home_paths_unknown_harness_is_skipped() {
-        let tmp = TempDir::new().unwrap();
-        // Even if a "made-up" harness dir exists, the helper only
-        // knows the shapes of harnesses it lists explicitly.
-        let weird = tmp.path().join(".made-up").join("skills");
-        std::fs::create_dir_all(&weird).unwrap();
-
-        let paths = cross_harness_home_paths(tmp.path(), &["made-up"]);
+        assert!(dirs.contains(&home.join(".agents").join("skills")));
+        assert!(dirs.contains(&home.join(".claude").join("skills")));
+        assert!(dirs.contains(&home.join(".codex").join("skills")));
         assert!(
-            paths.is_empty(),
-            "unknown harnesses should not contribute paths"
+            dirs.contains(&home.join(".pi").join("agent").join("skills")),
+            "pi's deeper shape must survive as data: {dirs:?}"
+        );
+    }
+
+    /// A harness carries its name through as provenance, and reports Personal
+    /// scope — a user-level library, below workspace and kiln.
+    #[test]
+    fn a_harness_root_is_personal_scope_and_keeps_its_name() {
+        let tmp = TempDir::new().unwrap();
+        let mut harnesses = BTreeMap::new();
+        harnesses.insert("claude".to_string(), PathBuf::from(".claude"));
+
+        let entries = harness_roots(tmp.path(), &harnesses);
+        let found = search_paths(RuntimeAsset::Skills, &entries);
+        assert_eq!(found[0].harness.as_deref(), Some("claude"));
+        assert_eq!(scope_for(found[0].origin), SkillScope::Personal);
+    }
+
+    /// An empty harness table reads nothing. A row IS the opt-in.
+    ///
+    /// Skill text becomes LLM instructions, so a harness directory must never
+    /// be read because it merely exists on disk.
+    #[test]
+    fn no_harness_rows_read_no_harness_directories() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude").join("skills")).unwrap();
+
+        let entries = harness_roots(tmp.path(), &BTreeMap::new());
+        assert!(
+            search_paths(RuntimeAsset::Skills, &entries).is_empty(),
+            "a harness directory that exists must still not be read unnamed"
         );
     }
 
@@ -564,9 +577,10 @@ mod tests {
         std::fs::create_dir(&workspace_dir).unwrap();
         write_skill(&workspace_dir, "commit", "Workspace commit style");
 
+        // Highest priority first; the workspace skill is the one kept.
         let discovery = FolderDiscovery::new(vec![
-            SearchPath::new(personal_dir, SkillScope::Personal),
             SearchPath::new(workspace_dir, SkillScope::Workspace),
+            SearchPath::new(personal_dir, SkillScope::Personal),
         ]);
         let resolved = discovery.discover().unwrap();
 
@@ -592,10 +606,13 @@ mod tests {
         std::fs::create_dir(&kiln).unwrap();
         write_skill(&kiln, "review", "Kiln review");
 
+        // Highest priority first: `FolderDiscovery` takes the order given
+        // and keeps the first match. It used to sort by scope, which made the
+        // caller's order meaningless.
         let discovery = FolderDiscovery::new(vec![
-            SearchPath::new(personal, SkillScope::Personal),
-            SearchPath::new(workspace, SkillScope::Workspace),
             SearchPath::new(kiln, SkillScope::Kiln),
+            SearchPath::new(workspace, SkillScope::Workspace),
+            SearchPath::new(personal, SkillScope::Personal),
         ]);
         let resolved = discovery.discover().unwrap();
 
@@ -645,14 +662,14 @@ mod tests {
     fn the_highest_priority_runtime_root_wins() {
         let tmp = TempDir::new().unwrap();
         for (root, desc) in [("user", "User copy"), ("shipped", "Shipped copy")] {
-            let dir = tmp.path().join(root).join("crucible-help").join("skills");
+            let dir = tmp.path().join(root).join("skills");
             std::fs::create_dir_all(&dir).unwrap();
             write_skill(&dir, "cru-help", desc);
         }
 
         // `runtime_roots` order: user runtime first, shipped after.
         let roots = vec![tmp.path().join("user"), tmp.path().join("shipped")];
-        let resolved = FolderDiscovery::new(runtime_skill_paths(&roots))
+        let resolved = FolderDiscovery::new(bundled_skill_paths(&roots))
             .discover()
             .unwrap();
 
@@ -752,7 +769,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // Inject an empty home dir so the test isn't affected by the
         // host's real ~/.claude / ~/.codex / ~/.pi skill libraries.
-        let paths = default_discovery_paths_from(Some(tmp.path()), None, Some(tmp.path()), &[]);
+        let paths =
+            default_discovery_paths_from(Some(tmp.path()), None, Some(tmp.path()), &[], &[]);
         let discovery = FolderDiscovery::new(paths);
 
         // Should not panic, and discover should work on nonexistent paths
@@ -780,7 +798,8 @@ mod tests {
         std::fs::create_dir_all(kiln.join("skills")).unwrap();
         std::fs::create_dir_all(kiln.join(".crucible").join("skills")).unwrap();
 
-        let paths = default_discovery_paths_from(Some(&ws), Some(&kiln), Some(tmp.path()), &[]);
+        let paths =
+            default_discovery_paths_from(Some(&ws), Some(&kiln), Some(tmp.path()), &[], &[]);
 
         assert!(
             paths

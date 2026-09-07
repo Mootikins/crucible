@@ -151,6 +151,29 @@ impl RuntimeAsset {
         }
     }
 
+    /// Whether a kiln root outranks a workspace root for this kind.
+    ///
+    /// **The two disagree, and always have.** `SkillScope` declares
+    /// `Builtin < Personal < Workspace < Kiln`, so a kiln's skill shadows a
+    /// workspace's. Agent cards run the other way:
+    /// `project_workspace_cards_shadow_kiln_cards` has asserted since it was
+    /// written that a project card wins.
+    ///
+    /// Both are defensible — a kiln is where knowledge goes, so its SKILLS are
+    /// the most specific; a workspace is where work happens, so its AGENTS
+    /// are. Unifying them would silently change which skill or card a user
+    /// gets, which is not this refactor's business. So the difference is
+    /// recorded here, as a total function, instead of living in two
+    /// precedence mechanisms that happen to disagree.
+    pub fn kiln_outranks_workspace(self) -> bool {
+        match self {
+            RuntimeAsset::Skills => true,
+            RuntimeAsset::Cards => false,
+            // Neither reaches a workspace or a kiln at all.
+            RuntimeAsset::Plugins | RuntimeAsset::Themes | RuntimeAsset::Defaults => false,
+        }
+    }
+
     /// Whether this kind may be resolved from a root of `origin`.
     ///
     /// **This is the containment half, and it is not the same as
@@ -339,6 +362,22 @@ mod tests {
                 "{asset:?} should resolve from a plugin's own directory"
             );
         }
+    }
+
+    /// Skills and cards disagree about kiln-versus-workspace, on purpose.
+    ///
+    /// If this ever becomes uniform it must be a deliberate change with a
+    /// migration note, not a refactor's side effect.
+    #[test]
+    fn skills_and_cards_rank_kiln_and_workspace_differently() {
+        assert!(
+            RuntimeAsset::Skills.kiln_outranks_workspace(),
+            "a kiln's skill has always shadowed a workspace's"
+        );
+        assert!(
+            !RuntimeAsset::Cards.kiln_outranks_workspace(),
+            "a project card has always shadowed a kiln's"
+        );
     }
 
     /// Text kinds are never recorded as execution roots.

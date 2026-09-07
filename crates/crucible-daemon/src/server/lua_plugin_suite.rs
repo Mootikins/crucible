@@ -265,7 +265,14 @@ mod shipped_plugin_tests {
     /// plugin may sit in `runtime/plugins/` untested, but only by saying so
     /// here, with a reason. Silence is what let `web-search` (148 assertions)
     /// and `worktree` (42) go unrun by any in-process gate for months.
-    const NO_LUA_SUITE: &[(&str, &str)] = &[];
+    const NO_LUA_SUITE: &[(&str, &str)] = &[(
+        "crucible-help",
+        "It registers the shipped documentation as skill context and declares \
+         no tools, commands or handlers, so there is no behaviour a Lua suite \
+         could assert. The skills it ships are covered by \
+         `skills_extracted_from_the_binary_are_discovered`, and its own \
+         loading by `every_shipped_plugin_executes`.",
+    )];
 
     fn run_plugin_tests(plugin_dir: &str) -> serde_json::Value {
         let req = Request {
@@ -544,7 +551,7 @@ mod shipped_plugin_tests {
             ("runtime/statusline/", VmProfile::Statusline),
             ("runtime/themes/", VmProfile::Theme),
             // Ordinary plugins, and the scaffold for writing one.
-            ("runtime/crucible-help/", VmProfile::Daemon),
+            ("runtime/plugins/crucible-help/", VmProfile::Daemon),
             ("examples/plugins/", VmProfile::Daemon),
             (
                 "crates/crucible-cli/src/commands/plugin/templates/",
