@@ -112,16 +112,20 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
         path.push(RuntimeEntry::root(root.clone(), Origin::Harness).with_harness(name.clone()));
     }
 
-    if let Some(config_home) = inputs.config_home {
-        path.push(RuntimeEntry::root(config_home, Origin::UserConfig).with_harness("crucible"));
-    }
-
+    // `agent_directories` BEFORE the config home, because that is the order
+    // they already have: `card_directories` listed the global directory first
+    // in a lowest-first list, so a configured directory shadowed it. Same
+    // relative priority, now expressed highest-first like everything else.
     for dir in inputs.agent_directories {
         path.push(RuntimeEntry::leaf(
             dir.clone(),
             Origin::UserConfig,
             RuntimeAsset::Cards,
         ));
+    }
+
+    if let Some(config_home) = inputs.config_home {
+        path.push(RuntimeEntry::root(config_home, Origin::UserConfig).with_harness("crucible"));
     }
 
     for dir in inputs.plugin_dirs {

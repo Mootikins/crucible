@@ -6,11 +6,16 @@
 //! per session context and uses them as delegation targets and for
 //! `session.create` agent resolution.
 //!
-//! Discovery precedence (later shadows earlier, by card name):
-//! 1. `~/.config/crucible/agents/` — global personal cards
-//! 2. `agent_directories` from the app config, in config order
-//! 3. `KILN/.crucible/agents/` — kiln config
-//! 4. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
+//! Discovery precedence (highest first, first match wins):
+//! 1. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
+//! 2. `KILN/.crucible/agents/` — kiln config
+//! 3. `agent_directories` from the app config, in config order
+//! 4. `~/.config/crucible/agents/` — global personal cards
+//!
+//! The list used to run the other way and take the LAST match. Same outcome,
+//! opposite spelling; it reads highest-first now because every other resolver
+//! does, and carrying two directions in one codebase is how `cru agents list`
+//! came to advertise cards the daemon would not resolve.
 //!
 //! Only `.crucible/` directories. See [`card_directories`] for why a kiln's
 //! visible top level is not scanned.
@@ -40,6 +45,12 @@ pub struct CardRoots {
     /// means "no global cards".
     pub config_home: Option<PathBuf>,
     /// `agent_directories` from the app config, tilde already expanded.
+    ///
+    /// **Deprecated.** It names one leaf directory that serves cards only.
+    /// `runtimepath` names a root that serves every asset kind, so a user who
+    /// wants to share cards, skills and themes from one directory writes one
+    /// line instead of three knobs. Kept working; [`warn_if_deprecated`] says
+    /// so once.
     pub agent_directories: Vec<PathBuf>,
 }
 
@@ -68,8 +79,27 @@ impl CardRoots {
     }
 }
 
-/// Candidate card directories for a session context, in precedence order
-/// (later shadows earlier).
+/// Warn once that `agent_directories` is superseded by `runtimepath`.
+///
+/// Once per process, not per session: card discovery runs per use, and a line
+/// per turn would be noise rather than guidance.
+pub fn warn_if_deprecated(roots: &CardRoots) {
+    use std::sync::Once;
+    static WARNED: Once = Once::new();
+    if roots.agent_directories.is_empty() {
+        return;
+    }
+    WARNED.call_once(|| {
+        tracing::warn!(
+            directories = ?roots.agent_directories,
+            "`agent_directories` is deprecated: it serves cards only. \
+             Put the directory on `runtimepath` instead and its agents/, \
+             skills/ and themes/ are all found."
+        );
+    });
+}
+
+/// Candidate card directories for a session context, highest priority first.
 ///
 /// Only `.crucible/` directories, never a kiln's visible top level. `KILN/agents/`
 /// and `KILN/Agents/` used to be scanned, which made any cloned or synced kiln
@@ -83,24 +113,40 @@ impl CardRoots {
 /// directory to the path at load. The component brings itself, the host does
 /// not go looking.
 pub fn card_directories(roots: &CardRoots, workspace: &Path, kiln: Option<&Path>) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(config_home) = &roots.config_home {
-        dirs.push(config_home.join("crucible").join("agents"));
-    }
-    dirs.extend(roots.agent_directories.iter().cloned());
-    if let Some(kiln) = kiln {
-        dirs.push(kiln.join(".crucible").join("agents"));
-    }
-    // An empty workspace path is "no workspace", not the current directory:
-    // `Path::new("").join(".crucible/agents")` is a RELATIVE path, and
-    // `is_dir()` then resolves it against whatever directory the daemon
-    // happens to have been started in. A kiln-less, workspace-less session
-    // would pick up cards from there — a card names a model, a prompt and a
-    // tool set, so that is a meaningful thing to acquire by accident.
-    if !workspace.as_os_str().is_empty() && kiln != Some(workspace) {
-        dirs.push(workspace.join(".crucible").join("agents"));
-    }
-    dirs
+    use crucible_core::runtime_path::{build_path, search_paths, PathInputs, RuntimeAsset};
+
+    // `kiln == workspace` would otherwise offer `<kiln>/.crucible/agents`
+    // twice. The kiln entry is the one kept, because a session with no
+    // separate workspace is a kiln session.
+    let workspace_roots = [".crucible".to_string()];
+    let distinct_workspace =
+        workspace
+            .as_os_str()
+            .is_empty()
+            .then_some(None)
+            .unwrap_or(if kiln == Some(workspace) {
+                None
+            } else {
+                Some(workspace)
+            });
+
+    // `CardRoots::config_home` is the raw config dir (`dirs::config_dir()`),
+    // so the `crucible` segment is added here to make it a runtime root.
+    let config_root = roots.config_home.as_ref().map(|home| home.join("crucible"));
+
+    let path = build_path(&PathInputs {
+        workspace: distinct_workspace,
+        workspace_roots: &workspace_roots,
+        kiln,
+        config_home: config_root.as_deref(),
+        agent_directories: &roots.agent_directories,
+        ..PathInputs::default()
+    });
+
+    search_paths(RuntimeAsset::Cards, &path)
+        .into_iter()
+        .map(|c| c.path)
+        .collect()
 }
 
 /// Discover agent cards visible to a session (workspace + kiln), keyed by
@@ -114,6 +160,7 @@ pub fn discover_agent_cards_in(
     workspace: &Path,
     kiln: Option<&Path>,
 ) -> HashMap<String, AgentCard> {
+    warn_if_deprecated(roots);
     let mut cards = HashMap::new();
     let mut loader = AgentCardLoader::new();
     for dir in card_directories(roots, workspace, kiln) {
@@ -126,7 +173,13 @@ pub fn discover_agent_cards_in(
         match loader.load_from_directory(dir_str) {
             Ok(loaded) => {
                 for card in loaded {
-                    cards.insert(card.name.clone(), card);
+                    // FIRST wins. `card_directories` is highest-priority
+                    // first now, like every other resolver, so an already
+                    // present name must not be overwritten. This used to be
+                    // an unconditional insert over a lowest-first list; the
+                    // observable outcome is identical, and the three
+                    // shadowing tests below prove it.
+                    cards.entry(card.name.clone()).or_insert(card);
                 }
             }
             Err(e) => debug!(dir = %dir.display(), error = %e, "Agent card directory skipped"),
@@ -355,7 +408,36 @@ mod tests {
         assert!(roots.agent_directories.is_empty());
     }
 
-    /// Precedence order of the full list: global, configured, kiln, workspace.
+    /// A config naming only `agent_directories` still resolves its cards.
+    ///
+    /// The knob is deprecated, not removed. Someone who has it set must keep
+    /// getting their cards until they move the directory to `runtimepath`.
+    #[test]
+    fn a_deprecated_agent_directory_still_supplies_its_cards() {
+        let shared = TempDir::new().unwrap();
+        write_card(
+            shared.path(),
+            "legacy.md",
+            "---\ndescription: legacy card\n---\n\nPrompt.\n",
+        );
+        let roots = CardRoots {
+            config_home: None,
+            agent_directories: vec![shared.path().to_path_buf()],
+        };
+
+        let cards = discover_agent_cards_in(&roots, Path::new(""), None);
+        assert_eq!(
+            cards["legacy"].description, "legacy card",
+            "a deprecated knob must keep working"
+        );
+    }
+
+    /// Precedence order of the full list: workspace, kiln, configured, global.
+    ///
+    /// This is the one test the reversal inverts. It asserts the ORDER, and
+    /// the order is now highest-first; the three tests above assert the
+    /// OUTCOME, and they are unchanged, which is what proves the reversal did
+    /// not move which card a user gets.
     #[test]
     fn card_directories_follow_the_documented_precedence() {
         let roots = CardRoots {
@@ -366,10 +448,10 @@ mod tests {
         assert_eq!(
             dirs,
             vec![
-                PathBuf::from("/cfg/crucible/agents"),
-                PathBuf::from("/shared"),
-                PathBuf::from("/kiln/.crucible/agents"),
                 PathBuf::from("/ws/.crucible/agents"),
+                PathBuf::from("/kiln/.crucible/agents"),
+                PathBuf::from("/shared"),
+                PathBuf::from("/cfg/crucible/agents"),
             ]
         );
     }
