@@ -584,7 +584,6 @@ async fn cleanup_session_leaves_no_per_session_residue() {
     //
     // `get_or_create_session_state` covers two: it builds the Lua VM and
     // records the session's captured defaults in `session_overrides`.
-    let _ = agent_manager.get_or_create_session_state(session_id);
     let _ = agent_manager
         .get_or_rebuild_session_tree(session_id, std::path::Path::new("/nonexistent.jsonl"))
         .await;

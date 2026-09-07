@@ -32,16 +32,15 @@ pub(crate) struct SessionSlot {
     /// invalidated together and having them separate was a bug: see
     /// [`Self::install_agent`].
     build: Mutex<BuildCache>,
-    /// This session's Lua VM, built on first use.
+    /// Names this session's spill files. Monotonic across the session's
+    /// messages, so two large tool results never collide.
     ///
-    /// A `OnceLock` rather than a map entry because that is the honest type:
-    /// the old `DashMap` was check-then-insert, so two concurrent first uses
-    /// each built a VM and one was discarded — along with any handler
-    /// registered on it. `get_or_init` builds exactly once. The builder is
-    /// synchronous (it loads files and runs `on_session_start`), which is why
-    /// this is `std::sync::OnceLock` and the tree below is not.
-    pub(in crate::agent_manager) lua:
-        std::sync::OnceLock<Arc<tokio::sync::Mutex<super::SessionEventState>>>,
+    /// A bare atomic: there is nothing to build lazily any more. It used to
+    /// live inside a `OnceLock<Arc<Mutex<SessionEventState>>>` whose real job
+    /// was to build the session's Lua VM exactly once. Sessions have no VM,
+    /// and `on_session_start` fires from `SessionLifecycle`, so the lock, the
+    /// mutex and the struct were three layers over one counter.
+    pub(in crate::agent_manager) spill_counter: std::sync::atomic::AtomicU32,
     /// Scheduler-owned conversation tree, rebuilt from the session's JSONL on
     /// first use. `tokio::sync::OnceCell` because that rebuild is async.
     pub(in crate::agent_manager) tree:

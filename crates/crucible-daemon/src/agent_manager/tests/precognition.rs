@@ -638,7 +638,6 @@ async fn setup_precog_session_with_handler(
     vm.lua.load(lua_handler).exec().unwrap();
     let (registry, lua) = vm.handlers();
     agent_manager.set_plugin_handlers(registry, lua);
-    agent_manager.get_or_create_session_state(&session_id);
 
     let received_messages = Arc::new(StdMutex::new(None));
     agent_manager.install_agent_for_test(

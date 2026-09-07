@@ -61,37 +61,6 @@ impl AgentManager {
         self.schedule_variable_persist(session_id);
     }
 
-    pub(in crate::agent_manager) fn get_or_create_session_state(
-        &self,
-        session_id: &str,
-    ) -> Arc<Mutex<SessionEventState>> {
-        let slot = self.slot(session_id);
-        // `get_or_init`, not check-then-insert: two concurrent first turns on a
-        // session used to build two VMs and keep whichever inserted last,
-        // silently discarding every handler registered on the other.
-        slot.lua
-            .get_or_init(|| self.build_session_state(session_id))
-            .clone()
-    }
-
-    /// Per-session state, and the one-time work that goes with a session's
-    /// first turn.
-    ///
-    /// There is no per-session Lua VM. Every file runs once, on the daemon VM
-    /// (`daemon_plugins::boot`), and a hook receives its session as an
-    /// argument rather than by living in a VM that belongs to it. What is
-    /// genuinely per session is the starting values `on_session_start`
-    /// chooses, so that is what this builds.
-    fn build_session_state(&self, _session_id: &str) -> Arc<Mutex<SessionEventState>> {
-        // `on_session_start` does NOT fire here. `SessionLifecycle` fires it
-        // once, at session create, against the same daemon VM — firing again
-        // here ran every hook twice, with a different session binding each
-        // time. This builds only what a session owns.
-        Arc::new(Mutex::new(SessionEventState {
-            spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }))
-    }
-
     /// Persist the variables a start hook stored, from the synchronous VM
     /// builder. The Lua setter is synchronous and storage is not, so the map
     /// lives on the slot and reaches `meta.json` from this task. A builder
@@ -120,7 +89,6 @@ impl AgentManager {
     }
 
     fn apply_session_defaults(&self, session_id: &str, mut agent: SessionAgent) -> SessionAgent {
-        let _vm = self.get_or_create_session_state(session_id);
         // Creating the VM ran `on_session_start`, which captured this
         // session's values into the slot's `overrides` — already seeded from the
         // globals, so it is the complete picture. Fall back to the raw globals

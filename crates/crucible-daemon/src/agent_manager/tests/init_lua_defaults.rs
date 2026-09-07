@@ -420,7 +420,6 @@ async fn a_declared_modes_label_reaches_the_descriptor() {
            cru.modes.deepReview = { label = "Deep review", permissions = "ask" }"#,
     )
     .await;
-    let _vm = agent_manager.get_or_create_session_state(&session_id);
 
     let labels: Vec<(String, String)> = agent_manager
         .session_modes(&session_id)
@@ -457,9 +456,8 @@ async fn a_declared_modes_label_reaches_the_descriptor() {
 /// degrade — the alias is what stops that.
 #[tokio::test]
 async fn the_former_normal_id_still_resolves_to_ask() {
-    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
+    let (_vm, agent_manager, _sm, _session_id) = session_with_lua("").await;
     // Declaring the modes is what loading the session's VM does.
-    let _vm = agent_manager.get_or_create_session_state(&session_id);
 
     assert_eq!(
         agent_manager.mode_stance("normal"),
@@ -477,7 +475,6 @@ async fn the_former_normal_id_still_resolves_to_ask() {
 #[tokio::test]
 async fn the_former_normal_id_is_not_offered_as_a_mode() {
     let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
-    let _state = agent_manager.get_or_create_session_state(&session_id);
 
     let ids: Vec<String> = agent_manager
         .session_modes(&session_id)
@@ -616,8 +613,7 @@ async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: Permis
 
 #[tokio::test]
 async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
-    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
-    let _state = agent_manager.get_or_create_session_state(&session_id);
+    let (_vm, agent_manager, _sm, _session_id) = session_with_lua("").await;
 
     assert_eq!(
         agent_manager.mode_stance("auto"),
@@ -720,7 +716,6 @@ async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
         .unwrap();
 
     // Simulate the declaration going away underneath a persisted session.
-    let _vm = agent_manager.get_or_create_session_state(&session_id);
     agent_manager.modes.remove("plan");
 
     let modes = agent_manager.session_modes(&session_id);
@@ -816,7 +811,6 @@ async fn a_start_hook_runs_once_per_session() {
     // Everything a turn does that used to re-fire.
     let _ = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
     let _ = agent_manager.session_modes(&session_id);
-    agent_manager.get_or_create_session_state(&session_id);
 
     let fired: i64 = vm.plugin_lua().globals().get("fired").unwrap();
     assert_eq!(

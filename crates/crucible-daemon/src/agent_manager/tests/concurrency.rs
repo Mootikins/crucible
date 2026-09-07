@@ -285,15 +285,18 @@ async fn scope_mutation_releases_request_slot_on_completion() {
     );
 }
 
-/// Two first turns arriving together on one session must share a VM.
+/// Two first turns arriving together on one session must share a slot.
 ///
-/// The old `DashMap` was check-then-insert with the whole VM construction in
-/// the gap — file loads, `on_session_start` hooks — so both callers built one
-/// and the loser's was dropped along with every handler registered on it. The
-/// slot's `OnceLock` builds exactly once, and the proof is pointer equality:
-/// two handles to the same `Mutex`, not two equal-looking VMs.
+/// The slot carries the spill counter and the start-hook overrides, so two
+/// slots means two counters — colliding spill filenames — and a set of
+/// overrides that one caller cannot see. `DashMap::entry().or_default()` is
+/// atomic; the proof is pointer equality, not two equal-looking slots.
+///
+/// It used to build the session's Lua VM in that gap, which is what made the
+/// old check-then-insert lose handlers. Sessions have no VM now, and the race
+/// this guards is smaller — but it is the same race.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn concurrent_first_uses_share_one_session_vm() {
+async fn concurrent_first_uses_share_one_session_slot() {
     let session_manager = temp_session_manager();
     let agent_manager = Arc::new(create_test_agent_manager(session_manager));
     let session_id = "shared-vm-session";
@@ -307,19 +310,19 @@ async fn concurrent_first_uses_share_one_session_vm() {
             let gate = gate.clone();
             tokio::task::spawn_blocking(move || {
                 gate.wait();
-                agent_manager.get_or_create_session_state(session_id)
+                agent_manager.slot(session_id)
             })
         })
         .collect();
 
     let mut states = Vec::new();
     for handle in handles {
-        states.push(handle.await.expect("state builder must not panic"));
+        states.push(handle.await.expect("slot lookup must not panic"));
     }
 
     assert!(
         Arc::ptr_eq(&states[0], &states[1]),
-        "both callers must get the same VM, or one caller's handlers are lost"
+        "both callers must get the same slot, or the spill counters diverge"
     );
 }
 

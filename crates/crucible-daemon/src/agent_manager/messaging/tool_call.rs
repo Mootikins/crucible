@@ -677,12 +677,10 @@ impl AgentManager {
             && result_str.len() >= SPILL_THRESHOLD
             && !is_reproducible_tool(&tool_call.name);
         let spill_path = if should_spill {
-            let counter = {
-                let state = stream_ctx.session_state.lock().await;
-                state
-                    .spill_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            };
+            let counter = stream_ctx
+                .slot
+                .spill_counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             match Self::spill_tool_output(
                 &stream_ctx.session_dir,
                 &tool_call.name,

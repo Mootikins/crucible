@@ -1008,7 +1008,7 @@ impl AgentManager {
                 session_id: stream_ctx.session_id.clone(),
                 message_id: format!("msg-{}", uuid::Uuid::new_v4()),
                 event_tx: stream_ctx.event_tx.clone(),
-                session_state: stream_ctx.session_state.clone(),
+                slot: stream_ctx.slot.clone(),
                 workspace_path: stream_ctx.workspace_path.clone(),
                 session_dir: stream_ctx.session_dir.clone(),
                 whitelists_dir: stream_ctx.whitelists_dir.clone(),
@@ -1016,7 +1016,6 @@ impl AgentManager {
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,
                 conversation_tree: stream_ctx.conversation_tree.clone(),
-                slot: stream_ctx.slot.clone(),
                 session_manager: stream_ctx.session_manager.clone(),
                 // Don't re-inject Precognition on a validation retry —
                 // the original turn already prepended it.

@@ -231,19 +231,6 @@ pub type AgentFactoryOverride = Box<
         + Sync,
 >;
 
-/// What a session owns that the daemon VM cannot.
-///
-/// It holds no `Lua`. Every Lua file runs once, on the daemon VM, and a
-/// handler takes its session as an argument — so a session needs no VM of its
-/// own, and one wedged handler no longer belongs to one session.
-///
-/// Built lazily and cached per session, which is what makes it the right place
-/// to hang once-per-session work: `on_session_start` fires from its builder.
-pub(crate) struct SessionEventState {
-    /// Counter for spill file naming, persists across messages in a session
-    pub(crate) spill_counter: std::sync::atomic::AtomicU32,
-}
-
 fn emit_precognition_event(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     session_id: &str,
@@ -289,7 +276,6 @@ struct StreamContext {
     session_id: String,
     message_id: String,
     event_tx: broadcast::Sender<SessionEventMessage>,
-    session_state: Arc<Mutex<SessionEventState>>,
     workspace_path: PathBuf,
     session_dir: PathBuf,
     /// The `whitelists.d` directory the permission gate reads saved grants
@@ -913,7 +899,6 @@ impl AgentManager {
     ) -> crucible_core::types::acp::schema::SessionModeState {
         use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
         use crucible_core::types::mode::default_internal_modes;
-        let _vm = self.get_or_create_session_state(session_id);
         // The SESSION's mode, not registration order. `current_mode_id` was
         // previously `declared.first()`, which nothing noticed because both
         // callers read only `available_modes` — but the moment this struct
