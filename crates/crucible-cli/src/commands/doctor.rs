@@ -327,6 +327,14 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         });
     }
 
+    // Check 9: the resolved runtime path, per asset kind.
+    //
+    // "Where does Crucible look for this?" used to have five answers in five
+    // resolvers, and a user debugging a skill that would not load had nowhere
+    // to see any of them. One list now, so a missing root is visible rather
+    // than inferred from a plugin that silently did not appear.
+    results.extend(runtime_path_checks(&loaded_config));
+
     let total_checks = results.len();
 
     match format {
@@ -488,6 +496,73 @@ async fn evaluate_config_check(
     }
 
     (results, Some(boot.config))
+}
+
+/// One line per asset kind: how many roots exist, and how many were offered.
+///
+/// A kind with candidates but none on disk is a `warn`, not a `fail`: a root
+/// that does not exist is a normal state — `runtime_roots` names the extracted
+/// tree unconditionally — but a kind with NO candidates at all means the path
+/// itself is empty, which is a real misconfiguration.
+fn runtime_path_checks(config: &Option<CliConfig>) -> Vec<DoctorCheckResult> {
+    use crucible_core::runtime_path::{search_paths, RuntimeAsset};
+
+    let runtimepath: Vec<PathBuf> = config
+        .as_ref()
+        .map(|c| c.runtimepath.clone())
+        .unwrap_or_default();
+    let path = crucible_daemon::runtime_path::daemon_path(&runtimepath);
+
+    RuntimeAsset::ALL
+        .iter()
+        .map(|asset| {
+            let dirs = search_paths(*asset, &path);
+            let present: Vec<&PathBuf> = dirs
+                .iter()
+                .filter(|d| d.path.is_dir())
+                .map(|d| &d.path)
+                .collect();
+            let (status, message) = if dirs.is_empty() {
+                (
+                    "fail",
+                    format!("{}: no directory is on the path at all", asset.subdir()),
+                )
+            } else if present.is_empty() {
+                (
+                    "warn",
+                    format!(
+                        "{}: {} candidates, none on disk: {}",
+                        asset.subdir(),
+                        dirs.len(),
+                        dirs.iter()
+                            .map(|d| d.path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )
+            } else {
+                (
+                    "pass",
+                    format!(
+                        "{}: {} of {} on disk: {}",
+                        asset.subdir(),
+                        present.len(),
+                        dirs.len(),
+                        present
+                            .iter()
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )
+            };
+            DoctorCheckResult {
+                check_name: format!("Runtime path: {}", asset.subdir()),
+                status: status.to_string(),
+                message,
+            }
+        })
+        .collect()
 }
 
 async fn check_providers(config: Option<&CliConfig>) -> Vec<ProviderCheck> {
