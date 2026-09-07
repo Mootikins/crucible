@@ -272,7 +272,7 @@ sweep runs every 30 min with a 72 h default (`server/mod.rs:664-667`).
   the CLI literal at `crucible-cli/src/commands/session/acp.rs:527-558`
   both repeat `SessionAgent::internal_from_config`
   (`crucible-core/src/session/types/agent.rs:335-398`).
-- The "session VM under lock, then plugin VM" two-pass loop is hand-written
+- The two-pass loop over session VM then plugin VM was hand-written
   eleven times: `tool_call.rs:358-393`; `permission.rs:331-365,502-533`;
   `stream.rs:1181-1199,1250-1279`; `tool_hooks.rs:26-70,77-121,192-218,226-274`;
   `precognition/mod.rs:159-175,253-274`.
@@ -821,7 +821,7 @@ the precognition formatter. `ModeRegistry` has no Rust default.
 `handlers/`, `lifecycle/`, `prelude/`, `sessions/`, `vault/`),
 `crucible-daemon/src/daemon_plugins/`, `plugin_tools.rs`, `plugin_ops.rs`,
 `runtime_defaults.rs`, `rules_files.rs`, `skills/`, `session_bridge.rs`,
-`tools_bridge.rs`, `agent_manager/session_vm.rs`, `server/{lua,plugins,
+`tools_bridge.rs`, `agent_manager/session_config.rs`, `server/{lua,plugins,
 plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 
 **Types.**
@@ -871,8 +871,8 @@ of which 5 are empty).
 `create_function` (sync) and `create_async_function` (async). The daemon calls
 `runtime_handlers_for` and `execute_runtime_handler` (async),
 `execute_permission_hooks` (sync by design), `execute_tool_*_hooks` (async).
-Plugin code runs in one VM; session VMs are per session (`session_vm.rs`).
-`register_permission_hook_api` is called only from `session_vm.rs:113`; the
+All Lua files run in one VM, the daemon's.
+`register_permission_hook_api` is called only from `daemon_plugins/mod.rs`; the
 plugin loader never registers it. `load_plugin_spec` spawns a fresh sandboxed
 `Lua` per spec (`spec.rs:140`) and the daemon executes the same file again in
 the real VM (`discovery.rs:295`). `ChannelSessionRpc` uses `blocking_recv`

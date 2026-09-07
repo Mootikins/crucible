@@ -66,7 +66,7 @@ fn deny_tool_call(
 ///
 /// Takes `registry` and `lua` explicitly because handler bodies are
 /// `RegistryKey`s valid only against the state that created them: session
-/// handlers live in the session VM, plugin handlers in the loader's.
+/// handlers live in the loader's VM, the one VM that runs Lua files.
 async fn run_pre_tool_call_handlers(
     stream_ctx: &StreamContext,
     registry: &crucible_lua::LuaScriptHandlerRegistry,

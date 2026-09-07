@@ -28,7 +28,7 @@ fn daemon_plugin_loader_creates_successfully() {
 /// Contract test for the plugin runtime's API surface.
 ///
 /// Plugins execute in this loader's VM, which is disjoint from the
-/// per-session VM and the per-`lua.init_session` VM. Anything a plugin is
+/// per-`lua.init_session` VM. Anything a plugin is
 /// documented to call must be registered *here* — registering it on the
 /// other two is invisible to plugins.
 ///

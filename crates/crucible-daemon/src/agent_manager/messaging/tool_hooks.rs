@@ -1,6 +1,6 @@
 //! Display, before-execute, and tool-result hook resolution for tool calls.
 //!
-//! Each resolver runs the session VM's handlers first (under the session
+//! Each resolver runs the handler VM's handlers (under the session
 //! state lock), then the plugin VM's with the lock released — plugin Lua may
 //! run for seconds and must not hold the session's whole state hostage.
 //! Display hints are first-non-empty-wins; env maps merge with session
@@ -75,7 +75,7 @@ impl DisplayStage for ToolDisplayCompleteEvent {
     }
 }
 
-/// Resolve the display hints for one stage: the session VM's handlers first,
+/// Resolve the display hints for one stage from the handler VM's handlers,
 /// then the plugin VM's. A hook error falls back to the default metadata.
 pub(super) async fn resolve_hints<E: DisplayStage>(
     stream_ctx: &StreamContext,
@@ -112,7 +112,7 @@ pub(super) async fn resolve_hints<E: DisplayStage>(
 /// Handlers get `{ tool, args, result, error }` and return a `Transform` of
 /// `{ result = <string> }` and/or `{ error = <string> }` — partial: an
 /// omitted key keeps the current value, and each handler sees the previous
-/// handlers' patches (session VM first, then plugin VM). Use cases:
+/// handlers' patches. Use cases:
 /// redacting secrets from bash output, summarising a large read. Execution
 /// already happened, so Cancel/Handled have nothing to act on and are
 /// ignored; handler errors fail open like every non-gate hook — a redactor

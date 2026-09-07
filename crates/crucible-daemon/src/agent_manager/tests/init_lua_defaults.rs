@@ -1,10 +1,10 @@
 //! The behaviour `defaults/init.lua` is responsible for, asserted against the
-//! REAL daemon session VM (`get_or_create_session_state`) rather than a
+//! REAL daemon VM, wired the way `bind_with_plugin_config` wires it, rather than a
 //! hand-built `Lua`.
 //!
 //! Why that distinction matters: the previous default system prompt was
 //! written as a `cru.on_session_start` hook, but that API is registered
-//! only by `LuaExecutor` — never on the daemon's session VM. The guard
+//! only by `LuaExecutor` — never on the VM that ran the file. The guard
 //! `if type(cru.on_session_start) == "function"` was therefore always
 //! false and the prompt silently never applied, while `init_lua.rs`'s
 //! "loads without error" test stayed green throughout. These tests assert the
@@ -21,7 +21,7 @@ use crucible_lua::{execute_permission_hooks, PermissionHookResult, PermissionReq
 /// `extra` stands in for `~/.config/crucible/init.lua`, which runs second, so
 /// an assignment in it wins and `cru.modes.x = nil` removes.
 ///
-/// One VM runs every file. The session VM runs none, so planting a file for a
+/// One VM runs every file. Sessions run none, so planting a file for a
 /// session to find would prove nothing.
 async fn session_with_lua(
     extra: &str,

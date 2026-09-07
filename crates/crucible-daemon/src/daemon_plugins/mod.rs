@@ -136,7 +136,7 @@ pub struct DaemonPluginLoader {
     /// The session-default store the user's `init.lua` writes.
     ///
     /// Shared with `AgentManager`, which registers the same handle into every
-    /// session VM, so one write at boot reaches every session.
+    /// session reads, so one write at boot reaches every session.
     session_defaults: crucible_lua::SessionDefaults,
     /// The mode registry, shared the same way and for the same reason.
     modes: crucible_lua::ModeRegistry,
@@ -286,7 +286,7 @@ impl DaemonPluginLoader {
         )?;
 
         // `cru.defaults` and `cru.modes`. The stores are the SAME handles the
-        // session VMs read, so `cru.defaults.system_prompt = …` in the user's
+        // sessions read, so `cru.defaults.system_prompt = …` in the user's
         // `~/.config/crucible/init.lua` reaches every session with no copy
         // step. `AgentManager` adopts them at bind time.
         //
@@ -542,7 +542,7 @@ impl DaemonPluginLoader {
     ///
     /// The registry is owned by `AgentManager`, not by this loader: it is a
     /// per-session buffer with no plugin dependency, and having the loader own
-    /// it meant session VMs raced plugin boot for a working binding.
+    /// it meant a session raced plugin boot for a working binding.
     pub fn register_context_attach(
         &self,
         registry: Arc<ContextAttachRegistry>,
@@ -634,7 +634,7 @@ impl DaemonPluginLoader {
     /// The session-default and mode stores this VM writes.
     ///
     /// `AgentManager` adopts both handles, so `cru.defaults.model = …` in the
-    /// user's `init.lua` is read by every session VM built afterwards.
+    /// user's `init.lua` is read by every session built afterwards.
     pub fn session_stores(&self) -> (crucible_lua::SessionDefaults, crucible_lua::ModeRegistry) {
         (self.session_defaults.clone(), self.modes.clone())
     }

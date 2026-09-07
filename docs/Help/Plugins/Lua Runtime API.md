@@ -452,7 +452,7 @@ Three properties hold by construction:
   so waiting on a delegation and waiting on any other subagent job is the
   same call.
 
-`delegate = true` needs a current session on the VM. Session VMs (a
+`delegate = true` needs a current session on the VM. A bound session (a
 session's own Lua) and `lua.init_session` runtimes have one; the shared
 plugin VM does not, and a delegate there is refused with that reason —
 spawn a plain session instead, or move the call into the session's Lua.

@@ -78,10 +78,10 @@ return {
 /// The two halves this proves, neither of which held before:
 ///
 /// 1. `cru.defaults` exists on the daemon VM. It was registered only on
-///    session VMs, so this assignment was a nil-index error and the user's
+///    session VMs only, so this assignment was a nil-index error and the user's
 ///    only route to it was a workspace file the daemon no longer executes.
 /// 2. The value wins over the shipped defaults file, which assigns
-///    `cru.defaults.system_prompt` itself. The session VM runs the two files
+///    `cru.defaults.system_prompt` itself. The daemon VM runs the two files
 ///    in order — defaults, then this one — so ordinary assignment decides it.
 ///
 /// Two keys, because they prove different halves. `thinking_budget` is a key
@@ -160,7 +160,7 @@ async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
 /// `cru.modes.auto = nil` in the user's `init.lua` removes the shipped mode.
 ///
 /// The point of an exec order rather than an override tier: removal needs no
-/// mechanism of its own. The session VM runs the defaults file, which declares
+/// mechanism of its own. The daemon VM runs the defaults file, which declares
 /// `auto`, and then this file, which unsets it. Anything that re-applied the
 /// first file's values on top would take this test red.
 #[tokio::test]

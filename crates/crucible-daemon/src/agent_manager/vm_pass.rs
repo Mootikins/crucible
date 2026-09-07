@@ -2,7 +2,7 @@
 //!
 //! Every turn-loop stage runs its handlers the same way: against the daemon
 //! VM, which is the only VM that runs Lua files. It used to be two passes —
-//! the session VM first, then the plugin VM — because a `RegistryKey` is only
+//! a per-session VM first, then the plugin VM, because a `RegistryKey` is only
 //! valid against the `Lua` state that made it, and each session had its own.
 //! Sessions no longer do.
 //!

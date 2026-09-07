@@ -3,9 +3,9 @@
 //! before the pipeline writes them.
 //!
 //! Both are decisions, not patches: the first usable Transform wins, the
-//! session VM (when the caller has one) runs before the plugin VM, and a
+//! handler VM runs when the caller has one, and a
 //! handler that errors leaves the Rust default in place. The search path
-//! outside precognition has no session VM, and the index pipeline never has
+//! outside precognition has no handler VM, and the index pipeline never has
 //! one, so those callers hand over the plugin VM alone.
 
 use crucible_core::events::SessionEvent;

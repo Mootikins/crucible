@@ -397,7 +397,7 @@ async fn the_luau_declarations_cover_the_vm_namespaces() {
 /// Every PROFILE, not just the daemon one.
 ///
 /// This built `DaemonPluginLoader` alone, so a function registered only on the
-/// session VM — `cru.permissions.on_request` and its neighbours — could go
+/// daemon VM — `cru.permissions.on_request` and its neighbours — could go
 /// undeclared with nothing to say so, and `cru-session.d.luau` would render it
 /// `(...any) -> any` while the header still counted it as unsigned. That is
 /// the same false green the profiles were built to end, one VM short of the

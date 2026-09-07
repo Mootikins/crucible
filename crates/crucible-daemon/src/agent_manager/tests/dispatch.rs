@@ -236,7 +236,7 @@ mod event_dispatch {
         use crucible_lua::{register_cru_on_api, LuaScriptHandlerRegistry};
 
         // A plugin VM: its own Lua state and its own registry, like the
-        // daemon's plugin loader — NOT the session VM.
+        // daemon's plugin loader.
         let plugin_lua = Arc::new(mlua::Lua::new());
         let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
         register_cru_on_api(
@@ -274,7 +274,7 @@ mod event_dispatch {
     }
 
     /// Cross-registry inject ordering: the plugin VM pass runs after the
-    /// session VM pass, so its inject wins the last-writer race — the same
+    /// only pass, so its inject wins the last-writer race — the same
     /// rule that lets plugin transforms see session transforms' output.
     #[tokio::test]
     async fn plugin_inject_overrides_session_inject() {

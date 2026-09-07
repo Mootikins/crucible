@@ -1508,7 +1508,7 @@ impl RpcDispatcher {
             // resource in `on_session_start` needs the matching teardown.
             self.fire_plugin_session_end(session_id).await;
 
-            // Attachment state is not a plugin concern: session VMs can attach
+            // Attachment state is not a plugin concern: handlers can attach
             // with no plugin runtime bound at all, so releasing inside
             // `fire_plugin_session_end` leaked every session on a plugin-less
             // daemon. It also must NOT fire on pause — that would hand a

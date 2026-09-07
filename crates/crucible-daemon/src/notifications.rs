@@ -64,7 +64,7 @@ pub struct NotificationHub {
 }
 
 /// What a VM holds: the channel into the hub, and the session the VM
-/// belongs to when it is a session VM.
+/// a call belongs to, when the caller named one.
 struct HubSink {
     tx: mpsc::Sender<NotifyRequest>,
     session_id: Option<String>,
@@ -101,7 +101,7 @@ impl NotificationHub {
     }
 
     /// The sink a VM gets. `session_id` is stamped onto every request from a
-    /// session VM, so the plugin VM's `None` is the only way to stay unstamped.
+    /// caller, so `None` is the only way to stay unstamped.
     pub fn sink(self: &Arc<Self>, session_id: Option<&str>) -> Arc<dyn NotificationSink> {
         Arc::new(HubSink {
             tx: self.tx.clone(),
@@ -201,7 +201,7 @@ impl NotificationHub {
         removed
     }
 
-    /// Explicit hints win. Without them, a session VM's request takes the
+    /// Explicit hints win. Without them, a session-stamped request takes the
     /// session's own workspace and kilns. Anything else is global.
     ///
     /// A bad kiln name is dropped with a warning. When nothing else was
@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_session_vm_notification_takes_the_session_workspace_and_kilns() {
+    async fn a_scoped_notification_takes_the_session_workspace_and_kilns() {
         let f = fixture();
 
         let stored = f

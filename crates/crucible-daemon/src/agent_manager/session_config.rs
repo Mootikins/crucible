@@ -1,21 +1,20 @@
-//! The per-session Lua VM, and the session config it seeds.
+//! What a session's config starts as, and who decides it.
 //!
 //! Split from `agent_manager/mod.rs` for the 1500-line file budget, along a
-//! real seam rather than an arbitrary one: everything here is about standing
-//! up a session's Lua state and reading what that Lua decided.
+//! real seam: everything here is about the values a session begins with and
+//! the one place they are written down.
 //!
-//! A VM is its list of sources, executed in order: the defaults file the
-//! runtimepath resolves, then the user's config. Nothing merges and nothing
-//! re-applies — a later file wins by ordinary assignment.
+//! Sessions run no Lua. The daemon VM loads the runtimepath's defaults file
+//! and then `~/.config/crucible/init.lua`, once, at boot — a later file wins
+//! by ordinary assignment, and `cru.modes.x = nil` removes. No workspace file
+//! is on that list: a workspace is data the agent reads, not code the daemon
+//! executes, and `execution_roots` can only protect a tree a loader names in
+//! advance.
 //!
-//! No workspace file is on that list. A workspace is data the agent reads,
-//! not code the daemon executes, and `execution_roots` can only protect a
-//! tree that a loader names in advance.
-//!
-//! `~/.config/crucible/init.lua` is the second source, so a value it sets
-//! wins and `cru.modes.x = nil` removes. It also runs at boot on the daemon
-//! VM (`daemon_plugins/boot.rs`) against the same `cru.defaults` and
-//! `cru.modes` stores; one file, two VMs, one order each.
+//! `on_session_start` fires once per session, from `SessionLifecycle`, and
+//! writes into the scope [`AgentManager::start_hook_scope`] hands it.
+//! [`AgentManager::apply_session_defaults`] reads that scope back when the
+//! agent is built — the global defaults are the fallback, not the source.
 
 use super::*;
 

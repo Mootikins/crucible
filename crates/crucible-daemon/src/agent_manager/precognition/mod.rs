@@ -180,7 +180,7 @@ impl AgentManager {
             }),
         };
 
-        // First Transform wins, session VM before plugin VM: a session's
+        // First Transform wins: a
         // custom formatter overrides a plugin's default. Formatters run
         run_handlers(plugin_handlers, None, |registry, lua, _| {
             let event = &event;
@@ -264,7 +264,7 @@ impl AgentManager {
             }),
         };
 
-        // Session VM before plugin VM, first Transform wins — same precedence
+        // First Transform wins — same precedence
         // as `precognition_format`, so a session's policy overrides a plugin's.
         run_handlers(plugin_handlers, None, |registry, lua, _| {
             let event = &event;

@@ -2355,7 +2355,7 @@ mod tests {
     ///
     /// The fail-closed branch for a vanished mode was first keyed on
     /// "a registry is attached", but one always is on the daemon path. Before a
-    /// session VM has run the Lua defaults — or if that file fails to parse, or
+    /// daemon VM has run the Lua defaults — or if that file fails to parse, or
     /// a runtimepath entry shadows it — the registry is attached and empty, and
     /// every agent silently lost `read_file`, `grep` and `bash`.
     #[tokio::test]

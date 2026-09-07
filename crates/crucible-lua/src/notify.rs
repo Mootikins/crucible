@@ -23,7 +23,7 @@
 //! cru.log.notify_once("Deprecated API", cru.log.levels.WARN)
 //!
 //! -- Limit who sees it: one workspace, or one kiln. Without either, a
-//! -- session VM's call takes its own session's scope; the plugin VM's
+//! -- a session-stamped call takes that session's scope; an unstamped one
 //! -- call goes to everyone.
 //! cru.log.notify("Index rebuilt", cru.log.levels.INFO, { kiln = "notes" })
 //! cru.log.notify("Review ready", cru.log.levels.INFO, { workspace = "/w/a" })
@@ -41,7 +41,7 @@ const NOTIFIED_ONCE_KEY: &str = "__crucible_notified_once__";
 #[derive(Debug, Clone)]
 pub struct NotifyRequest {
     pub notification: Notification,
-    /// The session whose VM made the call, when it was a session VM.
+    /// The session the call was stamped with, when the caller named one.
     pub session_id: Option<String>,
     /// `opts.workspace`, verbatim; the daemon canonicalizes it.
     pub workspace: Option<PathBuf>,

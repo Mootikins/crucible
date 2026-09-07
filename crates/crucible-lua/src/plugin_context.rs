@@ -23,7 +23,7 @@
 //!    late caller.
 //!
 //! An ABSENT context means no plugin is running — the user's own `init.lua`,
-//! or a session VM. That code carries the operator's authority, so it may
+//! or the host itself. That code carries the operator's authority, so it may
 //! intercept; it has no storage namespace, and `cru.storage` refuses it, as it
 //! always has.
 

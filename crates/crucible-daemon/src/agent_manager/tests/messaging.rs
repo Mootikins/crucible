@@ -1261,7 +1261,7 @@ async fn repeated_triggers_attach_once_per_key() {
 
 /// The registry must exist from `AgentManager::new`, not from plugin boot.
 ///
-/// It used to be bound late, so a session VM built before the bind got a nil
+/// It used to be bound late, so a VM built before the bind got a nil
 /// `cru.context.attach` — permanently, because VMs are cached — and the
 /// resulting failure was silent: the handler raised, the hook failed open, and
 /// the retrieval just never happened.

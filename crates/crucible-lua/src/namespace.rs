@@ -30,7 +30,7 @@ pub enum CruNamespace {
     Config,
     Context,
     /// Seeded session defaults (`cru.defaults.x = …`). On the daemon VM,
-    /// where the user's `init.lua` runs, and on every session VM, against the
+    /// where the user's `init.lua` runs, against the
     /// same store.
     Defaults,
     /// The kiln's own embedding provider: `cru.embed(kiln, text)`.
@@ -53,8 +53,7 @@ pub enum CruNamespace {
     /// The crate-local stub-generator VM only; the plugin VM has no MCP
     /// client API of its own.
     Mcp,
-    /// The mode registry, on the daemon VM and on every session VM against
-    /// the same store.
+    /// The mode registry, on the daemon VM.
     Modes,
     Oil,
     On,
@@ -63,7 +62,7 @@ pub enum CruNamespace {
     OnSessionStart,
     Oq,
     Paths,
-    /// Session VMs only: `cru.permissions.on_request`.
+    /// `cru.permissions.on_request`, on the VM that runs Lua files.
     Permissions,
     Plugin,
     Ratelimit,

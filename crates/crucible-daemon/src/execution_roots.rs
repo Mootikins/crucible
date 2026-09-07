@@ -7,7 +7,7 @@
 //! - [`crate::daemon_plugins::daemon_plugin_paths`] reads `$CRUCIBLE_PLUGIN_PATH`,
 //!   the user's `plugins/`, `<runtimepath>/plugins` and `$CRUCIBLE_RUNTIME/plugins`
 //! - [`crate::runtime_defaults::defaults_candidates`] executes
-//!   `<entry>/defaults/init.lua` in every session VM
+//!   `<entry>/defaults/init.lua` on the daemon VM
 //! - `$CRUCIBLE_CONFIG_DIR/config.toml` carries `runtimepath`, `[acp.agents.*]`
 //!   command paths, `[permissions]` and `[security.shell]` — writing it is
 //!   arbitrary execution on the next start
@@ -358,7 +358,7 @@ mod tests {
         for candidate in &defaults {
             assert!(
                 !candidate.starts_with(&kiln),
-                "the session VM would execute {} out of an unnominated kiln",
+                "the daemon VM would execute {} out of an unnominated kiln",
                 candidate.display()
             );
         }

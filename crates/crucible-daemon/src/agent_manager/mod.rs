@@ -361,7 +361,7 @@ pub struct AgentManager {
     /// not called `cru.o`.
     session_defaults: crucible_lua::SessionDefaults,
     /// Modes declared from Lua (`cru.modes.<name> = {…}`). Empty until a
-    /// session VM has run its files; every read falls back to
+    /// daemon VM has run its files; every read falls back to
     /// `default_internal_modes()` in that case, so a daemon whose Lua failed
     /// to load still has working modes rather than none.
     modes: crucible_lua::ModeRegistry,
@@ -403,7 +403,7 @@ pub struct AgentManager {
     /// loop.
     ///
     /// Created eagerly rather than bound later: it is a per-session buffer with
-    /// no dependency on the plugin system, and late binding meant a session VM
+    /// no dependency on the plugin system, and late binding meant a VM
     /// built before the bind silently got a nil `cru.context.attach` — for that
     /// session, permanently, because VMs are cached.
     context_attach: std::sync::Arc<crucible_lua::ContextAttachRegistry>,
@@ -629,7 +629,7 @@ impl AgentManager {
     }
 
     /// Statusline expression values. Created eagerly for the same reason as
-    /// `context_attach`: session VMs are lazy and cached, so a registry bound
+    /// `context_attach`: a registry bound
     /// later leaves earlier VMs holding a nil function forever.
     pub fn statusline_exprs(&self) -> std::sync::Arc<crucible_lua::StatuslineExprRegistry> {
         self.statusline_exprs.clone()
@@ -861,7 +861,7 @@ impl AgentManager {
     /// A setter rather than a `AgentManagerParams` field: every test
     /// constructing a manager wants the fall-through behaviour (empty →
     /// exe-relative → built-in), and only the daemon has a configured path to
-    /// pass. Call before the first session VM is created; later calls do not
+    /// pass. Call before the daemon VM loads its files; later calls do not
     /// re-run defaults for VMs that already exist.
     /// Adopt the daemon VM's session-default and mode stores.
     ///
@@ -1585,8 +1585,8 @@ pub(crate) mod precognition_gate;
 pub mod providers;
 mod residue;
 pub(crate) mod scope;
+pub(crate) mod session_config;
 mod session_permissions;
-pub(crate) mod session_vm;
 mod slot;
 pub(crate) mod stream_config;
 pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};

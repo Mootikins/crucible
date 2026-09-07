@@ -2,7 +2,7 @@
 //!
 //! The hub's own tests call the Rust sink directly. These two drive the call
 //! from Lua on each daemon VM, so a missing `upgrade_with_notify_sink` in
-//! `session_vm.rs` or in `DaemonPluginLoader` fails here.
+//! `DaemonPluginLoader` fails here.
 
 use super::*;
 use crate::daemon_plugins::DaemonPluginLoader;
@@ -19,7 +19,7 @@ struct HubFixture {
 }
 
 /// One live session with the kiln `kiln`, and a hub bound to the agent
-/// manager BEFORE any session VM exists. `ReactorTestHarness::new` builds
+/// manager BEFORE the plugin boot binds one. `ReactorTestHarness::new` builds
 /// the VM inside `configure_agent`, which is too early for a hub bound
 /// afterwards; the daemon binds the hub at boot, before any session runs.
 async fn hub_fixture() -> HubFixture {

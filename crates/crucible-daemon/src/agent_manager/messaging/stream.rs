@@ -1073,7 +1073,7 @@ impl AgentManager {
             );
         }
 
-        // Observational event; session VM first, then plugin VM with the
+        // Observational event, run against the handler VM with the
         // state lock released (plugin Lua may run for seconds).
         let post_llm_event = SessionEvent::Custom {
             name: "post_llm_call".to_string(),
@@ -1139,7 +1139,7 @@ impl AgentManager {
             }),
         };
 
-        // Session VM first, plugin VM second — the uniform registry order.
+        // The handler VM's registry — the one that runs Lua files.
         // Inject is last-writer-wins within a registry and across them, so a
         // plugin's inject overrides a session handler's; a session that must
         // win can use priority within its own registry, but cross-registry

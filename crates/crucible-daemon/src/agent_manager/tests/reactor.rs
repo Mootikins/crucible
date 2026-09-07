@@ -314,7 +314,7 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
 /// A hook registered by a *plugin* must actually fire on a tool call.
 ///
 /// This is the gap that let the whole plugin hook system ship broken: the
-/// suite above registers handlers directly into the per-session VM, which
+/// suite above registers handlers directly into the handler VM, which
 /// proves the dispatcher works but never that a plugin can reach it. Plugins
 /// load into `DaemonPluginLoader`'s VM — a third, disjoint Lua state — where
 /// `cru.on` was simply absent, so `oci` (the reference interception
@@ -1212,7 +1212,7 @@ mod handler_budget {
     /// One broken plugin must not be able to end a session — which is exactly
     /// what an unbounded handler did, by never returning at all. The handler
     /// spins rather than sleeps, so this is the VM deadline and not the tokio
-    /// timeout: a session VM offers no async API to await on, and a spinning
+    /// timeout: this path offers no async API to await on, and a spinning
     /// handler is the case a timeout cannot reach anyway.
     #[tokio::test]
     async fn a_pre_llm_call_handler_over_its_budget_leaves_the_turn_running() {

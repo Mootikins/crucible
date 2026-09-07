@@ -147,8 +147,8 @@ a different program; a rule that names `rm` never covers `find . -delete`.
 not stop a determined caller. [[Help/Concepts/Permission Precedence]] states the
 guarantee and its limits in full.
 
-Declare a mode in `~/.config/crucible/init.lua`. Each session VM runs the
-shipped defaults file first and your file second, so your declaration wins and
+Declare a mode in `~/.config/crucible/init.lua`. The daemon runs the shipped
+defaults file first and your file second, so your declaration wins and
 `cru.modes.plan = nil` removes a built-in.
 
 For decisions that depend on the arguments rather than the tool, use a

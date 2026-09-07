@@ -296,7 +296,7 @@ impl AgentManager {
     /// cancels the TURN: the caller emits the ended event and returns `None`,
     /// same as the reactor path and `transform_context`. (The old loop
     /// `break`-ed on Cancel and sent the prompt anyway — a cancel that
-    /// didn't cancel.) Extracted so the session VM and the plugin VM share
+    /// didn't cancel.) Extracted so every caller shares
     /// one loop body: plugins registering this event used to get documented
     /// silence, because only the per-session registry was ever dispatched.
     async fn run_pre_llm_call_handlers(

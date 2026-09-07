@@ -92,7 +92,7 @@ fn defaults_candidates_from(
         }
     }
 
-    // Each candidate is Lua the session VM executes before the user's config,
+    // Each candidate is Lua the daemon VM executes before the user's config,
     // so the write-protected set has to name it — including the ones that do
     // not exist, which are exactly the ones an agent would plant. See
     // [`crate::execution_roots`] for why the loader records rather than the

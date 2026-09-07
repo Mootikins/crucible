@@ -30,13 +30,13 @@ pub struct KilnSearchSource {
 
 /// The `search:rerank` stage a search fires after the merge and before the
 /// cut. The VMs run in order, first usable Transform wins: precognition lists
-/// the session VM before the plugin VM; the tool and the RPC list the plugin
+/// the handler VM's; the tool and the RPC list the plugin
 /// VM alone.
 #[derive(Clone)]
 pub struct RerankStage {
     /// The session the handlers run for, when the caller has one.
     pub session_id: Option<String>,
-    /// Session VM first, then the plugin VM.
+    /// The handler VM's registry.
     pub vms: Vec<StageVm>,
 }
 

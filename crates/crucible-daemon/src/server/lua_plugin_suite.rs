@@ -516,7 +516,7 @@ mod shipped_plugin_tests {
     /// and the unmapped-file assertion is what keeps it complete.
     ///
     /// The profile matters as much as the coverage. `runtime/defaults/init.lua`
-    /// runs on the SESSION VM and a theme on a BARE VM with no `cru` at all;
+    /// runs on the DAEMON VM and a theme on a BARE VM with no `cru` at all;
     /// checked against the daemon definitions they report type errors for
     /// working API,
     /// which is exactly the false failure that made a wider gate look
@@ -533,7 +533,7 @@ mod shipped_plugin_tests {
         // Ordered longest-prefix-first is unnecessary: no prefix here contains
         // another.
         const PROFILES: &[(&str, VmProfile)] = &[
-            // The shipped defaults and a workspace `init.lua`: session VM.
+            // The shipped defaults file: it runs on the daemon VM.
             ("runtime/defaults/", VmProfile::Daemon),
             // A statusline layout evaluates on a VM with `cru.statusline` and
             // NOTHING else; a theme evaluates on a bare VM with no `cru` at

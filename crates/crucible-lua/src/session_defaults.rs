@@ -61,7 +61,7 @@ pub struct SessionDefaultValues {
 
 /// Shared handle to the daemon's session defaults.
 ///
-/// Cheap to clone; every session VM registers the same underlying store, so a
+/// Cheap to clone; the daemon VM and every reader share one store, so a
 /// default set by one file is visible to the daemon regardless of which VM ran
 /// it. This is plain process-local state, not an RPC surface — unlike
 /// `session.x`, there is no per-session actor to route through.
