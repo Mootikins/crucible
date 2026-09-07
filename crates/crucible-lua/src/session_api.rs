@@ -64,19 +64,12 @@ pub trait SessionConfigRpc: Send + Sync {
     fn set_thinking_budget(&self, budget: i64) -> Result<(), String>;
     fn get_model(&self) -> Option<String>;
     fn switch_model(&self, model: &str) -> Result<(), String>;
-    fn list_models(&self) -> Vec<String>;
     fn get_mode(&self) -> String;
     fn set_mode(&self, mode: &str) -> Result<(), String>;
     fn get_system_prompt(&self) -> Option<String>;
     fn set_system_prompt(&self, prompt: &str) -> Result<(), String>;
-    fn mark_first_message_sent(&self);
     fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String>;
     fn get_variable(&self, key: &str) -> Option<serde_json::Value>;
-    fn notify(&self, notification: crucible_core::types::Notification);
-    fn toggle_messages(&self);
-    fn show_messages(&self);
-    fn hide_messages(&self);
-    fn clear_messages(&self);
 }
 
 /// A [`SessionConfigRpc`] that supports no knob.
@@ -100,9 +93,6 @@ impl SessionConfigRpc for UnsupportedSessionRpc {
     fn switch_model(&self, _model: &str) -> Result<(), String> {
         Err(unsupported("model"))
     }
-    fn list_models(&self) -> Vec<String> {
-        Vec::new()
-    }
     fn get_mode(&self) -> String {
         "chat".to_string()
     }
@@ -115,18 +105,12 @@ impl SessionConfigRpc for UnsupportedSessionRpc {
     fn set_system_prompt(&self, _prompt: &str) -> Result<(), String> {
         Err(unsupported("system_prompt"))
     }
-    fn mark_first_message_sent(&self) {}
     fn set_variable(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
         Err(unsupported("variables"))
     }
     fn get_variable(&self, _key: &str) -> Option<serde_json::Value> {
         None
     }
-    fn notify(&self, _notification: crucible_core::types::Notification) {}
-    fn toggle_messages(&self) {}
-    fn show_messages(&self) {}
-    fn hide_messages(&self) {}
-    fn clear_messages(&self) {}
 }
 
 /// The per-session key/value map behind `session:set_variable` and
@@ -456,13 +440,6 @@ impl UserData for Session {
             }
         });
 
-        methods.add_method("mark_first_message_sent", |_lua, this, ()| {
-            this.with_rpc(|r| {
-                r.mark_first_message_sent();
-                Ok(())
-            })
-        });
-
         // ── Lifecycle verbs ─────────────────────────────────────────────
         session_method!(methods, "configure_agent", configure_agent_op, config: Value);
         session_method!(methods, "send_message", send_message_op, content: String);
@@ -612,7 +589,6 @@ pub mod tests {
     pub struct MockRpc {
         model: Arc<std::sync::RwLock<Option<String>>>,
         system_prompt: Arc<std::sync::RwLock<String>>,
-        first_message_sent: Arc<std::sync::RwLock<bool>>,
         variables: Arc<std::sync::RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     }
 
@@ -629,7 +605,6 @@ pub mod tests {
                 system_prompt: Arc::new(std::sync::RwLock::new(
                     crucible_core::prompts::DEFAULT_SYSTEM_PROMPT.to_string(),
                 )),
-                first_message_sent: Arc::new(std::sync::RwLock::new(false)),
                 variables: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             }
         }
@@ -643,9 +618,6 @@ pub mod tests {
             *self.model.write().unwrap() = Some(model.to_string());
             Ok(())
         }
-        fn list_models(&self) -> Vec<String> {
-            vec!["model-a".to_string(), "model-b".to_string()]
-        }
         fn get_mode(&self) -> String {
             "act".to_string()
         }
@@ -653,14 +625,8 @@ pub mod tests {
             Some(self.system_prompt.read().unwrap().clone())
         }
         fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
-            if *self.first_message_sent.read().unwrap() {
-                return Err("system_prompt is locked after first message".to_string());
-            }
             *self.system_prompt.write().unwrap() = prompt.to_string();
             Ok(())
-        }
-        fn mark_first_message_sent(&self) {
-            *self.first_message_sent.write().unwrap() = true;
         }
         fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
             self.variables
@@ -681,11 +647,6 @@ pub mod tests {
         fn set_mode(&self, mode: &str) -> Result<(), String> {
             UnsupportedSessionRpc.set_mode(mode)
         }
-        fn notify(&self, _notification: crucible_core::types::Notification) {}
-        fn toggle_messages(&self) {}
-        fn show_messages(&self) {}
-        fn hide_messages(&self) {}
-        fn clear_messages(&self) {}
     }
 
     #[test]
@@ -893,26 +854,6 @@ pub mod tests {
             .eval()
             .unwrap();
         assert_eq!(prompt, "custom prompt");
-    }
-
-    #[test]
-    fn test_session_system_prompt_locked_after_send() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
-
-        let session = Session::new("s1".to_string());
-        session.bind(Box::new(MockRpc::new()));
-        mgr.set_current(session);
-
-        lua.load("cru.get_session():mark_first_message_sent()")
-            .exec()
-            .unwrap();
-
-        let result: mlua::Result<()> = lua
-            .load("cru.get_session().system_prompt = 'new prompt'")
-            .exec();
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("locked"));
     }
 }
 

@@ -216,14 +216,6 @@ impl SessionConfigRpc for SessionDefaultsRpc {
         Ok(())
     }
 
-    // A session default has no agent yet, so there is no provider to list
-    // models from. This answers like the unsupported backing does.
-    fn list_models(&self) -> Vec<String> {
-        UnsupportedSessionRpc.list_models()
-    }
-
-    fn mark_first_message_sent(&self) {}
-
     fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
         match &self.variables {
             Some(variables) => {
@@ -237,16 +229,6 @@ impl SessionConfigRpc for SessionDefaultsRpc {
     fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
         self.variables.as_ref().and_then(|v| v.get(key))
     }
-
-    fn notify(&self, _notification: crucible_core::types::Notification) {}
-
-    fn toggle_messages(&self) {}
-
-    fn show_messages(&self) {}
-
-    fn hide_messages(&self) {}
-
-    fn clear_messages(&self) {}
 }
 
 /// Register `cru.defaults` on `lua`.
