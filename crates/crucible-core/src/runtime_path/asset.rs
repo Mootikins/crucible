@@ -163,15 +163,22 @@ impl RuntimeAsset {
     /// authored. So the executing kinds refuse `Workspace` and `Kiln` here,
     /// and `execution_roots`' own gate stays green.
     ///
+    /// **The executing kinds also refuse [`Origin::Harness`].** A harness root
+    /// is another agent tool's home — `~/.claude`, `~/.codex`. Claude Code
+    /// keeps `~/.claude/plugins`, and running another tool's plugins because
+    /// the user asked Crucible to read its *skills* would be a gross
+    /// overreach. Harness roots exist to share text: skills and cards.
+    ///
     /// `Plugins` also refuses [`Origin::Plugin`]: a plugin does not ship
     /// plugins, and allowing it would make discovery recursive.
     pub fn reaches(self, origin: Origin) -> bool {
         match self {
-            RuntimeAsset::Plugins => {
-                !matches!(origin, Origin::Workspace | Origin::Kiln | Origin::Plugin)
-            }
+            RuntimeAsset::Plugins => !matches!(
+                origin,
+                Origin::Workspace | Origin::Kiln | Origin::Plugin | Origin::Harness
+            ),
             RuntimeAsset::Themes | RuntimeAsset::Defaults => {
-                !matches!(origin, Origin::Workspace | Origin::Kiln)
+                !matches!(origin, Origin::Workspace | Origin::Kiln | Origin::Harness)
             }
             RuntimeAsset::Skills | RuntimeAsset::Cards => true,
         }
@@ -278,6 +285,29 @@ mod tests {
     #[test]
     fn plugins_never_reach_a_plugin_root() {
         assert!(!RuntimeAsset::Plugins.reaches(Origin::Plugin));
+    }
+
+    /// No executing kind reads another agent tool's home directory.
+    ///
+    /// A harness root is `~/.claude` or `~/.codex`, and Claude Code keeps
+    /// `~/.claude/plugins`. Running another tool's plugins because the user
+    /// asked Crucible to read its SKILLS would be a gross overreach: harness
+    /// roots exist to share text.
+    #[test]
+    fn an_executing_kind_never_reaches_a_harness_root() {
+        for asset in RuntimeAsset::iter().filter(|a| a.executes()) {
+            assert!(
+                !asset.reaches(Origin::Harness),
+                "{asset:?} executes and would run another tool's code"
+            );
+        }
+    }
+
+    /// Text kinds DO read a harness root. That is what harnesses are for.
+    #[test]
+    fn text_kinds_reach_a_harness_root() {
+        assert!(RuntimeAsset::Skills.reaches(Origin::Harness));
+        assert!(RuntimeAsset::Cards.reaches(Origin::Harness));
     }
 
     /// A plugin may ship the three non-executing-lookup kinds.
