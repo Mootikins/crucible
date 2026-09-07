@@ -1276,7 +1276,7 @@ The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The o
 
 ## Session-VM-only: cru.defaults and cru.modes
 
-`cru.defaults` (session default values like `system_prompt`, `temperature`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — the VM that runs the shipped Lua defaults and a workspace's `.crucible/lua/init.lua`. The daemon's plugin VM never registers them, so referencing `cru.defaults` or `cru.modes` from a plugin's `init.lua` is a nil-index error. Set defaults and define modes from a workspace's `.crucible/lua/init.lua` (or a copied-out runtime defaults tree on the `runtimepath`), not from plugins.
+`cru.defaults` (session default values like `system_prompt`, `temperature`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — and on the daemon VM, against the same stores. A write from `~/.config/crucible/init.lua` at boot therefore reaches every session, and the daemon re-applies it over each session's freshly-loaded defaults file. `cru.permissions` is the one that stays session-only.
 
 ## See Also
 

@@ -743,14 +743,13 @@ impl AgentManager {
             .map(|m| m.permissions);
 
         let hook_result = Self::run_permission_hooks(
-            &stream_ctx.session_state,
+            stream_ctx.agent_stream_config.daemon_permissions.as_ref(),
             &tool_call.name,
             args,
             &stream_ctx.session_id,
             &stream_ctx.session_mode,
             &stream_ctx.agent_stream_config.mcp_read_only_tools,
-        )
-        .await;
+        );
 
         match hook_result {
             PermissionHookResult::Allow => {
@@ -1114,14 +1113,22 @@ impl AgentManager {
     /// permission request hung. The deadline is a strict upgrade at the same
     /// 1 s: it stops the hook mid-execution and this returns `Prompt`, which
     /// is what the stopwatch meant to do.
-    pub(super) async fn run_permission_hooks(
-        session_state: &Arc<Mutex<SessionEventState>>,
+    /// The `cru.permissions.on_request` hooks, in priority order.
+    ///
+    /// One registry, on the one VM that runs Lua files. `None` is a manager
+    /// with no daemon VM bound — every hook-free test — and means Prompt.
+    pub(super) fn run_permission_hooks(
+        registry: Option<&super::super::DaemonPermissions>,
         tool_name: &str,
         args: &serde_json::Value,
         session_id: &str,
         session_mode: &str,
         mcp_read_only: &std::collections::HashSet<String>,
     ) -> PermissionHookResult {
+        let Some((hooks, functions, lua)) = registry else {
+            return PermissionHookResult::Prompt;
+        };
+
         let file_path = args
             .get("path")
             .or_else(|| args.get("file"))
@@ -1136,13 +1143,10 @@ impl AgentManager {
             is_safe: crate::agent_manager::believed_read_only(tool_name, mcp_read_only),
         };
 
-        let state = session_state.lock().await;
-        let hooks_guard = state
-            .permission_hooks
+        let hooks_guard = hooks
             .lock()
             .expect("permission_hooks: poisoned while executing Lua permission hook");
-        let functions_guard = state
-            .permission_functions
+        let functions_guard = functions
             .lock()
             .expect("permission_functions: poisoned while executing Lua permission hook");
 
@@ -1150,17 +1154,10 @@ impl AgentManager {
             return PermissionHookResult::Prompt;
         }
 
-        let result = execute_permission_hooks(&state.lua, &hooks_guard, &functions_guard, &request);
-
-        match result {
+        match execute_permission_hooks(lua, &hooks_guard, &functions_guard, &request) {
             Ok(hook_result) => hook_result,
             Err(e) => {
-                warn!(
-                    session_id = %session_id,
-                    tool = %tool_name,
-                    error = %e,
-                    "Permission hook execution failed"
-                );
+                warn!(session_id = %session_id, tool = %tool_name, error = %e, "Permission hook failed");
                 PermissionHookResult::Prompt
             }
         }

@@ -369,6 +369,7 @@ impl AgentManager {
                         lua_validators,
                         plugin_lua,
                         plugin_handlers: self.plugin_handlers(),
+                        daemon_permissions: self.daemon_permissions(),
                         isolation: self.isolation(),
                         plugin_tool_names,
                         modes: self.modes.clone(),

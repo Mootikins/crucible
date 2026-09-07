@@ -9,7 +9,7 @@ tags:
 
 # Lua Configuration
 
-Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. This file can configure the TUI, define keybindings, and customize behavior.
+Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. This file can configure the TUI, define keybindings, and customize behavior. It runs on the daemon VM, which registers neither `cru.defaults` nor `cru.modes` — those belong to the defaults file, described below.
 
 ## Quick Start
 
@@ -38,15 +38,29 @@ sl.setup({
 
 ## Config Locations
 
-| Location | Purpose | Load Order |
-|----------|---------|------------|
-| Built-in defaults | Precognition format, session defaults, bundled plugins | First (embedded) |
-| `~/.config/crucible/init.lua` | Your config — overrides defaults | Second |
-| `<workspace>/.crucible/lua/init.lua` | Per-project config | Third |
+`~/.config/crucible/init.lua` is the one file you write. It runs once, at
+daemon boot, on the daemon VM.
 
-Your init.lua runs after the built-in defaults, so you can override anything. The per-project file runs last and can override both.
+It runs twice, on two VMs, and that is the whole model. At boot it runs on
+the daemon VM, where it configures plugins, the statusline and `cru.config`.
+On each new session it runs again on that session's VM — **after** the shipped
+defaults file (`runtime/defaults/init.lua`, compiled into the binary), which
+supplies the default system prompt, the three modes, the precognition
+formatter and the plan-mode permission hook.
 
-That third path is the session's **workspace** — where work happens — not its kiln. The two are often the same directory, which is why this is easy to get wrong; the daemon reads `session.workspace`.
+A VM is its list of sources, executed in order. Nothing merges and nothing
+re-applies: a later file wins by ordinary assignment, and `= nil` removes.
+
+| Written in `init.lua` | Effect |
+|---|---|
+| `cru.defaults.x = …` | every new session starts with `x` |
+| `cru.modes.<name> = {…}` | a new mode, in the TUI cycle and the web picker |
+| `cru.config.set{…}` | app config, the `config.toml` tier |
+
+A workspace runs no Lua. The daemon executes only trees it names in advance,
+because naming a tree for the loader is what write-protects it — see
+`crucible-daemon/src/execution_roots.rs`. A cloned repository therefore cannot
+change a session's model, prompt, modes or hooks.
 
 ## The Boot Order
 
@@ -140,12 +154,12 @@ tier.
 
 ```lua
 cru.defaults.system_prompt = "Answer in British English."
-cru.defaults.temperature = 0.3
 ```
 
 Modes are declared, not built in. `cru.modes.<name>` takes a tool set and a
-permission stance; the three shipped modes are declared this same way in
-`runtime/defaults/init.lua`, so yours are not second-class.
+permission stance; the three shipped modes are declared this same way in the
+shipped defaults file, so yours are not second-class. `cru.modes.auto = nil`
+removes one, because your file runs after it.
 
 ```lua
 cru.modes.review = {

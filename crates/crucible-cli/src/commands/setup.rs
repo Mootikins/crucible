@@ -84,9 +84,11 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
 /// the version you ran setup on, and every default added afterwards ships to
 /// nobody who ran this command.
 ///
-/// The override point for defaults is `~/.config/crucible/init.lua`, which
-/// already runs after them and wins per assignment — Vim's `after/` in
-/// everything but name, and it exists precisely so nobody forks a runtime file.
+/// The override point for defaults is `~/.config/crucible/init.lua`. It writes
+/// the same `cru.defaults` and `cru.modes` stores, and the daemon re-applies
+/// what it set over every session's freshly-loaded defaults — Vim's `after/`
+/// in everything but name, and it exists precisely so nobody forks a runtime
+/// file.
 const NOT_COPIED: &[&str] = &["defaults"];
 
 fn populate_runtime(source: Option<&Path>, target: &Path) -> Result<()> {
@@ -193,32 +195,6 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --       sl.any(sl.notification, sl.context) },
 --   },
 -- })
-
--- Session defaults: the values a NEW session starts from.
--- (`cru.defaults.x` is Neovim's `vim.o`; `session.x` is `vim.bo`.)
--- cru.defaults.temperature = 0.7
--- cru.defaults.system_prompt = cru.defaults.system_prompt
---   .. "\n\nAnswer in British English."
-
--- Per session, for anything conditional
--- cru.on_session_start(function(session)
---   if session.workspace:match("/work/") then
---     session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
---   end
--- end)
-
--- Modes. `tools` gates visibility; `permissions` gates what may be done with
--- a visible tool, in the same `tool:pattern` grammar as [permissions].
--- cru.modes.review = {
---   tools = { "read_*", "*_search", "bash" },
---   permissions = { default = "deny", allow = { "bash:rg *", "bash:grep *" } },
--- }
-
--- Permission hooks, for anything conditional. Yours run BEFORE the shipped
--- ones, so this wins over the built-ins.
--- cru.permissions.on_request(function(request)
---   return { deny = true }
--- end, { pattern = "bash" })
 "#;
 
 #[cfg(test)]

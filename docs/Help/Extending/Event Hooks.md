@@ -59,10 +59,9 @@ those is filtering on something that does not exist and never matches.
 
 ## Two Registries, One Order
 
-Handlers live in **two registries**: each session's VM (files evaluated per
-session — the built-in defaults, your `init.lua`, the workspace's
-`.crucible/lua/init.lua`) and the daemon's plugin VM (plugin `init.lua`s, plus
-your `init.lua` evaluated after plugins load). They cannot be merged — a Lua
+Handlers live in **two registries**: each session's VM (the defaults file the
+runtimepath resolves) and the daemon's plugin VM (plugin `init.lua`s, plus
+`~/.config/crucible/init.lua` evaluated after plugins load). They cannot be merged — a Lua
 function is only valid against the VM that created it — so dispatch runs them
 in a fixed order: **session-VM handlers first, then plugin-VM handlers**,
 each registry in ascending priority. Transforms chain across the boundary:
@@ -607,8 +606,8 @@ end, { required = true })
 **Where the hook runs decides what it may do.** On the plugin-VM path the
 hooks are fired asynchronously, so they may call async APIs
 (`cru.shell.exec`, `cru.http`, ...), and `required = true` is honoured. Hooks
-registered on the **session VM** (your `init.lua` or the workspace's
-`.crucible/lua/init.lua` deciding a session's opening configuration) run
+registered on the **session VM** (the defaults file deciding a session's
+opening configuration) run
 **synchronously** during session-VM construction: they cannot await async
 APIs, they fail open per hook, and `required` is not honoured there —
 session refusal stays with the plugin loader, where isolation claims live.
@@ -653,9 +652,10 @@ cru.permissions.on_request(function(request)
 end)
 ```
 
-> **Session-scoped Lua only.** This API exists on each session's VM — put the
-> callback in your workspace's `.crucible/lua/init.lua`. It is *not*
-> registered on the plugin runtime, so a plugin's `init.lua` cannot use it
+> **Session-scoped Lua.** The gate dispatches the hooks registered on the
+> session VM, and `~/.config/crucible/init.lua` runs there, so put the callback
+> in that file. A plugin's `init.lua` runs only on the daemon VM and cannot
+> use it
 > yet; a plugin wanting to gate tools should use `pre_tool_call` with
 > `cancel` instead.
 

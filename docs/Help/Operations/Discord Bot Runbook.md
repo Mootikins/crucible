@@ -86,8 +86,8 @@ any incident.
   granted it explicitly through `tool_policy`.
 
 **Hard deployment invariant: the bot's daemon must host nothing else.** `ModeRegistry` is
-process-global and writable from any Lua in the process, and `session.set_mode` is an
-unauthenticated RPC — so anything that reaches that daemon's socket can relax the bot's stance,
+process-global and writable from the defaults file the runtimepath resolves, and
+`session.set_mode` is an unauthenticated RPC — so anything that reaches that daemon's socket can relax the bot's stance,
 or your own TUI's if they share a process. Give the bot its own `CRUCIBLE_SOCKET` and its own
 data root, and do not run `cru web` on the same host.
 

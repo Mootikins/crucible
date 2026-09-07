@@ -4,14 +4,18 @@
 //! real seam rather than an arbitrary one: everything here is about standing
 //! up a session's Lua state and reading what that Lua decided.
 //!
-//! Load order matters and is the whole extensibility mechanism — no file gets
-//! a privileged API, only an earlier turn to speak:
+//! A VM is its list of sources, executed in order: the defaults file the
+//! runtimepath resolves, then the user's config. Nothing merges and nothing
+//! re-applies — a later file wins by ordinary assignment.
 //!
-//! 1. built-in defaults (`BUILTIN_INIT_LUA`)
-//! 2. `~/.config/crucible/init.lua` and the workspace's `.crucible/lua/init.lua`
+//! No workspace file is on that list. A workspace is data the agent reads,
+//! not code the daemon executes, and `execution_roots` can only protect a
+//! tree that a loader names in advance.
 //!
-//! Later files override earlier ones with ordinary assignment, which is why
-//! `cru.defaults.x = …` needs no override mechanism of its own.
+//! `~/.config/crucible/init.lua` is the second source, so a value it sets
+//! wins and `cru.modes.x = nil` removes. It also runs at boot on the daemon
+//! VM (`daemon_plugins/boot.rs`) against the same `cru.defaults` and
+//! `cru.modes` stores; one file, two VMs, one order each.
 
 use super::*;
 
@@ -109,8 +113,6 @@ impl AgentManager {
             error!(session_id = %session_id, error = %e, "Failed to install the Lua time budget hook");
         }
         let registry = LuaScriptHandlerRegistry::new();
-        let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
-        let permission_functions = Arc::new(StdMutex::new(HashMap::new()));
 
         if let Err(e) = register_cru_on_api(
             &lua,
@@ -118,14 +120,6 @@ impl AgentManager {
             registry.handler_functions(),
         ) {
             error!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
-        }
-
-        if let Err(e) = register_permission_hook_api(
-            &lua,
-            permission_hooks.clone(),
-            permission_functions.clone(),
-        ) {
-            error!(session_id = %session_id, error = %e, "Failed to register cru.permissions API");
         }
 
         // Every session VM writes to the SAME store, so a default set by any
@@ -230,61 +224,9 @@ impl AgentManager {
             }
         }
 
-        // Resolved off the runtimepath, so a copied-out `runtime/defaults/`
-        // shadows what shipped. The origin is logged because "I edited the
-        // defaults and nothing changed" is otherwise near-undiagnosable — it
-        // usually means a higher-priority candidate won.
-        let (defaults_src, defaults_origin) =
-            crate::runtime_defaults::load_defaults(&self.runtimepath);
-        debug!(session_id = %session_id, source = %defaults_origin, "Loading Lua defaults");
-        if let Err(e) = lua
-            .load(&defaults_src)
-            .set_name(defaults_origin.to_string())
-            .exec()
-        {
-            warn!(
-                session_id = %session_id,
-                source = %defaults_origin,
-                error = %e,
-                "Failed to load Lua defaults (fail-open)"
-            );
-        }
-
-        if let Some(session) = self.session_manager.get_session(session_id) {
-            let user_init = session
-                .workspace
-                .as_ref()
-                .map(|ws| ws.join(".crucible/lua/init.lua"))
-                .filter(|p| p.exists());
-            if let Some(user_init) = user_init {
-                match std::fs::read_to_string(&user_init) {
-                    Ok(source) => {
-                        if let Err(e) = lua.load(&source).set_name("user init.lua").exec() {
-                            warn!(
-                                session_id = %session_id,
-                                path = %user_init.display(),
-                                error = %e,
-                                "Failed to load user init.lua (fail-open)"
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            session_id = %session_id,
-                            path = %user_init.display(),
-                            error = %e,
-                            "Failed to read user init.lua (fail-open)"
-                        );
-                    }
-                }
-            }
-        }
-
-        // Every file has now run, so the hooks list is complete. Fire it here
-        // rather than at session.create: this is the only point where the
-        // session's OWN Lua (workspace `.crucible/lua/init.lua`) has been
-        // loaded, and a project-local hook that never fires is the bug this
-        // whole arc is about.
+        // The hooks live on the daemon VM, which ran every file at boot.
+        // Fire them here rather than at session.create, because this is where
+        // the per-session scope they write into is created.
         //
         // Seeded from the global defaults so `session.x` reads the inherited
         // value — `session.system_prompt = session.system_prompt .. "…"`
@@ -292,15 +234,17 @@ impl AgentManager {
         // session's starting values; `apply_session_defaults` reads it.
         let scope = crucible_lua::SessionDefaults::new();
         scope.set(self.session_defaults.get());
-        self.fire_session_start_hooks(&lua, session_id, &scope);
+        match self.plugin_handlers() {
+            Some((_, daemon_lua)) => self.fire_session_start_hooks(&daemon_lua, session_id, &scope),
+            // No daemon VM bound: a test manager. Nothing registered hooks.
+            None => self.fire_session_start_hooks(&lua, session_id, &scope),
+        }
         self.slot(session_id).set_overrides(scope.get());
         self.schedule_variable_persist(session_id);
 
         Arc::new(Mutex::new(SessionEventState {
             lua,
             registry,
-            permission_hooks,
-            permission_functions,
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }))
     }

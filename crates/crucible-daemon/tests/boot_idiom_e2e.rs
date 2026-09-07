@@ -72,3 +72,140 @@ return {
         "the user's marker survives activation"
     );
 }
+
+/// `cru.defaults` in the user's `init.lua` reaches a real session.
+///
+/// The two halves this proves, neither of which held before:
+///
+/// 1. `cru.defaults` exists on the daemon VM. It was registered only on
+///    session VMs, so this assignment was a nil-index error and the user's
+///    only route to it was a workspace file the daemon no longer executes.
+/// 2. The value wins over the shipped defaults file, which assigns
+///    `cru.defaults.system_prompt` itself. The session VM runs the two files
+///    in order — defaults, then this one — so ordinary assignment decides it.
+///
+/// Two keys, because they prove different halves. `thinking_budget` is a key
+/// the shipped file never touches; `system_prompt` is one it always sets, so
+/// only the second proves the order.
+#[tokio::test]
+async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
+    let daemon = TestDaemon::start_with_home_setup(|home| {
+        let config_dir = home.join(".config").join("crucible");
+        std::fs::create_dir_all(&config_dir)?;
+        std::fs::write(
+            config_dir.join("init.lua"),
+            "cru.defaults.thinking_budget = 4242\ncru.defaults.system_prompt = \"Only haiku.\"",
+        )?;
+        Ok(())
+    })
+    .await
+    .expect("daemon must boot with the fixture home");
+
+    let mut conn = RpcConn::connect(&daemon.socket_path)
+        .await
+        .expect("connect");
+
+    let created = conn
+        .call_method(
+            "session.create",
+            serde_json::json!({ "session_type": "chat" }),
+            1,
+        )
+        .await;
+    let session_id = created["result"]["session_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("session.create failed: {created}"))
+        .to_string();
+
+    // An agent that names no budget of its own, so the default has to fill it.
+    let configured = conn
+        .call_method(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": session_id,
+                "agent": {
+                    "agent_type": "internal",
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "system_prompt": "",
+                }
+            }),
+            2,
+        )
+        .await;
+    assert!(
+        configured["error"].is_null(),
+        "configure_agent failed: {configured}"
+    );
+
+    let session = conn
+        .call_method(
+            "session.get",
+            serde_json::json!({ "session_id": session_id }),
+            3,
+        )
+        .await;
+    assert_eq!(
+        session["result"]["agent"]["thinking_budget"].as_i64(),
+        Some(4242),
+        "the user's init.lua default must reach the session: {session}"
+    );
+    assert_eq!(
+        session["result"]["agent"]["system_prompt"].as_str(),
+        Some("Only haiku."),
+        "and must win over the shipped defaults file, which sets it too: {session}"
+    );
+}
+
+/// `cru.modes.auto = nil` in the user's `init.lua` removes the shipped mode.
+///
+/// The point of an exec order rather than an override tier: removal needs no
+/// mechanism of its own. The session VM runs the defaults file, which declares
+/// `auto`, and then this file, which unsets it. Anything that re-applied the
+/// first file's values on top would take this test red.
+#[tokio::test]
+async fn a_shipped_mode_can_be_removed_from_the_users_init_lua() {
+    let daemon = TestDaemon::start_with_home_setup(|home| {
+        let config_dir = home.join(".config").join("crucible");
+        std::fs::create_dir_all(&config_dir)?;
+        std::fs::write(config_dir.join("init.lua"), "cru.modes.auto = nil")?;
+        Ok(())
+    })
+    .await
+    .expect("daemon must boot with the fixture home");
+
+    let mut conn = RpcConn::connect(&daemon.socket_path)
+        .await
+        .expect("connect");
+
+    let created = conn
+        .call_method(
+            "session.create",
+            serde_json::json!({ "session_type": "chat" }),
+            1,
+        )
+        .await;
+    let session_id = created["result"]["session_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("session.create failed: {created}"))
+        .to_string();
+
+    let modes = conn
+        .call_method(
+            "session.list_modes",
+            serde_json::json!({ "session_id": session_id }),
+            2,
+        )
+        .await;
+    let ids: Vec<&str> = modes["result"]["modes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("session.list_modes failed: {modes}"))
+        .iter()
+        .filter_map(|m| m["id"].as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["ask", "plan"],
+        "the user's file runs after the defaults file, so its removal stands: {modes}"
+    );
+}

@@ -6,7 +6,7 @@
 //! | profile | built by | what runs on it |
 //! |---|---|---|
 //! | [`VmProfile::Daemon`] | [`crate::daemon_plugins::DaemonPluginLoader::new`] | every plugin, and the user's `init.lua` |
-//! | [`VmProfile::Session`] | `AgentManager::build_session_state` | `runtime/defaults/init.lua`, `.crucible/lua/init.lua` |
+//! | [`VmProfile::Session`] | `AgentManager::build_session_state` | `runtime/defaults/init.lua` |
 //! | [`VmProfile::Config`] | [`crucible_lua::config::LuaConfigLoader`] | the CLI's config read (`cru config`, `cru doctor`) |
 //!
 //! One definitions file used to describe the daemon profile and stand in for

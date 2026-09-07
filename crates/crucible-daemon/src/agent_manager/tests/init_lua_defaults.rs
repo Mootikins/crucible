@@ -15,44 +15,62 @@ use crate::test_support::{kiln_name, temp_session_manager};
 use crucible_core::config::components::permissions::PermissionDecision;
 use crucible_lua::{execute_permission_hooks, PermissionHookResult, PermissionRequest};
 
-async fn session_with_defaults() -> (TempDir, Arc<AgentManager>, String) {
-    let tmp = TempDir::new().unwrap();
+/// A daemon VM that ran `BUILTIN_INIT_LUA` and then `extra`, plus a session
+/// wired to it exactly as `Server::bind_with_plugin_config` wires production.
+///
+/// `extra` stands in for `~/.config/crucible/init.lua`, which runs second, so
+/// an assignment in it wins and `cru.modes.x = nil` removes.
+///
+/// One VM runs every file. The session VM runs none, so planting a file for a
+/// session to find would prove nothing.
+async fn session_with_lua(
+    extra: &str,
+) -> (
+    crate::daemon_plugins::DaemonPluginLoader,
+    Arc<AgentManager>,
+    Arc<SessionManager>,
+    String,
+) {
+    let loader = crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+        .expect("daemon VM");
+    let src = format!("{}\n{}", crucible_lua::BUILTIN_INIT_LUA, extra);
+    loader
+        .executor()
+        .lua()
+        .load(&src)
+        .set_name("test defaults")
+        .exec()
+        .expect("the defaults file and the fixture must load");
+
     let session_manager = temp_session_manager();
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+        .expect("session");
+    let agent_manager = Arc::new(
+        create_test_agent_manager(session_manager.clone())
+            .with_session_stores(Some(loader.session_stores())),
+    );
+    agent_manager.set_daemon_permissions(loader.permission_registry());
+    agent_manager.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
     let id = session.id.to_string();
-    (tmp, agent_manager, id)
+    (loader, agent_manager, session_manager, id)
 }
 
-/// Run the session VM's registered permission hooks the same way
-/// `AgentManager::run_permission_hooks` does.
-async fn run_permission_hooks(
-    agent_manager: &AgentManager,
-    session_id: &str,
-    request: PermissionRequest,
+/// Run the daemon VM's permission hooks the way the tool gate does.
+fn run_permission_hooks(
+    loader: &crate::daemon_plugins::DaemonPluginLoader,
+    request: &PermissionRequest,
 ) -> PermissionHookResult {
-    let state = agent_manager.get_or_create_session_state(session_id);
-    let guard = state.lock().await;
-    let hooks = guard.permission_hooks.lock().unwrap();
-    let functions = guard.permission_functions.lock().unwrap();
+    let (hooks, functions, lua) = loader.permission_registry();
+    let hooks = hooks.lock().unwrap();
+    let functions = functions.lock().unwrap();
     assert!(
         !hooks.is_empty(),
-        "defaults/init.lua must register a permission hook on the session VM; \
+        "defaults/init.lua must register a permission hook on the daemon VM; \
          an empty list means cru.permissions.on_request was missing there"
     );
-    execute_permission_hooks(&guard.lua, &hooks, &functions, &request).unwrap()
+    execute_permission_hooks(&lua, &hooks, &functions, request).unwrap()
 }
 
 fn tool_request(mode: &str) -> PermissionRequest {
@@ -70,18 +88,18 @@ fn tool_request(mode: &str) -> PermissionRequest {
 /// is asserted in `the_auto_mode_stance_is_allow_and_plan_is_deny`.
 #[tokio::test]
 async fn auto_mode_registers_no_permission_hook() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("auto")).await;
+    let result = run_permission_hooks(&vm, &tool_request("auto"));
 
     assert_eq!(result, PermissionHookResult::Prompt);
 }
 
 #[tokio::test]
 async fn normal_mode_still_reaches_the_prompt() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("ask")).await;
+    let result = run_permission_hooks(&vm, &tool_request("ask"));
 
     assert_eq!(
         result,
@@ -96,9 +114,9 @@ async fn normal_mode_still_reaches_the_prompt() {
 /// independently — this makes it legible and extensible, not load-bearing.
 #[tokio::test]
 async fn plan_mode_denies_a_mutating_tool() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("plan")).await;
+    let result = run_permission_hooks(&vm, &tool_request("plan"));
 
     assert_eq!(result, PermissionHookResult::Deny);
 }
@@ -109,13 +127,13 @@ async fn plan_mode_denies_a_mutating_tool() {
 /// classification instead of the hook assuming.
 #[tokio::test]
 async fn plan_mode_does_not_deny_a_read_only_tool() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
 
     let mut request = tool_request("plan");
     request.tool_name = "read_file".to_string();
     request.is_safe = true;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, request).await;
+    let result = run_permission_hooks(&vm, &request);
 
     assert_eq!(
         result,
@@ -129,12 +147,12 @@ async fn plan_mode_does_not_deny_a_read_only_tool() {
 /// would look like it "just doesn't work".
 #[tokio::test]
 async fn request_without_a_mode_falls_through_to_the_prompt() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
 
     let mut request = tool_request("auto");
     request.mode = None;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, request).await;
+    let result = run_permission_hooks(&vm, &request);
 
     assert_eq!(result, PermissionHookResult::Prompt);
 }
@@ -169,7 +187,7 @@ fn bare_agent() -> SessionAgent {
 
 #[tokio::test]
 async fn an_agent_with_no_prompt_of_its_own_gets_the_default() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     let session_manager = agent_manager.session_manager.clone();
 
     let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
@@ -188,7 +206,7 @@ async fn an_agent_with_no_prompt_of_its_own_gets_the_default() {
 /// in-process proxy for "the UIs can see it".
 #[tokio::test]
 async fn the_default_is_visible_as_session_state_not_just_at_send_time() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     let session_manager = agent_manager.session_manager.clone();
 
     configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
@@ -208,7 +226,7 @@ async fn the_default_is_visible_as_session_state_not_just_at_send_time() {
 /// Defaults fill, they never override — that is what makes them defaults.
 #[tokio::test]
 async fn an_agent_card_prompt_wins_over_the_default() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     let session_manager = agent_manager.session_manager.clone();
 
     let mut agent = bare_agent();
@@ -219,76 +237,17 @@ async fn an_agent_card_prompt_wins_over_the_default() {
     assert_eq!(configured.system_prompt, "You are a haiku bot.");
 }
 
-/// `cru.defaults.x = …` is ordinary assignment on an ordinary VM, so a
-/// later file overrides an earlier one with no special mechanism. This is the
-/// whole extensibility story for defaults — if it fails, users cannot change
-/// a shipped default without editing the shipped file.
-#[tokio::test]
-async fn a_user_init_lua_can_replace_a_shipped_default() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
-        r#"cru.defaults.system_prompt = "Only haiku.""#,
-    )
-    .unwrap();
-
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
-
-    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
-
-    assert_eq!(
-        agent.system_prompt, "Only haiku.",
-        "user init.lua runs after the built-in defaults, so its assignment must win"
-    );
-}
-
 /// The append idiom, end to end: a user file extends the shipped prompt
 /// instead of replacing it, using plain string concatenation.
 #[tokio::test]
 async fn a_user_init_lua_can_append_to_a_shipped_default() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.defaults.system_prompt =
              cru.defaults.system_prompt .. "\n\nAnswer in British English.""#,
     )
-    .unwrap();
+    .await;
 
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
-
-    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
     assert!(
         agent.system_prompt.contains("Crucible"),
@@ -306,35 +265,15 @@ async fn a_user_init_lua_can_append_to_a_shipped_default() {
 /// this VM, so every hook registered against it silently never ran.
 #[tokio::test]
 async fn on_session_start_fires_and_can_set_this_sessions_values() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.on_session_start(function(session)
              session.system_prompt = "per-session prompt"
              session.temperature = 0.25
            end)"#,
     )
-    .unwrap();
+    .await;
 
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
-
-    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
     assert_eq!(agent.system_prompt, "per-session prompt");
     assert_eq!(agent.temperature, Some(0.25));
@@ -344,30 +283,14 @@ async fn on_session_start_fires_and_can_set_this_sessions_values() {
 /// the caller named a model, so its choice replaces that one.
 #[tokio::test]
 async fn on_session_start_can_pick_the_model() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.on_session_start(function(session)
              session.model = "hook-picked-model"
            end)"#,
     )
-    .unwrap();
+    .await;
 
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
-
-    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
     assert_eq!(agent.model, "hook-picked-model");
 }
@@ -378,34 +301,14 @@ async fn on_session_start_can_pick_the_model() {
 /// inside the hook and appending would error.
 #[tokio::test]
 async fn on_session_start_sees_the_global_default_and_can_extend_it() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.on_session_start(function(session)
              session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
            end)"#,
     )
-    .unwrap();
+    .await;
 
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
-
-    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
     assert!(
         agent.system_prompt.contains("Crucible"),
@@ -417,35 +320,15 @@ async fn on_session_start_sees_the_global_default_and_can_extend_it() {
 /// A hook that throws must not take the session down, nor stop later hooks.
 #[tokio::test]
 async fn a_failing_start_hook_does_not_break_the_session() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.on_session_start(function(session) error("boom") end)
            cru.on_session_start(function(session)
              session.system_prompt = "second hook ran"
            end)"#,
     )
-    .unwrap();
+    .await;
 
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
-
-    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
 
     assert_eq!(
         agent.system_prompt, "second hook ran",
@@ -459,35 +342,15 @@ async fn a_failing_start_hook_does_not_break_the_session() {
 /// comment offered exactly this override as an example.
 #[tokio::test]
 async fn a_user_hook_overrides_the_shipped_auto_approve() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (vm, _am, _sm, _id) = session_with_lua(
         r#"cru.permissions.on_request(function(request)
              if request.tool_name == "bash" then return { deny = true } end
              return nil
            end)"#,
     )
-    .unwrap();
+    .await;
 
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
-
-    let result = run_permission_hooks(&agent_manager, &session.id, tool_request("auto")).await;
+    let result = run_permission_hooks(&vm, &tool_request("auto"));
 
     assert_eq!(
         result,
@@ -501,10 +364,9 @@ async fn a_user_hook_overrides_the_shipped_auto_approve() {
 /// above would then be the only thing standing between us and that regression.
 #[tokio::test]
 async fn the_shipped_permission_hook_registers_behind_user_hooks() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
-    let state = agent_manager.get_or_create_session_state(&session_id);
-    let guard = state.lock().await;
-    let hooks = guard.permission_hooks.lock().unwrap();
+    let (vm, _am, _sm, _session_id) = session_with_lua("").await;
+    let (hooks, _functions, _lua) = vm.permission_registry();
+    let hooks = hooks.lock().unwrap();
 
     assert!(!hooks.is_empty(), "the shipped defaults register hooks");
     for hook in hooks.iter() {
@@ -522,7 +384,7 @@ async fn the_shipped_permission_hook_registers_behind_user_hooks() {
 
 #[tokio::test]
 async fn the_shipped_modes_are_declared_in_lua() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
 
     let modes = agent_manager.session_modes(&session_id);
     let ids: Vec<String> = modes
@@ -543,31 +405,15 @@ async fn the_shipped_modes_are_declared_in_lua() {
 /// is what a user actually reads for any mode that did not declare one.
 #[tokio::test]
 async fn a_declared_modes_label_reaches_the_descriptor() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua(
         r#"cru.modes.acceptEdits = { permissions = "ask" }
            cru.modes.deepReview = { label = "Deep review", permissions = "ask" }"#,
     )
-    .unwrap();
-
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
-    let _vm = agent_manager.get_or_create_session_state(&session.id);
+    .await;
+    let _vm = agent_manager.get_or_create_session_state(&session_id);
 
     let labels: Vec<(String, String)> = agent_manager
-        .session_modes(&session.id)
+        .session_modes(&session_id)
         .available_modes
         .iter()
         .map(|m| (m.id.0.to_string(), m.name.clone()))
@@ -601,7 +447,7 @@ async fn a_declared_modes_label_reaches_the_descriptor() {
 /// degrade — the alias is what stops that.
 #[tokio::test]
 async fn the_former_normal_id_still_resolves_to_ask() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     // Declaring the modes is what loading the session's VM does.
     let _vm = agent_manager.get_or_create_session_state(&session_id);
 
@@ -620,8 +466,8 @@ async fn the_former_normal_id_still_resolves_to_ask() {
 /// the same mode twice and put a dead id in the mode cycle.
 #[tokio::test]
 async fn the_former_normal_id_is_not_offered_as_a_mode() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
-    let _vm = agent_manager.get_or_create_session_state(&session_id);
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
+    let _state = agent_manager.get_or_create_session_state(&session_id);
 
     let ids: Vec<String> = agent_manager
         .session_modes(&session_id)
@@ -641,47 +487,27 @@ async fn the_former_normal_id_is_not_offered_as_a_mode() {
 /// you could never enter.
 #[tokio::test]
 async fn a_user_defined_mode_can_be_selected() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(
-        lua_dir.join("init.lua"),
+    let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
         r#"cru.modes.review = {
              description = "Read-only review",
              tools = { "read_*", "*_search" },
              permissions = "ask",
            }"#,
     )
-    .unwrap();
-
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    .await;
     agent_manager
-        .configure_agent(&session.id, test_agent())
+        .configure_agent(&session_id, test_agent())
         .await
         .unwrap();
 
     agent_manager
-        .set_mode(&session.id, "review", None)
+        .set_mode(&session_id, "review", None)
         .await
         .expect("a Lua-declared mode must be selectable");
 
     assert_eq!(
         session_manager
-            .get_session(&session.id)
+            .get_session(&session_id)
             .unwrap()
             .agent
             .unwrap()
@@ -733,7 +559,7 @@ async fn selecting_the_former_normal_id_stores_the_canonical_one() {
 
 #[tokio::test]
 async fn an_undeclared_mode_is_still_rejected() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
 
     let err = agent_manager
         .set_mode(&session_id, "nonsense", None)
@@ -743,33 +569,14 @@ async fn an_undeclared_mode_is_still_rejected() {
     assert!(err.to_string().contains("unknown mode"), "got: {err}");
 }
 
-/// A mode can be deleted outright, which is the point of shadowing the
-/// defaults file rather than merely layering on top of it.
+/// A mode can be deleted outright, which is the point of a defaults file the
+/// user can shadow rather than merely layer on top of.
 #[tokio::test]
 async fn a_shipped_mode_can_be_removed() {
-    let tmp = TempDir::new().unwrap();
-    let lua_dir = tmp.path().join(".crucible/lua");
-    std::fs::create_dir_all(&lua_dir).unwrap();
-    std::fs::write(lua_dir.join("init.lua"), "cru.modes.auto = nil").unwrap();
-
-    let session_manager = temp_session_manager();
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![kiln_name("kiln")],
-            // Explicit: a user `init.lua` is discovered under the session's
-            // WORKSPACE, and this fixture writes it into `tmp`. It used to
-            // arrive there by the `workspace == kilns[0]` sentinel, which said
-            // nothing about where the user meant to be working.
-            Some(tmp.path().to_path_buf()),
-            None,
-        )
-        .await
-        .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("cru.modes.auto = nil").await;
 
     let ids: Vec<String> = agent_manager
-        .session_modes(&session.id)
+        .session_modes(&session_id)
         .available_modes
         .iter()
         .map(|m| m.id.0.to_string())
@@ -786,22 +593,21 @@ async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: Permis
     // hooks at all — the auto/plan behaviour is data now. Hooks stay available
     // for conditional policy, which is why "Prompt" (no hook had an opinion) is
     // the right answer here; the stance is applied later, in the gate.
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
-    let state = agent_manager.get_or_create_session_state(&session_id);
-    let guard = state.lock().await;
-    let hooks = guard.permission_hooks.lock().unwrap();
-    let functions = guard.permission_functions.lock().unwrap();
+    let (vm, _am, _sm, _session_id) = session_with_lua("").await;
+    let (hooks, functions, lua) = vm.permission_registry();
+    let hooks = hooks.lock().unwrap();
+    let functions = functions.lock().unwrap();
 
     let result =
-        crucible_lua::execute_permission_hooks(&guard.lua, &hooks, &functions, &tool_request(mode))
+        crucible_lua::execute_permission_hooks(&lua, &hooks, &functions, &tool_request(mode))
             .unwrap();
     assert_eq!(result, expected);
 }
 
 #[tokio::test]
 async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
-    let _vm = agent_manager.get_or_create_session_state(&session_id);
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
+    let _state = agent_manager.get_or_create_session_state(&session_id);
 
     assert_eq!(
         agent_manager.mode_stance("auto"),
@@ -865,7 +671,7 @@ fn a_mode_can_permit_bash_for_specific_commands_only(command: &str, expected: Pe
 /// defect this whole arc is about.
 #[tokio::test]
 async fn session_modes_reports_the_sessions_own_current_mode() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     agent_manager
         .configure_agent(&session_id, test_agent())
         .await
@@ -891,7 +697,7 @@ async fn session_modes_reports_the_sessions_own_current_mode() {
 /// current — that would put a mode nobody can enforce on the wire.
 #[tokio::test]
 async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     let session_manager = agent_manager.session_manager.clone();
     agent_manager
         .configure_agent(&session_id, test_agent())
@@ -943,7 +749,7 @@ async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
 /// that reaches `cru.defaults` and not `SessionAgent` is the failure mode.
 #[tokio::test]
 async fn a_mode_set_in_a_session_start_hook_reaches_the_agent() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     let session_manager = agent_manager.session_manager.clone();
 
     let defaults = agent_manager.session_defaults();
@@ -964,7 +770,7 @@ async fn a_mode_set_in_a_session_start_hook_reaches_the_agent() {
 /// do not overrule a choice already made.
 #[tokio::test]
 async fn an_agents_own_mode_outranks_the_default() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
     let session_manager = agent_manager.session_manager.clone();
 
     let defaults = agent_manager.session_defaults();

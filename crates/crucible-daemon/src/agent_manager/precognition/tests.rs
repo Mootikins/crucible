@@ -191,8 +191,6 @@ mod format_precognition_context_tests {
 mod precognition_format_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex as StdMutex};
 
     fn make_result(
         doc_id: &str,
@@ -224,8 +222,6 @@ mod precognition_format_hook_tests {
         SessionEventState {
             lua,
             registry,
-            permission_hooks: Arc::new(StdMutex::new(Vec::new())),
-            permission_functions: Arc::new(StdMutex::new(HashMap::new())),
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }
     }
@@ -444,8 +440,6 @@ mod precognition_format_hook_tests {
 mod precognition_select_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex as StdMutex};
 
     /// The registry name every fixture hit is attributed to. It is a NAME, not
     /// a directory: `SearchResult` cannot hold a directory any more, which is
@@ -485,8 +479,6 @@ mod precognition_select_hook_tests {
         SessionEventState {
             lua,
             registry,
-            permission_hooks: Arc::new(StdMutex::new(Vec::new())),
-            permission_functions: Arc::new(StdMutex::new(HashMap::new())),
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }
     }

@@ -1,7 +1,8 @@
 --!strict
 -- Crucible built-in Lua defaults
 -- Loaded into every daemon session VM automatically.
--- Override by creating .crucible/lua/init.lua in your project directory.
+-- Set cru.defaults.* and declare cru.modes.* in ~/.config/crucible/init.lua;
+-- those stores are shared and your values are re-applied over this file.
 
 -- Precognition context formatter
 --
@@ -10,10 +11,7 @@
 -- (event.user_message, event.results, ...). Return a string to use as the
 -- context block, or nil to fall back.
 --
--- Override example in your .crucible/lua/init.lua:
---   cru.on("precognition_format", function(ctx, event)
---     return "## Notes\n" .. event.user_message
---   end)
+-- To change it, register your own handler for this event from a plugin.
 cru.on("precognition_format", function(ctx, event)
   -- `event.payload` guard kept for sessions replaying pre-flattening
   -- recordings; live events are flat.
@@ -76,7 +74,8 @@ end)
 -- containment, the shell policy — are outside modes entirely and stay
 -- unconditional. Widening a mode here cannot widen those.
 --
--- Override or extend from your own init.lua, which runs after this file:
+-- Add a mode from ~/.config/crucible/init.lua. Removing one needs an edit
+-- here, because this file re-declares the three per session:
 --
 --   cru.modes.review = { tools = { "read_*", "*_search" }, permissions = "ask" }
 --   cru.modes.auto   = nil    -- remove it entirely
@@ -154,7 +153,7 @@ end, { priority = 1000 })
 -- left unset.
 --
 -- This is an ordinary assignment, so overriding it is ordinary Lua. In your
--- ~/.config/crucible/init.lua, which runs after this file:
+-- ~/.config/crucible/init.lua, whose values are re-applied over this file:
 --
 --   cru.defaults.system_prompt = "…"                        -- replace
 --   cru.defaults.system_prompt =                            -- append

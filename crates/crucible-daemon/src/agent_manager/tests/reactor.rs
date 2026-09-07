@@ -1326,14 +1326,13 @@ mod handler_budget {
     async fn a_spinning_permission_hook_still_lets_the_request_proceed() {
         let mut h = ReactorTestHarness::new().await;
 
-        h.load_lua(
+        let _vm = h.load_daemon_lua(
             r#"
             cru.permissions.on_request(function(request)
                 while true do end
             end, { priority = 1 })
             "#,
-        )
-        .await;
+        );
 
         h.inject_streaming_agent(vec![
             script::tool_call("call-perm", "bash", serde_json::json!({ "command": "id" })),

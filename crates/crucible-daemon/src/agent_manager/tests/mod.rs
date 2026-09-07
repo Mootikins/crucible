@@ -503,6 +503,21 @@ impl ReactorTestHarness {
         state.lua.load(script).exec().unwrap();
     }
 
+    /// Load a snippet on a daemon VM and bind it, as the daemon does at boot.
+    ///
+    /// Permission hooks live on the daemon VM — the only VM that runs Lua
+    /// files — so a `cru.permissions.on_request` fixture must go here.
+    /// Returns the loader; drop it and the hooks go with it.
+    fn load_daemon_lua(&self, script: &str) -> crate::daemon_plugins::DaemonPluginLoader {
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("daemon VM");
+        loader.executor().lua().load(script).exec().unwrap();
+        self.agent_manager
+            .set_daemon_permissions(loader.permission_registry());
+        loader
+    }
+
     /// Bind a Lua validator registry for `OutputValidation::Lua` tests.
     fn set_lua_validators(
         &self,

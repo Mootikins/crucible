@@ -53,6 +53,7 @@ impl AgentManager {
             notification_hub: _, // startup-bound OnceLock; shared hub, not per-session
             lua_validators: _,   // startup-bound OnceLock
             plugin_handlers: _,  // startup-bound OnceLock
+            daemon_permissions: _, // startup-bound OnceLock; one registry for the process
             isolation: _,        // startup-bound OnceLock
             context_attach: _,   // process-wide buffer, drained per turn
             statusline_exprs: _, // process-wide expression values

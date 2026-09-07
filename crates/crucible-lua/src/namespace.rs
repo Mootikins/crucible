@@ -29,7 +29,9 @@ pub enum CruNamespace {
     Colorscheme,
     Config,
     Context,
-    /// Session VMs only: seeded session defaults (`cru.defaults.x = …`).
+    /// Seeded session defaults (`cru.defaults.x = …`). On the daemon VM,
+    /// where the user's `init.lua` runs, and on every session VM, against the
+    /// same store.
     Defaults,
     /// The kiln's own embedding provider: `cru.embed(kiln, text)`.
     Embed,
@@ -51,7 +53,8 @@ pub enum CruNamespace {
     /// The crate-local stub-generator VM only; the plugin VM has no MCP
     /// client API of its own.
     Mcp,
-    /// Session VMs only: the mode registry.
+    /// The mode registry, on the daemon VM and on every session VM against
+    /// the same store.
     Modes,
     Oil,
     On,
@@ -100,11 +103,12 @@ impl CruNamespace {
     /// placement is stated, and the gate then proves the statement.
     pub fn on_plugin_vm(self) -> bool {
         match self {
-            Self::Defaults | Self::Include | Self::Mcp | Self::Modes | Self::Permissions => false,
+            Self::Include | Self::Mcp => false,
             Self::Check
             | Self::Colorscheme
             | Self::Config
             | Self::Context
+            | Self::Defaults
             | Self::Embed
             | Self::Emitter
             | Self::Errors
@@ -119,6 +123,7 @@ impl CruNamespace {
             | Self::Json
             | Self::Kiln
             | Self::Log
+            | Self::Modes
             | Self::Oil
             | Self::On
             | Self::OnProviderAuth
@@ -126,6 +131,7 @@ impl CruNamespace {
             | Self::OnSessionStart
             | Self::Oq
             | Self::Paths
+            | Self::Permissions
             | Self::Plugin
             | Self::Ratelimit
             | Self::Retry

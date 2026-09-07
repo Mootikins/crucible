@@ -43,6 +43,11 @@ impl Server {
             // never reads.
             self.agent_manager
                 .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+            // `cru.permissions.on_request` from the defaults file and from the
+            // user's `init.lua`. Both ran on this VM; the tool gate needs the
+            // registry and the VM together.
+            self.agent_manager
+                .set_daemon_permissions(loader.permission_registry());
             // The index pipeline fires `index:blocks` through the same pair.
             self.rpc_context
                 .kiln

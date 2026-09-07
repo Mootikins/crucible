@@ -296,6 +296,24 @@ pub async fn evaluate_boot_config_with_paths(
             },
         )));
 
+        // Step 3b: the shipped defaults file, FIRST. It declares the modes,
+        // the default prompt, the precognition formatter and the plan-mode
+        // permission hook. `init.lua` runs after it, so overriding is
+        // ordinary assignment and `cru.modes.auto = nil` removes.
+        //
+        // Fail open: a broken defaults file must not stop the boot. It is not
+        // covered by the rollback below, which restores the state as it was
+        // when this evaluation started — that includes this file's writes.
+        let (defaults_src, defaults_origin) = crate::runtime_defaults::load_defaults(&seed_rtp);
+        debug!(source = %defaults_origin, "Loading Lua defaults");
+        if let Err(e) = lua
+            .load(&defaults_src)
+            .set_name(defaults_origin.to_string())
+            .exec()
+        {
+            warn!(source = %defaults_origin, error = %e, "Failed to load Lua defaults (fail-open)");
+        }
+
         // Step 4: evaluate init.lua once, top to bottom, under the boot
         // deadline. Errors fail open onto the seed — ENTIRELY: the state
         // snapshot below rolls the store, theme, layout, geometry, syntax

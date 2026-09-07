@@ -34,6 +34,19 @@ use super::SessionEventState;
 /// A plugin registry with the `Lua` state it belongs to.
 pub(crate) type PluginHandlers = (Arc<LuaScriptHandlerRegistry>, Arc<Lua>);
 
+/// The daemon VM's permission hooks, their bodies, and the state those bodies
+/// live in.
+///
+/// The `Lua` travels with the registry rather than being taken from
+/// `plugin_lua`: that handle is bound with the VALIDATOR registry, so reading
+/// it here made permission dispatch depend on whether validators happened to
+/// be wired.
+pub type DaemonPermissions = (
+    Arc<std::sync::Mutex<Vec<crucible_lua::PermissionHook>>>,
+    Arc<std::sync::Mutex<std::collections::HashMap<String, mlua::RegistryKey>>>,
+    Arc<Lua>,
+);
+
 /// One stage's pass over a VM. `T` flows in as the accumulator; `B` is the
 /// early result of a `Break`.
 pub(crate) trait VmPass<'a, T, B>:

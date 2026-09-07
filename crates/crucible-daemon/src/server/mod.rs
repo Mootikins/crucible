@@ -382,6 +382,18 @@ impl Server {
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
             crate::delegation::DelegationService::new(session_manager.clone(), event_tx.clone());
+        // The daemon VM registers `cru.defaults` and `cru.modes`, and the
+        // user's `init.lua` has already run on it. Take those handles rather
+        // than the fresh ones the constructor makes.
+
+        // The daemon VM ran every Lua file at boot and owns the resulting
+        // `cru.defaults` and `cru.modes` stores. Take those handles rather
+        // than the empty ones the constructor makes.
+        let session_stores = plugin_loader
+            .lock()
+            .await
+            .as_ref()
+            .map(|loader| loader.session_stores());
         let agent_manager = Arc::new(
             AgentManager::new_with_delegation(
                 AgentManagerParams {
@@ -398,7 +410,8 @@ impl Server {
                 },
                 delegation_service.clone(),
             )
-            .with_runtimepath(params.runtimepath.clone()),
+            .with_runtimepath(params.runtimepath.clone())
+            .with_session_stores(session_stores),
         );
         delegation_service.bind_agent_manager(&agent_manager);
         let subscription_manager = Arc::new(SubscriptionManager::new());

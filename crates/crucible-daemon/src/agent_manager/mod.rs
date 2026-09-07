@@ -28,9 +28,8 @@ use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::types::{AcpKnob, SessionKnob};
 use crucible_lua::{
-    execute_permission_hooks, register_cru_on_api, register_permission_hook_api,
-    LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHook, PermissionHookResult,
-    PermissionRequest,
+    execute_permission_hooks, register_cru_on_api, LuaScriptHandlerRegistry, LuaValidatorRegistry,
+    PermissionHookResult, PermissionRequest,
 };
 use dashmap::DashMap;
 use mlua::Lua;
@@ -232,14 +231,9 @@ pub type AgentFactoryOverride = Box<
         + Sync,
 >;
 
-use mlua::RegistryKey;
-use std::sync::Mutex as StdMutex;
-
 pub(crate) struct SessionEventState {
     lua: Lua,
     registry: LuaScriptHandlerRegistry,
-    permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
-    permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
     /// Counter for spill file naming, persists across messages in a session
     pub(crate) spill_counter: std::sync::atomic::AtomicU32,
 }
@@ -417,6 +411,9 @@ pub struct AgentManager {
     /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
     /// isolated managers, where plugin hooks simply don't fire.
     plugin_handlers: std::sync::OnceLock<PluginHandlers>,
+    /// `cru.permissions.on_request` hooks from the daemon VM — the only VM
+    /// that runs Lua files, so the only place they can be registered.
+    daemon_permissions: std::sync::OnceLock<DaemonPermissions>,
     /// Plugin isolation claims, bound at daemon startup alongside the handlers.
     isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
 
@@ -540,6 +537,7 @@ impl AgentManager {
             card_roots: params.card_roots,
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
+            daemon_permissions: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
             context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
             statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
@@ -606,6 +604,15 @@ impl AgentManager {
 
     /// Snapshot of the plugin hook registry for the stream loop. `None` when
     /// no plugin loader has bound one.
+    /// Bind the daemon VM's permission hooks. Idempotent, like the others.
+    pub fn set_daemon_permissions(&self, registry: DaemonPermissions) {
+        let _ = self.daemon_permissions.set(registry);
+    }
+
+    pub(crate) fn daemon_permissions(&self) -> Option<DaemonPermissions> {
+        self.daemon_permissions.get().cloned()
+    }
+
     pub(crate) fn plugin_handlers(&self) -> Option<PluginHandlers> {
         self.plugin_handlers
             .get()
@@ -876,6 +883,25 @@ impl AgentManager {
     /// exe-relative → built-in), and only the daemon has a configured path to
     /// pass. Call before the first session VM is created; later calls do not
     /// re-run defaults for VMs that already exist.
+    /// Adopt the daemon VM's session-default and mode stores.
+    ///
+    /// Both VMs run the same two files, so both must write the same stores or
+    /// the daemon VM's copy would be a second, invisible tier.
+    ///
+    /// `None` is the loader-less case (most tests): keep the stores this
+    /// manager made for itself.
+    #[must_use]
+    pub fn with_session_stores(
+        mut self,
+        stores: Option<(crucible_lua::SessionDefaults, crucible_lua::ModeRegistry)>,
+    ) -> Self {
+        if let Some((defaults, modes)) = stores {
+            self.session_defaults = defaults;
+            self.modes = modes;
+        }
+        self
+    }
+
     #[must_use]
     pub fn with_runtimepath(mut self, runtimepath: Vec<PathBuf>) -> Self {
         self.runtimepath = runtimepath;
@@ -1608,6 +1634,7 @@ pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 pub(crate) mod vm_pass;
+pub use vm_pass::DaemonPermissions;
 pub(crate) use vm_pass::PluginHandlers;
 
 #[cfg(test)]

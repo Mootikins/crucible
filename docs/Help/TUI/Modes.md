@@ -147,10 +147,8 @@ a different program; a rule that names `rm` never covers `find . -delete`.
 not stop a determined caller. [[Help/Concepts/Permission Precedence]] states the
 guarantee and its limits in full.
 
-Declare a mode in `~/.config/crucible/init.lua` for every session, or in
-`<workspace>/.crucible/lua/init.lua` for one project. That path is the
-session's **workspace** — the directory work happens in — not its kiln; see
-`crates/crucible-daemon/src/agent_manager/session_vm.rs`. Setting
+Declare a mode in `~/.config/crucible/init.lua`. Each session VM runs the
+shipped defaults file first and your file second, so your declaration wins and
 `cru.modes.plan = nil` removes a built-in.
 
 For decisions that depend on the arguments rather than the tool, use a

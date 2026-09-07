@@ -133,6 +133,17 @@ pub struct DaemonPluginLoader {
     /// Live service tasks by owning plugin, recorded by the spawn site so
     /// reload/disable/remove can abort them ([`Self::abort_services`]).
     service_tasks: HashMap<String, Vec<tokio::task::JoinHandle<()>>>,
+    /// The session-default store the user's `init.lua` writes.
+    ///
+    /// Shared with `AgentManager`, which registers the same handle into every
+    /// session VM, so one write at boot reaches every session.
+    session_defaults: crucible_lua::SessionDefaults,
+    /// The mode registry, shared the same way and for the same reason.
+    modes: crucible_lua::ModeRegistry,
+    /// `cru.permissions.on_request` hooks and their bodies. The tool gate
+    /// runs them against this VM's `Lua`.
+    permission_hooks: Arc<std::sync::Mutex<Vec<crucible_lua::PermissionHook>>>,
+    permission_functions: Arc<std::sync::Mutex<HashMap<String, mlua::RegistryKey>>>,
     /// Shared registry of Lua-defined output validators.
     ///
     /// Plugins call `cru.context.register_validator(name, fn)` which inserts
@@ -251,8 +262,7 @@ impl DaemonPluginLoader {
         )?;
 
         // `cru.statusline`, `cru.colorscheme`, `cru.hl`, `cru.geometry` and
-        // `cru.syntax` — NOT `cru.modes` or `cru.defaults`, which only the
-        // session VM registers (`agent_manager/session_vm.rs`).
+        // `cru.syntax`.
         //
         // The daemon evaluates the user's
         // `init.lua` on THIS VM (`daemon_plugins::boot`, step 3), so these
@@ -273,6 +283,34 @@ impl DaemonPluginLoader {
         reg(
             "ui namespaces",
             crucible_lua::config::register_ui_namespaces(lua),
+        )?;
+
+        // `cru.defaults` and `cru.modes`. The stores are the SAME handles the
+        // session VMs read, so `cru.defaults.system_prompt = …` in the user's
+        // `~/.config/crucible/init.lua` reaches every session with no copy
+        // step. `AgentManager` adopts them at bind time.
+        //
+        // A workspace cannot reach these: no workspace file runs on any VM.
+        // This file and the runtimepath's defaults file are the only writers.
+        let session_defaults = crucible_lua::SessionDefaults::new();
+        reg(
+            "defaults",
+            crucible_lua::register_session_defaults(lua, session_defaults.clone()),
+        )?;
+        let modes = crucible_lua::ModeRegistry::new();
+        reg("modes", crucible_lua::register_modes(lua, modes.clone()))?;
+
+        // `cru.permissions`. This VM runs every Lua file, so this is the only
+        // registration; the tool gate dispatches these hooks.
+        let permission_hooks = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let permission_functions = Arc::new(std::sync::Mutex::new(HashMap::new()));
+        reg(
+            "permissions",
+            crucible_lua::register_permission_hook_api(
+                lua,
+                permission_hooks.clone(),
+                permission_functions.clone(),
+            ),
         )?;
 
         let plugin_manager = PluginManager::new();
@@ -333,6 +371,10 @@ impl DaemonPluginLoader {
             session_api: std::sync::Mutex::new(None),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
+            session_defaults,
+            modes,
+            permission_hooks,
+            permission_functions,
             validator_registry,
             handler_registry,
             plugin_config,
@@ -587,6 +629,23 @@ impl DaemonPluginLoader {
     /// `OutputValidation::Lua { name }` against plugin-registered functions.
     pub fn validator_registry(&self) -> Arc<LuaValidatorRegistry> {
         Arc::clone(&self.validator_registry)
+    }
+
+    /// The session-default and mode stores this VM writes.
+    ///
+    /// `AgentManager` adopts both handles, so `cru.defaults.model = …` in the
+    /// user's `init.lua` is read by every session VM built afterwards.
+    pub fn session_stores(&self) -> (crucible_lua::SessionDefaults, crucible_lua::ModeRegistry) {
+        (self.session_defaults.clone(), self.modes.clone())
+    }
+
+    /// The permission hooks registered on this VM, for the tool gate.
+    pub fn permission_registry(&self) -> crate::agent_manager::DaemonPermissions {
+        (
+            self.permission_hooks.clone(),
+            self.permission_functions.clone(),
+            self.plugin_lua(),
+        )
     }
 
     /// Clone of the plugin runtime's `Lua` handle.
