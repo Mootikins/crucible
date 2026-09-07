@@ -21,6 +21,7 @@ pub mod project;
 pub mod prompts;
 pub mod protocol;
 pub mod recording;
+pub mod runtime_path;
 pub mod runtime_roots;
 pub mod serde_helpers;
 pub mod session;
