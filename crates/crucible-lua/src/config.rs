@@ -403,6 +403,53 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
         },
     )?;
 
+    // cru.rtp.append / prepend — sugar over `cru.config.set{runtimepath=…}`.
+    //
+    // NOT a second door, and not because it routes through `merge_from_lua`:
+    // the authority lives in `ConfigStore`'s `LocationPolicy`, so EVERY write
+    // path is subject to it. Verified by breaking this — routing `append`
+    // through `merge_app_config_tagged` instead still leaves it refused after
+    // boot.
+    //
+    // Going through `merge_from_lua` anyway is what buys the other three
+    // things a direct store write would lose: the call-site provenance tag,
+    // the per-key warning naming `file:line`, and the extender that rebuilds
+    // the module search space inside the call.
+    //
+    // It exists because `set` alone cannot express "add one root". Arrays
+    // replace wholesale, and `runtimepath` is withheld from `cru.config.get`,
+    // so a plugin or config cannot read-then-append. Adding a root is the
+    // single most common thing anyone wants to do with a runtimepath, and
+    // making that one call is the point of the path being one list.
+    let rtp_table = lua.create_table()?;
+    let mut rtp = crate::host_registry::Ns::over(lua, "cru.rtp", rtp_table.clone());
+
+    rtp.func("append", "(path: string) -> ()", |lua, path: String| {
+        let mut entries = store_runtimepath();
+        if !entries.iter().any(|e| e == &path) {
+            entries.push(path);
+        }
+        merge_from_lua(lua, serde_json::json!({ "runtimepath": entries }));
+        Ok(())
+    })?;
+
+    rtp.func("prepend", "(path: string) -> ()", |lua, path: String| {
+        let mut entries = store_runtimepath();
+        entries.retain(|e| e != &path);
+        entries.insert(0, path);
+        merge_from_lua(lua, serde_json::json!({ "runtimepath": entries }));
+        Ok(())
+    })?;
+
+    // Reading the path back is safe where reading arbitrary location keys is
+    // not: the caller already knows what it appended, and a config that
+    // cannot see the list cannot append to it idempotently.
+    rtp.func("get", "() -> { string }", |lua, ()| {
+        lua.create_sequence_from(store_runtimepath())
+    })?;
+
+    cru_table.set("rtp", rtp_table)?;
+
     // cru.config.get(key) — read a single TOP-LEVEL value. The key is one
     // name, not a dotted path, and an unset key reads `nil` rather than
     // raising.
@@ -962,6 +1009,101 @@ mod tests {
         assert_eq!(
             config.colors.error,
             AdaptiveColor::from_single(Color::Rgb(255, 0, 0))
+        );
+    }
+
+    /// `cru.rtp.append` inherits `config.set`'s authority, it does not bypass
+    /// it.
+    ///
+    /// `runtimepath` is a location key: the store accepts one only during the
+    /// boot phase. If `rtp.append` wrote through a different door it would be
+    /// an unauthenticated write to a key that names where the daemon executes
+    /// code — the exact hazard `LOCATION_CONFIG_KEYS` exists to prevent.
+    #[test]
+    fn rtp_append_is_withheld_after_boot_like_any_location_key() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        // Set the path the only way it can be set: during boot.
+        begin_boot_store();
+        merge_app_config(serde_json::json!({ "runtimepath": ["/a"] }));
+        end_boot_phase();
+        assert!(!in_boot_phase());
+        let withheld = merge_app_config(serde_json::json!({ "runtimepath": ["/a", "/b"] }));
+        assert!(
+            withheld.contains(&"runtimepath".to_string()),
+            "a runtimepath write after boot must be withheld"
+        );
+    }
+
+    /// `cru.rtp.append` goes through the SAME door as `cru.config.set`.
+    ///
+    /// This is the gate that matters, and it exercises the Lua call rather
+    /// than the store beneath it. `runtimepath` names where the daemon
+    /// executes code, and the RPC socket has no authentication, so an append
+    /// that wrote past the location-key policy would be an unauthenticated
+    /// write to that. Red-proof: route `append` through
+    /// `merge_app_config_tagged` instead of `merge_from_lua` and this fails.
+    #[test]
+    fn rtp_append_from_lua_is_refused_after_boot() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        // Boot: the path is settable, and append extends it.
+        begin_boot_store();
+        lua.load(r#"cru.rtp.append("/a")"#).exec().unwrap();
+        assert_eq!(store_runtimepath(), vec!["/a".to_string()]);
+
+        // After boot: the same call is withheld, and the path does not move.
+        end_boot_phase();
+        let before = store_runtimepath();
+        lua.load(r#"cru.rtp.append("/evil")"#).exec().unwrap();
+        assert_eq!(
+            store_runtimepath(),
+            before,
+            "an append after boot must not reach the store"
+        );
+    }
+
+    /// Append is idempotent, so a config re-evaluated twice does not grow the
+    /// path.
+    #[test]
+    fn rtp_append_does_not_duplicate_an_entry() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        begin_boot_store();
+        lua.load(r#"cru.rtp.append("/a") cru.rtp.append("/a")"#)
+            .exec()
+            .unwrap();
+        assert_eq!(store_runtimepath(), vec!["/a".to_string()]);
+    }
+
+    /// During boot the same write lands, which is what makes append usable
+    /// from `init.lua`.
+    #[test]
+    fn rtp_append_lands_during_the_boot_phase() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+        begin_boot_store();
+        merge_app_config(serde_json::json!({ "runtimepath": ["/a"] }));
+
+        let mut entries = store_runtimepath();
+        entries.push("/b".to_string());
+        merge_app_config(serde_json::json!({ "runtimepath": entries }));
+
+        assert_eq!(
+            store_runtimepath(),
+            vec!["/a".to_string(), "/b".to_string()],
+            "append during boot must extend the path"
         );
     }
 
