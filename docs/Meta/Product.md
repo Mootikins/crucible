@@ -204,7 +204,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Proof:** `crates/crucible-daemon/src/session_bridge.rs`::remove_messages_last_n_rewinds_tree (seeds 3 nodes, removes 2, asserts the tree path), `::remove_messages_indices_truncates_from_start`, `::context_usage_returns_expected_shape`. The tree is authoritative for the prompt (`agent_manager/messaging/stream.rs:258-260`). `compact` is the one member of this module that does nothing — see **Auto-Compaction**.
 - [x] **`cru.context.attach`** `P1` — mid-turn context attachment from a Lua handler · `crucible-lua`, `crucible-daemon`
   - **Gets you:** a handler that finds something useful partway through a turn (say from a `tool_result`) can put it where the agent's *next* LLM call **in that same turn** will see it — deduped by key so a repeated trigger attaches once, capped by a per-session character budget with a typed rejection reason.
-  - **Proof:** `crates/crucible-daemon/src/agent_manager/tests/messaging.rs`::attached_context_reaches_the_agent_within_the_same_turn, `::repeated_triggers_attach_once_per_key`, `::context_attach_is_available_without_any_plugin_boot`
+  - **Proof:** `crates/crucible-daemon/src/agent_manager/tests/messaging.rs`::attached_context_reaches_the_agent_within_the_same_turn, `::repeated_triggers_attach_once_per_key`, `::context_attach_is_available_on_the_handler_vm`
 
 ### Execution Limits
 

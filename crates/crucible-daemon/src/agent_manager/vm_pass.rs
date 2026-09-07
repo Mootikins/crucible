@@ -59,18 +59,19 @@ impl<'a, T, B, F> VmPass<'a, T, B> for F where
 {
 }
 
-/// Which VM a pass is running against. Logs name it so a handler error
-/// points at the right registry.
+/// Which VM a pass is running against.
+///
+/// One variant: every Lua file runs on the daemon VM. Kept as a type rather
+/// than dropped from the pass signature because a second VM is a design
+/// change, and this is where it would have to be named.
 #[derive(Clone, Copy)]
 pub(crate) enum Vm {
-    Session,
     Plugin,
 }
 
 impl fmt::Display for Vm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Vm::Session => "session",
             Vm::Plugin => "plugin",
         })
     }
@@ -86,14 +87,8 @@ pub(crate) async fn fold_vms<'a, T: Into<B>, B>(
     init: T,
     mut pass: impl VmPass<'a, T, B>,
 ) -> B {
-    let acc = {
-        let state = session_state.lock().await;
-        match pass(Vm::Session, state.registry.clone(), state.lua.clone(), init).await {
-            ControlFlow::Break(done) => return done,
-            ControlFlow::Continue(acc) => acc,
-        }
-    };
-    plugin_pass(plugin_handlers, acc, &mut pass).await
+    let _ = session_state;
+    plugin_pass(plugin_handlers, init, &mut pass).await
 }
 
 /// The same two passes over a session state the caller already locked.
@@ -106,11 +101,8 @@ pub(crate) async fn fold_vms_locked<'a, T: Into<B>, B>(
     init: T,
     mut pass: impl VmPass<'a, T, B>,
 ) -> B {
-    let acc = match pass(Vm::Session, state.registry.clone(), state.lua.clone(), init).await {
-        ControlFlow::Break(done) => return done,
-        ControlFlow::Continue(acc) => acc,
-    };
-    plugin_pass(plugin_handlers, acc, &mut pass).await
+    let _ = state;
+    plugin_pass(plugin_handlers, init, &mut pass).await
 }
 
 async fn plugin_pass<'a, T: Into<B>, B>(

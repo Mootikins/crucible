@@ -473,16 +473,14 @@ impl AgentManager {
             return None;
         }
 
-        // `search:rerank` runs inside the search, session VM first. The
-        // handles are cloned out under a short lock so the search itself
-        // holds nothing.
+        // `search:rerank` runs inside the search, on the one VM that holds
+        // handlers. The handles are cloned out so the search itself holds
+        // nothing.
         let rerank = {
-            let session_state = self.get_or_create_session_state(session_id);
-            let state = session_state.lock().await;
-            let mut vms = vec![(state.registry.clone(), state.lua.clone())];
-            if let Some((registry, lua)) = self.plugin_handlers() {
-                vms.push(((*registry).clone(), (*lua).clone()));
-            }
+            let vms = self
+                .plugin_handlers()
+                .map(|(registry, lua)| vec![((*registry).clone(), (*lua).clone())])
+                .unwrap_or_default();
             RerankStage::new(Some(session_id.to_string()), vms)
         };
         let mut results = self

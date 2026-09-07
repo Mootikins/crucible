@@ -4,21 +4,13 @@ use super::*;
 async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             cru.on("pre_llm_call", function(ctx, event)
                 return { prompt = event.prompt .. " [modified]" }
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
@@ -33,21 +25,13 @@ async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
 async fn runtime_dispatch_pre_tool_call_cancels_execution() {
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             cru.on("pre_tool_call", function(ctx, event)
                 return { cancel = true, reason = "blocked" }
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     h.inject_streaming_agent(vec![
         script::tool_call(
@@ -94,21 +78,13 @@ async fn runtime_dispatch_pre_tool_call_cancels_execution() {
 async fn runtime_dispatch_pre_tool_call_handler_error_blocks_execution() {
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             cru.on("pre_tool_call", function(ctx, event)
                 error("handler exploded")
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     h.inject_streaming_agent(vec![
         script::tool_call(
@@ -140,23 +116,15 @@ async fn runtime_dispatch_pre_tool_call_handler_error_blocks_execution() {
 async fn runtime_dispatch_post_llm_call_fires_handler() {
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             post_llm_runtime_fired = false
             cru.on("post_llm_call", function(ctx, event)
                 post_llm_runtime_fired = true
                 return { cancel = true, reason = "ignored" }
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
 
@@ -166,13 +134,11 @@ async fn runtime_dispatch_post_llm_call_fires_handler() {
 
     let fired = timeout(Duration::from_secs(2), async {
         loop {
-            let state = session_state.lock().await;
-            let fired: bool = state
-                .lua
+            let fired: bool = _vm
+                .plugin_lua()
                 .load("return post_llm_runtime_fired")
                 .eval()
                 .unwrap();
-            drop(state);
             if fired {
                 return true;
             }
@@ -206,13 +172,8 @@ async fn runtime_transform_context_appends_system_message() {
     // the structured messages, not just a prompt string.
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             cru.on("transform_context", function(ctx, event)
                 local msgs = event.messages
                 table.insert(msgs, {
@@ -222,10 +183,7 @@ async fn runtime_transform_context_appends_system_message() {
                 return { messages = msgs }
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     let (_prompt, messages) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
@@ -256,21 +214,13 @@ async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
     // in the batch, the agent loop ends after the batch.
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             cru.on("pre_tool_call", function(ctx, event)
                 return { handled = true, result = "final answer", terminate = true }
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     // Single tool_call only; the scripted stream emits ToolBatchEnd and
     // waits for ToolResult feedback. With terminate=true the loop should
@@ -308,13 +258,8 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
     // work short.
     let mut h = ReactorTestHarness::new().await;
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    {
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
+    let _vm = h.load_daemon_lua(
+        r#"
             cru.on("pre_tool_call", function(ctx, event)
                 local tool = event.tool
                 if tool == "submit_final" then
@@ -324,10 +269,7 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
                 end
             end)
         "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    );
 
     // Two tools in one batch: only one signals terminate.
     h.inject_streaming_agent(vec![
@@ -1276,14 +1218,13 @@ mod handler_budget {
     async fn a_pre_llm_call_handler_over_its_budget_leaves_the_turn_running() {
         let mut h = ReactorTestHarness::new().await;
 
-        h.load_lua(
+        let _vm = h.load_daemon_lua(
             r#"
             cru.on("pre_llm_call", { timeout_ms = 300 }, function(ctx, event)
                 while true do end
             end)
             "#,
-        )
-        .await;
+        );
 
         let (received_prompt, _) =
             h.inject_capturing_agent(ReactorTestHarness::default_ok_events());

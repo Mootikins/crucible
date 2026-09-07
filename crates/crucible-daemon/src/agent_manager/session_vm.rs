@@ -104,126 +104,15 @@ impl AgentManager {
             .clone()
     }
 
+    /// Per-session state, and the one-time work that goes with a session's
+    /// first turn.
+    ///
+    /// There is no per-session Lua VM. Every file runs once, on the daemon VM
+    /// (`daemon_plugins::boot`), and a hook receives its session as an
+    /// argument rather than by living in a VM that belongs to it. What is
+    /// genuinely per session is the starting values `on_session_start`
+    /// chooses, so that is what this builds.
     fn build_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
-        let lua = Lua::new();
-        // The handler and permission-hook budgets are enforced from inside this
-        // VM hook, so it goes on before any Lua runs — the defaults file below
-        // included. See `crucible_lua::handler_budget`.
-        if let Err(e) = crucible_lua::install_deadline_hook(&lua) {
-            error!(session_id = %session_id, error = %e, "Failed to install the Lua time budget hook");
-        }
-        let registry = LuaScriptHandlerRegistry::new();
-
-        if let Err(e) = register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        ) {
-            error!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
-        }
-
-        // Every session VM writes to the SAME store, so a default set by any
-        // file on any VM is what `configure_agent` reads.
-        if let Err(e) = crucible_lua::register_session_defaults(&lua, self.session_defaults.clone())
-        {
-            error!(session_id = %session_id, error = %e, "Failed to register cru.defaults API");
-        }
-
-        if let Err(e) = crucible_lua::register_modes(&lua, self.modes.clone()) {
-            error!(session_id = %session_id, error = %e, "Failed to register cru.modes API");
-        }
-
-        // `on_session_start` / `on_session_end`. Registered only by
-        // `LuaExecutor` until now, which is why the API was nil here — the
-        // shipped defaults AND `cru setup`'s user template both advertised it
-        // while it silently did nothing on this VM.
-        match crucible_lua::lua_util::get_or_create_namespace(&lua, "cru") {
-            Ok(table) => {
-                if let Err(e) = crucible_lua::register_hooks_module(&lua, &table) {
-                    error!(session_id = %session_id, error = %e, "Failed to register lifecycle hooks API");
-                }
-                // `cru.log(level, msg)` and the `cru.log.notify` family. The
-                // notify sink installed below is read by these functions, so
-                // a session VM without them would hold a sink nothing calls.
-                if let Err(e) = crucible_lua::register_log_function(&lua, &table) {
-                    error!(session_id = %session_id, error = %e, "Failed to register cru.log");
-                }
-                if let Err(e) = crucible_lua::register_notify_module(&lua, &table) {
-                    error!(session_id = %session_id, error = %e, "Failed to register cru.log.notify");
-                }
-            }
-            Err(e) => {
-                error!(session_id = %session_id, error = %e, "Failed to create Lua namespace");
-            }
-        }
-
-        // Session handlers get the same attachment surface plugin handlers
-        // have; a handler shouldn't behave differently depending on which VM
-        // it was registered in. Unconditional — the registry exists from
-        // `AgentManager::new`, so there is no ordering to get wrong.
-        if let Err(e) = crucible_lua::register_context_attach(&lua, self.context_attach()) {
-            error!(session_id = %session_id, error = %e, "Failed to register cru.context.attach");
-        }
-
-        // `cru.session.*` and `cru.session.current()`, bound to THIS session.
-        // A session VM is 1:1 with its session and never shared, so the
-        // current-session binding is authoritative here — which is what makes
-        // `delegate = true` parentage honest from session Lua. Skipped
-        // entirely (rather than half-registered) when boot wired no API.
-        if let Some(api) = self.session_api() {
-            let mut lua_session = crucible_lua::Session::new(session_id.to_string());
-            if let Some(daemon_session) = self.session_manager.get_session(session_id) {
-                if let Some(workspace) = &daemon_session.workspace {
-                    lua_session =
-                        lua_session.with_workspace(workspace.to_string_lossy().into_owned());
-                }
-                if let Some(isolation) = daemon_session.isolation {
-                    lua_session = lua_session.with_isolation(isolation);
-                }
-            }
-            match crucible_lua::register_session_module(&lua) {
-                Ok(current) => {
-                    current.set_current(lua_session.clone().with_api(api.clone()));
-                    if let Err(e) = crucible_lua::register_sessions_module_with_api_and_current(
-                        &lua,
-                        api.clone(),
-                        current,
-                    ) {
-                        error!(session_id = %session_id, error = %e, "Failed to register cru.session module");
-                    }
-                }
-                Err(e) => {
-                    error!(session_id = %session_id, error = %e, "Failed to register cru.session.current");
-                }
-            }
-        }
-
-        // `cru.log.notify` from this VM is stamped with this session, so the
-        // hub can scope it to the session's workspace and kilns. Without a
-        // hub the call queues in the VM, as it always did.
-        match self.notification_hub() {
-            Some(hub) => {
-                if let Err(e) = crucible_lua::upgrade_with_notify_sink(
-                    &lua,
-                    hub.sink(Some(session_id)),
-                    Some(session_id.to_string()),
-                ) {
-                    error!(session_id = %session_id, error = %e, "Failed to install the notify sink");
-                }
-            }
-            None => {
-                debug!(session_id = %session_id, "no notification hub bound; cru.log.notify queues in the VM");
-            }
-        }
-
-        if let Ok(cru) = lua.globals().get::<mlua::Table>("cru") {
-            if let Err(e) =
-                crucible_lua::register_statusline_exprs(&lua, &cru, self.statusline_exprs())
-            {
-                error!(session_id = %session_id, error = %e, "Failed to register cru.statusline");
-            }
-        }
-
         // The hooks live on the daemon VM, which ran every file at boot.
         // Fire them here rather than at session.create, because this is where
         // the per-session scope they write into is created.
@@ -234,17 +123,14 @@ impl AgentManager {
         // session's starting values; `apply_session_defaults` reads it.
         let scope = crucible_lua::SessionDefaults::new();
         scope.set(self.session_defaults.get());
-        match self.plugin_handlers() {
-            Some((_, daemon_lua)) => self.fire_session_start_hooks(&daemon_lua, session_id, &scope),
-            // No daemon VM bound: a test manager. Nothing registered hooks.
-            None => self.fire_session_start_hooks(&lua, session_id, &scope),
+        // No daemon VM bound is a test manager: nothing registered hooks.
+        if let Some((_, daemon_lua)) = self.plugin_handlers() {
+            self.fire_session_start_hooks(&daemon_lua, session_id, &scope);
         }
         self.slot(session_id).set_overrides(scope.get());
         self.schedule_variable_persist(session_id);
 
         Arc::new(Mutex::new(SessionEventState {
-            lua,
-            registry,
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }))
     }

@@ -49,7 +49,6 @@ impl AgentManager {
             permission_config: _, // daemon config
             card_roots: _,       // daemon config
             plugin_loader: _,    // shared service
-            session_api: _,      // startup-bound OnceLock; shared bridge, not per-session
             notification_hub: _, // startup-bound OnceLock; shared hub, not per-session
             lua_validators: _,   // startup-bound OnceLock
             plugin_handlers: _,  // startup-bound OnceLock

@@ -493,21 +493,11 @@ impl ReactorTestHarness {
             .unwrap();
     }
 
-    /// Load and execute a Lua snippet in this session's Lua VM (for tests
-    /// that register `cru.on(...)` display hooks).
-    async fn load_lua(&self, script: &str) {
-        let session_state = self
-            .agent_manager
-            .get_or_create_session_state(&self.session_id);
-        let state = session_state.lock().await;
-        state.lua.load(script).exec().unwrap();
-    }
-
     /// Load a snippet on a daemon VM and bind it, as the daemon does at boot.
     ///
-    /// Permission hooks live on the daemon VM — the only VM that runs Lua
-    /// files — so a `cru.permissions.on_request` fixture must go here.
-    /// Returns the loader; drop it and the hooks go with it.
+    /// The daemon VM is the only VM that runs Lua files, so every `cru.on`
+    /// and `cru.permissions.on_request` fixture goes here. Returns the
+    /// loader; drop it and the registrations go with it.
     fn load_daemon_lua(&self, script: &str) -> crate::daemon_plugins::DaemonPluginLoader {
         let loader =
             crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
@@ -515,6 +505,13 @@ impl ReactorTestHarness {
         loader.executor().lua().load(script).exec().unwrap();
         self.agent_manager
             .set_daemon_permissions(loader.permission_registry());
+        self.agent_manager
+            .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+        crucible_lua::register_context_attach(
+            &loader.plugin_lua(),
+            self.agent_manager.context_attach(),
+        )
+        .unwrap();
         loader
     }
 
@@ -640,6 +637,41 @@ pub(super) fn test_workspace_root() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
     DIR.get_or_init(|| tempfile::tempdir().expect("test workspace tempdir"))
         .path()
+}
+
+/// A Lua VM with the `cru.on` registry bound — the shape the daemon VM has.
+///
+/// Handlers live on one VM now, so a registry test builds one directly rather
+/// than reaching into a session for it.
+pub(crate) struct HandlerVm {
+    pub(crate) lua: Arc<mlua::Lua>,
+    pub(crate) registry: Arc<crucible_lua::LuaScriptHandlerRegistry>,
+}
+
+impl HandlerVm {
+    /// The pair a dispatch takes, in the shape the daemon binds it.
+    pub(crate) fn handlers(&self) -> crate::agent_manager::PluginHandlers {
+        (self.registry.clone(), self.lua.clone())
+    }
+}
+
+pub(crate) fn handler_vm() -> HandlerVm {
+    let lua = Arc::new(mlua::Lua::new());
+    let registry = Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
+    crucible_lua::register_cru_on_api(
+        &lua,
+        registry.runtime_handlers(),
+        registry.handler_functions(),
+    )
+    .expect("register cru.on");
+    HandlerVm { lua, registry }
+}
+
+/// A session state with no VM in it — all that is left of one.
+pub(crate) fn empty_session_state() -> Arc<Mutex<crate::agent_manager::SessionEventState>> {
+    Arc::new(Mutex::new(crate::agent_manager::SessionEventState {
+        spill_counter: std::sync::atomic::AtomicU32::new(1),
+    }))
 }
 
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {

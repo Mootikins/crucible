@@ -28,8 +28,8 @@ use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::types::{AcpKnob, SessionKnob};
 use crucible_lua::{
-    execute_permission_hooks, register_cru_on_api, LuaScriptHandlerRegistry, LuaValidatorRegistry,
-    PermissionHookResult, PermissionRequest,
+    execute_permission_hooks, LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHookResult,
+    PermissionRequest,
 };
 use dashmap::DashMap;
 use mlua::Lua;
@@ -231,9 +231,15 @@ pub type AgentFactoryOverride = Box<
         + Sync,
 >;
 
+/// What a session owns that the daemon VM cannot.
+///
+/// It holds no `Lua`. Every Lua file runs once, on the daemon VM, and a
+/// handler takes its session as an argument — so a session needs no VM of its
+/// own, and one wedged handler no longer belongs to one session.
+///
+/// Built lazily and cached per session, which is what makes it the right place
+/// to hang once-per-session work: `on_session_start` fires from its builder.
 pub(crate) struct SessionEventState {
-    lua: Lua,
-    registry: LuaScriptHandlerRegistry,
     /// Counter for spill file naming, persists across messages in a session
     pub(crate) spill_counter: std::sync::atomic::AtomicU32,
 }
@@ -381,12 +387,6 @@ pub struct AgentManager {
     /// The service holds a `Weak` back-reference (bound at startup), so this
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
-    /// The daemon session API session VMs register `cru.session` against.
-    /// Bound once at boot (`Server` owns both halves by then); `None` in
-    /// tests and any boot that never wired it, where session VMs simply do
-    /// not get the module — the pre-existing behaviour, not a half-registered
-    /// one.
-    session_api: std::sync::OnceLock<Arc<dyn crucible_lua::DaemonSessionApi>>,
     /// Where a session VM's `cru.log.notify` goes. Bound once at boot beside
     /// `session_api`; `None` in tests and boots that never wired it, where
     /// the VM queues the call instead.
@@ -526,7 +526,6 @@ impl AgentManager {
             session_manager: params.session_manager,
             background_manager: params.background_manager,
             delegation_service,
-            session_api: std::sync::OnceLock::new(),
             notification_hub: std::sync::OnceLock::new(),
             mcp_gateway: params.mcp_gateway,
             llm_config: crate::llm_state::LiveLlmConfig::new(params.llm_config),
@@ -1380,16 +1379,6 @@ impl AgentManager {
     /// Access the delegation service (child-session spawning).
     pub fn delegation_service(&self) -> &Arc<DelegationService> {
         &self.delegation_service
-    }
-
-    /// Bind the daemon session API session VMs register `cru.session`
-    /// against. Idempotent; first binder wins.
-    pub fn set_session_api(&self, api: Arc<dyn crucible_lua::DaemonSessionApi>) {
-        let _ = self.session_api.set(api);
-    }
-
-    fn session_api(&self) -> Option<&Arc<dyn crucible_lua::DaemonSessionApi>> {
-        self.session_api.get()
     }
 
     /// Bind the notification hub session VMs send `cru.log.notify` to.

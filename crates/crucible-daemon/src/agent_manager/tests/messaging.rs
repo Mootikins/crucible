@@ -308,7 +308,7 @@ async fn owns_history_tool_only_turn_is_not_reported_as_an_empty_response() {
 async fn tool_result_handlers_patch_acp_pass_through_results() {
     let mut h = ReactorTestHarness::new().await;
 
-    h.load_lua(
+    let _vm = h.load_daemon_lua(
         r#"
         cru.on("tool_result", function(ctx, event)
             return {
@@ -316,8 +316,7 @@ async fn tool_result_handlers_patch_acp_pass_through_results() {
             }
         end)
     "#,
-    )
-    .await;
+    );
 
     h.inject_agent(Box::new(OwnsToolsMockAgent {
         events: vec![
@@ -485,7 +484,7 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
     let mut h = ReactorTestHarness::new().await;
     std::fs::write(h.workspace().join("test.md"), "content").unwrap();
 
-    h.load_lua(
+    let _vm = h.load_daemon_lua(
         r#"
         cru.on("tool:display_start", function(ctx, event)
             return {
@@ -500,8 +499,7 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
             }
         end)
     "#,
-    )
-    .await;
+    );
 
     h.inject_streaming_agent(vec![
         script::tool_call(
@@ -1165,7 +1163,7 @@ async fn send_revives_evicted_session_from_storage() {
 async fn attached_context_reaches_the_agent_within_the_same_turn() {
     let mut h = ReactorTestHarness::new().await;
 
-    h.load_lua(
+    let _vm = h.load_daemon_lua(
         r#"
         -- No real tool executor in this harness; `handled` supplies the
         -- result. tool_result still fires over it, which is the point.
@@ -1177,8 +1175,7 @@ async fn attached_context_reaches_the_agent_within_the_same_turn() {
                                { key = "k1" })
         end)
     "#,
-    )
-    .await;
+    );
 
     let recorded = Arc::new(StdMutex::new(Vec::new()));
     h.inject_agent(Box::new(InboundRecordingAgent {
@@ -1228,7 +1225,7 @@ async fn attached_context_reaches_the_agent_within_the_same_turn() {
 #[tokio::test]
 async fn repeated_triggers_attach_once_per_key() {
     let mut h = ReactorTestHarness::new().await;
-    h.load_lua(
+    let _vm = h.load_daemon_lua(
         r#"
         cru.on("pre_tool_call", function(ctx, event)
             return { handled = true, result = "file contents" }
@@ -1237,8 +1234,7 @@ async fn repeated_triggers_attach_once_per_key() {
             cru.context.attach(ctx.session_id, "CPP-NOTES", { key = "filetype:cpp" })
         end)
     "#,
-    )
-    .await;
+    );
 
     let recorded = Arc::new(StdMutex::new(Vec::new()));
     h.inject_agent(Box::new(InboundRecordingAgent {
@@ -1270,21 +1266,19 @@ async fn repeated_triggers_attach_once_per_key() {
 /// resulting failure was silent: the handler raised, the hook failed open, and
 /// the retrieval just never happened.
 #[tokio::test]
-async fn context_attach_is_available_without_any_plugin_boot() {
+async fn context_attach_is_available_on_the_handler_vm() {
     let h = ReactorTestHarness::new().await;
+    let vm = h.load_daemon_lua("");
 
-    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
-    let state = session_state.lock().await;
-
-    let kind: String = state
-        .lua
+    let kind: String = vm
+        .plugin_lua()
         .load("return type(cru and cru.context and cru.context.attach)")
         .eval()
         .expect("probe should evaluate");
 
     assert_eq!(
         kind, "function",
-        "cru.context.attach must be present on a session VM with no plugin runtime bound"
+        "cru.context.attach must be present wherever handlers run"
     );
 }
 

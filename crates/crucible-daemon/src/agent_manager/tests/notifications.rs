@@ -14,7 +14,7 @@ struct HubFixture {
     _data_home: TempDir,
     _workspace: TempDir,
     session_id: String,
-    agent_manager: AgentManager,
+    _agent_manager: AgentManager,
     hub: Arc<NotificationHub>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
 }
@@ -41,32 +41,10 @@ async fn hub_fixture() -> HubFixture {
         _data_home: data_home,
         _workspace: workspace,
         session_id: session.id.to_string(),
-        agent_manager,
+        _agent_manager: agent_manager,
         hub,
         event_rx,
     }
-}
-
-#[tokio::test]
-async fn cru_log_notify_on_a_session_vm_reaches_the_hub_stamped_with_the_session() {
-    let mut f = hub_fixture().await;
-
-    let state = f.agent_manager.get_or_create_session_state(&f.session_id);
-    state
-        .lock()
-        .await
-        .lua
-        .load(r#"cru.log.notify("from the session vm")"#)
-        .exec()
-        .expect("cru.log.notify must run on a session VM");
-
-    let event = next_event_or_skip(&mut f.event_rx, "notification_added").await;
-    assert_eq!(event.session_id, f.session_id);
-    assert_eq!(event.data["notification"]["message"], "from the session vm");
-    assert_eq!(
-        event.data["notification"]["scope"]["kilns"][0], "kiln",
-        "the session VM's sink must stamp the session, so the hub takes its kilns"
-    );
 }
 
 #[tokio::test]

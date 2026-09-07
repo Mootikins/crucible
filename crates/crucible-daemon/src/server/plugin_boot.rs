@@ -16,13 +16,9 @@ impl Server {
             let session_api: Arc<dyn crucible_lua::DaemonSessionApi> = Arc::new(
                 crate::session_bridge::DaemonSessionBridge::new(self.rpc_context.clone()),
             );
-            if let Err(e) = loader.upgrade_with_sessions(session_api.clone()) {
+            if let Err(e) = loader.upgrade_with_sessions(session_api) {
                 warn!("Failed to upgrade Lua sessions module: {}", e);
             }
-            // Session VMs register `cru.session` against the same bridge, so
-            // `delegate = true` from a session's own Lua and from the plugin
-            // VM reach one enforcement path.
-            self.agent_manager.set_session_api(session_api);
             // `cru.log.notify` on the plugin VM goes to the hub unstamped;
             // the hub reads `opts.workspace` / `opts.kiln` or goes global.
             // Session VMs get their own stamped sink when they are built.
@@ -48,6 +44,14 @@ impl Server {
             // registry and the VM together.
             self.agent_manager
                 .set_daemon_permissions(loader.permission_registry());
+            // `cru.context.attach` — the drain is per turn, so a handler that
+            // attaches must reach the manager's registry, not a second one.
+            if let Err(e) = crucible_lua::register_context_attach(
+                &loader.plugin_lua(),
+                self.agent_manager.context_attach(),
+            ) {
+                warn!(error = %e, "failed to register cru.context.attach on the plugin VM");
+            }
             // The index pipeline fires `index:blocks` through the same pair.
             self.rpc_context
                 .kiln
