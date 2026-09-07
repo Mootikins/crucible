@@ -407,7 +407,6 @@ Each session tracks agent configuration:
 
 - **Model** — LLM model (e.g., `claude-3-5-sonnet`, `gpt-4o`)
 - **Thinking Budget** — Token budget for extended thinking
-- **Temperature** — Response randomness
 - **Tools** — Available MCP tools
 
 Change mid-session via `:set` or `:model`:

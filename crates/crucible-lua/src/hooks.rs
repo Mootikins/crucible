@@ -42,7 +42,6 @@ const SESSION_HOOK: &str = "(session: any) -> ...any";
 ///
 /// ```lua
 /// cru.on_session_start(function(session)
-///     session.temperature = 0.5
 /// end)
 /// ```
 pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {

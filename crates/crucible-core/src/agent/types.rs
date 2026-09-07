@@ -59,7 +59,7 @@ pub type ToolPolicyMap = HashMap<String, ToolPolicy>;
 /// - Identity (name, version, description)
 /// - Discovery (tags, specialty)
 /// - System prompt (markdown body)
-/// - Model selection (provider/model) and generation knobs
+/// - Model selection (provider/model)
 /// - Tool policy and MCP server references
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCard {

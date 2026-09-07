@@ -16,7 +16,6 @@ default = "local"
 type = "ollama"
 endpoint = "http://localhost:11434"
 default_model = "llama3.2"
-temperature = 0.7
 timeout_secs = 120
 
 # Named provider: cloud OpenAI
@@ -25,16 +24,12 @@ type = "openai"
 api_key = "{env:OPENAI_API_KEY}"  # Reads from environment variable
 endpoint = "https://api.openai.com/v1"  # Optional, uses default if not set
 default_model = "gpt-4o"
-temperature = 0.7
-max_tokens = 4096
 
 # Named provider: remote Ollama instance (e.g., on another machine)
 [llm.providers.remote]
 type = "ollama"
 endpoint = "https://llm.example.com"
 default_model = "qwen-110b-q4"
-temperature = 0.8
-max_tokens = 8192
 timeout_secs = 300
 
 # Named provider: Anthropic Claude
@@ -42,16 +37,12 @@ timeout_secs = 300
 type = "anthropic"
 api_key = "{env:ANTHROPIC_API_KEY}"
 default_model = "claude-sonnet-5"
-temperature = 0.7
-max_tokens = 4096
 
 # Named provider: OpenRouter (meta-provider for multiple LLM APIs)
 [llm.providers.openrouter]
 type = "openrouter"
 api_key = "{env:OPENROUTER_API_KEY}"
 default_model = "openai/gpt-4o"  # Use provider/model format
-temperature = 0.7
-max_tokens = 4096
 
 # Named provider: Z.AI GLM Coding Plan
 # Z.AI provides access to GLM models via their Coding Plan subscription.
@@ -62,8 +53,6 @@ type = "zai"
 endpoint = "https://api.z.ai/api/coding/paas/v4"
 api_key = "{env:GLM_AUTH_TOKEN}"
 default_model = "GLM-4.7"
-temperature = 0.7
-max_tokens = 4096
 
 # Backwards Compatibility Notes:
 #
@@ -73,8 +62,6 @@ max_tokens = 4096
 # [chat]
 # model = "llama3.2"
 # endpoint = "http://localhost:11434"
-# temperature = 0.7
-# max_tokens = 2048
 #
 # This ensures existing configurations continue to work without changes.
 

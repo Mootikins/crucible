@@ -353,7 +353,6 @@ field the old plain table exposed (`session.id`, `session.state`,
   `review_list_hunks`, `review_set_state`, `review_comment`,
   `review_resolve_comment`.
 - On the *current session's* handle (`cru.session.current()`), the live config
-  knobs also work as properties: `s.model = "…"`, `s.temperature = 0.5`,
   `s:get_variable(k)`. These need the per-session RPC binding; on a handle
   from `create`/`get`/`list` they report not-connected, and config changes go
   through `s:configure_agent(...)` instead.
@@ -1276,7 +1275,7 @@ The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The o
 
 ## Session-VM-only: cru.defaults and cru.modes
 
-`cru.defaults` (session default values like `system_prompt`, `temperature`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — and on the daemon VM, against the same stores. A write from `~/.config/crucible/init.lua` at boot therefore reaches every session, and the daemon re-applies it over each session's freshly-loaded defaults file. `cru.permissions` is the one that stays session-only.
+`cru.defaults` (session default values like `system_prompt`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — and on the daemon VM, against the same stores. A write from `~/.config/crucible/init.lua` at boot therefore reaches every session, and the daemon re-applies it over each session's freshly-loaded defaults file. `cru.permissions` is the one that stays session-only.
 
 ## See Also
 

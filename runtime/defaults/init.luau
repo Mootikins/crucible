@@ -1,8 +1,8 @@
 --!strict
 -- Crucible built-in Lua defaults
--- Loaded into every daemon session VM automatically.
--- Set cru.defaults.* and declare cru.modes.* in ~/.config/crucible/init.lua;
--- those stores are shared and your values are re-applied over this file.
+-- Loaded once, at daemon boot, before ~/.config/crucible/init.lua.
+-- That file runs second on the same VM, so anything it assigns wins and
+-- `cru.modes.x = nil` removes. Nothing merges and nothing re-applies.
 
 -- Precognition context formatter
 --
@@ -74,8 +74,8 @@ end)
 -- containment, the shell policy — are outside modes entirely and stay
 -- unconditional. Widening a mode here cannot widen those.
 --
--- Add a mode from ~/.config/crucible/init.lua. Removing one needs an edit
--- here, because this file re-declares the three per session:
+-- Add or remove a mode from ~/.config/crucible/init.lua, which runs after
+-- this file:
 --
 --   cru.modes.review = { tools = { "read_*", "*_search" }, permissions = "ask" }
 --   cru.modes.auto   = nil    -- remove it entirely
@@ -153,7 +153,7 @@ end, { priority = 1000 })
 -- left unset.
 --
 -- This is an ordinary assignment, so overriding it is ordinary Lua. In your
--- ~/.config/crucible/init.lua, whose values are re-applied over this file:
+-- ~/.config/crucible/init.lua, which runs after this file:
 --
 --   cru.defaults.system_prompt = "…"                        -- replace
 --   cru.defaults.system_prompt =                            -- append

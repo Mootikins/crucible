@@ -143,7 +143,6 @@ session_config_setter!(
     optional_param!(req, "precognition_results", as_u64).unwrap_or(5) as usize
 );
 
-// max_tokens can be null to clear the limit, so we use optional.
 // timeout_secs can be null to clear the timeout, so we use optional.
 session_config_setter!(
     handle_session_set_context_budget,

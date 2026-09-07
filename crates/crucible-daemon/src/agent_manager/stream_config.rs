@@ -9,17 +9,16 @@ use super::*;
 #[derive(Clone)]
 pub(crate) struct AgentStreamConfig {
     pub(crate) model: String,
-    // No temperature/max_tokens/thinking_budget/system_prompt here. Those
-    // reach the LLM through the agent handle, built from the same
-    // `SessionAgent` — the copies that used to sit in this struct were never
-    // read, and a second place to look for the authoritative value is worse
-    // than none. Surfaced by rustc once the struct moved out of `mod.rs`.
+    // No thinking_budget or system_prompt here. Those reach the LLM through
+    // the agent handle, built from the same `SessionAgent` — the copies that
+    // used to sit in this struct were never read, and a second place to look
+    // for the authoritative value is worse than none.
     //
-    // That was true of thinking_budget and system_prompt and *not* of
-    // temperature/max_tokens: the factory dropped those two, so deleting the
-    // copies here left them reaching nothing at all. Fixed in the factory
-    // (`with_generation_settings`); the invariant this comment asserts is now
-    // pinned by `generation_settings_reach_the_outgoing_chat_options`.
+    // Deleting a copy is only safe when the factory sets the real one. It was
+    // not for temperature/max_tokens: the factory dropped those two, so
+    // removing their copies here left them reaching nothing. Both are gone
+    // entirely now — genai defaults them per model — and
+    // `the_request_leaves_sampling_to_the_provider` pins that.
     /// Snapshot of the session's `context_budget` for auto-compaction.
     /// `None` disables auto-compaction (no budget to compare against).
     pub(crate) context_budget: Option<usize>,
