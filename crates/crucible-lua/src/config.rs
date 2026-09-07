@@ -480,7 +480,7 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
     Ok(())
 }
 
-/// The roots whose `themes/` subdirectory holds themes, highest priority first.
+/// The `themes/` directories to search, highest priority first.
 ///
 /// The config directory comes first, so a user's own theme wins. Every runtime
 /// root follows — `cru setup` copies the shipped tree into
@@ -489,12 +489,26 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
 /// never listed.
 ///
 /// Impure by design: this is the seam that reads `current_exe()`. Tests call
-/// [`list_available_themes`] with roots of their own, exactly as
+/// [`list_available_themes`] with directories of their own, exactly as
 /// `runtime_skill_paths` is split from `default_discovery_paths`.
+///
+/// It resolves through `search_paths` rather than joining `themes` itself, so
+/// `RuntimeAsset::Themes::reaches` stays in force: a workspace, kiln or
+/// harness root must never supply Lua the theme VM executes.
 pub fn theme_roots(config_dir: &Path) -> Vec<PathBuf> {
-    let mut roots = vec![config_dir.to_path_buf()];
-    roots.extend(crucible_core::runtime_roots::for_current_exe());
-    roots
+    use crucible_core::runtime_path::{build_path, search_paths, PathInputs, RuntimeAsset};
+
+    let runtime = crucible_core::runtime_roots::for_current_exe();
+    let path = build_path(&PathInputs {
+        config_home: Some(config_dir),
+        runtime_roots: &runtime,
+        ..PathInputs::default()
+    });
+
+    search_paths(RuntimeAsset::Themes, &path)
+        .into_iter()
+        .map(|c| c.path)
+        .collect()
 }
 
 /// Theme names across every root's `themes/` subdirectory.
@@ -507,11 +521,10 @@ pub fn theme_roots(config_dir: &Path) -> Vec<PathBuf> {
 /// written because four subsystems open-coded their candidate lists and
 /// drifted; themes were the fifth and were never wired up, so `cru setup`
 /// wrote to a directory no reader looked in.
-pub fn list_available_themes(roots: &[PathBuf]) -> Vec<String> {
+pub fn list_available_themes(theme_dirs: &[PathBuf]) -> Vec<String> {
     let mut names = vec![];
-    for root in roots {
-        let themes_dir = root.join("themes");
-        let Ok(entries) = std::fs::read_dir(&themes_dir) else {
+    for themes_dir in theme_dirs {
+        let Ok(entries) = std::fs::read_dir(themes_dir) else {
             continue;
         };
         for entry in entries.flatten() {
@@ -534,9 +547,8 @@ pub fn list_available_themes(roots: &[PathBuf]) -> Vec<String> {
 /// the lister and the loader cannot disagree — `rpc/ui.rs` built its own path
 /// and reported "available: default, opencode" for themes it then failed to
 /// open.
-pub fn resolve_theme_file(roots: &[PathBuf], name: &str) -> Option<PathBuf> {
-    roots.iter().find_map(|root| {
-        let themes_dir = root.join("themes");
+pub fn resolve_theme_file(theme_dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    theme_dirs.iter().find_map(|themes_dir| {
         crate::source_files::SOURCE_EXTENSIONS
             .iter()
             .map(|ext| themes_dir.join(format!("{name}.{ext}")))
@@ -962,7 +974,7 @@ mod tests {
         std::fs::write(themes_dir.join("light.lua"), "return {}").unwrap();
         std::fs::write(themes_dir.join("not_a_theme.txt"), "").unwrap();
 
-        let themes = list_available_themes(&[tmp.path().to_path_buf()]);
+        let themes = list_available_themes(&[themes_dir.clone()]);
         assert_eq!(themes, vec!["dark".to_string(), "light".to_string()]);
     }
 
@@ -981,7 +993,8 @@ mod tests {
         std::fs::write(config_dir.join("themes").join("mine.luau"), "return {}").unwrap();
         std::fs::write(runtime_dir.join("themes").join("shipped.luau"), "return {}").unwrap();
 
-        let themes = list_available_themes(&[config_dir.clone(), runtime_dir.clone()]);
+        let themes =
+            list_available_themes(&[config_dir.join("themes"), runtime_dir.join("themes")]);
         assert_eq!(
             themes,
             vec!["mine".to_string(), "shipped".to_string()],
@@ -1004,7 +1017,7 @@ mod tests {
         )
         .unwrap();
 
-        let roots = [config_dir.clone(), runtime_dir.clone()];
+        let roots = [config_dir.join("themes"), runtime_dir.join("themes")];
         assert_eq!(list_available_themes(&roots), vec!["default".to_string()]);
         assert_eq!(
             resolve_theme_file(&roots, "default"),
@@ -1020,7 +1033,7 @@ mod tests {
         std::fs::create_dir_all(tmp.path().join("themes")).unwrap();
         std::fs::write(tmp.path().join("themes").join("old.lua"), "return {}").unwrap();
 
-        let roots = [tmp.path().to_path_buf()];
+        let roots = [tmp.path().join("themes")];
         assert_eq!(
             resolve_theme_file(&roots, "old"),
             Some(tmp.path().join("themes").join("old.lua"))
