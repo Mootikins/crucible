@@ -73,6 +73,7 @@ pub mod rpc_client;
 pub mod rpc_helpers;
 pub(crate) mod rules_files;
 pub mod runtime_defaults;
+pub mod runtime_path;
 pub mod scm;
 pub mod server;
 pub mod session_bridge;

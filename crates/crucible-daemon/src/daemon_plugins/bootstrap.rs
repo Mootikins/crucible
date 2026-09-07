@@ -31,73 +31,68 @@ use tracing::{info, warn};
 /// therefore shadows a same-named bundled plugin, which is how you override
 /// one.
 pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, PluginSource)> {
-    let mut paths = Vec::new();
-
-    // 1. CRUCIBLE_PLUGIN_PATH env var (highest priority, for dev/CI)
-    paths.extend(
-        crucible_core::paths::env_plugin_paths()
-            .into_iter()
-            .map(|p| (p, PluginSource::EnvPath)),
-    );
-
-    // 2. User plugins (~/.config/crucible/plugins/)
-    if let Some(dir) = crucible_core::paths::user_plugins_dir() {
-        paths.push((dir, PluginSource::User));
-    }
-
-    // 3a. Configured runtimepath entries, ahead of the shipped runtime so they
-    // can shadow a bundled plugin by name. Additive — 3b still runs.
-    for rtp in runtimepath {
-        let expanded = crate::kiln_manager::expand_tilde_path(rtp);
-        let plugins_dir = expanded.join("plugins");
-        if plugins_dir.exists() {
-            tracing::debug!("Adding runtimepath plugin dir: {:?}", plugins_dir);
-            paths.push((plugins_dir, PluginSource::Runtime));
-        }
-    }
-
-    // 3b. The shipped runtime, always searched.
-    {
-        // Auto-detect: CRUCIBLE_RUNTIME env → exe-relative fallback
-        if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
-            let runtime_plugins = PathBuf::from(runtime_base).join("plugins");
-            if runtime_plugins.exists() {
-                tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
-                paths.push((runtime_plugins, PluginSource::Runtime));
-            }
-        } else {
-            // Installed layout, then the dev tree, then the copy extracted from
-            // the binary; see `runtime_roots`.
-            paths.extend(runtime_plugin_paths(
-                &crucible_core::runtime_roots::for_current_exe(),
-            ));
-        }
-    }
-
-    // Every directory above is one the daemon executes Lua out of, so the
-    // write-protected set has to name it. Recording here rather than asking
-    // `protected` to rebuild the same list is what keeps the two from drifting:
-    // a tree that reaches this return is protected by the act of reaching it.
-    crate::execution_roots::record(paths.iter().map(|(dir, _)| dir.clone()));
-
-    paths
+    daemon_plugin_paths_from(&crate::runtime_path::daemon_path(runtimepath))
 }
 
-/// The `plugins/` directories among `roots`, in the order given.
+/// [`daemon_plugin_paths`] with the path supplied rather than assembled.
 ///
-/// Split out so the auto-detect branch is reachable from a test without
-/// controlling the running binary's location — the sibling resolver in
-/// `skills::discovery` has had `runtime_skill_paths` for the same reason, and
-/// this branch had no equivalent, which is why nothing caught that the bundled
-/// plugins reached no installed user.
-pub(crate) fn runtime_plugin_paths(roots: &[PathBuf]) -> Vec<(PathBuf, PluginSource)> {
-    roots
-        .iter()
-        .map(|root| root.join("plugins"))
-        .filter(|dir| dir.exists())
-        .inspect(|dir| tracing::debug!("Adding runtime plugin path: {:?}", dir))
-        .map(|dir| (dir, PluginSource::Runtime))
+/// Tests must use this. The assembling version reads `dirs::config_dir()` and
+/// `runtime_roots::for_current_exe()`, so a test asserting "this root offers no
+/// plugins" would pass on CI and fail on any machine where `cru` is installed —
+/// which is every developer's. `runtime_plugin_paths` was split out for exactly
+/// this reason before; this is that seam, moved up a level now that one
+/// resolver answers for the whole path.
+pub fn daemon_plugin_paths_from(
+    path: &[crucible_core::runtime_path::RuntimeEntry],
+) -> Vec<(PathBuf, PluginSource)> {
+    let candidates = crucible_core::runtime_path::search_paths(
+        crucible_core::runtime_path::RuntimeAsset::Plugins,
+        path,
+    );
+
+    // Record BEFORE filtering for existence. Protection is judged on the name,
+    // because the directory an agent creates is by definition the one that did
+    // not exist. `search_paths` deliberately consults no filesystem, so this is
+    // the full candidate set.
+    //
+    // Recording here rather than asking `protected` to rebuild the same list is
+    // what keeps the two from drifting: a tree that reaches this function is
+    // protected by the act of reaching it.
+    crate::execution_roots::record(candidates.iter().map(|c| c.path.clone()));
+
+    candidates
+        .into_iter()
+        .filter(|c| c.path.exists())
+        .inspect(|c| tracing::debug!("Adding plugin path: {:?} ({:?})", c.path, c.origin))
+        .map(|c| (c.path, plugin_source_for(c.origin)))
         .collect()
+}
+
+/// How a root's provenance reads to the plugin loader.
+///
+/// `PluginSource` is the loader's older, coarser vocabulary: it distinguishes
+/// the env override, the user's own directory, and everything shipped or
+/// configured. `Origin` is finer, so this is a narrowing.
+///
+/// The four origins no arm names — `Workspace`, `Kiln`, `Harness`, `Plugin` —
+/// cannot appear: `RuntimeAsset::Plugins::reaches` refuses all four, and
+/// `search_paths` drops them before a caller sees them. They map to `Runtime`
+/// rather than panicking because a narrowing function is the wrong place to
+/// enforce containment; the type-level gate in `asset.rs` is the right one, and
+/// `the_daemon_path_offers_plugins_no_containment_hazard` proves it holds.
+fn plugin_source_for(origin: crucible_core::runtime_path::Origin) -> PluginSource {
+    use crucible_core::runtime_path::Origin;
+    match origin {
+        Origin::Env => PluginSource::EnvPath,
+        Origin::UserConfig => PluginSource::User,
+        Origin::Config(_)
+        | Origin::UserRuntime
+        | Origin::Bundled
+        | Origin::Workspace
+        | Origin::Kiln
+        | Origin::Harness
+        | Origin::Plugin => PluginSource::Runtime,
+    }
 }
 
 /// Return default plugin paths (no config runtimepath).

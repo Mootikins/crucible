@@ -509,7 +509,10 @@ fn plugins_extracted_from_the_binary_are_discovered() {
     let extracted = tmp.path().join("runtime-x.y.z");
     crucible_core::runtime_roots::write_bundled_runtime(&extracted).unwrap();
 
-    let paths = runtime_plugin_paths(std::slice::from_ref(&extracted));
+    let paths = daemon_plugin_paths_from(&[crucible_core::runtime_path::RuntimeEntry::root(
+        extracted.clone(),
+        crucible_core::runtime_path::Origin::Bundled,
+    )]);
 
     assert!(
         paths
@@ -533,7 +536,37 @@ fn a_root_without_plugins_is_not_offered() {
     use tempfile::TempDir;
 
     let tmp = TempDir::new().unwrap();
-    assert!(runtime_plugin_paths(&[tmp.path().to_path_buf()]).is_empty());
+    let path = [crucible_core::runtime_path::RuntimeEntry::root(
+        tmp.path().to_path_buf(),
+        crucible_core::runtime_path::Origin::Bundled,
+    )];
+    assert!(daemon_plugin_paths_from(&path).is_empty());
+}
+
+/// A kiln on the path contributes no plugin directory, whatever it contains.
+///
+/// The type-level gate lives in `RuntimeAsset::reaches`; this is the resolver
+/// end of it, next to the loader that would have executed what it found.
+#[test]
+fn a_kiln_entry_offers_the_plugin_loader_nothing() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    std::fs::create_dir_all(tmp.path().join("plugins").join("evil")).unwrap();
+    std::fs::write(
+        tmp.path().join("plugins").join("evil").join("init.luau"),
+        "-- planted",
+    )
+    .unwrap();
+
+    let path = [crucible_core::runtime_path::RuntimeEntry::root(
+        tmp.path().to_path_buf(),
+        crucible_core::runtime_path::Origin::Kiln,
+    )];
+    assert!(
+        daemon_plugin_paths_from(&path).is_empty(),
+        "a kiln must never offer a plugin directory, even one that exists"
+    );
 }
 
 #[test]

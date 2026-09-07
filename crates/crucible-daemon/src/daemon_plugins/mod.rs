@@ -18,11 +18,11 @@ pub use boot::{
     PluginPathsFn,
 };
 pub use bootstrap::{
-    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
-    union_plugin_entries, BootstrapOutcome,
+    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, daemon_plugin_paths_from,
+    default_daemon_plugin_paths, union_plugin_entries, BootstrapOutcome,
 };
 #[cfg(test)]
-pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url, runtime_plugin_paths};
+pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url};
 
 use crate::plugin_tools::PluginRegistry;
 use crucible_core::storage::NoteStore;
