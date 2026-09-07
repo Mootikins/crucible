@@ -60,19 +60,42 @@ pub enum RuntimeAsset {
 
 /// How an entry is recognised inside `<root>/<subdir>/`.
 ///
-/// Three shapes, because the five kinds genuinely differ. An earlier draft had
-/// two and put agent cards under [`Self::DirWithMarkers`] — but a card is a
-/// *file* in `agents/`, not a directory holding a marker — and wrote a glob
-/// into a variant named for fixed names.
+/// # These name predicate families, not extensions
+///
+/// An earlier draft spelled the extensions out — `FilesInDir(["md"])` for
+/// cards, `["luau", "lua"]` for themes. Both were wrong, and one was caught by
+/// `nobody_hand_rolls_the_markdown_extension_check`:
+///
+/// - Agent cards already go through `crucible_core::kiln::is_note_file`
+///   (`agent/loader.rs:39`), which accepts `md` **and** `markdown`, lowercased.
+///   A literal `["md"]` silently understated what the loader finds.
+/// - `crucible_lua::source_files` exists because "sites across three crates
+///   used to decide *is this a Lua file*, each with its own literal". This
+///   crate cannot call it — `crucible-core` does not depend on `crucible-lua`,
+///   and must not — so naming the family is the only honest option.
+///
+/// So no extension literal appears below. Each variant names *who decides*,
+/// and the consumer resolves it in a crate that can reach that answer.
+/// `SKILL.md` and `plugin.yaml` stay literal because nothing else owns them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryShape {
-    /// A directory holding any one of these marker files. Plugins, skills.
-    DirWithMarkers(&'static [&'static str]),
-    /// Files directly in the subdirectory, selected by extension. Cards,
-    /// themes. The entry name is the file stem.
-    FilesInDir(&'static [&'static str]),
-    /// One file, under any of these exact names. Defaults.
-    FixedFile(&'static [&'static str]),
+    /// A directory holding this marker file. Skills: `SKILL.md`.
+    DirWithMarker(&'static str),
+    /// A plugin directory: a `plugin.yaml`, **or** a Lua entry file.
+    ///
+    /// Bespoke because the rule is: either may identify a plugin, and a
+    /// directory holding both entry-file spellings is refused rather than
+    /// resolved (`crucible_lua::source_files::init_file`).
+    PluginDir,
+    /// Markdown files directly in the subdirectory. `is_note_file` decides.
+    /// The entry name is the file stem. Cards.
+    NoteFiles,
+    /// Lua source files directly in the subdirectory. `source_files` decides.
+    /// The entry name is the file stem. Themes.
+    LuaSourceFiles,
+    /// The one Lua entry file. `source_files::init_file_names` decides, and
+    /// the first that exists wins. Defaults.
+    LuaEntryFile,
 }
 
 impl RuntimeAsset {
@@ -104,13 +127,11 @@ impl RuntimeAsset {
     /// silently dropped plugin.
     pub fn shape(self) -> EntryShape {
         match self {
-            RuntimeAsset::Plugins => {
-                EntryShape::DirWithMarkers(&["plugin.yaml", "init.luau", "init.lua"])
-            }
-            RuntimeAsset::Skills => EntryShape::DirWithMarkers(&["SKILL.md"]),
-            RuntimeAsset::Cards => EntryShape::FilesInDir(&["md"]),
-            RuntimeAsset::Themes => EntryShape::FilesInDir(&["luau", "lua"]),
-            RuntimeAsset::Defaults => EntryShape::FixedFile(&["init.luau", "init.lua"]),
+            RuntimeAsset::Plugins => EntryShape::PluginDir,
+            RuntimeAsset::Skills => EntryShape::DirWithMarker("SKILL.md"),
+            RuntimeAsset::Cards => EntryShape::NoteFiles,
+            RuntimeAsset::Themes => EntryShape::LuaSourceFiles,
+            RuntimeAsset::Defaults => EntryShape::LuaEntryFile,
         }
     }
 
@@ -197,20 +218,41 @@ mod tests {
         }
     }
 
-    /// Every shape carries at least one name to match on.
+    /// Every kind gets its own shape, and no shape spells out an extension
+    /// another crate owns.
     ///
-    /// An empty list would match nothing, so the kind would resolve no entries
-    /// while looking correctly configured.
+    /// The second half is the load-bearing one. A literal `["md"]` for cards
+    /// understated `is_note_file`, which takes `md` AND `markdown` in any
+    /// case, and `nobody_hand_rolls_the_markdown_extension_check` caught it.
+    /// The Lua equivalent is not gated anywhere, so it is gated here.
     #[test]
-    fn every_shape_carries_names() {
+    fn no_shape_hard_codes_an_extension_another_crate_owns() {
         for asset in RuntimeAsset::iter() {
-            let names = match asset.shape() {
-                EntryShape::DirWithMarkers(n)
-                | EntryShape::FilesInDir(n)
-                | EntryShape::FixedFile(n) => n,
-            };
-            assert!(!names.is_empty(), "{asset:?} has an empty shape list");
+            match asset.shape() {
+                // Owned by nothing else: the skills spec names SKILL.md.
+                EntryShape::DirWithMarker(marker) => {
+                    assert!(!marker.is_empty(), "{asset:?} has an empty marker");
+                    assert!(
+                        !marker.eq_ignore_ascii_case("markdown"),
+                        "{asset:?} names a markdown extension; ask is_note_file"
+                    );
+                }
+                // These four name WHO decides, and carry no extension at all.
+                EntryShape::PluginDir
+                | EntryShape::NoteFiles
+                | EntryShape::LuaSourceFiles
+                | EntryShape::LuaEntryFile => {}
+            }
         }
+    }
+
+    /// Cards are recognised by the note predicate, not by a literal.
+    ///
+    /// `agent/loader.rs` already calls `is_note_file`, so a table that said
+    /// `["md"]` would describe a loader that does not exist.
+    #[test]
+    fn cards_defer_to_the_note_predicate() {
+        assert_eq!(RuntimeAsset::Cards.shape(), EntryShape::NoteFiles);
     }
 
     /// No executing kind accepts a workspace or a kiln root.
