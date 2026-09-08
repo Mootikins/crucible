@@ -61,8 +61,23 @@ pub struct PluginManifest {
     #[serde(default = "default_main")]
     pub main: String,
 
-    #[serde(default)]
-    pub capabilities: Vec<Capability>,
+    /// Whether this plugin takes tool calls over.
+    ///
+    /// The one declaration the host checks. NOT a sandboxing claim — plugin
+    /// Lua runs in the daemon VM with `io` and `os`, so a declaration checked
+    /// by the host is advisory against a non-adversarial author, and
+    /// installation is the real boundary. It is a COMPOSITION claim: a handler
+    /// returning `handled = true` takes another component's tool call and
+    /// returns BEFORE the permission gate. A plugin that does that by accident
+    /// should be refused; one that means it should say so.
+    ///
+    /// It replaced a ten-name `Capability` enum in which nine names had no
+    /// call site outside the parser's own tests, and could not have had one:
+    /// `lifecycle/mod.rs` installs `register_stdlib_compat` unconditionally,
+    /// so every plugin holds `io` and `os.remove` whether or not it declared
+    /// `filesystem`.
+    #[serde(default, rename = "intercept_tools", alias = "intercept-tools")]
+    pub intercepts_tools: bool,
 
     #[serde(default)]
     pub dependencies: Vec<PluginDependency>,
@@ -73,33 +88,6 @@ pub struct PluginManifest {
 
 fn default_main() -> String {
     "init.lua".to_string()
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum Capability {
-    Filesystem,
-    Network,
-    Shell,
-    #[serde(alias = "vault")]
-    Kiln,
-    Agent,
-    Ui,
-    Config,
-    System,
-    #[serde(rename = "websocket", alias = "web_socket")]
-    WebSocket,
-    /// Take over a tool call: return `{ handled = true, result = … }` to
-    /// replace execution, or rewrite its arguments before dispatch.
-    ///
-    /// Separate from [`Self::Agent`] because it is not observation. A handler
-    /// returning `handled` returns BEFORE the permission gate
-    /// (`agent_manager/messaging/tool_call.rs`), so without this an ordinary
-    /// plugin held the power the container sandbox needs — the sandbox is the
-    /// one legitimate holder, since taking the call over *is* the sandbox.
-    /// `cancel` needs no capability: refusing a call can only narrow.
-    #[serde(rename = "intercept_tools", alias = "intercept-tools")]
-    InterceptTools,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -171,7 +159,7 @@ impl PluginManifest {
                         .map(|n| n.to_string())
                 })
                 .unwrap_or_else(|| "init.lua".to_string()),
-            capabilities: Vec::new(),
+            intercepts_tools: false,
             dependencies: Vec::new(),
             enabled: None,
         })
@@ -206,10 +194,6 @@ impl PluginManifest {
 
     pub fn is_enabled(&self) -> bool {
         self.enabled.unwrap_or(true)
-    }
-
-    pub fn has_capability(&self, cap: Capability) -> bool {
-        self.capabilities.contains(&cap)
     }
 
     pub fn required_dependencies(&self) -> impl Iterator<Item = &PluginDependency> {
@@ -370,7 +354,7 @@ version: "1.0.0"
         assert_eq!(manifest.name, "my-plugin");
         assert_eq!(manifest.version, "1.0.0");
         assert_eq!(manifest.main, "init.lua");
-        assert!(manifest.capabilities.is_empty());
+        assert!(!manifest.intercepts_tools);
     }
 
     #[test]
@@ -384,10 +368,7 @@ license: MIT
 main: lua/init.lua
 init: setup
 
-capabilities:
-  - filesystem
-  - shell
-  - kiln
+intercept_tools: true
 
 dependencies:
   - name: other-plugin
@@ -408,11 +389,7 @@ exports:
         assert_eq!(manifest.author, "Test Author");
         assert_eq!(manifest.license, Some("MIT".to_string()));
         assert_eq!(manifest.main, "lua/init.lua");
-        assert_eq!(manifest.capabilities.len(), 3);
-        assert!(manifest.has_capability(Capability::Filesystem));
-        assert!(manifest.has_capability(Capability::Shell));
-        assert!(manifest.has_capability(Capability::Kiln));
-        assert!(!manifest.has_capability(Capability::Network));
+        assert!(manifest.intercepts_tools);
         assert_eq!(manifest.dependencies.len(), 2);
         assert_eq!(manifest.required_dependencies().count(), 1);
     }
@@ -570,7 +547,7 @@ enabled: false
         assert_eq!(manifest.name, "my-plugin");
         assert_eq!(manifest.version, "0.0.0");
         assert_eq!(manifest.main, "init.lua");
-        assert!(manifest.capabilities.is_empty());
+        assert!(!manifest.intercepts_tools);
         assert!(manifest.dependencies.is_empty());
     }
 
@@ -585,12 +562,9 @@ enabled: false
         let yaml = r#"
 name: hermit
 version: "0.1.0"
-capabilities:
-  - vault
-  - ui
+intercept_tools: true
 "#;
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(manifest.has_capability(Capability::Kiln));
-        assert!(manifest.has_capability(Capability::Ui));
+        assert!(manifest.intercepts_tools);
     }
 }

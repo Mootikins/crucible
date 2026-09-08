@@ -6,12 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - filesystem
-  - kiln
-  # `setup(cfg)` reads the `[plugins.todo-list]` section below.
-  - config
-
 exports:
   tools:
     - tasks_list

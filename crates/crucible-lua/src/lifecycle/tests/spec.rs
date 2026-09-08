@@ -1,6 +1,6 @@
 use super::{create_spec_plugin, create_test_plugin};
 use crate::lifecycle::{load_plugin_spec_from_source, PluginManager};
-use crate::manifest::{Capability, PluginState};
+use crate::manifest::PluginState;
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -207,19 +207,19 @@ return {
 }
 
 #[test]
-fn test_capabilities_from_spec() {
+fn a_spec_can_declare_that_it_intercepts_tools() {
     let source = r#"
 return {
     name = "cap-test",
     version = "1.0.0",
-    capabilities = { "kiln", "ui", "config" },
+    intercepts_tools = true,
 }
 "#;
     let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
         .unwrap()
         .unwrap();
 
-    assert_eq!(spec.capabilities, vec!["kiln", "ui", "config"]);
+    assert!(spec.intercepts_tools);
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn test_spec_plugin_without_manifest() {
 }
 
 #[test]
-fn test_spec_capabilities_merged_into_manifest() {
+fn a_spec_intercept_declaration_reaches_the_manifest() {
     let temp = TempDir::new().unwrap();
     create_spec_plugin(temp.path(), "cap-merge");
 
@@ -311,7 +311,7 @@ fn test_spec_capabilities_merged_into_manifest() {
     manager.load("cap-merge").unwrap();
 
     let plugin = manager.get("cap-merge").unwrap();
-    assert!(plugin.manifest.has_capability(Capability::Kiln));
+    assert!(plugin.manifest.intercepts_tools);
 }
 
 #[test]

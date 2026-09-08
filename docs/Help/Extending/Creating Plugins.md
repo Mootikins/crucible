@@ -243,14 +243,18 @@ author: Your Name
 dependencies:
   - name: core-utils
 
-# Optional: declared capabilities — INFORMATIONAL. All plugins share one
-# Lua VM, so per-plugin module gating is not enforced; treat this as
-# documentation of what the plugin touches. Valid values: filesystem,
-# network, shell, kiln, agent, ui, config, system, websocket. An invalid
-# value fails manifest parsing and the plugin never loads.
-capabilities:
-  - filesystem
-  - kiln
+# Optional: declare that this plugin takes tool calls over.
+#
+# The ONE declaration the host checks. It is not a sandbox claim — plugin Lua
+# runs in the daemon VM with `io` and `os`, so installing a plugin is the real
+# trust decision. It is a COMPOSITION claim: a handler returning
+# `handled = true` takes another component's tool call and returns BEFORE the
+# permission gate. Without this the daemon ignores the takeover and dispatches
+# normally, and logs that it did.
+#
+# It replaced a ten-name `capabilities:` list of which nine names were never
+# checked anywhere and could not have been.
+intercept_tools: true
 ```
 
 See [[Help/Extending/Plugin Manifest]] for the complete manifest specification.
@@ -740,7 +744,7 @@ local function check()
         cru.health.ok("Kiln API available")
     else
         cru.health.error("Kiln API missing", {
-            "Ensure the plugin has 'kiln' in its capabilities",
+            "Check the plugin loaded: `cru doctor`",
         })
     end
 

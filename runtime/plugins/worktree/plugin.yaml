@@ -6,12 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - shell
-  - config
-  # Checks whether a worktree destination already exists before creating it.
-  - filesystem
-
 config:
   properties:
     template:

@@ -6,10 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - network
-  - config
-
 # `PluginManifest` has no `config` field, so nothing parses this block — it is
 # the declaration of record for what the plugin reads, and `lua/config.lua` is
 # what implements it. Keep the two in step; the defaults below are duplicated

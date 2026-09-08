@@ -1032,7 +1032,14 @@ mod plugin_health_visibility_tests {
         write_plugin(
             tmp.path(),
             "bogus-caps",
-            "name: bogus-caps\nversion: \"0.1.0\"\nmain: init.lua\ncapabilities:\n  - teleportation\n",
+            // `version` must be a string. A list is a type error the YAML
+            // reader reports, which is what this test is about: a manifest
+            // that does not parse must reach the CLIENT, not only a `warn!`.
+            //
+            // It used to use an unknown `capabilities:` entry. That field no
+            // longer exists, and an unknown key parses cleanly, so the test
+            // would have passed while asserting nothing.
+            "name: bogus-caps\nversion: [not, a, string]\n",
             "return { name = 'bogus-caps' }\n",
         );
 
@@ -1046,7 +1053,7 @@ mod plugin_health_visibility_tests {
                 e["path"].as_str().is_some_and(|p| p.contains("bogus-caps"))
                     && e["error"]
                         .as_str()
-                        .is_some_and(|m| m.contains("teleportation"))
+                        .is_some_and(|m| m.contains("version"))
             }),
             "discovery failure for 'bogus-caps' should be reported: {result:#}"
         );

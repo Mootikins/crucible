@@ -1,5 +1,5 @@
 use super::registration::RegisteredItem;
-use super::spec::{load_plugin_spec, parse_capability, PluginSpec};
+use super::spec::{load_plugin_spec, PluginSpec};
 use super::{LifecycleError, LifecycleResult, PluginManager};
 use crate::error::format_lua_error;
 use crate::manifest::{LoadedPlugin, PluginManifest, PluginSource};
@@ -254,21 +254,12 @@ impl PluginManager {
                                 plugin.manifest.description = spec_desc.clone();
                             }
                         }
-                        // Merge capabilities from spec. An unrecognised name is
-                        // a typo in the plugin, not a no-op — say so rather
-                        // than dropping it the way the manifest path used to.
-                        for cap_str in &spec.capabilities {
-                            match parse_capability(cap_str) {
-                                Some(cap) => {
-                                    if !plugin.manifest.capabilities.contains(&cap) {
-                                        plugin.manifest.capabilities.push(cap);
-                                    }
-                                }
-                                None => warn!(
-                                    "Plugin {} declares unknown capability '{}' in its spec table; ignoring",
-                                    name, cap_str
-                                ),
-                            }
+                        // The one declaration the host checks. A plugin
+                        // may state it in either place; both are the plugin
+                        // author's word either way, and the check exists to
+                        // catch an accidental takeover, not a hostile one.
+                        if spec.intercepts_tools {
+                            plugin.manifest.intercepts_tools = true;
                         }
                     }
 
@@ -307,7 +298,7 @@ impl PluginManager {
                 plugin.dir.clone(),
                 plugin
                     .manifest
-                    .has_capability(crate::manifest::Capability::InterceptTools),
+                    .intercepts_tools,
             )
         };
 

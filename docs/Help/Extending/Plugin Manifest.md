@@ -1,6 +1,6 @@
 ---
 title: Plugin Manifest
-description: Plugin manifest format for declaring metadata, dependencies, and capabilities
+description: Plugin manifest format for declaring metadata, dependencies, and tool interception
 status: implemented
 tags:
   - extending
@@ -13,12 +13,21 @@ aliases:
 
 # Plugin Manifest
 
-Plugins can include a `plugin.yaml` manifest to declare metadata, dependencies, capabilities, and exports. While simple plugins work without a manifest, adding one enables:
+Plugins can include a `plugin.yaml` manifest to declare metadata, dependencies
+and tool interception. A plugin works without one — a bare `init.luau` is
+enough, and its returned spec table can carry `name`, `version` and
+`description` instead. A manifest adds:
 
 - Dependency management
-- Capability-based permissions
 - Plugin enable/disable
 - Version tracking
+- `intercept_tools`, the one declaration the host checks
+
+There is no capability list. `capabilities:` used to name ten things, of which
+nine were never consulted anywhere and could not have been: every plugin shares
+one Lua VM that installs `io` and `os` unconditionally, so declaring
+`filesystem` granted and withheld nothing. The tenth, `intercept_tools`, is a
+field of its own now.
 
 ## Location
 
@@ -53,12 +62,9 @@ license: MIT
 
 main: lua/init.lua
 
-# Informational — not enforced (all plugins share one Lua VM). An invalid
-# value fails manifest parsing and the plugin never loads.
-capabilities:
-  - filesystem
-  - shell
-  - kiln
+# The one declaration the host checks: this plugin takes tool calls over.
+# See "Tool interception" below.
+intercept_tools: false
 
 dependencies:
   - name: core-utils
@@ -91,29 +97,28 @@ enabled: true
 |-------|------|---------|-------------|
 | `main` | string | "init.lua" | Main file path relative to plugin dir |
 
-### Capabilities
-
-Capabilities declare what resources the plugin needs access to:
+### Tool interception
 
 ```yaml
-capabilities:
-  - filesystem    # Read/write files outside kiln
-  - network       # Make HTTP requests
-  - shell         # Execute shell commands
-  - kiln          # Access knowledge kiln
-  - agent         # Interact with AI agents
-  - ui            # Create custom UI views
-  - config        # Access user configuration
-  - system        # Access system information
-  - websocket     # Open WebSocket connections
+intercept_tools: true
 ```
 
-Those nine values are the complete set.
+The one declaration the host checks. Set it when a `pre_tool_call` handler
+returns `{ handled = true, result = … }` — taking another component's tool call
+over and returning **before** the permission gate. A plugin without it that
+tries is refused, the call dispatches normally, and the daemon logs that it
+did. `{ cancel = true }` needs no declaration: refusing a call can only narrow.
 
-Capabilities are informational: all plugins share one Lua VM, so per-plugin
-module gating is not enforced. There is no restricted sandbox and no
-grant prompt — declare capabilities as documentation of what the plugin
-touches. An invalid value fails manifest parsing and the plugin never loads.
+It is not a sandbox. Plugin Lua runs in the daemon VM with `io` and `os`, so
+installing a plugin is the trust decision; this catches an accidental takeover,
+not a hostile one. Its one legitimate use is the `oci` plugin, where taking the
+call over *is* the sandbox.
+
+The old `capabilities:` list is gone. Nine of its ten names were never
+consulted anywhere, and could not have been — every plugin shares one Lua VM
+that installs `io` and `os` unconditionally, so declaring `filesystem` granted
+and withheld nothing. A manifest that still lists them parses; the field is
+ignored.
 
 ### Dependencies
 

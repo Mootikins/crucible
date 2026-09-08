@@ -713,7 +713,7 @@ mod interception_grant {
     }
 
     /// The manifest that grants the capability.
-    const GRANTED: &str = "name: grabby\nversion: \"0.1.0\"\ncapabilities:\n  - intercept_tools\n";
+    const GRANTED: &str = "name: grabby\nversion: \"0.1.0\"\nintercept_tools: true\n";
 
     #[tokio::test]
     async fn a_daemon_loaded_plugin_without_the_grant_cannot_replace_a_tool_call() {

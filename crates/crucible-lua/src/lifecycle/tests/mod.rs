@@ -97,7 +97,7 @@ return {{
     name = "{}",
     version = "1.0.0",
     description = "Test spec plugin",
-    capabilities = {{ "kiln" }},
+    intercepts_tools = true,
 
     tools = {{
         search = {{

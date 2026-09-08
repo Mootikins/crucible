@@ -6,12 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - config
-  - network
-  - websocket
-  - agent
-
 config:
   properties:
     bot_token:

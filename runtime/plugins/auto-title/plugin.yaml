@@ -6,11 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  # The one-shot completion against the session's own model.
-  - agent
-  - config
-
 config:
   properties:
     prompt:

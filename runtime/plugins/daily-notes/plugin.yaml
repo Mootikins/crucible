@@ -6,12 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - filesystem
-  - kiln
-  # `setup(cfg)` reads the `[plugins.daily-notes]` section below.
-  - config
-
 exports:
   tools:
     - daily_create

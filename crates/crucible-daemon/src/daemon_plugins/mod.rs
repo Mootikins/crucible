@@ -1370,9 +1370,7 @@ impl DaemonPluginLoader {
     /// gate, so an unanswerable question must answer "no".
     fn plugin_may_intercept(&self, name: &str) -> bool {
         self.plugin_manager.get(name).is_some_and(|plugin| {
-            plugin
-                .manifest
-                .has_capability(crucible_lua::manifest::Capability::InterceptTools)
+            plugin.manifest.intercepts_tools
         })
     }
 

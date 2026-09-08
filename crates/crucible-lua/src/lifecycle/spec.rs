@@ -3,7 +3,6 @@ use crate::discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };
 use crate::error::format_lua_error;
-use crate::manifest::Capability;
 use mlua::{Lua, Value};
 use std::path::Path;
 
@@ -17,7 +16,9 @@ pub struct PluginSpec {
     pub name: Option<String>,
     pub version: Option<String>,
     pub description: Option<String>,
-    pub capabilities: Vec<String>,
+    /// The plugin declaring that it takes tool calls over. See
+    /// `PluginManifest::intercepts_tools`.
+    pub intercepts_tools: bool,
     pub tools: Vec<DiscoveredTool>,
     pub commands: Vec<DiscoveredCommand>,
     pub handlers: Vec<DiscoveredHandler>,
@@ -27,21 +28,6 @@ pub struct PluginSpec {
     pub source: Option<String>,
 }
 
-/// Parse a capability string (from Lua spec) to a Capability enum.
-pub(super) fn parse_capability(s: &str) -> Option<Capability> {
-    match s.to_lowercase().as_str() {
-        "filesystem" => Some(Capability::Filesystem),
-        "network" => Some(Capability::Network),
-        "shell" => Some(Capability::Shell),
-        "kiln" => Some(Capability::Kiln),
-        "agent" => Some(Capability::Agent),
-        "ui" => Some(Capability::Ui),
-        "config" => Some(Capability::Config),
-        "system" => Some(Capability::System),
-        "websocket" => Some(Capability::WebSocket),
-        _ => None,
-    }
-}
 
 /// Set up a permissive sandbox for spec extraction.
 ///
@@ -172,6 +158,7 @@ pub(crate) fn load_plugin_spec_from_source(
     // A spec table has at least one recognized declarative field.
     let spec_fields = [
         "name", "version", "tools", "commands", "handlers", "views", "setup",
+        "intercepts_tools",
     ];
     let has_spec_field = spec_fields
         .iter()
@@ -189,13 +176,9 @@ pub(crate) fn load_plugin_spec_from_source(
         ..Default::default()
     };
 
-    // Extract capabilities
-    if let Ok(Value::Table(caps)) = table.get::<Value>("capabilities") {
-        for i in 1..=caps.raw_len() {
-            if let Ok(s) = caps.get::<String>(i) {
-                spec.capabilities.push(s);
-            }
-        }
+    // The one declaration the host checks.
+    if let Ok(Value::Boolean(flag)) = table.get::<Value>("intercepts_tools") {
+        spec.intercepts_tools = flag;
     }
 
     // Extract tools

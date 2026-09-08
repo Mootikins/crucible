@@ -6,12 +6,6 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - kiln
-  - agent
-  - config
-  - filesystem
-
 config:
   properties:
     enabled:

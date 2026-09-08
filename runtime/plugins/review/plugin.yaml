@@ -6,8 +6,5 @@ license: MIT
 
 main: init.luau
 
-capabilities:
-  - agent
-
 exports:
   auto_discover: true
