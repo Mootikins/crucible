@@ -238,20 +238,49 @@ impl PluginManager {
 
                     // Update manifest metadata from spec if available
                     if let Some(plugin) = self.plugins.get_mut(name) {
+                        // The spec's `name` is the plugin's identity when it
+                        // states one; the directory name is only the fallback.
+                        // A repo cloned as `crucible-discord` whose plugin
+                        // declares `name = "discord"` must still receive its
+                        // `[plugins.discord]` config — moving a directory
+                        // cannot change what a plugin IS.
+                        //
+                        // This used to be guarded on `version == "0.0.0"`,
+                        // so the spec's NAME was taken only when the VERSION
+                        // happened to be the placeholder.
                         if let Some(ref spec_name) = spec.name {
-                            // Only override if manifest came from directory defaults
-                            if plugin.manifest.version == "0.0.0" {
+                            if plugin.manifest.synthesized {
                                 plugin.manifest.name = spec_name.clone();
                             }
                         }
                         if let Some(ref spec_version) = spec.version {
-                            if plugin.manifest.version == "0.0.0" {
+                            if plugin.manifest.synthesized {
                                 plugin.manifest.version = spec_version.clone();
                             }
                         }
                         if let Some(ref spec_desc) = spec.description {
                             if plugin.manifest.description.is_empty() {
                                 plugin.manifest.description = spec_desc.clone();
+                            }
+                        }
+                        if let Some(ref author) = spec.author {
+                            if plugin.manifest.author.is_empty() {
+                                plugin.manifest.author = author.clone();
+                            }
+                        }
+                        if let Some(ref license) = spec.license {
+                            if plugin.manifest.license.is_none() {
+                                plugin.manifest.license = Some(license.clone());
+                            }
+                        }
+                        for dep in &spec.dependencies {
+                            if !plugin.manifest.dependencies.iter().any(|d| &d.name == dep) {
+                                plugin.manifest.dependencies.push(
+                                    crate::manifest::PluginDependency {
+                                        name: dep.clone(),
+                                        optional: false,
+                                    },
+                                );
                             }
                         }
                         // The one declaration the host checks. A plugin

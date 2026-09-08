@@ -19,6 +19,11 @@ pub struct PluginSpec {
     /// The plugin declaring that it takes tool calls over. See
     /// `PluginManifest::intercepts_tools`.
     pub intercepts_tools: bool,
+    pub author: Option<String>,
+    pub license: Option<String>,
+    /// Plugin names this one requires. Optional dependencies are not
+    /// expressible here; nothing consumed the `optional` flag.
+    pub dependencies: Vec<String>,
     pub tools: Vec<DiscoveredTool>,
     pub commands: Vec<DiscoveredCommand>,
     pub handlers: Vec<DiscoveredHandler>,
@@ -164,6 +169,9 @@ pub(crate) fn load_plugin_spec_from_source(
         "views",
         "setup",
         "intercepts_tools",
+        "author",
+        "license",
+        "dependencies",
     ];
     let has_spec_field = spec_fields
         .iter()
@@ -180,6 +188,22 @@ pub(crate) fn load_plugin_spec_from_source(
         description: table.get::<String>("description").ok(),
         ..Default::default()
     };
+
+    for (field, slot) in [("author", 0usize), ("license", 1usize)] {
+        if let Ok(Value::String(text)) = table.get::<Value>(field) {
+            let text = text.to_string_lossy().to_string();
+            match slot {
+                0 => spec.author = Some(text),
+                _ => spec.license = Some(text),
+            }
+        }
+    }
+
+    if let Ok(Value::Table(deps)) = table.get::<Value>("dependencies") {
+        for pair in deps.sequence_values::<String>().flatten() {
+            spec.dependencies.push(pair);
+        }
+    }
 
     // The one declaration the host checks.
     if let Ok(Value::Boolean(flag)) = table.get::<Value>("intercepts_tools") {

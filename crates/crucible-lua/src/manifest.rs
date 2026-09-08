@@ -81,6 +81,20 @@ pub struct PluginManifest {
 
     #[serde(default)]
     pub enabled: Option<bool>,
+
+    /// True when no `plugin.yaml` was found and this manifest was synthesized
+    /// from the directory.
+    ///
+    /// It decides whether the Lua spec's `name`, `version` and `description`
+    /// override it: a manifest the author actually wrote is the more specific
+    /// statement and wins; a synthesized one is a placeholder and yields.
+    ///
+    /// This used to be inferred from `version == "0.0.0"`, which is the
+    /// synthesized default — so the spec's NAME was taken only when the
+    /// VERSION happened to still be the placeholder, and a real manifest
+    /// pinned at `0.0.0` would have had its name silently replaced.
+    #[serde(skip)]
+    pub synthesized: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -142,6 +156,7 @@ impl PluginManifest {
             intercepts_tools: false,
             dependencies: Vec::new(),
             enabled: None,
+            synthesized: true,
         })
     }
 

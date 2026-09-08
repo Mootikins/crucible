@@ -222,6 +222,36 @@ return {
     assert!(spec.intercepts_tools);
 }
 
+/// A plugin keeps its declared name in a differently-named directory.
+///
+/// `plugin_name_for_dir` documents the hazard: a repo cloned as
+/// `crucible-discord` whose plugin declares `name = "discord"`. Identity is
+/// the declared name, so `[plugins.discord]` still reaches its `setup`.
+/// Moving a directory must not change what a plugin IS.
+#[test]
+fn a_plugin_keeps_its_declared_name_in_a_differently_named_directory() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("crucible-discord");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.luau"),
+        "return { name = 'discord', version = '1.0.0' }\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("crucible-discord").unwrap();
+
+    assert!(
+        manager.get("discord").is_some()
+            || manager
+                .get("crucible-discord")
+                .is_some_and(|p| p.manifest.name == "discord"),
+        "the declared name must win over the directory name"
+    );
+}
+
 #[test]
 fn test_plain_module_table_not_spec() {
     // A plugin that returns a module table (not a spec) should be None
