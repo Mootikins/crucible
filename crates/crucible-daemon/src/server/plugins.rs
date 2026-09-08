@@ -1051,9 +1051,7 @@ mod plugin_health_visibility_tests {
         assert!(
             errors.iter().any(|e| {
                 e["path"].as_str().is_some_and(|p| p.contains("bogus-caps"))
-                    && e["error"]
-                        .as_str()
-                        .is_some_and(|m| m.contains("version"))
+                    && e["error"].as_str().is_some_and(|m| m.contains("version"))
             }),
             "discovery failure for 'bogus-caps' should be reported: {result:#}"
         );

@@ -4,8 +4,6 @@ description: Retrospective self-improvement — propose kiln notes after a sessi
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 config:
   properties:
     enabled:

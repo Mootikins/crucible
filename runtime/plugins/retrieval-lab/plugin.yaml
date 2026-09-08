@@ -4,8 +4,6 @@ description: "A proof of concept. It exercises the search:rerank and index:block
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 config:
   properties:
     enabled:

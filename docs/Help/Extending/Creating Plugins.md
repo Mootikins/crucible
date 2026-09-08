@@ -234,7 +234,6 @@ Every directory plugin needs a `plugin.yaml` (or `plugin.yml`, `manifest.yaml`, 
 ```yaml
 name: tasks
 version: 1.0.0
-main: init.lua
 description: Task management tools
 author: Your Name
 

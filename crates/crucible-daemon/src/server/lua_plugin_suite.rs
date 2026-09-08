@@ -265,6 +265,48 @@ mod shipped_plugin_tests {
     /// plugin may sit in `runtime/plugins/` untested, but only by saying so
     /// here, with a reason. Silence is what let `web-search` (148 assertions)
     /// and `worktree` (42) go unrun by any in-process gate for months.
+    /// Every shipped plugin's entry file is the file that is really there.
+    ///
+    /// The gate B3 needed and did not have. `crucible-help` declared
+    /// `main: init.lua` beside an `init.luau` and silently did not load,
+    /// because the sweep that renamed the other eleven walked
+    /// `runtime/plugins/` and it sat outside. The field is gone now, so this
+    /// asserts the property the field used to be able to violate: the
+    /// resolver finds exactly one entry file per plugin.
+    ///
+    /// It derives its list from the directory rather than a maintained one,
+    /// which is the difference between this and the sweep that missed.
+    #[test]
+    fn every_shipped_plugin_resolves_exactly_one_entry_file() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../runtime/plugins")
+            .canonicalize()
+            .expect("the shipped plugin tree");
+
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&root).expect("read runtime/plugins") {
+            let dir = entry.expect("dir entry").path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let found = crucible_lua::source_files::init_file(&dir);
+            match found {
+                Ok(Some(path)) => assert!(
+                    path.is_file(),
+                    "{} resolved to a file that is not there: {}",
+                    dir.display(),
+                    path.display()
+                ),
+                Ok(None) => panic!("{} ships no init.luau or init.lua", dir.display()),
+                Err(ambiguous) => {
+                    panic!("{} ships both entry spellings: {ambiguous}", dir.display())
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked >= 12, "expected the shipped plugins, saw {checked}");
+    }
+
     const NO_LUA_SUITE: &[(&str, &str)] = &[(
         "crucible-help",
         "It registers the shipped documentation as skill context and declares \

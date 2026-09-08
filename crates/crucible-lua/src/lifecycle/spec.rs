@@ -28,7 +28,6 @@ pub struct PluginSpec {
     pub source: Option<String>,
 }
 
-
 /// Set up a permissive sandbox for spec extraction.
 ///
 /// Stubs `require()`, `crucible`, `cru`, and `io` so that plugin init files
@@ -157,7 +156,13 @@ pub(crate) fn load_plugin_spec_from_source(
     // Determine if this is a spec table vs a plain module table.
     // A spec table has at least one recognized declarative field.
     let spec_fields = [
-        "name", "version", "tools", "commands", "handlers", "views", "setup",
+        "name",
+        "version",
+        "tools",
+        "commands",
+        "handlers",
+        "views",
+        "setup",
         "intercepts_tools",
     ];
     let has_spec_field = spec_fields

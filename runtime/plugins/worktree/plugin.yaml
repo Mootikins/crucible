@@ -4,8 +4,6 @@ description: Run a session against a git worktree — the workspace axis
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 config:
   properties:
     template:

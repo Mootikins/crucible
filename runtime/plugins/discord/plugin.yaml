@@ -4,8 +4,6 @@ description: Discord integration via Gateway WebSocket and REST API
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 config:
   properties:
     bot_token:

@@ -4,8 +4,6 @@ description: Task management with TASKS.md format
 author: Crucible Contributors
 license: MIT
 
-main: init.luau
-
 exports:
   tools:
     - tasks_list

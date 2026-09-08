@@ -4,7 +4,5 @@ description: Registers Crucible documentation as agent skill context
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 exports:
   auto_discover: true

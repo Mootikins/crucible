@@ -60,7 +60,6 @@ description: Task management with TASKS.md format
 author: Your Name <you@example.com>
 license: MIT
 
-main: lua/init.lua
 
 # The one declaration the host checks: this plugin takes tool calls over.
 # See "Tool interception" below.
@@ -95,7 +94,11 @@ enabled: true
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `main` | string | "init.lua" | Main file path relative to plugin dir |
+(There is no `main` field. The entry point is `init.luau`, else `init.lua`, at
+the plugin's root. A field naming the entry file could name one that is not
+there, and did: the shipped `crucible-help` said `main: init.lua` beside an
+`init.luau` and silently failed to load. A directory holding both spellings is
+refused rather than resolved.)
 
 ### Tool interception
 

@@ -535,9 +535,9 @@ fn a_luau_plugin_is_discovered_and_loads() {
     let plugin = manager.get("luau-plugin").unwrap();
     assert_eq!(plugin.state, PluginState::Active);
     assert!(
-        plugin.manifest.main.ends_with("init.luau"),
-        "the manifest's entry point must be the file that is really there, got {}",
-        plugin.manifest.main
+        plugin.main_path().ends_with("init.luau"),
+        "the entry point must be the file that is really there, got {}",
+        plugin.main_path().display()
     );
 }
 

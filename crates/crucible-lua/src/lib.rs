@@ -206,8 +206,8 @@ pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};
 pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
 pub use luau_compat::register_stdlib_compat;
 pub use manifest::{
-    LoadedPlugin, ManifestError, ManifestResult, PluginDependency, PluginManifest,
-    PluginSource, PluginState,
+    LoadedPlugin, ManifestError, ManifestResult, PluginDependency, PluginManifest, PluginSource,
+    PluginState,
 };
 pub use mcp::register_mcp_module_stub;
 pub use modes::{

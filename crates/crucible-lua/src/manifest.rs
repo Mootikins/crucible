@@ -58,9 +58,6 @@ pub struct PluginManifest {
     #[serde(default)]
     pub license: Option<String>,
 
-    #[serde(default = "default_main")]
-    pub main: String,
-
     /// Whether this plugin takes tool calls over.
     ///
     /// The one declaration the host checks. NOT a sandboxing claim — plugin
@@ -84,10 +81,6 @@ pub struct PluginManifest {
 
     #[serde(default)]
     pub enabled: Option<bool>,
-}
-
-fn default_main() -> String {
-    "init.lua".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -146,19 +139,6 @@ impl PluginManifest {
             description: String::new(),
             author: String::new(),
             license: None,
-            // The file that is really there, preferred extension first. A
-            // manifest-less plugin has no `main` field to read, so guessing one
-            // name meant a `init.luau` plugin resolved to a path that does not
-            // exist.
-            main: crate::source_files::init_file(dir)
-                .ok()
-                .flatten()
-                .and_then(|path| {
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.to_string())
-                })
-                .unwrap_or_else(|| "init.lua".to_string()),
             intercepts_tools: false,
             dependencies: Vec::new(),
             enabled: None,
@@ -186,10 +166,6 @@ impl PluginManifest {
         }
 
         Ok(())
-    }
-
-    pub fn main_path(&self, plugin_dir: &Path) -> PathBuf {
-        plugin_dir.join(&self.main)
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -335,8 +311,27 @@ impl LoadedPlugin {
         &self.manifest.version
     }
 
+    /// The plugin's entry file: `init.luau`, else `init.lua`.
+    ///
+    /// The manifest used to name it in a `main:` field, defaulting to
+    /// `init.lua`. That field could name a file that was not there, and did:
+    /// the shipped `crucible-help` said `main: init.lua` beside an
+    /// `init.luau` and silently failed to load, because the sweep that
+    /// renamed the other eleven walked `runtime/plugins/` and it sat outside.
+    /// A field that can name the wrong file eventually does, so there is no
+    /// field.
+    ///
+    /// Falls back to the preferred name when neither exists, so the loader's
+    /// "Main file not found" error names something a user can create. A
+    /// directory holding BOTH spellings is refused at discovery, not here.
     pub fn main_path(&self) -> PathBuf {
-        self.manifest.main_path(&self.dir)
+        crate::source_files::init_file(&self.dir)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                self.dir
+                    .join(format!("init.{}", crate::source_files::PREFERRED_EXTENSION))
+            })
     }
 }
 
@@ -353,7 +348,6 @@ version: "1.0.0"
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         assert_eq!(manifest.name, "my-plugin");
         assert_eq!(manifest.version, "1.0.0");
-        assert_eq!(manifest.main, "init.lua");
         assert!(!manifest.intercepts_tools);
     }
 
@@ -388,7 +382,6 @@ exports:
         assert_eq!(manifest.description, "A sample plugin");
         assert_eq!(manifest.author, "Test Author");
         assert_eq!(manifest.license, Some("MIT".to_string()));
-        assert_eq!(manifest.main, "lua/init.lua");
         assert!(manifest.intercepts_tools);
         assert_eq!(manifest.dependencies.len(), 2);
         assert_eq!(manifest.required_dependencies().count(), 1);
@@ -505,17 +498,16 @@ version: "1.0.0"
         let yaml = r#"
 name: test-plugin
 version: "1.0.0"
-main: lua/main.lua
 "#;
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         let plugin = LoadedPlugin::new(manifest, PathBuf::from("/plugins/test"));
 
         assert_eq!(plugin.name(), "test-plugin");
         assert_eq!(plugin.version(), "1.0.0");
-        assert_eq!(
-            plugin.main_path(),
-            PathBuf::from("/plugins/test/lua/main.lua")
-        );
+        // No entry file on disk at that path, so the resolver falls back to
+        // the preferred name — which is what the loader's "not found" error
+        // should name.
+        assert_eq!(plugin.main_path(), PathBuf::from("/plugins/test/init.luau"));
         assert_eq!(plugin.state, PluginState::Discovered);
     }
 
@@ -546,7 +538,6 @@ enabled: false
             PluginManifest::from_directory_defaults(Path::new("/plugins/my-plugin")).unwrap();
         assert_eq!(manifest.name, "my-plugin");
         assert_eq!(manifest.version, "0.0.0");
-        assert_eq!(manifest.main, "init.lua");
         assert!(!manifest.intercepts_tools);
         assert!(manifest.dependencies.is_empty());
     }

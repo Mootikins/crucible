@@ -296,9 +296,7 @@ impl PluginManager {
             (
                 plugin.main_path(),
                 plugin.dir.clone(),
-                plugin
-                    .manifest
-                    .intercepts_tools,
+                plugin.manifest.intercepts_tools,
             )
         };
 

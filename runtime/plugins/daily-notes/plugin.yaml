@@ -4,8 +4,6 @@ description: Create and navigate daily notes
 author: Crucible Contributors
 license: MIT
 
-main: init.luau
-
 exports:
   tools:
     - daily_create

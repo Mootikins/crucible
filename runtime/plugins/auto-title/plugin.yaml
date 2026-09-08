@@ -4,8 +4,6 @@ description: Name a session after what it is about
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 config:
   properties:
     prompt:

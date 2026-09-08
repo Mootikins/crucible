@@ -4,7 +4,5 @@ description: Attributed-diff review as agent-callable tools — list, decide, re
 author: Crucible Team
 license: MIT
 
-main: init.luau
-
 exports:
   auto_discover: true

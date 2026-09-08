@@ -120,20 +120,13 @@ fn every_shipped_plugin_is_discovered() {
 
 /// Every shipped manifest carries the same block of identifying fields.
 ///
-/// `oci` was eight lines with no `author`, no `license` and no `main` while the
+/// `oci` was eight lines with no `author` and no `license` while the
 /// other six carried all three — an arbitrary difference nobody would notice
 /// until they were generating an index of what ships and half the rows were
 /// blank. One shape, asserted, so it stays one shape.
 #[test]
 fn every_shipped_manifest_declares_the_same_identifying_fields() {
-    const REQUIRED: &[&str] = &[
-        "name",
-        "version",
-        "description",
-        "author",
-        "license",
-        "main",
-    ];
+    const REQUIRED: &[&str] = &["name", "version", "description", "author", "license"];
 
     let mut missing: Vec<String> = Vec::new();
     for name in shipped_plugin_names() {

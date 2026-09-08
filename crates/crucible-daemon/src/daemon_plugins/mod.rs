@@ -1369,9 +1369,9 @@ impl DaemonPluginLoader {
     /// model reads as the tool's own, and it returns BEFORE the permission
     /// gate, so an unanswerable question must answer "no".
     fn plugin_may_intercept(&self, name: &str) -> bool {
-        self.plugin_manager.get(name).is_some_and(|plugin| {
-            plugin.manifest.intercepts_tools
-        })
+        self.plugin_manager
+            .get(name)
+            .is_some_and(|plugin| plugin.manifest.intercepts_tools)
     }
 
     /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.
