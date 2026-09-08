@@ -227,36 +227,44 @@ plugins/tasks/
 └── README.md       # Usage documentation
 ```
 
-### Plugin Manifest
+### Plugin metadata
 
-Every directory plugin needs a `plugin.yaml` (or `plugin.yml`, `manifest.yaml`, `manifest.yml`):
+A plugin is one directory with one entry file: `init.luau`, or `init.lua`. A
+directory holding both is refused rather than resolved.
 
-```yaml
-name: tasks
-version: 1.0.0
-description: Task management tools
-author: Your Name
+There is no manifest. Metadata lives in the spec table the entry file returns:
 
-# Optional: declare dependencies. Matched by NAME only — a `version:`
-# constraint here is parsed but never checked, so don't write one.
-dependencies:
-  - name: core-utils
+```lua
+return {
+    name = "tasks",
+    version = "1.0.0",
+    description = "Task management tools",
+    author = "Your Name",
+    license = "MIT",
 
-# Optional: declare that this plugin takes tool calls over.
-#
-# The ONE declaration the host checks. It is not a sandbox claim — plugin Lua
-# runs in the daemon VM with `io` and `os`, so installing a plugin is the real
-# trust decision. It is a COMPOSITION claim: a handler returning
-# `handled = true` takes another component's tool call and returns BEFORE the
-# permission gate. Without this the daemon ignores the takeover and dispatches
-# normally, and logs that it did.
-#
-# It replaced a ten-name `capabilities:` list of which nine names were never
-# checked anywhere and could not have been.
-intercept_tools: true
+    -- Optional. Matched by NAME only.
+    dependencies = { "core-utils" },
+
+    -- Optional: this plugin takes tool calls over. The one declaration the
+    -- host checks. A `pre_tool_call` handler returning `handled = true`
+    -- returns BEFORE the permission gate; without this the daemon ignores the
+    -- takeover, dispatches normally, and logs that it did.
+    intercepts_tools = false,
+
+    tools = { --[[ … ]] },
+    setup = function(cfg) end,
+}
 ```
 
-See [[Help/Extending/Plugin Manifest]] for the complete manifest specification.
+`name` is the plugin's identity, and the directory name is only the fallback
+when the spec does not state one — so a repo cloned under a different
+directory name keeps its `[plugins.<name>]` config. A name that is not a
+usable plugin name is refused and the directory name stands.
+
+`plugin.yaml` is gone. It carried `main:`, which could name a file that was not
+there and did; a ten-name `capabilities:` list of which nine were never
+consulted; and `exports:`, `config:` and `keywords:` blocks nothing ever
+parsed.
 
 ```lua
 -- init.lua - Main module: return the plugin spec table
@@ -884,7 +892,7 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 
 ## See Also
 
-- [[Help/Extending/Plugin Manifest]] - Manifest format and programmatic API
+- the plugin spec table - Manifest format and programmatic API
 - [[Help/Lua/Language Basics]] - Lua syntax
 - [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/Extending/Event Hooks]] - Hook system

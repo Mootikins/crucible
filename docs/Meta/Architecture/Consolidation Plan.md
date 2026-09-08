@@ -865,7 +865,7 @@ Items the pass kept, with the reason:
 - [keep] McpGatewayManager::upstream_status tools/mcp_gateway.rs:454 (weak: own tests only) — The item is already gone. Nothing to remove. Strike the claim from the plan.
 - [keep-protected-path] RpcMethod::SessionReindex rpc/dispatch.rs:175 (weak; protected path; retired name in METHODS) — Referenced by a handler arm, a CLI test and the changelog. Protected path rpc/dispatch.rs. Removal is a wire change (METHODS list).
 - [keep] PluginManager::eval_runtime (crates/crucible-lua/src/lifecycle/lua_integration.rs:54) — Already test-gated; nothing further to narrow. Tests that use it verify reload and load/unload hooks, not only eval_runtime itself.
-- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/loading.rs:216) — Already test-gated; no change needed.
+- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/loading.rs:181) — Already test-gated; no change needed.
 - [keep] PluginManager::initialize (crates/crucible-lua/src/lifecycle/mod.rs:136) — Method no longer exists; it was replaced by discover_only (lifecycle/mod.rs:128) and load_all (loading.rs:93). Nothing to remove. Optionally reword the four stale doc comments that still reference ini
 - [keep-protected-path] KeepAlive.shell Some path (crucible-web routes/terminal.rs:56) — The field is the test injection seam the doc comment at terminal.rs:49-51 describes; the production const sets None on purpose. Under routes/. Keep.
 - [delete] NodeSpec, spec_to_node, NodeSpecError, NodeAttrs, parse_* (crucible-oil template/node_spec.rs) — Partial. NodeSpec, NodeAttrs, spec_to_node and every parse_* except parse_color/parse_hex_color/parse_rgb_color are dead. NodeSpecError and NodeSpecResult stay because parse_color returns them. Move p

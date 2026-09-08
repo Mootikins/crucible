@@ -76,12 +76,6 @@ pub struct PluginManifest {
     #[serde(default, rename = "intercept_tools", alias = "intercept-tools")]
     pub intercepts_tools: bool,
 
-    #[serde(default)]
-    pub dependencies: Vec<PluginDependency>,
-
-    #[serde(default)]
-    pub enabled: Option<bool>,
-
     /// True when no `plugin.yaml` was found and this manifest was synthesized
     /// from the directory.
     ///
@@ -95,41 +89,19 @@ pub struct PluginManifest {
     /// pinned at `0.0.0` would have had its name silently replaced.
     #[serde(skip)]
     pub synthesized: bool,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PluginDependency {
-    pub name: String,
-
-    #[serde(default)]
-    pub optional: bool,
+    /// The name the plugin's spec table declares, when it differs from the
+    /// directory it lives in.
+    ///
+    /// Identity is the DIRECTORY name — the only name knowable without running
+    /// Lua. This is honoured for `[plugins.<name>]` lookup so a repo cloned as
+    /// `crucible-discord` whose plugin declares `name = "discord"` still gets
+    /// its config section.
+    #[serde(skip)]
+    pub declared_name: Option<String>,
 }
 
 impl PluginManifest {
-    pub fn from_yaml(yaml: &str) -> ManifestResult<Self> {
-        let manifest: Self = serde_yaml::from_str(yaml)?;
-        manifest.validate()?;
-        Ok(manifest)
-    }
-
-    pub fn from_file(path: &Path) -> ManifestResult<Self> {
-        let content = std::fs::read_to_string(path)?;
-        Self::from_yaml(&content)
-    }
-
-    pub fn discover(plugin_dir: &Path) -> ManifestResult<Option<Self>> {
-        let candidates = ["plugin.yaml", "plugin.yml", "manifest.yaml", "manifest.yml"];
-
-        for name in candidates {
-            let path = plugin_dir.join(name);
-            if path.exists() {
-                return Self::from_file(&path).map(Some);
-            }
-        }
-
-        Ok(None)
-    }
-
     /// Create a default manifest from a directory path (no plugin.yaml required).
     ///
     /// Uses the directory stem as the plugin name with version "0.0.0".
@@ -154,9 +126,8 @@ impl PluginManifest {
             author: String::new(),
             license: None,
             intercepts_tools: false,
-            dependencies: Vec::new(),
-            enabled: None,
             synthesized: true,
+            declared_name: None,
         })
     }
 
@@ -181,14 +152,6 @@ impl PluginManifest {
         }
 
         Ok(())
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled.unwrap_or(true)
-    }
-
-    pub fn required_dependencies(&self) -> impl Iterator<Item = &PluginDependency> {
-        self.dependencies.iter().filter(|d| !d.optional)
     }
 }
 
@@ -355,122 +318,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_minimal_manifest() {
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(manifest.name, "my-plugin");
-        assert_eq!(manifest.version, "1.0.0");
-        assert!(!manifest.intercepts_tools);
-    }
-
-    #[test]
-    fn test_parse_full_manifest() {
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-description: A sample plugin
-author: Test Author
-license: MIT
-main: lua/init.lua
-init: setup
-
-intercept_tools: true
-
-dependencies:
-  - name: other-plugin
-  - name: optional-dep
-    optional: true
-
-exports:
-  tools:
-    - search
-    - create
-  commands:
-    - /my-command
-  auto_discover: true
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(manifest.name, "my-plugin");
-        assert_eq!(manifest.description, "A sample plugin");
-        assert_eq!(manifest.author, "Test Author");
-        assert_eq!(manifest.license, Some("MIT".to_string()));
-        assert!(manifest.intercepts_tools);
-        assert_eq!(manifest.dependencies.len(), 2);
-        assert_eq!(manifest.required_dependencies().count(), 1);
-    }
-
-    #[test]
-    fn exports_block_is_ignored_for_backward_compat() {
-        // `exports` (tools/commands/views/handlers/auto_discover) was parsed
-        // but never consumed, so the field was deleted. Existing plugin.yaml
-        // files that still declare it must keep parsing (no
-        // deny_unknown_fields here).
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-exports:
-  tools:
-    - search
-  auto_discover: true
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(manifest.name, "my-plugin");
-    }
-
-    #[test]
-    fn dependency_version_field_is_ignored_for_backward_compat() {
-        // The dependency-level `version` constraint was parsed but never
-        // compared, so the field was deleted. Existing plugin.yaml files that
-        // still set it must keep parsing (no deny_unknown_fields here).
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-dependencies:
-  - name: other-plugin
-    version: ">=1.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(
-            manifest.dependencies,
-            vec![PluginDependency {
-                name: "other-plugin".to_string(),
-                optional: false,
-            }]
-        );
-    }
-
-    #[test]
-    fn test_validate_missing_name() {
-        let yaml = r#"
-version: "1.0.0"
-"#;
-        let result = PluginManifest::from_yaml(yaml);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_missing_version() {
-        let yaml = r#"
-name: my-plugin
-"#;
-        let result = PluginManifest::from_yaml(yaml);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_invalid_name() {
-        let yaml = r#"
-name: My Plugin!
-version: "1.0.0"
-"#;
-        let result = PluginManifest::from_yaml(yaml);
-        assert!(matches!(result, Err(ManifestError::Validation(_))));
-    }
-
-    #[test]
     fn test_valid_plugin_names() {
         assert!(is_valid_plugin_name("my-plugin"));
         assert!(is_valid_plugin_name("plugin123"));
@@ -509,68 +356,17 @@ version: "1.0.0"
     }
 
     #[test]
-    fn test_loaded_plugin() {
-        let yaml = r#"
-name: test-plugin
-version: "1.0.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        let plugin = LoadedPlugin::new(manifest, PathBuf::from("/plugins/test"));
-
-        assert_eq!(plugin.name(), "test-plugin");
-        assert_eq!(plugin.version(), "1.0.0");
-        // No entry file on disk at that path, so the resolver falls back to
-        // the preferred name — which is what the loader's "not found" error
-        // should name.
-        assert_eq!(plugin.main_path(), PathBuf::from("/plugins/test/init.luau"));
-        assert_eq!(plugin.state, PluginState::Discovered);
-    }
-
-    #[test]
-    fn test_manifest_enabled_default() {
-        let yaml = r#"
-name: test
-version: "1.0.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(manifest.is_enabled());
-    }
-
-    #[test]
-    fn test_manifest_explicitly_disabled() {
-        let yaml = r#"
-name: test
-version: "1.0.0"
-enabled: false
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(!manifest.is_enabled());
-    }
-
-    #[test]
     fn test_from_directory_defaults() {
         let manifest =
             PluginManifest::from_directory_defaults(Path::new("/plugins/my-plugin")).unwrap();
         assert_eq!(manifest.name, "my-plugin");
         assert_eq!(manifest.version, "0.0.0");
         assert!(!manifest.intercepts_tools);
-        assert!(manifest.dependencies.is_empty());
     }
 
     #[test]
     fn test_from_directory_defaults_invalid_name() {
         let result = PluginManifest::from_directory_defaults(Path::new("/plugins/My Plugin!"));
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_vault_capability_alias() {
-        let yaml = r#"
-name: hermit
-version: "0.1.0"
-intercept_tools: true
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(manifest.intercepts_tools);
     }
 }

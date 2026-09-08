@@ -20,7 +20,7 @@ tags:
 > with an `init.lua` returning a spec table (tools, commands, services), hooks
 > register via `cru.on()`, and manifest capabilities are informational
 > rather than sandbox-enforced. See [[Help/Extending/Creating Plugins]] and
-> [[Help/Extending/Plugin Manifest]] for the real system, and
+> the plugin spec table for the real system, and
 > [[Help/Extending/Event Hooks]] for the real event set.
 
 ## What this page was

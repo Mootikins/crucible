@@ -210,25 +210,6 @@ fn test_load_with_dependencies() {
     assert!(base_idx < dep_idx);
 }
 
-#[test]
-fn test_load_fails_for_missing_dependency() {
-    let temp = TempDir::new().unwrap();
-
-    // Plugin that depends on non-existent plugin
-    create_plugin_with_dependency(
-        temp.path(),
-        "orphan-plugin",
-        "1.0.0",
-        &[("non-existent", ">=1.0.0")],
-    );
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-
-    let result = manager.load("orphan-plugin");
-    assert!(result.is_err());
-}
-
 // ============================================================================
 // PLUGIN UNLOADING
 // ============================================================================
@@ -264,26 +245,6 @@ fn test_unload_removes_plugin_tools() {
 
     let tools_after = manager.tools().len();
     assert_eq!(tools_after, 0, "Tools should be removed on unload");
-}
-
-#[test]
-fn test_cannot_unload_if_depended_upon() {
-    let temp = TempDir::new().unwrap();
-    create_plugin_structure(temp.path(), "base-plugin", "1.0.0");
-    create_plugin_with_dependency(
-        temp.path(),
-        "dependent",
-        "1.0.0",
-        &[("base-plugin", ">=1.0.0")],
-    );
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load_all().unwrap();
-
-    // Should fail because dependent relies on base
-    let result = manager.unload("base-plugin");
-    assert!(result.is_err());
 }
 
 // ============================================================================

@@ -1383,9 +1383,21 @@ impl DaemonPluginLoader {
             return Ok(());
         };
 
+        // The directory name first, then the name the plugin declares.
+        //
+        // Identity is the directory — the only name knowable without running
+        // Lua. But a repo cloned as `crucible-discord` whose plugin declares
+        // `name = "discord"` must still receive `[plugins.discord]`: the user
+        // wrote that section against the plugin, not against wherever their
+        // clone happens to sit.
+        let declared = self
+            .plugin_manager
+            .get(name)
+            .and_then(|p| p.manifest.declared_name.clone());
         let cfg = self
             .plugin_config
             .get(name)
+            .or_else(|| declared.as_deref().and_then(|d| self.plugin_config.get(d)))
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
         let cfg = self

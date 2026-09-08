@@ -1,7 +1,6 @@
 use super::PluginManager;
 use std::path::{Path, PathBuf};
 
-mod dependencies;
 mod discovery;
 mod error_log;
 mod hooks;
@@ -39,8 +38,9 @@ pub(super) fn create_plugin_with_lua(
     let plugin_dir = dir.join(name);
     std::fs::create_dir_all(&plugin_dir).unwrap();
 
-    let manifest = format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n");
-    std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+    // No manifest: a plugin is a directory with an entry file, and the spec
+    // table it returns carries the metadata.
+    let _ = version;
     std::fs::write(plugin_dir.join("init.lua"), lua_source).unwrap();
 
     plugin_dir
@@ -53,31 +53,6 @@ pub(super) fn create_test_plugin_with_source(
     lua_source: &str,
 ) {
     create_plugin_with_lua(dir, name, version, lua_source);
-}
-
-pub(super) fn create_plugin_with_deps(dir: &Path, name: &str, deps: &[&str]) -> PathBuf {
-    let plugin_dir = dir.join(name);
-    std::fs::create_dir_all(&plugin_dir).unwrap();
-
-    let deps_yaml: String = deps
-        .iter()
-        .map(|d| format!("  - name: {d}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let manifest = format!(
-        r#"
-name: {name}
-version: "1.0.0"
-main: init.lua
-dependencies:
-{deps_yaml}
-"#
-    );
-    std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-    std::fs::write(plugin_dir.join("init.lua"), "-- empty").unwrap();
-
-    plugin_dir
 }
 
 pub(super) fn create_spec_plugin(dir: &Path, name: &str) -> PathBuf {

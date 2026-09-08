@@ -1,6 +1,5 @@
 //! Plugin lifecycle management
 
-mod dependency;
 mod discovery;
 mod error;
 mod error_log;

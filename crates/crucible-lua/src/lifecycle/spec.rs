@@ -21,9 +21,6 @@ pub struct PluginSpec {
     pub intercepts_tools: bool,
     pub author: Option<String>,
     pub license: Option<String>,
-    /// Plugin names this one requires. Optional dependencies are not
-    /// expressible here; nothing consumed the `optional` flag.
-    pub dependencies: Vec<String>,
     pub tools: Vec<DiscoveredTool>,
     pub commands: Vec<DiscoveredCommand>,
     pub handlers: Vec<DiscoveredHandler>,
@@ -171,7 +168,6 @@ pub(crate) fn load_plugin_spec_from_source(
         "intercepts_tools",
         "author",
         "license",
-        "dependencies",
     ];
     let has_spec_field = spec_fields
         .iter()
@@ -196,12 +192,6 @@ pub(crate) fn load_plugin_spec_from_source(
                 0 => spec.author = Some(text),
                 _ => spec.license = Some(text),
             }
-        }
-    }
-
-    if let Ok(Value::Table(deps)) = table.get::<Value>("dependencies") {
-        for pair in deps.sequence_values::<String>().flatten() {
-            spec.dependencies.push(pair);
         }
     }
 

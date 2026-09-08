@@ -930,10 +930,9 @@ mod plugin_health_visibility_tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn write_plugin(root: &Path, name: &str, manifest: &str, init_lua: &str) {
+    fn write_plugin(root: &Path, name: &str, init_lua: &str) {
         let dir = root.join(name);
         fs::create_dir_all(&dir).expect("plugin dir");
-        fs::write(dir.join("plugin.yaml"), manifest).expect("manifest");
         fs::write(dir.join("init.lua"), init_lua).expect("init.lua");
     }
 
@@ -974,12 +973,7 @@ mod plugin_health_visibility_tests {
     #[tokio::test]
     async fn a_plugin_that_raises_at_load_is_listed_with_its_error() {
         let tmp = TempDir::new().unwrap();
-        write_plugin(
-            tmp.path(),
-            "raiser",
-            "name: raiser\nversion: \"0.1.0\"\nmain: init.lua\n",
-            "error('kaboom')\n",
-        );
+        write_plugin(tmp.path(), "raiser", "error('kaboom')\n");
 
         let result = list_after_loading(tmp.path()).await;
         let plugin = entry(&result, "raiser");
@@ -1004,7 +998,6 @@ mod plugin_health_visibility_tests {
         write_plugin(
             tmp.path(),
             "badsetup",
-            "name: badsetup\nversion: \"0.1.0\"\nmain: init.lua\n",
             "return { name = 'badsetup', setup = function() error('setup exploded') end }\n",
         );
 
@@ -1022,26 +1015,25 @@ mod plugin_health_visibility_tests {
         );
     }
 
-    /// A manifest that doesn't parse keeps the plugin out of
-    /// `PluginManager::plugins` entirely — there is no entry to mark broken.
-    /// `reflection` shipped for months in exactly this state, with the only
-    /// trace a `warn!` in the daemon's log.
+    /// A discovery error keeps the plugin out of `PluginManager::plugins`
+    /// entirely — there is no entry to mark broken. `reflection` shipped for
+    /// months in exactly that state, with the only trace a `warn!` in the
+    /// daemon's log.
+    ///
+    /// The error used to be an unparseable `plugin.yaml`. There is no manifest
+    /// now, so the discovery error a plugin can actually have is two entry
+    /// files: `init.luau` beside `init.lua` is refused rather than resolved,
+    /// because picking one silently means an edit to the other appears to do
+    /// nothing.
     #[tokio::test]
-    async fn a_plugin_with_an_unparseable_manifest_reaches_the_client() {
+    async fn a_plugin_with_a_discovery_error_reaches_the_client() {
         let tmp = TempDir::new().unwrap();
-        write_plugin(
-            tmp.path(),
-            "bogus-caps",
-            // `version` must be a string. A list is a type error the YAML
-            // reader reports, which is what this test is about: a manifest
-            // that does not parse must reach the CLIENT, not only a `warn!`.
-            //
-            // It used to use an unknown `capabilities:` entry. That field no
-            // longer exists, and an unknown key parses cleanly, so the test
-            // would have passed while asserting nothing.
-            "name: bogus-caps\nversion: [not, a, string]\n",
+        write_plugin(tmp.path(), "bogus-caps", "return { name = 'bogus-caps' }\n");
+        fs::write(
+            tmp.path().join("bogus-caps").join("init.luau"),
             "return { name = 'bogus-caps' }\n",
-        );
+        )
+        .expect("second entry file");
 
         let result = list_after_loading(tmp.path()).await;
         let errors = result["errors"]
@@ -1051,7 +1043,7 @@ mod plugin_health_visibility_tests {
         assert!(
             errors.iter().any(|e| {
                 e["path"].as_str().is_some_and(|p| p.contains("bogus-caps"))
-                    && e["error"].as_str().is_some_and(|m| m.contains("version"))
+                    && e["error"].as_str().is_some_and(|m| m.contains("init"))
             }),
             "discovery failure for 'bogus-caps' should be reported: {result:#}"
         );

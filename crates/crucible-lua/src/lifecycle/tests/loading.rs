@@ -27,13 +27,16 @@ fn load_all_omits_a_disabled_plugin_from_the_loaded_list() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = create_test_plugin(temp.path(), "disabled-plugin", "1.0.0");
     std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        "name: disabled-plugin\nversion: \"1.0.0\"\nmain: init.lua\nenabled: false\n",
+        plugin_dir.join("init.lua"),
+        "return { name = 'disabled-plugin', version = '1.0.0' }\n",
     )
     .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     manager.discover().unwrap();
+    // Disabling is the operator's act. A plugin is enabled by BEING on the
+    // runtimepath; there is no field it declares about itself.
+    manager.disable("disabled-plugin").unwrap();
     let loaded = manager.load_all().unwrap();
 
     assert!(
@@ -53,8 +56,8 @@ fn a_disabled_plugin_registers_no_tools() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = create_test_plugin(temp.path(), "disabled-tools", "1.0.0");
     std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        "name: disabled-tools\nversion: \"1.0.0\"\nmain: init.lua\nenabled: false\n",
+        plugin_dir.join("init.lua"),
+        "return { name = 'disabled-tools', version = '1.0.0' }\n",
     )
     .unwrap();
 
@@ -125,25 +128,14 @@ fn test_enable_disable() {
     let plugin = manager.get("toggle-test").unwrap();
     assert_eq!(plugin.state, PluginState::Disabled);
 
+    // `enable` clears the disabled state; loading is a separate act. It used
+    // to flip a manifest field that `load` consulted, so the two were one
+    // step. There is no such field now — being on the runtimepath is what
+    // enables a plugin.
     manager.enable("toggle-test").unwrap();
+    manager.load("toggle-test").unwrap();
     let plugin = manager.get("toggle-test").unwrap();
     assert_eq!(plugin.state, PluginState::Active);
-}
-
-#[test]
-fn test_cannot_unload_if_depended_upon() {
-    use super::create_plugin_with_deps;
-    use crate::lifecycle::LifecycleError;
-    let temp = TempDir::new().unwrap();
-    create_test_plugin(temp.path(), "core", "1.0.0");
-    create_plugin_with_deps(temp.path(), "extension", &["core"]);
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load_all().unwrap();
-
-    let result = manager.unload("core");
-    assert!(matches!(result, Err(LifecycleError::LoadError(_))));
 }
 
 #[test]
@@ -152,16 +144,17 @@ fn test_disabled_plugin_skipped() {
     let plugin_dir = temp.path().join("disabled-plugin");
     std::fs::create_dir_all(&plugin_dir).unwrap();
 
-    let manifest = r#"
-name: disabled-plugin
-version: "1.0.0"
-enabled: false
-"#;
-    std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-    std::fs::write(plugin_dir.join("init.lua"), "-- empty").unwrap();
+    std::fs::write(
+        plugin_dir.join("init.lua"),
+        "return { name = 'disabled-plugin', version = '1.0.0' }\n",
+    )
+    .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     manager.discover().unwrap();
+    // Disabling is the OPERATOR\'s call, so it goes through the API a
+    // config drives, not a field the plugin declares about itself.
+    manager.disable("disabled-plugin").unwrap();
     manager.load("disabled-plugin").unwrap();
 
     let plugin = manager.get("disabled-plugin").unwrap();
@@ -176,14 +169,14 @@ fn test_active_plugins_iterator() {
     let plugin_dir = temp.path().join("inactive");
     std::fs::create_dir_all(&plugin_dir).unwrap();
     std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        "name: inactive\nversion: \"1.0.0\"\nenabled: false",
+        plugin_dir.join("init.lua"),
+        "return { name = 'inactive', version = '1.0.0' }\n",
     )
     .unwrap();
-    std::fs::write(plugin_dir.join("init.lua"), "").unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     manager.discover().unwrap();
+    manager.disable("inactive").unwrap();
     manager.load_all().unwrap();
 
     let active: Vec<_> = manager.active_plugins().collect();

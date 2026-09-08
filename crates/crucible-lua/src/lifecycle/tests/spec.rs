@@ -229,7 +229,7 @@ return {
 /// the declared name, so `[plugins.discord]` still reaches its `setup`.
 /// Moving a directory must not change what a plugin IS.
 #[test]
-fn a_plugin_keeps_its_declared_name_in_a_differently_named_directory() {
+fn a_declared_name_is_recorded_for_config_lookup() {
     let temp = TempDir::new().unwrap();
     let dir = temp.path().join("crucible-discord");
     std::fs::create_dir_all(&dir).unwrap();
@@ -243,12 +243,55 @@ fn a_plugin_keeps_its_declared_name_in_a_differently_named_directory() {
     manager.discover().unwrap();
     manager.load("crucible-discord").unwrap();
 
+    // Identity stays the directory name — the only name the runtimepath knows
+    // without running Lua. The declared name is recorded so `[plugins.discord]`
+    // still reaches this plugin's `setup`.
+    let plugin = manager
+        .get("crucible-discord")
+        .expect("identity is the directory name");
+    assert_eq!(
+        plugin.manifest.declared_name.as_deref(),
+        Some("discord"),
+        "the declared name must be recorded for config lookup"
+    );
+}
+
+/// A spec name that is not a usable plugin name is refused, not adopted.
+///
+/// Deleting the YAML reader deleted the only `validate()` call site. The Lua
+/// spec is now the only place a name comes from, so it takes the same checks
+/// the manifest used to: a name with a path separator would otherwise reach
+/// `[plugins.<name>]` lookups and the module search path.
+#[test]
+fn a_spec_name_that_is_not_a_valid_plugin_name_is_refused() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("wellformed");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.luau"),
+        "return { name = '../escape', version = '1.0.0' }\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("wellformed").unwrap();
+
     assert!(
-        manager.get("discord").is_some()
-            || manager
-                .get("crucible-discord")
-                .is_some_and(|p| p.manifest.name == "discord"),
-        "the declared name must win over the directory name"
+        manager.get("../escape").is_none(),
+        "a name with a path separator must not become a plugin identity"
+    );
+    assert_eq!(
+        manager.get("wellformed").map(|p| p.manifest.name.clone()),
+        Some("wellformed".to_string()),
+        "identity is always the directory name"
+    );
+    assert_eq!(
+        manager
+            .get("wellformed")
+            .and_then(|p| p.manifest.declared_name.clone()),
+        None,
+        "an unusable declared name is refused, not recorded for config lookup"
     );
 }
 

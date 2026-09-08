@@ -47,6 +47,8 @@ return {
     name = "{{name}}",
     version = "0.1.0",
     description = "A Crucible plugin",
+    author = "",
+    license = "MIT",
 
     --- Called at load with this plugin's `[plugins.{{name}}]` config section,
     --- or an empty table when there is none. Delete if you read no config.

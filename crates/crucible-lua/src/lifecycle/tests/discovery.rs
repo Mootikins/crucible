@@ -50,28 +50,30 @@ fn test_discover_manifestless_with_spec_override() {
     manager.load("my-plugin").unwrap();
 
     let plugin = manager.get("my-plugin").unwrap();
-    // Name updated from spec (since version was 0.0.0 = directory defaults)
-    assert_eq!(plugin.manifest.name, "custom-name");
+    // Identity stays the directory name; the declared one is recorded for
+    // `[plugins.<name>]` lookup. Version does come from the spec — it names
+    // nothing the host has to resolve before running Lua.
+    assert_eq!(plugin.manifest.name, "my-plugin");
+    assert_eq!(
+        plugin.manifest.declared_name.as_deref(),
+        Some("custom-name")
+    );
     assert_eq!(plugin.version(), "1.2.0");
 }
 
+/// The spec table supplies a plugin's version and description.
+///
+/// There is no manifest to take precedence over it any more. This replaces
+/// `test_manifest_takes_precedence_over_lua_table`, whose premise was that a
+/// `plugin.yaml` could out-declare the Lua — a file that no longer exists.
 #[test]
-fn test_manifest_takes_precedence_over_lua_table() {
+fn the_spec_table_supplies_the_plugins_identity() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = temp.path().join("my-plugin");
     std::fs::create_dir_all(&plugin_dir).unwrap();
-
-    // Manifest with explicit version
-    std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        "name: my-plugin\nversion: \"2.0.0\"\nmain: init.lua\n",
-    )
-    .unwrap();
-
-    // Lua spec with different version
     std::fs::write(
         plugin_dir.join("init.lua"),
-        r#"return { name = "other-name", version = "9.9.9" }"#,
+        r#"return { name = "my-plugin", version = "2.0.0" }"#,
     )
     .unwrap();
 
@@ -80,7 +82,6 @@ fn test_manifest_takes_precedence_over_lua_table() {
     manager.load("my-plugin").unwrap();
 
     let plugin = manager.get("my-plugin").unwrap();
-    // Manifest values should win (version != "0.0.0", so spec doesn't override)
     assert_eq!(plugin.manifest.name, "my-plugin");
     assert_eq!(plugin.version(), "2.0.0");
 }

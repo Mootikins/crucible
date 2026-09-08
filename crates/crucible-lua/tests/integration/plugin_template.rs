@@ -1,25 +1,26 @@
 //! Plugin template validation tests.
 
+/// The scaffold declares its identity in the spec table, not a manifest.
+///
+/// `cru plugin new` used to write a `plugin.yaml`. It does not: a plugin is one
+/// directory with one entry file, and scaffolding a manifest would teach every
+/// new plugin author a form that no longer exists.
 #[test]
-fn test_plugin_template_yaml_is_valid() {
-    let template_yaml =
-        include_str!("../../../crucible-cli/src/commands/plugin/templates/plugin.yaml");
-    let substituted = template_yaml.replace("{{name}}", "test-plugin");
+fn the_scaffold_declares_its_identity_in_the_spec_table() {
+    let template_lua =
+        include_str!("../../../crucible-cli/src/commands/plugin/templates/init.luau");
+    let substituted = template_lua.replace("{{name}}", "test-plugin");
 
-    let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&substituted);
-    assert!(parsed.is_ok(), "plugin.yaml template should be valid YAML");
-
-    let manifest = parsed.unwrap();
-    assert!(manifest["name"].is_string(), "name field should be present");
+    for field in ["name", "version", "description"] {
+        assert!(
+            substituted.contains(&format!("{field} = ")),
+            "the scaffold must declare {field} in its spec table"
+        );
+    }
     assert!(
-        manifest["version"].is_string(),
-        "version field should be present"
+        substituted.contains(r#"name = "test-plugin""#),
+        "the scaffold must substitute the plugin's name"
     );
-    assert!(manifest["main"].is_string(), "main field should be present");
-    // `.luau` is what `cru plugin new` writes: the extension Luau's own
-    // editor tooling recognises. `.lua` still loads for every plugin
-    // already on disk.
-    assert_eq!(manifest["main"].as_str().unwrap(), "init.luau");
 }
 
 #[test]
