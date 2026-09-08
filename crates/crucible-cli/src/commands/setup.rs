@@ -259,7 +259,7 @@ mod tests {
         assert!(target
             .join("plugins")
             .join("reflection")
-            .join("plugin.yaml")
+            .join("init.luau")
             .is_file());
         assert!(target
             .join("plugins")
@@ -282,10 +282,7 @@ mod tests {
         let target = tmp.path().join("runtime");
         populate_runtime(None, &target).unwrap();
 
-        let plugin = target
-            .join("plugins")
-            .join("reflection")
-            .join("plugin.yaml");
+        let plugin = target.join("plugins").join("reflection").join("init.luau");
         std::fs::write(&plugin, "# edited").unwrap();
 
         populate_runtime(None, &target).unwrap();

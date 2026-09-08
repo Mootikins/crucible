@@ -418,7 +418,7 @@ mod tests {
         // through the same table as everything else.
         let plugin_dir = extracted.join("plugins").join("crucible-help");
         assert!(
-            plugin_dir.join("plugin.yaml").is_file(),
+            plugin_dir.join("init.luau").is_file(),
             "the extracted tree must carry crucible-help as a plugin"
         );
 

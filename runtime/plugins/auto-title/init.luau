@@ -97,6 +97,8 @@ end
 cru.plugin.publish(CHANNEL, { command = COMMAND })
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
   name = NAME,
   version = "0.1.0",
   description = "Name a session after what it is about",

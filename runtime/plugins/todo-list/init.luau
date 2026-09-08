@@ -366,10 +366,11 @@ function M.tasks_command(args: { [string]: any }, ctx: any): ()
 end
 
 return {
+    author = "Crucible Contributors",
+    license = "MIT",
     name = "todo-list",
     version = "1.1.0",
     description = "Manages tasks in TASKS.md format",
-    capabilities = { "filesystem", "kiln", "config" },
 
     setup = M.setup,
 

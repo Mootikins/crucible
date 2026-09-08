@@ -157,10 +157,10 @@ function M.resolve_comment(args: { [string]: any }): ToolResult
 end
 
 return {
+    license = "MIT",
     name = "review",
     version = "0.1.0",
     description = "Review the attributed diff of a session — including one you delegated to",
-    capabilities = { "agent" },
 
     tools = {
         review_list_hunks = {

@@ -297,10 +297,11 @@ cru.schedule({ every = config.get("interval", 21600) }, function()
 end)
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
     name = "consolidation",
     version = "0.1.0",
     description = "Periodic pass over recent sessions that proposes pattern notes",
-    capabilities = { "kiln", "agent", "config", "filesystem" },
 
     -- Exposed for unit tests and manual invocation.
     run = M.run,

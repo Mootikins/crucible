@@ -759,10 +759,11 @@ cru.on_session_end(function(session)
 end)
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
     name = "reflection",
     version = "0.1.0",
     description = "Retrospective self-improvement: propose kiln notes after a session ends",
-    capabilities = { "kiln", "agent", "config", "filesystem" },
 
     -- Exposed for unit tests and manual invocation. The consolidation
     -- plugin calls `review` and `load_hunks`, so the two passes share one

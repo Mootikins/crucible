@@ -1,9 +1,0 @@
-name: oci
-version: "0.2.0"
-description: Run agent workspace tools inside OCI containers
-author: Crucible Team
-license: MIT
-
-# Takes tool calls over: `handled = true` runs bash inside the container
-# instead of on the host. Here, intercepting IS the sandbox.
-intercept_tools: true

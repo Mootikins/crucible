@@ -193,10 +193,11 @@ end
 -- ============================================================================
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
     name = "discord",
     version = "0.2.0",
     description = "Discord integration via Gateway WebSocket and REST API",
-    capabilities = { "config", "network", "websocket", "agent" },
 
     commands = {
         discord = {

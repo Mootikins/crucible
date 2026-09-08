@@ -766,6 +766,11 @@ cru.on_session_end(function(session)
 end)
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
+  -- Takes tool calls over: `handled = true` runs bash inside the
+  -- container instead of on the host. Here, intercepting IS the sandbox.
+  intercepts_tools = true,
   name = "oci",
 
   commands = {

@@ -313,10 +313,10 @@ mod tests {
             "statusline/default.luau",
             "plugins/auto-title/init.luau",
             "plugins/auto-title/lua/auto_title.luau",
-            "plugins/reflection/plugin.yaml",
+            "plugins/reflection/init.luau",
             "plugins/reflection/lua/config.luau",
             "plugins/oci/init.luau",
-            "plugins/reflection/plugin.yaml",
+            "plugins/reflection/init.luau",
             "plugins/worktree/init.luau",
             "plugins/worktree/lua/git.luau",
             "plugins/crucible-help/skills/crucible-help/SKILL.md",
@@ -370,7 +370,7 @@ mod tests {
 
         for required in [
             "plugins/oci/init.luau",
-            "plugins/oci/plugin.yaml",
+            "plugins/oci/init.luau",
             "plugins/oci/lua/container.luau",
             "plugins/web-search/lua/providers/ddg.luau",
             "defaults/init.luau",

@@ -6,6 +6,8 @@
 --- metadata for the lifecycle manager.
 
 return {
+    author = "Crucible Team",
+    license = "MIT",
     name = "crucible-help",
     version = "0.1.0",
     description = "Registers Crucible documentation as agent skill context",

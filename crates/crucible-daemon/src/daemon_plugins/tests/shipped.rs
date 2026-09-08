@@ -125,19 +125,24 @@ fn every_shipped_plugin_is_discovered() {
 /// until they were generating an index of what ships and half the rows were
 /// blank. One shape, asserted, so it stays one shape.
 #[test]
-fn every_shipped_manifest_declares_the_same_identifying_fields() {
+fn every_shipped_plugin_declares_the_same_identifying_fields() {
     const REQUIRED: &[&str] = &["name", "version", "description", "author", "license"];
 
     let mut missing: Vec<String> = Vec::new();
     for name in shipped_plugin_names() {
-        let manifest_path = shipped_plugins_dir().join(&name).join("plugin.yaml");
-        let body = std::fs::read_to_string(&manifest_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display()));
-        let manifest: serde_yaml::Value = serde_yaml::from_str(&body)
-            .unwrap_or_else(|e| panic!("{name}/plugin.yaml does not parse: {e}"));
+        // The spec table in the entry file, which is where this metadata
+        // lives now that `plugin.yaml` is gone. Read as text rather than
+        // executed: this asserts the field is DECLARED, and executing a
+        // plugin to find out would be the defect `discover_only` exists to
+        // avoid.
+        let entry = crucible_lua::source_files::init_file(&shipped_plugins_dir().join(&name))
+            .unwrap_or_else(|e| panic!("{name}: {e}"))
+            .unwrap_or_else(|| panic!("{name} ships no entry file"));
+        let body = std::fs::read_to_string(&entry)
+            .unwrap_or_else(|e| panic!("read {}: {e}", entry.display()));
 
         for field in REQUIRED {
-            if manifest.get(field).is_none() {
+            if !body.contains(&format!("{field} = ")) {
                 missing.push(format!("{name}: {field}"));
             }
         }
@@ -145,7 +150,7 @@ fn every_shipped_manifest_declares_the_same_identifying_fields() {
 
     assert!(
         missing.is_empty(),
-        "shipped manifests are missing identifying fields: {missing:#?}"
+        "shipped plugins are missing identifying fields: {missing:#?}"
     );
 }
 
