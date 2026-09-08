@@ -81,22 +81,21 @@ shellexpand = "3.1"
 nucleo-matcher = "0.3"
 
 [features]
-default = ["core", "markdown-it-parser", "yaml", "toml"]
+default = ["core", "markdown-it-parser", "toml"]
 core = []
 test-utils = []
 markdown-it-parser = []
 
-# Absorbed from crucible-config: format toggles
-yaml = []
+# Absorbed from crucible-config: the TOML format toggle
 toml = []
 
 [dev-dependencies]
 # Integration tests under `tests/` compile the library without `cfg(test)`,
 # so the `test-utils` feature must turn the test helpers on for them.
 crucible-core = { path = ".", features = ["test-utils"] }
-# `EnumIter` over `ScriptingEvent`, so the test asserting `ALL` covers every
-# variant walks what the compiler knows rather than a second hand-written list.
-# Dev-only: the derive is `#[cfg_attr(test, ...)]`.
+# `EnumIter` over `ScriptingEvent` and `SourceTag`, so the tests asserting
+# completeness walk what the compiler knows rather than a second hand-written
+# list. Dev-only: each derive is `#[cfg_attr(test, ...)]`.
 strum = { version = "0.28", features = ["derive"] }
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }

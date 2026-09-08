@@ -8,27 +8,32 @@ tags:
 
 # Embedding & Enrichment Configuration
 
-Semantic search, precognition, and similarity features all run through the **enrichment pipeline**. This page documents the `[enrichment]` section in `config.toml`.
+Semantic search, precognition, and similarity features all run through the **enrichment pipeline**. This page documents the `enrichment` table in `init.lua`.
 
-> Previous versions used a flat top-level `[embedding]` section. This is no longer supported — Crucible now rejects configs containing `[embedding]`. Use `[enrichment]` with a nested `provider` table as shown below.
+> Previous versions used a flat top-level `embedding` section. This is no longer supported — Crucible now rejects configs containing `embedding`. Use `enrichment` with a nested `provider` table as shown below.
 
 ## Configuration Location
 
-Add to `~/.config/crucible/config.toml`:
+Add to `~/.config/crucible/init.lua`:
 
-```toml
-[enrichment.provider]
-type = "fastembed"
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "fastembed",
+        },
+    },
+})
 ```
 
-The `[enrichment]` section has two sub-tables, both optional:
+The `enrichment` section has two sub-tables, both optional:
 
 | Sub-table | Purpose |
 |---|---|
-| `[enrichment.provider]` | Which embedding backend to use + its settings |
-| `[enrichment.pipeline]` | Pipeline tuning — one knob, `max_precognition_chars` (see below) |
+| `enrichment.provider` | Which embedding backend to use + its settings |
+| `enrichment.pipeline` | Pipeline tuning — one knob, `max_precognition_chars` (see below) |
 
-Omitting the whole `[enrichment]` section is meaningful, though: the daemon then skips
+Omitting the whole `enrichment` section is meaningful, though: the daemon then skips
 embedding generation, and semantic search returns nothing.
 
 ## Providers
@@ -43,12 +48,17 @@ load with an error that lists the supported types.
 
 Fast local embeddings with no API key needed:
 
-```toml
-[enrichment.provider]
-type = "fastembed"
-model = "bge-small-en-v1.5"        # default
-batch_size = 32
-# cache_dir = "/path/to/cache"     # optional
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "fastembed",
+            model = "bge-small-en-v1.5",  -- default
+            batch_size = 32,
+            -- cache_dir = "/path/to/cache"     -- optional
+        },
+    },
+})
 ```
 
 `cru models embeddings` prints the whole catalog of local models, with the
@@ -67,24 +77,35 @@ without an error; the values are ignored.
 
 Use Ollama's embedding models locally:
 
-```toml
-[enrichment.provider]
-type = "ollama"
-model = "nomic-embed-text"
-base_url = "http://localhost:11434"
-batch_size = 32
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "ollama",
+            model = "nomic-embed-text",
+            base_url = "http://localhost:11434",
+            batch_size = 32,
+        },
+    },
+})
 ```
 
 **Setup:** `ollama pull nomic-embed-text`
 
 ### OpenAI
 
-```toml
-[enrichment.provider]
-type = "openai"
-api_key = "{env:OPENAI_API_KEY}"           # required
-model = "text-embedding-3-small"
-# base_url = "https://api.openai.com/v1"   # optional
+<!-- crucible:not-config — `api_key` is required, and only the reader's own environment holds it -->
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "openai",
+            api_key = os.getenv("OPENAI_API_KEY"),  -- required
+            model = "text-embedding-3-small",
+            -- base_url = "https://api.openai.com/v1"   -- optional
+        },
+    },
+})
 ```
 
 The model name decides the vector dimension. The removed knobs `dimensions`,
@@ -98,14 +119,19 @@ embeddings, use `fastembed`.
 
 ### Mock
 
-```toml
-[enrichment.provider]
-type = "mock"
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "mock",
+        },
+    },
+})
 ```
 
 Returns deterministic stub vectors. Used by tests and local dev.
 
-## `[enrichment.pipeline]`
+## `enrichment.pipeline`
 
 The pipeline table has one knob: `max_precognition_chars` (default 3000 — the
 aggregate character budget for precognition context snippets). The removed knobs
@@ -113,9 +139,14 @@ aggregate character budget for precognition context snippets). The removed knobs
 `retry_delay_ms`, `circuit_breaker_threshold`, `circuit_breaker_timeout_ms`) still
 load without an error; the values are ignored.
 
-```toml
-[enrichment.pipeline]
-max_precognition_chars = 3000
+```lua
+cru.config.set({
+    enrichment = {
+        pipeline = {
+            max_precognition_chars = 3000,
+        },
+    },
+})
 ```
 
 ## Dimensions
@@ -154,32 +185,48 @@ Each note's embedding is stored on its row in the SQLite database; semantic sear
 
 ### Local Development (default)
 
-```toml
-[enrichment.provider]
-type = "fastembed"
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "fastembed",
+        },
+    },
+})
 ```
 
 No setup required.
 
 ### High-Quality Local
 
-```toml
-[enrichment.provider]
-type = "ollama"
-model = "nomic-embed-text"
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "ollama",
+            model = "nomic-embed-text",
+        },
+    },
+})
 ```
 
 ### Cloud API
 
-```toml
-[enrichment.provider]
-type = "openai"
-api_key = "{env:OPENAI_API_KEY}"
-model = "text-embedding-3-small"
+<!-- crucible:not-config — `api_key` is required, and only the reader's own environment holds it -->
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "openai",
+            api_key = os.getenv("OPENAI_API_KEY"),
+            model = "text-embedding-3-small",
+        },
+    },
+})
 ```
 
-`[enrichment.provider]` has no `batch_size` for the `openai` type, and the
-`[enrichment.pipeline]` `batch_size` field is currently unread — there is no working
+`enrichment.provider` has no `batch_size` for the `openai` type, and the
+`enrichment.pipeline` `batch_size` field is currently unread — there is no working
 batching knob for cloud providers.
 
 ## Troubleshooting

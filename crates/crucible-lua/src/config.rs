@@ -144,6 +144,51 @@ pub fn get_app_config_provenance() -> Option<crucible_core::config::ProvenanceMa
     )
 }
 
+/// Where one app-config leaf came from, and whether `config.save` refuses it.
+///
+/// The store answers, not the caller: the pin record is the store's, and the
+/// origin and the refusal must be one projection. See
+/// [`crucible_core::config::ConfigStore::origin`].
+///
+/// With no store — a process that never booted config — every leaf defaults.
+pub fn app_config_origin(path: &str) -> crucible_core::config::LeafOrigin {
+    match get_config().read() {
+        Ok(state) => match state.app_config.as_ref() {
+            Some(store) => store.origin(path),
+            None => default_leaf_origin(),
+        },
+        Err(_) => default_leaf_origin(),
+    }
+}
+
+/// [`app_config_origin`] for every leaf the store recorded, in path order.
+///
+/// One lock for the whole listing: a per-key call would take the lock once
+/// per leaf, and a merge landing between two of those calls would answer half
+/// the list from one store and half from another.
+pub fn app_config_origins() -> Vec<(String, crucible_core::config::LeafOrigin)> {
+    match get_config().read() {
+        Ok(state) => match state.app_config.as_ref() {
+            Some(store) => store
+                .recorded_leaves()
+                .into_iter()
+                .map(|path| (path.to_string(), store.origin(path)))
+                .collect(),
+            None => Vec::new(),
+        },
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The row a leaf nothing wrote gets: the compiled-in default, pinned by
+/// nobody.
+fn default_leaf_origin() -> crucible_core::config::LeafOrigin {
+    crucible_core::config::LeafOrigin {
+        pinned: false,
+        origin: SourceTag::Default.origin(),
+    }
+}
+
 /// Seed app config from an already-loaded config value.
 ///
 /// Installs a RUNTIME store: the location-naming keys are withheld from the
@@ -179,6 +224,27 @@ pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: SourceTag) -> Ve
             .get_or_insert_with(ConfigStore::runtime)
             .merge(overlay, tag),
         Err(_) => Vec::new(),
+    }
+}
+
+/// Split an overlay against the store's pins: what `config.save` may write,
+/// and the leaves a boot-restored layer above `settings.json` refuses.
+///
+/// The refusal belongs to the store, not to the RPC handler: the pin record
+/// is the store's, and a second copy of the rule in the daemon would be a
+/// second answer to who owns a leaf.
+///
+/// With no store — a process that never booted config — nothing is pinned and
+/// the whole overlay is accepted.
+pub fn split_pinned_app_config(
+    overlay: serde_json::Value,
+) -> (serde_json::Value, Vec<crucible_core::config::PinnedLeaf>) {
+    match get_config().read() {
+        Ok(state) => match state.app_config.as_ref() {
+            Some(store) => store.split_pinned(overlay),
+            None => (overlay, Vec::new()),
+        },
+        Err(_) => (overlay, Vec::new()),
     }
 }
 
@@ -308,44 +374,113 @@ fn store_runtimepath() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The Lua call site of the frame that invoked the current Rust callback,
-/// for `file:line` provenance.
-fn lua_call_site(lua: &Lua) -> (String, Option<u32>) {
-    lua.inspect_stack(1, |debug| {
-        let source = debug.source();
-        let file = source
-            .short_src
-            .map(|s| s.into_owned())
-            .unwrap_or_else(|| "?".to_string());
-        let line = debug.current_line().and_then(|l| u32::try_from(l).ok());
-        (file, line)
-    })
-    .unwrap_or_else(|| ("?".to_string(), None))
+/// The Lua call site of the frame that invoked the current Rust callback.
+///
+/// Two forms of the same site, and both are needed. `chunk` is the raw chunk
+/// name, which names the file: a path decision must read it. `display` is
+/// Luau's printable form, which truncates a long path to fit an error message
+/// — right for a human-facing warning, and useless for a prefix match.
+struct CallSite {
+    /// The chunk name, as the loader set it.
+    chunk: String,
+    /// The printable short form.
+    display: String,
+    /// The call-site line; `None` when the frame reports none.
+    line: Option<u32>,
 }
 
-/// One Lua write into the store: tag with the call site, warn per withheld
-/// key, and — during the boot phase — extend the live search space when the
-/// write touched `runtimepath`.
+impl CallSite {
+    /// The site as a human reads it: `file:line`, or the file alone.
+    fn printable(&self) -> String {
+        match self.line {
+            Some(line) => format!("{}:{line}", self.display),
+            None => self.display.clone(),
+        }
+    }
+}
+
+fn lua_call_site(lua: &Lua) -> CallSite {
+    lua.inspect_stack(1, |debug| {
+        let source = debug.source();
+        let chunk = source
+            .source
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|| "?".to_string());
+        let display = source
+            .short_src
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|| chunk.clone());
+        let line = debug.current_line().and_then(|l| u32::try_from(l).ok());
+        CallSite {
+            chunk,
+            display,
+            line,
+        }
+    })
+    .unwrap_or_else(|| CallSite {
+        chunk: "?".to_string(),
+        display: "?".to_string(),
+        line: None,
+    })
+}
+
+/// The roots that say which author a Lua write belongs to. Installed by the
+/// boot, which is the one place that knows both the config root and the
+/// plugin roots. Empty until then: every write counts as the human's, which
+/// is the visible failure rather than the silent one.
+fn author_roots_slot() -> &'static RwLock<crate::authorship::AuthorRoots> {
+    static SLOT: OnceLock<RwLock<crate::authorship::AuthorRoots>> = OnceLock::new();
+    SLOT.get_or_init(|| RwLock::new(crate::authorship::AuthorRoots::default()))
+}
+
+/// Install the roots that classify a Lua write.
+pub fn set_author_roots(roots: crate::authorship::AuthorRoots) {
+    if let Ok(mut slot) = author_roots_slot().write() {
+        *slot = roots;
+    }
+}
+
+/// Add one plugin root to the installed roots, keeping the rest.
+///
+/// The boot installs the whole list at once, because it resolves it at once.
+/// A plugin installed while the daemon runs arrives one directory at a time
+/// and must not discard what the boot found, so it adds rather than replaces.
+/// Answers whether the root was new.
+pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
+    match author_roots_slot().write() {
+        Ok(mut slot) => slot.add_plugin_root(root),
+        // A poisoned lock leaves the roots as they are. The write is then
+        // classified as the human's, which is the visible failure: the user
+        // is told the file and the line and can see that it is not theirs.
+        Err(_) => false,
+    }
+}
+
+/// The layer a write from this call site lands in.
+///
+/// A poisoned lock falls back to empty roots rather than to a hand-made tag,
+/// so the "no root matches" rule is written once and both paths obey it.
+fn classify_call_site(site: &CallSite) -> SourceTag {
+    match author_roots_slot().read() {
+        Ok(roots) => roots.classify(&site.chunk, site.line),
+        Err(_) => crate::authorship::AuthorRoots::default().classify(&site.chunk, site.line),
+    }
+}
+
+/// One Lua write into the store: tag with the call site's AUTHOR, warn per
+/// withheld key, and — during the boot phase — extend the live search space
+/// when the write touched `runtimepath`.
 fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
-    let (file, line) = lua_call_site(lua);
+    let site = lua_call_site(lua);
     let touched_runtimepath = overlay
         .as_object()
         .is_some_and(|map| map.contains_key("runtimepath"));
 
-    let withheld = merge_app_config_tagged(
-        overlay,
-        SourceTag::Lua {
-            file: file.clone(),
-            line,
-        },
-    );
+    let withheld = merge_app_config_tagged(overlay, classify_call_site(&site));
     for key in &withheld {
         warn!(
             key = %key,
-            call_site = %match line {
-                Some(line) => format!("{file}:{line}"),
-                None => file.clone(),
-            },
+            call_site = %site.printable(),
             "location keys freeze at daemon boot; restart the daemon to change this key"
         );
     }
@@ -637,9 +772,19 @@ fn register_include(lua: &Lua, ns: &Table, config_dir: PathBuf) -> Result<(), Lu
         })?;
 
         debug!("Including config file: {}", full_path.display());
+        // The `@` prefix makes Luau render the chunk as a FILE, so its
+        // message reads `<path>:<line>: <reason>` rather than
+        // `[string "<path>"]:<line>:`. The failure rule reports that message
+        // verbatim, so the prefix is what names the line to the user.
+        //
+        // An included file is config, exactly as `init.lua` is. The mark
+        // carries "this file does not parse" out of this Rust callback,
+        // which Luau would otherwise report to `init.lua` as a runtime
+        // error — the same mistake, fatal one level up and silent here.
         lua.load(&source)
-            .set_name(full_path.to_string_lossy())
+            .set_name(format!("@{}", full_path.display()))
             .exec()
+            .map_err(crate::config_syntax::mark_config_syntax)
     })?;
 
     ns.set("include", include_fn)?;
@@ -908,6 +1053,34 @@ mod tests {
         assert!(included);
     }
 
+    /// A file `cru.include` loads is config, exactly as `init.lua` is, so a
+    /// syntax error in it must classify as one. `include` loads inside a Rust
+    /// callback and Luau reports a callback failure to its caller as a
+    /// RUNTIME error, so without the mark the identical mistake would refuse
+    /// the boot in `init.lua` and pass silently one level down.
+    #[test]
+    fn an_included_file_that_does_not_parse_is_a_config_syntax_error() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path().to_path_buf();
+        std::fs::write(config_dir.join("broken.lua"), "local x =\n").unwrap();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_include(&lua, &cru, config_dir).unwrap();
+
+        let error = lua
+            .load(r#"cru.include("broken.lua")"#)
+            .exec()
+            .expect_err("a file that does not parse must fail the include");
+
+        let syntax = crate::config_syntax::config_syntax_error(&error)
+            .expect("an included file that does not parse is a config syntax error");
+        assert!(
+            syntax.message.contains("broken.lua:2"),
+            "the message must name the included file and its line: {syntax}"
+        );
+    }
+
     #[test]
     fn test_include_missing_file() {
         let tmp = TempDir::new().unwrap();
@@ -919,6 +1092,92 @@ mod tests {
 
         let result = lua.load(r#"cru.include("nonexistent.lua")"#).exec();
         assert!(result.is_err());
+    }
+
+    /// The gate for the two-author split. A plugin's `setup()` write supplies
+    /// a default and must lose to the settings UI; the same write from the
+    /// user's own `init.lua` must beat it.
+    ///
+    /// The directories are deliberately long. Luau's printable chunk name
+    /// holds 256 bytes (`LUA_IDSIZE`) and drops the head of a longer path, so
+    /// a classifier that reads `short_src` matches neither root and files
+    /// every write under one layer.
+    #[test]
+    fn a_plugin_write_declares_a_default_and_a_write_from_init_lua_pins() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let tmp = TempDir::new().unwrap();
+        let long_name = "a_directory_named_long_enough_to_push_the_chunk_name_past_the_limit";
+        let deep = tmp
+            .path()
+            .join(long_name)
+            .join(long_name)
+            .join(long_name)
+            .join(long_name);
+        assert!(
+            deep.as_os_str().len() > 256,
+            "the printable chunk name must truncate, or this proves nothing"
+        );
+        let config_root = deep.join("config");
+        let plugins_root = deep.join("plugins");
+        let init_file = config_root.join("init.lua");
+        let plugin_file = plugins_root.join("alpha").join("init.lua");
+        std::fs::create_dir_all(&config_root).unwrap();
+        std::fs::create_dir_all(plugin_file.parent().unwrap()).unwrap();
+
+        set_author_roots(crate::authorship::AuthorRoots::new(
+            vec![config_root.clone()],
+            vec![plugins_root.clone()],
+        ));
+        begin_boot_store();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        let write = r#"cru.config.set({ chat = { model = "from-the-file" } })"#;
+        let source_of = |file: &Path| {
+            lua.load(write)
+                .set_name(format!("@{}", file.display()))
+                .exec()
+                .unwrap();
+            get_app_config_provenance()
+                .expect("the store is live")
+                .get("chat.model")
+                .cloned()
+                .expect("the write recorded a leaf")
+        };
+        let from_plugin = source_of(&plugin_file);
+        let from_init = source_of(&init_file);
+
+        // Restore before asserting: a failed assertion must not leave the
+        // roots installed for the next test.
+        set_author_roots(crate::authorship::AuthorRoots::default());
+
+        assert_eq!(
+            from_plugin,
+            SourceTag::PluginDefault {
+                plugin: "alpha".to_string(),
+                file: plugin_file.display().to_string(),
+                line: Some(1),
+            }
+        );
+        assert!(
+            from_plugin.rank() < SourceTag::Settings.rank(),
+            "a plugin default must not lock the key against settings.json"
+        );
+        assert_eq!(
+            from_init,
+            SourceTag::Lua {
+                file: init_file.display().to_string(),
+                line: Some(1),
+            }
+        );
+        assert!(
+            from_init.rank() > SourceTag::Settings.rank(),
+            "a line the user wrote must lock the key"
+        );
     }
 
     #[test]

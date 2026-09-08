@@ -278,9 +278,12 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
     let config_home = TempDir::new().unwrap();
     let whitelists_dir = config_home.path().join("crucible").join("whitelists.d");
     std::fs::create_dir_all(&whitelists_dir).unwrap();
+    // The rig's turn calls `rm -rf /`, so the grant names that command. A
+    // bare `rm` would not do: a saved pattern with no `*` is the whole
+    // statement, which is what stops one grant reaching every later `rm`.
     std::fs::write(
         whitelists_dir.join("user.toml"),
-        "[bash_commands]\nallowed_prefixes = [\"rm\"]\n",
+        "[bash_commands]\nallowed_prefixes = [\"rm -rf /\"]\n",
     )
     .unwrap();
     let card_roots = crate::agent_cards::CardRoots {

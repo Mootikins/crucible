@@ -69,11 +69,11 @@ This is my knowledge base. Here I'll store notes, ideas, and references.
 
 ### 4. Configure Crucible
 
-Register the kiln in your global config under the `[kilns]` section:
+Register the kiln in your global config under the `kilns` section:
 
 ```bash
 mkdir -p ~/.config/crucible
-cat > ~/.config/crucible/config.toml << 'EOF'
+cat > ~/.config/crucible/init.lua << 'EOF'
 default_kiln = "my-kiln"
 
 [kilns]

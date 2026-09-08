@@ -136,7 +136,7 @@ impl Server {
 
             let declared = self
                 .rpc_context
-                .effective_config
+                .effective_config()
                 .as_ref()
                 .and_then(|cfg| cfg.get("plugins"))
                 .and_then(|v| {

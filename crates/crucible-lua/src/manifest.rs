@@ -1,23 +1,23 @@
-//! Plugin manifest parsing and validation
+//! Plugin manifest: what the host knows about a plugin before it runs it.
 //!
-//! Plugins declare metadata, dependencies, and capabilities in a `plugin.yaml` manifest.
+//! There is no manifest FILE. A plugin is a directory that holds an entry
+//! file (`init.luau`, else `init.lua`), and `plugin.yaml` is gone. The host
+//! synthesizes this struct from the directory — the directory name is the
+//! identity, because it is the only name the host knows without running Lua
+//! — and the spec table the entry file returns declares the rest.
 //!
-//! ## Example Manifest
+//! ## Example entry file
 //!
-//! ```yaml
-//! name: my-plugin
-//! version: "1.0.0"
-//! description: A sample plugin
-//! author: Your Name
+//! ```lua
+//! return {
+//!     name = "my-plugin",
+//!     version = "1.0.0",
+//!     description = "A sample plugin",
+//!     author = "Your Name",
+//!     license = "MIT",
 //!
-//! main: lua/init.lua
-//!
-//! capabilities:
-//!   - filesystem
-//!   - shell
-//!
-//! dependencies:
-//!   - name: other-plugin
+//!     setup = function(opts) end,
+//! }
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -28,9 +28,6 @@ use thiserror::Error;
 pub enum ManifestError {
     #[error("Failed to read manifest: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("Failed to parse YAML: {0}")]
-    Yaml(#[from] serde_yaml::Error),
 
     #[error("Validation failed: {0}")]
     Validation(String),

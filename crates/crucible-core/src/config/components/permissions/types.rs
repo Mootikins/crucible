@@ -1,35 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Scope for writing permission rules to config files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermissionScope {
-    /// Project-level config: `crucible.toml` in the project directory.
-    Project,
-    /// User-level config: `~/.config/crucible/config.toml` (or platform equivalent).
-    User,
-}
-
-/// A grant scope that no config file stores.
-///
-/// `Once` and `Session` grants live only in memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("permission scope {0:?} has no config file")]
-pub struct TransientScope(pub crate::interaction::PermissionScope);
-
-/// To make a new grant scope fail to compile here, this match is exhaustive.
-impl TryFrom<crate::interaction::PermissionScope> for PermissionScope {
-    type Error = TransientScope;
-
-    fn try_from(scope: crate::interaction::PermissionScope) -> Result<Self, Self::Error> {
-        use crate::interaction::PermissionScope as Grant;
-        match scope {
-            Grant::Project => Ok(PermissionScope::Project),
-            Grant::User => Ok(PermissionScope::User),
-            Grant::Once | Grant::Session => Err(TransientScope(scope)),
-        }
-    }
-}
-
 /// Permission mode for tool access control
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

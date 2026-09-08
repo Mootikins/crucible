@@ -1222,9 +1222,11 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 
 ### 4.25 Config
 
-- Responsibility: load `config.toml` with value references, CLI overrides and a source trace; validate; reject legacy keys with an actionable error.
-- Owns: `AppConfig`, one canonical struct; `ValueSourceMap`.
+- Responsibility: evaluate `init.lua` once at boot and merge the layers into one store with per-leaf provenance — defaults, plugin defaults, `settings.json`, the human's Lua lines, CLI flags, the runtime knob; validate; reject legacy keys with an actionable error. `config.toml` is not a config source: the reader is gone and only `cru config migrate` still parses the file.
+- Owns: `CliAppConfig`, one canonical struct; `ConfigStore`; `SourceTag` and `ProvenanceMap`.
+- Operations: `config.effective`, `config.get`, `config.set` (runtime, in memory), `config.save` (durable, `settings.json`, refuses a pinned leaf), `config.origin`, `config.controls`.
 - Must never know: runtime state.
+- See [[Config Boot]] for the sequence, the layer order and the two verbs.
 
 ### 4.26 Daemon server and RPC client
 
@@ -1344,7 +1346,7 @@ GET  /api/plugins/{publications,options}  POST /api/plugins/:name/option  POST /
 GET  /api/review/hunks  POST /api/review/hunk/:id/state  POST /api/review/comment
 GET  /api/scm/branches  POST /api/scm/worktree  POST /api/scm/clone
 GET  /api/layout  POST /api/layout  DELETE /api/layout
-GET  /api/config  GET /api/mcp/status
+GET  /api/config  POST /api/config  GET /api/mcp/status
 POST /api/webhook/:name
 POST /exec  (SSE)   GET /api/terminal/ws  (WebSocket; localhost, or remote_shell opt-in)
 GET  /  and static assets, SPA fallback
@@ -1927,7 +1929,7 @@ determine the design.
 5. **ACP filesystem capability.** Deliberately unwired. If read-only capture is wanted, `readTextFile: true` is the documented direction, and the content capture path needs a home.
 6. **`handled` ordering.** The `oci` plugin takes over execution before the gate. The isolation claim in section 9.5 is stronger than the docs require. A capability token on the session is possible but unspecified.
 7. **Project config `kilns` table.** Parsed and ignored. Multi-kiln association uses a global registry plus `session.connect_kiln`. The docs do not say which wins, or whether `project.toml` seeds the kiln set at creation.
-8. **Kiln-local `.crucible/config.toml`.** `cru init` writes it. It appears never to load. Whether per-kiln config is a layer at all is undecided.
+8. **Kiln-local config.** `cru init` writes `.crucible/init.lua`, which loads into that kiln's session runtimes. The `.crucible/config.toml` older versions wrote never loaded at all. Whether per-kiln app config is a layer is undecided.
 9. **Webhook auth posture.** The route sits inside bearer auth, so a remote sender gets 401 before its HMAC is read. Move it outside, or add an opt-in key. Not decided.
 10. **Agent-initiated questions.** Seven interaction kinds render in both clients. No agent tool produces an `Ask`. Should `ask` be a `BuiltinTool` with surface `Daemon`, or a Lua-only primitive through `cru.ui`? Its plan-mode class is unspecified.
 11. **`cru.session.fork`.** The Lua path copies history with no agent config. Whether fork copies the agent, the mode and the kiln set is unspecified.

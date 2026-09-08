@@ -54,25 +54,32 @@ Every delegation creates a parent-child relationship between sessions. Children 
 A delegation target is resolved in this order:
 
 1. **[[Help/Extending/Agent Cards|Agent cards]]** — specialized internal agents defined as markdown cards in your kiln, project, or config directory. This is the primary way to define delegation targets: a card carries its own system prompt, optional model, and per-tool policy.
-2. **[[Agent Client Protocol]] profiles** — external agents (Claude Code, OpenCode, Cursor, Gemini, Codex, or custom profiles from `config.toml`).
+2. **[[Agent Client Protocol]] profiles** — external agents (Claude Code, OpenCode, Cursor, Gemini, Codex, or custom profiles from `init.lua`).
 
 Omit the target to hand the task to a clone of the parent's own agent configuration.
 
 ## Configuration
 
-Delegation settings live in your agent profile under `config.toml`. Each agent can have its own delegation rules.
+Delegation settings live in your agent profile under `init.lua`. Each agent can have its own delegation rules.
 
-```toml
-[acp.agents.my-claude]
-extends = "claude"
-
-[acp.agents.my-claude.delegation]
-enabled = true
-max_depth = 2
-allowed_targets = ["opencode", "cursor"]
-result_max_bytes = 102400
-max_concurrent_delegations = 3
-timeout_secs = 300
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            ["my-claude"] = {
+                extends = "claude",
+                delegation = {
+                    enabled = true,
+                    max_depth = 2,
+                    allowed_targets = { "opencode", "cursor" },
+                    result_max_bytes = 102400,
+                    max_concurrent_delegations = 3,
+                    timeout_secs = 300,
+                },
+            },
+        },
+    },
+})
 ```
 
 ### Settings
@@ -102,11 +109,11 @@ Delegation follows a principle of least privilege. Child agents run with restric
 - Delegate to themselves — a target matching the delegating agent's own name or card is rejected by a self-delegation guard, cutting off trivial infinite loops
 - Use tools their agent card marks `deny`
 - Read or write files outside the workspace, kilns, and session directory (filesystem containment)
-- Answer permission prompts — children run non-interactively, so a tool that would prompt is denied unless a permission pattern, Lua hook, or `[permissions]` config allows it
+- Answer permission prompts — children run non-interactively, so a tool that would prompt is denied unless a permission pattern, Lua hook, or `permissions` config allows it
 
 **What Crucible enforces:**
 
-- Every tool call from a delegated child goes through the same permission gate as direct calls, including the `[permissions]` config and the project `[security.shell]` policy
+- Every tool call from a delegated child goes through the same permission gate as direct calls, including the `permissions` config and the project `[security.shell]` policy
 - The child's **provider trust level** (not a blanket assumption) must satisfy the kiln's data classification — a local-model card can serve a confidential kiln that a cloud target cannot
 - Results are truncated to `result_max_bytes` to prevent context overflow
 - Concurrent delegation limits prevent resource exhaustion; `timeout_secs` cancels hung children

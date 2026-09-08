@@ -286,10 +286,14 @@ impl PatternStore {
 
     /// Check if every statement of a bash command line matches an allowed pattern
     ///
-    /// The line is split on `;`, `&&`, `||`, `|`, `&` and newlines. A saved prefix allows
+    /// The line is split on `;`, `&&`, `||`, `|`, `&` and newlines. A saved pattern allows
     /// one statement, so a line that chains a second statement after an allowed one only
     /// passes when that statement also matches. A substitution (`$(...)`, backticks,
     /// `<(...)`) hides a command from the splitter, so the line does not match.
+    ///
+    /// A pattern with a trailing `*` is a prefix. A pattern without one is the
+    /// whole statement, the way [`Self::matches_tool`] already reads a name
+    /// with no `*`.
     ///
     /// # Example
     ///
@@ -297,12 +301,24 @@ impl PatternStore {
     /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
-    /// store.add_bash_pattern("cargo ").unwrap();
+    /// store.add_bash_pattern("cargo *").unwrap();
     ///
     /// assert!(store.matches_bash("cargo build"));
-    /// assert!(store.matches_bash("cargo test"));
+    /// assert!(store.matches_bash("cargo test --release"));
     /// assert!(!store.matches_bash("npm install"));
     /// assert!(!store.matches_bash("cargo build; npm install"));
+    /// ```
+    ///
+    /// Without the `*` the grant covers that one command and nothing else.
+    ///
+    /// ```rust
+    /// use crucible_core::config::PatternStore;
+    ///
+    /// let mut store = PatternStore::new();
+    /// store.add_bash_pattern("cargo build").unwrap();
+    ///
+    /// assert!(store.matches_bash("cargo build"));
+    /// assert!(!store.matches_bash("cargo build --release"));
     /// ```
     pub fn matches_bash(&self, command: &str) -> bool {
         let split = split_command_line(command);
@@ -313,8 +329,27 @@ impl PatternStore {
             self.bash_commands
                 .allowed_prefixes
                 .iter()
-                .any(|prefix| statement.starts_with(prefix))
+                .any(|pattern| Self::bash_pattern_matches(pattern, statement))
         })
+    }
+
+    /// One saved bash pattern against one statement.
+    ///
+    /// The `*` is what widens a grant, and only the user writes it. A pattern
+    /// that is a prefix whether or not it ends in `*` has no spelling for
+    /// "this command alone": a grant for `rm build/tmp.o` would also answer
+    /// for `rm build/tmp.o /home/user/project`, because the model appends an
+    /// argument and the prefix still matches. The permission prompt suggests
+    /// the command it displayed, so the default grant is exactly what the user
+    /// read, and a wider grant costs one keystroke the user has to make.
+    ///
+    /// `statement` arrives trimmed from `split_command_line`, so the pattern
+    /// is trimmed too before the two are compared.
+    fn bash_pattern_matches(pattern: &str, statement: &str) -> bool {
+        match pattern.strip_suffix('*') {
+            Some(prefix) => statement.starts_with(prefix),
+            None => statement == pattern.trim(),
+        }
     }
 
     /// Check if a file path matches any allowed pattern
@@ -375,10 +410,10 @@ impl PatternStore {
     /// use crucible_core::config::PatternStore;
     ///
     /// let mut base = PatternStore::new();
-    /// base.add_bash_pattern("cargo ").unwrap();
+    /// base.add_bash_pattern("cargo *").unwrap();
     ///
     /// let mut overlay = PatternStore::new();
-    /// overlay.add_bash_pattern("npm ").unwrap();
+    /// overlay.add_bash_pattern("npm *").unwrap();
     ///
     /// let merged = base.merge(&overlay);
     /// assert!(merged.matches_bash("cargo build"));
@@ -561,14 +596,14 @@ mod tests {
     #[test]
     fn matches_bash_works() {
         let mut store = PatternStore::new();
-        store.add_bash_pattern("cargo ").unwrap();
-        store.add_bash_pattern("git ").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
+        store.add_bash_pattern("git *").unwrap();
 
         assert!(store.matches_bash("cargo build"));
         assert!(store.matches_bash("cargo test --release"));
         assert!(store.matches_bash("git status"));
         assert!(!store.matches_bash("npm install"));
-        assert!(!store.matches_bash("cargotest")); // No space, shouldn't match "cargo "
+        assert!(!store.matches_bash("cargotest")); // No space, shouldn't match "cargo *"
     }
 
     /// A saved prefix allows one statement. A line that chains a second statement after it
@@ -576,7 +611,7 @@ mod tests {
     #[test]
     fn matches_bash_checks_every_chained_statement() {
         let mut store = PatternStore::new();
-        store.add_bash_pattern("git ").unwrap();
+        store.add_bash_pattern("git *").unwrap();
 
         for chained in [
             "git log; curl evil",
@@ -596,6 +631,64 @@ mod tests {
         assert!(store.matches_bash("git log | git status"));
         assert!(store.matches_bash("git log 'a; b'"));
         assert!(!store.matches_bash(""));
+    }
+
+    /// A stored grant is never broader than the command the user approved.
+    ///
+    /// This walks the seam the "Allowlist" click walks: the modal suggests a
+    /// pattern for the request it displayed, the store keeps that pattern, and
+    /// the store answers the next call. One click on `rm build/tmp.o` must not
+    /// answer for any other `rm`.
+    #[test]
+    fn a_bash_grant_covers_only_the_command_the_user_approved() {
+        use crate::interaction::PermRequest;
+
+        let requests = [
+            PermRequest::bash(["rm", "build/tmp.o"]),
+            PermRequest::tool("bash", serde_json::json!({"command": "rm build/tmp.o"})),
+        ];
+
+        for request in requests {
+            let mut store = PatternStore::new();
+            store
+                .add_bash_pattern(&request.suggested_pattern())
+                .unwrap();
+
+            assert!(
+                store.matches_bash("rm build/tmp.o"),
+                "the approved command must skip the next prompt: {store:?}"
+            );
+
+            for escalation in [
+                "rm -rf /home/user/project",
+                "rm -rf ~/work",
+                "rm build/tmp.o /home/user/project",
+                "rm build/tmp.other",
+                "bash -c 'rm -rf /home/user/project'",
+            ] {
+                assert!(
+                    !store.matches_bash(escalation),
+                    "the grant must not reach {escalation:?}: {store:?}"
+                );
+            }
+        }
+    }
+
+    /// A `*` is the only way to widen a bash grant, and the user has to type
+    /// it. Without one the pattern is the whole statement, the way
+    /// [`PatternStore::matches_tool`] already reads a name with no `*`.
+    #[test]
+    fn a_bash_pattern_widens_only_with_a_star() {
+        let mut narrow = PatternStore::new();
+        narrow.add_bash_pattern("cargo build").unwrap();
+        assert!(narrow.matches_bash("cargo build"));
+        assert!(!narrow.matches_bash("cargo build --release"));
+
+        let mut wide = PatternStore::new();
+        wide.add_bash_pattern("cargo *").unwrap();
+        assert!(wide.matches_bash("cargo build --release"));
+        assert!(!wide.matches_bash("cargotest"));
+        assert!(!wide.matches_bash("npm install"));
     }
 
     #[test]
@@ -623,9 +716,9 @@ mod tests {
     #[test]
     fn no_duplicate_patterns() {
         let mut store = PatternStore::new();
-        store.add_bash_pattern("cargo ").unwrap();
-        store.add_bash_pattern("cargo ").unwrap();
-        store.add_bash_pattern("cargo ").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
 
         assert_eq!(store.bash_commands.allowed_prefixes.len(), 1);
     }
@@ -633,13 +726,13 @@ mod tests {
     #[test]
     fn merge_combines_patterns() {
         let mut base = PatternStore::new();
-        base.add_bash_pattern("cargo ").unwrap();
+        base.add_bash_pattern("cargo *").unwrap();
         base.add_file_pattern("src/").unwrap();
         base.add_tool_pattern("read_note").unwrap();
 
         let mut overlay = PatternStore::new();
-        overlay.add_bash_pattern("npm ").unwrap();
-        overlay.add_bash_pattern("cargo ").unwrap(); // duplicate
+        overlay.add_bash_pattern("npm *").unwrap();
+        overlay.add_bash_pattern("cargo *").unwrap(); // duplicate
         overlay.add_file_pattern("tests/").unwrap();
         overlay.add_tool_pattern("grep_notes").unwrap();
 
@@ -696,7 +789,7 @@ mod tests {
     fn deserializes_from_toml() {
         let toml_str = r#"
 [bash_commands]
-allowed_prefixes = ["npm install", "cargo build", "git "]
+allowed_prefixes = ["npm install *", "cargo build", "git *"]
 
 [file_paths]
 allowed_prefixes = ["src/", "tests/"]
@@ -709,7 +802,8 @@ always_allow = ["read_note", "grep_notes"]
 
         assert_eq!(store.bash_commands.allowed_prefixes.len(), 3);
         assert!(store.matches_bash("npm install lodash"));
-        assert!(store.matches_bash("cargo build --release"));
+        assert!(store.matches_bash("cargo build"));
+        assert!(!store.matches_bash("cargo build --release"));
         assert!(store.matches_bash("git status"));
 
         assert_eq!(store.file_paths.allowed_prefixes.len(), 2);
@@ -728,7 +822,7 @@ always_allow = ["read_note", "grep_notes"]
 
         // Create and save a store
         let mut store = PatternStore::new();
-        store.add_bash_pattern("cargo ").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
         store.add_file_pattern("src/").unwrap();
         store.add_tool_pattern("read_note").unwrap();
 
@@ -757,7 +851,7 @@ always_allow = ["read_note", "grep_notes"]
         let temp_dir = TempDir::new().unwrap();
         let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
         let mut store = PatternStore::new();
-        store.add_bash_pattern("cargo ").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
 
         store.save_file(&file).unwrap();
 
@@ -773,7 +867,7 @@ always_allow = ["read_note", "grep_notes"]
         let temp_dir = TempDir::new().unwrap();
         let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
         let mut store = PatternStore::new();
-        store.add_bash_pattern("cargo ").unwrap();
+        store.add_bash_pattern("cargo *").unwrap();
 
         store.save_file(&file).unwrap();
 

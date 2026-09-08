@@ -61,3 +61,10 @@ crucible-lua = { path = ".", features = ["test-utils"] }
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
 proptest = "1"
+# `docs_lua_config` sweeps every markdown file under the two docs roots.
+walkdir = "2.5"
+# `docs_lua_config` needs the keys the config types do not claim: nothing in
+# the config tree sets `deny_unknown_fields`, so a documented-but-invented key
+# merges into the store, extracts clean, and the doc looks validated when it
+# is not. The TOML gate closes the same hole the same way.
+serde_ignored = "0.1"

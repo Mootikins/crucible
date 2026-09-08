@@ -20,55 +20,60 @@ in and which one wins.
 
 ## Global Permissions
 
-Set in `~/.config/crucible/config.toml`. Applies to all agent sessions unless overridden
+Set in `~/.config/crucible/init.lua`. Applies to all agent sessions unless overridden
 per-agent. (A kiln's `.crucible/kiln.toml` holds only the kiln's display name — there is
 no kiln-level permissions file.)
 
-```toml
-[permissions]
-# What to do when no rule matches: allow, deny, or ask (default)
-default = "ask"
+```lua
+cru.config.set({
+    permissions = {
+        -- What to do when no rule matches: allow, deny, or ask (default)
+        default = "ask",
 
-# Always allow these tools (no prompt)
-allow = [
-  "bash:cargo *",
-  "bash:git *",
-  "read_file:*",
-]
+        -- Always allow these tools (no prompt)
+        allow = { "bash:cargo *", "bash:git *", "read_file:*" },
 
-# Always deny these tools (no override possible)
-deny = [
-  "bash:rm -rf *",
-  "bash:sudo *",
-]
+        -- Always deny these tools (no override possible)
+        deny = { "bash:rm -rf *", "bash:sudo *" },
 
-# Ask user before running these tools
-ask = [
-  "write_file:*",
-  "edit_file:*",
-  "bash:*",
-]
+        -- Ask user before running these tools
+        ask = { "write_file:*", "edit_file:*", "bash:*" },
+    },
+})
 ```
 
 ## Per-Agent Permissions
 
-Each ACP agent profile can have its own permission config. When present, it replaces the global `[permissions]` for sessions using that agent.
+Each ACP agent profile can have its own permission config. When present, it replaces the global `permissions` for sessions using that agent.
 
-```toml
-# Claude: ask before anything, but wave read-shaped calls through
-[acp.agents.claude.permissions]
-default = "ask"
-allow = ["read:*", "search:*"]
-
-# OpenCode: permissive — allow by default, refuse anything execute-shaped
-[acp.agents.opencode.permissions]
-default = "allow"
-deny = ["bash:*"]
-
-# Gemini: read-only — allow only read- and search-shaped calls
-[acp.agents.gemini.permissions]
-default = "deny"
-allow = ["read:*", "search:*"]
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            claude = {
+                permissions = {
+                    -- Claude: ask before anything, but wave read-shaped calls through
+                    default = "ask",
+                    allow = { "read:*", "search:*" },
+                },
+            },
+            opencode = {
+                permissions = {
+                    -- OpenCode: permissive — allow by default, refuse anything execute-shaped
+                    default = "allow",
+                    deny = { "bash:*" },
+                },
+            },
+            gemini = {
+                permissions = {
+                    -- Gemini: read-only — allow only read- and search-shaped calls
+                    default = "deny",
+                    allow = { "read:*", "search:*" },
+                },
+            },
+        },
+    },
+})
 ```
 
 **These profiles gate by ACP tool *kind*, not by command or path.** An external agent's
@@ -83,8 +88,8 @@ or rely on the interactive prompt.
 When a session starts, the permission config is resolved in this priority order:
 
 1. **`--permissions` CLI flag** — overrides the `default` mode for that invocation only
-2. **Agent-specific `[acp.agents.<name>.permissions]`** — if present, used in full
-3. **Global `[permissions]`** — fallback when agent has no specific config
+2. **Agent-specific `acp.agents.<name>.permissions`** — if present, used in full
+3. **Global `permissions`** — fallback when agent has no specific config
 
 Note: `--permissions ask` keeps the resolved config's rule lists and only resets the
 default. `--permissions allow` and `--permissions deny` are **unconditional** — the
@@ -135,7 +140,7 @@ prefixed names (`gh_search_code`), and so on.
   e.g. `{"path":"src/main.rs"}` — not a bare path. In practice that makes `*` (match any
   invocation of this tool) the reliable pattern, and path-shaped patterns unreliable.
 
-**External ACP agents** (sessions gated by `[acp.agents.<name>.permissions]`, or by the
+**External ACP agents** (sessions gated by `acp.agents.<name>.permissions`, or by the
 global config as their fallback) are checked differently: the agent's native tool calls
 arrive labeled only with an ACP tool *kind*, and the engine sees the kind's fixed name —
 `read`, `edit`, `delete`, `write` (a move), `search`, `bash` (execute), `fetch`,
@@ -182,10 +187,19 @@ allow rule is denied. The one thing that outranks a written `deny` is the
 `--permissions allow` override, which discards the rule lists entirely (see the note
 under Resolution Order).
 
-```toml
-[acp.agents.opencode.permissions]
-default = "allow"
-deny = ["bash:*"]  # fires before any allow rule — but not under --permissions allow
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            opencode = {
+                permissions = {
+                    default = "allow",
+                    deny = { "bash:*" },  -- fires before any allow rule — but not under --permissions allow
+                },
+            },
+        },
+    },
+})
 ```
 
 ## What a `deny` rule cannot do
@@ -205,9 +219,12 @@ it does not know, or a different program with the same effect. A rule that names
 A `deny` rule guards against an accident. It does not stop intent. Deny the whole
 tool when the risk is real:
 
-```toml
-[permissions]
-deny = ["bash:*"]     # no shell at all — the only rule with no spelling to evade
+```lua
+cru.config.set({
+    permissions = {
+        deny = { "bash:*" },  -- no shell at all — the only rule with no spelling to evade
+    },
+})
 ```
 
 To prevent a catastrophic action, use containment. Run the agent in a container

@@ -64,16 +64,21 @@ That's it — no manual configuration needed. Crucible automatically resolves th
 
 ### Step 4: Configure Provider
 
-Add to your `config.toml`:
+Add to your `init.lua`:
 
-```toml
-[llm]
-default = "copilot"
-
-[llm.providers.copilot]
-type = "copilot"
-# No api_key needed — token is resolved from credential store
-# default_model = "gpt-4o"  # optional, gpt-4o is default
+```lua
+cru.config.set({
+    llm = {
+        default = "copilot",
+        providers = {
+            copilot = {
+                type = "copilot",
+                -- No api_key needed — token is resolved from credential store
+                -- default_model = "gpt-4o"  -- optional, gpt-4o is default
+            },
+        },
+    },
+})
 ```
 
 Alternatively, you can set the token via environment variable (overrides credential store):
@@ -192,7 +197,7 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 
 - OAuth tokens are stored with user-only permissions
 - Never commit tokens to version control
-- Use `{env:VAR}` syntax in config files
+- Read a key with `os.getenv("VAR")` rather than writing it into the file
 - Tokens can be revoked at: <https://github.com/settings/applications>
 
 ## See Also

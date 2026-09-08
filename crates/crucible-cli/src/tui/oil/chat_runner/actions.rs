@@ -8,6 +8,85 @@ use tokio::sync::mpsc;
 
 use super::{DrainMessagesOutcome, OilChatRunner, ProcessActionParams};
 
+/// Write one app-config key through the daemon, and report what the store
+/// holds afterwards.
+///
+/// The read-back is the point. `config.set` can drop a key — the store
+/// withholds the keys that name where the daemon acts — so echoing the value
+/// that was sent would let the TUI claim a setting the daemon never took.
+/// The daemon's value is the only value, here and in the transcript.
+async fn write_app_config_key(
+    key: &str,
+    value: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = crucible_daemon::DaemonClient::connect()
+        .await
+        .map_err(|e| format!("daemon connect failed: {e}"))?;
+
+    let written = client
+        .call(
+            "config.set",
+            serde_json::json!({ "values": { key: value } }),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let refused = written
+        .get("rejected")
+        .and_then(|r| r.as_array())
+        .is_some_and(|keys| keys.iter().any(|k| k.as_str() == Some(key)));
+    if refused {
+        return Err(format!(
+            "'{key}' names where the daemon acts; change it in the config file"
+        ));
+    }
+
+    let read_back = client
+        .call("config.get", serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+    match read_back.get("value") {
+        Some(serde_json::Value::Null) | None => {
+            Err(format!("the daemon config store did not keep '{key}'"))
+        }
+        Some(value) => Ok(value.clone()),
+    }
+}
+
+/// Read one app-config key back out of the daemon store, with its provenance
+/// when the caller asked for the history spelling.
+///
+/// The daemon is the only reader here on purpose: `:set key?` used to answer
+/// from a TUI overlay that never held app config, so every key `init.lua`
+/// wrote read back as "not set".
+async fn read_app_config_key(
+    key: &str,
+    history: bool,
+) -> Result<(serde_json::Value, Option<serde_json::Value>), String> {
+    let client = crucible_daemon::DaemonClient::connect()
+        .await
+        .map_err(|e| format!("daemon connect failed: {e}"))?;
+
+    // Same lookup as the write's read-back, so `:set k=v` and `:set k?`
+    // cannot disagree about which key they named.
+    let read = client
+        .call("config.get", serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+    let value = read
+        .get("value")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    if !history {
+        return Ok((value, None));
+    }
+    let origin = client
+        .call("config.origin", serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((value, Some(origin)))
+}
+
 impl OilChatRunner {
     /// Spawn the daemon RPC behind `FetchModels` as a background task.
     ///
@@ -513,32 +592,45 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    // Gated on `!self.is_replay`: best-effort mirror of an
-                    // unknown `:set` key into the daemon app-config store so
-                    // Lua/plugins observe it. Failure is non-fatal (the local
-                    // store already has the value) — surfaced via statusline.
+                    // Gated on `!self.is_replay`: an app-config `:set` is a
+                    // write to the daemon store, and the store's own answer
+                    // is what comes back. Nothing here is best-effort: a
+                    // failure produces an error and no value at all, because
+                    // the TUI holds no second copy to fall back on.
                     ChatAppMsg::ConfigSet { ref key, ref value } if !self.is_replay => {
                         let key = key.clone();
                         let value = value.clone();
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
-                            let result = match crucible_daemon::DaemonClient::connect().await {
-                                Ok(client) => client
-                                    .call(
-                                        "config.set",
-                                        serde_json::json!({ "values": { key.clone(): value } }),
-                                    )
-                                    .await
-                                    .map(|_| ()),
-                                Err(e) => Err(e),
+                            let msg = match write_app_config_key(&key, value).await {
+                                Ok(value) => ChatAppMsg::ConfigSetResolved { key, value },
+                                Err(e) => {
+                                    tracing::warn!(key = %key, error = %e, "config.set failed");
+                                    ChatAppMsg::Error(format!("set {}: {}", key, e))
+                                }
                             };
-                            if let Err(e) = result {
-                                tracing::warn!(key = %key, error = %e, "config.set mirror failed");
-                                let _ = tx.send(ChatAppMsg::Status(format!(
-                                    "config sync failed for '{}'",
-                                    key
-                                )));
-                            }
+                            let _ = tx.send(msg);
+                        }));
+                    }
+                    // Gated on `!self.is_replay`: a `:set key?` on an
+                    // app-config key is a daemon read, and the daemon's
+                    // answer is the only answer — the TUI holds no copy of
+                    // app config to fall back on.
+                    ChatAppMsg::ConfigQuery { ref key, history } if !self.is_replay => {
+                        let key = key.clone();
+                        let history = *history;
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match read_app_config_key(&key, history).await {
+                                Ok((value, origin)) => {
+                                    ChatAppMsg::ConfigQueryResolved { key, value, origin }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(key = %key, error = %e, "config.get failed");
+                                    ChatAppMsg::Error(format!("set {}?: {}", key, e))
+                                }
+                            };
+                            let _ = tx.send(msg);
                         }));
                     }
                     // Gated on `!self.is_replay`: opens a fresh
@@ -774,6 +866,7 @@ impl OilChatRunner {
                     ChatAppMsg::ReloadPlugin(_)
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
+                    | ChatAppMsg::ConfigQuery { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::RunPluginCommand { .. }
                     | ChatAppMsg::ExportSession(_)

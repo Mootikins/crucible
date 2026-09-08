@@ -5,6 +5,7 @@ import { AlertTriangle, Brain, Key, Link2, Mic, Package, Palette, Pencil, Termin
 
 import { createDebounce, SectionHeader, SettingRow, SettingsSectionState } from './settings/primitives';
 import { settingsSections } from './settings/sections';
+import { PluginInstallRows } from './settings/PluginInstall';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
@@ -268,7 +269,7 @@ export const ModelSettingsSection: Component = () => {
 // Plugins Section
 // =============================================================================
 
-export const PluginsSection: Component = () => {
+export const PluginsSection: Component<{ onChanged?: () => void | Promise<unknown> }> = (props) => {
   const [plugins, setPlugins] = createSignal<PluginInfo[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -309,9 +310,23 @@ export const PluginsSection: Component = () => {
       loading={loading()}
       error={error()}
       loadingMessage="Loading plugins…"
-      isEmpty={plugins().length === 0}
-      emptyMessage="No plugins discovered."
+      isEmpty={false}
     >
+      <PluginInstallRows
+        onInstalled={async () => {
+          await loadPlugins();
+          // The declared trees too, so a plugin that ships settings gets its
+          // pane in the left list without a restart.
+          await props.onChanged?.();
+        }}
+      />
+      <Show when={plugins().length === 0}>
+        <tr>
+          <td colSpan={2} class="py-3 text-center text-sm text-muted-dark">
+            No plugins discovered.
+          </td>
+        </tr>
+      </Show>
       <For each={plugins()}>
         {(plugin) => (
           <tr class="border-b border-hairline">

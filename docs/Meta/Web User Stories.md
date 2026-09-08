@@ -230,7 +230,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### WS-HERO: One session across web and terminal (cross-surface)
 **As a user**, a session and its kiln notes are shared truth across the browser and the terminal — the daemon is the hypervisor, the consoles are stateless.
 **Acceptance:** the web console resumes a session started in `cru chat` (turn 1 hydrates both sides); opening `from-tui.md` in the real editor shows the terminal's write; editing + saving changes the bytes on disk; a web-sent turn 2 is later visible from `cru chat --resume`; final history is 3 turns and the file carries both the terminal and browser edits.
-**Tests:** the flagship live journey `e2e/live/hero.live.spec.ts` (serial), orchestrating TUI legs (`tests/tui_e2e_tests/hero.rs`) around the web console. Deterministic LLM turns via the fake Ollama server (`e2e/live/fake-ollama.ts`) + injected `config.toml` (`hero-setup.ts`). Run with `just web-test hero`. This is the first live-tier story to exercise real agent turns (see infra #3 note).
+**Tests:** the flagship live journey `e2e/live/hero.live.spec.ts` (serial), orchestrating TUI legs (`tests/tui_e2e_tests/hero.rs`) around the web console. Deterministic LLM turns via the fake Ollama server (`e2e/live/fake-ollama.ts`) + an injected `init.lua` (`hero-setup.ts`), whose arrival the setup proves by reading the daemon's effective config. Run with `just web-test hero`. This is the first live-tier story to exercise real agent turns (see infra #3 note).
 
 ---
 
@@ -315,6 +315,43 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 **The trap this closes:** `session.set_execution_timeout`'s wire field is `timeout_secs`. A request struct named after the knob compiles, passes review, returns 200, and drops the value. Route existence does not prove a value survives, so each knob is asserted in both directions instead.
 **Tests:** Rust A2e (route existence for all fifteen; ledger now empty) and `routes/session_config/tests.rs` (per-knob round-trip through the mock daemon — PUT's value read off the wire under the daemon's field name, GET's value under the web's response key, with per-knob-distinct values so a mis-wired route cannot pass by coincidence; plus `GET /api/session/{id}/mode`). W1 (`AdvancedSessionSettings.test.tsx` — load, per-knob commit, `null` on clear, non-nullable retries, enum spelling, unknown-enum passthrough, prompt debounce).
 
+### WS-316: The daemon's own configuration, from the browser
+**As a user**, the settings dialog shows Crucible's own configuration beside my
+browser-local preferences, tells me which values my `init.lua` holds, and opens
+the line that holds one.
+**Acceptance:** a "Configuration" section renders the control tree
+`GET /api/config` carries (`config.controls`: the same node vocabulary a
+plugin's `cru.plugin.options{}` tree uses, so ONE renderer draws both), fed by
+the daemon's effective config and its per-leaf provenance; a change writes
+through `POST /api/config` (`config.save`) by config path. A leaf the daemon
+reports as `pinned` renders LOCKED — the control is disabled, the note names
+the file and the line, and a **jump-to-pin** button opens that line in the
+editor and dismisses the dialog. The note never claims the user chose the value
+everywhere: a pin may sit inside a test on the hostname, so it says the line may
+be conditional on this host. A leaf that takes no control at all (the seven
+location keys, the unbounded maps and lists, the free-form `plugins` subtree)
+renders read-only WITH the daemon's reason. The four browser-local sections —
+transcription, editor, appearance, terminal — stay in `localStorage` and nothing
+migrates: fonts, terminal size, vim mode and the microphone are per-device.
+**No credential crosses this door:** the effective config and the origin rows
+both carry `web.api_key` and every `llm.providers.*.api_key`, and neither type
+redacts on `Serialize`. The web layer redacts each answer as it arrives
+(`services/daemon_config.rs`), so those leaves reach the browser as
+`[redacted]` and the settings dialog shows a key is configured without showing
+the key. The rule matches a leaf NAME, not a path, so a credential a future
+struct adds is covered without anyone editing a list.
+**Why the lock needs a route out:** Grafana, GNOME dconf and VS Code all refuse
+a write against a higher layer, and all three say where to change the value. A
+lock with no route out is a dead end, so the jump is part of the lock.
+**Tests:** W1 (`settings/__tests__/AppConfigSettings.test.tsx` — a pinned leaf
+renders disabled, names its file and line, jumps to it and closes the dialog; an
+unpinned sibling saves by config path; a read-only leaf shows its reason).
+Rust: `routes/config.rs` pass-through of the tree and the read-only reasons,
+`rpc::dispatch` `config.controls` and the per-leaf `pinned` flag, and
+`tests/config_secret_redaction_e2e.rs` (a real daemon boots an `init.lua` that
+sets a provider key and the web key; neither string appears anywhere in the
+`GET /api/config` body).
+
 ---
 
 ## 4. Shipped-feature stubs (stories owed under the "every feature adds a story" rule)
@@ -334,7 +371,15 @@ These features shipped without a WS entry. Each gets a stub here; flesh out acce
 ### WS-228: Manage plugins from the browser
 **As a user**, a Plugins panel lists installed plugins, lets me install/remove/reload them, run plugin commands, and edit plugin options.
 **Acceptance (stub):** `plugins` registers left; seven endpoints: `GET`/`POST /api/plugins`, `DELETE /api/plugins/{name}`, `POST /api/plugins/{name}/reload`, `GET /api/plugins/publications`, `GET /api/plugins/options`, `POST /api/plugins/{name}/option`, `POST /api/plugins/command`.
-**Tests:** W1 (`PluginPanel.test.tsx`, `PluginSettings.test.tsx`). GAP: no W2 journey.
+The Plugins section of the settings dialog takes a git URL or the `user/repo`
+shorthand and installs it through `POST /api/plugins`. ONE confirmation names
+the URL before the clone, because a plugin runs with the user's own reach and
+user installation is the security boundary this project relies on. After the
+install the declared `cru.plugin.options{}` tree is re-read, so the plugin's
+settings pane appears with no restart.
+**Tests:** W1 (`PluginPanel.test.tsx`, `PluginSettings.test.tsx`), W2
+(`e2e/plugin-install.spec.ts` — paste, confirm, the URL reaches the route
+unchanged, the declared options render).
 
 ### WS-229: Search the kiln — text and semantic
 **As a user**, the Navigator's search scope gives me one debounced box that searches notes as literal text (ripgrep) or by vector similarity, with hits that open in the editor.
@@ -357,7 +402,7 @@ These features shipped without a WS entry. Each gets a stub here; flesh out acce
 
 1. **vitest gates CI** — DONE: `just ci` runs `web-test unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).
 2. **Story specs run with video + trace ON** and step screenshots — DONE: the `stories` Playwright project (`e2e/stories/**`) with `createStory().step()`; the existing default project keeps its cheap settings.
-3. **W4 harness** — DONE: `playwright.live.config.ts` + `e2e/live/global-setup.ts` boot `cru web` on an isolated socket against a `TempDir` kiln; teardown stops the daemon and kills the tree. Gated on a `cru` binary (`CRU_BIN`); skips cleanly otherwise. NOTE: the web session route hardcodes the internal agent, so `mock-acp-agent` is unreachable — but the hero tier (`playwright.hero.config.ts`) now makes real internal-agent turns deterministic by pointing the daemon's Ollama provider at a fake Ollama server (`e2e/live/fake-ollama.ts`) via an injected `config.toml`. The base live tier still covers the no-LLM kiln-truth path.
+3. **W4 harness** — DONE: `playwright.live.config.ts` + `e2e/live/global-setup.ts` boot `cru web` on an isolated socket against a `TempDir` kiln; teardown stops the daemon and kills the tree. Gated on a `cru` binary (`CRU_BIN`); skips cleanly otherwise. NOTE: the web session route hardcodes the internal agent, so `mock-acp-agent` is unreachable — but the hero tier (`playwright.hero.config.ts`) now makes real internal-agent turns deterministic by pointing the daemon's Ollama provider at a fake Ollama server (`e2e/live/fake-ollama.ts`) via an injected `init.lua`. The base live tier still covers the no-LLM kiln-truth path.
 4. **Visual baselines** committed under `e2e/__screenshots__/` — DONE: markdown editor + chat mid-stream/complete, each eye-verified before commit.
 
 ## See Also

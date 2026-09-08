@@ -12,7 +12,7 @@ tags:
 # Permission Precedence
 
 Five different things can decide whether a tool call runs: a CLI flag, the
-`[permissions]` config, a saved "allow for this project" pattern, a Lua hook,
+`permissions` config, a saved "allow for this project" pattern, a Lua hook,
 and the session's mode. They are consulted in a fixed order, and the first one
 with an opinion wins.
 
@@ -58,7 +58,7 @@ card's tool policy and a plugin's isolation claim. See "Above the chain" below.
 | # | Layer | Set by |
 |---|-------|--------|
 | 1 | CLI `--permissions` override | the flag you launched with |
-| 2 | `[permissions]` config | `config.toml` (global or kiln) |
+| 2 | `permissions` config | `init.lua` (global or kiln) |
 | 3 | Saved patterns | answering "allow for this project" at a prompt |
 | 4 | Lua permission hooks | `cru.permissions.on_request` |
 | 5 | Mode rules, then mode stance | `cru.modes.<name>.permissions` |
@@ -75,7 +75,7 @@ source of truth if this page ever drifts from it.
 before any hook, so a hook cannot rescue a call the flag denied, and cannot
 block one it allowed. `ask` and no flag fall through.
 
-### 2 — `[permissions]` config
+### 2 — `permissions` config
 
 Config **deny is absolute** — nothing below can override it. Config **allow**
 short-circuits the gate, including `default = "allow"`. Only `ask`, or no
@@ -136,7 +136,7 @@ cru.modes.review = {
 ```
 
 Rules are evaluated first, the bare stance second. Both use the same grammar and
-the same engine as `[permissions]`, so `bash:rg *` inherits its handling of
+the same engine as `permissions`, so `bash:rg *` inherits its handling of
 chained commands — a mode that permits `rg` does **not** thereby permit
 `rg foo && rm -rf /`. What that handling covers, and where it stops, is stated
 in [What a `bash:` rule covers](#what-a-bash-rule-covers) below; read it before
@@ -167,7 +167,7 @@ against the whole line: they split it into statements first and evaluate each
 one, so an `allow` rule only ever speaks for the command it names.
 
 This section is the guarantee, stated once. It applies wherever the engine
-runs — `[permissions]`, a mode's `permissions` block, and the saved patterns of
+runs — `permissions`, a mode's `permissions` block, and the saved patterns of
 layer 3.
 
 **The line is split on** `&&`, `||`, `;`, `|`, a bare `&`, and a newline —
@@ -255,7 +255,7 @@ An agent card can declare a per-tool policy — `deny`, `ask`, or `allow` — se
   read-only.
 - **`allow` skips the chain** — the saved patterns, the Lua hooks, the mode
   rules and the mode stance are never consulted. The one thing still checked is
-  layer 2's deny: `[permissions]` deny rules are evaluated even for
+  layer 2's deny: `permissions` deny rules are evaluated even for
   card-allowed tools, so a card shipped by an untrusted kiln cannot sidestep a
   configured deny. A card-allowed call is marked auto-approved ("agent card
   policy") on its tool-call event.
@@ -354,7 +354,7 @@ the *policy* half of plan mode is declared in Lua like any other mode's — see
 
 | You want | Use |
 |---|---|
-| A rule for every session on this machine | `[permissions]` config |
+| A rule for every session on this machine | `permissions` config |
 | A rule for one project | answer a prompt with "allow for this project" |
 | A decision that depends on the arguments | a Lua hook |
 | A named working posture you switch between | a mode |

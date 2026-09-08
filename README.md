@@ -141,12 +141,19 @@ installed, `cru chat -a <agent>` prints the install command for each.
 
 Agents can delegate tasks to each other. An ACP agent like Claude can hand off work to Cursor or OpenCode mid-conversation using the `delegate_session` tool, then incorporate the results. Delegation works both directions: internal agents can delegate to ACP agents, and ACP agents can delegate to other ACP agents.
 
-Custom profiles go in `~/.config/crucible/config.toml`:
+Custom profiles go in `~/.config/crucible/init.lua`:
 
-```toml
-[acp.agents.my-claude]
-extends = "claude"
-env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
+```lua
+cru.config.set({
+  acp = {
+    agents = {
+      ["my-claude"] = {
+        extends = "claude",
+        env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+      },
+    },
+  },
+})
 ```
 
 Then: `cru chat -a my-claude`. See [ACP configuration](./docs/Help/Config/acp.md) for every

@@ -82,7 +82,8 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// Config file path (defaults to ~/.config/crucible/config.toml)
+    /// Config file path; its directory holds init.lua
+    /// (defaults to ~/.config/crucible)
     #[arg(short = 'C', long, global = true)]
     pub config: Option<PathBuf>,
 

@@ -27,8 +27,8 @@ pub use crucible_core::config::{
 /// Two client-side checks ride along:
 /// - the ROOT-MISMATCH refusal: an invocation whose resolved config root
 ///   differs from the daemon's is refused, naming both roots;
-/// - the STALENESS warning: a changed boot-input hash (`init.lua`, plus
-///   `config.toml` while it exists) warns "restart to apply".
+/// - the STALENESS warning: a changed boot-input hash (`init.lua`, under
+///   either name) warns "restart to apply".
 pub async fn fetch_effective_config(
     config_file: Option<std::path::PathBuf>,
     embedding_url: Option<String>,

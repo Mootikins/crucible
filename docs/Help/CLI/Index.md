@@ -67,7 +67,7 @@ Complete reference for all Crucible CLI commands.
 ```
 -l, --log-level <LEVEL>     Set log level (off, error, warn, info, debug, trace)
 -v, --verbose               Enable verbose logging (--log-level=debug)
--C, --config <PATH>         Config file path (defaults to ~/.config/crucible/config.toml)
+-C, --config <PATH>         Config file path (defaults to ~/.config/crucible/init.lua)
                             Its DIRECTORY is the config root: the daemon
                             evaluates <root>/init.lua and resolves
                             <root>/lua/ modules. (Older versions always
@@ -128,7 +128,7 @@ Run bounded installation diagnostics:
 - **Kiln accessibility** — checks the kiln path exists, is a directory, and is writable
 - **Embedding backend** — confirms FastEmbed or Ollama embeddings are available
 - **Plugins** — asks the daemon how many plugins loaded (skipped if the daemon is down)
-- **Kiln references** — every kiln named by a `[projects.*]` entry exists in `[kilns]`
+- **Kiln references** — every kiln named by a `projects.*` entry exists in `kilns`
 - **Config validation** — the loaded config passed structural validation
 
 ```
@@ -141,7 +141,7 @@ Each failed check prints a suggested fix on the same line:
 
 ```
 ✗ Daemon not running. Try: `cru daemon start`
-✗ Config missing at ~/.config/crucible/config.toml. Try: `cru config init`
+✗ Config missing at ~/.config/crucible/init.lua. Try: `cru config init`
 ```
 
 `-f json` prints the raw check results (`check_name`, `status`, `message`) instead of the

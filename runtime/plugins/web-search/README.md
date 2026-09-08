@@ -69,16 +69,22 @@ correct behaviour.
 
 ## Configuration
 
-Either `[plugins.web-search]` in `config.toml`:
+Either the `plugins["web-search"]` config key, which the daemon reads before
+the plugin loads:
 
-```toml
-[plugins.web-search]
-providers   = ["searxng", "ddg"]        # order = preference; [] disables search
-searxng_url = "http://localhost:8888"   # unset → searxng is skipped
-timeout     = 15                        # seconds, per provider
+```lua
+cru.config.set({
+    plugins = {
+        ["web-search"] = {
+            providers = { "searxng", "ddg" }, -- order = preference; {} disables search
+            searxng_url = "http://localhost:8888", -- unset → searxng is skipped
+            timeout = 15, -- seconds, per provider
+        },
+    },
+})
 ```
 
-or from your `init.lua`, which runs after plugins load and therefore wins:
+or `setup{}`, which runs after plugins load and therefore wins:
 
 ```lua
 require("web-search").setup({
@@ -95,7 +101,7 @@ require("web-search").setup({
 | `exa_api_key` | secret | *(none)* | Optional Exa key. See below — put it in the environment, not here. |
 
 Resolution order, highest first: `$CRUCIBLE_WEB_SEARCH_*` for secrets →
-`setup{}` → `[plugins.web-search]` → the defaults above.
+`setup{}` → `plugins["web-search"]` → the defaults above.
 
 ### Secrets
 

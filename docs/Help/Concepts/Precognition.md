@@ -41,7 +41,7 @@ Precognition retrieves at the **note level**. During indexing, each block of a n
 
 The search is semantic. If you ask about "staying productive while remote," Precognition can find notes about "work from home tips" or "focus strategies" even if those exact words don't appear in your message.
 
-Every kiln the session is attached to is searched. The set is flat — no member is privileged by having been attached first — so results are merged and ranked together and one guard applies uniformly: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]). All kilns share the single `[enrichment]` config, so there is no per-kiln embedding model to reconcile.
+Every kiln the session is attached to is searched. The set is flat — no member is privileged by having been attached first — so results are merged and ranked together and one guard applies uniformly: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]). All kilns share the single `enrichment` config, so there is no per-kiln embedding model to reconcile.
 
 ## Configuration
 
@@ -84,7 +84,7 @@ Plugins can reshape Precognition through two event seams:
 Register handlers with `cru.on("precognition_select", ...)` / `cru.on("precognition_format", ...)`. See [[Help/Extending/Event Hooks]] for handler signatures and semantics.
 
 Both seams name the kiln a note came from as `note.kiln` — the key of its
-`[kilns]` entry, not its directory. A handler can tell one corpus from another
+`kilns` entry, not its directory. A handler can tell one corpus from another
 without ever being handed a filesystem path.
 
 ## When It Activates

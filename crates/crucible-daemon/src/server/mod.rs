@@ -486,7 +486,7 @@ impl Server {
             // What `config.effective` serves: the extracted config this
             // daemon was bound with, and the boot-input hash when it booted
             // through the one-VM evaluation.
-            effective_config: params.app_config.clone(),
+            bound_config: params.app_config.clone(),
             boot_hash: params.boot_hash.clone(),
             // `[projects.*]` from the config the daemon was handed. Normalized
             // here so the listing applies the one precedence rule rather than

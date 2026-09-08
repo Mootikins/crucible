@@ -14,7 +14,7 @@ aliases:
 
 # Lua Runtime API
 
-This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. `cru` is the one Lua global; every module hangs off it. Note that `cru.config.get` (the app-config store) and `cru.plugin.config.get` (the plugin's own `[plugins.*]` TOML section) are **different functions** (see [[Help/Lua/Configuration]]).
+This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. `cru` is the one Lua global; every module hangs off it. Note that `cru.config.get` (the app-config store) and `cru.plugin.config.get` (the plugin's own `plugins.*` TOML section) are **different functions** (see [[Help/Lua/Configuration]]).
 
 For TUI-specific Lua APIs (Oil rendering primitives), see [[Help/Plugins/Oil Lua API]].
 
@@ -372,7 +372,7 @@ errors with "No active session" when none is bound.
 Create a new session. Returns a session handle whose fields read like the old plain table: at least `{ id, session_type, state, kilns }`.
 
 `kilns` is the session's whole knowledge scope — a flat set with no primary
-member, and each member is the **name** of a `[kilns]` entry in the user's
+member, and each member is the **name** of a `kilns` entry in the user's
 config, not a directory. A name no entry claims is refused rather than
 attached, and a `kilns` list that is non-empty but names only unknown kilns is
 an error rather than "no scope". Omit it (or pass an empty table) for a
@@ -682,7 +682,7 @@ The `cru.tools` module runs workspace tools from a plugin, and decides which too
 | `cru.tools.set_active(session_id, names)` | narrow the tools that session offers, or clear the narrowing |
 | `cru.tools.get_active(session_id)` | the patterns in force, or `nil` |
 
-`call` and `batch` are checked against the operator's `[permissions]` rules before anything runs. See [[permissions]] for what a Lua call may do without a prompt.
+`call` and `batch` are checked against the operator's `permissions` rules before anything runs. See [[permissions]] for what a Lua call may do without a prompt.
 
 ### cru.tools.set_active(session_id, names)
 
@@ -1065,7 +1065,7 @@ Validates `name`, `desc`, `start` (required) and `stop`, `health` (optional), th
 If `spec.config` is a schema table, values are resolved **at define time**, per key. All three steps use the **service's `name`**, not the plugin's — name the service after the plugin if you want them to line up:
 
 1. keys marked `secret = true`: the env var `CRUCIBLE_<NAME>_<KEY>` (service name and key uppercased, non-alphanumerics replaced with `_` — `name = "gateway"` reads `CRUCIBLE_GATEWAY_*`)
-2. `cru.plugin.config.get("<name>.<key>")` — the `[plugins.<name>]` section of config.toml
+2. `cru.plugin.config.get("<name>.<key>")` — the `plugins.<name>` table of your `init.lua`
 3. the schema's `default`
 
 The resolved table is stored on the internal registry entry only — nothing passes it to `start`, and no accessor exposes it. A start function that needs the values must resolve them itself (the `web-search` plugin's `ws_config.lua` does exactly this, matching the env-var convention).

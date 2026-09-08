@@ -44,7 +44,7 @@ cru chat --acp gemini
 cru chat --acp codex
 ```
 
-Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or any custom profile defined in `config.toml`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
+Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or any custom profile defined in `init.lua`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
 
 `cru chat` does not take an agent card. It resolves its agent client-side,
 while cards are resolved by the daemon at session create — use
@@ -52,7 +52,7 @@ while cards are resolved by the daemon at session create — use
 
 #### `--provider <PROVIDER>`
 
-LLM provider from your `[llm.providers]` config section.
+LLM provider from your `llm.providers` config section.
 
 ```bash
 cru chat --provider openai

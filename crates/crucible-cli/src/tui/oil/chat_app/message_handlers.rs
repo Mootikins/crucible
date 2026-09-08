@@ -400,10 +400,25 @@ impl OilChatApp {
                 self.set_status("Ready");
             }
 
+            // The daemon's answer for an app-config `:set`. The value is the
+            // store's, not the one the user typed: a refused or normalized
+            // write must not read back as what was asked for.
+            ChatAppMsg::ConfigSetResolved { key, value } => {
+                self.apply_resolved_app_config(&key, value);
+            }
+
+            // The daemon's answer for `:set key?` / `:set key??`. It is
+            // printed and not recorded: a read must not create the second
+            // copy the write path stopped making.
+            ChatAppMsg::ConfigQueryResolved { key, value, origin } => {
+                self.show_app_config_answer(&key, value, origin);
+            }
+
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::ReloadPlugin(_)
             | ChatAppMsg::EvalLua(_)
             | ChatAppMsg::ConfigSet { .. }
+            | ChatAppMsg::ConfigQuery { .. }
             | ChatAppMsg::ExecuteSlashCommand(_)
             | ChatAppMsg::ExportSession(_)
             | ChatAppMsg::Undo(_) => {}

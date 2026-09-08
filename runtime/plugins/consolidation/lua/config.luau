@@ -2,11 +2,11 @@
 --- consolidation configuration
 ---
 --- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention — the daemon seeds setup() with the TOML section at load, and
---- a user's later `setup{}` call, e.g. from ~/.config/crucible/init.lua
---- which runs after plugins load, overrides it):
+--- convention — the daemon seeds setup() with the plugin's config section at
+--- load, and a user's later `setup{}` call, e.g. from
+--- ~/.config/crucible/init.lua which runs after plugins load, overrides it):
 ---   1. values passed to `setup({...})` — last call wins per key.
----   2. `[plugins.consolidation]` in config.toml, read through
+---   2. the `plugins.consolidation` config key, read through
 ---      `cru.plugin.config.get("consolidation.<key>")` — covers keys read
 ---      before any setup() call lands. Note this is NOT `cru.config[...]` —
 ---      `cru.config` is the *app* config store and holds only `get`/`set`

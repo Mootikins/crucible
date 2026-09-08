@@ -154,8 +154,8 @@ before the permission gate; only statement order protects it.
   (`crucible-cli/src/kiln_attach.rs:112`) while the doc calls the daemon
   registry the authority. `KilnRegistryContext::for_daemon` reads
   `current_dir` and `home_dir` (`kiln_registry.rs:174`).
-- `execution_roots::baseline` reads env vars and `config.toml` from disk
-  (`execution_roots.rs:73-99`); `kiln_registry.rs:323` names it as the
+- `execution_roots::baseline` reads env vars and `settings.json` from disk
+  (`execution_roots.rs`); `kiln_registry.rs:323` names it as the
   precedent for the wrong choice.
 - The web layer holds its own policy: credential-directory deny list
   (`crucible-web/src/routes/project.rs:28-76`), SSRF address classification
@@ -1444,8 +1444,10 @@ Production items that only tests use:
   `JobKind::Subagent` remains and `delegation.rs:489` builds it.
 - `register_project_in_config` uses a serde round-trip and drops comments
   (`crucible-core/src/config/registration.rs:183`).
-- Two readers of `config.toml`: `CliAppConfig::load` and the daemon's own parse
-  in `execution_roots.rs:90-114`; the kiln registry reads a JSON view.
+- One reader of `config.toml` is left: `CliAppConfig::load`, which serves
+  `cru config migrate`. `cru web` used it too until it moved to the effective
+  config, and served the DEFAULT port, API key and allow-list while it did. `execution_roots` parses `settings.json` instead, and
+  the kiln registry reads a JSON view.
 - Config fields parsed and read by nothing: `acp.lazy_agent_selection`,
   `storage.idle_timeout_secs` (both documented as reserved; plan T3-B18 deleted
   `DiscoveryConfig` and `ResolveMode`),

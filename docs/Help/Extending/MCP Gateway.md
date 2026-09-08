@@ -29,20 +29,27 @@ All external tools integrate with [[Help/Extending/Event Hooks|event hooks]], so
 
 ## Quick Start
 
-Add to `~/.config/crucible/config.toml`:
+Add to `~/.config/crucible/init.lua`:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+        },
+    },
+})
 ```
 
 Set your token:
@@ -54,7 +61,7 @@ Now you have tools like `gh_search_code`, `gh_get_file_contents`, etc.
 
 ## Configuration
 
-Every field of `[[mcp.servers]]` — `name`, `prefix`, `transport`,
+Every field of `mcp.servers` — `name`, `prefix`, `transport`,
 `allowed_tools`, `blocked_tools`, `auto_reconnect`, `timeout_secs` — plus worked examples
 for GitHub, filesystem, and multiple servers, live in
 [[Help/Config/mcp|MCP Configuration]]. This page covers what the gateway *does* with them.
@@ -84,19 +91,26 @@ end)
 
 Never commit tokens to your config:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-# Resolved from the environment at load time, never stored in the file
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        -- Resolved from the environment at load time, never stored in the file
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+        },
+    },
+})
 ```
 
 Then set in your shell:

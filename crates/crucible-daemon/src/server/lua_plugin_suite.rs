@@ -592,6 +592,11 @@ mod shipped_plugin_tests {
             // raised "attempt to index nil with 'hl'" at load.
             ("runtime/statusline/", VmProfile::Statusline),
             ("runtime/themes/", VmProfile::Theme),
+            // The reference config and its example fragments. A user copies
+            // these into `init.lua`, which the daemon VM evaluates, so they
+            // are checked against the same definitions that file gets.
+            ("docs/init.lua", VmProfile::Daemon),
+            ("docs/examples/config/", VmProfile::Daemon),
             // Ordinary plugins, and the scaffold for writing one.
             ("runtime/plugins/crucible-help/", VmProfile::Daemon),
             ("examples/plugins/", VmProfile::Daemon),

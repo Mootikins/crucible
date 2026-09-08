@@ -167,11 +167,26 @@ These sync to the daemon and are session-scoped:
 | `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
 | `perm.full_commands` | bool | Show the full command/args (wrapped) in permission prompts; off = compact one-line view. Default: on |
 
-### Unknown Keys
+### App-Config Keys
 
-A key the classifier doesn't recognize is not an error: it is stored locally
-(so `:set key?` round-trips) **and** mirrored into the daemon's app-config
-store, so `:lua cru.config.get(key)` and plugins see the same typed value.
+A key the classifier doesn't recognize is not an error: it is app config, and
+the daemon store owns it. `:set` writes it there, then reads the store back
+and shows you that answer, so `:lua cru.config.get(key)` and plugins see
+exactly what `:set key?` shows.
+
+Every spelling goes to the same store. `:set key?` reads the daemon store, so
+a key `init.lua` wrote answers with the value the daemon holds. `:set key??`
+adds the row `config.origin` gives: the source that owns the leaf, with its
+file and line.
+
+The TUI keeps no copy of its own. If the daemon refuses the write — the seven
+keys that name where the daemon acts are refused at runtime — you get a
+warning that names the key, and no value is recorded.
+
+`:set key&` and `:set key^` refuse an app-config key. They drop a layer from
+the TUI's own stack, and the daemon store is one merged value with no layer
+stack to drop. To change such a key, write a new value with
+`:set key=<value>`.
 
 ## The `:model` Command
 
@@ -238,7 +253,10 @@ The `:set` command modifies a **runtime overlay** on top of your base configurat
 │  Environment variables      │
 ├─────────────────────────────┤
 │  ~/.config/crucible/        │
-│  config.toml (user)         │
+│  init.lua (you)             │
+├─────────────────────────────┤
+│  ~/.config/crucible/        │
+│  settings.json (the UI)     │
 ├─────────────────────────────┤
 │  Built-in defaults          │ ← Lowest priority
 └─────────────────────────────┘

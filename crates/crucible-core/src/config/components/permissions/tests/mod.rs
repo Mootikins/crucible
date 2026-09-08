@@ -5,7 +5,6 @@ mod hardcoded;
 mod matcher;
 mod normalize;
 mod types;
-mod write;
 
 fn config_with_rules(
     default: PermissionMode,

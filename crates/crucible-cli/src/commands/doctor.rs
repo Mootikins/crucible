@@ -59,12 +59,17 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         .unwrap_or_else(|| config_dir.join("init.lua"));
     let mut loaded_config: Option<CliConfig> = None;
 
-    // Check 2: Config. The config is `init.lua`; `config.toml`, where it
-    // still exists, is the deprecated seed under it — so "missing" means
-    // NEITHER file exists, and an init.lua-only setup (the wizard's output)
-    // is found, not broken. The seed keeps its structural parse; init.lua
-    // is judged by the isolated evaluation below.
-    if !config_path.exists() && !init_lua_path.exists() {
+    // Check 2: Config. The config is `init.lua`, and nothing else — so
+    // "missing" means that file is not there. It is judged by the isolated
+    // evaluation below, which is the daemon's own construction; presence is
+    // all this row claims.
+    if init_lua_path.exists() {
+        results.push(DoctorCheckResult {
+            check_name: "Config".to_string(),
+            status: "pass".to_string(),
+            message: format!("Config found at {}", display_path(&init_lua_path)),
+        });
+    } else {
         results.push(DoctorCheckResult {
             check_name: "Config".to_string(),
             status: "fail".to_string(),
@@ -73,40 +78,18 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
                 display_path(&init_lua_path)
             ),
         });
-    } else if !config_path.exists() {
-        results.push(DoctorCheckResult {
-            check_name: "Config".to_string(),
-            status: "pass".to_string(),
-            message: format!("Config found at {}", display_path(&init_lua_path)),
-        });
-    } else {
-        match CliConfig::load(Some(config_path.clone()), None, None) {
-            Ok(config) => {
-                results.push(DoctorCheckResult {
-                    check_name: "Config".to_string(),
-                    status: "pass".to_string(),
-                    message: format!("Config found at {}", display_path(&config_path)),
-                });
-                loaded_config = Some(config);
-            }
-            Err(err) => {
-                results.push(DoctorCheckResult {
-                    check_name: "Config".to_string(),
-                    status: "warn".to_string(),
-                    message: format!(
-                        "Config has errors: {}. Try: `cru config init` to repair",
-                        err
-                    ),
-                });
-            }
-        }
+    }
+
+    // Check 2a: a `config.toml` the daemon no longer reads.
+    if let Some(result) = retired_config_note(&config_path) {
+        results.push(result);
     }
 
     // Check 2b: the isolated config evaluation — the same construction as
     // the daemon's boot, run in this process, its output only a report (the
     // one sanctioned dual evaluation). Skipped when there is no config at
     // all; Check 2 already failed that.
-    if config_path.exists() || init_lua_path.exists() {
+    if init_lua_path.exists() || explicit_override {
         let daemon_boot_hash = match DaemonClient::connect().await {
             Ok(client) => client
                 .call("config.effective", serde_json::json!({}))
@@ -119,14 +102,10 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
             std::sync::Arc::new(|rtp: &[PathBuf]| {
                 crucible_daemon::daemon_plugins::daemon_plugin_paths(rtp)
             });
-        // An explicit-but-missing `-C` path must keep failing loudly (the
-        // boot's own oracle rule); the default path passes as `None` so a
-        // missing `config.toml` beside a real `init.lua` is not an error.
-        let eval_source = if config_path.exists() || explicit_override {
-            Some(config_path.clone())
-        } else {
-            None
-        };
+        // An explicit `-C` names the config root to evaluate; without one
+        // the boot resolves the default root itself, which is the same path
+        // `config_path` holds.
+        let eval_source = explicit_override.then(|| config_path.clone());
         let (eval_results, evaluated_config) =
             evaluate_config_check(eval_source, daemon_boot_hash, paths_fn).await;
         results.extend(eval_results);
@@ -309,16 +288,17 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         }),
     }
 
-    // Check 8: Config validation (structural parse of config.toml)
+    // Check 8: Config validation. `loaded_config` is the evaluated config
+    // when Check 2b produced one, so this row reports whether the daemon's
+    // own construction yielded a config to check the rest against.
     if loaded_config.is_some() {
         results.push(DoctorCheckResult {
             check_name: "Config validation".to_string(),
             status: "pass".to_string(),
             message: "Config parsed and validated".to_string(),
         });
-    } else if config_path.exists() {
-        // Config file exists but failed to load (already reported in Check 2),
-        // add a validation-specific note
+    } else if init_lua_path.exists() {
+        // The file is there and produced nothing — Check 2b already said why.
         results.push(DoctorCheckResult {
             check_name: "Config validation".to_string(),
             status: "fail".to_string(),
@@ -388,6 +368,32 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     }
 
     Ok(())
+}
+
+/// The global `config.toml`, reported as the retired file it is.
+///
+/// It WAS read, as the seed under `init.lua`, and v0.30.0 warned at every
+/// boot that it was deprecated. The reader is gone now, so a user who still
+/// has one has settings that stopped applying — the one case where a row
+/// must say "no longer read" rather than "never read". The kiln-local file
+/// below is the opposite case and must not borrow this wording.
+///
+/// Only a file actually named `config.toml` qualifies: `-C` names the file
+/// whose directory is the config root, and a user who points it at their
+/// `init.lua` must not be told their config is retired.
+fn retired_config_note(config_path: &Path) -> Option<DoctorCheckResult> {
+    if config_path.file_name()? != "config.toml" || !config_path.exists() {
+        return None;
+    }
+    Some(DoctorCheckResult {
+        check_name: "Retired config".to_string(),
+        status: "warn".to_string(),
+        message: format!(
+            "{} is no longer read — its settings no longer apply. \
+             Run `cru config migrate` to move them into init.lua",
+            display_path(config_path)
+        ),
+    })
 }
 
 /// The never-read kiln-local config, reported as the true fact it is.
@@ -837,11 +843,12 @@ mod tests {
             .expect("an evaluation row")
     }
 
+    /// An `init.lua` that RAISES fails open in the daemon, so doctor reports
+    /// the error and still hands the seed config to the checks below it.
     #[tokio::test]
-    async fn a_broken_init_lua_fails_the_evaluation_check_by_name() {
+    async fn a_raising_init_lua_fails_the_evaluation_check_by_name() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("config.toml"), "").unwrap();
-        std::fs::write(tmp.path().join("init.lua"), "this is not lua(").unwrap();
+        std::fs::write(tmp.path().join("init.lua"), "error('boom')").unwrap();
 
         let (results, config) = evaluate_config_check(
             Some(tmp.path().join("config.toml")),
@@ -863,10 +870,37 @@ mod tests {
         );
     }
 
+    /// An `init.lua` that does not PARSE stops the boot, so there is no
+    /// config to hand on. Doctor's job is then to say which line, because a
+    /// user who cannot start the daemon runs doctor to find out why.
+    #[tokio::test]
+    async fn an_unparseable_init_lua_fails_the_evaluation_check_and_names_the_line() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("init.lua"), "this is not lua(").unwrap();
+
+        let (results, config) = evaluate_config_check(
+            Some(tmp.path().join("config.toml")),
+            None,
+            no_plugin_paths(),
+        )
+        .await;
+
+        let row = eval_row(&results);
+        assert_eq!(row.status, "fail");
+        assert!(
+            row.message.contains("init.lua:1"),
+            "the failure must name the file and the line: {}",
+            row.message
+        );
+        assert!(
+            config.is_none(),
+            "a config file that does not parse yields no config to check further"
+        );
+    }
+
     #[tokio::test]
     async fn a_clean_init_lua_passes_and_its_values_reach_the_returned_config() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("config.toml"), "").unwrap();
         std::fs::write(
             tmp.path().join("init.lua"),
             "cru.config.set{ chat = { model = 'from-lua' } }",
@@ -893,8 +927,9 @@ mod tests {
     #[tokio::test]
     async fn the_freshness_row_warns_only_on_a_hash_mismatch() {
         let tmp = tempfile::TempDir::new().unwrap();
+        // The `-C` path names the config ROOT through its directory; the
+        // file itself is not read.
         let config_toml = tmp.path().join("config.toml");
-        std::fs::write(&config_toml, "").unwrap();
         std::fs::write(tmp.path().join("init.lua"), "-- fine").unwrap();
         let current = crucible_daemon::daemon_plugins::boot_input_hash(&config_toml);
 
@@ -952,6 +987,38 @@ mod tests {
             "'deprecated' would claim the file once worked: {}",
             row.message
         );
+    }
+
+    /// The global `config.toml` was read until v0.30.0 and is not read now.
+    /// A user with one is a user whose settings silently stopped applying,
+    /// so the row must say that and name the command that ends it.
+    #[test]
+    fn a_retired_global_config_toml_is_reported_with_the_migrate_command() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_toml = tmp.path().join("config.toml");
+        assert!(
+            retired_config_note(&config_toml).is_none(),
+            "no file, no row"
+        );
+
+        std::fs::write(&config_toml, "[chat]\n").unwrap();
+        let row = retired_config_note(&config_toml).expect("a row for the existing file");
+        assert_eq!(row.status, "warn");
+        assert!(
+            row.message.contains("cru config migrate"),
+            "the row must name the remedy: {}",
+            row.message
+        );
+        assert!(
+            row.message.contains("no longer read"),
+            "the row must say what changed: {}",
+            row.message
+        );
+
+        // An `init.lua` the user named through `-C` is not a retired file.
+        let init_lua = tmp.path().join("init.lua");
+        std::fs::write(&init_lua, "").unwrap();
+        assert!(retired_config_note(&init_lua).is_none());
     }
 
     #[test]

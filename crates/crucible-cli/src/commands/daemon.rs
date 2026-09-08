@@ -110,10 +110,10 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             }
         });
 
-        // The one-VM config boot: seed defaults + config.toml, create THE
-        // plugin VM, evaluate init.lua in it once (fail open), extract the
-        // effective config. The loader rides into the bind so the same VM
-        // runs the deferred plugin activation.
+        // The one-VM config boot: seed the defaults and `settings.json`,
+        // create THE plugin VM, evaluate init.lua in it once (fail open),
+        // extract the effective config. The loader rides into the bind so the
+        // same VM runs the deferred plugin activation.
         let boot =
             crucible_daemon::daemon_plugins::evaluate_boot_config(config_path.clone(), None, None)
                 .await?;
@@ -125,7 +125,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
                 &boot.config,
                 plugin_sections.clone(),
                 plugin_watch,
-                boot.config_source.clone(),
+                boot.config_file(),
             )
             .with_boot_hash(boot.boot_hash.clone())
             .with_loader(boot.loader),

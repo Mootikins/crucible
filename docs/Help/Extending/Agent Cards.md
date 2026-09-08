@@ -93,7 +93,7 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 | `provider` | No | Provider override (`ollama`, `anthropic`, …); omit to inherit |
 | `model` | No | Model override; omit to inherit (better portability) |
 | `mode` | No | Initial mode (`auto`/`plan`) |
-| `specialty` | No | Model category resolved via `[llm.models]` (see below) |
+| `specialty` | No | Model category resolved via `llm.models` (see below) |
 | `tags` | No | Tags for discovery |
 
 ## Model Resolution
@@ -101,18 +101,23 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 A card's model resolves through one explicit chain, most specific first:
 
 1. **Card-explicit** `provider:` / `model:` — always wins.
-2. **`specialty:`** mapped through your `[llm.models]` config table.
+2. **`specialty:`** mapped through your `llm.models` config table.
 3. **Inherit from the spawning context** — the delegating parent's
    provider/model, or the configured default for `session.create`.
 
 The `specialty` layer keeps cards portable: the card says what *kind* of
 model it wants, and each machine maps that to its own preferred model:
 
-```toml
-[llm.models]
-reasoning = "openai/o1"          # provider/model — switches both
-coder = "qwen2.5-coder"          # bare model — provider inherited
-writing = "anthropic/claude-haiku"
+```lua
+cru.config.set({
+    llm = {
+        models = {
+            reasoning = "openai/o1",  -- provider/model — switches both
+            coder = "qwen2.5-coder",  -- bare model — provider inherited
+            writing = "anthropic/claude-haiku",
+        },
+    },
+})
 ```
 
 An unmapped specialty simply falls through to inheritance, so sharing a
@@ -134,7 +139,7 @@ Permission values:
 
 Tools not listed use the default behavior (safe read-only tools run freely; mutating tools go through the permission gate). Note: delegated child sessions run non-interactively — for them, `ask` is effectively `deny` unless a permission pattern or Lua hook answers the prompt.
 
-**Trust note:** `allow` skips the interactive prompt, so only install cards from sources you trust — a kiln-shipped card granting `bash: allow` runs shell commands unattended when delegated to. The operator's `[permissions]` deny rules are still evaluated for a card-allowed tool, so a card cannot sidestep them: `deny = ["bash:*"]` in your permissions config outranks any card.
+**Trust note:** `allow` skips the interactive prompt, so only install cards from sources you trust — a kiln-shipped card granting `bash: allow` runs shell commands unattended when delegated to. The operator's `permissions` deny rules are still evaluated for a card-allowed tool, so a card cannot sidestep them: `deny = ["bash:*"]` in your permissions config outranks any card.
 
 It outranks cards, not everything. Three things sit outside it, and a `deny` rule is a backstop only against what it can actually see:
 

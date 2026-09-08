@@ -208,7 +208,7 @@ runs the built-in internal agent with an [[Help/Extending/Agent Cards|agent
 card]]'s prompt, model, tool policy and MCP servers layered over your config
 defaults. `--acp` instead launches an external agent subprocess by profile name
 (`claude`, `gemini`, `codex`, `cursor`, `opencode`, or anything under
-`[acp.agents.*]`).
+`acp.agents.*`).
 `cru agents list` shows both. Either way the daemon resolves the name before
 the session exists, so an unknown one fails without leaving a session behind.
 
@@ -377,11 +377,14 @@ The daemon automatically archives stale sessions. A background sweep runs every 
 
 **Default threshold:** 72 hours of inactivity.
 
-Configure it in `~/.config/crucible/config.toml`:
+Configure it in `~/.config/crucible/init.lua`:
 
-```toml
-[server]
-auto_archive_hours = 72    # default; set to 0 to disable
+```lua
+cru.config.set({
+    server = {
+        auto_archive_hours = 72,  -- default; set to 0 to disable
+    },
+})
 ```
 
 The sweep skips sessions that have active subscribers (connected clients). It also re-checks activity timestamps before archiving to avoid race conditions where a session receives new activity between the staleness check and the archive operation.
@@ -390,15 +393,18 @@ Auto-archived sessions can be unarchived at any time. No data is lost.
 
 ## Session Configuration
 
-Session behavior is configured through the `[chat]` section in `~/.config/crucible/config.toml`. The daemon manages session persistence automatically; sessions always save under the daemon data root (`~/.crucible/sessions/`), never inside a kiln.
+Session behavior is configured through the `chat` section in `~/.config/crucible/init.lua`. The daemon manages session persistence automatically; sessions always save under the daemon data root (`~/.crucible/sessions/`), never inside a kiln.
 
-```toml
-[chat]
-# Default chat model (can be overridden per session)
-# model = "llama3.2"
+```lua
+cru.config.set({
+    chat = {
+        -- Default chat model (can be overridden per session)
+        -- model = "llama3.2"
 
-# Show thinking/reasoning tokens from models that support it
-# show_thinking = false
+        -- Show thinking/reasoning tokens from models that support it
+        -- show_thinking = false
+    },
+})
 ```
 
 ## Agent Configuration per Session

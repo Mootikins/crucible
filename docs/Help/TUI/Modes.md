@@ -127,7 +127,7 @@ read the same in the same list. The modeline applies the same rule to the id
 and upper-cases the result, so `acceptEdits` shows as ` ACCEPT EDITS `; that
 is the modeline's styling, not a second name.
 
-Rules use the same engine as the global `[permissions]` config, so
+Rules use the same engine as the global `permissions` config, so
 `bash:rg *` inherits its handling of chained commands — permitting `rg` does
 not thereby permit `rg foo && rm -rf /`, `rg foo; rm -rf /`, or the same line
 with `&`, `|`, `||` or a newline in place of the `&&`. A construct the splitter
@@ -157,7 +157,7 @@ permission hook instead — see [[Help/Concepts/Permission Precedence]].
 ## Modes in an ACP Session
 
 A session that runs an external agent — `cru chat --acp claude`, or any
-`[acp.agents.*]` profile — shows **that agent's** modes, not the ones you
+`acp.agents.*` profile — shows **that agent's** modes, not the ones you
 declared in Lua. The agent owns them: claude-agent-acp offers five
 (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), codex-acp
 offers its own three, and an agent rejects a mode it never declared.

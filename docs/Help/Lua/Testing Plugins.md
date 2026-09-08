@@ -108,7 +108,7 @@ before_each(function()
     },
     fs = {
       files = {
-        ["config.toml"] = "key = 'value'",
+        ["fixture.toml"] = "key = 'value'",
       },
     },
   })

@@ -255,11 +255,11 @@ expect_text = ["All of this happens within your single conversation.", "**No sha
 
 # TRANSITION Help/Concepts/Trust and Classification.md
 #   "## How They Fit Together" — "An `untrusted` provider can only touch `public` data."
-#   "## Configuration" / "### Setting Trust on Providers" — "Add `trust_level` to any provider in your `config.toml`:"
+#   "## Configuration" / "### Setting Trust on Providers" — "Add `trust_level` to any provider in your `init.lua`:"
 [[queries]]
 question = "which provider trust levels unlock which data classes, and how do I set a provider's trust in config?"
 expect_note = "Trust and Classification"
-expect_text = ["An `untrusted` provider can only touch `public` data.", "Add `trust_level` to any provider in your `config.toml`:"]
+expect_text = ["An `untrusted` provider can only touch `public` data.", "Add `trust_level` to any provider in your `init.lua`:"]
 
 # TRANSITION Help/Concepts/Trust and Classification.md
 #   "### Classifying Your Kilns" — "Classification lives on a **kiln attachment** in the project's own `.crucible/project.toml`"

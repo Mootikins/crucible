@@ -26,21 +26,26 @@ pub const REPLACE_MARKER: &str = "__replace";
 /// makes that table replace instead of merge. The marker key is
 /// always consumed and never appears in the result.
 pub fn deep_merge(base: &mut Value, overlay: Value) {
-    deep_merge_traced(base, overlay, &mut String::new(), &mut |_, _| {});
+    deep_merge_traced(base, overlay, &mut String::new(), &mut |_, _| true);
 }
 
-/// [`deep_merge`], reporting each landing point to `observer`.
+/// [`deep_merge`], offering each landing point to `admit` before it lands.
 ///
-/// The observer runs once per wholesale write — an inserted key, a replaced
-/// value — with the dot-joined path and the (marker-stripped) value that
-/// landed there. The config store uses it to record provenance without a
-/// second copy of the merge walk; per-key recursion into a merged object
-/// reports the leaves it writes, never the object itself.
+/// `admit` runs once per wholesale write — an inserted key, a replaced value
+/// — with the dot-joined path and the (marker-stripped) value that would land
+/// there, and answers whether the write happens. It answers `false` and the
+/// base keeps what it had; per-key recursion into a merged object offers the
+/// leaves it writes, never the object itself.
+///
+/// One callback decides and records, because the config store needs both: it
+/// compares the layer that holds the leaf against the layer that is writing,
+/// and records the provenance of whichever write actually landed. A second
+/// callback, or a second walk, would let the two disagree about a leaf.
 pub fn deep_merge_traced(
     base: &mut Value,
     overlay: Value,
     path: &mut String,
-    observer: &mut dyn FnMut(&str, &Value),
+    admit: &mut dyn FnMut(&str, &Value) -> bool,
 ) {
     match overlay {
         Value::Object(map) if !map.contains_key(REPLACE_MARKER) => {
@@ -52,11 +57,12 @@ pub fn deep_merge_traced(
                     }
                     path.push_str(&key);
                     match base_map.get_mut(&key) {
-                        Some(slot) => deep_merge_traced(slot, value, path, observer),
+                        Some(slot) => deep_merge_traced(slot, value, path, admit),
                         None => {
                             let value = strip_replace_markers(value);
-                            observer(path, &value);
-                            base_map.insert(key, value);
+                            if admit(path, &value) {
+                                base_map.insert(key, value);
+                            }
                         }
                     }
                     path.truncate(saved);
@@ -64,16 +70,18 @@ pub fn deep_merge_traced(
             } else {
                 // Type change: object over array or scalar replaces.
                 let value = strip_replace_markers(Value::Object(map));
-                observer(path, &value);
-                *base = value;
+                if admit(path, &value) {
+                    *base = value;
+                }
             }
         }
         // A marked table, an array, or a scalar: replacement wins. `null` is
         // a value, not a deletion marker.
         other => {
             let value = strip_replace_markers(other);
-            observer(path, &value);
-            *base = value;
+            if admit(path, &value) {
+                *base = value;
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::types::acp::FileDiff;
+use crate::types::{ToolDisplay, ToolDisplayKind};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Permission Request/Response
@@ -146,16 +147,27 @@ impl PermRequest {
     }
 
     /// Suggested pattern for allowlisting this request.
-    /// For bash: first token + `*` (e.g., `cargo *`)
-    /// For file ops: directory prefix (e.g., `src/`)
-    /// For tools: tool name, or MCP prefix + `*` (e.g., `fs_*`)
+    ///
+    /// For bash: the command line itself (e.g., `cargo build --release`).
+    /// For file ops: directory prefix (e.g., `src/`).
+    /// For tools: tool name, or MCP prefix + `*` (e.g., `fs_*`).
+    ///
+    /// A suggestion is the *default* grant, so it may never be wider than the
+    /// action the modal displayed. The first token alone was wider: the user
+    /// read `rm build/tmp.o` and the offered grant was `rm *`, which covers
+    /// `rm -rf /home/user/project` on every project, for as long as the store
+    /// file lives. A shell tool call answers with its command for the same
+    /// reason — the tool name `bash` is a bash pattern, and as a prefix it
+    /// read `bash -c <anything>`. The user who wants a wider grant edits the
+    /// suggestion and types the `*`; see
+    /// [`crate::config::PatternStore::matches_bash`].
     pub fn suggested_pattern(&self) -> String {
         match &self.action {
             PermAction::Bash { tokens } => {
                 if tokens.is_empty() {
                     "*".to_string()
                 } else {
-                    format!("{} *", tokens[0])
+                    tokens.join(" ")
                 }
             }
             PermAction::Read { segments } | PermAction::Write { segments } => {
@@ -165,11 +177,14 @@ impl PermRequest {
                     format!("{}/", segments[0])
                 }
             }
-            PermAction::Tool { name, .. } => {
-                if let Some(prefix_end) = name.find('_') {
-                    format!("{}_*", &name[..prefix_end])
-                } else {
-                    name.clone()
+            PermAction::Tool { name, args } => {
+                let display = ToolDisplay::of(name, args);
+                match (display.kind, display.primary) {
+                    (ToolDisplayKind::Command, Some(command)) => command,
+                    _ => match name.find('_') {
+                        Some(prefix_end) => format!("{}_*", &name[..prefix_end]),
+                        None => name.clone(),
+                    },
                 }
             }
         }

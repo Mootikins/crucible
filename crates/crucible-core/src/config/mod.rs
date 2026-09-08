@@ -43,8 +43,10 @@ pub mod overlay;
 mod patterns;
 mod project_config;
 pub mod provenance;
+pub mod redact;
 mod security;
 pub mod serde_helpers;
+pub mod settings_file;
 pub mod store;
 mod tilde;
 mod workspace;
@@ -98,8 +100,10 @@ pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
 pub use project_config::{read_project_config, write_project_config, ProjectConfig};
-pub use provenance::{ProvenanceMap, SourceTag};
+pub use provenance::{LeafOrigin, ProvenanceMap, SourceOrigin, SourceTag};
+pub use redact::{names_a_credential, redact_credentials, REDACTED};
 pub use security::{ProjectFileAccess, ShellPolicy};
-pub use store::{ConfigStore, LocationPolicy};
+pub use settings_file::{load_settings, save_settings_delta, settings_path, SETTINGS_FILE_NAME};
+pub use store::{split_pinned_by, ConfigStore, LocationPolicy, PinnedLeaf};
 pub use tilde::expand_tilde;
 pub use workspace::{KilnAttachment, SecurityConfig};

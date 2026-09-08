@@ -87,10 +87,15 @@ These four are the models Crucible recommends and can download.
 The set is curated, not closed. Name any model the backend supports in the
 config file and it runs:
 
-```toml
-[enrichment.provider]
-type = "fastembed"
-model = "BAAI/bge-large-en-v1.5"
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "fastembed",
+            model = "BAAI/bge-large-en-v1.5",
+        },
+    },
+})
 ```
 
 Crucible resolves the name against the backend's own registry, so the name you
@@ -132,22 +137,27 @@ now rather than during `cru process`.
 
 ## `cru models embeddings use <NAME>`
 
-Writes two keys into your config file:
+Saves the model as a durable preference. The command resolves the name against
+the daemon's catalog first, so a typo never lands in the store and an alias
+lands as the canonical name; `-f json` reports the result to a script.
 
-```toml
-[enrichment.provider]
-type = "fastembed"
-model = "arctic-embed-m"
+The write is a `config.save`: the daemon merges `enrichment.provider` into the
+running store and persists it in `settings.json`, beside your `init.lua`.
+
+**A key your `init.lua` sets is refused, by name.** Your own line outranks a
+saved preference and re-applies at the next boot, so the command names the file
+and the line rather than saving a value that would vanish. Edit it there:
+
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "fastembed",
+            model = "arctic-embed-m",
+        },
+    },
+})
 ```
-
-The command prints the config file path, the old model and the new one. It
-writes nothing else, and it keeps the rest of the file, comments included. Use
-`--config <PATH>` to write to a config file other than the default, and
-`-f json` to read the result from a script.
-
-If the file named a remote provider before, its other keys stay in the file.
-The command names them, because nothing reads them under `type = "fastembed"`
-and the config loader ignores them without a word.
 
 **A change of model needs a daemon restart, then a reprocess.** The running
 daemon holds the config it started with and reads no file again, so a reprocess
@@ -163,32 +173,39 @@ cru process --force
 A different model also gives a different vector width, which is why the old
 vectors cannot be reused.
 
-> `init.lua` out-ranks `config.toml`. If your Lua config sets
-> `enrichment.provider`, that value wins over the one this command writes.
-> Move the setting into the Lua config, or remove it from there.
-
 ## A remote embedding service
 
 The model stays configurable. `cru models embeddings` covers the local backend
 only, because that is the backend whose files Crucible fetches. To use a remote
-service, write `[enrichment.provider]` yourself.
+service, write `enrichment.provider` yourself.
 
 Ollama, on this machine or another one:
 
-```toml
-[enrichment.provider]
-type = "ollama"
-model = "nomic-embed-text"
-base_url = "http://localhost:11434"
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "ollama",
+            model = "nomic-embed-text",
+            base_url = "http://localhost:11434",
+        },
+    },
+})
 ```
 
 OpenAI:
 
-```toml
-[enrichment.provider]
-type = "openai"
-api_key = "{env:OPENAI_API_KEY}"
-model = "text-embedding-3-small"
+<!-- crucible:not-config — `api_key` is required, and only the reader's own environment holds it -->
+```lua
+cru.config.set({
+    enrichment = {
+        provider = {
+            type = "openai",
+            api_key = os.getenv("OPENAI_API_KEY"),
+            model = "text-embedding-3-small",
+        },
+    },
+})
 ```
 
 The same reprocess rule applies: run `cru process --force` after the change.
@@ -204,7 +221,7 @@ A daemon that was built without the `fastembed` feature runs no local model.
 
 ## See Also
 
-- [[Help/Config/embedding]] — every `[enrichment]` field
+- [[Help/Config/embedding]] — every `enrichment` field
 - [[Help/CLI/process]] — `cru process --force`
 - [[Help/CLI/search]] — the semantic search these vectors serve
 - [[Help/CLI/doctor]] — the backend check

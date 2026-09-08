@@ -1,5 +1,6 @@
 import { Component } from 'solid-js';
 import {
+  Cog,
   Cpu,
   Key,
   LayoutDashboard,
@@ -21,12 +22,28 @@ import {
   TranscriptionSettingsSection,
 } from '@/components/SettingsPanel';
 import { AdvancedSessionSettingsSection } from './AdvancedSessionSettings';
+import { AppConfigSettingsSection } from './AppConfigSettings';
 import { PluginSettings } from '@/components/PluginSettings';
 import type { PluginOptionNode } from '@/lib/api';
 import { WorkspaceSettingsSection } from './WorkspaceSettings';
 
 /** A plugin's declared settings tree, as the daemon describes it. */
 export type PluginTrees = Record<string, PluginOptionNode>;
+
+/**
+ * What every section may be handed, whether or not it uses it.
+ *
+ * Both are OPTIONAL and both are ignored by most sections. A prop rather than
+ * a per-section wiring, because the registry renders through `<Dynamic>`: a
+ * section that needs to reload the plugin trees, or to dismiss the dialog it
+ * sits in, cannot reach either from inside itself.
+ */
+export interface SettingsSectionProps {
+  /** Re-read what the surrounding dialog fetched; resolves when it is in hand. */
+  onChanged?: () => void | Promise<unknown>;
+  /** Dismiss the dialog. A section that opens a file behind it needs this. */
+  onClose?: () => void;
+}
 
 export interface SettingsSection {
   id: string;
@@ -35,7 +52,7 @@ export interface SettingsSection {
   icon: Component<{ class?: string }>;
   /** Left-list grouping, in declaration order. */
   group: string;
-  render: Component;
+  render: Component<SettingsSectionProps>;
 }
 
 let cached: SettingsSection[] | null = null;
@@ -78,6 +95,11 @@ function builtins(): SettingsSection[] {
     { id: 'mcp', label: 'MCP', icon: Plug, group: 'Connections', render: McpStatusSection },
 
     { id: 'workspace', label: 'Workspace', icon: LayoutDashboard, group: 'Workspace', render: WorkspaceSettingsSection },
+
+    // The DAEMON's config, beside the browser-local sections above rather than
+    // replacing any of them: fonts, terminal size, vim mode and the microphone
+    // are per-device and stay in localStorage.
+    { id: 'app-config', label: 'Configuration', icon: Cog, group: 'Crucible', render: AppConfigSettingsSection },
   ];
   return cached;
 }

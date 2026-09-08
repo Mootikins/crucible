@@ -55,7 +55,7 @@ re-applies: a later file wins by ordinary assignment, and `= nil` removes.
 |---|---|
 | `cru.defaults.x = …` | every new session starts with `x` |
 | `cru.modes.<name> = {…}` | a new mode, in the TUI cycle and the web picker |
-| `cru.config.set{…}` | app config, the `config.toml` tier |
+| `cru.config.set{…}` | app config |
 
 A workspace runs no Lua. The daemon executes only trees it names in advance,
 because naming a tree for the loader is what write-protects it — see
@@ -67,13 +67,13 @@ change a session's model, prompt, modes or hooks.
 The daemon evaluates your `init.lua` exactly once, at boot, **before** it loads plugins — the Neovim model. Your file authors the config (`cru.config.set`, `runtimepath` included), and plugin *activation* runs afterwards against the final result.
 
 - **Any line may set any config key.** The daemon reads the store when the evaluation finishes, so the last write wins.
-- **`cru.config.set` deep-merges.** Objects merge key by key; arrays and scalars replace wholesale. To replace a whole table instead of merging into it, put `__replace = true` inside it: `cru.config.set({ llm = { providers = { __replace = true, mine = { type = "ollama" } } } })` drops every provider the table does not restate. The marker is the one replacement mechanism, spelled the same in a hand-written table, a not-yet-migrated `config.toml`, and the `config.set` RPC; it is always consumed and never appears in a `cru.config.get` read.
+- **`cru.config.set` deep-merges.** Objects merge key by key; arrays and scalars replace wholesale. To replace a whole table instead of merging into it, put `__replace = true` inside it: `cru.config.set({ llm = { providers = { __replace = true, mine = { type = "ollama" } } } })` drops every provider the table does not restate. The marker is the one replacement mechanism, spelled the same in a hand-written table and over the `config.set` RPC; it is always consumed and never appears in a `cru.config.get` read.
 - **The module search path is live.** A `runtimepath` entry added on line N serves every `require` after line N — and none before it. The lazy.nvim bootstrap has the same rule: prepend, then require. A failed `require` is never cached, so a retry after the addition succeeds.
 - **`require` is a module load, not membership.** It cannot enable, disable, or activate a plugin. A `require` of a disabled plugin still loads its module, but activation registers none of its hooks or exports.
 - **Daemon-state APIs raise during evaluation.** `cru.kiln.*`, `cru.session.*`, and storage-backed calls answer "daemon state is not ready during init.lua evaluation; use a hook" — the kiln registry is built *from* your file's output, so it cannot exist during it. Move such reads into a hook.
 - **No hot reload.** Runtime `config.set` and `plugin.reload` do not re-run the bootstrap; a `runtimepath` change needs `cru daemon restart`.
 - **`require("my.mod")`** resolves from `~/.config/crucible/lua/` everywhere — during boot, in hooks, and in plugins. A module there shadows a same-named plugin module.
-- **`config.toml` is a deprecated seed.** While it exists it loads *under* your `init.lua` (your Lua wins per key). Run `cru config migrate` to move it into Lua.
+- **`config.toml` is not read.** It was the seed under `init.lua` until v0.30.0. The reader is gone, so its values no longer apply. Run `cru config migrate` to move them into Lua.
 
 ## Configuring Plugins
 
@@ -137,7 +137,7 @@ them.
 Plugin configuration has two working forms, and each plugin uses **one**:
 
 - **The direct form** — `require("reflection").setup({...})` at the top of `init.lua`. The call you write *owns* that plugin's setup: activation reuses the same module instance (the file is never evaluated twice) and skips its default `setup(cfg)` call.
-- **The store form** — `cru.config.set({ plugins = { reflection = {...} } })`, or a `[plugins.reflection]` section in a not-yet-migrated `config.toml`. This feeds the default `setup(cfg)` the activation phase calls for every plugin you did not set up directly.
+- **The store form** — `cru.config.set({ plugins = { reflection = {...} } })`. This feeds the default `setup(cfg)` the activation phase calls for every plugin you did not set up directly.
 
 A plugin configured both ways takes the direct call; pick one form per plugin. Bundled plugins (in `runtime/plugins/`) load with their defaults when you configure nothing. To disable one entirely, set `plugins = { <name> = { enabled = false } }`.
 
@@ -232,9 +232,9 @@ cru.json.decode -- same as cru.json.decode
 
 > [!warning] `cru.config` and `cru.plugin.config` are not the same function
 > `cru.config.get(key)` reads one **top-level** value of the merged app config
-> (`config.toml` seeded, `cru.config.set{}` overlaid) and takes no dotted
+> (defaults seeded, `cru.config.set{}` overlaid) and takes no dotted
 > paths. On the daemon's plugin VM, `cru.plugin.config.get("plugin.key")` walks
-> dotted keys into `[plugins.*]` config. This is a known trap — check which
+> dotted keys into `plugins.*` config. This is a known trap — check which
 > one you mean before reaching for either.
 
 ### The keys `cru.config.get` will not return
@@ -250,7 +250,7 @@ of the user's config, and a plugin is told which kilns a session reaches by
 *name* — through `session.kilns` and through the `kiln` field on a
 `precognition_select` / `precognition_format` result. Publishing the
 directories here would be a side door around that. Your own
-`[plugins.<name>]` keys are untouched; the rule is about top-level keys only,
+`plugins.<name>` keys are untouched; the rule is about top-level keys only,
 so `cru.plugin.config.get("myplugin.kilns")` still works exactly as before.
 
 The `config.set` RPC refuses the same seven, and reports them in a `rejected`

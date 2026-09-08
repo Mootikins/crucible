@@ -103,22 +103,16 @@ impl OilChatApp {
                 request_id,
                 response,
             } => {
-                if let Some(ref pattern) = response.pattern {
-                    let config_scope =
-                        crucible_core::config::components::permissions::PermissionScope::try_from(
-                            response.scope,
-                        );
-                    if let Ok(scope) = config_scope {
-                        match crucible_core::config::components::permissions::write_permission_rule(
-                            scope, pattern, None,
-                        ) {
-                            Ok(path) => {
-                                self.notify_toast(format!("Rule saved to {}", path.display()));
-                            }
-                            Err(e) => {
-                                self.notify_toast(format!("Failed to save rule: {e}"));
-                            }
-                        }
+                // The grant itself travels with the response below. The
+                // daemon stores it, because the daemon owns every store: it
+                // holds the per-project and per-user pattern files, and it is
+                // the process that reads them back at the next prompt. The
+                // TUI used to write a rule into a config file of its own, in
+                // a grammar the permission engine could not parse, in a file
+                // nothing loaded.
+                if let Some(scope) = Self::persisted_scope_label(response.scope) {
+                    if let Some(ref pattern) = response.pattern {
+                        self.notify_toast(format!("Always allowing {pattern} {scope}"));
                     }
                 }
                 self.close_interaction_and_show_next();
@@ -138,6 +132,22 @@ impl OilChatApp {
                 })
             }
             InteractionModalOutput::ToggleDiff => Action::Continue,
+        }
+    }
+
+    /// How to word the scope of a grant the daemon persists, or `None` for a
+    /// grant that dies with the run and needs no report.
+    ///
+    /// Exhaustive: a new grant scope must decide here whether it outlives the
+    /// run, rather than fall into a wildcard that says it does not.
+    fn persisted_scope_label(
+        scope: crucible_core::interaction::PermissionScope,
+    ) -> Option<&'static str> {
+        use crucible_core::interaction::PermissionScope;
+        match scope {
+            PermissionScope::Project => Some("in this project"),
+            PermissionScope::User => Some("everywhere"),
+            PermissionScope::Once | PermissionScope::Session => None,
         }
     }
 

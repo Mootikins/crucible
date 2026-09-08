@@ -55,8 +55,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-104: REPL `:set` runtime config
 **As a user**, I use vim-style `:set key=value` (and `?`, `??`, `&`, `^`) to change runtime config (thinking budget, context strategy/budget/window, autocompact threshold, precognition, perm.*).
-**Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets; unknown (plugin/dynamic) keys store locally AND mirror into the daemon app-config store, so `:lua cru.config.get(key)` and plugins see the same typed value. Every advertised key must be REAL: `:set syntax_theme=<name>` switches diff/code-block highlighting live (validated against the loaded theme set plus `derived`, which follows the colorscheme; seeded from `cli.highlighting` at startup). Renamed from `:set theme=` when the UI gained its own colorscheme; the inert `verbose` knob was removed 2026-07-10.
-**Tests:** T1 per-key dispatch matrix in `chat_app/command_handling.rs` (test-case over every session-scoped key: daemon-sync emission, invalid-value warnings, query round-trip, reset), T2 (`:set` result notification render).
+**Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets; app-config keys (the ones the classifier does not own) are written to the daemon store and read back from it, so `:set key?`, `:set key??`, `:lua cru.config.get(key)` and plugins give one answer; every spelling of one key reaches one store; `&` and `^` refuse an app-config key, because the daemon store keeps no layer stack to drop; a refused write warns and records nothing. Every advertised key must be REAL: `:set syntax_theme=<name>` switches diff/code-block highlighting live (validated against the loaded theme set plus `derived`, which follows the colorscheme; seeded from `cli.highlighting` at startup). Renamed from `:set theme=` when the UI gained its own colorscheme; the inert `verbose` knob was removed 2026-07-10.
+**Tests:** T1 per-key dispatch matrix in `chat_app/command_handling.rs` (test-case over every session-scoped key: daemon-sync emission, invalid-value warnings, query round-trip, reset), plus two completeness walks over `SHORTCUTS` × `SetCommand::iter()` — every declared target answers locally under every spelling, and no spelling of an app-config key touches the local store. T2 (`:set` result notification render; the daemon's query answer reaches the transcript).
 
 ### US-108: `:lua` escape hatch
 **As a power user**, `:lua <expr>` (or `:= <expr>`) evaluates a Lua expression in the daemon's plugin runtime and shows the result as a system message, so I can poke config/state beyond the `:set` knobs without leaving the chat. The default command line never evals implicitly — unknown `:` input still gets command suggestions, not execution.
@@ -132,7 +132,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-401: Permission modal full flow
 **As a user**, when the agent needs permission I get a modal with the tool, args, and a togglable diff; y approves, n denies, a allowlists — and the tool then runs or errors accordingly.
-**Acceptance:** queued permissions auto-open in order; `h` toggles diff (the on-screen hint reads `press h to expand/collapse diff` — `d` is not bound, see `interaction_modal/perm.rs:68`); decision reaches the daemon; deny yields an error tool result and the turn continues; allowlist persists project-scoped.
+**Acceptance:** queued permissions auto-open in order; `h` toggles diff (the on-screen hint reads `press h to expand/collapse diff` — `d` is not bound, see `interaction_modal/perm.rs:68`); decision reaches the daemon; deny yields an error tool result and the turn continues; allowlist persists project-scoped, and the grant it saves is the command the modal displayed — a wider grant needs the user to `Tab` and add a `*`.
 **Tests:** T2 (modal render + diff), full approve/deny→tool-result flow + queued-ordering in `user_story_tests/permission_tests.rs`, permission_invariant_tests.
 
 ### US-402: Ask modal
@@ -263,7 +263,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### US-HERO: One session, many consoles (cross-surface)
 **As a user**, work I start in the terminal is fully continuable in the browser and back again — the session lives in the daemon (the "hypervisor"), the TUI and web are stateless consoles, and kiln files are a shared buffer.
 **Acceptance:** a session created + advanced in `cru chat` resumes in `cru web` with turn 1 hydrated both sides; a note the terminal wrote via the shell modal opens in the web editor; the browser's edit to that note is visible from a later `cru chat --resume` via `!cat`; both consoles see the same 3-turn history and the same bytes on disk.
-**Tests:** the flagship live journey — TUI legs `hero_leg_1`/`hero_leg_3` in `tests/tui_e2e_tests/hero.rs` (driven, not standalone), orchestrated by `web/e2e/live/hero.live.spec.ts`. Deterministic turns come from a fake Ollama server (`web/e2e/live/fake-ollama.ts`) + a temp `config.toml` (`hero-setup.ts`). Run with `just web-test hero`.
+**Tests:** the flagship live journey — TUI legs `hero_leg_1`/`hero_leg_3` in `tests/tui_e2e_tests/hero.rs` (driven, not standalone), orchestrated by `web/e2e/live/hero.live.spec.ts`. Deterministic turns come from a fake Ollama server (`web/e2e/live/fake-ollama.ts`) + a temp `init.lua` (`hero-setup.ts`), whose arrival the setup proves by reading the daemon's effective config. Run with `just web-test hero`.
 
 ---
 

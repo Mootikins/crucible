@@ -1,4 +1,12 @@
 //! SetCommand parser for vim-style `:set` commands.
+//!
+//! [`SetCommand`] and [`SetEffect`] are closed sets that decide which store a
+//! `:set` reaches. The two denies below turn a wildcard arm — the arm that
+//! sends a new spelling or a new effect somewhere nobody chose — into a
+//! compile error.
+
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
 
 use crate::tui::oil::config::{ConfigValue, ThinkingPreset};
 
@@ -10,7 +18,11 @@ pub enum ParseError {
     InvalidSyntax(String),
 }
 
+/// The `:set` spellings. A closed set: the dispatch in `command_handling.rs`
+/// matches every variant, and the tests walk them through `EnumIter` so a new
+/// spelling cannot reach a store the other spellings do not.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 pub enum SetCommand {
     ShowModified,
     ShowAll,
@@ -219,15 +231,24 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 value: CliValue::Set(value),
             })
         }
-        // `thinking` stays TUI-local on purpose: it hides or shows reasoning
-        // blocks in this client's transcript and changes nothing about the
-        // turn. `precognition` looked like its neighbour and was not — it
-        // decides whether the daemon injects kiln context, so a TUI-local
-        // toggle only ever changed the `:set` readout.
-        "thinking" => Ok(SetEffect::TuiLocal {
-            key,
-            value: CliValue::Set(value),
-        }),
+        // `thinking` and `show_diffs` stay TUI-local on purpose: they hide or
+        // show reasoning blocks and diff bodies in this client's transcript
+        // and change nothing about the turn. `precognition` looked like their
+        // neighbour and was not — it decides whether the daemon injects kiln
+        // context, so a TUI-local toggle only ever changed the `:set` readout.
+        //
+        // `show_diffs` reached this classifier as an unknown key until 2026-09,
+        // which mirrored a display key into the daemon app-config store.
+        "thinking" | "show_diffs" => {
+            parse_bool(&value).map_err(|message| SetError::InvalidValue {
+                key: key.clone(),
+                message,
+            })?;
+            Ok(SetEffect::TuiLocal {
+                key,
+                value: CliValue::Set(value),
+            })
+        }
         "precognition" => {
             let enabled = parse_bool(&value).map_err(|message| SetError::InvalidValue {
                 key: key.clone(),
@@ -317,7 +338,44 @@ impl SetRpcAction {
     }
 }
 
-fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect, SetError> {
+/// Which store answers for one `:set` key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyHome {
+    /// This client's own overlay: display state, and the session knobs the
+    /// TUI mirrors so a redraw needs no round trip.
+    Client,
+    /// The daemon app-config store, which owns every key no rule declares.
+    Daemon,
+}
+
+/// Where the key of a value-less `:set` spelling lives.
+///
+/// `key?`, `key??`, `key&` and `key^` carry nothing to classify, so they ask
+/// here instead of assuming the local overlay. Answering that question twice
+/// is the defect this replaces: `:set foo=9` reached the daemon while
+/// `:set foo?` read an overlay that never held `foo` and printed "not set".
+///
+/// The answer comes from [`classify_key_without_value`] rather than from a
+/// second list of key names, so one rule names the client's keys.
+pub fn key_home(key: &str) -> KeyHome {
+    // `CliValue::Toggle` only decides WHICH error a declared key returns. The
+    // question here is whether any rule names the key at all.
+    match classify_key_without_value(key.to_string(), CliValue::Toggle) {
+        // Nothing declares it, so the daemon app-config store owns it.
+        Err(SetError::UnknownKey(_)) => KeyHome::Daemon,
+        Ok(SetEffect::TuiLocal { .. } | SetEffect::DaemonRpc(_))
+        | Err(SetError::InvalidValue { .. } | SetError::NotSupportedAsCli | SetError::Parse(_)) => {
+            KeyHome::Client
+        }
+    }
+}
+
+/// Classify a value-less `:set key` / `:set nokey` / `:set key!`.
+///
+/// The same door as [`classify_set_value`], for the same reason: the TUI used
+/// to answer these three spellings from its own store, so a key could be
+/// `true` in the TUI and absent from the daemon at the same time.
+pub fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect, SetError> {
     if is_tui_local_key(&key) {
         Ok(SetEffect::TuiLocal { key, value: effect })
     } else if key == "precognition" {
@@ -334,7 +392,7 @@ fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect
                 message: "toggling needs the current value; use precognition=on|off".to_string(),
             }),
         }
-    } else if is_daemon_rpc_key(&key) {
+    } else if is_daemon_rpc_key(&key) || needs_an_explicit_value(&key) {
         Err(SetError::InvalidValue {
             key,
             message: "this key requires an explicit value".to_string(),
@@ -344,10 +402,14 @@ fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect
     }
 }
 
+/// The keys this client owns outright: boolean display state that no other
+/// client and no plugin reads. A value-less `:set` spelling writes these
+/// locally; every other key belongs to the daemon.
 fn is_tui_local_key(key: &str) -> bool {
     matches!(
         key,
         "thinking"
+            | "show_diffs"
             | "precognition"
             | "perm.show_diff"
             | "perm.autoconfirm_session"
@@ -364,9 +426,23 @@ fn is_daemon_rpc_key(key: &str) -> bool {
             | "context_budget"
             | "contextstrategy"
             | "context_strategy"
+            | "outputvalidation"
+            | "output_validation"
+            | "validationretries"
+            | "validation_retries"
             | "autocompactthreshold"
             | "autocompact_threshold"
             | "precognition.results"
+    )
+}
+
+/// Declared `:set` targets whose value is not a boolean and whose home is
+/// this client. `:set syntax_theme` cannot mean "true", so the value-less
+/// spellings ask for a value rather than writing one.
+fn needs_an_explicit_value(key: &str) -> bool {
+    matches!(
+        key,
+        "syntax_theme" | "syntaxtheme" | "completionstyle" | "completion_style"
     )
 }
 
@@ -517,6 +593,52 @@ fn split_on_value_colon(input: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::config::SHORTCUTS;
+
+    /// Every declared `:set` target is classified. A target the classifier
+    /// does not know falls through to the app-config store, which mirrors a
+    /// TUI display key into the daemon and gives one key two homes.
+    ///
+    /// The expectation walks the shortcut table itself rather than a second
+    /// list, so a new shortcut cannot pass by being absent from both.
+    #[test]
+    fn every_declared_set_target_is_classified() {
+        for shortcut in SHORTCUTS {
+            let classified = classify_set_value(shortcut.short.to_string(), "true".to_string());
+            assert!(
+                !matches!(classified, Err(SetError::UnknownKey(_))),
+                "`:set {}` reaches the daemon app-config store because nothing classifies it",
+                shortcut.short
+            );
+            // The value-less spellings ask `key_home`, not the classifier.
+            // The two must name the same store, or a target is written in
+            // one place and read from the other.
+            assert_eq!(
+                key_home(shortcut.short),
+                KeyHome::Client,
+                "`:set {}?` and `:set {}=v` disagree about which store owns the key",
+                shortcut.short,
+                shortcut.short
+            );
+        }
+    }
+
+    /// `show_diffs` decides whether THIS transcript renders diff bodies. It
+    /// is display state, so it stays in the TUI.
+    #[test]
+    fn show_diffs_stays_in_the_tui() {
+        assert_eq!(
+            classify_set_value("show_diffs".to_string(), "false".to_string()),
+            Ok(SetEffect::TuiLocal {
+                key: "show_diffs".to_string(),
+                value: CliValue::Set("false".to_string()),
+            })
+        );
+        assert!(matches!(
+            classify_set_value("show_diffs".to_string(), "maybe".to_string()),
+            Err(SetError::InvalidValue { .. })
+        ));
+    }
 
     #[test]
     fn parse_bool_accepts_the_config_value_tokens() {

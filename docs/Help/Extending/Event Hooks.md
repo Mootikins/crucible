@@ -265,7 +265,7 @@ Event fields:
 - `event.char_budget` — total snippet characters the handler may allocate
 - `event.results` — array of `{ index, title, score, snippet, kiln }`
 
-`kiln` is the **name** of the `[kilns]` entry the note came from, never its
+`kiln` is the **name** of the `kilns` entry the note came from, never its
 directory — a plugin is told which corpus a note is in, not where it lives on
 disk. The key is **absent** when no entry claims the note's kiln, so
 `if note.kiln then` answers the question it looks like it is asking; it is
@@ -474,10 +474,15 @@ it for the shape of a real handler at either stage.
 The plugin is a proof of concept, not a retrieval setting. It ships with
 `enabled = false`, and it stays off until you set the two knobs:
 
-```toml
-[plugins.retrieval-lab]
-enabled = true
-strategy = "arc_post"
+```lua
+cru.config.set({
+    plugins = {
+        ["retrieval-lab"] = {
+            enabled = true,
+            strategy = "arc_post",
+        },
+    },
+})
 ```
 
 Eight measurement runs found no strategy worth a default. At note level a

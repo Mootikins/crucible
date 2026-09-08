@@ -491,9 +491,20 @@ impl ModuleRegistry {
         }
         let source = std::fs::read_to_string(&request.path)
             .map_err(|e| mlua::Error::runtime(format!("read {}: {e}", request.path.display())))?;
-        lua.load(&source)
+        let outcome = lua
+            .load(&source)
             .set_name(format!("@{}", request.path.display()))
-            .call(request.name.clone())
+            .call(request.name.clone());
+        match request.kind {
+            // A module under the user's own `lua/` directory is config, the
+            // same as `init.lua`. The mark carries "this file does not
+            // parse" out of this Rust callback, which Luau would otherwise
+            // report to the requiring chunk as a runtime error.
+            RootKind::User => outcome.map_err(crate::config_syntax::mark_config_syntax),
+            // A plugin is not the user's config. The user did not write it
+            // and cannot fix its line, so its syntax error stays fail-open.
+            RootKind::Plugin => outcome,
+        }
     }
 }
 

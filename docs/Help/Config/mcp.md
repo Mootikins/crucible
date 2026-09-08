@@ -23,20 +23,27 @@ The MCP Gateway allows Crucible to connect to multiple upstream MCP servers, agg
 
 ## Configuration File
 
-Add to `~/.config/crucible/config.toml`:
+Add to `~/.config/crucible/init.lua`:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+        },
+    },
+})
 ```
 
 ## Server Configuration
@@ -73,18 +80,25 @@ Invalid: `""` (empty), `gh` (no trailing underscore), `my-server_` (contains a h
 
 Spawn an MCP server as a subprocess:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+        },
+    },
+})
 ```
 
 **Fields:**
@@ -100,15 +114,22 @@ GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
 
 Connect to an HTTP-based MCP server:
 
-```toml
-[[mcp.servers]]
-name = "remote"
-prefix = "remote_"
-
-[mcp.servers.transport]
-type = "sse"
-url = "http://localhost:3000/sse"
-auth_header = "Bearer your-secret-token"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "remote",
+                prefix = "remote_",
+                transport = {
+                    type = "sse",
+                    url = "http://localhost:3000/sse",
+                    auth_header = "Bearer your-secret-token",
+                },
+            },
+        },
+    },
+})
 ```
 
 **Fields:**
@@ -119,17 +140,24 @@ auth_header = "Bearer your-secret-token"
 
 Control which tools are exposed using glob patterns:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-allowed_tools = ["search_*", "get_*", "list_*"]
-blocked_tools = ["delete_*", "*_dangerous"]
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                allowed_tools = { "search_*", "get_*", "list_*" },
+                blocked_tools = { "delete_*", "*_dangerous" },
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                },
+            },
+        },
+    },
+})
 ```
 
 **Filter behavior** (`mcp_gateway.rs`, `is_tool_allowed`):
@@ -146,78 +174,100 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 
 ### GitHub MCP Server
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-timeout_secs = 60
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                timeout_secs = 60,
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+        },
+    },
+})
 ```
 
 ### Filesystem MCP Server
 
-```toml
-[[mcp.servers]]
-name = "filesystem"
-prefix = "fs_"
-allowed_tools = ["read_*", "list_*"]  # Read-only access
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"]
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "filesystem",
+                prefix = "fs_",
+                allowed_tools = { "read_*", "list_*" },  -- Read-only access
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir" },
+                },
+            },
+        },
+    },
+})
 ```
 
 ### Multiple Servers
 
-```toml
-# GitHub
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
-
-# Filesystem
-[[mcp.servers]]
-name = "filesystem"
-prefix = "fs_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "~"]
-
-# Custom local server
-[[mcp.servers]]
-name = "custom"
-prefix = "my_"
-auto_reconnect = false
-
-[mcp.servers.transport]
-type = "stdio"
-command = "/usr/local/bin/my-mcp-server"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                -- GitHub
+                name = "github",
+                prefix = "gh_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+            {
+                -- Filesystem
+                name = "filesystem",
+                prefix = "fs_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-filesystem", "~" },
+                },
+            },
+            {
+                -- Custom local server
+                name = "custom",
+                prefix = "my_",
+                auto_reconnect = false,
+                transport = {
+                    type = "stdio",
+                    command = "/usr/local/bin/my-mcp-server",
+                },
+            },
+        },
+    },
+})
 ```
 
 ### Separate Configuration File
 
-To keep servers out of the main config, point the `mcp` key at a file with a value
-reference. The referenced `.toml` is parsed and substituted in place, so its top level is
-the body of `[mcp]` — `[[servers]]`, not `[[mcp.servers]]`. See
-[[Help/Configuration#Value References]] for `{file:}` and `{dir:}`.
+To keep servers out of the main config, put the `cru.config.set` call in its own file
+beside `init.lua` and load it with `cru.include("mcp.lua")`, or under
+`~/.config/crucible/lua/` and load it with `require`. The included file writes the same
+`mcp` table this page documents. See
+[[Help/Config/workspaces#Splitting Configuration Across Files]].
 
 ## How Tools Appear
 
@@ -253,16 +303,23 @@ Ensure prefix:
 
 Increase the timeout on that server:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-timeout_secs = 120
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                timeout_secs = 120,
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                },
+            },
+        },
+    },
+})
 ```
 
 ### "Prefix collision"

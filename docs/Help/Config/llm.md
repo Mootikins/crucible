@@ -12,27 +12,32 @@ Configure language model providers for the chat interface and agents.
 
 ## Configuration File
 
-Add to `~/.config/crucible/config.toml`:
+Add to `~/.config/crucible/init.lua`:
 
-```toml
-[llm]
-default = "local"
-
-[llm.providers.local]
-type = "ollama"
-default_model = "llama3.2"
-endpoint = "http://localhost:11434"
+```lua
+cru.config.set({
+    llm = {
+        default = "local",
+        providers = {
+            ["local"] = {
+                type = "ollama",
+                default_model = "llama3.2",
+                endpoint = "http://localhost:11434",
+            },
+        },
+    },
+})
 ```
 
-The `[llm]` section has three fields:
+The `llm` section has three fields:
 
 - `default` — name of the provider to use by default
-- `providers` — the named provider instances (`[llm.providers.NAME]` tables)
-- `models` — a specialty → model mapping (`[llm.models]`) used by agent cards that
+- `providers` — the named provider instances (`llm.providers.NAME` tables)
+- `models` — a specialty → model mapping (`llm.models`) used by agent cards that
   declare a `specialty:` but no explicit `model:`, e.g. `reasoning = "openai/o1"` or
   `coder = "qwen2.5-coder"` (provider inherited when unprefixed)
 
-Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label you choose.
+Each provider lives under `llm.providers.NAME` where `NAME` is whatever label you choose.
 
 ## Provider Fields
 
@@ -41,7 +46,7 @@ Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label 
 | `type` | string | yes | Provider backend (see below) |
 | `default_model` | string | no | Model to use (falls back to provider default) |
 | `endpoint` | string | no | API endpoint (falls back to provider default) |
-| `api_key` | string | no | API key, or `{env:VAR_NAME}` to read from environment |
+| `api_key` | string | no | API key. Read it from the environment with `os.getenv("VAR_NAME")` |
 | `available_models` | list | no | Models to advertise for this provider (otherwise discovered dynamically) |
 | `trust_level` | string | no | Override the backend's default trust level — see [[Help/Concepts/Trust and Classification]] |
 | `name` | string | no | Custom display name shown in model lists/UI |
@@ -52,14 +57,19 @@ Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label 
 
 Run models locally with Ollama:
 
-```toml
-[llm]
-default = "local"
-
-[llm.providers.local]
-type = "ollama"
-default_model = "llama3.2"
-endpoint = "http://localhost:11434"
+```lua
+cru.config.set({
+    llm = {
+        default = "local",
+        providers = {
+            ["local"] = {
+                type = "ollama",
+                default_model = "llama3.2",
+                endpoint = "http://localhost:11434",
+            },
+        },
+    },
+})
 ```
 
 All fields except `type` are optional. Ollama defaults to `llama3.2` on `http://localhost:11434`.
@@ -78,14 +88,19 @@ ollama list
 
 ### OpenAI
 
-```toml
-[llm]
-default = "openai"
-
-[llm.providers.openai]
-type = "openai"
-default_model = "gpt-4o"
-api_key = "{env:OPENAI_API_KEY}"
+```lua
+cru.config.set({
+    llm = {
+        default = "openai",
+        providers = {
+            openai = {
+                type = "openai",
+                default_model = "gpt-4o",
+                api_key = os.getenv("OPENAI_API_KEY"),
+            },
+        },
+    },
+})
 ```
 
 Defaults to `gpt-4o` on `https://api.openai.com/v1` if not specified.
@@ -97,14 +112,19 @@ export OPENAI_API_KEY=your-api-key
 
 ### Anthropic
 
-```toml
-[llm]
-default = "anthropic"
-
-[llm.providers.anthropic]
-type = "anthropic"
-default_model = "claude-sonnet-5"
-api_key = "{env:ANTHROPIC_API_KEY}"
+```lua
+cru.config.set({
+    llm = {
+        default = "anthropic",
+        providers = {
+            anthropic = {
+                type = "anthropic",
+                default_model = "claude-sonnet-5",
+                api_key = os.getenv("ANTHROPIC_API_KEY"),
+            },
+        },
+    },
+})
 ```
 
 Defaults to `claude-sonnet-5` on `https://api.anthropic.com/v1` if not specified. Available models depend on your account. Run `cru models` to see the current list.
@@ -118,7 +138,7 @@ export ANTHROPIC_API_KEY=your-api-key
 
 Additional provider types are supported for chat: `openrouter`, `zai`, `github-copilot`,
 `cohere`, and `custom` (generic OpenAI-compatible). They follow the same
-`[llm.providers.NAME]` format. `vertexai` parses but has no chat backend at runtime. Run
+`llm.providers.NAME` format. `vertexai` parses but has no chat backend at runtime. Run
 `cru models` to see all available models across your configured providers.
 
 ## Parameters
@@ -132,46 +152,65 @@ Additional provider types are supported for chat: `openrouter`, `zai`, `github-c
 
 Custom API endpoint:
 
-```toml
-[llm.providers.local]
-type = "ollama"
-endpoint = "http://192.168.1.100:11434"
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            ["local"] = {
+                type = "ollama",
+                endpoint = "http://192.168.1.100:11434",
+            },
+        },
+    },
+})
 ```
 
 ### api_key
 
-Set directly or reference an environment variable with `{env:VAR_NAME}`:
+Set it directly, or read it from the environment with `os.getenv("VAR_NAME")`:
 
-```toml
-[llm.providers.openai]
-type = "openai"
-api_key = "{env:OPENAI_API_KEY}"
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            openai = {
+                type = "openai",
+                api_key = os.getenv("OPENAI_API_KEY"),
+            },
+        },
+    },
+})
 ```
 
 ## Multiple Providers
 
 You can configure several providers and switch between them:
 
-```toml
-[llm]
-default = "local"
-
-[llm.providers.local]
-type = "ollama"
-default_model = "llama3.2"
-
-[llm.providers.cloud]
-type = "openai"
-default_model = "gpt-4o"
-api_key = "{env:OPENAI_API_KEY}"
-
-[llm.providers.claude]
-type = "anthropic"
-default_model = "claude-sonnet-5"
-api_key = "{env:ANTHROPIC_API_KEY}"
+```lua
+cru.config.set({
+    llm = {
+        default = "local",
+        providers = {
+            ["local"] = {
+                type = "ollama",
+                default_model = "llama3.2",
+            },
+            cloud = {
+                type = "openai",
+                default_model = "gpt-4o",
+                api_key = os.getenv("OPENAI_API_KEY"),
+            },
+            claude = {
+                type = "anthropic",
+                default_model = "claude-sonnet-5",
+                api_key = os.getenv("ANTHROPIC_API_KEY"),
+            },
+        },
+    },
+})
 ```
 
-Change the active provider by setting `default` under `[llm]`, or switch at runtime with the `:model` command in the TUI.
+Change the active provider by setting `default` under `llm`, or switch at runtime with the `:model` command in the TUI.
 
 ## Environment Variables
 
@@ -180,7 +219,7 @@ Change the active provider by setting `default` under `[llm]`, or switch at runt
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 
-These are read only where the config references them with `{env:VAR}`. The Ollama
+These are read only where your config calls `os.getenv` for them. The Ollama
 endpoint is configured with the provider's `endpoint` field — `OLLAMA_HOST` is consulted
 only by `cru init`'s provider detection, not by chat.
 
@@ -188,37 +227,52 @@ only by `cru init`'s provider detection, not by chat.
 
 ### Local Development
 
-```toml
-[llm]
-default = "local"
-
-[llm.providers.local]
-type = "ollama"
-default_model = "llama3.2"
+```lua
+cru.config.set({
+    llm = {
+        default = "local",
+        providers = {
+            ["local"] = {
+                type = "ollama",
+                default_model = "llama3.2",
+            },
+        },
+    },
+})
 ```
 
 ### Production with OpenAI
 
-```toml
-[llm]
-default = "openai"
-
-[llm.providers.openai]
-type = "openai"
-default_model = "gpt-4o"
-api_key = "{env:OPENAI_API_KEY}"
+```lua
+cru.config.set({
+    llm = {
+        default = "openai",
+        providers = {
+            openai = {
+                type = "openai",
+                default_model = "gpt-4o",
+                api_key = os.getenv("OPENAI_API_KEY"),
+            },
+        },
+    },
+})
 ```
 
 ### Cost-Conscious
 
-```toml
-[llm]
-default = "openai-mini"
-
-[llm.providers.openai-mini]
-type = "openai"
-default_model = "gpt-4o-mini"
-api_key = "{env:OPENAI_API_KEY}"
+```lua
+cru.config.set({
+    llm = {
+        default = "openai-mini",
+        providers = {
+            ["openai-mini"] = {
+                type = "openai",
+                default_model = "gpt-4o-mini",
+                api_key = os.getenv("OPENAI_API_KEY"),
+            },
+        },
+    },
+})
 ```
 
 ## Troubleshooting

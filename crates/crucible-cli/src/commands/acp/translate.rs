@@ -447,7 +447,9 @@ mod tests {
             InteractionResponse::Permission(p) => {
                 assert!(p.allowed);
                 assert_eq!(p.scope, PermissionScope::Session);
-                assert_eq!(p.pattern.as_deref(), Some("cargo *"));
+                // The grant is the command the host displayed, not every
+                // `cargo` invocation: a suggestion never widens the request.
+                assert_eq!(p.pattern.as_deref(), Some("cargo test"));
             }
             other => panic!("expected permission response, got {other:?}"),
         }

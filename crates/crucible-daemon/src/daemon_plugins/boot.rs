@@ -131,26 +131,35 @@ fn plugin_of_module(module: &str) -> &str {
     module.split('.').next().unwrap_or(module)
 }
 
-/// The hash of what a boot evaluation reads: `config.toml` (while it
-/// exists) and `init.lua`, under the given config file's directory.
+/// The hash of what a boot evaluation reads under the given config file's
+/// directory: `init.lua`, `init.luau` and `settings.json`.
 ///
 /// The daemon records it at boot and `config.effective` returns it; a client
 /// that computes a different value over the same root warns "restart to
-/// apply". A missing file hashes as absent, so creating or deleting either
-/// file changes the hash too.
+/// apply". A missing file hashes as absent, so creating or deleting the file
+/// changes the hash too. `config.toml` is deliberately not in it: the boot
+/// does not read that file, so editing it is not a reason to restart.
+///
+/// `settings.json` IS in it. [`load_settings_layer`] reads the file at every
+/// boot, and `settings_file` states that a hand edit survives, so a hand edit
+/// is a real change to what the running daemon would evaluate. Without it,
+/// `cru doctor` reported a stale daemon as current.
 pub fn boot_input_hash(config_source: &Path) -> String {
     let config_root = config_source
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut hasher = blake3::Hasher::new();
-    // Both names hash in. A user who renames `init.lua` to `init.luau` changes
-    // the boot input, and the staleness warning has to notice.
-    let init_paths: Vec<PathBuf> = crucible_lua::source_files::init_file_names()
+    // Both `init` names hash in. A user who renames `init.lua` to `init.luau`
+    // changes the boot input, and the staleness warning has to notice.
+    let boot_inputs: Vec<PathBuf> = crucible_lua::source_files::init_file_names()
         .iter()
         .map(|name| config_root.join(name))
+        .chain(std::iter::once(crucible_core::config::settings_path(
+            config_root,
+        )))
         .collect();
-    for file in std::iter::once(config_source).chain(init_paths.iter().map(|p| p.as_path())) {
+    for file in boot_inputs.iter().map(|p| p.as_path()) {
         match std::fs::read(file) {
             Ok(bytes) => {
                 hasher.update(&(bytes.len() as u64).to_le_bytes());
@@ -167,13 +176,13 @@ pub fn boot_input_hash(config_source: &Path) -> String {
 /// The result of the boot evaluation: the extracted config and the VM it
 /// was evaluated in, ready to be handed to `Server::bind_with_plugin_config`.
 pub struct BootConfig {
-    /// The effective config: defaults, then the `config.toml` seed, then
-    /// whatever `init.lua` set. On an evaluation failure this is the seed.
+    /// The effective config: defaults, then `settings.json`, then whatever
+    /// `init.lua` set. On an evaluation failure this is the seed.
     pub config: CliAppConfig,
     /// THE plugin VM, `init.lua` already evaluated in it.
     pub loader: DaemonPluginLoader,
-    /// The config FILE the seed came from (existing or not), for refusals
-    /// and forwarding.
+    /// The config file the `--config` flag named (existing or not), whose
+    /// directory is the config root. For refusals and forwarding.
     pub config_source: PathBuf,
     /// Its directory: where `init.lua` lives.
     pub config_root: PathBuf,
@@ -184,6 +193,38 @@ pub struct BootConfig {
     /// this config fall back to the seed. The boot only warns; `cru doctor`
     /// reports it as a check.
     pub eval_error: Option<String>,
+}
+
+impl BootConfig {
+    /// The file a user edits to change this config: the `init.lua` under the
+    /// config root, whether or not it exists yet.
+    ///
+    /// Refusals name it. `config_source` is the `--config` path, which
+    /// defaults to `config.toml` — a file nothing reads, so a message built
+    /// from it sends the user to edit the wrong file.
+    pub fn config_file(&self) -> PathBuf {
+        crucible_lua::source_files::init_file(&self.config_root)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| self.config_root.join("init.lua"))
+    }
+}
+
+/// Why the `init.lua` evaluation stopped, and what the boot owes the user
+/// for it.
+///
+/// The two failures are not the same failure. A file that does not PARSE
+/// states no intent: nothing can be read out of it, so the daemon refuses to
+/// start and names the line rather than starting as though the file were
+/// absent — silence is how a typo survives for weeks. A file that parses and
+/// then RAISES states an intent that ran part way; the boot rolls the whole
+/// state back and warns, so a broken config means exactly what the warning
+/// says.
+enum InitFailure {
+    /// The file, or a config file it loaded, does not parse. Fatal.
+    Syntax(crucible_lua::ConfigSyntaxError),
+    /// It parsed, then raised or overran the boot budget. Fail open.
+    Runtime(String),
 }
 
 /// How the boot resolves `runtimepath` entries to plugin directories.
@@ -197,9 +238,10 @@ pub type PluginPathsFn = Arc<dyn Fn(&[PathBuf]) -> Vec<(PathBuf, PluginSource)> 
 /// create the VM with a live search path, evaluate `init.lua` once under
 /// the boot deadline, extract.
 ///
-/// Evaluation fails open: a broken `init.lua` is warned about and the
-/// daemon continues on the seed. A broken `config.toml` stays an error,
-/// exactly as `CliAppConfig::load` treats it today.
+/// Evaluation fails two ways. An `init.lua` that does not PARSE is an error
+/// naming the line: nothing readable is in the file, so there is no intent
+/// to fall back from. An `init.lua` that parses and then raises is warned
+/// about, rolled back whole, and the daemon continues on the seed.
 pub async fn evaluate_boot_config(
     config_file: Option<PathBuf>,
     embedding_url: Option<String>,
@@ -222,45 +264,69 @@ pub async fn evaluate_boot_config_with_paths(
     embedding_model: Option<String>,
     plugin_paths: PluginPathsFn,
 ) -> anyhow::Result<BootConfig> {
-    // Step 1: the config root. An explicitly named file must exist — a
-    // typo'd `--config` must not silently read defaults (oracle parity).
+    // Step 1: the config root — the DIRECTORY the named file sits in, which
+    // is where `init.lua` and `settings.json` are read from.
     let explicit = config_file.is_some();
     let config_source = config_file.unwrap_or_else(CliAppConfig::default_config_path);
-    if explicit && !config_source.exists() {
-        anyhow::bail!(
-            "Config file not found: {}. Try: `cru doctor`",
-            config_source.display()
-        );
-    }
     let config_root = config_source
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."))
         .to_path_buf();
+    // A typo'd `--config` must not silently read defaults. What is checked is
+    // the DIRECTORY, because that is what the boot reads: `init.lua` and
+    // `settings.json` live there, and the named file itself is no longer read
+    // at all. An existing directory with neither file in it is a legitimate
+    // ask — it is how a test, or a user, boots on the defaults alone.
+    if explicit && !config_root.is_dir() {
+        anyhow::bail!(
+            "Config directory not found: {}. Try: `cru doctor`",
+            config_root.display()
+        );
+    }
 
-    // Step 2: seed the store — defaults, then config.toml when it exists,
-    // through the oracle's parse path (legacy-key rejections, include pass).
+    // Step 2: seed the store with the defaults. `config.toml` is NOT a layer
+    // any more. v0.30.0 read it under `init.lua` and warned at every boot
+    // that it was deprecated; this release drops the reader, so the file sets
+    // nothing and — being unread — can no longer refuse a boot either.
+    // `cru config migrate` still parses it, which is why
+    // `CliAppConfig::load_seed_value` is still here.
     crucible_lua::begin_boot_store();
     let defaults =
         serde_json::to_value(CliAppConfig::default()).context("serialize default config")?;
     crucible_lua::merge_app_config_tagged(defaults, SourceTag::Default);
     if config_source.exists() {
-        let seed = CliAppConfig::load_seed_value(&config_source)?;
-        crucible_lua::merge_app_config_tagged(seed, SourceTag::Toml(config_source.clone()));
+        // Once per boot, naming the one command that ends it. A file whose
+        // values silently stopped applying is the failure mode a deprecation
+        // exists to prevent, so the warning says what changed, not that
+        // something is deprecated.
         warn!(
-            "{} is a deprecated config source; run `cru config migrate` to move it into init.lua",
+            "{} is no longer read; run `cru config migrate` to move it into init.lua",
             config_source.display()
         );
     }
 
-    // The seed must extract — this is where a malformed config.toml erred
-    // under `CliAppConfig::load`, and it still errs here, before any Lua.
+    // The machine layer: `settings.json`, beside `init.lua`, which
+    // `config.save` writes. It loads BELOW `init.lua` and ABOVE a plugin's
+    // declared default: a human's own line beats what a UI saved, and what a
+    // UI saved beats what a plugin declared. Plugins run their `setup()`
+    // during the evaluation of `init.lua`, which is why this file must load
+    // before that evaluation rather than after it.
+    //
+    // It loads in the boot phase, where `LocationPolicy::Accept` holds, so a
+    // HAND EDIT of this file can set the location keys — the same authority
+    // `config.toml` has today. `config.save` cannot: it runs under
+    // `LocationPolicy::Withhold`, where the store strips those keys and
+    // reports them back to the caller.
+    load_settings_layer(&config_root);
+
+    // The seed must extract. Only the defaults and `settings.json` are in it
+    // now, and `load_settings_layer` probes its own merge, so reaching this
+    // error means the DEFAULTS do not extract — a build defect, not a user's
+    // file.
     let seed_store = crucible_lua::snapshot_store().expect("the store was just seeded");
     let mut seed_config = seed_store.extract().map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to parse config file {}: {e}. Try: `cru doctor`",
-            config_source.display()
-        )
+        anyhow::anyhow!("The default configuration does not extract: {e}. Try: `cru doctor`")
     })?;
     seed_config.source_map = Some(seed_store.provenance().clone());
 
@@ -270,10 +336,15 @@ pub async fn evaluate_boot_config_with_paths(
     // entries — membership that exists before any user file runs.
     let mut loader = DaemonPluginLoader::new(HashMap::new())?;
     let seed_rtp: Vec<PathBuf> = seed_config.runtimepath.clone();
-    let mut eval_error: Option<String> = {
+    let init_failure: Option<InitFailure> = {
         let lua = loader.executor().lua();
         let modules = loader.executor().modules().clone();
         let plugin_dirs = plugin_paths(&seed_rtp);
+        // Who each config write belongs to. The same two root lists the
+        // module search path gets: a write from the config root is the
+        // human's own line and pins the key, a write from a plugin root is
+        // that plugin's default and loses to the settings the user saves.
+        install_author_roots(&config_root, &plugin_dirs);
         seed_boot_search_path(lua, &modules, &config_root, &plugin_dirs)?;
         install_boot_hook(&modules, loader.publications(), loader.options());
         // The UI namespaces must exist on the VM that evaluates the user's
@@ -290,6 +361,9 @@ pub async fn evaluate_boot_config_with_paths(
             move |lua: &Lua, entries: &[String]| {
                 let rtp: Vec<PathBuf> = entries.iter().map(PathBuf::from).collect();
                 let dirs = extender_paths(&rtp);
+                // A root added mid-evaluation is a plugin root from its next
+                // line on, so the classifier must learn it with the resolver.
+                install_author_roots(&extender_root, &dirs);
                 if let Err(e) = refresh_plugin_dirs(lua, &extender_modules, &extender_root, &dirs) {
                     warn!("runtimepath change did not reach the module search path: {e}");
                 }
@@ -303,13 +377,17 @@ pub async fn evaluate_boot_config_with_paths(
         load_shipped_defaults(lua, &seed_rtp);
 
         // Step 4: evaluate init.lua once, top to bottom, under the boot
-        // deadline. Errors fail open onto the seed — ENTIRELY: the state
+        // deadline. EVERY error rolls back onto the seed ENTIRELY: the state
         // snapshot below rolls the store, theme, layout, geometry, syntax
         // and highlight groups back, and the failed VM is dropped after
         // this scope, taking hooks, handlers, `package.loaded` and every
         // `_G` mutation with it. "Seed plus whatever registered before the
         // error line" would depend on WHERE the file failed; the rollback
         // makes a broken config mean exactly what the warning says.
+        //
+        // What the failure DECIDES differs, and the decision is below the
+        // scope: a file that does not parse stops the boot, a file that
+        // raised lets it continue on the rolled-back seed.
         // `init.luau` or `init.lua`, preferred first. A config directory
         // holding both is refused rather than resolved: the user edits one and
         // watches nothing happen otherwise.
@@ -321,9 +399,12 @@ pub async fn evaluate_boot_config_with_paths(
                 config_root.join("init.lua")
             }
         };
-        let eval_error = if init_path.exists() {
+        let failure = if init_path.exists() {
             let pre_eval = crucible_lua::snapshot_state().expect("the config state is live");
             let error = evaluate_init_file(lua, &init_path).await.err();
+            // Both failures roll back, and the rollback happens here rather
+            // than at the decision below, because the snapshot is only live
+            // inside this scope.
             if error.is_some() {
                 crucible_lua::install_state(pre_eval);
             }
@@ -340,7 +421,7 @@ pub async fn evaluate_boot_config_with_paths(
         // directory) went through the standard loader unobserved, and
         // without this sweep activation would execute its file a second
         // time — doubling every top-level hook and publish.
-        if eval_error.is_none() {
+        if failure.is_none() {
             record_boot_loaded_modules(lua, &modules);
         }
 
@@ -352,7 +433,29 @@ pub async fn evaluate_boot_config_with_paths(
             state.active = false;
         }
         BootRequireState::restore_wrapped_setups(lua);
-        eval_error
+        failure
+    };
+
+    // The fatal half of the rule. Everything above already rolled back, so
+    // the store this leaves behind is the seed either way; what differs is
+    // whether the daemon carries on with it. It does not carry on past a
+    // file it cannot read: `init.lua` is the only config language a human
+    // writes, and a daemon that starts on defaults after a mistyped bracket
+    // reports the user's whole config as "no config".
+    let mut eval_error: Option<String> = match init_failure {
+        Some(InitFailure::Syntax(syntax)) => {
+            // The location keys must stop being writable even on the way
+            // out: the process that boots is not always the process that
+            // called, and a store left in the boot posture accepts a
+            // `config.set` that names a data root.
+            crucible_lua::end_boot_phase();
+            anyhow::bail!(
+                "{syntax}. Crucible does not start on a config file it cannot read: \
+                 fix the line, or move the file aside."
+            );
+        }
+        Some(InitFailure::Runtime(message)) => Some(message),
+        None => None,
     };
 
     if eval_error.is_some() {
@@ -394,6 +497,17 @@ pub async fn evaluate_boot_config_with_paths(
         }
     };
     config.apply_embedding_overrides(embedding_url, embedding_model);
+
+    // The trees the resolved `runtimepath` puts executable code in, recorded
+    // before the daemon binds its socket. `execution_roots::baseline` cannot
+    // reach this list: `runtimepath` is a location key, so no supported write
+    // puts it in `settings.json`, and the file that does carry it — `init.lua`
+    // — takes a VM to read. This is the one point that holds the VM's answer
+    // and still runs before any session can be built, so a plugin an agent
+    // plants under `<entry>/plugins` is write-refused from the first session
+    // on. See [`crate::execution_roots`].
+    crate::execution_roots::record_runtimepath(&config.runtimepath);
+
     crucible_lua::end_boot_phase();
 
     // The plugin sections feed each plugin's default `setup(cfg)` in the
@@ -412,6 +526,39 @@ pub async fn evaluate_boot_config_with_paths(
     })
 }
 
+/// Merge `settings.json` into the boot store, when the file is there.
+///
+/// Fail open twice. An absent file is the normal case — nothing has saved
+/// yet — and never an error. A file that does not read is warned about and
+/// skipped, because the machine layer holds preferences: a daemon that
+/// refuses to start over one leaves the user no door to fix it.
+///
+/// The probe is the second half of that. A hand edit can give a key the
+/// wrong type, and without the probe the failure would surface at
+/// `seed_store.extract()`, whose message names `config.toml` — the file the
+/// user did not touch.
+fn load_settings_layer(config_root: &Path) {
+    let settings = match crucible_core::config::load_settings(config_root) {
+        Ok(Some(settings)) => settings,
+        Ok(None) => return,
+        Err(e) => {
+            warn!("{e:#}; continuing without the saved settings");
+            return;
+        }
+    };
+    let mut probe = crucible_lua::snapshot_store().expect("the store was just seeded");
+    probe.merge(settings.clone(), SourceTag::Settings);
+    match probe.extract() {
+        Ok(_) => {
+            crucible_lua::merge_app_config_tagged(settings, SourceTag::Settings);
+        }
+        Err(e) => warn!(
+            "{} does not extract ({e}); continuing without the saved settings",
+            crucible_core::config::settings_path(config_root).display()
+        ),
+    }
+}
+
 /// Run the runtimepath's defaults file on `lua`.
 ///
 /// Fail-open: a broken defaults file must not stop the boot. Called twice —
@@ -427,13 +574,19 @@ fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf]) {
 }
 
 /// Evaluate one init.lua in the boot VM: guards on, budget armed. `Err`
-/// carries the failure the caller fails open on (and reports).
-async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), String> {
+/// carries the failure, already classified — see [`InitFailure`].
+async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), InitFailure> {
     let source = match std::fs::read_to_string(init_path) {
         Ok(source) => source,
         Err(e) => {
             warn!("Failed to read {}: {e}", init_path.display());
-            return Err(format!("failed to read {}: {e}", init_path.display()));
+            // An unreadable file is not an unparseable one. A permission or
+            // I/O fault is the machine's, not the config's, and the daemon
+            // must still come up so the user can fix it.
+            return Err(InitFailure::Runtime(format!(
+                "failed to read {}: {e}",
+                init_path.display()
+            )));
         }
     };
 
@@ -470,23 +623,31 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), String> {
             info!("Evaluated user init: {}", init_path.display());
             Ok(())
         }
-        Ok(Err(e)) => {
-            warn!(
-                "User init.lua error ({}): {e}; continuing on the seed",
-                init_path.display()
-            );
-            Err(format!("{e}"))
-        }
+        Ok(Err(e)) => match crucible_lua::config_syntax_error(&e) {
+            Some(syntax) => {
+                warn!("{} does not parse: {syntax}", init_path.display());
+                Err(InitFailure::Syntax(syntax))
+            }
+            None => {
+                warn!(
+                    "User init.lua error ({}): {e}; continuing on the seed",
+                    init_path.display()
+                );
+                Err(InitFailure::Runtime(format!("{e}")))
+            }
+        },
         Err(_) => {
             warn!(
                 "init.lua evaluation exceeded its {} s budget ({}); continuing on the seed",
                 BOOT_EVAL_BUDGET.as_secs(),
                 init_path.display()
             );
-            Err(format!(
+            // The file parsed — it had to, to start running. A budget
+            // overrun is a runtime failure.
+            Err(InitFailure::Runtime(format!(
                 "the evaluation exceeded its {} s budget",
                 BOOT_EVAL_BUDGET.as_secs()
-            ))
+            )))
         }
     }
 }
@@ -497,6 +658,51 @@ fn plugin_dir_roots(dirs: &[(PathBuf, PluginSource)]) -> Vec<PathBuf> {
         .filter(|(dir, _)| dir.exists())
         .filter_map(|(dir, _)| std::fs::canonicalize(dir).ok())
         .collect()
+}
+
+/// Install the roots that say which author a `cru.config.set` write belongs
+/// to: the config directory pins a key, a plugin directory declares a default.
+///
+/// The resolver canonicalizes the file it loads, so a plugin's chunk name is
+/// canonical and its root must be too. The config directory is registered in
+/// both forms, because `init.lua` is loaded by the path the user named and a
+/// symlinked config directory would otherwise match neither.
+fn install_author_roots(config_root: &Path, plugin_dirs: &[(PathBuf, PluginSource)]) {
+    let mut config = vec![config_root.to_path_buf()];
+    if let Ok(canonical) = std::fs::canonicalize(config_root) {
+        if !config.contains(&canonical) {
+            config.push(canonical);
+        }
+    }
+    crucible_lua::set_author_roots(crucible_lua::AuthorRoots::new(
+        config,
+        plugin_dir_roots(plugin_dirs),
+    ));
+}
+
+/// Learn the plugin root a runtime install just created.
+///
+/// The boot resolves the author roots from the directories that EXIST while
+/// it runs: `daemon_plugin_paths` and [`plugin_dir_roots`] both drop a
+/// missing one. On a fresh machine `~/.config/crucible/plugins` is missing,
+/// so only the config root is registered — and a plugin installed into that
+/// directory afterwards sits UNDER the config root, matches no plugin root,
+/// and every `cru.config.set` its `setup()` makes pins the key as if the
+/// human had written it.
+///
+/// The fix registers on install rather than registering the directory at
+/// boot while it does not exist. Two reasons. The install path is the one
+/// place that knows the real destination, including a destination the boot
+/// never enumerates. And the directory exists by the time this runs, so it
+/// canonicalizes to the same form the module resolver gives the plugin's
+/// chunk name; a boot-time registration could not canonicalize a missing
+/// directory, and the literal path it would store fails to match wherever
+/// the config home sits under a symlink.
+pub(crate) fn learn_plugin_author_root(dir: &Path) {
+    let root = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if crucible_lua::add_plugin_author_root(root.clone()) {
+        debug!("Plugin author root learned at runtime: {}", root.display());
+    }
 }
 
 /// Put the search roots on the VM's resolver: the user's `lua/` directory
@@ -844,8 +1050,8 @@ cru.config.set({ guard_probe = { ok = ok, err = tostring(err) } })
         let config_root = tmp.path().join("config");
         std::fs::create_dir_all(&config_root).unwrap();
         std::fs::write(
-            config_root.join("config.toml"),
-            "default_kiln = \"seeded\"\n",
+            config_root.join("settings.json"),
+            "{ \"default_kiln\": \"seeded\" }",
         )
         .unwrap();
 
@@ -909,12 +1115,8 @@ error("boom")
         let config_root = tmp.path().join("config");
         std::fs::create_dir_all(&config_root).unwrap();
         std::fs::write(
-            config_root.join("config.toml"),
-            format!(
-                "runtimepath = [{:?}]
-",
-                rtp.display().to_string()
-            ),
+            config_root.join("settings.json"),
+            serde_json::json!({ "runtimepath": [rtp.display().to_string()] }).to_string(),
         )
         .unwrap();
 
@@ -976,5 +1178,120 @@ error("boom")
         assert_eq!(withheld, vec!["kiln_path".to_string()]);
         let store = crucible_lua::get_app_config().expect("store is live");
         assert!(store.get("kiln_path").is_none());
+    }
+
+    /// The machine layer reaches the effective config, and the human's own
+    /// line beats it. Both halves in one test, because the layer is only
+    /// worth loading if it loses to `init.lua`: a saved value that shadowed
+    /// the user's file would take the file's authorship away silently.
+    #[tokio::test]
+    async fn a_saved_setting_reaches_the_config_and_the_users_own_line_beats_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_root = tmp.path().join("config");
+        std::fs::create_dir_all(&config_root).unwrap();
+        crucible_core::config::save_settings_delta(
+            &config_root,
+            json!({
+                "default_kiln": "from-settings",
+                "chat": { "model": "from-settings" },
+            }),
+        )
+        .unwrap();
+
+        let boot = boot_with(
+            &config_root,
+            "cru.config.set { chat = { model = \"from-init\" } }\n",
+        )
+        .await;
+
+        assert_eq!(
+            boot.config.default_kiln.as_deref(),
+            Some("from-settings"),
+            "a key no other layer holds must come from settings.json"
+        );
+        assert_eq!(
+            boot.config.chat.model.as_deref(),
+            Some("from-init"),
+            "the human's own line must beat the saved value"
+        );
+        let sources = boot.config.source_map.expect("the boot records provenance");
+        assert_eq!(
+            sources.get("default_kiln").map(SourceTag::short),
+            Some("settings")
+        );
+        assert_eq!(sources.get("chat.model").map(SourceTag::short), Some("lua"));
+    }
+
+    /// The boot order inverts the layer order, and the rank has to survive it.
+    ///
+    /// `settings.json` merges at step 2, before `init.lua` is evaluated, and a
+    /// plugin's write happens DURING that evaluation — so the plugin writes
+    /// last on every boot. This is the whole reason the store ranks a write
+    /// rather than taking the last one: without the rank, a plugin default
+    /// replaces the value the settings UI saved, and the user's saved
+    /// preference is gone with no sign of it anywhere.
+    #[tokio::test]
+    async fn a_plugin_default_does_not_replace_a_saved_setting_at_boot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rtp = tmp.path().join("extra");
+        write_fixture_plugin(
+            &rtp,
+            "pd_probe",
+            "cru.config.set { chat = { model = \"plugin-default\" } }\nreturn {}\n",
+        );
+        let config_root = tmp.path().join("config");
+        std::fs::create_dir_all(&config_root).unwrap();
+        crucible_core::config::save_settings_delta(
+            &config_root,
+            json!({
+                "runtimepath": [rtp.display().to_string()],
+                "chat": { "model": "saved-by-the-user" },
+            }),
+        )
+        .unwrap();
+
+        let boot = boot_with(&config_root, "require(\"pd_probe\")\n").await;
+
+        let sources = boot
+            .config
+            .source_map
+            .clone()
+            .expect("the boot records provenance");
+        assert_eq!(
+            boot.config.chat.model.as_deref(),
+            Some("saved-by-the-user"),
+            "a plugin default must not replace what the settings UI saved \
+             (provenance says {:?})",
+            sources.get("chat.model").map(SourceTag::short)
+        );
+        assert_eq!(
+            sources.get("chat.model").map(SourceTag::short),
+            Some("settings"),
+            "and the leaf must still name the layer that owns it"
+        );
+    }
+
+    /// A hand edit can give a key the wrong type. The daemon still starts,
+    /// because the machine layer is a preference store and a daemon that
+    /// refuses to boot over one leaves the user no door to fix it.
+    #[tokio::test]
+    async fn a_settings_file_that_does_not_extract_is_skipped_rather_than_fatal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_root = tmp.path().join("config");
+        std::fs::create_dir_all(&config_root).unwrap();
+        std::fs::write(
+            crucible_core::config::settings_path(&config_root),
+            r#"{"chat": {"show_thinking": "yes please"}}"#,
+        )
+        .unwrap();
+
+        let boot = boot_with(&config_root, "cru.config.set { default_kiln = \"live\" }\n").await;
+
+        assert!(!boot.config.chat.show_thinking);
+        assert_eq!(
+            boot.config.default_kiln.as_deref(),
+            Some("live"),
+            "the boot must run on, and init.lua with it"
+        );
     }
 }

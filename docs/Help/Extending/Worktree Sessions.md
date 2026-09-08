@@ -42,9 +42,14 @@ matter of starting N sessions.
 
 ## Where worktrees go
 
-```toml
-[plugins.worktree]
-template = "{repo}/tree/{branch}"
+```lua
+cru.config.set({
+    plugins = {
+        worktree = {
+            template = "{repo}/tree/{branch}",
+        },
+    },
+})
 ```
 
 `{repo}` is the repository root, `{branch}` the branch name. `{branch}` keeps
@@ -57,9 +62,14 @@ own workspace. The plugin warns when it notices.
 
 To keep them out of the repo entirely:
 
-```toml
-[plugins.worktree]
-template = "~/worktrees/{branch}"
+```lua
+cru.config.set({
+    plugins = {
+        worktree = {
+            template = "~/worktrees/{branch}",
+        },
+    },
+})
 ```
 
 ## From the CLI and RPC

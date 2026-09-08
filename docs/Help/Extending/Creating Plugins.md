@@ -60,9 +60,11 @@ they never shadow your own.
 `runtimepath` is the opt-in. It is your own config naming the tree, so consent
 is explicit and needs no prompt in a headless daemon:
 
-```toml
-# ~/.config/crucible/config.toml
-runtimepath = ["~/kilns/work"]   # loads ~/kilns/work/plugins/
+```lua
+-- ~/.config/crucible/init.lua
+cru.config.set({
+    runtimepath = { "~/kilns/work" },  -- loads ~/kilns/work/plugins/
+})
 ```
 
 Entries **add to** the shipped runtime rather than replacing it, and they rank
@@ -100,8 +102,8 @@ extracted on first run. Every one of them loads **enabled by default**, except
 | `web-search` | Search over a provider chain |
 | `worktree` | Run a session against a git worktree |
 
-Turn one off with `[plugins.<name>] enabled = false` in `config.toml`. That is
-the only durable lever — editing the extracted `plugin.yaml` does not survive,
+Turn one off with `plugins.<name>.enabled = false` in your `init.lua`. That is
+the only durable lever — an edit inside the extracted plugin does not survive,
 because the runtime tree is re-stamped from the binary whenever the build
 changes.
 
@@ -123,13 +125,13 @@ require("reflection").setup({
 
 Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
 
-Configuration precedence, highest first — **Lua beats TOML**, the Neovim convention:
+Configuration precedence, highest first:
 
-1. `setup({...})` calls — last call wins per key. The daemon evaluates `~/.config/crucible/init.lua` *after* plugins load, so your calls land after the TOML seed.
-2. `[plugins.<name>]` in `config.toml` — the daemon passes this section to each plugin's `setup()` at load, so TOML is the base configuration.
+1. `setup({...})` calls — last call wins per key.
+2. `plugins.<name>` in the config store — the daemon passes that table to each plugin's `setup()`, so it is the base configuration.
 3. The plugin's own declared defaults.
 
-A broken init.lua is warned about and skipped (the daemon runs with TOML-only config); it never blocks startup.
+An `init.lua` that does not parse stops the daemon and names the line. One that parses and then raises is warned about, rolled back whole, and the daemon boots on the defaults.
 
 A plugin's `setup()` merges user config into its defaults:
 
@@ -258,7 +260,7 @@ return {
 
 `name` is the plugin's identity, and the directory name is only the fallback
 when the spec does not state one — so a repo cloned under a different
-directory name keeps its `[plugins.<name>]` config. A name that is not a
+directory name keeps its `plugins.<name>` config. A name that is not a
 usable plugin name is refused and the directory name stands.
 
 `plugin.yaml` is gone. It carried `main:`, which could name a file that was not
@@ -382,9 +384,12 @@ that fails to execute returns an error and leaves the plugin fully inert —
 see [[#Lifecycle States]]. To reload automatically when plugin files change
 on disk, enable the watcher:
 
-```toml
-[plugins]
-watch = true
+```lua
+cru.config.set({
+    plugins = {
+        watch = true,
+    },
+})
 ```
 
 ## Plugin Lifecycle
@@ -695,7 +700,7 @@ before_each(function()
             },
         },
         fs = {
-            files = { ["config.toml"] = "key = 'value'" },
+            files = { ["fixture.toml"] = "key = 'value'" },
         },
     })
 end)
@@ -814,11 +819,14 @@ Crucible clears the plugin's module cache, re-reads the source files, and re-reg
 
 ### Automatic File Watching
 
-Enable watch mode in `config.toml` to reload plugins whenever their files change on disk:
+Enable watch mode in `init.lua` to reload plugins whenever their files change on disk:
 
-```toml
-[plugins]
-watch = true
+```lua
+cru.config.set({
+    plugins = {
+        watch = true,
+    },
+})
 ```
 
 With this enabled, saving a `.lua` file inside any plugin directory triggers an automatic reload. Changes are debounced per-plugin, so rapid saves don't cause repeated reloads.

@@ -158,7 +158,7 @@ pub struct DaemonPluginLoader {
     /// than in the per-session registry because plugins are loaded once, at
     /// daemon start, into a VM no session owns.
     handler_registry: Arc<LuaScriptHandlerRegistry>,
-    /// `[plugins.*]` sections from config.toml, keyed by plugin name.
+    /// The `plugins.*` config subtrees, keyed by plugin name.
     ///
     /// Also exposed to Lua as `cru.plugin.config.get("<plugin>.<key>")`; kept
     /// here so each plugin's section can be handed to its `setup()` at load.
@@ -661,9 +661,9 @@ impl DaemonPluginLoader {
     /// Register plugin config as `cru.plugin.config` in the Lua runtime.
     ///
     /// Provides `cru.plugin.config.get("plugin_name.key")` for dotted-key
-    /// lookup from `[plugins.*]` sections in config.toml. Deliberately NOT
+    /// lookup into the `plugins.*` config subtrees. Deliberately NOT
     /// `cru.config`: that name is the app-config store (`get`/`set`), and a
-    /// plugin's own TOML section is a different thing — the plugin seam owns
+    /// plugin's own section is a different thing — the plugin seam owns
     /// plugin-scoped state.
     fn register_plugin_config(
         lua: &mlua::Lua,
@@ -881,10 +881,11 @@ impl DaemonPluginLoader {
         info!("Discovered {} daemon plugin(s)", discovered.len());
 
         // The kill switch, applied between discovery and load. A bundled
-        // plugin's `plugin.yaml` ships inside the binary and is re-stamped
-        // whenever `version + blake3(runtime tree)` changes, so editing
-        // `enabled:` there does not survive an upgrade — `[plugins.<name>]
-        // enabled = false` in config.toml is the only durable lever.
+        // plugin is re-stamped inside the binary whenever
+        // `version + blake3(runtime tree)` changes, so an edit in the
+        // extracted tree does not survive an upgrade —
+        // `plugins.<name>.enabled = false` in `init.lua` is the only durable
+        // lever.
         // `disable` unloads first, and `unload` returns early for anything not
         // Active, so running it before `load_all` is just a state flip.
         for name in &discovered {

@@ -110,7 +110,7 @@ Use `--force` to reinitialize an already-configured directory.
 
 #### First-run setup wizard
 
-If no global config exists yet (`~/.config/crucible/config.toml`), running bare
+If no global config exists yet (`~/.config/crucible/init.lua`), running bare
 `cru` or interactive `cru chat` (no query, record, or replay arguments) on a
 terminal launches a first-run wizard that walks you through choosing an LLM
 provider and model. `cru init` does **not** run this wizard — it has its own
@@ -121,44 +121,54 @@ providers or embeddings.
 
 You can also create the config file by hand. See [[Configuration]] for the full reference.
 
-Create `~/.config/crucible/config.toml`:
+Create `~/.config/crucible/init.lua`:
 
-```toml
-default_kiln = "notes"
-
-[kilns]
-notes = "~/notes"
-
-[llm]
-default = "local"
-
-[llm.providers.local]
-type = "ollama"
-endpoint = "http://localhost:11434"
-default_model = "llama3.2"
-
-[enrichment.provider]
-type = "fastembed"
+```lua
+cru.config.set({
+    default_kiln = "notes",
+    kilns = {
+        notes = "~/notes",
+    },
+    llm = {
+        default = "local",
+        providers = {
+            ["local"] = {
+                type = "ollama",
+                endpoint = "http://localhost:11434",
+                default_model = "llama3.2",
+            },
+        },
+    },
+    enrichment = {
+        provider = {
+            type = "fastembed",
+        },
+    },
+})
 ```
 
-Without an `[enrichment]` section the daemon skips embedding generation entirely, so
+Without an `enrichment` section the daemon skips embedding generation entirely, so
 semantic search returns nothing. See [[Help/Config/embedding]] for the other providers.
 
 For multiple kilns and project bindings:
 
-```toml
-default_kiln = "vault"
-
-[kilns]
-vault = "~/vault"
-docs = "~/crucible/docs"
-
-[projects.crucible]
-path = "~/crucible"
-kilns = ["docs", "vault"]
+```lua
+cru.config.set({
+    default_kiln = "vault",
+    kilns = {
+        vault = "~/vault",
+        docs = "~/crucible/docs",
+    },
+    projects = {
+        crucible = {
+            path = "~/crucible",
+            kilns = { "docs", "vault" },
+        },
+    },
+})
 ```
 
-See [[Configuration#Migrating from `kiln_path` to `[kilns]`]] if you have an existing `kiln_path` setup.
+See [[Configuration#Migrating from `kiln_path` to `kilns`]] if you have an existing `kiln_path` setup.
 
 ## Your First Commands
 
@@ -238,17 +248,17 @@ The SQLite database contains:
 
 ### "Error: kiln path does not exist"
 
-Check that your kiln is registered under `[kilns]` in `~/.config/crucible/config.toml` and that the path resolves. You can also point Crucible at a kiln directly with `$CRUCIBLE_KILN`.
+Check that your kiln is registered under `kilns` in `~/.config/crucible/init.lua` and that the path resolves. You can also point Crucible at a kiln directly with `$CRUCIBLE_KILN`.
 
 ### Processing is slow
 
 Processing runs inside the daemon, which manages its own parallelism — the
 `--parallel` flag is accepted but currently has no effect. The usual cause of
-slow processing is embedding generation; check your `[enrichment]` provider.
+slow processing is embedding generation; check your `enrichment` provider.
 
 ### Chat doesn't respond
 
-Make sure your LLM provider is running and configured. For Ollama: `cru chat --provider ollama`. For other providers, check your `config.toml` settings.
+Make sure your LLM provider is running and configured. For Ollama: `cru chat --provider ollama`. For other providers, check your `init.lua` settings.
 
 ## Uninstalling
 
@@ -273,7 +283,7 @@ rm ~/.cargo/bin/cru
 These directories contain your settings, plugins, session history, and project registry. Only remove them if you want a clean slate:
 
 ```bash
-# Configuration (config.toml, plugins, MCP settings, permission whitelists)
+# Configuration (init.lua, plugins, MCP settings, permission whitelists)
 rm -rf ~/.config/crucible/
 
 # Project registry and session data

@@ -365,7 +365,13 @@ impl Default for CliAppConfig {
 }
 
 impl CliAppConfig {
-    /// Load CLI configuration from file with env var and CLI flag overrides
+    /// Load CLI configuration from a `config.toml`, with env var and CLI flag
+    /// overrides.
+    ///
+    /// The daemon does NOT boot through this any more — `init.lua` is the
+    /// config. What is left is `cru config migrate`, which reads the old file
+    /// to emit Lua from it, and the tests that hold the Lua path to this
+    /// one's answers.
     ///
     /// Priority (highest to lowest):
     /// 1. CLI flags (--kiln-path, --embedding-url, --embedding-model)
@@ -562,8 +568,11 @@ impl CliAppConfig {
         }
     }
 
-    /// The raw keys `config.toml` sets, as JSON — the deprecated SEED layer
-    /// of the Lua-config boot.
+    /// The raw keys `config.toml` sets, as JSON.
+    ///
+    /// This was the seed layer of the Lua-config boot until v0.30.0. The boot
+    /// does not call it now; `cru config migrate` does, to turn an old file
+    /// into `init.lua`.
     ///
     /// Runs the oracle's own parse path — the legacy-key rejections and the
     /// include pass, with the same messages — but returns only the file's own

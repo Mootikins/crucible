@@ -44,6 +44,7 @@
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
 pub mod auth_plugin;
+pub mod authorship;
 pub mod check;
 mod context;
 mod context_attach;
@@ -100,6 +101,7 @@ mod ws;
 pub(crate) mod test_support;
 
 pub mod config;
+pub mod config_syntax;
 pub mod hl;
 pub mod hl_lua;
 pub mod statusline_exprs;
@@ -111,13 +113,16 @@ pub mod theme_wire;
 pub mod ui_geometry;
 
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
+pub use authorship::AuthorRoots;
 pub use config::{
-    begin_boot_store, end_boot_phase, evaluate_config_source, get_app_config,
-    get_app_config_provenance, get_layout, get_theme_config, get_ui_geometry, in_boot_phase,
-    install_state, install_store, list_available_themes, merge_app_config, merge_app_config_tagged,
-    resolve_theme_file, seed_app_config, set_runtimepath_extender, snapshot_state, snapshot_store,
-    theme_roots, ConfigLoader, ConfigState,
+    add_plugin_author_root, app_config_origin, app_config_origins, begin_boot_store,
+    end_boot_phase, evaluate_config_source, get_app_config, get_app_config_provenance, get_layout,
+    get_theme_config, get_ui_geometry, in_boot_phase, install_state, install_store,
+    list_available_themes, merge_app_config, merge_app_config_tagged, resolve_theme_file,
+    seed_app_config, set_author_roots, set_runtimepath_extender, snapshot_state, snapshot_store,
+    split_pinned_app_config, theme_roots, ConfigLoader, ConfigState,
 };
+pub use config_syntax::{config_syntax_error, mark_config_syntax, ConfigSyntaxError};
 pub use context::{
     register_context_module, register_context_module_stub, register_context_validators,
     LuaValidatorRegistry,

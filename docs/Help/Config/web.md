@@ -9,13 +9,13 @@ tags:
 
 # Web UI Configuration
 
-`[web]` configures the browser UI that `cru web` serves. Every field has a default, so the
+`web` configures the browser UI that `cru web` serves. Every field has a default, so the
 section is optional — `cru web` works with no configuration at all, serving the embedded
 frontend on `http://localhost:3000`.
 
-Add it to `~/.config/crucible/config.toml`.
+Add it to `~/.config/crucible/init.lua`.
 
-## `[web]`
+## `web`
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -27,10 +27,13 @@ Add it to `~/.config/crucible/config.toml`.
 | `registration_roots` | array of strings | `[]` | Optional confinement for the web UI's "add project" button. Empty allows any ordinary directory (the floor is the only gate); a non-empty list confines registration to it — see [Project registration from the web UI](#project-registration-from-the-web-ui) |
 | `allowed_hosts` | array of strings | `[]` | Extra `Host` authorities the server answers to. Empty derives them from the bind address and this machine's own hostname — see [Host validation](#host-validation) |
 
-```toml
-[web]
-port = 3000
-host = "127.0.0.1"
+```lua
+cru.config.set({
+    web = {
+        port = 3000,
+        host = "127.0.0.1",
+    },
+})
 ```
 
 `allowed_hosts` is empty by default and rarely needs filling: a client on another machine may
@@ -58,7 +61,7 @@ token, or sign in once through the UI to get an HttpOnly session cookie.
 
 The key resolves in this order:
 
-1. `api_key` in `[web]`, if set to a non-empty string — used as-is.
+1. `api_key` in `web`, if set to a non-empty string — used as-is.
 2. `api_key = ""` — **auth is disabled**; every client is trusted.
 3. Otherwise `~/.config/crucible/api_key`, read if it exists and is non-empty.
 4. Otherwise a random key is generated and written there (mode `0600` on Unix) on first
@@ -105,10 +108,13 @@ for authenticated clients only, and it is fail-closed: with no API key configure
 `api_key = ""`), `remote_shell` is ignored and the loopback restriction stays, with a warning
 logged at startup.
 
-```toml
-[web]
-host = "0.0.0.0"
-remote_shell = true       # only takes effect because a key is in use
+```lua
+cru.config.set({
+    web = {
+        host = "0.0.0.0",
+        remote_shell = true,  -- only takes effect because a key is in use
+    },
+})
 ```
 
 ## Host validation
@@ -148,10 +154,13 @@ what was never behind auth anyway: `/health` and the static bundle.
 `allowed_hosts` remains for the cases that *are* loopback callers — most often a reverse proxy
 on this same machine forwarding a public name:
 
-```toml
-[web]
-host = "0.0.0.0"
-allowed_hosts = ["crucible.example.com"]
+```lua
+cru.config.set({
+    web = {
+        host = "0.0.0.0",
+        allowed_hosts = { "crucible.example.com" },
+    },
+})
 ```
 
 ### What is accepted
@@ -246,9 +255,12 @@ everything else is allowed by default.
 only if you want to *confine* registration further — with a non-empty list, a new root must
 also be inside one of its entries:
 
-```toml
-[web]
-registration_roots = ["~/work/repos"]
+```lua
+cru.config.set({
+    web = {
+        registration_roots = { "~/work/repos" },
+    },
+})
 ```
 
 A leading `~/` expands to your home directory. Entries are canonicalised before use, so a
@@ -307,7 +319,7 @@ A local Ollama on `http://localhost:11434` is loopback, and so would be refused 
 above. It is the product's headline local-LLM path, so it gets an exception — decided by the
 **bind address**, with no configuration (the escape hatch below can only widen this):
 
-| Effective bind (`[web] host`, or `cru web --host`) | Loopback endpoints |
+| Effective bind (`web.host`, or `cru web --host`) | Loopback endpoints |
 |---|---|
 | `127.0.0.1` (the default), any `127.x.x.x`, `::1`, `localhost` | **allowed** |
 | `0.0.0.0`, `::` | refused |
@@ -392,8 +404,8 @@ oracle for which webhooks exist. The real reason is in the server log.
 
 ### Secrets file
 
-`~/.config/crucible/webhooks.toml`, one entry per webhook. It is not part of `config.toml`,
-and it is read **once, when the server starts** — restart `cru web` after editing it.
+`~/.config/crucible/webhooks.toml`, one entry per webhook. It is not part of the Lua
+config, and it is read **once, when the server starts** — restart `cru web` after editing it.
 
 <!-- crucible:not-config — this block is webhooks.toml, not config.toml -->
 ```toml
@@ -405,7 +417,7 @@ secret = "at-least-16-bytes-of-secret"
 secret = "a-different-at-least-16-byte-secret"
 ```
 
-The easiest way to mint an entry is the CLI, which writes `[webhooks.<name>]` into the
+The easiest way to mint an entry is the CLI, which writes `webhooks.<name>` into the
 file at mode `0600`, leaving other entries alone:
 
 ```bash
@@ -592,11 +604,11 @@ is rendered by the browser's viewer with the app's policy applied; the judgement
 viewer gives a PDF's own scripting no DOM, cookie or same-origin fetch access to the
 embedding page. If that assumption ever fails, this is the row to revisit.
 
-## `[web]` vs `[server]`
+## `web` vs `server`
 
-These are different sections. `[web]` is the browser UI above. `[server]` holds daemon-side
+These are different sections. `web` is the browser UI above. `server` holds daemon-side
 settings (`auto_archive_hours`) plus several TLS and request-limit fields reserved for
-future use and not yet wired to any behaviour. Configuring the web UI under `[server]` has
+future use and not yet wired to any behaviour. Configuring the web UI under `server` has
 no effect.
 
 ## See Also

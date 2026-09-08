@@ -10,7 +10,7 @@ tags:
 
 Manage the kilns Crucible knows about.
 
-A kiln is addressed everywhere else in Crucible by the **name** of its `[kilns]` entry,
+A kiln is addressed everywhere else in Crucible by the **name** of its `kilns` entry,
 never by its path — that is what keeps your directory layout out of session metadata,
 plugin payloads, and the agent's prompt. This is where a directory gets a name.
 
@@ -54,7 +54,7 @@ from a setup script.
 The command sends the registration to the daemon. The daemon writes it to
 `<data_home>/kilns.json`, not to your config file. The reply names the file it wrote.
 
-Two layers hold kiln names. Your config file holds a `[kilns]` table that you edit.
+Two layers hold kiln names. Your config file holds a `kilns` table that you edit.
 The state file holds the registrations that commands make. The config layer out-ranks
 the state layer. Therefore the daemon refuses a name that the config already gives to a
 different directory: the state entry would never be used.
@@ -66,7 +66,7 @@ the daemon.
 ### Why the command exists
 
 Two daemon refusals name `cru kiln register` as the remedy: `session.create` telling a
-caller that kilns are addressed by the name of a `[kilns]` entry, and the registry
+caller that kilns are addressed by the name of a `kilns` entry, and the registry
 telling a user that every disambiguation of a derived name is taken. An error that names
 a command which does not exist is worse than one that names nothing.
 

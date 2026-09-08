@@ -27,7 +27,7 @@ cru acp [--kiln <name|path>]
 
 | Option | Description |
 |--------|-------------|
-| `--kiln <name|path>` | The kiln to attach: the name of a `[kilns]` entry, or a directory |
+| `--kiln <name|path>` | The kiln to attach: the name of a `kilns` entry, or a directory |
 
 That is the entire flag surface. `--kiln` takes either reading: a bare word is looked up
 as a registry name, and anything that resolves to a directory is registered under a
@@ -40,7 +40,7 @@ different kiln is exactly the confusion this refuses to create.
 
 Without the flag, the configured kiln is used when it contains `.crucible/`. Failing
 that, Crucible walks up from the current directory looking for one, and **registers what
-it finds** — so running `cru acp` inside an unregistered kiln appends a `[kilns]` entry
+it finds** — so running `cru acp` inside an unregistered kiln appends a `kilns` entry
 to your config file. That is deliberate: a discovered directory with no entry would
 otherwise produce a session attached to no kiln at all. If nothing is found, the command
 exits telling you to pass `--kiln <name|path>` or run from inside a kiln.
@@ -71,10 +71,17 @@ Point any ACP host at the `cru` binary with the single argument `acp` (Zed calls
 "agent server"; other hosts use similar command/args settings). Crucible itself can host
 it — add a profile to your config:
 
-```toml
-[acp.agents.crucible]
-command = "cru"
-args = ["acp"]
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            crucible = {
+                command = "cru",
+                args = { "acp" },
+            },
+        },
+    },
+})
 ```
 
 then `cru chat -a crucible` runs Crucible-hosting-Crucible, which exercises both sides

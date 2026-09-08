@@ -13,7 +13,8 @@ use std::path::PathBuf;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::commands::{
-    classify_set_value, SetCommand, SetEffect, SetError, SetRpcAction,
+    classify_key_without_value, classify_set_value, key_home, CliValue, KeyHome, SetCommand,
+    SetEffect, SetError, SetRpcAction,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource};
 
@@ -54,6 +55,24 @@ fn parse_config_scalar(value: &str) -> serde_json::Value {
         }
     }
     serde_json::Value::String(value.to_string())
+}
+
+/// Render one `config.origin` row as the "where this came from" line of
+/// `:set key??`. The daemon owns the provenance of app config, so this is the
+/// history the client can show for such a key.
+fn format_config_origin(origin: &serde_json::Value) -> String {
+    let source = origin
+        .get("source")
+        .and_then(|s| s.as_str())
+        .unwrap_or("unknown");
+    match (
+        origin.get("file").and_then(|f| f.as_str()),
+        origin.get("line").and_then(|l| l.as_u64()),
+    ) {
+        (Some(file), Some(line)) => format!("from {} ({}:{})", source, file, line),
+        (Some(file), None) => format!("from {} ({})", source, file),
+        (None, _) => format!("from {}", source),
+    }
 }
 
 /// Categorized help text for the :help system.
@@ -381,20 +400,16 @@ impl OilChatApp {
                     self.add_system_message(output);
                     Action::Continue
                 }
-                SetCommand::Query { key } => {
-                    let output = self.runtime_config.format_query(&key);
-                    self.add_system_message(output);
-                    Action::Continue
-                }
-                SetCommand::QueryHistory { key } => {
-                    let output = self.runtime_config.format_history(&key);
-                    self.add_system_message(output);
-                    Action::Continue
-                }
+                SetCommand::Query { key } => self.handle_set_query(&key, false),
+                SetCommand::QueryHistory { key } => self.handle_set_query(&key, true),
                 SetCommand::Enable { key } => self.handle_set_enable(&key),
                 SetCommand::Disable { key } => self.handle_set_disable(&key),
                 SetCommand::Toggle { key } => self.handle_set_toggle(&key),
                 SetCommand::Reset { key } => {
+                    if let Some(refusal) = Self::refuse_app_config_drop(&key, "reset") {
+                        self.warn_invalid(refusal);
+                        return Action::Continue;
+                    }
                     self.runtime_config.reset(&key);
                     self.sync_runtime_to_fields(&key);
                     let output = self.runtime_config.format_query(&key);
@@ -402,6 +417,10 @@ impl OilChatApp {
                     Action::Continue
                 }
                 SetCommand::Pop { key } => {
+                    if let Some(refusal) = Self::refuse_app_config_drop(&key, "pop") {
+                        self.warn_invalid(refusal);
+                        return Action::Continue;
+                    }
                     if self.runtime_config.pop(&key).is_some() {
                         self.sync_runtime_to_fields(&key);
                         let output = self.runtime_config.format_query(&key);
@@ -420,9 +439,76 @@ impl OilChatApp {
         }
     }
 
+    /// Answers `:set key?` and `:set key??`.
+    ///
+    /// The read follows the same classifier the write does. An app-config key
+    /// is read from the daemon, because this client keeps no copy of app
+    /// config: a local answer was "not set" for every key `init.lua` wrote,
+    /// while the daemon held the value.
+    fn handle_set_query(&mut self, key: &str, history: bool) -> Action<ChatAppMsg> {
+        match key_home(key) {
+            KeyHome::Client => {
+                let output = if history {
+                    self.runtime_config.format_history(key)
+                } else {
+                    self.runtime_config.format_query(key)
+                };
+                self.add_system_message(output);
+                Action::Continue
+            }
+            KeyHome::Daemon => Action::Send(ChatAppMsg::ConfigQuery {
+                key: key.to_string(),
+                history,
+            }),
+        }
+    }
+
+    /// The refusal text for `:set key&` and `:set key^` on an app-config key,
+    /// or `None` when this client owns the key and may drop its own layer.
+    ///
+    /// `&` and `^` drop layers from this client's overlay. The daemon store
+    /// is one merged value with per-leaf provenance and no layer stack, so it
+    /// has nothing to drop: a `null` write would replace what `init.lua`
+    /// holds rather than restore it (`null` is a value there, not a
+    /// deletion). Dropping the local copy alone is worse still — it leaves
+    /// the two stores holding different values for one key, which is the
+    /// split these spellings used to open.
+    fn refuse_app_config_drop(key: &str, verb: &str) -> Option<String> {
+        match key_home(key) {
+            KeyHome::Client => None,
+            KeyHome::Daemon => Some(format!(
+                "the daemon config store owns '{key}' and keeps no layer to {verb}; \
+                 write a new value with :set {key}=<value>"
+            )),
+        }
+    }
+
+    /// Print what the daemon app-config store holds for a key.
+    ///
+    /// A read records nothing. The store's value is not this client's to
+    /// keep, and the next read asks the store again.
+    pub(super) fn show_app_config_answer(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+        origin: Option<serde_json::Value>,
+    ) {
+        // `null` is the daemon's answer for a key the store does not hold.
+        let mut lines = if value.is_null() {
+            format!("  {} is not set", key)
+        } else {
+            format!("  {}={}", key, ConfigValue::from(value))
+        };
+        if let Some(origin) = origin {
+            lines.push('\n');
+            lines.push_str(&format!("  {}", format_config_origin(&origin)));
+        }
+        self.add_system_message(lines);
+    }
+
     /// Dispatches `:set key=value` through the shared classifier so the live
-    /// TUI and CLI `--set` accept exactly the same keys and values. Keys the
-    /// classifier doesn't know stay TUI-local (plugin/dynamic runtime keys).
+    /// TUI and CLI `--set` accept exactly the same keys and values. A key the
+    /// classifier does not name is app config, and the daemon store owns it.
     fn dispatch_set_key(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
         if key.starts_with("perm.") {
             return self.handle_perm_set(key, &value);
@@ -435,18 +521,16 @@ impl OilChatApp {
                 self.send_setting_ack(key, &value);
                 Action::Continue
             }
-            // Unknown (plugin/dynamic) keys: store locally for `:set key?`
-            // round-trips AND mirror into the daemon app-config store so
-            // `:lua cru.config.get(key)` and plugins see the same value.
-            Err(SetError::UnknownKey(_)) => {
-                self.runtime_config.set_str(key, &value, ModSource::Command);
-                self.sync_runtime_to_fields(key);
-                self.send_setting_ack(key, &value);
-                Action::Send(ChatAppMsg::ConfigSet {
-                    key: key.to_string(),
-                    value: parse_config_scalar(&value),
-                })
-            }
+            // Every other key is app config, which the daemon store owns.
+            // Nothing lands locally here: the write goes to the daemon and
+            // `ConfigSetResolved` brings back what the store then holds. A
+            // local write would answer the next read with a value the daemon
+            // may have refused — the divergence that hid the dead
+            // `config.set` for as long as it lasted.
+            Err(SetError::UnknownKey(_)) => Action::Send(ChatAppMsg::ConfigSet {
+                key: key.to_string(),
+                value: parse_config_scalar(&value),
+            }),
             Err(e) => {
                 self.warn_invalid(e.to_string());
                 Action::Continue
@@ -541,33 +625,40 @@ impl OilChatApp {
     }
 
     fn handle_set_enable(&mut self, key: &str) -> Action<ChatAppMsg> {
-        if let Some(current) = self.runtime_config.get(key) {
-            if current.as_bool().is_some() {
+        match classify_key_without_value(key.to_string(), CliValue::Enable) {
+            Ok(SetEffect::TuiLocal { .. }) => {
                 self.runtime_config
                     .set(key, ConfigValue::Bool(true), ModSource::Command);
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, true);
-            } else {
-                let output = self.runtime_config.format_query(key);
-                self.add_system_message(output);
-                return Action::Continue;
+                Self::daemon_sync_for_bool(key, true)
             }
-        } else {
-            self.runtime_config
-                .set(key, ConfigValue::Bool(true), ModSource::Command);
-            self.sync_runtime_to_fields(key);
-            self.send_setting_ack(key, true);
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, "on", action),
+            Err(SetError::UnknownKey(_)) => Self::send_app_config_bool(key, true),
+            Err(e) => {
+                self.warn_invalid(e.to_string());
+                Action::Continue
+            }
         }
-        Self::daemon_sync_for_bool(key, true)
     }
 
     fn handle_set_disable(&mut self, key: &str) -> Action<ChatAppMsg> {
-        match self.runtime_config.disable(key, ModSource::Command) {
-            Ok(()) => {
-                self.sync_runtime_to_fields(key);
-                self.send_setting_ack(key, false);
-                Self::daemon_sync_for_bool(key, false)
+        match classify_key_without_value(key.to_string(), CliValue::Disable) {
+            Ok(SetEffect::TuiLocal { .. }) => {
+                match self.runtime_config.disable(key, ModSource::Command) {
+                    Ok(()) => {
+                        self.sync_runtime_to_fields(key);
+                        self.send_setting_ack(key, false);
+                        Self::daemon_sync_for_bool(key, false)
+                    }
+                    Err(e) => {
+                        self.warn_invalid(e.to_string());
+                        Action::Continue
+                    }
+                }
             }
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, "off", action),
+            Err(SetError::UnknownKey(_)) => Self::send_app_config_bool(key, false),
             Err(e) => {
                 self.warn_invalid(e.to_string());
                 Action::Continue
@@ -576,17 +667,59 @@ impl OilChatApp {
     }
 
     fn handle_set_toggle(&mut self, key: &str) -> Action<ChatAppMsg> {
-        match self.runtime_config.toggle(key, ModSource::Command) {
-            Ok(new_val) => {
-                self.sync_runtime_to_fields(key);
-                self.send_setting_ack(key, new_val);
-                return Self::daemon_sync_for_bool(key, new_val);
+        match classify_key_without_value(key.to_string(), CliValue::Toggle) {
+            Ok(SetEffect::TuiLocal { .. }) => {
+                match self.runtime_config.toggle(key, ModSource::Command) {
+                    Ok(new_val) => {
+                        self.sync_runtime_to_fields(key);
+                        self.send_setting_ack(key, new_val);
+                        Self::daemon_sync_for_bool(key, new_val)
+                    }
+                    Err(e) => {
+                        self.warn_invalid(e.to_string());
+                        Action::Continue
+                    }
+                }
+            }
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, "toggle", action),
+            // The daemon's last answer is the only value to invert: this
+            // client holds no independent one to toggle.
+            Err(SetError::UnknownKey(_)) => {
+                match self.runtime_config.get(key).and_then(|v| v.as_bool()) {
+                    Some(current) => Self::send_app_config_bool(key, !current),
+                    None => {
+                        self.warn_invalid(format!(
+                            "'{key}' has no known value to toggle; use {key}=on or {key}=off"
+                        ));
+                        Action::Continue
+                    }
+                }
             }
             Err(e) => {
                 self.warn_invalid(e.to_string());
+                Action::Continue
             }
         }
-        Action::Continue
+    }
+
+    /// Send one app-config boolean to the daemon store, and record nothing.
+    /// `ConfigSetResolved` writes the local copy from the daemon's answer.
+    fn send_app_config_bool(key: &str, enabled: bool) -> Action<ChatAppMsg> {
+        Action::Send(ChatAppMsg::ConfigSet {
+            key: key.to_string(),
+            value: serde_json::Value::Bool(enabled),
+        })
+    }
+
+    /// Record what the daemon app-config store holds for a key, after a
+    /// `:set` wrote it. This is the only writer of an app-config key in the
+    /// TUI's runtime config, which is what keeps the two from disagreeing.
+    pub(super) fn apply_resolved_app_config(&mut self, key: &str, value: serde_json::Value) {
+        let value = ConfigValue::from(value);
+        self.runtime_config
+            .set(key, value.clone(), ModSource::Command);
+        self.sync_runtime_to_fields(key);
+        self.send_setting_ack(key, value);
     }
 
     /// Adds a warning notification for invalid input.
@@ -595,7 +728,7 @@ impl OilChatApp {
     }
 
     /// Acknowledges a setting change with a formatted system message.
-    fn send_setting_ack(&mut self, key: &str, value: impl std::fmt::Display) {
+    pub(super) fn send_setting_ack(&mut self, key: &str, value: impl std::fmt::Display) {
         self.add_system_message(format!("  {}={}", key, value));
     }
 

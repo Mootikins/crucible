@@ -92,7 +92,7 @@ Shown when the agent needs approval for a tool call (see the footer hints):
 |-----|--------|
 | `y` | Allow this call |
 | `n` | Deny this call |
-| `a` | Allowlist: save the suggested pattern project-scoped and allow |
+| `a` | Allowlist: save the suggested pattern project-scoped and allow. For a shell call the suggestion is the command shown, which grants that command alone; add a trailing `*` with `Tab` to grant a wider prefix |
 | `Up/Down` / `k`/`j` | Move between Yes / No / Allowlist |
 | `Enter` | Confirm the highlighted option |
 | `Shift+Enter` | On Allowlist: save the rule user-scoped (global) instead |

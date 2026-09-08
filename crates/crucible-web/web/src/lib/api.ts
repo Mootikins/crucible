@@ -22,6 +22,76 @@ export interface Config {
   kiln_path: string;
   /** Server allows non-loopback terminal/shell (opt-in env + API key). */
   remote_shell?: boolean;
+  /** The daemon's effective config, whole. Shapes come from the daemon. */
+  config?: Record<string, unknown>;
+  /** Where `init.lua` and `settings.json` live, when the daemon booted from a file. */
+  config_root?: string | null;
+  /** One row per recorded leaf, so a control can render its source. */
+  origins?: ConfigOrigin[];
+  /** The declared control tree the settings UI renders. */
+  controls?: AppConfigControls;
+}
+
+/**
+ * What the app config offers a settings UI: the controls, and the leaves that
+ * take none.
+ *
+ * `options` is the SAME node shape a plugin's tree uses, which is the point —
+ * one renderer draws both. `read_only` is the app config's own half: a leaf
+ * with no control still shows, with the reason it has none.
+ */
+export interface AppConfigControls {
+  options: AppConfigNode;
+  read_only: { path: string; reason: string }[];
+}
+
+/**
+ * One node of the app-config tree: a plugin option node plus the two fields
+ * only app config has.
+ *
+ * A plugin owns its storage and answers `get`; app config is stored by the
+ * daemon and read back through the effective config, so a node carries the
+ * config `path` it writes and the `default` a frontend shows when nothing set
+ * it.
+ */
+export interface AppConfigNode extends Omit<PluginOptionNode, 'args' | 'values'> {
+  /** Dot-joined config path — also the key a save writes. */
+  path?: string;
+  /** What the type defaults to when no layer set the leaf. */
+  default?: unknown;
+  values?: { value: unknown; label: string; desc?: string }[];
+  args?: AppConfigNode[];
+}
+
+/** Where one config leaf came from, as `config.origin` reports it. */
+export interface ConfigOrigin {
+  /** Dot-joined leaf path, e.g. `chat.model`. */
+  key: string;
+  value: unknown;
+  /** One word: `default`, `plugin_default`, `settings`, `lua`, `toml`, … */
+  source: string;
+  /** The file the source names, when it names one. */
+  file?: string;
+  /** The line inside `file`, when the source recorded one. */
+  line?: number;
+  /**
+   * Whether a save of this leaf would be refused.
+   *
+   * The daemon's answer, never re-derived here from `source`: which layers pin
+   * IS the refusal rule, and a copy of it in the browser would go wrong the
+   * moment a layer is added.
+   */
+  pinned?: boolean;
+}
+
+/** What one save did: the leaves that landed, and the leaves that could not. */
+export interface ConfigSaveResult {
+  /** False when anything was refused or withheld. */
+  ok: boolean;
+  /** Leaves a higher layer holds, each naming the file and line that holds it. */
+  refused: ConfigOrigin[];
+  /** Keys naming where the daemon acts; those are changed in the config file. */
+  rejected: string[];
 }
 
 /**
@@ -483,6 +553,20 @@ export async function respondToInteraction(
 /** Get server configuration including the configured kiln path. */
 export async function getConfig(): Promise<Config> {
   return request<Config>('GET', '/api/config', { errorMessage: 'Failed to get config' });
+}
+
+/**
+ * Save values as the user's durable preference.
+ *
+ * A refusal is part of the answer, not an error: a leaf the user's `init.lua`
+ * holds comes back in `refused` with the file and the line that holds it, and
+ * the leaves beside it still saved.
+ */
+export async function saveConfig(values: Record<string, unknown>): Promise<ConfigSaveResult> {
+  return request<ConfigSaveResult>('POST', '/api/config', {
+    errorMessage: 'Failed to save config',
+    ...jsonRequest({ values }),
+  });
 }
 
 /** Everything plugins published, keyed by contribution kind then plugin. */

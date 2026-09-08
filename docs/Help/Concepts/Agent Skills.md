@@ -130,10 +130,12 @@ a `skills/` folder.
 
 ### Adding a directory
 
-One line in `~/.config/crucible/config.toml`:
+One line in `~/.config/crucible/init.lua`:
 
-```toml
-runtimepath = ["~/team-kit"]
+```lua
+cru.config.set({
+    runtimepath = { "~/team-kit" },
+})
 ```
 
 `~/team-kit/skills/`, `~/team-kit/agents/`, `~/team-kit/plugins/` and

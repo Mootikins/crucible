@@ -69,7 +69,7 @@ pub(super) fn provider_test_config() -> TuiTestConfig {
     // The PTY harness spawns children with a HERMETIC environment (env -i +
     // allowlist, temp HOME) — the child cannot see the developer's real
     // ~/.config. Live-provider tests therefore MUST point at their provider
-    // explicitly via CRUCIBLE_TEST_CONFIG=<config.toml>; the old implicit
+    // explicitly via CRUCIBLE_TEST_CONFIG=<init.lua>; the old implicit
     // fallback to the developer's real config was exactly the credential
     // leak the hermetic env removes.
     if let Some(cfg_path) = crucible_core::test_support::test_env("CRUCIBLE_TEST_CONFIG") {

@@ -214,8 +214,8 @@ impl TuiTestSession {
         let cfg_dir = home.path().join(".config/crucible");
         std::fs::create_dir_all(&cfg_dir).expect("create hermetic config dir");
         std::fs::write(
-            cfg_dir.join("config.toml"),
-            "[llm]\ndefault = \"ollama\"\n\n[llm.providers.ollama]\ntype = \"ollama\"\n",
+            cfg_dir.join("init.lua"),
+            "cru.config.set({ llm = { default = \"ollama\", providers = { ollama = { type = \"ollama\" } } } })\n",
         )
         .expect("write hermetic provider config");
 

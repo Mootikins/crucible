@@ -232,8 +232,8 @@ cru config show
 These work with any command:
 
 ```bash
-# Specify config file
-cru -C /path/to/config.toml stats
+# Point at another config root; the daemon reads <root>/init.lua
+cru -C /path/to/init.lua stats
 
 # Verbose output
 cru --verbose process

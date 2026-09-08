@@ -92,9 +92,9 @@ each call that has no completion with an error that names the stop reason.
 
 ## Permissions
 
-Crucible does **not** enforce a per-capability ACP permission model. Tool calls from a hosted agent go through the same permission gate as every other session — permission patterns, agent-card tool policy, Lua hooks, and the `[permissions]` config (see [[Help/Concepts/Permission Precedence]]) — and interactive approvals surface as ACP `session/request_permission` requests.
+Crucible does **not** enforce a per-capability ACP permission model. Tool calls from a hosted agent go through the same permission gate as every other session — permission patterns, agent-card tool policy, Lua hooks, and the `permissions` config (see [[Help/Concepts/Permission Precedence]]) — and interactive approvals surface as ACP `session/request_permission` requests.
 
-The `capabilities` field on an `[acp.agents.*]` profile is parsed and stored but **never read for enforcement**. Setting `capabilities = ["read_kiln"]` on a profile has no effect today; do not rely on it to restrict an agent. Use the permission system instead.
+The `capabilities` field on an `acp.agents.*` profile is parsed and stored but **never read for enforcement**. Setting `capabilities = ["read_kiln"]` on a profile has no effect today; do not rely on it to restrict an agent. Use the permission system instead.
 
 ## Protocol Details
 
@@ -104,7 +104,7 @@ When Crucible spawns an agent subprocess, it performs a version handshake via `i
 
 ### Transport Configuration
 
-Timeouts and limits under `[acp]` in `config.toml`:
+Timeouts and limits under `acp` in `init.lua`:
 
 - `streaming_timeout_minutes` (default 15) — how long a streaming turn may go without completing before it is cut off.
 - The removed fields `session_timeout_minutes` and `max_message_size_mb` still load without an error; the values are ignored.
@@ -140,16 +140,23 @@ Agent discovery uses parallel probing: Crucible checks all known agents concurre
 
 ## Custom Agent Profiles
 
-Define custom profiles in `config.toml` using `extends` to inherit from a built-in:
+Define custom profiles in `init.lua` using `extends` to inherit from a built-in:
 
-```toml
-[acp.agents.my-claude]
-extends = "claude"
-env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
-
-[acp.agents.my-agent]
-command = "/usr/local/bin/my-agent"
-args = ["--mode", "acp"]
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            ["my-claude"] = {
+                extends = "claude",
+                env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+            },
+            ["my-agent"] = {
+                command = "/usr/local/bin/my-agent",
+                args = { "--mode", "acp" },
+            },
+        },
+    },
+})
 ```
 
 Then use with: `cru chat -a my-claude`
@@ -244,10 +251,17 @@ Because sessions are real daemon sessions, Precognition and kiln tools apply aut
 
 Because Crucible is both host and agent, you can point one instance at another. Add a profile that runs `cru acp`:
 
-```toml
-[acp.agents.crucible]
-command = "cru"
-args = ["acp"]
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            crucible = {
+                command = "cru",
+                args = { "acp" },
+            },
+        },
+    },
+})
 ```
 
 Then `cru chat -a crucible` runs a full round trip: the host Crucible spawns `cru acp`, which serves the internal agent back over the protocol. This is the end-to-end test of both roles at once. (See the "Manual verification" note in the ACP agent-mode module for a scripted stdio recipe.)

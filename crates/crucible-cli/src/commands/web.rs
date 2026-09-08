@@ -36,8 +36,8 @@ pub enum WebSubcommand {
     /// Localhost requests never need the key. Non-localhost clients must
     /// present it — open the printed URL once on the remote device, or paste
     /// the key into the web UI's Settings → API Access. Disable auth
-    /// entirely (NOT recommended on a 0.0.0.0 bind) with `api_key = ""`
-    /// under `[web]` in config.toml.
+    /// entirely (NOT recommended on a 0.0.0.0 bind) by setting `web.api_key`
+    /// to `""` in your init.lua.
     Key {
         /// Write a new key to the key file. A server that is already running
         /// keeps serving the OLD key until it is restarted.
@@ -66,7 +66,7 @@ pub async fn handle(
     standalone: bool,
     config_path: Option<std::path::PathBuf>,
 ) -> Result<()> {
-    let config = load_app_config(config_path)?;
+    let config = load_app_config(config_path).await?;
 
     // `..default()` on both, so a new security-relevant `WebConfig` field
     // (registration_roots, allowed_hosts, …) is carried through instead of
@@ -107,27 +107,28 @@ pub async fn handle(
 
 /// Load the app config for `cru web`, honouring a `--config` path.
 ///
-/// Its own function because the interesting behaviour is the *asymmetry*, and
-/// that is what regressed: `--config` never reached the load at all, so
-/// `cru --config X web` served the default config's port, API key and
-/// allowed_hosts while reporting success (same class as 04b58b098).
+/// Through the same door every other daemon-backed command uses: the running
+/// daemon's effective config, or a local boot evaluation when no daemon is up.
+/// It used to call `CliAppConfig::load`, which reads `config.toml` and nothing
+/// else — so once that reader stopped being the config, `cru web` served the
+/// DEFAULT port, API key and allow-list to anyone whose settings live in
+/// `init.lua`, and reported success while doing it.
 ///
 /// A path the user NAMED fails loudly rather than falling back, because the
 /// fallback is a different security posture — another key, another allow-list —
-/// and that is the worst thing to substitute silently. With no `--config`, a
-/// missing or unreadable global config still defaults, so `cru web key` keeps
-/// working on a box that has never been configured.
-fn load_app_config(config_path: Option<std::path::PathBuf>) -> Result<CliAppConfig> {
-    match CliAppConfig::load(config_path.clone(), None, None) {
-        Ok(config) => Ok(config),
-        Err(err) => match config_path {
-            Some(named) => Err(anyhow::Error::new(err).context(format!(
-                "failed to load the config file named by --config ({})",
+/// and that is the worst thing to substitute silently. A box that has never
+/// been configured is NOT that case: an absent `init.lua` evaluates to the
+/// defaults, so `cru web key` keeps working there.
+async fn load_app_config(config_path: Option<std::path::PathBuf>) -> Result<CliAppConfig> {
+    crate::config::fetch_effective_config(config_path.clone(), None, None)
+        .await
+        .map_err(|err| match config_path {
+            Some(named) => err.context(format!(
+                "failed to load the config named by --config ({})",
                 named.display()
-            ))),
-            None => Ok(CliAppConfig::default()),
-        },
-    }
+            )),
+            None => err,
+        })
 }
 
 fn handle_key(config: &WebConfig, rotate: bool) -> Result<()> {
@@ -140,8 +141,8 @@ fn handle_key(config: &WebConfig, rotate: bool) -> Result<()> {
     let (key, notice) = if rotate {
         if config.api_key.is_some() {
             anyhow::bail!(
-                "api_key is set explicitly in [web] config — edit config.toml to change it \
-                 (--rotate only manages the generated key file)"
+                "api_key is set explicitly in [web] config — edit `web.api_key` in your \
+                 init.lua to change it (--rotate only manages the generated key file)"
             );
         }
         let path = api_key_path()
@@ -369,53 +370,52 @@ mod tests {
         (listener, port)
     }
 
+    /// `--rotate` over an explicit `api_key` must name a file that is read.
+    ///
+    /// It named `config.toml`, whose reader is gone: an operator who followed
+    /// the refusal edited a file nothing loads and got the same key back.
     #[test]
-    fn a_named_config_file_is_the_one_that_gets_used() {
-        // The regression: `--config` never reached the load, so a named file's
-        // port, API key and allow-list were all silently replaced by the
-        // defaults while the command reported success.
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("named.toml");
-        std::fs::write(
-            &path,
-            "[web]\nport = 4242\nallowed_hosts = [\"named.example.test\"]\n",
-        )
-        .expect("write config");
+    fn rotating_over_an_explicit_api_key_names_the_file_that_holds_it() {
+        let config = WebConfig {
+            api_key: Some("explicit-key".to_string()),
+            ..WebConfig::default()
+        };
 
-        let web = load_app_config(Some(path))
-            .expect("a valid named config loads")
-            .web
-            .expect("[web] section survives the load");
-
-        assert_eq!(web.port, 4242);
-        assert_eq!(web.allowed_hosts, ["named.example.test"]);
+        let err = handle_key(&config, true).expect_err("an explicit key refuses a rotation");
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("init.lua"),
+            "the refusal must name the file the boot evaluates: {rendered}"
+        );
+        assert!(
+            !rendered.contains("config.toml"),
+            "no reader loads that file, so the instruction changes nothing: {rendered}"
+        );
     }
 
-    #[test]
-    fn a_named_config_that_cannot_be_read_fails_instead_of_defaulting() {
-        // Falling back here would serve a DIFFERENT api_key and allowed_hosts
-        // than the operator asked for — the one substitution that must never be
-        // silent. Absent `--config`, defaulting is still correct, so that arm
-        // stays permissive (not asserted here: it would read the developer's
-        // real ~/.config/crucible and is not hermetic).
-        let dir = tempfile::tempdir().expect("tempdir");
-        let broken = dir.path().join("broken.toml");
-        std::fs::write(&broken, "this is not = valid toml [[[\n").expect("write config");
+    // Where `cru web` READS its settings from is proved end to end, in
+    // `tests/config_acquisition_e2e.rs`: a unit test here would have to reach
+    // for a running daemon and would read the developer's own config.
 
-        let err = load_app_config(Some(broken.clone())).expect_err("must not default");
+    /// A named `--config` that cannot be honoured fails instead of defaulting.
+    ///
+    /// Falling back here would serve a DIFFERENT api_key and allowed_hosts
+    /// than the operator asked for — the one substitution that must never be
+    /// silent. Absent `--config`, an absent config is still fine: it
+    /// evaluates to the defaults rather than failing.
+    #[tokio::test]
+    async fn a_named_config_that_cannot_be_honoured_fails_instead_of_defaulting() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let named = dir.path().join("absent").join("config.toml");
+
+        let err = load_app_config(Some(named.clone()))
+            .await
+            .expect_err("must not default");
         let rendered = format!("{err:#}");
         assert!(
             rendered.contains("--config"),
             "the error must name the flag that chose the file: {rendered}"
         );
-        assert!(
-            rendered.contains(&broken.display().to_string()),
-            "the error must name the file: {rendered}"
-        );
-
-        // A path that does not exist at all is the same mistake as an
-        // unparseable one: the operator named something we cannot honour.
-        assert!(load_app_config(Some(dir.path().join("absent.toml"))).is_err());
     }
 
     #[test]

@@ -220,11 +220,32 @@ pub enum ChatAppMsg {
     EvalLua(String),
     /// **Event** (daemon → TUI): Result of a `:lua` evaluation.
     LuaEvaled { output: String, is_error: bool },
-    /// **Command** (TUI → daemon): Mirror an unknown/dynamic `:set` key into
-    /// the daemon app-config store (`config.set`) so Lua/plugins see it.
+    /// **Command** (TUI → daemon): write an app-config `:set` key into the
+    /// daemon store (`config.set`), the one home for it.
     ConfigSet {
         key: String,
         value: serde_json::Value,
+    },
+    /// **Event** (daemon → TUI): what the app-config store holds for a key
+    /// after [`ChatAppMsg::ConfigSet`] wrote it. The TUI keeps no second copy
+    /// of app config, so this reply — not the text the user typed — is what a
+    /// later `:set key?` answers.
+    ConfigSetResolved {
+        key: String,
+        value: serde_json::Value,
+    },
+    /// **Command** (TUI → daemon): read an app-config `:set` key back out of
+    /// the daemon store (`config.get`, plus `config.origin` when `history`).
+    /// `:set key?` and `:set key??` send this instead of reading an overlay
+    /// that holds no app config at all.
+    ConfigQuery { key: String, history: bool },
+    /// **Event** (daemon → TUI): the daemon's answer for [`ChatAppMsg::ConfigQuery`].
+    /// `value` is null when the store holds nothing; `origin` carries the
+    /// `config.origin` row for `:set key??`.
+    ConfigQueryResolved {
+        key: String,
+        value: serde_json::Value,
+        origin: Option<serde_json::Value>,
     },
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
     ExecuteSlashCommand(String),
@@ -347,6 +368,9 @@ impl ChatAppMsg {
             | Self::EvalLua(_)
             | Self::LuaEvaled { .. }
             | Self::ConfigSet { .. }
+            | Self::ConfigSetResolved { .. }
+            | Self::ConfigQuery { .. }
+            | Self::ConfigQueryResolved { .. }
             | Self::Undo(_)
             | Self::UndoComplete { .. }
             | Self::SessionInitialized(_)

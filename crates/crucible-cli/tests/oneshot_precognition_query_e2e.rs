@@ -38,11 +38,10 @@ use std::process::Output;
 ///   (`llm/embeddings/mock.rs`), which is what lets Precognition run at all
 ///   without a network embedding service.
 const CLOSED_LLM_AND_MOCK_EMBEDDINGS: &str = concat!(
-    "endpoint = \"http://127.0.0.1:9\"\n",
-    "timeout_secs = 2\n",
-    "\n[enrichment.provider]\n",
-    "type = \"mock\"\n",
-    "dimensions = 384\n",
+    "cru.config.set({\n",
+    "  llm = { providers = { ollama = { endpoint = \"http://127.0.0.1:9\", timeout_secs = 2 } } },\n",
+    "  enrichment = { provider = { type = \"mock\", dimensions = 384 } },\n",
+    "})\n",
 );
 
 const QUESTION: &str = "what is a kiln?";
