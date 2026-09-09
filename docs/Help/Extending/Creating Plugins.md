@@ -76,8 +76,7 @@ unchanged, which is why this is a deliberate act and not a default.
 ~/.config/crucible/plugins/
 ├── tasks/               # Directory plugin
 │   ├── init.lua         # Main module
-│   ├── lua/parser.lua   # Helper modules
-│   └── plugin.yaml      # Manifest (optional)
+│   └── lua/parser.lua   # Helper modules
 └── quick-tag.lua        # Single-file plugin
 ```
 
@@ -218,12 +217,11 @@ plugins — the returned spec table is the contract.)
 
 ## Directory Plugin
 
-For complex plugins, use a directory with a manifest and entry point:
+For complex plugins, use a directory. The `init.lua` is what makes it one:
 
 ```
 plugins/tasks/
-├── plugin.yaml     # Plugin manifest (required)
-├── init.lua        # Entry point, exports public items
+├── init.lua        # Entry point; its spec table carries the metadata
 ├── parser.lua      # TASKS.md format parser
 ├── commands.lua    # Command handlers
 └── README.md       # Usage documentation

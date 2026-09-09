@@ -129,9 +129,8 @@ require("consolidation").setup({
 | `timeout` | `240` | Seconds to wait for the reviewer |
 | `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
 
-These two tables are the one place the keys are documented. The plugin
-manifests (`runtime/plugins/*/plugin.yaml`) declare the same keys and
-defaults; [[Help/Concepts/Reflection Pass]] says what each pass does with
+These two tables are the one place the keys are documented. Each plugin's
+`cru.plugin.options{}` call declares the same keys and defaults; [[Help/Concepts/Reflection Pass]] says what each pass does with
 them.
 
 Plugin configuration has two working forms, and each plugin uses **one**:
