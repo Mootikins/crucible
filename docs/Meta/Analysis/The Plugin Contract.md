@@ -202,7 +202,9 @@ Queueing one is not minor, and the distinction is worth keeping sharp. An
 executable primitive runs on the daemon by definition, so offline it does not
 run at all. Deferring it means an outbox, replay and a conflict answer against
 a daemon that owns writes — which `docs/Meta/Architecture/Mobile Shell.md`
-sequences last precisely because the failure mode is silent data loss.
+defers precisely because the failure mode is silent data loss. That draft
+records open questions rather than an implementation order — it does not
+sequence anything.
 
 So: refusing offline is cheap and should ship with the first button. Queueing
 offline is a separate piece of product work and should not be smuggled in

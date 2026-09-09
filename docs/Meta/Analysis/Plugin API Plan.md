@@ -54,13 +54,37 @@ plugin. The `?key=` narrowing is a courtesy to the caller, not a boundary.
 4. The same for publications: a caller identifying as plugin X reads X's
    publications unless it asks for another and is allowed to.
 
+**The flaw a review found, and the fix.** The first draft of this step would
+have built a gate whose default is open, and whose test could not see it.
+
+Two live callers have no plugin identity and must keep working: the app itself
+(`api.ts` `getProviderTargets` and `resolveWorkspace`, which invoke `oci` and
+`worktree` commands from `CenterComposer`), and the TUI
+(`chat_runner/actions.rs`). So "no identity" would have had to mean "allowed" —
+and a block would then bypass the check by **omitting** the header rather than
+forging one. The proposed test (a block asks for another plugin's command and
+is refused) passes while that bypass works, and red-proofing by deleting the
+check still passes it.
+
+So the identity is three-valued, not two: `app`, a named plugin, or absent —
+and **absent is refused**. The app and the TUI declare themselves as `app`.
+That is what makes the header a seam rather than a decoration.
+
+**A second identity problem, unsolved.** `BlockProps.plugin` comes from the
+fence's first line, so a *note author* picks the string a block mounts under.
+The mount identity is caller-supplied before any script forges anything. Until
+blocks are isolated this cannot be closed; record it rather than imply the
+header fixes it.
+
 **What this deliberately does not claim.** Until blocks are isolated, a header
 is forgeable by any script on the origin, so this is not a security boundary —
 it is the *seam* one would attach to, plus an honest error for the accidental
 case. Say that in the code, or someone will later believe it is a gate.
 
-**Done when:** a block asking for another plugin's command is refused, with a
-route contract test that red-proofs by removing the check.
+**Done when:** a request carrying no identity is refused; the app and the TUI
+still work because they declare `app`; and a block asking for another plugin's
+command is refused. Red-proof each by deletion — the omission case is the one
+the first draft could not observe.
 
 ## Step 2 — Backlinks as the forcing function
 
