@@ -82,6 +82,40 @@ The invariant that does matter sits elsewhere: **the kiln stays rebuildable
 from its files.** The surface that could break that is `cru.storage`, which is
 durable and per-plugin, not the publication channel.
 
+### The invariant a plugin must satisfy
+
+**A plugin's published state must stay derivable from its files.**
+
+Authorship of a write is decidable, and definitionally so: a write arriving
+through a file-editing route is the user's, one arriving through a plugin
+command is the plugin's. The path decides; nothing is inferred.
+
+*Field ownership* is not decidable. Nothing stops a user editing `status:` in a
+ticket file by hand, bypassing `kanban_move`. The file cannot say that one line
+belongs to a plugin's state machine and the rest to the person.
+
+That is acceptable only while the invariant holds. Kanban owns the transition
+*logic*, not the bytes: it re-derives its board on the next read, so a hand
+edit is a legal move it observes. A plugin whose state is not recoverable that
+way desynchronises silently the moment someone opens the file in an editor.
+
+The honest test is therefore: **does the plugin survive its own user's text
+editor while the daemon is off?** Offline is the harshest instance — an edit
+reaches the plugin's files with the plugin not running at all: no command, no
+republish, no observation until the daemon returns.
+
+### One requirement on any scope vocabulary
+
+Publications have one scope today: global, per plugin. Session-scoped,
+viewer-scoped and user-named saved queries are all wanted, and the shape is
+undecided. One constraint is not: **a scope binding resolves server-side.**
+
+`data/session/<id>/…` takes `<id>` from the request's resolved session, and a
+literal `me` is substituted by the server. A client never writes an id it chose.
+A viewer-scoped key resolved from a caller-supplied viewer id is one viewer
+reading another's state — the same hole as a caller asserting its own identity,
+wearing a different name.
+
 ## The contract
 
 | Layer | Owns | Runs |
@@ -224,8 +258,11 @@ rebuilt as plugins, rather than by design from first principles.
 2. **Scoped publications.** One shape exists — global, per plugin. A review
    index wants a key scoped to a *session*; tree expansion and graph forces
    want a key scoped to a *viewer*.
-3. **A refusal a UI can act on.** `FsMoveOutcome` is the shape to copy; a
-   command returns opaque JSON.
+3. **A refusal a UI can act on.** A command returns opaque JSON. The shape
+   worth copying is `FsMoveOutcome` — `{moved, rewritten_sources?, skipped?}`,
+   where `skipped` names each source and *why* it was left alone. Note it is a
+   TypeScript client interface (`web/src/lib/api.ts`) with no Rust counterpart,
+   so it is a shape to imitate rather than a type to reuse.
 4. **Declared file access.** Kanban reads and writes with `io.open`, unscoped —
    `cru.fs` has no read and no write at all. A scoped alternative assumes
    capability enforcement that **does not exist**: `Capability` has ten

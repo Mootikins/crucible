@@ -52,7 +52,25 @@ plugin. The `?key=` narrowing is a courtesy to the caller, not a boundary.
    calling plugin. `commands_json` already records `plugin` per command, so the
    check is a comparison, not a new registry.
 4. The same for publications: a caller identifying as plugin X reads X's
-   publications unless it asks for another and is allowed to.
+   publications unless it asks for another and is allowed to. **`PluginBlockPanel`
+   reads every plugin's publications with no key and is the app**, so it
+   declares `app` — a review found this item would otherwise break a step-0
+   consumer on the day it landed.
+
+**Widen the step beyond the two obvious routes.** `routes/plugin.rs` exposes
+six plugin routes, and command invocation is not the largest hole:
+
+| Route | Why it matters |
+|---|---|
+| `POST /api/plugins/{name}/option` | reads and writes *any* plugin's settings tree; `{name}` is caller-supplied |
+| `POST /api/plugins` | **installs a plugin from a git URL** |
+| `DELETE /api/plugins/{name}` | removes any plugin |
+| `POST /api/plugins/{name}/reload` | reloads any plugin |
+
+Installing arbitrary code from a URL is a bigger hole than calling another
+plugin's command, and it sits on the same origin behind the same cookie. The
+three lifecycle routes should be `app`-only outright; `option` needs the same
+per-plugin comparison as `command`.
 
 **The flaw a review found, and the fix.** The first draft of this step would
 have built a gate whose default is open, and whose test could not see it.
@@ -86,62 +104,134 @@ still work because they declare `app`; and a block asking for another plugin's
 command is refused. Red-proof each by deletion — the omission case is the one
 the first draft could not observe.
 
-## Step 2 — Backlinks as the forcing function
+## Step 2 — Graph as the forcing function
 
-Chosen over Skills deliberately. Skills would prove publish and push, which
-kanban already proves. Backlinks is the first consumer whose read depends on an
-argument **the user moves** — the focused note — so it forces the parameterised
-read end to end.
+**Changed from Backlinks by review, and the review is right.** Backlinks fails
+on its own merits: `GET /api/backlinks` already serves it richly (`title`,
+`abs_path`, `span_start`), `cru.kiln.backlinks` returns only `{ string }` from
+an exact path, and the panel additionally **writes into the open editor
+buffer** — `applySuggestion` calls `updateFileContent`, a channel no daemon
+endpoint and no plugin command provides and no sandboxed block could reach. So
+"keep the panel until the block reaches parity" concealed a reimplementation of
+the link index plus an editor-write channel that does not exist. It would also
+have taught the wrong lesson: the block would be slower and poorer, and the
+plan's "including if it is worse" would have read as a verdict on parameterised
+reads rather than on choosing a consumer the daemon already serves.
 
-1. A `backlinks` plugin in Luau exposing a read-only command over
-   `cru.kiln.backlinks`, which exists and is reachable from nowhere else.
-2. A `BacklinksBlock` in TS that invokes it as the focused note changes.
-3. Keep the existing `BacklinksPanel` until the block reaches parity. Do not
-   delete a working panel to prove a point.
+Graph is the right one:
 
-**What it will teach, and is meant to:** whether an argument-keyed read wants a
-different shape from a command; whether the focused-note argument belongs in
-the call or in a viewer-scoped publication; and what a per-keystroke-ish read
-costs over RPC.
+- `GET /api/kiln/graph` returns the **whole** edge list and `GraphPanel`
+  traverses it in the browser. There is no neighbourhood endpoint anywhere —
+  verified.
+- `cru.kiln.neighbors(path, depth)` is scope-filtered per hop and cycle-safe,
+  and is reachable only from Lua. The claim the plan misapplied to backlinks is
+  true here.
+- The argument is one the **user moves**: the focused note, plus a depth
+  control the user turns.
+- It has no editor-write leg, so parity is a rendering question rather than a
+  rewrite.
+- Its cost is size — which is the point. A per-move read over RPC on a large
+  kiln is exactly the latency answer this plan says it wants.
 
-**Done when:** the block renders real backlinks for the focused note, and the
-comparison against the existing panel is written down — including if it is
-worse.
+1. A `graph` plugin in Luau exposing a read-only command over
+   `cru.kiln.neighbors`.
+2. A `GraphBlock` in TS that invokes it as the focused note and depth change.
+3. Keep `GraphPanel` until the block reaches parity.
+
+**Done when:** the block renders a real neighbourhood for the focused note at a
+user-chosen depth, and the latency of a per-move RPC on a large kiln is
+measured and written down — including if it is unacceptable.
 
 ## Step 3 — mark reads, and type the parameters
 
 Both come from the same place and should land together.
 
-1. A read/write marker on a command. `kanban_board` is a read; `kanban_move` is
-   a write. Nothing distinguishes them, so a permission layer cannot treat them
-   differently and a UI cannot know which is safe to call speculatively.
-2. `parameters` crosses as opaque JSON. `signature.rs` already renders a
-   declaration as JSON Schema for tools; a command's parameters come from the
-   same `ToolDefinition`, so this is pointing existing machinery at an existing
-   field.
+**The Rust side is already wired.** `extract_params_from_table` reads a
+command's `params`, `register_plugin` schemas them through
+`discovered_params_to_json_schema` → `to_input_schema`, `commands_json` ships
+them, and `PluginCommand.parameters` receives them. The work is not Rust.
 
-**Done when:** a dialog is *generated* from a command's declared parameters
-rather than hand-written, for a command the dialog code has never seen.
+1. **Luau declarations.** No shipped plugin declares `params` on a command —
+   every one carries a free-text `hint`. Declare them on at least one, and
+   document the field.
+2. **A TS consumer.** `getPluginCommands` has zero callers today.
+3. **A read/write marker.** Nothing distinguishes a read from a write, so the
+   permission layer cannot treat them differently and a UI cannot know which is
+   safe to call speculatively.
 
-## Step 4 — the capability question
+**Budget it honestly.** The dialog is about a day. The *surface* that offers a
+command as a button is not — it needs a placement and a permission answer for a
+person-invoked write, which is the contract's item 7 and is unsequenced. Budget
+them separately or this step's done-when slips.
 
-**Do not start this until steps 1–3 are done, and treat its premise as
-unproven.** `Capability` has ten variants and is enforced in two places, both
-`InterceptTools`. `filesystem`, `kiln`, `config` and five others gate nothing.
-So this is not extending a working model; it is the first real use of one.
+**Done when:** a dialog is *generated* from a command's declared parameters for
+a command the dialog code has never seen, **and** a read is distinguishable
+from a write without reading the plugin's source.
 
-The specific gap: `Capability::Kiln` cannot say "read the kiln, write nothing".
-A block that legitimately needs `getNote` gets `saveNote` with it — and could
-then write kanban's ticket files directly, bypassing `kanban_move`. Same bytes,
-wrong author.
+## Step 4 — path scoping, not a read/write split
 
-Open, and to be answered with evidence rather than taste:
+**Research answered this, and the answer is: do not build the mode axis.** It
+was the open question; it is now closed enough to act on.
 
-- Is a read/write split worth the granularity, or does it collapse the way
-  Obsidian's ecosystem suggests? (Under research.)
-- Does path scoping belong here, or in `cru.fs`, which today has no read and no
-  write at all?
-- Does a capability gate mean anything before block isolation exists?
+**Obsidian makes no read/write distinction and holds no permission object at
+all.** A loaded plugin gets the whole `App` — vault reads, writes, the raw
+filesystem adapter, and `child_process`. Their help page gives the reason
+plainly: *"Obsidian cannot reliably restrict plugins to specific permissions or
+access levels"*, so *"plugins inherit Obsidian's access levels."* Restricted
+Mode is one binary switch, not a per-plugin scope. `app.vault.adapter` is
+discouraged for **portability**, never safety, and nothing detects or blocks
+it. In May 2026 they announced capability *disclosures* — network, filesystem,
+clipboard — which are **declarative, not enforced, and opt-in**.
+
+**WebExtensions is the one large enforced ecosystem, and it expresses the split
+exactly once.** `clipboardRead` and `clipboardWrite` are separate strings.
+`bookmarks`, `history`, `storage`, `cookies`, `topSites` and `sessions` are each
+**one grant covering both read and modify**. `downloads` / `downloads.open`
+splits by sub-API, not by mode. So the ecosystem that *can* enforce declined the
+mode axis everywhere except the single resource where read alone is the whole
+attack.
+
+**Does Obsidian's reasoning transfer to us? The stated reason does not.** Luau
+ships no `io.popen` and no `os.execute`, `cru.shell` is the only gated door, and
+`modules.rs` owns `require` because lookup is import authority. There is no
+`child_process` and no raw adapter: the daemon genuinely can hold the line.
+
+**A second reason does transfer, and it is the operative one.** Obsidian starts
+disclosures opt-in because thousands of plugins must migrate. Enforcement cost
+is not the gate — it is every plugin, doc and test that must name the new grant.
+Our enum enforces one variant of ten. A *finer* vocabulary widens that gap
+before it closes it.
+
+### What to build instead
+
+1. **Enforce the ten variants that already exist.** `filesystem`, `kiln`,
+   `config` and five others gate nothing. Declared-and-ungated is the state
+   Obsidian is shipping toward and being criticised for; we are already there
+   by accident.
+2. **Path scoping.** Scope answers "which files", which is the question that
+   actually binds. `cru.fs` has no read and no write at all, so plugins use raw
+   `io.open` unscoped — kanban included. A scoped read and write is the real
+   work, and it is a `cru.fs` change, not a capability change.
+3. **A mode axis only where read alone is the whole attack.** We have no
+   clipboard case today. If one appears, split that one and nothing else.
+
+### The web half: do not pretend
+
+A block is same-origin script that can call any endpoint. That is Obsidian's
+position, not ours — our Lua half can be enforced and our web half cannot, yet.
+So enforce on the Lua side where the daemon owns the door, and **do not print a
+capability label on a web block until real isolation exists**. A label without a
+gate teaches a user to trust a promise nothing keeps, which is precisely the
+criticism Obsidian is now taking.
+
+### The residual, unchanged
+
+`Capability::Kiln` still cannot say "read the kiln, write nothing", so a block
+that needs `getNote` gets `saveNote` with it. Path scoping narrows the blast
+radius; it does not close this. The mitigation is the contract's invariant — a
+plugin's published state stays derivable from its files — rather than a gate,
+because a user editing their own note by hand is a legal move that a plugin must
+survive anyway.
 
 ## Step 5 — decide delivery, then package
 
@@ -152,6 +242,28 @@ expensive mistake available here.
 
 Once decided: extract the safe subset, make `KanbanBlock` consume it instead of
 `@/lib/api`, and let that prove sufficiency before anything third-party exists.
+
+## On the write path, and a correction
+
+Kanban writes by rewriting the whole file (`io.open(path, "w")`), so its
+conflict story is last-write-wins with no `If-Match`. A neighbouring design for
+anchored `{expect, replace}` batches is under discussion for the mobile shell,
+and this plan should sit on it rather than grow a second write primitive.
+
+**One correction to how that was first described here and in correspondence.**
+The anchored batch is better than kanban's write in its *conflict unit* — an
+edit that fails loudly when its anchor changed, rather than clobbering. It is
+**not** better in *anchor precision*. Kanban anchors on
+`"(\nstatus:%s*)[%w_-]+"` limited to the first occurrence: a leading newline, a
+key, and a character class terminating the value. A bare-substring `expect`
+matches inside a longer word, inside a fenced code block, and in prose — and
+*under*-matches when a document holds two identical lines, which refuses the
+edit rather than performing it.
+
+So the two halves come from different places: precision from a line-anchored
+pattern, detection from the anchor being re-validated at apply time. A write
+primitive worth adopting needs both, and taking the batch as specified today
+would trade a precision problem for a detection fix.
 
 ## Not in this plan
 
