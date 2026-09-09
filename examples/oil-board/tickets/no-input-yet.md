@@ -1,6 +1,6 @@
 ---
 title: An Oil input cannot send a value back
-status: todo
+status: doing
 ---
 
 `oil.input` renders read-only in the browser: a view has no way to return a

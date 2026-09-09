@@ -1,6 +1,6 @@
 ---
 title: Pin the serialized node shape
-status: done
+status: todo
 ---
 
 The tree is a wire contract now. `crates/crucible-oil/tests/wire_shape.rs`

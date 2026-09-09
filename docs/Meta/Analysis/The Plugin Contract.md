@@ -35,6 +35,53 @@ run in a browser. **The concept ports; the code never does.**
 So Oil is not the plugin's interface to the frontends. Oil is one renderer's
 way of drawing a plugin's data.
 
+## Two sides, and only two
+
+**The daemon holds executable primitives. The frontends display data and
+collect input.** Everything below is a consequence.
+
+A frontend never performs a plugin's work. It renders what the plugin knows,
+takes what the user typed, and invokes a primitive. That is true of the web and
+of the TUI equally, which is what stops the two drifting into different
+capabilities.
+
+### Where computation goes
+
+Four placements, and the criteria are not a matter of taste:
+
+| Placement | Choose it when |
+|---|---|
+| **Lua, published** | it needs a secret or privileged access, or it reduces a lot of data to a little |
+| **Lua, invoked** | it performs a write the plugin owns |
+| **TS over daemon endpoints** | the daemon already exposes what is needed |
+| **TS, computed in the browser** | it is presentational, interactive, or must work offline |
+
+The reduction case is the one most easily missed. A graph plugin wanting a
+three-hop neighbourhood must not ship ten thousand edges to the browser to
+compute it — `kiln.graph` hands back a flat edge list and the web traverses it
+client-side today, which is the wrong shape the moment the graph is large.
+`cru.kiln.neighbors(path, depth)` already exists in Lua, scope-filtered per hop
+and cycle-safe, and is reachable from nowhere else. It is waiting for exactly
+this.
+
+A file tree is the opposite case: `/api/fs/list` already returns what a tree
+needs, so a file-tree plugin needs **no Lua at all**.
+
+Auth proxying is not a preference but a boundary. A credential that reaches the
+browser has left the daemon, and nothing puts it back.
+
+### What a publication is, and is not
+
+A publication is ephemeral daemon state. It dies with the daemon and nothing
+durable depends on it, so it may hold anything useful — a derived index, a hot
+reduction, a proxied result. It is not a claim about where truth lives, and
+publishing computed data is not a compromise of the markdown contract. SQLite
+is already the same kind of thing.
+
+The invariant that does matter sits elsewhere: **the kiln stays rebuildable
+from its files.** The surface that could break that is `cru.storage`, which is
+durable and per-plugin, not the publication channel.
+
 ## The contract
 
 | Layer | Owns | Runs |
@@ -109,6 +156,58 @@ time — `cru.storage`'s namespace, and now publish's attribution — was filed
 under whatever context was left behind. Fixed in `plugin_tools.rs`, restoring
 on both paths.
 
+## Executable primitives are one thing wearing four names
+
+Tools, commands, slash commands, skills and workflows are the same shape: a
+name, a description, typed parameters, and something that runs. They are
+registered separately, enumerated separately, and invoked through separate
+paths, for no reason anyone wrote down.
+
+**Half the unification already exists and nobody noticed.** A plugin command
+and a plugin tool share one `ToolDefinition`: `commands_json`
+(`plugin_tools.rs`) emits `name`, `description`, `hint` and `parameters` from
+the same struct the tool registry uses. The difference between them today is
+which map they land in and which RPC reaches them — not what they are.
+
+### Why this matters for the web
+
+If executable primitives are one enumerable set with declared parameter types,
+then a frontend can offer **any** of them without knowing what it is: a button,
+and — when the primitive takes arguments — a generated dialog. A user pins one
+to a panel; the panel needs no code per primitive.
+
+That is not a new mechanism. `signature.rs` already renders one declaration
+three ways — `to_luau`, `to_json_schema`, `to_input_schema` — and
+`PluginSettings.tsx` already switches on a declared node type to build a form
+that a plugin shipped after it was written gets for free. An argument dialog is
+the fourth projection of the same declaration, built the same way.
+
+### What is missing
+
+- One registry, or at least one enumeration, spanning the four kinds.
+- Skills and workflows carry no `parameters` today, so they cannot yet be
+  offered with a dialog.
+- A permission answer: a primitive invoked from a button is invoked by a
+  *person*, not an agent, and the `ask` disposition currently has nobody to
+  prompt from a Lua call (see the 2026-02-03 `cru.tools.call` row in
+  [[Meta/Product Decision Log]]). A button is precisely the surface that
+  could make `ask` mean what it says.
+
+## Offline: which half is minor
+
+Knowing you are offline is minor — a failed fetch and `navigator.onLine`
+settle it, and a primitive that cannot run should grey out and say why.
+
+Queueing one is not minor, and the distinction is worth keeping sharp. An
+executable primitive runs on the daemon by definition, so offline it does not
+run at all. Deferring it means an outbox, replay and a conflict answer against
+a daemon that owns writes — which `docs/Meta/Architecture/Mobile Shell.md`
+sequences last precisely because the failure mode is silent data loss.
+
+So: refusing offline is cheap and should ship with the first button. Queueing
+offline is a separate piece of product work and should not be smuggled in
+beside it.
+
 ## What is still not built
 
 - **No TUI surface hosts a plugin view.** Oil is now unambiguously the TUI's
@@ -116,6 +215,12 @@ on both paths.
   terminal-specific primitives correct rather than defective. But a Lua-built
   tree still has to cross a process boundary to reach the TUI, so it needs
   `Node: Deserialize` and an action dispatcher. See [[Meta/Analysis/Oil in Documents]], section "P1".
+- **The TS side of the contract has no surface.** Three of the four placements
+  above are TypeScript, and none has a client library. `KanbanBlock.tsx` can
+  `import from '@/lib/api'` only because it ships in-tree; a third-party block
+  has no typed endpoint wrappers and no statement of what it may call. The
+  publish path works end to end and the other three do not, so the contract as
+  committed is one-legged.
 - **Third-party TS cannot be loaded.** A plugin bundle the daemon serves is
   `script-src 'self'`, so the CSP would admit it and protect nothing, and the
   service worker's root scope leans on that same bound. Block components ship
