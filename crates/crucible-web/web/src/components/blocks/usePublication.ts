@@ -47,7 +47,14 @@ export function usePublication<T>(plugin: string, key: string): Resource<T | und
     // Narrowed to this key: the route filters daemon-side, so a document with
     // four blocks in it fetches four small answers rather than four copies of
     // every plugin's data.
-    const all = await getPluginPublications(key);
+    // Declared as `plugin`, not as the app: this is a block drawing one
+    // plugin's data, and the route narrows a plugin caller to its own rows.
+    //
+    // `plugin` reaches here from `BlockProps.plugin`, which is the first line
+    // of the ```plugin fence — so a NOTE AUTHOR picked this string. The
+    // identity is caller-supplied one layer above the header, and no header
+    // fixes that; only isolating blocks does. See `routes/plugin_caller.rs`.
+    const all = await getPluginPublications(key, plugin);
     return all[key]?.[plugin] as T | undefined;
   });
 

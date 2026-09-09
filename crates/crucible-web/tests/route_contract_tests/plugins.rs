@@ -59,6 +59,7 @@ async fn reload_plugin_returns_counts() {
             Request::builder()
                 .method("POST")
                 .uri("/api/plugins/mock-plugin/reload")
+                .header("x-crucible-plugin", "app")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -87,6 +88,7 @@ async fn install_plugin_returns_200_with_outcome() {
                 .method("POST")
                 .uri("/api/plugins")
                 .header("content-type", "application/json")
+                .header("x-crucible-plugin", "app")
                 .body(Body::from(
                     serde_json::json!({ "url": "user/repo" }).to_string(),
                 ))
@@ -116,6 +118,7 @@ async fn install_plugin_rejects_empty_url() {
                 .method("POST")
                 .uri("/api/plugins")
                 .header("content-type", "application/json")
+                .header("x-crucible-plugin", "app")
                 .body(Body::from(serde_json::json!({ "url": "" }).to_string()))
                 .unwrap(),
         )
@@ -136,6 +139,7 @@ async fn remove_plugin_returns_200() {
             Request::builder()
                 .method("DELETE")
                 .uri("/api/plugins/some-plugin")
+                .header("x-crucible-plugin", "app")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -161,6 +165,7 @@ async fn remove_plugin_with_purge_query_returns_200() {
             Request::builder()
                 .method("DELETE")
                 .uri("/api/plugins/some-plugin?purge=true")
+                .header("x-crucible-plugin", "app")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -234,6 +239,7 @@ async fn an_option_read_write_and_press_each_reach_the_daemon() {
                     .method("POST")
                     .uri("/api/plugins/mock-plugin/option")
                     .header("content-type", "application/json")
+                    .header("x-crucible-plugin", "app")
                     .body(Body::from(action.to_string()))
                     .unwrap(),
             )
@@ -266,6 +272,7 @@ async fn an_option_call_naming_no_path_is_rejected() {
                 .method("POST")
                 .uri("/api/plugins/mock-plugin/option")
                 .header("content-type", "application/json")
+                .header("x-crucible-plugin", "app")
                 .body(Body::from(r#"{"action":"get","path":[]}"#))
                 .unwrap(),
         )
@@ -292,6 +299,7 @@ async fn a_publications_key_reaches_the_daemon() {
         .oneshot(
             Request::builder()
                 .uri("/api/plugins/publications?key=kanban:board")
+                .header("x-crucible-plugin", "app")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -322,6 +330,7 @@ async fn publications_without_a_key_still_answers_everything() {
         .oneshot(
             Request::builder()
                 .uri("/api/plugins/publications")
+                .header("x-crucible-plugin", "app")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -371,4 +380,273 @@ async fn plugin_commands_are_enumerable_with_their_parameters() {
     assert_eq!(params.len(), 2);
     assert_eq!(params[0]["name"], "target");
     assert_eq!(params[1]["optional"], true);
+}
+
+// ── the caller-identity seam ────────────────────────────────────────────────
+//
+// `routes/plugin_caller.rs` says at length what this is not: a block is
+// same-origin script and can send any header, so none of these tests prove a
+// hostile block is stopped. They prove the three-valued identity behaves —
+// app, a named plugin, absent — and that absent is a refusal.
+//
+// The last part is the one that matters. Answer "allowed" for a request with
+// no identity and every other test below still passes, because a block would
+// then bypass the check by omitting the header rather than by forging one.
+
+/// Every gated route, with a request body where the route needs one.
+///
+/// One table, driven by every test in this section, so a route that grows a
+/// check is exercised for omission, for the app, and for a plugin without
+/// three separate lists drifting apart.
+fn gated_routes() -> Vec<(&'static str, &'static str, Option<&'static str>)> {
+    vec![
+        (
+            "POST",
+            "/api/plugins/command",
+            Some(r#"{"name":"mock_command","args":{}}"#),
+        ),
+        (
+            "POST",
+            "/api/plugins/mock-plugin/option",
+            Some(r#"{"action":"get","path":["image"]}"#),
+        ),
+        ("POST", "/api/plugins", Some(r#"{"url":"user/repo"}"#)),
+        ("DELETE", "/api/plugins/mock-plugin", None),
+        ("POST", "/api/plugins/mock-plugin/reload", None),
+        ("GET", "/api/plugins/publications", None),
+    ]
+}
+
+fn request_as(
+    caller: Option<&str>,
+    method: &str,
+    uri: &str,
+    body: Option<&'static str>,
+) -> Request<Body> {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(caller) = caller {
+        builder = builder.header("x-crucible-plugin", caller);
+    }
+    match body {
+        Some(json) => builder
+            .header("content-type", "application/json")
+            .body(Body::from(json))
+            .unwrap(),
+        None => builder.body(Body::empty()).unwrap(),
+    }
+}
+
+/// **The load-bearing one.** A caller that names nobody is refused.
+///
+/// Two live callers had no plugin identity when this landed, so the obvious
+/// reading — "no identity means the app" — was available and would have made
+/// omission the way past every other check here.
+#[tokio::test]
+async fn a_request_naming_no_caller_is_refused_on_every_gated_route() {
+    for (method, uri, body) in gated_routes() {
+        let (_mock, client) = start_mock_daemon().await;
+        let app = build_test_app(build_mock_state(client));
+
+        let response = app
+            .oneshot(request_as(None, method, uri, body))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{method} {uri} answered a caller that named nobody"
+        );
+    }
+}
+
+/// An empty header value names nobody either — a client that built the header
+/// from an unset variable must not read as the app.
+#[tokio::test]
+async fn an_empty_caller_header_names_nobody() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(request_as(
+            Some("   "),
+            "GET",
+            "/api/plugins/publications",
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// The app reaches every gated route. `api.ts` and the plugins panel declare
+/// `app`, and this is the test that fails if the seam narrows them.
+#[tokio::test]
+async fn the_app_reaches_every_gated_route() {
+    for (method, uri, body) in gated_routes() {
+        let (_mock, client) = start_mock_daemon().await;
+        let app = build_test_app(build_mock_state(client));
+
+        let response = app
+            .oneshot(request_as(Some("app"), method, uri, body))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "{method} {uri} refused the app"
+        );
+    }
+}
+
+/// A plugin invokes its own command. `plugin.commands` records the owner, so
+/// the check is a comparison against what the daemon already knows.
+#[tokio::test]
+async fn a_plugin_may_invoke_its_own_command() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(request_as(
+            Some("mock-plugin"),
+            "POST",
+            "/api/plugins/command",
+            Some(r#"{"name":"mock_command","args":{}}"#),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_plugin_may_not_invoke_another_plugins_command() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(request_as(
+            Some("other-plugin"),
+            "POST",
+            "/api/plugins/command",
+            Some(r#"{"name":"mock_command","args":{}}"#),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// A command no loaded plugin owns cannot be attributed to the caller either.
+#[tokio::test]
+async fn a_plugin_may_not_invoke_a_command_nobody_owns() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(request_as(
+            Some("mock-plugin"),
+            "POST",
+            "/api/plugins/command",
+            Some(r#"{"name":"no_such_command","args":{}}"#),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// `{name}` on the option route is caller-supplied, which is the whole hole:
+/// without the comparison a block reads and writes any plugin's settings by
+/// naming it.
+#[tokio::test]
+async fn a_plugin_reaches_its_own_settings_and_no_others() {
+    for (caller, expected) in [
+        ("mock-plugin", StatusCode::OK),
+        ("other-plugin", StatusCode::FORBIDDEN),
+    ] {
+        let (_mock, client) = start_mock_daemon().await;
+        let app = build_test_app(build_mock_state(client));
+
+        let response = app
+            .oneshot(request_as(
+                Some(caller),
+                "POST",
+                "/api/plugins/mock-plugin/option",
+                Some(r#"{"action":"set","path":["image"],"value":"debian"}"#),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), expected, "caller {caller}");
+    }
+}
+
+/// Install, remove and reload are the app's. Installing clones code from a URL
+/// the caller chose and loads it, which is a larger hole than calling another
+/// plugin's command and sits behind the same cookie.
+#[tokio::test]
+async fn the_lifecycle_routes_refuse_a_plugin() {
+    for (method, uri, body) in gated_routes() {
+        // The two per-plugin routes are covered above; these three are the
+        // app-only ones.
+        let app_only = matches!(
+            (method, uri),
+            ("POST", "/api/plugins")
+                | ("DELETE", "/api/plugins/mock-plugin")
+                | ("POST", "/api/plugins/mock-plugin/reload")
+        );
+        if !app_only {
+            continue;
+        }
+
+        let (_mock, client) = start_mock_daemon().await;
+        let app = build_test_app(build_mock_state(client));
+
+        // `mock-plugin` is the plugin the route names, so this is not refused
+        // for naming someone else — a plugin has no business here at all.
+        let response = app
+            .oneshot(request_as(Some("mock-plugin"), method, uri, body))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{method} {uri} let a plugin in"
+        );
+    }
+}
+
+/// A plugin reading publications sees its own rows and nothing else, with or
+/// without `?key=`. The app keeps the unnarrowed answer, which is what
+/// `PluginBlockPanel` enumerates every published block from.
+#[tokio::test]
+async fn a_plugin_reads_only_its_own_publications() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(request_as(
+            Some("mock-plugin"),
+            "GET",
+            "/api/plugins/publications",
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let publications = &json["publications"];
+    assert!(
+        publications.get("everything").is_some(),
+        "its own row should survive, got {json}"
+    );
+    assert!(
+        publications.get("and-more").is_none(),
+        "another plugin's row must not come back, got {json}"
+    );
 }

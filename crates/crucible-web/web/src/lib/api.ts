@@ -188,10 +188,35 @@ function notifyAuthRequired(): void {
   }
 }
 
+/**
+ * The header a caller declares itself in, on the plugin routes.
+ *
+ * **Not a secret and not a credential.** Any script on this origin can set it,
+ * so it stops nothing hostile — the server refuses a request that names
+ * *nobody*, which turns "a block reached for another plugin's command" from a
+ * silent success into an error someone can read. `routes/plugin_caller.rs`
+ * carries the long version; read it before treating this as a gate.
+ *
+ * It rides on every request rather than only the plugin ones, so a route
+ * gated later does not need a second pass over the call sites.
+ */
+export const PLUGIN_CALLER_HEADER = 'X-Crucible-Plugin';
+
+/** What the app's own UI calls itself. */
+export const APP_CALLER = 'app';
+
 export interface RequestOptions extends Omit<RequestInit, 'method'> {
   errorMessage?: string;
   parseAs?: 'json' | 'text' | 'none';
   includeErrorText?: boolean;
+  /**
+   * Who is asking: {@link APP_CALLER}, or the plugin this call draws for.
+   *
+   * Defaults to the app, which is a convenience for the app's own call sites
+   * and not the gate — the gate is the server refusing a request that names
+   * nobody at all. A block passes its own plugin instead.
+   */
+  caller?: string;
 }
 
 /**
@@ -233,8 +258,18 @@ export async function request<T>(
   url: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { errorMessage = 'Request failed', parseAs = 'json', includeErrorText = false, ...init } = options;
-  const res = await fetch(url, { method, ...init });
+  const {
+    errorMessage = 'Request failed',
+    parseAs = 'json',
+    includeErrorText = false,
+    caller = APP_CALLER,
+    ...init
+  } = options;
+  const headers = {
+    [PLUGIN_CALLER_HEADER]: caller,
+    ...((init.headers as Record<string, string> | undefined) ?? {}),
+  };
+  const res = await fetch(url, { method, ...init, headers });
 
   if (!res.ok) {
     let errorText = '';
@@ -525,7 +560,10 @@ export async function getPluginCommands(): Promise<PluginCommand[]> {
   return body.commands ?? [];
 }
 
-export async function getPluginPublications(key?: string): Promise<PluginPublications> {
+export async function getPluginPublications(
+  key?: string,
+  caller: string = APP_CALLER,
+): Promise<PluginPublications> {
   // The path stays a bare literal and the query is appended to it.
   // `architecture_tests::every_frontend_api_path_has_a_backend_route` scans
   // this file for route literals and cannot see through an interpolation, so
@@ -536,6 +574,7 @@ export async function getPluginPublications(key?: string): Promise<PluginPublica
   const url = key ? `${path}?key=${encodeURIComponent(key)}` : path;
   const body = await request<{ publications?: PluginPublications }>('GET', url, {
     errorMessage: 'Failed to get plugin publications',
+    caller,
   });
   return body.publications ?? {};
 }
@@ -591,10 +630,15 @@ export async function executePluginOption(plugin: string, path: string[]): Promi
  * Untyped by design — the caller knows the shape it asked for, and a schema
  * here would be one only today's plugins could satisfy.
  */
-export async function runPluginCommand(name: string, args: unknown = {}): Promise<unknown> {
+export async function runPluginCommand(
+  name: string,
+  args: unknown = {},
+  caller: string = APP_CALLER,
+): Promise<unknown> {
   return request<unknown>('POST', '/api/plugins/command', {
     ...jsonRequest({ name, args }),
     errorMessage: `Plugin command '${name}' failed`,
+    caller,
   });
 }
 

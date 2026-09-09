@@ -30,7 +30,7 @@ RPC envelope, not a function library, so packaging early is rework.
 - `PluginBlockPanel` — a block can be a panel, not only a fence in a note
   (`683dc215a`).
 
-## Step 1 — the identity seam
+## Step 1 — the identity seam — landed
 
 **The problem.** `POST /api/plugins/command` reads `name` and `args` and
 dispatches. No caller identity, no scoping. Today the only caller is the app,
@@ -58,7 +58,8 @@ plugin. The `?key=` narrowing is a courtesy to the caller, not a boundary.
    consumer on the day it landed.
 
 **Widen the step beyond the two obvious routes.** `routes/plugin.rs` exposes
-six plugin routes, and command invocation is not the largest hole:
+nine routes — not six, as this first said — and command invocation is not the
+largest hole:
 
 | Route | Why it matters |
 |---|---|
@@ -103,6 +104,31 @@ case. Say that in the code, or someone will later believe it is a gate.
 still work because they declare `app`; and a block asking for another plugin's
 command is refused. Red-proof each by deletion — the omission case is the one
 the first draft could not observe.
+
+### What landed, and three corrections
+
+`routes/plugin_caller.rs` holds the identity: `App`, `Plugin(name)`, or an
+extractor rejection for absent. Six routes take it — `command` and `option`
+compare against the owning plugin, the three lifecycle routes are `app`-only,
+and `publications` narrows a plugin caller to its own rows. `api.ts` sends
+`X-Crucible-Plugin` on every request, defaulting to `app`; `usePublication` and
+`KanbanBlock` send the plugin the block draws for instead.
+
+**The TUI was never a caller here.** `chat_runner/actions.rs` calls
+`DaemonClient::connect()` and speaks JSON-RPC to the daemon directly — it does
+not pass through `crucible-web` at all, so it needed no change and could not
+have been broken by this step. The daemon's own RPC surface has no caller
+identity of any kind; it is protected by the per-uid 0700 socket and nothing
+else. Anything wanting a plugin identity *there* is a separate piece of work.
+
+**`GET /api/plugins/events` cannot carry this header.** Browsers open it with
+`EventSource`, which sets no headers — the same constraint that made the auth
+cookie HttpOnly rather than a bearer header. The push stream stays ungated, so
+a block learns *that* another plugin republished, though not what it published.
+
+**`GET /api/plugins`, `/commands` and `/options` stay ungated** for now: they
+are enumerations the plugins panel needs whole, and gating them buys nothing
+while a block can call itself `app`.
 
 ## Step 2 — Graph as the forcing function
 

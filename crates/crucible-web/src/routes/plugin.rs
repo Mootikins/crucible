@@ -1,3 +1,4 @@
+use crate::routes::plugin_caller::PluginCaller;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -13,6 +14,21 @@ use serde::Deserialize;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
 
+/// The ten plugin endpoints, six of which take a caller identity and four of
+/// which do not.
+///
+/// Gated by [`PluginCaller`]: `POST /api/plugins` (install), `DELETE
+/// /api/plugins/{name}`, `POST /api/plugins/{name}/reload` — app only; `POST
+/// /api/plugins/{name}/option` and `POST /api/plugins/command` — the app, or
+/// the plugin that owns the thing; `GET /api/plugins/publications` — narrowed
+/// to the caller's own.
+///
+/// Ungated, and each for a reason worth knowing before you "finish the job":
+/// `GET /api/plugins`, `/commands` and `/options` are enumerations the plugins
+/// panel needs and no route rewrites, so gating them buys nothing while a
+/// block can call itself `app`. `GET /api/plugins/events` **cannot** be gated
+/// this way at all: browsers open it with `EventSource`, which sets no
+/// headers. An identity for the push stream needs a different carrier.
 pub fn plugin_routes() -> Router<AppState> {
     Router::new()
         .route("/api/plugins", get(list_plugins).post(install_plugin))
@@ -77,10 +93,41 @@ async fn list_plugins(State(state): State<AppState>) -> Result<Json<serde_json::
 /// second isolating plugin would not have appeared at all.
 async fn list_publications(
     State(state): State<AppState>,
+    caller: PluginCaller,
     Query(q): Query<PublicationsQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     let publications = state.daemon.plugin_publications(q.key).await.daemon_err()?;
-    Ok(Json(serde_json::json!({ "publications": publications })))
+    Ok(Json(
+        serde_json::json!({ "publications": narrow_to_caller(publications, &caller) }),
+    ))
+}
+
+/// Keep only what the caller may see: everything for the app, a plugin's own
+/// rows for a plugin.
+///
+/// Narrowing rather than refusing, because `?key=` is a courtesy and this is
+/// the boundary the courtesy stands in for. The answer is keyed `key -> plugin
+/// -> value`, so a plugin's own rows are the inner entries under its name; a
+/// key left with nothing under it is dropped rather than answered as empty.
+///
+/// `PluginBlockPanel` reads every plugin's publications with no key and is the
+/// app, so it passes through here untouched. Narrow the app too and that panel
+/// goes blank.
+fn narrow_to_caller(publications: serde_json::Value, caller: &PluginCaller) -> serde_json::Value {
+    let PluginCaller::Plugin(plugin) = caller else {
+        return publications;
+    };
+    let serde_json::Value::Object(keys) = publications else {
+        return publications;
+    };
+    let mine = keys
+        .into_iter()
+        .filter_map(|(key, by_plugin)| {
+            let value = by_plugin.get(plugin.as_str())?.clone();
+            Some((key, serde_json::json!({ plugin.as_str(): value })))
+        })
+        .collect::<serde_json::Map<_, _>>();
+    serde_json::Value::Object(mine)
 }
 
 /// `GET /api/plugins/commands` — the executable primitives plugins declared.
@@ -127,8 +174,12 @@ async fn list_options(State(state): State<AppState>) -> Result<Json<serde_json::
 async fn option_call(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    caller: PluginCaller,
     Json(req): Json<OptionRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    // `{name}` is caller-supplied, so without this a block reads and writes
+    // any plugin's settings tree by naming it.
+    caller.require_speaks_for(&name, "read or write the settings")?;
     if req.path.is_empty() {
         return Err(WebError::Validation(
             "`path` must name an option".to_string(),
@@ -203,6 +254,7 @@ async fn publication_event_stream(
 /// only today's plugins could send.
 async fn run_command(
     State(state): State<AppState>,
+    caller: PluginCaller,
     Json(req): Json<CommandRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     if req.name.trim().is_empty() {
@@ -210,6 +262,7 @@ async fn run_command(
             "`name` must name a command".to_string(),
         ));
     }
+    refuse_another_plugins_command(&state, &caller, &req.name).await?;
     let result = state
         .daemon
         .plugin_run_command(&req.name, req.args)
@@ -218,12 +271,45 @@ async fn run_command(
     Ok(Json(result))
 }
 
+/// A caller drawing for plugin X may invoke only X's commands.
+///
+/// The owning plugin is already on every entry `plugin.commands` returns, so
+/// this is a comparison rather than a second registry — but it costs one extra
+/// daemon round trip per invocation, which is why the app skips it.
+///
+/// A command nobody owns is refused too. An unknown name from a plugin caller
+/// cannot be attributed, and "cannot attribute" is the same answer as "not
+/// yours" — the alternative leaks which command names exist by their error.
+async fn refuse_another_plugins_command(
+    state: &AppState,
+    caller: &PluginCaller,
+    command: &str,
+) -> Result<(), WebError> {
+    let PluginCaller::Plugin(plugin) = caller else {
+        return Ok(());
+    };
+    let commands = state.daemon.plugin_commands().await.daemon_err()?;
+    let owner = commands
+        .iter()
+        .find(|c| c.get("name").and_then(serde_json::Value::as_str) == Some(command))
+        .and_then(|c| c.get("plugin").and_then(serde_json::Value::as_str));
+
+    match owner {
+        Some(owner) if owner == plugin => Ok(()),
+        _ => Err(WebError::Forbidden(format!(
+            "`{command}` is not a command of plugin `{plugin}`"
+        ))),
+    }
+}
+
 /// `POST /api/plugins/:name/reload` — reload a plugin by name.
 /// Returns the daemon's reload response (counts of tools, commands, etc.).
 async fn reload_plugin(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    caller: PluginCaller,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    caller.require_app("reload a plugin")?;
     let result = state.daemon.plugin_reload(&name).await.daemon_err()?;
     Ok(Json(result))
 }
@@ -232,8 +318,12 @@ async fn reload_plugin(
 /// in plugins.toml. Synchronous; can take 10+ seconds.
 async fn install_plugin(
     State(state): State<AppState>,
+    caller: PluginCaller,
     Json(req): Json<InstallRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    // The largest of the plugin routes: it clones code from a URL the caller
+    // chose and loads it. Nothing a block draws needs this.
+    caller.require_app("install a plugin")?;
     if req.url.trim().is_empty() {
         return Err(WebError::Validation("plugin URL must not be empty".into()));
     }
@@ -249,8 +339,10 @@ async fn install_plugin(
 async fn remove_plugin(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    caller: PluginCaller,
     Query(query): Query<RemoveQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    caller.require_app("remove a plugin")?;
     let result = state
         .daemon
         .plugin_remove(&name, query.purge)

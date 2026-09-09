@@ -55,12 +55,20 @@ export const KanbanBlock: Component<BlockProps> = (props) => {
 
   const move = async (file: string, to: string) => {
     try {
-      const result = await runPluginCommand('kanban_move', {
-        file,
-        to,
-        folder: props.params.folder,
-        kiln: props.params.kiln,
-      });
+      // Third argument: this block declares itself as the plugin it draws
+      // for, so the route can refuse a block reaching for someone else's
+      // command. It is an assertion, not a proof — see
+      // `routes/plugin_caller.rs`.
+      const result = await runPluginCommand(
+        'kanban_move',
+        {
+          file,
+          to,
+          folder: props.params.folder,
+          kiln: props.params.kiln,
+        },
+        props.plugin,
+      );
       // The plugin republishes on success, which pushes `publication_changed`
       // and re-renders this block. Nothing is applied locally: one description
       // of the board, and the plugin owns it.

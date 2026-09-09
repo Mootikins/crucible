@@ -132,10 +132,17 @@ describe('KanbanBlock', () => {
     folder: 'tickets',
   };
 
-  function stubFetch(onCommand?: (body: unknown) => void) {
+  function stubFetch(
+    onCommand?: (body: unknown) => void,
+    onCaller?: (url: string, caller: string | undefined) => void,
+  ) {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
+        onCaller?.(
+          String(url),
+          (init?.headers as Record<string, string> | undefined)?.['X-Crucible-Plugin'],
+        );
         if (String(url).includes('/api/plugins/command')) {
           onCommand?.(JSON.parse(String(init?.body ?? '{}')));
           return new Response(JSON.stringify({ result: { ok: true } }), {
@@ -179,6 +186,32 @@ describe('KanbanBlock', () => {
     await waitFor(() => expect(sent).toBeTruthy());
     expect(sent.name).toBe('kanban_move');
     expect(sent.args).toMatchObject({ file: 'alpha.md', to: 'doing', folder: 'tickets', kiln: 'k' });
+  });
+
+  // The block declares which plugin it draws for, on the read AND on the
+  // write. Without it the block is indistinguishable from the app and the
+  // route's per-plugin comparison never runs in production — the Rust tests
+  // would still pass, because they send the header by hand.
+  //
+  // Asserted, not proved: `props.plugin` is the fence's first line, so a note
+  // author chose it. See `routes/plugin_caller.rs`.
+  it('declares itself as the plugin it draws for on every call it makes', async () => {
+    const callers = new Map<string, string | undefined>();
+    stubFetch(undefined, (url, caller) => {
+      callers.set(url.includes('/command') ? 'command' : 'publications', caller);
+    });
+    const { container } = render(() => (
+      <KanbanBlock plugin="kanban" block="board" params={{ folder: 'tickets' }} />
+    ));
+    await waitFor(() => expect(container.textContent).toContain('Alpha'));
+    expect(callers.get('publications')).toBe('kanban');
+
+    const card = container.querySelector('[draggable="true"]')!;
+    const columns = container.querySelectorAll('.flex-wrap > div');
+    fireEvent.dragStart(card);
+    fireEvent.drop(columns[1]);
+
+    await waitFor(() => expect(callers.get('command')).toBe('kanban'));
   });
 
   // The plugin republishes and the push re-renders. A component that applied

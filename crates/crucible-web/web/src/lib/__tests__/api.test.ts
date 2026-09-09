@@ -16,6 +16,10 @@ import {
   searchSessions,
   listModels,
   getConfig,
+  getPluginPublications,
+  runPluginCommand,
+  PLUGIN_CALLER_HEADER,
+  APP_CALLER,
   getTargetProviders,
   getProviderTargets,
   getSessionStatus,
@@ -1739,5 +1743,62 @@ describe('executeShell', () => {
     await vi.waitFor(() => expect(done).toBe(true));
     expect(events).toEqual([{ type: 'error', message: 'No response body' }]);
     expect(done).toBe(true);
+  });
+});
+
+
+// =============================================================================
+// The caller-identity header
+// =============================================================================
+//
+// The server refuses a plugin-route request that names nobody, so a call site
+// that stops sending this stops working. It is NOT a credential: any script on
+// this origin can set it. See `routes/plugin_caller.rs`.
+
+function callerOf(mockFetch: ReturnType<typeof createMockFetch>): string | undefined {
+  const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+  return (init?.headers as Record<string, string> | undefined)?.[PLUGIN_CALLER_HEADER];
+}
+
+describe('caller identity', () => {
+  it('rides on every request as the app by default', async () => {
+    const mockFetch = createMockFetch({ 'GET /api/config': { body: { kiln_path: '/k' } } });
+    global.fetch = mockFetch;
+
+    await getConfig();
+
+    expect(callerOf(mockFetch)).toBe(APP_CALLER);
+  });
+
+  it('carries the plugin a block declares, not the app', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/plugins/command': { body: { ok: true } } });
+    global.fetch = mockFetch;
+
+    await runPluginCommand('kanban_move', {}, 'kanban');
+
+    expect(callerOf(mockFetch)).toBe('kanban');
+  });
+
+  it('keeps the caller alongside a body content type rather than replacing it', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/plugins/command': { body: {} } });
+    global.fetch = mockFetch;
+
+    await runPluginCommand('kanban_move', {}, 'kanban');
+
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = init?.headers as Record<string, string>;
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers[PLUGIN_CALLER_HEADER]).toBe('kanban');
+  });
+
+  it('reads publications as the plugin when a block asks', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/plugins/publications': { body: { publications: {} } },
+    });
+    global.fetch = mockFetch;
+
+    await getPluginPublications('kanban:board', 'kanban');
+
+    expect(callerOf(mockFetch)).toBe('kanban');
   });
 });
