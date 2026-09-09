@@ -706,6 +706,7 @@ mod shipped_plugin_tests {
     #[test_case("consolidation")]
     #[test_case("daily-notes")]
     #[test_case("discord")]
+    #[test_case("graph")]
     #[test_case("oci")]
     #[test_case("reflection")]
     #[test_case("retrieval-lab")]

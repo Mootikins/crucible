@@ -168,6 +168,55 @@ Graph is the right one:
 user-chosen depth, and the latency of a per-move RPC on a large kiln is
 measured and written down — including if it is unacceptable.
 
+### Built, and the number
+
+`runtime/plugins/graph/` exposes `graph_neighborhood` as a command (and as a
+tool). `crucible-web/web/src/components/blocks/GraphBlock.tsx` invokes it for
+the focused note and re-invokes it on every move of a depth slider.
+`GraphPanel` is untouched.
+
+Two kilns, measured over the daemon socket (`plugin.run_command`), median of
+ten calls after two warm-ups, on a debug build:
+
+| Kiln | Notes | Edges | Whole graph, once | depth 1 | depth 2 | depth 3 | depth 4 |
+|---|---|---|---|---|---|---|---|
+| `docs/` | 138 | 670 (661 resolved) | 9 ms / 80 KiB | 4.7 ms | 9.7 ms | 14.4 ms | 20.1 ms |
+| synthetic | 2 000 | 11 996 | 137 ms / 1 009 KiB | 80 ms | 160 ms | 260 ms | 325 ms |
+
+**The verdict is: for a read this shape, the command is the wrong side of the
+wire, and the reason is not the wire.** On the 2 000-note kiln one depth-1
+move costs 80 ms — 58% of what fetching the *entire* graph costs, and it is
+paid again on the next move, while the whole-graph fetch is paid once and
+answers every move afterwards in the browser for free. The 1 009 KiB the
+reduction saves is real; the daemon work it saves is zero.
+
+**Why.** `cru.kiln.neighbors` is not a neighbourhood *query*. It reads the
+whole scoped note list plus the whole `graph_links` table and then walks a BFS
+in Rust (`crucible-lua/src/vault/mod.rs`, `storage/scoped_links.rs`). So a
+neighbourhood costs a full graph scan, and the per-hop growth in the table is
+that scan repeated: hop distance is only obtainable by asking once per hop,
+because the primitive attaches no distance to what it returns.
+
+**What it wants instead**, in the order the cost argues for:
+
+1. **A neighbourhood the store can answer** — a recursive CTE over the link
+   table, returning `(path, hops)`. That collapses `depth` scans into one
+   indexed query and is the only change that makes the per-move shape
+   defensible. Until it exists, the reduction is a transport reduction wearing
+   the name of a storage one.
+2. **A bulk edge read in `cru.kiln`.** There is none, so the block draws rings
+   rather than edges: `outlinks(path)` answers for one note and re-scans the
+   whole graph doing it, making an edge view N full scans.
+3. **Failing both, do not put this behind a per-move RPC.** Fetch once, walk in
+   the browser — which is what `GraphPanel` already does, and why keeping it
+   was right.
+
+The step still earned its keep: the command path itself is fine. `POST
+/api/plugins/command` → `plugin.run_command` → Luau round-trips in single-digit
+milliseconds on the small kiln, so the envelope is not the cost. The cost is
+the primitive underneath it, and that is a storage change, not a plugin-API
+one.
+
 ## Step 3 — mark reads, and type the parameters
 
 Both come from the same place and should land together.
