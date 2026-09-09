@@ -130,92 +130,59 @@ a block learns *that* another plugin republished, though not what it published.
 are enumerations the plugins panel needs whole, and gating them buys nothing
 while a block can call itself `app`.
 
-## Step 2 — Graph as the forcing function
+## Step 2 — Graph, built and measured. Verdict: negative.
 
-**Changed from Backlinks by review, and the review is right.** Backlinks fails
-on its own merits: `GET /api/backlinks` already serves it richly (`title`,
-`abs_path`, `span_start`), `cru.kiln.backlinks` returns only `{ string }` from
-an exact path, and the panel additionally **writes into the open editor
-buffer** — `applySuggestion` calls `updateFileContent`, a channel no daemon
-endpoint and no plugin command provides and no sandboxed block could reach. So
-"keep the panel until the block reaches parity" concealed a reimplementation of
-the link index plus an editor-write channel that does not exist. It would also
-have taught the wrong lesson: the block would be slower and poorer, and the
-plan's "including if it is worse" would have read as a verdict on parameterised
-reads rather than on choosing a consumer the daemon already serves.
+**Done, and the answer is that a parameterised read must not sit behind a
+per-move RPC while the storage primitive underneath it is a full scan.**
 
-Graph is the right one:
+Built: `runtime/plugins/graph/` exposing `graph_neighborhood` as a command, and
+`GraphBlock.tsx` driving it from the focused note and a depth slider.
+`GraphPanel` untouched.
 
-- `GET /api/kiln/graph` returns the **whole** edge list and `GraphPanel`
-  traverses it in the browser. There is no neighbourhood endpoint anywhere —
-  verified.
-- `cru.kiln.neighbors(path, depth)` is scope-filtered per hop and cycle-safe,
-  and is reachable only from Lua. The claim the plan misapplied to backlinks is
-  true here.
-- The argument is one the **user moves**: the focused note, plus a depth
-  control the user turns.
-- It has no editor-write leg, so parity is a rendering question rather than a
-  rewrite.
-- Its cost is size — which is the point. A per-move read over RPC on a large
-  kiln is exactly the latency answer this plan says it wants.
+### The measurement
 
-1. A `graph` plugin in Luau exposing a read-only command over
-   `cru.kiln.neighbors`.
-2. A `GraphBlock` in TS that invokes it as the focused note and depth change.
-3. Keep `GraphPanel` until the block reaches parity.
+Median of 10 calls after 2 warm-ups, debug build, over the daemon socket:
 
-**Done when:** the block renders a real neighbourhood for the focused note at a
-user-chosen depth, and the latency of a per-move RPC on a large kiln is
-measured and written down — including if it is unacceptable.
-
-### Built, and the number
-
-`runtime/plugins/graph/` exposes `graph_neighborhood` as a command (and as a
-tool). `crucible-web/web/src/components/blocks/GraphBlock.tsx` invokes it for
-the focused note and re-invokes it on every move of a depth slider.
-`GraphPanel` is untouched.
-
-Two kilns, measured over the daemon socket (`plugin.run_command`), median of
-ten calls after two warm-ups, on a debug build:
-
-| Kiln | Notes | Edges | Whole graph, once | depth 1 | depth 2 | depth 3 | depth 4 |
+| Kiln | Notes | Edges | Whole graph, once | d1 | d2 | d3 | d4 |
 |---|---|---|---|---|---|---|---|
-| `docs/` | 138 | 670 (661 resolved) | 9 ms / 80 KiB | 4.7 ms | 9.7 ms | 14.4 ms | 20.1 ms |
-| synthetic | 2 000 | 11 996 | 137 ms / 1 009 KiB | 80 ms | 160 ms | 260 ms | 325 ms |
+| `docs/` | 138 | 670 | 9 ms | 4.7 ms | 9.7 ms | 14.4 ms | 20.1 ms |
+| synthetic | 2 000 | 11 996 | 137 ms | 80 ms | 160 ms | 260 ms | 325 ms |
 
-**The verdict is: for a read this shape, the command is the wrong side of the
-wire, and the reason is not the wire.** On the 2 000-note kiln one depth-1
-move costs 80 ms — 58% of what fetching the *entire* graph costs, and it is
-paid again on the next move, while the whole-graph fetch is paid once and
-answers every move afterwards in the browser for free. The 1 009 KiB the
-reduction saves is real; the daemon work it saves is zero.
+A single depth-1 move on the 2 000-note kiln costs **58% of fetching the entire
+graph** — and is paid again on every move, where the whole-graph fetch is paid
+once and answers every later move in the browser for free.
 
-**Why.** `cru.kiln.neighbors` is not a neighbourhood *query*. It reads the
-whole scoped note list plus the whole `graph_links` table and then walks a BFS
-in Rust (`crucible-lua/src/vault/mod.rs`, `storage/scoped_links.rs`). So a
-neighbourhood costs a full graph scan, and the per-hop growth in the table is
-that scan repeated: hop distance is only obtainable by asking once per hop,
-because the primitive attaches no distance to what it returns.
+### Why, precisely
 
-**What it wants instead**, in the order the cost argues for:
+The cause is under the command, not in it. `scoped_neighbors` calls
+`visible_paths` and `store.graph_links()` — the whole scoped note list and the
+whole link table — on **every invocation**. So the reduction saves a megabyte on
+the wire and saves the daemon nothing.
+
+One refinement on how this was first reported: `neighbors` does *one* scan per
+call, not one per hop; its own comment says reading the table once "is what
+keeps the walk to a single `graph_links` read". The `depth` multiplier comes
+from the *plugin* calling it once per hop, which it must do because the
+primitive returns a flat set with no hop distance attached. The verdict does not
+depend on that multiplier — at depth 1, a single scan, it is already 58%.
+
+### What this does not overturn
+
+The contract's "reduce where the data is" rule holds as written. This read
+simply has no storage primitive that honours it. What it wants, in cost order:
 
 1. **A neighbourhood the store can answer** — a recursive CTE over the link
-   table, returning `(path, hops)`. That collapses `depth` scans into one
-   indexed query and is the only change that makes the per-move shape
-   defensible. Until it exists, the reduction is a transport reduction wearing
-   the name of a storage one.
-2. **A bulk edge read in `cru.kiln`.** There is none, so the block draws rings
-   rather than edges: `outlinks(path)` answers for one note and re-scans the
-   whole graph doing it, making an edge view N full scans.
+   table returning `(path, hops)`. One indexed query instead of a scan, and the
+   only change that makes a per-move read defensible.
+2. **A bulk edge read in `cru.kiln`.** There is none, so no block can draw edges
+   at all: `outlinks` answers for one note and rescans to do it, making edges
+   among N notes cost N scans. The graph block ships rings without edges for
+   this reason.
 3. **Failing both, do not put this behind a per-move RPC.** Fetch once, walk in
-   the browser — which is what `GraphPanel` already does, and why keeping it
-   was right.
+   the browser — which is what `GraphPanel` already does. Keeping it was right.
 
-The step still earned its keep: the command path itself is fine. `POST
-/api/plugins/command` → `plugin.run_command` → Luau round-trips in single-digit
-milliseconds on the small kiln, so the envelope is not the cost. The cost is
-the primitive underneath it, and that is a storage change, not a plugin-API
-one.
+**This is a storage change, not a plugin-API one.** It should be sequenced on
+its own rather than folded into the plugin work.
 
 ## Step 3 — mark reads, and type the parameters
 
