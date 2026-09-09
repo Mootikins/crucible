@@ -232,10 +232,22 @@ function sanitizeHtml(value: string): string {
     // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
     // marks code-block copy buttons for the reading-view click delegate.
     // `data-callout` carries the admonition kind through to the CSS.
+    // `data-oil-*` names which plugin view an ```oil fence mounts. They are
+    // three inert strings read back by mountOilViews; the daemon decides what
+    // a plugin/view pair may do, so a hand-authored fence naming one it should
+    // not reach is refused there, not here.
     // `style` is NOT listed: DOMPurify allows it by default and listing it here
     // read as a decision to permit arbitrary inline CSS. What actually governs
     // it is filterInlineCss.
-    ADD_ATTR: ['data-note', 'data-copy', 'data-callout', 'align'],
+    ADD_ATTR: [
+      'data-note',
+      'data-copy',
+      'data-callout',
+      'align',
+      'data-oil-plugin',
+      'data-oil-view',
+      'data-oil-params',
+    ],
     // `style`: DOMPurify empties a bare `<style>` (FORBID_CONTENTS) but keeps
     // one nested in `<svg>` intact — and an SVG `<style>` inside an HTML
     // document is NOT scoped to the SVG, its rules apply to the whole page.
@@ -420,6 +432,16 @@ async function highlightCodeBlocks(
       continue;
     }
 
+    // An ```oil fence names a plugin view. It is not rendered here: unlike
+    // mermaid, which produces an inert SVG, a view is live and interactive, so
+    // it needs a real component rather than a second string pass. Emit a mount
+    // point that survives DOMPurify and let mountOilViews (which runs against
+    // the DOM, after sanitizing) put a component in it.
+    if (language === 'oil') {
+      result += oilMountHtml(decodeHtml(encodedCode));
+      continue;
+    }
+
     const source = decodeHtml(encodedCode);
     let block: string;
     try {
@@ -450,6 +472,54 @@ async function highlightCodeBlocks(
 export async function renderMermaidDiagram(code: string): Promise<string | null> {
   const svg = await renderMermaid(code);
   return svg ? sanitizeMermaidSvg(svg) : null;
+}
+
+/**
+ * Parse an ```oil fence into a mount point.
+ *
+ * The body is deliberately tiny — `plugin/view` on the first line, optional
+ * JSON params after it:
+ *
+ * ```oil
+ * kanban/board
+ * { "folder": "tickets" }
+ * ```
+ *
+ * A fence is a thing a person types into a note by hand, so the common case is
+ * one line. Anything richer belongs in the plugin, not in the fence: the note
+ * says WHICH view, and the plugin says what it looks like. That split is the
+ * whole point — a note that carried the layout would be a note that rots when
+ * the plugin changes.
+ *
+ * A malformed fence renders as a visible error, never as nothing.
+ */
+export function oilMountHtml(source: string): string {
+  const lines = source.trim().split('\n');
+  const target = (lines[0] ?? '').trim();
+  const slash = target.indexOf('/');
+  if (slash <= 0 || slash === target.length - 1) {
+    return `<pre class="oil-error"><code>${escapeHtml(
+      `oil: first line must be "plugin/view", got ${JSON.stringify(target)}`,
+    )}</code></pre>`;
+  }
+  const plugin = target.slice(0, slash);
+  const view = target.slice(slash + 1);
+
+  const rest = lines.slice(1).join('\n').trim();
+  let params = '{}';
+  if (rest.length > 0) {
+    try {
+      params = JSON.stringify(JSON.parse(rest));
+    } catch {
+      return `<pre class="oil-error"><code>${escapeHtml(
+        'oil: params after the first line must be JSON',
+      )}</code></pre>`;
+    }
+  }
+
+  return `<div class="oil-mount" data-oil-plugin="${escapeHtml(plugin)}" data-oil-view="${escapeHtml(
+    view,
+  )}" data-oil-params="${escapeHtml(params)}"></div>`;
 }
 
 /** Placeholder emitted by {@link highlightCodeBlocks} for a ```mermaid fence;

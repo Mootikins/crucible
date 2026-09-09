@@ -34,7 +34,7 @@ tokio = { version = "1", features = ["fs", "rt", "process", "time"] }
 crucible-core = { path = "../crucible-core" }
 
 # Oil TUI framework for Lua UI building
-crucible-oil = { path = "../crucible-oil", default-features = false }
+crucible-oil = { path = "../crucible-oil", default-features = false, features = ["serde"] }
 
 # XDG config directories
 dirs = "6"

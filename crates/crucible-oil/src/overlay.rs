@@ -96,6 +96,7 @@ fn collect_overlays(node: &Node, overlays: &mut Vec<OverlayNode>) {
         Node::Fragment(children) | Node::Slot { children, .. } => {
             children.iter().for_each(|c| collect_overlays(c, overlays))
         }
+        Node::Action(a) => collect_overlays(&a.child, overlays),
         _ => {}
     }
 }

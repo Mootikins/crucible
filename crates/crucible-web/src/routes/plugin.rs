@@ -16,6 +16,7 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins/publications", get(list_publications))
         .route("/api/plugins/options", get(list_options))
         .route("/api/plugins/{name}/option", post(option_call))
+        .route("/api/plugins/{name}/view/{view}", post(view_call))
         .route("/api/plugins/command", post(run_command))
 }
 
@@ -124,6 +125,41 @@ async fn option_call(
             Ok(Json(serde_json::json!({ "ok": true })))
         }
     }
+}
+
+/// One render of, or one action against, a plugin view.
+///
+/// `action` absent means render only. Both answers are the same shape — a
+/// node tree — because a client that acted needs the new state and must not
+/// have a second, separately-computed description of it.
+#[derive(Debug, Deserialize)]
+struct ViewRequest {
+    #[serde(default)]
+    params: serde_json::Value,
+    #[serde(default)]
+    action: Option<String>,
+}
+
+/// `POST /api/plugins/:name/view/:view` — an Oil tree from a plugin.
+///
+/// POST rather than GET even for a pure render: `params` is a plugin's own
+/// vocabulary and can be any JSON, which a query string cannot carry without
+/// this route inventing an encoding for it.
+///
+/// Passed through verbatim, exactly as `list_options` is. Nothing here knows
+/// what a node means — `{"box": {...}}`, `{"text": {...}}` — so a plugin that
+/// ships a new view needs no change on this side.
+async fn view_call(
+    State(state): State<AppState>,
+    Path((name, view)): Path<(String, String)>,
+    Json(req): Json<ViewRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let node = state
+        .daemon
+        .plugin_view(&name, &view, req.params, req.action)
+        .await
+        .daemon_err()?;
+    Ok(Json(serde_json::json!({ "node": node })))
 }
 
 /// `POST /api/plugins/command` — invoke a plugin command by name.

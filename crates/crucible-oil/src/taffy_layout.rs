@@ -120,6 +120,13 @@ impl LayoutEngine {
                 return self.build_node(&overlay.child, available_width);
             }
 
+            // Transparent to layout: an action target occupies exactly the
+            // space its child does, so a terminal frame is unchanged by
+            // whether a node is clickable in some other frontend.
+            Node::Action(a) => {
+                return self.build_node(&a.child, available_width);
+            }
+
             Node::Raw(raw) => {
                 self.new_leaf_size(raw.display_width as f32, raw.display_height as f32)
             }
@@ -436,6 +443,8 @@ impl LayoutEngine {
                 // Overlay child is laid out for standalone rendering
                 self.node_to_layout_box(&overlay.child, taffy_id, offset_x, offset_y)
             }
+
+            Node::Action(a) => self.node_to_layout_box(&a.child, taffy_id, offset_x, offset_y),
 
             Node::Raw(raw) => LayoutBox::new(
                 rect,

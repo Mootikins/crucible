@@ -7,14 +7,15 @@ use crate::host_registry::{LuauValue, Ns};
 use crate::signature::LuaType;
 use crucible_oil::template::html_to_node;
 use crucible_oil::{
-    badge, bullet_list, divider, fragment, if_else, key_value, numbered_list, popup, popup_item,
-    progress_bar, spacer, spinner, styled, text, text_input, when, Border, BoxNode, Direction, Gap,
-    Node, Padding, Style,
+    action, badge, bullet_list, divider, fragment, if_else, key_value, numbered_list, popup,
+    popup_item, progress_bar, spacer, spinner, styled, text, text_input, when, Border, BoxNode,
+    Direction, Gap, Node, Padding, Style,
 };
 use mlua::{
     FromLua, Function, Lua, MultiValue, Result as LuaResult, Table, UserData, UserDataMethods,
     Value,
 };
+use std::collections::BTreeMap;
 
 /// Pure conversions from Lua values to crucible_oil primitives.
 ///
@@ -298,6 +299,30 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
 
     oil.func("spacer", "() -> OilNode", |_, ()| Ok(LuaNode(spacer())))?;
+
+    // The one node that carries behaviour rather than appearance. See
+    // `crucible_oil::Node::Action` for why activation is declared on the tree
+    // instead of registered beside it, as TUI focus is.
+    //
+    // `params` is string-to-string. A view dispatches an identifier back to
+    // its own plugin, and widening it to arbitrary JSON would put a second
+    // serialization contract in the node vocabulary for no case yet seen.
+    oil.func(
+        "action",
+        &format!("(action: string, params: {{ [string]: string }}?, child: {NODE_ARG}) -> OilNode"),
+        |_, (name, params, child): (String, Option<Table>, Value)| {
+            let child = parse::extract_node(child).ok_or_else(|| {
+                mlua::Error::RuntimeError(
+                    "oil.action: third argument must be a node or a string".to_string(),
+                )
+            })?;
+            let params: BTreeMap<String, String> = match params {
+                Some(t) => t.pairs::<String, String>().filter_map(Result::ok).collect(),
+                None => BTreeMap::new(),
+            };
+            Ok(LuaNode(action(name, params, child)))
+        },
+    )?;
 
     oil.func(
         "spinner",
@@ -700,7 +725,7 @@ mod tests {
             .into_iter()
             .filter(|path| path.starts_with("cru.oil."))
             .collect();
-        assert_eq!(paths.len(), 21, "every cru.oil function must be declared");
+        assert_eq!(paths.len(), 22, "every cru.oil function must be declared");
 
         // `export` is for a definitions file; a plain chunk takes the aliases
         // bare, and the parser is the same either way.

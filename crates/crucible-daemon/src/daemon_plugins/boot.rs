@@ -20,7 +20,8 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crucible_lua::{
-    register_options_module, register_publish_module, OptionsRegistry, PublicationRegistry,
+    register_options_module, register_publish_module, register_views_module, OptionsRegistry,
+    PublicationRegistry, ViewRegistry,
 };
 
 use super::{daemon_plugin_paths, DaemonPluginLoader};
@@ -275,7 +276,14 @@ pub async fn evaluate_boot_config_with_paths(
         let modules = loader.executor().modules().clone();
         let plugin_dirs = plugin_paths(&seed_rtp);
         seed_boot_search_path(lua, &modules, &config_root, &plugin_dirs)?;
-        install_boot_hook(&modules, loader.publications(), loader.options());
+        install_boot_hook(
+            &modules,
+            PluginBindings {
+                publications: loader.publications(),
+                options: loader.options(),
+                views: loader.views(),
+            },
+        );
         // The UI namespaces must exist on the VM that evaluates the user's
         // file, or `cru.colorscheme.setup{...}` is an index-nil error.
         crucible_lua::config::register_ui_namespaces(lua)?;
@@ -543,11 +551,37 @@ fn refresh_plugin_dirs(
 /// plugin's nested `require` therefore cannot rebind the publish attribution
 /// away from the outer plugin. A user module that shadows a plugin module is
 /// logged on the way past.
-fn install_boot_hook(
-    modules: &ModuleRegistry,
-    publications: PublicationRegistry,
-    options: OptionsRegistry,
-) {
+/// The three registries a plugin's own bindings are attributed to.
+///
+/// Grouped because they always travel together and always name the same
+/// plugin: `publish`, `options` and `views` are one concept — what THIS plugin
+/// contributes — split across three stores. Passing them as three arguments
+/// made the loader's signature grow by one every time a fourth kind of
+/// contribution appeared.
+#[derive(Clone)]
+pub(crate) struct PluginBindings {
+    pub publications: PublicationRegistry,
+    pub options: OptionsRegistry,
+    pub views: ViewRegistry,
+}
+
+impl PluginBindings {
+    /// Release this plugin's previous contributions and rebind all three to it.
+    ///
+    /// Release-then-bind, in that order and together: a reload's new closures
+    /// must not sit beside the old version's state, and doing it per registry
+    /// at three call sites is how one of them gets forgotten.
+    fn rebind(&self, lua: &Lua, plugin: &str) -> mlua::Result<()> {
+        self.publications.release_plugin(plugin);
+        register_publish_module(lua, self.publications.clone(), plugin.to_string())?;
+        self.options.release_plugin(plugin);
+        register_options_module(lua, self.options.clone(), plugin.to_string())?;
+        self.views.release_plugin(plugin);
+        register_views_module(lua, self.views.clone(), plugin.to_string())
+    }
+}
+
+fn install_boot_hook(modules: &ModuleRegistry, bindings: PluginBindings) {
     let hook_modules = modules.clone();
     modules.set_load_hook(Some(Arc::new(
         move |lua: &Lua, request: &ModuleRequest| -> Option<mlua::Result<Value>> {
@@ -576,8 +610,7 @@ fn install_boot_hook(
                 &plugin,
                 &request.path,
                 &request.name,
-                &publications,
-                &options,
+                &bindings,
             ))
         },
     )));
@@ -591,8 +624,7 @@ fn boot_load_plugin_module(
     plugin: &str,
     file: &Path,
     module_name: &str,
-    publications: &PublicationRegistry,
-    options: &OptionsRegistry,
+    bindings: &PluginBindings,
 ) -> mlua::Result<Value> {
     let source = std::fs::read_to_string(file)
         .map_err(|e| mlua::Error::RuntimeError(format!("read {}: {e}", file.display())))?;
@@ -601,10 +633,7 @@ fn boot_load_plugin_module(
     // its body runs, exactly as activation does — a shipped plugin publishes
     // its channel from its body, and an unbound publish would error the
     // user's `require`.
-    publications.release_plugin(plugin);
-    register_publish_module(lua, publications.clone(), plugin.to_string())?;
-    options.release_plugin(plugin);
-    register_options_module(lua, options.clone(), plugin.to_string())?;
+    bindings.rebind(lua, plugin)?;
 
     // The plugin's own `lua/` dir is resolvable for the duration of this
     // load, exactly as activation makes it — so an entry module's own

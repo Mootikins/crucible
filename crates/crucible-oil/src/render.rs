@@ -126,6 +126,7 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
             }
         }
         Node::Overlay(o) => render_node_plain_text(&o.child, width, output),
+        Node::Action(a) => render_node_plain_text(&a.child, width, output),
         other => {
             let rendered = render_to_string(other, width);
             output.push_str(&strip_ansi(&rendered).replace('\r', ""));

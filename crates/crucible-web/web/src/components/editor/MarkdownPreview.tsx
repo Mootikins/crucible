@@ -4,7 +4,8 @@
  * (wikilinks become `data-note` anchors), so previewed wikilinks get the
  * app-wide hover cards and click-to-open for free.
  */
-import { Component, createEffect, createResource } from 'solid-js';
+import { Component, createEffect, createResource, onCleanup } from 'solid-js';
+import { mountOilViews } from '@/components/oil/mount';
 import { renderMarkdownDocAsync, proseClass } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
@@ -57,6 +58,23 @@ export const MarkdownPreview: Component<{
   const handleClick = makeMarkdownClickHandler();
 
   let scrollHost: HTMLDivElement | undefined;
+  let proseHost: HTMLDivElement | undefined;
+
+  // Put a live component into every ```oil placeholder once the HTML lands.
+  // Re-runs whenever the rendered HTML changes, and disposes the previous
+  // islands first: `innerHTML` replaces the nodes those roots were mounted on,
+  // so without the disposer their effects and pending fetches outlive the DOM
+  // they were drawing into.
+  let disposeOil: (() => void) | undefined;
+  createEffect(() => {
+    const rendered = html();
+    disposeOil?.();
+    disposeOil = undefined;
+    if (rendered === undefined || !proseHost) return;
+    disposeOil = mountOilViews(proseHost);
+  });
+  onCleanup(() => disposeOil?.());
+
   // After the async render lands, jump to the wikilink that points at the
   // requested note (rendered wikilinks carry data-note = raw target text).
   createEffect(() => {
@@ -83,6 +101,7 @@ export const MarkdownPreview: Component<{
       onClick={handleClick}
     >
       <div
+        ref={proseHost}
         class={`${proseClass()} mx-auto`}
         // Readable line length setting; falls back to the classic prose column.
         style={{ 'max-width': props.maxWidth ? `${props.maxWidth}px` : '768px' }}

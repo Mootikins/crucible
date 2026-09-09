@@ -175,6 +175,19 @@ const DECLARED: &[Declared] = &[
         bound_at_load: true,
     },
     Declared {
+        path: "cru.plugin.views",
+        ty: || {
+            function(
+                vec![param(
+                    "views",
+                    LuaType::parse("table<string, any>").expect("well formed"),
+                )],
+                Vec::new(),
+            )
+        },
+        bound_at_load: true,
+    },
+    Declared {
         path: "cru.plugin.options",
         ty: || {
             function(

@@ -54,11 +54,11 @@ pub use focus::{FocusContext, FocusId};
 pub use layout::Rect;
 pub use layout::{build_layout_tree, render_layout_tree, LayoutBox, LayoutContent, LayoutTree};
 pub use node::{
-    badge, bullet_list, col, divider, fixed, flex, fragment, horizontal_rule, if_else, key_value,
-    maybe, numbered_list, overlay_from_bottom, popup, progress_bar, raw, row, show, spacer,
-    spinner, styled, text, text_input, when, BoxNode, Direction, InputNode, Node, OverlayNode,
-    PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, TextNode, DEFAULT_POPUP_BG,
-    DEFAULT_POPUP_SELECTED_BG,
+    action, badge, bullet_list, col, divider, fixed, flex, fragment, horizontal_rule, if_else,
+    key_value, maybe, numbered_list, overlay_from_bottom, popup, progress_bar, raw, row, show,
+    spacer, spinner, styled, text, text_input, when, ActionNode, BoxNode, Direction, InputNode,
+    Node, OverlayNode, PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, TextNode,
+    DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
 };
 pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};

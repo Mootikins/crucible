@@ -1,0 +1,36 @@
+name: kanban
+version: "0.1.0"
+description: A board over a folder of markdown tickets
+author: Crucible Contributors
+license: MIT
+
+main: init.luau
+
+capabilities:
+  - filesystem
+  - kiln
+  # `setup(cfg)` reads the `[plugins.kanban]` section below.
+  - config
+
+exports:
+  tools: []
+  commands: []
+  auto_discover: false
+
+# Documentation of record: `PluginManifest` has no `config` field, so nothing
+# parses this block. `init.luau`'s `setup(cfg)` is what applies these; the
+# defaults are duplicated there because that is where resolution happens.
+config:
+  properties:
+    folder:
+      type: string
+      description: >-
+        Folder of ticket notes. A relative path resolves against the kiln root
+        (falling back to the workspace); an absolute path is used as given.
+      default: "tickets"
+
+keywords:
+  - kanban
+  - board
+  - tickets
+  - views

@@ -71,3 +71,22 @@ pub struct PluginRemoveRequest {
     #[serde(default)]
     pub purge: bool,
 }
+
+/// Request for `plugin.view_render` and `plugin.view_action`.
+///
+/// One type for both because the two differ only by `action`, which the render
+/// call omits. Splitting them would duplicate four fields to save one
+/// `Option`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PluginViewRequest {
+    pub plugin: String,
+    pub view: String,
+    /// Handed to the view's `render` verbatim. The daemon never reads it: a
+    /// view's parameters are its own vocabulary, exactly as a publication's
+    /// values are.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub params: serde_json::Value,
+    /// Present only on `plugin.view_action`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+}

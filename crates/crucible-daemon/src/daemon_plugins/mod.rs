@@ -36,7 +36,7 @@ use crucible_lua::{
     register_ui_module, register_ui_module_with_api, register_vault_module, register_ws_module,
     ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
     LuaScriptHandlerRegistry, LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager,
-    PluginShellPolicy, PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
+    PluginShellPolicy, PluginSource, PluginSpec, PublicationRegistry, StatusRegistry, ViewRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -170,6 +170,10 @@ pub struct DaemonPluginLoader {
     publications: PublicationRegistry,
     /// Settings trees plugins declared, read by TUI and web.
     options: OptionsRegistry,
+    /// Oil view trees plugins declared, read by TUI and web. The same
+    /// describe-and-draw contract as `options`, over the whole node
+    /// vocabulary rather than over the widget kinds a settings form has.
+    views: ViewRegistry,
     /// One notice per plugin configured BOTH ways: a `plugins.<name>` store
     /// section AND a direct `setup` call in init.lua. The direct call owns
     /// the plugin, so the section is ignored — and one layer superseding
@@ -316,6 +320,9 @@ impl DaemonPluginLoader {
         // Bound per plugin at execute time for the same reason `publish` is.
         let options = OptionsRegistry::new();
 
+        // `cru.plugin.views` — bound per plugin at execute time, as options is.
+        let views = ViewRegistry::new();
+
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "cru.on",
@@ -341,6 +348,7 @@ impl DaemonPluginLoader {
             status,
             publications,
             options,
+            views,
             supersession_notices: std::sync::Mutex::new(Vec::new()),
             option_store_dir: None,
         })
@@ -493,6 +501,11 @@ impl DaemonPluginLoader {
     /// Settings trees plugins declared, for the RPC layer.
     pub fn options(&self) -> OptionsRegistry {
         self.options.clone()
+    }
+
+    /// View trees plugins declared, for the RPC layer.
+    pub fn views(&self) -> ViewRegistry {
+        self.views.clone()
     }
 
     /// Register `cru.context.attach` on the plugin VM against the daemon's
@@ -1152,6 +1165,7 @@ impl DaemonPluginLoader {
             // and releasing here would wipe what the body published.
             register_publish_module(lua, self.publications.clone(), name.to_string())?;
             crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
+            crucible_lua::register_views_module(lua, self.views.clone(), name.to_string())?;
 
             // Ownership is keyed by the MODULE name the user required, which
             // is not always the plugin's declared name.
@@ -1202,6 +1216,8 @@ impl DaemonPluginLoader {
         register_publish_module(lua, self.publications.clone(), name.to_string())?;
         self.options.release_plugin(name);
         crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
+        self.views.release_plugin(name);
+        crucible_lua::register_views_module(lua, self.views.clone(), name.to_string())?;
 
         // Read source before entering plugin context so a read failure cannot
         // leave it behind.

@@ -29,6 +29,27 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Render (and optionally act on) one plugin view.
+    pub async fn plugin_view(
+        &self,
+        plugin: &str,
+        view: &str,
+        params: serde_json::Value,
+        action: Option<String>,
+    ) -> anyhow::Result<serde_json::Value> {
+        let (plugin, view) = (plugin.to_string(), view.to_string());
+        self.call_with_reconnect("plugin.view", move |daemon| {
+            let (plugin, view, params, action) =
+                (plugin.clone(), view.clone(), params.clone(), action.clone());
+            Box::pin(async move {
+                daemon
+                    .plugin_view(&plugin, &view, params, action.as_deref())
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn plugin_option_get(
         &self,
         plugin: &str,

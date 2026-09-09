@@ -31,8 +31,39 @@ pub enum Node {
         children: Vec<Node>,
     },
     Overlay(OverlayNode),
+    /// A child made addressable: an activation target a frontend dispatches.
+    ///
+    /// Every other variant describes appearance alone, because a terminal frame
+    /// is a picture and the TUI registers focus imperatively through
+    /// [`crate::focus::FocusContext`]. A tree that crosses to a browser has no
+    /// such side channel — the click must arrive somewhere — so a tree that
+    /// travels declares its activation targets on itself.
+    ///
+    /// A wrapper rather than an `action` field on all ten variants: one variant
+    /// to add, one arm to handle, and a renderer that knows nothing about
+    /// actions still draws the child correctly.
+    Action(ActionNode),
     /// Raw escape sequence passthrough (for protocol-specific content like images)
     Raw(RawNode),
+}
+
+/// See [`Node::Action`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActionNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    pub child: Box<Node>,
+    /// Handed back to the declaring plugin verbatim. Opaque here: this crate
+    /// never interprets it, so a plugin's vocabulary needs no change in Oil.
+    pub action: String,
+    /// Payload carried with the action.
+    ///
+    /// Strings, not a JSON value: it keeps `serde_json` out of a terminal
+    /// renderer's dependency tree, and every payload a view has needed so far
+    /// is an identifier. A `BTreeMap` so the serialized order is stable and a
+    /// snapshot does not flap.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    pub params: std::collections::BTreeMap<String, String>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -259,6 +290,19 @@ pub fn overlay_from_bottom(child: Node, offset: usize) -> Node {
     Node::Overlay(OverlayNode {
         child: Box::new(child),
         anchor: OverlayAnchor::FromBottom(offset),
+    })
+}
+
+/// Wrap `child` so activating it dispatches `action` with `params`.
+pub fn action(
+    action: impl Into<String>,
+    params: impl IntoIterator<Item = (String, String)>,
+    child: Node,
+) -> Node {
+    Node::Action(ActionNode {
+        child: Box::new(child),
+        action: action.into(),
+        params: params.into_iter().collect(),
     })
 }
 

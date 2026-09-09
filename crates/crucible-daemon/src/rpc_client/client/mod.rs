@@ -71,7 +71,7 @@ pub use agent::{
 pub use notifications::{NotificationDismissRequest, NotificationListRequest};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
-    PluginRemoveRequest, PluginRunCommandRequest,
+    PluginRemoveRequest, PluginRunCommandRequest, PluginViewRequest,
 };
 pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest};
 pub use session::{
@@ -865,6 +865,39 @@ impl DaemonClient {
             .get("options")
             .cloned()
             .unwrap_or_else(|| serde_json::json!({})))
+    }
+
+    /// Render one plugin view to a serialized Oil node tree.
+    ///
+    /// `action`, when present, is delivered to the view's `on_action` first —
+    /// so the tree that comes back already reflects it.
+    pub async fn plugin_view(
+        &self,
+        plugin: &str,
+        view: &str,
+        params: serde_json::Value,
+        action: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let method = if action.is_some() {
+            "plugin.view_action"
+        } else {
+            "plugin.view_render"
+        };
+        let result: serde_json::Value = self
+            .typed_call(
+                method,
+                plugin_requests::PluginViewRequest {
+                    plugin: plugin.to_string(),
+                    view: view.to_string(),
+                    params,
+                    action: action.map(str::to_string),
+                },
+            )
+            .await?;
+        Ok(result
+            .get("node")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null))
     }
 
     /// Read one option, by its path through the settings tree.
