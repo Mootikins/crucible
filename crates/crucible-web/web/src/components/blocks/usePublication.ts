@@ -44,7 +44,10 @@ function subscribe(fn: (plugin: string, key: string) => void): () => void {
 
 export function usePublication<T>(plugin: string, key: string): Resource<T | undefined> {
   const [value, { refetch }] = createResource<T | undefined>(async () => {
-    const all = await getPluginPublications();
+    // Narrowed to this key: the route filters daemon-side, so a document with
+    // four blocks in it fetches four small answers rather than four copies of
+    // every plugin's data.
+    const all = await getPluginPublications(key);
     return all[key]?.[plugin] as T | undefined;
   });
 

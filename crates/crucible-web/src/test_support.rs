@@ -621,6 +621,26 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 })
             }
         }
+        // Echoes the `key` it was asked for, so a contract test can prove the
+        // route's `?key=` actually reaches the daemon rather than being
+        // dropped and filtered client-side.
+        "plugin.publications" => {
+            let key = msg
+                .get("params")
+                .and_then(|p| p.get("key"))
+                .and_then(|k| k.as_str());
+            match key {
+                Some(k) => {
+                    json!({ "publications": { k: { "mock-plugin": { "narrowed": true } } } })
+                }
+                None => json!({
+                    "publications": {
+                        "everything": { "mock-plugin": { "narrowed": false } },
+                        "and-more": { "other-plugin": { "narrowed": false } },
+                    }
+                }),
+            }
+        }
         "plugin.list" => json!({
             "plugins": ["mock-plugin"],
             "plugin_info": [{

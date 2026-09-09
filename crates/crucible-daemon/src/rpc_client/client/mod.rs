@@ -835,9 +835,19 @@ impl DaemonClient {
     ///
     /// Values are opaque: the client passes them through so a contribution kind
     /// added later needs no change here.
-    pub async fn plugin_publications(&self) -> Result<serde_json::Value> {
+    /// Everything plugins published, or just one key's answers.
+    ///
+    /// `key` narrows daemon-side. Without it a caller receives every plugin's
+    /// data, which is both more than a single block needs and more than it
+    /// should see.
+    pub async fn plugin_publications(&self, key: Option<&str>) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
-            .typed_call("plugin.publications", EmptyParams {})
+            .typed_call(
+                "plugin.publications",
+                plugin_requests::PluginPublicationsRequest {
+                    key: key.map(str::to_string),
+                },
+            )
             .await?;
         Ok(result
             .get("publications")

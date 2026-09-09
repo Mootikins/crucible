@@ -7,6 +7,13 @@ use tower::ServiceExt;
 
 use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
 
+async fn response_json(response: axum::response::Response) -> Value {
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&body).unwrap_or(Value::Null)
+}
+
 #[tokio::test]
 async fn list_plugins_returns_rich_plugin_info() {
     let (_mock, client) = start_mock_daemon().await;
@@ -267,4 +274,60 @@ async fn an_option_call_naming_no_path_is_rejected() {
 
     // 422, the shape every other `WebError::Validation` takes here.
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// `?key=` narrows DAEMON-side, not in the client.
+///
+/// The daemon has always accepted a `key`; the route did not pass one, so
+/// every caller received every plugin's published data and filtered it in the
+/// browser. That is more than a block drawing one key needs, and once
+/// third-party block code can run on this origin it is more than it should
+/// receive. Drop the query wiring and this test sees the unnarrowed answer.
+#[tokio::test]
+async fn a_publications_key_reaches_the_daemon() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/plugins/publications?key=kanban:board")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let publications = &json["publications"];
+    assert!(
+        publications.get("kanban:board").is_some(),
+        "the asked-for key should be the answer, got {json}"
+    );
+    assert!(
+        publications.get("and-more").is_none(),
+        "another plugin's key must not come back, got {json}"
+    );
+}
+
+/// Without a key the answer is everything, which is what the plugins panel
+/// wants and what a single block must not ask for.
+#[tokio::test]
+async fn publications_without_a_key_still_answers_everything() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/plugins/publications")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let json = response_json(response).await;
+    assert!(json["publications"].get("and-more").is_some(), "got {json}");
 }

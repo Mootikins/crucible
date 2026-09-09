@@ -13,9 +13,13 @@ impl ReconnectingDaemon {
             .await
     }
 
-    pub async fn plugin_publications(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("plugin.publications", |daemon| {
-            Box::pin(daemon.plugin_publications())
+    pub async fn plugin_publications(
+        &self,
+        key: Option<String>,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("plugin.publications", move |daemon| {
+            let key = key.clone();
+            Box::pin(async move { daemon.plugin_publications(key.as_deref()).await })
         })
         .await
     }

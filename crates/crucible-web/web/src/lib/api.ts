@@ -485,13 +485,26 @@ export async function getConfig(): Promise<Config> {
   return request<Config>('GET', '/api/config', { errorMessage: 'Failed to get config' });
 }
 
-/** Everything plugins published, keyed by contribution kind then plugin. */
-export async function getPluginPublications(): Promise<PluginPublications> {
-  const body = await request<{ publications?: PluginPublications }>(
-    'GET',
-    '/api/plugins/publications',
-    { errorMessage: 'Failed to get plugin publications' },
-  );
+/**
+ * What plugins published, keyed by contribution kind then plugin.
+ *
+ * Pass `key` to narrow daemon-side. A caller drawing one key should ask for
+ * that key: without it the response carries every plugin's data, which is more
+ * than the caller needs and — once third-party block code can run — more than
+ * it should receive.
+ */
+export async function getPluginPublications(key?: string): Promise<PluginPublications> {
+  // The path stays a bare literal and the query is appended to it.
+  // `architecture_tests::every_frontend_api_path_has_a_backend_route` scans
+  // this file for route literals and cannot see through an interpolation, so
+  // inlining the query would hide the route from the gate that proves it
+  // exists. (Do not write an example path in this comment either — the scan
+  // reads comments too.)
+  const path = '/api/plugins/publications';
+  const url = key ? `${path}?key=${encodeURIComponent(key)}` : path;
+  const body = await request<{ publications?: PluginPublications }>('GET', url, {
+    errorMessage: 'Failed to get plugin publications',
+  });
   return body.publications ?? {};
 }
 

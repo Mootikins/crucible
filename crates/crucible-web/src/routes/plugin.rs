@@ -76,9 +76,21 @@ async fn list_plugins(State(state): State<AppState>) -> Result<Json<serde_json::
 /// second isolating plugin would not have appeared at all.
 async fn list_publications(
     State(state): State<AppState>,
+    Query(q): Query<PublicationsQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let publications = state.daemon.plugin_publications().await.daemon_err()?;
+    let publications = state.daemon.plugin_publications(q.key).await.daemon_err()?;
     Ok(Json(serde_json::json!({ "publications": publications })))
+}
+
+/// `?key=` narrows to one contribution kind.
+///
+/// Without it every caller receives every plugin's published data. That is
+/// more than a block drawing one key needs, and — once third-party block code
+/// can run — more than it should be handed.
+#[derive(Debug, Deserialize)]
+struct PublicationsQuery {
+    #[serde(default)]
+    key: Option<String>,
 }
 
 /// `GET /api/plugins/options` — the settings trees plugins declared.
