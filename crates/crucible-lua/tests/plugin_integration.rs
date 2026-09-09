@@ -2,10 +2,9 @@
 //!
 //! Tests the full plugin lifecycle:
 //! 1. Plugin discovery from directories
-//! 2. Manifest loading and validation
-//! 3. Plugin loading with dependency resolution
-//! 4. Tool/Command registration from spec tables
-//! 5. Plugin unloading and reloading
+//! 2. Plugin loading
+//! 3. Tool/Command registration from spec tables
+//! 4. Plugin unloading and reloading
 
 use crucible_lua::{PluginManager, PluginState};
 use std::fs;
@@ -18,13 +17,6 @@ fn create_plugin_structure(
 ) -> std::path::PathBuf {
     let plugin_dir = base.join(name);
     fs::create_dir_all(&plugin_dir).unwrap();
-
-    let manifest = format!(
-        "name: \"{}\"\nversion: \"{}\"\nmain: init.lua\n",
-        name, version
-    );
-
-    fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
 
     let lua = format!(
         r#"
@@ -50,38 +42,6 @@ return {{
     );
 
     fs::write(plugin_dir.join("init.lua"), lua).unwrap();
-
-    plugin_dir
-}
-
-fn create_plugin_with_dependency(
-    base: &std::path::Path,
-    name: &str,
-    version: &str,
-    deps: &[(&str, &str)],
-) -> std::path::PathBuf {
-    let plugin_dir = base.join(name);
-    fs::create_dir_all(&plugin_dir).unwrap();
-
-    let deps_yaml: Vec<String> = deps
-        .iter()
-        .map(|(n, v)| format!("  - name: \"{}\"\n    version: \"{}\"", n, v))
-        .collect();
-
-    let manifest = format!(
-        r#"name: "{}"
-version: "{}"
-main: init.lua
-dependencies:
-{}
-"#,
-        name,
-        version,
-        deps_yaml.join("\n")
-    );
-
-    fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-    fs::write(plugin_dir.join("init.lua"), "-- empty").unwrap();
 
     plugin_dir
 }
@@ -122,30 +82,31 @@ fn test_discover_multiple_plugins() {
 fn test_discover_ignores_invalid_plugins() {
     let temp = TempDir::new().unwrap();
 
-    // Valid plugin with manifest
+    // Valid: an entry file that returns a spec table.
     create_plugin_structure(temp.path(), "valid-plugin", "1.0.0");
 
-    // Manifest-less plugin: has init.lua but no manifest — now valid via manifest-less discovery
-    let manifestless_dir = temp.path().join("manifestless-plugin");
-    fs::create_dir_all(&manifestless_dir).unwrap();
-    fs::write(manifestless_dir.join("init.lua"), "-- code").unwrap();
+    // Valid: an entry file that declares nothing. The directory name is the
+    // identity, so a bare entry file is still a plugin.
+    let bare_dir = temp.path().join("bare-plugin");
+    fs::create_dir_all(&bare_dir).unwrap();
+    fs::write(bare_dir.join("init.lua"), "-- code").unwrap();
 
-    // Invalid: directory with unrecognized manifest file (not plugin.yaml)
-    let bad_json_dir = temp.path().join("invalid-bad-json");
-    fs::create_dir_all(&bad_json_dir).unwrap();
-    fs::write(bad_json_dir.join("plugin.json"), "{ broken json").unwrap();
+    // Invalid: a directory whose only file is not an entry file. Nothing but
+    // `init.luau` or `init.lua` identifies a plugin.
+    let no_entry_dir = temp.path().join("invalid-no-entry");
+    fs::create_dir_all(&no_entry_dir).unwrap();
+    fs::write(no_entry_dir.join("README.md"), "not a plugin").unwrap();
 
-    // Invalid: empty directory (no init.lua, no manifest)
+    // Invalid: an empty directory.
     let empty_dir = temp.path().join("empty-dir");
     fs::create_dir_all(&empty_dir).unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     let discovered = manager.discover().unwrap();
 
-    // valid-plugin (manifest) + manifestless-plugin (init.lua) = 2
-    assert_eq!(discovered.len(), 2);
+    assert_eq!(discovered.len(), 2, "discovered: {discovered:?}");
     assert!(discovered.contains(&"valid-plugin".to_string()));
-    assert!(discovered.contains(&"manifestless-plugin".to_string()));
+    assert!(discovered.contains(&"bare-plugin".to_string()));
 }
 
 // ============================================================================
@@ -180,34 +141,6 @@ fn test_load_all_plugins() {
     assert_eq!(loaded.len(), 2);
     assert!(loaded.contains(&"plugin-1".to_string()));
     assert!(loaded.contains(&"plugin-2".to_string()));
-}
-
-#[test]
-fn test_load_with_dependencies() {
-    let temp = TempDir::new().unwrap();
-
-    // Base plugin
-    create_plugin_structure(temp.path(), "base-plugin", "1.0.0");
-
-    // Plugin that depends on base
-    create_plugin_with_dependency(
-        temp.path(),
-        "dependent-plugin",
-        "1.0.0",
-        &[("base-plugin", ">=1.0.0")],
-    );
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-
-    // Should automatically load base first
-    let loaded = manager.load_all().unwrap();
-
-    assert_eq!(loaded.len(), 2);
-    // Base should be loaded before dependent
-    let base_idx = loaded.iter().position(|n| n == "base-plugin").unwrap();
-    let dep_idx = loaded.iter().position(|n| n == "dependent-plugin").unwrap();
-    assert!(base_idx < dep_idx);
 }
 
 // ============================================================================
@@ -297,7 +230,7 @@ fn test_spec_plugin_discover_and_load() {
 
     let plugin = manager.get("spec-plugin").unwrap();
     assert_eq!(plugin.state, PluginState::Active);
-    assert_eq!(plugin.version(), "1.0.0");
+    assert_eq!(plugin.version(), Some("1.0.0"));
 
     // Tools from spec
     assert_eq!(manager.tools().len(), 1);
@@ -308,19 +241,25 @@ fn test_spec_plugin_discover_and_load() {
     assert_eq!(manager.commands()[0].name, "my_cmd");
 }
 
+/// Discovery names a plugin before anything runs its Lua, and the load that
+/// follows registers the tools the spec table declares.
 #[test]
-fn test_manifestless_plugin_discover_and_load() {
+fn test_discovery_names_a_plugin_before_load_registers_its_tools() {
     let temp = TempDir::new().unwrap();
-    // No plugin.yaml, just init.lua with spec
-    create_spec_plugin_structure(temp.path(), "no-yaml-plugin");
+    create_spec_plugin_structure(temp.path(), "late-load-plugin");
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     let discovered = manager.discover().unwrap();
 
     assert_eq!(discovered.len(), 1);
-    assert!(discovered.contains(&"no-yaml-plugin".to_string()));
+    assert!(discovered.contains(&"late-load-plugin".to_string()));
+    assert_eq!(
+        manager.tools().len(),
+        0,
+        "discovery must not run the plugin's Lua"
+    );
 
-    manager.load("no-yaml-plugin").unwrap();
+    manager.load("late-load-plugin").unwrap();
     assert_eq!(manager.tools().len(), 1);
 }
 
@@ -346,19 +285,17 @@ fn test_spec_plugin_unload_cleans_exports() {
 fn test_multiple_spec_plugins() {
     let temp = TempDir::new().unwrap();
 
-    // Manifest + spec plugin
-    create_plugin_structure(temp.path(), "manifest-plugin", "1.0.0");
-
-    // Manifest-less spec plugin
-    create_spec_plugin_structure(temp.path(), "spec-plugin");
+    // Two plugins under one root, each declaring its own tool.
+    create_plugin_structure(temp.path(), "first-plugin", "1.0.0");
+    create_spec_plugin_structure(temp.path(), "second-plugin");
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     manager.discover().unwrap();
     manager.load_all().unwrap();
 
     let tool_names: Vec<_> = manager.tools().iter().map(|t| t.name.clone()).collect();
-    assert!(tool_names.contains(&"test_tool".to_string())); // from manifest plugin
-    assert!(tool_names.contains(&"my_tool".to_string())); // from spec-only plugin
+    assert!(tool_names.contains(&"test_tool".to_string())); // from first-plugin
+    assert!(tool_names.contains(&"my_tool".to_string())); // from second-plugin
 }
 
 // ============================================================================

@@ -32,6 +32,43 @@ fn validate_socket_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The daemon this client just spawned, held until it answers.
+///
+/// A spawned daemon is deliberately detached: it is shared, it outlives the
+/// command that started it, and the next `cru` invocation must find it already
+/// running. So the SUCCESS path must release it — that is what
+/// [`Self::detach`] does, and why this is not simply a kill-on-drop wrapper.
+///
+/// The failure path is the opposite. A daemon that never became reachable has
+/// nobody holding it: the client is about to return an error and exit, and the
+/// process it left behind would keep running. Dropping this guard without
+/// detaching reaps it. `std::process::Child` does none of that on its own —
+/// its `Drop` neither kills nor waits.
+#[must_use = "either detach the daemon or let the guard reap it"]
+struct SpawnedDaemon(Option<std::process::Child>);
+
+impl SpawnedDaemon {
+    /// Let the daemon live: it answered, and outliving this client is the
+    /// whole point of it.
+    fn detach(mut self) {
+        self.0.take();
+    }
+}
+
+impl Drop for SpawnedDaemon {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let pid = child.id();
+            let _ = child.kill();
+            let _ = child.wait();
+            warn!(
+                pid,
+                "Reaped the daemon we spawned; it never became reachable"
+            );
+        }
+    }
+}
+
 // Submodules for logical organization of RPC methods.
 // Each submodule adds methods to `DaemonClient` via `impl` blocks and
 // defines the associated request/response types near the methods that use
@@ -183,19 +220,26 @@ impl DaemonClient {
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
-        Self::start_daemon().await?;
+        let spawned = Self::start_daemon().await?;
 
         let mut attempts = 0usize;
         for delay in Self::connect_backoff() {
             tokio::time::sleep(delay).await;
             attempts += 1;
             if let Ok(result) = connect().await {
+                spawned.detach();
                 return Ok(result);
             }
             if attempts > 5 {
                 warn!("Daemon not ready after {attempts} attempts");
             }
         }
+
+        // `spawned` is still held, so falling through to the bail below reaps
+        // the daemon that never answered. Before this it was dropped bare at
+        // the end of `start_daemon`, and a daemon that bound its socket a
+        // moment after the backoff ran out kept running with nobody holding
+        // it and no way to exit.
 
         let log_path = crate::rpc_client::lifecycle::daemon_log_path();
         let tail = crate::rpc_client::lifecycle::read_log_tail(&log_path, 15);
@@ -257,7 +301,7 @@ impl DaemonClient {
         args
     }
 
-    async fn start_daemon() -> Result<()> {
+    async fn start_daemon() -> Result<SpawnedDaemon> {
         use std::process::Command;
 
         let exe = std::env::current_exe()?;
@@ -286,14 +330,14 @@ impl DaemonClient {
         // Capture the daemon's output: a detached daemon that dies on startup
         // is otherwise a silent 4.6s timeout with no cause anywhere.
         let (out, err) = crate::rpc_client::lifecycle::daemon_log_stdio();
-        Command::new(&exe)
+        let child = Command::new(&exe)
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(out)
             .stderr(err)
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn daemon: {}", e))?;
-        Ok(())
+        Ok(SpawnedDaemon(Some(child)))
     }
 
     /// Connect to daemon at a specific socket path (simple mode)

@@ -22,17 +22,6 @@ fn write_fixture_plugin(root: &std::path::Path) -> std::path::PathBuf {
     std::fs::create_dir_all(&plugin_dir).expect("create plugin dir");
 
     std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        r#"name: shout
-version: "0.1.0"
-description: Test fixture plugin declaring a tool and a command
-main: init.lua
-capabilities: []
-"#,
-    )
-    .expect("write plugin.yaml");
-
-    std::fs::write(
         plugin_dir.join("init.lua"),
         r#"
 local M = {}

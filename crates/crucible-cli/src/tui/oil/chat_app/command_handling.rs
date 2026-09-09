@@ -405,31 +405,8 @@ impl OilChatApp {
                 SetCommand::Enable { key } => self.handle_set_enable(&key),
                 SetCommand::Disable { key } => self.handle_set_disable(&key),
                 SetCommand::Toggle { key } => self.handle_set_toggle(&key),
-                SetCommand::Reset { key } => {
-                    if let Some(refusal) = Self::refuse_app_config_drop(&key, "reset") {
-                        self.warn_invalid(refusal);
-                        return Action::Continue;
-                    }
-                    self.runtime_config.reset(&key);
-                    self.sync_runtime_to_fields(&key);
-                    let output = self.runtime_config.format_query(&key);
-                    self.add_system_message(format!("Reset: {}", output.trim()));
-                    Action::Continue
-                }
-                SetCommand::Pop { key } => {
-                    if let Some(refusal) = Self::refuse_app_config_drop(&key, "pop") {
-                        self.warn_invalid(refusal);
-                        return Action::Continue;
-                    }
-                    if self.runtime_config.pop(&key).is_some() {
-                        self.sync_runtime_to_fields(&key);
-                        let output = self.runtime_config.format_query(&key);
-                        self.add_system_message(output);
-                    } else {
-                        self.add_system_message(format!("  {} is at base value", key));
-                    }
-                    Action::Continue
-                }
+                SetCommand::Reset { key } => self.handle_set_drop(&key, false),
+                SetCommand::Pop { key } => self.handle_set_drop(&key, true),
                 SetCommand::Set { key, value } => self.dispatch_set_key(&key, value),
             },
             Err(e) => {
@@ -463,24 +440,66 @@ impl OilChatApp {
         }
     }
 
-    /// The refusal text for `:set key&` and `:set key^` on an app-config key,
-    /// or `None` when this client owns the key and may drop its own layer.
+    /// Answers `:set key&` (reset) and `:set key^` (pop).
     ///
-    /// `&` and `^` drop layers from this client's overlay. The daemon store
-    /// is one merged value with per-leaf provenance and no layer stack, so it
-    /// has nothing to drop: a `null` write would replace what `init.lua`
-    /// holds rather than restore it (`null` is a value there, not a
-    /// deletion). Dropping the local copy alone is worse still — it leaves
-    /// the two stores holding different values for one key, which is the
-    /// split these spellings used to open.
-    fn refuse_app_config_drop(key: &str, verb: &str) -> Option<String> {
+    /// Both spellings drop layers, and both follow the same classifier the
+    /// read and the write follow. A TUI-local key drops from this client's
+    /// own overlay; an app-config key drops in the daemon store, which keeps
+    /// the layers it merged and re-merges what is left. The client never
+    /// drops a local copy of a key the daemon owns — that is two stores
+    /// holding different values for one key.
+    fn handle_set_drop(&mut self, key: &str, pop: bool) -> Action<ChatAppMsg> {
         match key_home(key) {
-            KeyHome::Client => None,
-            KeyHome::Daemon => Some(format!(
-                "the daemon config store owns '{key}' and keeps no layer to {verb}; \
-                 write a new value with :set {key}=<value>"
-            )),
+            KeyHome::Client if pop => {
+                if self.runtime_config.pop(key).is_some() {
+                    self.sync_runtime_to_fields(key);
+                    let output = self.runtime_config.format_query(key);
+                    self.add_system_message(output);
+                } else {
+                    self.add_system_message(format!("  {key} is at base value"));
+                }
+                Action::Continue
+            }
+            KeyHome::Client => {
+                self.runtime_config.reset(key);
+                self.sync_runtime_to_fields(key);
+                let output = self.runtime_config.format_query(key);
+                self.add_system_message(format!("Reset: {}", output.trim()));
+                Action::Continue
+            }
+            KeyHome::Daemon => Action::Send(ChatAppMsg::ConfigDrop {
+                key: key.to_string(),
+                pop,
+            }),
         }
+    }
+
+    /// Print what the daemon store holds for a key once a `&` or a `^` took
+    /// its layers away.
+    ///
+    /// The daemon's row is the whole answer, exactly as it is for a read:
+    /// this client keeps no copy of app config to update.
+    pub(super) fn show_app_config_drop(
+        &mut self,
+        key: &str,
+        dropped: &[String],
+        value: serde_json::Value,
+        origin: &serde_json::Value,
+    ) {
+        if dropped.is_empty() {
+            self.add_system_message(format!("  {key} has no layer left to drop"));
+            return;
+        }
+        let mut lines = format!("Dropped {}:", dropped.join(", "));
+        lines.push('\n');
+        if value.is_null() {
+            lines.push_str(&format!("  {key} is not set"));
+        } else {
+            lines.push_str(&format!("  {}={}", key, ConfigValue::from(value)));
+        }
+        lines.push('\n');
+        lines.push_str(&format!("  {}", format_config_origin(origin)));
+        self.add_system_message(lines);
     }
 
     /// Print what the daemon app-config store holds for a key.
@@ -922,10 +941,12 @@ impl OilChatApp {
                 "Loaded" => ("✓", "loaded"),
                 _ => ("?", entry.state.as_str()),
             };
-            let version_part = if entry.version.is_empty() {
-                String::new()
-            } else {
-                format!(" v{}", entry.version)
+            // A plugin the daemon has discovered but not loaded declares no
+            // version yet, so the row shows the name and the state alone. A
+            // placeholder here read as a release; `{:?}` would read as Rust.
+            let version_part = match entry.version.as_deref() {
+                Some(version) => format!(" v{version}"),
+                None => String::new(),
             };
             let detail = if let Some(ref err) = entry.error {
                 format!("({}: {})", state_label, err)

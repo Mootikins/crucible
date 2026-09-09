@@ -153,15 +153,18 @@ with a warning naming the key and the Lua call site. The RPC socket has no
 authentication; these keys answer *where the daemon acts*, so they freeze at
 boot.
 
-## Two verbs, one store
+## Four verbs, one store
 
-Two RPC methods write the app-config store, and they hold different
-authority (`crucible-daemon/src/rpc/dispatch.rs`).
+Four RPC methods change the app-config store, and they hold different
+authority (`crucible-daemon/src/rpc/dispatch.rs`). Two write a layer; two
+drop one.
 
-| Verb | Layer it writes | Persists | Refuses a pin | Caller |
+| Verb | Layer it changes | Persists | Refuses a pin | Caller |
 |---|---|---|---|---|
-| `config.set` | `SourceTag::Rpc` | No | No | `:set`, one run |
-| `config.save` | `SourceTag::Settings` | Yes — `settings.json` | Yes | a settings UI |
+| `config.set` | writes `SourceTag::Rpc` | No | No | `:set key=value`, one run |
+| `config.save` | writes `SourceTag::Settings`, drops `Rpc` on the leaves it writes | Yes — `settings.json` | Yes | a settings UI |
+| `config.reset` | drops `SourceTag::Rpc` | No | n/a | `:set key&` |
+| `config.pop` | drops the highest layer holding the leaf | No | n/a | `:set key^` |
 
 `config.set` is the runtime knob. It never refuses, because a user must be
 able to raise a value `init.lua` holds for one turn without editing a file,
@@ -173,12 +176,49 @@ boot and the click would act nowhere. It therefore refuses that leaf and
 answers with the file and the line that holds it, per leaf: the siblings the
 same click changed still save.
 
+**A save also takes the leaf back from the runtime knob.** `Rpc` outranks
+`Settings`, so a leaf a `:set` already holds keeps the scratch value. The user
+saved from the settings pane, saw nothing change, and got the saved value only
+at the next boot — the same shape of failure this store exists to end: a write
+the system accepts and does not apply. `ConfigStore::save` therefore drops the
+ephemeral hold on every leaf it accepts, by the rule `config.reset` uses. It
+drops it on those leaves only, so a `:set` on an unrelated key survives
+someone else's save.
+
+**The refusal and the drop are one walk**
+(`crucible-core/src/config/store.rs`). A leaf a pin refuses is neither merged
+nor dropped, which is what leaves the value a user raised over a pinned line
+standing after a refused save. Two walks would answer "which leaves am I
+saving" twice, and the second answer would clear a value nothing replaced.
+
 The pin is a second record in the store, beside the provenance map
 (`crucible-core/src/config/store.rs`). Provenance names whoever wrote LAST,
 and the ephemeral `:set` writes last all the time; the pin is what runs again
 at the NEXT boot. Only a pinning source writes or clears a pin, so one `:set`
 cannot open a pinned key to a save. `SourceTag::pin` decides which sources
 pin, exhaustively (`crucible-core/src/config/provenance.rs`).
+
+`config.reset` and `config.pop` are the undo half, and both work in memory
+only. The store retains every overlay it merged
+(`crucible-core/src/config/store.rs`), so a drop takes the leaf out of one
+layer and merges the layers again from nothing. **The re-merge IS the merge
+rule**, which is why it is a re-merge and not a per-leaf undo stack: a stack
+would be a second copy of `SourceTag::rank`, of the wholesale-replace rule and
+of the pin rule, free to drift from the first copy.
+
+`config.reset` drops exactly the layer `config.set` writes, and
+`SourceTag::reset_drops` decides that exhaustively. It does NOT drop
+`Settings`: that layer is a durable file, so dropping it in memory would
+report a value the next boot takes back, and deleting the leaf from the file
+would let a one-key undo of a session tweak destroy a preference the user
+saved through the settings UI. `config.save` writes that layer, and
+`config.save` unwrites it. `config.pop` is the door for looking under it for
+one run.
+
+Both drop verbs withhold the location keys, exactly as `config.set` does. A
+drop changes what the store holds, so a caller that could pop `runtimepath`
+would re-point the trees the daemon reads code from without the floor ever
+seeing a path.
 
 **The state overlay is the one pin the store does not hold.** `llm.json`
 carries the provider selection `cru init` recorded, and
@@ -340,8 +380,10 @@ throwaway evaluation. Actions belong in hooks; values are free.
 
 ## Which front end reaches the durable verb
 
-`config.save`, `config.origin` and `config.controls` reach a user through the
-**web console only**. The TUI reaches `config.set`, and nothing else.
+`config.save` and `config.controls` reach a user through the **web console
+only**. The TUI reaches the three verbs that write no file — `config.set`,
+`config.reset` and `config.pop` — plus the two reads `config.get` and
+`config.origin`, which answer `:set key?` and `:set key??`.
 `cru config` has `init`, `show`, `migrate` and `dump`, and no write verb. One
 CLI command saves: `cru models embeddings use`, which calls `config.save` with
 two keys (`crucible-cli/src/commands/models/embeddings.rs`).

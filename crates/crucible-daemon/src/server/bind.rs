@@ -55,6 +55,14 @@ pub struct BindWithPluginConfigParams {
     /// in-process daemon handed a config value) creates the loader here and
     /// seeds the store from `app_config`, as before the inversion.
     pub loader: Option<crate::daemon_plugins::DaemonPluginLoader>,
+    /// How long the daemon may sit idle before it exits on its own.
+    ///
+    /// `None` — the default, and what every in-process binding gets — never
+    /// exits. Only a process whose whole job is to be the daemon arms this,
+    /// through [`Self::with_idle_shutdown`]; a daemon inside another process
+    /// dies with its host, and taking itself down would take the host's server
+    /// with it. See `server::idle` for the policy.
+    pub idle_shutdown: Option<std::time::Duration>,
 }
 
 impl BindWithPluginConfigParams {
@@ -106,7 +114,17 @@ impl BindWithPluginConfigParams {
             config_path: Some(config_path),
             boot_hash: None,
             loader: None,
+            idle_shutdown: None,
         }
+    }
+
+    /// Arm the idle-exit timer — see the `idle_shutdown` field.
+    ///
+    /// `minutes == 0` disables it, which is how a user turns the timer off in
+    /// `[server] idle_shutdown_minutes`.
+    pub fn with_idle_shutdown(mut self, minutes: u64) -> Self {
+        self.idle_shutdown = (minutes > 0).then(|| std::time::Duration::from_secs(minutes * 60));
+        self
     }
 
     /// Attach the boot evaluation's loader — see the `loader` field.
@@ -147,6 +165,7 @@ impl Default for BindWithPluginConfigParams {
             config_path: None,
             boot_hash: None,
             loader: None,
+            idle_shutdown: None,
         }
     }
 }

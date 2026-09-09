@@ -53,6 +53,31 @@ pub enum PatternError {
 /// Result type for pattern operations
 pub type PatternResult<T> = Result<T, PatternError>;
 
+/// A stored bash rule that [`PatternStore::load_file_reporting`] refused.
+///
+/// The message names the rule and the file, because the user's only repair
+/// is to open that file and rewrite that line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefusedRule {
+    /// The rule text, as the file spells it.
+    pub pattern: String,
+    /// The file the rule came from.
+    pub file: PathBuf,
+}
+
+impl std::fmt::Display for RefusedRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "refused the bash rule '{}' in {}: a command plus '*' allows every \
+             argument of that command, which is the widest grant there is. \
+             Give the rule an argument, or delete it.",
+            self.pattern,
+            self.file.display()
+        )
+    }
+}
+
 /// Patterns for bash command whitelisting
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
@@ -126,7 +151,8 @@ impl PatternStore {
         }
 
         let content = tokio::fs::read_to_string(&file_path).await?;
-        let store: PatternStore = toml::from_str(&content)?;
+        let (store, refused) = Self::parse_and_screen(&content, &file_path)?;
+        Self::log_refusals(&refused);
         Ok(store)
     }
 
@@ -147,14 +173,75 @@ impl PatternStore {
     }
 
     /// Load one store file. A missing file is an empty store.
+    ///
+    /// A refused rule is dropped and logged. To read the refusals, call
+    /// [`Self::load_file_reporting`].
     pub fn load_file(file_path: &Path) -> PatternResult<Self> {
+        let (store, refused) = Self::load_file_reporting(file_path)?;
+        Self::log_refusals(&refused);
+        Ok(store)
+    }
+
+    /// [`Self::load_file`], with the refused rules returned as well.
+    ///
+    /// The loader is the last gate a rule passes before it answers for the
+    /// user, so it screens the rules it reads. A rule the store already holds
+    /// is a rule an older prompt wrote, under an older reading of `*`; see
+    /// [`Self::bare_command_wildcard`]. The screen drops the one rule and
+    /// keeps the file, because the other rules in it are grants the user
+    /// still wants.
+    pub fn load_file_reporting(file_path: &Path) -> PatternResult<(Self, Vec<RefusedRule>)> {
         if !file_path.exists() {
-            return Ok(Self::new());
+            return Ok((Self::new(), Vec::new()));
         }
 
         let content = std::fs::read_to_string(file_path)?;
-        let store: PatternStore = toml::from_str(&content)?;
-        Ok(store)
+        Self::parse_and_screen(&content, file_path)
+    }
+
+    /// Log each refused rule. The permission gate reads a store file on
+    /// every tool call, so the user reads the message at the moment the
+    /// rule fails to answer, not one boot later.
+    fn log_refusals(refused: &[RefusedRule]) {
+        for rule in refused {
+            tracing::warn!("{rule}");
+        }
+    }
+
+    /// Parse `content` and separate the refused bash rules from the store.
+    fn parse_and_screen(
+        content: &str,
+        file_path: &Path,
+    ) -> PatternResult<(Self, Vec<RefusedRule>)> {
+        let mut store: PatternStore = toml::from_str(content)?;
+        let mut refused = Vec::new();
+        store.bash_commands.allowed_prefixes.retain(|pattern| {
+            if Self::bare_command_wildcard(pattern) {
+                refused.push(RefusedRule {
+                    pattern: pattern.clone(),
+                    file: file_path.to_path_buf(),
+                });
+                false
+            } else {
+                true
+            }
+        });
+        Ok((store, refused))
+    }
+
+    /// Is `pattern` one command name plus a wildcard, and nothing else?
+    ///
+    /// [`Self::bash_pattern_matches`] reads a trailing `*` as a prefix, so
+    /// `rm *` answers for `rm -rf /home/u/proj`. One token plus the wildcard
+    /// therefore grants the whole command, on every argument, for as long as
+    /// the file lives. The test is the same `strip_suffix('*')` the matcher
+    /// runs, so the screen covers exactly the rules the matcher widens:
+    /// `rm*` and `rm  *` are the same grant as `rm *`.
+    fn bare_command_wildcard(pattern: &str) -> bool {
+        match pattern.strip_suffix('*') {
+            Some(command) => !command.trim().contains(char::is_whitespace),
+            None => false,
+        }
     }
 
     /// Save patterns for a project to disk
@@ -691,6 +778,100 @@ mod tests {
         assert!(!wide.matches_bash("npm install"));
     }
 
+    /// The old prompt suggested `<cmd> *`, and this branch made a trailing
+    /// `*` a live prefix. Every such rule already on disk therefore widens.
+    /// The loader refuses one, and keeps the rest of the file.
+    #[test]
+    fn load_refuses_a_stale_bare_command_wildcard() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file,
+            r#"
+[bash_commands]
+allowed_prefixes = ["rm *", "cargo build", "git log *", "npm install"]
+
+[file_paths]
+allowed_prefixes = ["src/"]
+
+[tools]
+always_allow = ["read_note"]
+"#,
+        )
+        .unwrap();
+
+        let store = PatternStore::load_file(&file).unwrap();
+
+        assert!(
+            !store.matches_bash("rm -rf /home/u/proj"),
+            "a stale 'rm *' must not grant every rm: {store:?}"
+        );
+        assert!(!store.matches_bash("rm build/tmp.o"));
+
+        // The refusal drops one rule, never the file.
+        assert!(store.matches_bash("cargo build"));
+        assert!(store.matches_bash("git log --oneline"));
+        assert!(store.matches_bash("npm install"));
+        assert!(store.matches_file("src/main.rs"));
+        assert!(store.matches_tool("read_note"));
+
+        // The message names the rule and the file. `load_file` logs this
+        // same text, so it is what the user reads.
+        let (_, refused) = PatternStore::load_file_reporting(&file).unwrap();
+        let message = refused
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(refused.len(), 1, "{message}");
+        assert!(message.contains("'rm *'"), "{message}");
+        assert!(message.contains(&file.display().to_string()), "{message}");
+    }
+
+    /// The screen covers the rules the matcher widens, and no others. A rule
+    /// with an argument stays: the user wrote that breadth on purpose.
+    #[test]
+    fn the_loader_refuses_only_a_bare_command_wildcard() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
+
+        for refused in ["rm *", "cargo *", "rm  *", "cargo*", " rm *"] {
+            let store = PatternStore {
+                bash_commands: BashPatterns {
+                    allowed_prefixes: vec![refused.to_string()],
+                },
+                ..PatternStore::default()
+            };
+            store.save_file(&file).unwrap();
+            let (loaded, rules) = PatternStore::load_file_reporting(&file).unwrap();
+            assert_eq!(rules.len(), 1, "{refused:?} must be refused");
+            assert!(loaded.bash_commands.allowed_prefixes.is_empty());
+        }
+
+        for kept in [
+            "git log *",
+            "cargo build",
+            "rm -rf *",
+            "rm",
+            "npm install *",
+        ] {
+            let store = PatternStore {
+                bash_commands: BashPatterns {
+                    allowed_prefixes: vec![kept.to_string()],
+                },
+                ..PatternStore::default()
+            };
+            store.save_file(&file).unwrap();
+            let (loaded, rules) = PatternStore::load_file_reporting(&file).unwrap();
+            assert!(rules.is_empty(), "{kept:?} must load");
+            assert_eq!(
+                loaded.bash_commands.allowed_prefixes,
+                vec![kept.to_string()]
+            );
+        }
+    }
+
     #[test]
     fn matches_file_works() {
         let mut store = PatternStore::new();
@@ -846,12 +1027,15 @@ always_allow = ["read_note", "grep_notes"]
         assert!(loaded.matches_tool("read_note"));
     }
 
+    /// The rule is `git log *`, not `cargo *`: the loader refuses a command
+    /// name plus a wildcard, so that rule cannot round trip. See
+    /// `load_refuses_a_stale_bare_command_wildcard` above.
     #[test]
     fn save_file_then_load_file_round_trips() {
         let temp_dir = TempDir::new().unwrap();
         let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
         let mut store = PatternStore::new();
-        store.add_bash_pattern("cargo *").unwrap();
+        store.add_bash_pattern("git log *").unwrap();
 
         store.save_file(&file).unwrap();
 

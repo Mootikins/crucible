@@ -34,6 +34,7 @@ use dashmap::DashMap;
 use crate::protocol::RequestId;
 use crate::subscription::{ClientId, SubscriptionManager};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -51,6 +52,7 @@ mod external_announce;
 mod file_event_hooks;
 pub mod fs;
 pub mod grep;
+mod idle;
 pub mod kiln;
 mod plugin_boot;
 mod socket_lock;
@@ -58,6 +60,7 @@ mod socket_privacy;
 pub(crate) mod ui_broadcast;
 use accept::{accept_error_is_transient, ACCEPT_ERROR_BACKOFF};
 pub use bind::BindWithPluginConfigParams;
+use idle::{ConnectionGuard, IdleSnapshot, IdleTimer};
 use socket_lock::acquire_socket_lock;
 use socket_privacy::{bind_private_listener, prepare_socket_dir};
 pub mod llm;
@@ -116,6 +119,9 @@ pub struct Server {
     runtimepath: Vec<std::path::PathBuf>,
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
+    /// How long the daemon may sit idle before it exits on its own; `None`
+    /// never exits. See `server::idle` for the policy and who arms it.
+    idle_shutdown: Option<Duration>,
     schedules: Vec<crucible_core::config::ScheduleEntry>,
     /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`);
     /// `run()`'s open-kilns/archive-sweep read this instead of `crucible_home()`.
@@ -559,6 +565,7 @@ impl Server {
             runtimepath: params.runtimepath,
             plugin_watch: params.plugin_watch,
             auto_archive_hours: params.auto_archive_hours,
+            idle_shutdown: params.idle_shutdown,
             schedules: params.schedules,
             data_home,
             socket_lock,
@@ -574,8 +581,11 @@ impl Server {
         self.authorized_uid = uid;
     }
 
-    /// Get a shutdown sender for external shutdown triggers
-    #[allow(dead_code)] // used in integration tests for graceful shutdown
+    /// Get a shutdown sender for external shutdown triggers.
+    ///
+    /// `cru daemon serve` hands this to
+    /// [`crate::lifecycle::shutdown_on_signals`]; integration tests use it to
+    /// stop a server they own.
     pub fn shutdown_handle(&self) -> broadcast::Sender<()> {
         self.shutdown_tx.clone()
     }
@@ -591,6 +601,35 @@ impl Server {
     /// Run the server until shutdown
     pub async fn run(self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
+
+        // A daemon with declarative schedules is supposed to sit there with
+        // nobody attached — exiting would stop the schedules from firing — so
+        // it never arms the idle timer even when the config asks for one.
+        let idle_window = self.idle_shutdown.filter(|_| self.schedules.is_empty());
+        // The path this daemon actually bound, asked of the listener rather
+        // than remembered from the parameters — the two can differ, and the
+        // one that decides reachability is the kernel's.
+        let bound_socket = self
+            .listener
+            .local_addr()
+            .ok()
+            .and_then(|addr| addr.as_pathname().map(Path::to_path_buf));
+        let live_connections = Arc::new(AtomicUsize::new(0));
+        let mut idle_timer = idle_window.map(|window| IdleTimer::new(window, Instant::now()));
+        let mut idle_probe = idle_window.map(|window| {
+            let mut probe = tokio::time::interval(IdleTimer::probe_period(window));
+            // The first tick of a tokio interval completes immediately, and a
+            // probe at t=0 would read an idle daemon one instant after it
+            // bound. Skip it.
+            probe.reset();
+            probe
+        });
+        if let Some(window) = idle_window {
+            info!(
+                idle_shutdown_secs = window.as_secs(),
+                "Daemon will exit after this long with no client and no running job"
+            );
+        }
 
         self.boot_plugins().await;
 
@@ -996,7 +1035,19 @@ impl Server {
                             let dispatcher = self.dispatcher.clone();
                             let authorized_uid = self.authorized_uid;
                             let event_rx = self.rpc_context.event_tx.subscribe();
+                            // Counted here rather than inside the task, so the
+                            // count is already up when the next probe reads it
+                            // — a task that has not been polled yet must not
+                            // look like no client at all.
+                            let counted = ConnectionGuard::new(live_connections.clone());
+                            if let Some(timer) = idle_timer.as_mut() {
+                                // A client that connects and leaves between two
+                                // probes is never seen by a snapshot; say so
+                                // directly.
+                                timer.note_activity();
+                            }
                             tokio::spawn(async move {
+                                let _counted = counted;
                                 if let Err(e) =
                                     handle_client(stream, dispatcher, authorized_uid, event_rx).await
                                 {
@@ -1030,6 +1081,33 @@ impl Server {
                 _ = shutdown_rx.recv() => {
                     info!("Shutdown signal received");
                     break;
+                }
+                // `pending()` when the timer is disarmed, which parks this
+                // branch for ever instead of spinning the select.
+                _ = async {
+                    match idle_probe.as_mut() {
+                        Some(probe) => { probe.tick().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    let snapshot = IdleSnapshot {
+                        live_connections: live_connections.load(Ordering::SeqCst),
+                        running_jobs: self.agent_manager.background_manager().running_count(),
+                        // An abstract socket has no path and cannot be
+                        // deleted, so treat "no path" as reachable.
+                        reachable: bound_socket.as_ref().is_none_or(|p| p.exists()),
+                    };
+                    let expired = idle_timer
+                        .as_mut()
+                        .is_some_and(|timer| timer.observe(Instant::now(), snapshot));
+                    if expired {
+                        info!(
+                            reachable = snapshot.reachable,
+                            "Nothing left to serve; exiting. Sessions are persisted and the \
+                             next command starts a fresh daemon."
+                        );
+                        break;
+                    }
                 }
             }
         }

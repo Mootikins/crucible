@@ -1599,7 +1599,8 @@ export function executeShell(
  */
 export interface PluginInfo {
   name: string;
-  version: string;
+  /** Null until the plugin loads: the version is declared in its spec table. */
+  version: string | null;
   source: 'User' | 'Runtime' | 'EnvPath' | 'Builtin' | string;
   state: 'Active' | 'Error' | 'Disabled' | string;
   /** Why the plugin is not Active. Null for healthy plugins. */

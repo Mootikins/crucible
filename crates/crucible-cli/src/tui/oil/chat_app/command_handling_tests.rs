@@ -906,6 +906,85 @@ fn an_app_config_reset_does_not_diverge_from_the_daemon() {
     );
 }
 
+/// `:set key&` and `:set key^` on an app-config key ask the daemon, which is
+/// the only process that keeps the layers. The two spellings are different
+/// verbs there — `config.reset` drops the ephemeral layer, `config.pop` drops
+/// the highest one — so the message has to carry which.
+#[test]
+fn an_app_config_reset_and_pop_ask_the_daemon_for_the_right_verb() {
+    let mut app = app();
+    assert!(
+        matches!(
+            app.handle_set_command("set myplugin.retries&"),
+            Action::Send(ChatAppMsg::ConfigDrop { pop: false, ref key })
+                if key == "myplugin.retries"
+        ),
+        "`:set key&` must send config.reset"
+    );
+    assert!(
+        matches!(
+            app.handle_set_command("set myplugin.retries^"),
+            Action::Send(ChatAppMsg::ConfigDrop { pop: true, ref key })
+                if key == "myplugin.retries"
+        ),
+        "`:set key^` must send config.pop"
+    );
+}
+
+/// The daemon's answer for a `&` or a `^` is printed with the layers it
+/// dropped and the origin the leaf now has, and records nothing locally.
+///
+/// The origin is the point of the print: a pop that did not say which layer
+/// now holds the key would leave the user guessing how many more to press.
+#[test]
+fn an_app_config_drop_answer_names_the_layer_it_revealed() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ConfigDropResolved {
+        key: "chat.model".to_string(),
+        dropped: vec!["lua".to_string()],
+        value: serde_json::json!("from-settings"),
+        origin: serde_json::json!({ "source": "settings" }),
+    });
+
+    assert!(
+        app.runtime_config.get("chat.model").is_none(),
+        "a drop answer must not write this client's store"
+    );
+    let tree = crate::tui::oil::tests::helpers::view_with_default_ctx(&app);
+    let output = crucible_oil::ansi::strip_ansi(&crucible_oil::render_to_string(&tree, 80));
+    assert!(
+        output.contains("Dropped lua"),
+        "the answer must name the layer that went: {output}"
+    );
+    assert!(
+        output.contains("chat.model=from-settings"),
+        "and the value that showed: {output}"
+    );
+    assert!(
+        output.contains("from settings"),
+        "and where that value comes from: {output}"
+    );
+}
+
+/// A key with no layer left to drop says so, rather than printing a drop
+/// that did not happen.
+#[test]
+fn an_app_config_drop_that_dropped_nothing_says_so() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ConfigDropResolved {
+        key: "chat.model".to_string(),
+        dropped: Vec::new(),
+        value: serde_json::Value::Null,
+        origin: serde_json::json!({ "source": "default" }),
+    });
+    let tree = crate::tui::oil::tests::helpers::view_with_default_ctx(&app);
+    let output = crucible_oil::ansi::strip_ansi(&crucible_oil::render_to_string(&tree, 80));
+    assert!(
+        output.contains("no layer left to drop"),
+        "an untouched key must not read as a drop: {output}"
+    );
+}
+
 /// No `:set` spelling of an app-config key answers from — or writes — this
 /// client's own store. The spellings walk [`SetCommand`] through `EnumIter`,
 /// so a spelling added later cannot pass this test by being absent from it.
@@ -969,6 +1048,7 @@ fn every_declared_target_answers_locally_under_every_spelling() {
                     action,
                     Action::Send(ChatAppMsg::ConfigSet { .. })
                         | Action::Send(ChatAppMsg::ConfigQuery { .. })
+                        | Action::Send(ChatAppMsg::ConfigDrop { .. })
                 ),
                 "`:set {spelling}` sent a declared target to the daemon app-config store"
             );

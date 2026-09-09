@@ -247,6 +247,22 @@ pub enum ChatAppMsg {
         value: serde_json::Value,
         origin: Option<serde_json::Value>,
     },
+    /// **Command** (TUI → daemon): drop config layers for an app-config key.
+    /// `:set key&` sends `pop: false` (`config.reset`, which drops the
+    /// ephemeral layer `:set` writes); `:set key^` sends `pop: true`
+    /// (`config.pop`, which drops the highest layer holding the leaf).
+    ConfigDrop { key: String, pop: bool },
+    /// **Event** (daemon → TUI): the store's answer for
+    /// [`ChatAppMsg::ConfigDrop`] — what the leaf holds once the layers are
+    /// gone, and which layers went.
+    ConfigDropResolved {
+        key: String,
+        /// The one-word source names the store dropped, lowest layer first.
+        /// Empty when nothing was dropped.
+        dropped: Vec<String>,
+        value: serde_json::Value,
+        origin: serde_json::Value,
+    },
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
     ExecuteSlashCommand(String),
     /// **Command** (TUI → daemon): Invoke a plugin-declared command via
@@ -371,6 +387,8 @@ impl ChatAppMsg {
             | Self::ConfigSetResolved { .. }
             | Self::ConfigQuery { .. }
             | Self::ConfigQueryResolved { .. }
+            | Self::ConfigDrop { .. }
+            | Self::ConfigDropResolved { .. }
             | Self::Undo(_)
             | Self::UndoComplete { .. }
             | Self::SessionInitialized(_)

@@ -88,9 +88,15 @@ Examples:
 ### Resetting Values
 
 ```
-:set option&            # Reset to default value
-:set option^            # Pop one modification (undo last change)
+:set option&            # Reset: drop the layer `:set` writes
+:set option^            # Pop: drop the highest layer, and show the one under it
 ```
+
+For a TUI-local option these walk this client's own stack of modifications.
+For an app-config key they call the daemon, which owns the layers — see
+[App-Config Keys](#app-config-keys) for the layer order and what each verb
+drops. Neither verb edits a file: every layer returns at the next daemon
+start.
 
 ## Available Options
 
@@ -174,19 +180,40 @@ the daemon store owns it. `:set` writes it there, then reads the store back
 and shows you that answer, so `:lua cru.config.get(key)` and plugins see
 exactly what `:set key?` shows.
 
-Every spelling goes to the same store. `:set key?` reads the daemon store, so
-a key `init.lua` wrote answers with the value the daemon holds. `:set key??`
-adds the row `config.origin` gives: the source that owns the leaf, with its
-file and line.
+Every spelling goes to the same store:
+
+| Spelling | Verb | What it does |
+|----------|------|--------------|
+| `:set key?` | `config.get` | Show the value the daemon holds |
+| `:set key??` | `config.get` + `config.origin` | Show the value with the source that owns it, and its file and line |
+| `:set key=value` | `config.set` | Write the value for this run, then show what the store kept |
+| `:set key&` | `config.reset` | Drop the layer `:set` writes, so the key returns to what the defaults and the config files give |
+| `:set key^` | `config.pop` | Drop the highest layer holding the key, and show the layer under it |
 
 The TUI keeps no copy of its own. If the daemon refuses the write — the seven
 keys that name where the daemon acts are refused at runtime — you get a
-warning that names the key, and no value is recorded.
+warning that names the key, and no value is recorded. `&` and `^` are refused
+for the same keys, and for the same reason: both change what the store holds.
 
-`:set key&` and `:set key^` refuse an app-config key. They drop a layer from
-the TUI's own stack, and the daemon store is one merged value with no layer
-stack to drop. To change such a key, write a new value with
-`:set key=<value>`.
+The config store keeps the layers it merged, lowest first:
+
+```
+default < plugin < settings < toml < lua < registered < cli < rpc
+```
+
+`&` and `^` drop layers from that stack and merge again, so what they show is
+what the merge rule gives — never a second answer beside it. `&` drops the
+`rpc` layer, which is what `:set key=value` writes: the key returns to the
+value the next boot would give it. `^` drops one layer per press, so a key
+written in both `settings.json` and `init.lua` answers with the `init.lua`
+value, and after one `^` with the `settings.json` value.
+
+Both verbs work in memory only, and neither edits a file. Every layer returns
+at the next daemon start. To change a durable preference, edit `init.lua`, or
+save it through the web settings page, which writes `settings.json`. That save
+also drops the `rpc` layer for the key it saves, so a `:set` you made earlier
+does not hide the value you just saved. A key your `init.lua` holds is refused
+instead, and your `:set` value stands.
 
 ## The `:model` Command
 

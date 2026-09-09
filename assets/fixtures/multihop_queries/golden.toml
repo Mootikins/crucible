@@ -188,7 +188,7 @@ lenient = true
 # S: Help/Extending/Discord.md — [[Help/Operations/Discord Bot Runbook]]
 #   T: Help/Operations/Discord Bot Runbook.md — "1. Stop it answering (keeps the process, keeps the logs) ... `enabled = false # <- the only line you add`"
 [[queries]]
-question = "of the three ways to stop the Discord bot, which one keeps the process and the logs, and what is the one line it adds to config.toml?"
+question = "of the three ways to stop the Discord bot, which one keeps the process and the logs, and what is the one line it adds to init.lua?"
 expect_note = "Discord Bot Runbook"
 
 # S: Help/Lua/Configuration.md — [[Help/Concepts/Reflection Pass]]

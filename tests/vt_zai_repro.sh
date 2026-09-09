@@ -53,26 +53,46 @@ check_prereqs() {
     WORKDIR=$(mktemp -d)
     trap 'rm -rf "$WORKDIR"' EXIT
 
-    cat >"$WORKDIR/anthropic-config.toml" <<EOF
-kiln_path = "./docs"
-[llm]
-default = "zai-coding"
-[llm.providers.zai-coding]
-type = "anthropic"
-endpoint = "https://api.z.ai/api/anthropic"
-api_key = "$GLM_AUTH_TOKEN"
-default_model = "claude-sonnet-4-20250514"
+    # Lua and not TOML: the daemon stopped reading the old TOML config in
+    # v0.30.0. `--config` names a FILE whose DIRECTORY is the config root, so
+    # each config gets a directory of its own. The token is read from the
+    # environment at evaluation, so it never lands in a file.
+    ANTHROPIC_CONFIG="$WORKDIR/anthropic/init.lua"
+    ZAI_CONFIG="$WORKDIR/zai-native/init.lua"
+    mkdir -p "$WORKDIR/anthropic" "$WORKDIR/zai-native"
+
+    cat >"$ANTHROPIC_CONFIG" <<'EOF'
+cru.config.set({
+    kiln_path = "./docs",
+    llm = {
+        default = "zai-coding",
+        providers = {
+            ["zai-coding"] = {
+                type = "anthropic",
+                endpoint = "https://api.z.ai/api/anthropic",
+                api_key = os.getenv("GLM_AUTH_TOKEN"),
+                default_model = "claude-sonnet-4-20250514",
+            },
+        },
+    },
+})
 EOF
 
-    cat >"$WORKDIR/zai-native-config.toml" <<EOF
-kiln_path = "./docs"
-[llm]
-default = "zai-native"
-[llm.providers.zai-native]
-type = "zai"
-endpoint = "https://api.z.ai/api/coding/paas/v4"
-api_key = "$GLM_AUTH_TOKEN"
-default_model = "GLM-4.7"
+    cat >"$ZAI_CONFIG" <<'EOF'
+cru.config.set({
+    kiln_path = "./docs",
+    llm = {
+        default = "zai-native",
+        providers = {
+            ["zai-native"] = {
+                type = "zai",
+                endpoint = "https://api.z.ai/api/coding/paas/v4",
+                api_key = os.getenv("GLM_AUTH_TOKEN"),
+                default_model = "GLM-4.7",
+            },
+        },
+    },
+})
 EOF
 
     log_info "Using binary: $CRU"
@@ -116,8 +136,10 @@ validate_config() {
         ok=1
     fi
 
-    if [[ "$config_json" == *"{env:GLM_AUTH_TOKEN}"* ]]; then
-        log_fail "config api_key still literal {env:GLM_AUTH_TOKEN}"
+    # The Lua reads the token with `os.getenv`. If the call text reaches the
+    # rendered config, the chunk was stored rather than evaluated.
+    if [[ "$config_json" == *"os.getenv"* ]]; then
+        log_fail "config api_key still holds the unevaluated os.getenv call"
         ok=1
     else
         log_pass "config api_key injected as literal value"
@@ -240,7 +262,7 @@ run_debug_diagnostics() {
     log_info "Running debug diagnostics (RUST_LOG=genai=debug)..."
 
     if [[ "$anthropic_chat_failed" == "true" ]]; then
-        RUST_LOG=genai=debug timeout 60 "$CRU" --config "$WORKDIR/anthropic-config.toml" \
+        RUST_LOG=genai=debug timeout 60 "$CRU" --config "$ANTHROPIC_CONFIG" \
             chat --standalone --no-context --provider zai-coding \
             "Say hello" \
             >"$WORKDIR/debug-anthropic-stdout.log" \
@@ -252,7 +274,7 @@ run_debug_diagnostics() {
     fi
 
     if [[ "$zai_chat_failed" == "true" ]]; then
-        RUST_LOG=genai=debug timeout 60 "$CRU" --config "$WORKDIR/zai-native-config.toml" \
+        RUST_LOG=genai=debug timeout 60 "$CRU" --config "$ZAI_CONFIG" \
             chat --standalone --no-context --provider zai-native \
             "Say hello" \
             >"$WORKDIR/debug-zai-stdout.log" \
@@ -288,10 +310,10 @@ main() {
     check_prereqs
 
     log_info "Phase 2: Config validation"
-    if validate_config "$WORKDIR/anthropic-config.toml" "zai-coding" "anthropic" "https://api.z.ai/api/anthropic" "$WORKDIR/config-anthropic-stderr.log"; then
+    if validate_config "$ANTHROPIC_CONFIG" "zai-coding" "anthropic" "https://api.z.ai/api/anthropic" "$WORKDIR/config-anthropic-stderr.log"; then
         :
     fi
-    if validate_config "$WORKDIR/zai-native-config.toml" "zai-native" "zai" "https://api.z.ai/api/coding/paas/v4" "$WORKDIR/config-zai-stderr.log"; then
+    if validate_config "$ZAI_CONFIG" "zai-native" "zai" "https://api.z.ai/api/coding/paas/v4" "$WORKDIR/config-zai-stderr.log"; then
         :
     fi
     if [[ $failed -eq 0 ]]; then
@@ -322,8 +344,8 @@ main() {
         phase3b_http || true
 
     log_info "Phase 4: Crucible chat tests"
-    run_chat_test "anthropic" "$WORKDIR/anthropic-config.toml" "zai-coding" "$WORKDIR/chat-anthropic-stderr.log" phase4a_status anthropic_chat_failed || true
-    run_chat_test "zai-native" "$WORKDIR/zai-native-config.toml" "zai-native" "$WORKDIR/chat-zai-stderr.log" phase4b_status zai_chat_failed || true
+    run_chat_test "anthropic" "$ANTHROPIC_CONFIG" "zai-coding" "$WORKDIR/chat-anthropic-stderr.log" phase4a_status anthropic_chat_failed || true
+    run_chat_test "zai-native" "$ZAI_CONFIG" "zai-native" "$WORKDIR/chat-zai-stderr.log" phase4b_status zai_chat_failed || true
 
     run_debug_diagnostics
     print_summary

@@ -206,10 +206,10 @@ async fn install_load_report_surfaces_failure_and_absence() {
     );
 }
 
-/// A repo named `crucible-greeter` whose plugin.yaml says `name: greeter` is
-/// a thoroughly conventional layout, and it puts two naming authorities in
+/// A repo named `crucible-greeter` whose spec table says `name = "greeter"`
+/// is a thoroughly conventional layout, and it puts two naming authorities in
 /// play: the installed manifest and the clone dir go by the URL name, the
-/// plugin manager by the yaml/spec name. Resolution must go through the
+/// plugin manager by the declared name. Resolution must go through the
 /// clone DIRECTORY, or install reports a healthy plugin as broken and remove
 /// silently no-ops (unload's NotFound swallowed, manifest record gone,
 /// plugin still running and now unremovable).

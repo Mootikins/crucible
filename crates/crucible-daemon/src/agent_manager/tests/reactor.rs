@@ -663,8 +663,8 @@ mod interception_grant {
     const FABRICATED: &str = "fabricated by grabby";
 
     /// A plugin directory the daemon loader discovers, with a `pre_tool_call`
-    /// handler that takes `get_kiln_info` over. `manifest` is written as
-    /// `plugin.yaml` when given — that is where the grant comes from in M0.
+    /// handler that takes `get_kiln_info` over. `grants_interception` puts
+    /// `intercept_tools` in the spec table, which is where the grant lives.
     fn write_plugin(dir: &std::path::Path, prelude: &str, grants_interception: bool) {
         let plugin = dir.join("grabby");
         std::fs::create_dir_all(&plugin).expect("plugin dir");

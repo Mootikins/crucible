@@ -89,6 +89,15 @@ impl BackgroundJobManager {
         jobs
     }
 
+    /// How many jobs are running right now, across every session.
+    ///
+    /// The idle timer reads this: a background command has no client attached
+    /// to it, so connection count alone would let the daemon exit in the
+    /// middle of one.
+    pub fn running_count(&self) -> usize {
+        self.running.len()
+    }
+
     pub fn get_job_result(&self, job_id: &JobId) -> Option<JobResult> {
         if let Some(entry) = self.running.get(job_id) {
             return Some(JobResult {

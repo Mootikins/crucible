@@ -318,7 +318,7 @@ pub enum Commands {
     /// Manage Crucible configuration (initialize, view, export)
     #[command(
         subcommand,
-        long_about = "Manage Crucible configuration - initialize, view, and export settings.\n\nExamples:\n  # Initialize config\n  cru config init\n\n  # Show current config\n  cru config show\n\n  # Show config as JSON\n  cru config show -f json\n\n  # Dump default config\n  cru config dump > default-config.toml",
+        long_about = "Manage Crucible configuration - initialize, view, and export settings.\n\nExamples:\n  # Initialize config\n  cru config init\n\n  # Show current config\n  cru config show\n\n  # Show config as JSON\n  cru config show -f json\n\n  # Dump the default config for reference\n  cru config dump",
         visible_alias = "cfg"
     )]
     Config(ConfigCommands),

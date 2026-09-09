@@ -152,6 +152,34 @@ pub struct TestDaemon {
     temp_dir: tempfile::TempDir,
 }
 
+/// How long a fixture gives its daemon to accept a connection.
+const READY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The daemon never accepted a connection inside the readiness window.
+///
+/// It carries the pid the fixture spawned. A test that proves the fixture
+/// reaped its child has to ask the operating system about that exact process,
+/// and a string error cannot answer that.
+#[derive(Debug)]
+pub struct DaemonNotReady {
+    /// The process the fixture spawned.
+    pub pid: u32,
+    /// How long the fixture waited before it gave up.
+    pub waited: Duration,
+}
+
+impl std::fmt::Display for DaemonNotReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "daemon pid {} did not start accepting connections within {:?}",
+            self.pid, self.waited
+        )
+    }
+}
+
+impl std::error::Error for DaemonNotReady {}
+
 /// Block until the daemon at `socket_path` actually accepts a connection.
 ///
 /// Waiting for the socket *file* to appear and then sleeping a fixed 50ms is
@@ -161,14 +189,14 @@ pub struct TestDaemon {
 /// the work. `rpc_session_e2e.rs` already replaced its own copy of that pattern
 /// after the same intermittent failures — this is the remaining one, shared by
 /// 17 tests across four files.
-async fn wait_until_accepting(socket_path: &Path) -> Result<()> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+async fn wait_until_accepting(socket_path: &Path, ready: Duration, pid: u32) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + ready;
     loop {
         if socket_path.exists() && UnixStream::connect(socket_path).await.is_ok() {
             return Ok(());
         }
         if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!("Daemon did not start accepting connections within 10 seconds");
+            return Err(DaemonNotReady { pid, waited: ready }.into());
         }
         sleep(Duration::from_millis(20)).await;
     }
@@ -268,17 +296,8 @@ impl TestDaemon {
     /// ensuring test isolation.
     pub async fn start() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
         write_daemon_config(temp_dir.path())?;
-
-        let process = spawn_daemon(temp_dir.path(), &socket_path, &[])?;
-
-        wait_until_accepting(&socket_path).await?;
-        Ok(Self {
-            socket_path,
-            process: Some(process),
-            temp_dir,
-        })
+        Self::spawn_and_await_readiness(temp_dir, &[], READY_TIMEOUT).await
     }
 
     /// Start a test daemon after `setup` has arranged extra fixture files
@@ -287,35 +306,56 @@ impl TestDaemon {
     #[allow(dead_code)]
     pub async fn start_with_home_setup(setup: impl FnOnce(&Path) -> Result<()>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
         write_daemon_config(temp_dir.path())?;
         setup(temp_dir.path())?;
-
-        let process = spawn_daemon(temp_dir.path(), &socket_path, &[])?;
-
-        wait_until_accepting(&socket_path).await?;
-        Ok(Self {
-            socket_path,
-            process: Some(process),
-            temp_dir,
-        })
+        Self::spawn_and_await_readiness(temp_dir, &[], READY_TIMEOUT).await
     }
 
     /// Start a test daemon with additional environment variables.
     #[allow(dead_code)]
     pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
         write_daemon_config(temp_dir.path())?;
+        Self::spawn_and_await_readiness(temp_dir, &env_vars, READY_TIMEOUT).await
+    }
 
-        let process = spawn_daemon(temp_dir.path(), &socket_path, &env_vars)?;
+    /// Start a test daemon with an explicit readiness window.
+    ///
+    /// A window no daemon can meet is the only deterministic way to reach the
+    /// failure path, which is what the orphan gate needs.
+    #[allow(dead_code)]
+    pub async fn start_with_ready_timeout(ready: Duration) -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        write_daemon_config(temp_dir.path())?;
+        Self::spawn_and_await_readiness(temp_dir, &[], ready).await
+    }
 
-        wait_until_accepting(&socket_path).await?;
-        Ok(Self {
+    /// Spawn the daemon, then wait for it to accept a connection.
+    ///
+    /// One implementation, because the readiness wait can FAIL and the child
+    /// has to die when it does. `Child` has no killing `Drop` of its own, so
+    /// only [`TestDaemon`]'s does that.
+    async fn spawn_and_await_readiness(
+        temp_dir: tempfile::TempDir,
+        extra_env: &[(&str, &str)],
+        ready: Duration,
+    ) -> Result<Self> {
+        let socket_path = temp_dir.path().join("daemon.sock");
+        let process = spawn_daemon(temp_dir.path(), &socket_path, extra_env)?;
+        let pid = process.id();
+
+        // Construct FIRST, wait SECOND. Every `?` past this line drops
+        // `daemon`, and that `Drop` kills and reaps the child. Waiting before
+        // the struct existed handed a timeout's `?` a bare `Child`, whose
+        // `Drop` does nothing at all — see the module docs of
+        // `tests/daemon_orphan_gate.rs`.
+        let daemon = Self {
             socket_path,
             process: Some(process),
             temp_dir,
-        })
+        };
+        wait_until_accepting(&daemon.socket_path, ready, pid).await?;
+        Ok(daemon)
     }
 
     /// The `CRUCIBLE_HOME` this daemon was given.
@@ -349,9 +389,46 @@ impl TestDaemon {
         // `wait_until_accepting` cannot answer with the dead daemon's file.
         let _ = std::fs::remove_file(&self.socket_path);
 
-        self.process = Some(spawn_daemon(self.temp_dir.path(), &self.socket_path, &[])?);
-        wait_until_accepting(&self.socket_path).await?;
+        // Assign BEFORE the wait: `self`'s `Drop` then owns the new child, so
+        // a readiness failure below cannot leave it running.
+        let process = spawn_daemon(self.temp_dir.path(), &self.socket_path, &[])?;
+        let pid = process.id();
+        self.process = Some(process);
+        wait_until_accepting(&self.socket_path, READY_TIMEOUT, pid).await?;
         Ok(())
+    }
+
+    /// Send `signal` to the daemon and wait up to `timeout` for it to exit.
+    ///
+    /// Answers `None` when the daemon is still running at the deadline, so a
+    /// test can say "it ignored the signal" rather than hang.
+    ///
+    /// The exit STATUS is the point: a process that handles SIGTERM exits with
+    /// a code, while one that lets the default disposition run is terminated
+    /// BY the signal and has no code at all. That is the only observable
+    /// difference between a clean shutdown and no handler.
+    #[allow(dead_code)]
+    pub fn signal_and_wait(
+        &mut self,
+        signal: i32,
+        timeout: Duration,
+    ) -> Option<std::process::ExitStatus> {
+        let process = self.process.as_mut()?;
+        // SAFETY: `kill` on a pid this fixture spawned and still owns.
+        unsafe {
+            libc::kill(process.id() as libc::pid_t, signal);
+        }
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match process.try_wait() {
+                Ok(Some(status)) => return Some(status),
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(None) => return None,
+                Err(_) => return None,
+            }
+        }
     }
 
     /// Manually stop the daemon process

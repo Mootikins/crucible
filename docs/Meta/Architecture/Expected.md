@@ -1230,7 +1230,7 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 
 ### 4.26 Daemon server and RPC client
 
-- Responsibility: bind the socket; authenticate by uid through socket permissions; dispatch JSON-RPC to the subsystems; stream events; report `daemon.capabilities`. On the client side: auto-spawn and version check.
+- Responsibility: bind the socket; authenticate by uid through socket permissions; dispatch JSON-RPC to the subsystems; stream events; report `daemon.capabilities`; end itself on a signal or after `server.idle_shutdown_minutes` idle. On the client side: auto-spawn, version check, and reaping a spawned daemon that never became reachable.
 - Owns: `SocketPath`, `RpcMethod`, `RpcRequest`, `RpcResponse`, `RpcError { code, message, data }`, `Capabilities { methods, build_sha }`, `Subscription`.
 - Operations: `Server::bind_with_data_home(data_home, config)`, `DaemonClient::connect_or_start()`, `DaemonClient::call<T>(method, params)`, `DaemonClient::subscribe(targets) -> EventStream`. Idempotent methods retry twice on a transport timeout.
 - Must never know: domain logic. A handler is a thin translation from params to one subsystem call.

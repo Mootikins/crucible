@@ -335,7 +335,7 @@ fn test_spec_plugin_full_lifecycle() {
     let plugin = manager.get("spec-test").unwrap();
     assert_eq!(plugin.state, PluginState::Active);
     assert_eq!(plugin.manifest.name, "spec-test");
-    assert_eq!(plugin.version(), "1.0.0");
+    assert_eq!(plugin.version(), Some("1.0.0"));
 
     assert_eq!(manager.tools().len(), 1);
     assert_eq!(manager.tools()[0].name, "search");
@@ -368,7 +368,7 @@ fn test_spec_plugin_without_manifest() {
     assert_eq!(plugin.state, PluginState::Active);
     // Name/version updated from spec
     assert_eq!(plugin.manifest.name, "no-manifest");
-    assert_eq!(plugin.version(), "1.0.0");
+    assert_eq!(plugin.version(), Some("1.0.0"));
 
     assert_eq!(manager.tools().len(), 1);
     assert_eq!(manager.commands().len(), 1);

@@ -250,12 +250,17 @@ impl PluginManager {
                                 ),
                             }
                         }
+                        // The spec is the only source of a version, so it
+                        // fills one in exactly when none is known. It used to
+                        // be guarded on a `synthesized` flag that stood in for
+                        // "the version is still the placeholder" — the
+                        // placeholder is gone, and `None` says it directly.
                         if let Some(ref spec_version) = spec.version {
-                            if plugin.manifest.synthesized {
+                            if plugin.manifest.version.is_none() {
                                 let mut candidate = plugin.manifest.clone();
-                                candidate.version = spec_version.clone();
+                                candidate.version = Some(spec_version.clone());
                                 match candidate.validate() {
-                                    Ok(()) => plugin.manifest.version = spec_version.clone(),
+                                    Ok(()) => plugin.manifest.version = Some(spec_version.clone()),
                                     Err(e) => warn!(
                                         "plugin {} declares an unusable version \
                                          {spec_version:?}: {e}",

@@ -264,7 +264,13 @@ impl AuthTestEnv {
 
     /// Create a kiln fixture in the test environment
     ///
-    /// Creates a minimal kiln structure at the given path (relative to temp HOME).
+    /// Creates a minimal kiln structure at the given path (relative to temp HOME),
+    /// the same shape `cru init` writes: `sessions/`, `plugins/` and an
+    /// `init.lua`.
+    ///
+    /// The config is Lua. The fixture wrote a `.crucible/config.toml` until
+    /// v0.30.0; no reader loads that file now, so a kiln built that way was
+    /// unconfigured while its contents claimed a provider and a model.
     ///
     /// # Example
     ///
@@ -280,17 +286,17 @@ impl AuthTestEnv {
         fs::create_dir_all(crucible_dir.join("sessions")).expect("Failed to create sessions dir");
         fs::create_dir_all(crucible_dir.join("plugins")).expect("Failed to create plugins dir");
 
-        // Create minimal config.toml
-        let config_content = r#"
-[kiln]
-path = "."
-
-[chat]
-provider = "ollama"
-model = "llama3.2"
+        let init_lua = r#"cru.config.set({
+    kiln_path = ".",
+    llm = {
+        default = "ollama",
+        providers = {
+            ollama = { type = "ollama", default_model = "llama3.2" },
+        },
+    },
+})
 "#;
-        fs::write(crucible_dir.join("config.toml"), config_content)
-            .expect("Failed to write config.toml");
+        fs::write(crucible_dir.join("init.lua"), init_lua).expect("Failed to write init.lua");
 
         kiln_path
     }
@@ -371,6 +377,10 @@ mod tests {
         assert_eq!(env_vars.get("TEST_VAR"), Some(&"test_value".to_string()));
     }
 
+    /// The fixture must produce the kiln `cru init` produces: an `init.lua`
+    /// and no `config.toml`. A `.crucible/config.toml` is not a config —
+    /// no reader loads it — so a fixture that wrote one gave every test
+    /// using it a silent set of defaults while the file said otherwise.
     #[test]
     fn test_create_kiln_creates_structure() {
         let env = AuthTestEnv::new();
@@ -378,7 +388,11 @@ mod tests {
 
         assert!(kiln_path.exists());
         assert!(kiln_path.join(".crucible").exists());
-        assert!(kiln_path.join(".crucible/config.toml").exists());
+        assert!(kiln_path.join(".crucible/init.lua").exists());
+        assert!(
+            !kiln_path.join(".crucible/config.toml").exists(),
+            "the fixture must not write a file no reader loads"
+        );
         assert!(kiln_path.join(".crucible/sessions").exists());
         assert!(kiln_path.join(".crucible/plugins").exists());
     }

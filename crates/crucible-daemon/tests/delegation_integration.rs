@@ -165,11 +165,6 @@ async fn load_test_plugin(temp: &Path, init: &str) -> DaemonPluginLoader {
     let root = temp.join("plugins");
     let dir = root.join("sandbox");
     std::fs::create_dir_all(&dir).expect("plugin dir");
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
-    )
-    .expect("plugin.yaml");
     std::fs::write(dir.join("init.lua"), init).expect("init.lua");
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");

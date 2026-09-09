@@ -61,12 +61,14 @@ async fn every_shipped_plugin_executes() {
     }
 }
 
-/// The kill switch: `[plugins.<name>] enabled = false` in config.toml must
-/// keep a bundled plugin from ever executing.
+/// The kill switch: `plugins.<name>.enabled = false` in the config store must
+/// keep a bundled plugin from ever executing. A user writes it in `init.lua`;
+/// the web writes it to `settings.json`. Either way the loader sees the same
+/// `plugin_config` map this test hands it.
 ///
-/// Editing the extracted `plugin.yaml` does not work — the runtime tree is
+/// Editing the extracted entry file does not work — the runtime tree is
 /// re-stamped from the binary whenever `version + blake3(tree)` changes, which
-/// silently restores `enabled: true`. Config is the only durable lever, and
+/// silently restores the shipped copy. Config is the only durable lever, and
 /// `oci` is the plugin that most needs it (it shells out to a container
 /// runtime). Paired with `every_shipped_plugin_executes` above, which proves
 /// `oci` DOES load when config says nothing.

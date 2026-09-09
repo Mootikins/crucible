@@ -359,7 +359,7 @@ stderr.
 | `permissions` | Tool allow/deny/ask rules | [[Help/Config/permissions|Permission Configuration]] |
 | `web` | Browser UI served by `cru web` | [[Help/Config/web|Web UI Configuration]] |
 | `workspace` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/init.lua` |
-| `server` | `auto_archive_hours`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `web` | `docs/init.lua` |
+| `server` | `auto_archive_hours` and `idle_shutdown_minutes`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `web` | `docs/init.lua` |
 | `schedules` | Recurring Lua snippets run on an interval — `cru.schedule` in `init.lua` is the native spelling | `docs/init.lua` |
 | `plugins.*` | Free-form per-plugin tables, fed to that plugin's `setup(cfg)`; plus the reserved `plugins.declare` table below | [[Help/Lua/Configuration|Lua Configuration]] — the two plugin-config forms |
 
@@ -452,6 +452,10 @@ saved setting rewrites the file whole, with sorted keys. You may edit it by
 hand, and the next save keeps what you wrote, but prefer `init.lua` — a key
 your `init.lua` sets wins over the saved value, and the save is refused
 rather than lost, naming the line that holds the key.
+
+A save also replaces a value you set with `:set` for this run, so the value
+you save is the value in force immediately. A save the daemon refuses changes
+nothing: your `:set` value stands until the session ends.
 
 The browser writes that file. In `cru web`, open the settings gear, then
 **Configuration**: the section shows the same keys, with the daemon's own

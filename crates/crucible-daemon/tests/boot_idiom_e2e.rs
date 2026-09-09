@@ -31,10 +31,6 @@ async fn init_lua_setup_idiom_survives_a_real_daemon_boot() {
         let plugin_dir = config_dir.join("plugins").join("prefs");
         std::fs::create_dir_all(&plugin_dir)?;
         std::fs::write(
-            plugin_dir.join("plugin.yaml"),
-            "name: prefs\nversion: \"0.1.0\"\nmain: init.lua\n",
-        )?;
-        std::fs::write(
             plugin_dir.join("init.lua"),
             r#"
 _G.__prefs_setups = 0

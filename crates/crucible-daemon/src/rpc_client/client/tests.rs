@@ -819,3 +819,68 @@ mod simple_mode_correlation {
         server.await.expect("server task");
     }
 }
+
+/// Ask the operating system whether `pid` still names a live process.
+///
+/// Signal 0 delivers nothing; it performs only the existence and permission
+/// checks. Reading the guard's own bookkeeping would prove nothing about the
+/// process it was supposed to reap.
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    // SAFETY: `kill` with signal 0 sends no signal. Its only effects are the
+    // return value and `errno`.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+/// A child that outlives any plausible test, so "still alive" means the guard
+/// let it live rather than that it had not finished yet.
+#[cfg(unix)]
+fn spawn_long_lived_child() -> std::process::Child {
+    std::process::Command::new("sleep")
+        .arg("300")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn a long-lived child")
+}
+
+/// The give-up path: the daemon never answered, the client is about to return
+/// an error, and nothing else in the system holds that process.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_never_answers_is_reaped_by_the_guard() {
+    let child = spawn_long_lived_child();
+    let pid = child.id();
+
+    drop(SpawnedDaemon(Some(child)));
+
+    assert!(
+        !process_is_alive(pid),
+        "pid {pid} survived the guard; a daemon that never answered is an orphan"
+    );
+}
+
+/// The success path: the daemon is serving, and outliving this client is the
+/// entire reason it was spawned detached.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_answers_is_left_running() {
+    let child = spawn_long_lived_child();
+    let pid = child.id();
+
+    SpawnedDaemon(Some(child)).detach();
+
+    assert!(
+        process_is_alive(pid),
+        "pid {pid} was killed; a daemon that answered must outlive its client"
+    );
+
+    // Detaching means nothing waits on it any more. Kill it here; the test
+    // process exits immediately afterwards (nextest runs one test per
+    // process), so init reaps what is left.
+    // SAFETY: `kill` on a pid this test spawned and still owns.
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+    }
+}

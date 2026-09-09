@@ -10,6 +10,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
 import type { PluginInfo } from '@/lib/api';
+import { pluginVersionLabel } from '@/lib/plugin-version';
 import type { AgentConfigOption } from '@/lib/types';
 import {
   login,
@@ -339,7 +340,7 @@ export const PluginsSection: Component<{ onChanged?: () => void | Promise<unknow
                   title={`State: ${plugin.state}`}
                 />
                 <div>
-                  <div class="text-sm">{plugin.name} <span class="text-xs text-muted-dark">v{plugin.version}</span></div>
+                  <div class="text-sm">{plugin.name} <span class="text-xs text-muted-dark" data-testid={`plugin-version-${plugin.name}`}>{pluginVersionLabel(plugin.version)}</span></div>
                   <div class="text-xs text-muted-dark">{plugin.source} · {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S</div>
                 </div>
               </div>

@@ -50,7 +50,7 @@ Complete reference for all Crucible CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `cru daemon` | Manage the Crucible daemon (start, stop, restart, status, logs; `serve` runs it in the foreground) |
+| `cru daemon` | Manage the Crucible daemon (start, stop, restart, status, logs; `serve` runs it in the foreground). It also stops itself: on SIGTERM or SIGINT, and after `server.idle_shutdown_minutes` (default 30) with no connected client and no running job — see [[Help/Configuration]] |
 | `cru storage` | Storage info (mode, stats). `verify`, `cleanup`, `backup`, and `restore` are parsed but call daemon stubs that are not yet implemented — they print a warning and exit 0 |
 | `cru workflow` | Workflow notes (`type: workflow` frontmatter): list, show, start, approve, status, cancel |
 | `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done, blocked) |

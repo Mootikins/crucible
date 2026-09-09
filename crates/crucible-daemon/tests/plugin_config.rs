@@ -188,11 +188,6 @@ fn reflection_setup_lowers_min_turns() {
 fn write_plugin(root: &Path, name: &str, init_lua: &str) {
     let dir = root.join(name);
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
-    )
-    .unwrap();
     std::fs::write(dir.join("init.lua"), init_lua).unwrap();
 }
 
@@ -399,11 +394,6 @@ async fn a_name_mismatched_plugin_executes_once_and_hooks_once() {
     let root = tmp.path().join("plugins");
     let dir = root.join("plainmod");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: fancy-name\nversion: \"0.1.0\"\nmain: init.lua\n",
-    )
-    .unwrap();
     std::fs::write(
         dir.join("init.lua"),
         r#"

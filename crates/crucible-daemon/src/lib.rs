@@ -112,7 +112,7 @@ pub use daemon_plugins::{
 pub use delegation::{DelegationRequest, DelegationService, DelegationSpawned, DelegationSpawner};
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
-pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
+pub use lifecycle::{remove_socket, socket_path, ShutdownSignals};
 pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
 pub use observe::{events, id, indexer, markdown, session};

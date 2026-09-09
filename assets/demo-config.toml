@@ -1,28 +1,23 @@
-# Crucible Demo Configuration
-# Used by VHS tape files for reproducible demo recordings.
-# Points to docs/ as the kiln (ships with the repo, 155 notes).
-
+# Crucible Demo Configuration (local — not committed)
 kiln_path = "./docs"
 
 [llm]
-default = "demo"
+default = "llama-swappo"
 
-[llm.providers.demo]
+[llm.providers.llama-swappo]
 type = "openai"
-endpoint = "{env:CRUCIBLE_DEMO_ENDPOINT}"
+endpoint = "https://llama.example.io/v1"
 default_model = "glm-4.7-flash-iq4"
+temperature = 0.3
+max_tokens = 2048
 
 [chat]
 agent_preference = "crucible"
-internal_backend = "rig"
 
 [cli]
 show_progress = false
 confirm_destructive = true
 verbose = false
-
-[storage]
-mode = "sqlite"
 
 [enrichment.provider]
 type = "fastembed"

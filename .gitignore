@@ -50,10 +50,6 @@ Thumbs.db
 *.db-wal
 .crucible/
 
-# Demo configs (contain local endpoint/paths — copy from .example)
-assets/demo-config.toml
-assets/demo-acp-config.toml
-
 # Tauri
 src-tauri/target/
 

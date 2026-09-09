@@ -962,11 +962,6 @@ mod tests {
     fn write_fixture_plugin(root: &Path, name: &str, body: &str) {
         let dir = root.join("plugins").join(name);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("plugin.yaml"),
-            format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
-        )
-        .unwrap();
         std::fs::write(dir.join("init.lua"), body).unwrap();
     }
 

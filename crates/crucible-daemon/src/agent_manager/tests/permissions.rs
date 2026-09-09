@@ -405,7 +405,14 @@ mod pattern_matching_tests {
                     let barrier = barrier.clone();
                     std::thread::spawn(move || {
                         barrier.wait();
-                        AgentManager::store_pattern_to(&file, "bash", &format!("tool{round}_{i} *"))
+                        // `tool{n} *` is a command name plus a wildcard, which
+                        // the loader refuses. The grant under test is the
+                        // round trip, so the rule carries an argument.
+                        AgentManager::store_pattern_to(
+                            &file,
+                            "bash",
+                            &format!("tool{round}_{i} run *"),
+                        )
                     })
                 })
                 .collect();
@@ -417,13 +424,13 @@ mod pattern_matching_tests {
         let store = PatternStore::load_file(&file).unwrap();
         for round in 0..rounds {
             for i in 0..writers {
-                let sample = format!("tool{round}_{i} run");
+                let sample = format!("tool{round}_{i} run now");
                 assert!(store.matches_bash(&sample), "grant lost: {sample:?}");
             }
         }
     }
 
-    #[test_case("bash", "cargo *", "cargo build --release", true; "store_pattern_adds_bash_pattern")]
+    #[test_case("bash", "cargo build *", "cargo build --release", true; "store_pattern_adds_bash_pattern")]
     #[test_case("write_file", "src/", "src/main.rs", true; "store_pattern_adds_file_pattern")]
     #[test_case("custom_tool", "custom_tool", "custom_tool", true; "store_pattern_adds_tool_pattern")]
     #[test_case("bash", "*", "", false; "store_pattern_rejects_star_pattern")]

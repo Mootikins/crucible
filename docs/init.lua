@@ -335,12 +335,19 @@ cru.config.set({
     -- =========================================================================
     -- server - Daemon server settings
     -- =========================================================================
-    -- `auto_archive_hours` is the whole table. `host` and `port` were removed —
-    -- the daemon binds a Unix socket, and the web server's address is `web`. So
-    -- were the TLS and request-limit keys, which were never wired to anything.
-    -- This table refuses an unknown key, and says which one.
+    -- `auto_archive_hours` and `idle_shutdown_minutes` are the whole table.
+    -- `host` and `port` were removed — the daemon binds a Unix socket, and the
+    -- web server's address is `web`. So were the TLS and request-limit keys,
+    -- which were never wired to anything. This table refuses an unknown key,
+    -- and says which one.
+    --
+    -- `idle_shutdown_minutes` is how long a daemon that owns its own process
+    -- sits with no connected client and no running job before it exits. It is
+    -- spawned detached and has no parent to reap it, so without a timer an
+    -- auto-spawned daemon whose client died lived for ever. Set 0 to disable.
+    -- A daemon with `schedules` never arms it.
 
-    -- server = { auto_archive_hours = 72 },
+    -- server = { auto_archive_hours = 72, idle_shutdown_minutes = 30 },
 
     -- =========================================================================
     -- logging

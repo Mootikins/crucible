@@ -87,6 +87,50 @@ async fn read_app_config_key(
     Ok((value, Some(origin)))
 }
 
+/// Drop config layers for one app-config key through the daemon, and report
+/// what the store then holds.
+///
+/// `pop` picks the verb: `config.reset` drops the ephemeral layer `:set`
+/// writes, `config.pop` drops the highest layer holding the leaf. The
+/// daemon's row is the whole answer — the value, its origin, and the layers
+/// that went — because the TUI keeps no copy of app config to update.
+async fn drop_app_config_key(
+    key: &str,
+    pop: bool,
+) -> Result<(Vec<String>, serde_json::Value, serde_json::Value), String> {
+    let client = crucible_daemon::DaemonClient::connect()
+        .await
+        .map_err(|e| format!("daemon connect failed: {e}"))?;
+
+    let method = if pop { "config.pop" } else { "config.reset" };
+    let row = client
+        .call(method, serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // The store withholds the keys that name where the daemon acts from every
+    // write door, and a drop is a write door. Reporting it as "nothing to
+    // drop" would read as a key with no layers rather than a key this socket
+    // may not touch.
+    if row.get("outcome").and_then(|o| o.as_str()) == Some("withheld") {
+        return Err(format!(
+            "'{key}' names where the daemon acts; change it in the config file"
+        ));
+    }
+    let dropped = row
+        .get("dropped")
+        .and_then(|d| d.as_array())
+        .map(|sources| {
+            sources
+                .iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let value = row.get("value").cloned().unwrap_or(serde_json::Value::Null);
+    Ok((dropped, value, row))
+}
+
 impl OilChatRunner {
     /// Spawn the daemon RPC behind `FetchModels` as a background task.
     ///
@@ -633,6 +677,30 @@ impl OilChatRunner {
                             let _ = tx.send(msg);
                         }));
                     }
+                    // Gated on `!self.is_replay`: a `:set key&` or `:set
+                    // key^` on an app-config key CHANGES the daemon store, so
+                    // replaying a transcript must not re-drop the layers.
+                    ChatAppMsg::ConfigDrop { ref key, pop } if !self.is_replay => {
+                        let key = key.clone();
+                        let pop = *pop;
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match drop_app_config_key(&key, pop).await {
+                                Ok((dropped, value, origin)) => ChatAppMsg::ConfigDropResolved {
+                                    key,
+                                    dropped,
+                                    value,
+                                    origin,
+                                },
+                                Err(e) => {
+                                    tracing::warn!(key = %key, pop, error = %e, "a config drop failed");
+                                    let spelling = if pop { "^" } else { "&" };
+                                    ChatAppMsg::Error(format!("set {key}{spelling}: {e}"))
+                                }
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
                     // Gated on `!self.is_replay`: opens a fresh
                     // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::EvalLua(ref code) if !self.is_replay => {
@@ -867,6 +935,7 @@ impl OilChatRunner {
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ConfigQuery { .. }
+                    | ChatAppMsg::ConfigDrop { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::RunPluginCommand { .. }
                     | ChatAppMsg::ExportSession(_)

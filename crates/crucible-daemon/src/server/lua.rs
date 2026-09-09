@@ -191,8 +191,9 @@ pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
 /// `PluginManager::initialize`, which loads what it finds, so answering "what
 /// plugins are there" ran every one of their `init.lua` files. Two callers made
 /// that reachable: this RPC (which the web UI calls, `daemon.rs:399`) and
-/// `session.create`'s setup task. Name, version and state all come from
-/// `plugin.yaml`; none of them needs a VM.
+/// `session.create`'s setup task. Name and state come from the directory;
+/// neither needs a VM. The VERSION does — it is declared in the spec table —
+/// so a plugin that has not loaded reports `None`, not a placeholder.
 ///
 /// Shared by the RPC and `session.create` so the two cannot answer differently.
 pub(crate) fn discover_available_plugins(
@@ -202,7 +203,7 @@ pub(crate) fn discover_available_plugins(
         .list()
         .map(|p| crucible_core::types::PluginStatusEntry {
             name: p.name().to_string(),
-            version: p.version().to_string(),
+            version: p.version().map(str::to_string),
             state: p.state.to_string(),
             error: p.last_error.clone(),
         })
@@ -464,18 +465,15 @@ mod discover_plugins_tests {
     fn write_kiln_plugin(kiln_root: &Path, name: &str, version: &str) {
         let plugin_dir = kiln_root.join("plugins").join(name);
         fs::create_dir_all(&plugin_dir).unwrap();
-        fs::write(
-            plugin_dir.join("plugin.yaml"),
-            format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n"),
-        )
-        .unwrap();
         let marker = kiln_root.join("EXECUTED");
         fs::write(
             plugin_dir.join("init.lua"),
             format!(
                 "local f = io.open({:?}, 'w'); f:write('ran'); f:close()\n\
-                 return {{ setup = function() end }}\n",
-                marker.to_string_lossy()
+                 return {{ name = {:?}, version = {:?}, setup = function() end }}\n",
+                marker.to_string_lossy(),
+                name,
+                version
             ),
         )
         .unwrap();

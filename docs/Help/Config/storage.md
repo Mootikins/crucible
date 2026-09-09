@@ -15,6 +15,8 @@ Crucible uses a **daemon-backed storage architecture**. All storage operations g
 
 The daemon is the only storage backend. It starts automatically on first use via `DaemonClient::connect_or_start()` and manages all data access.
 
+It also stops on its own. A signal (SIGTERM or SIGINT) shuts it down cleanly, and it exits after `server.idle_shutdown_minutes` (default 30) with no connected client and no running background job — at once, rather than after the window, if its socket file has gone, because no client can reach it again. Sessions are persisted, so the next command starts a fresh daemon and resumes them. Set the key to `0` to keep a daemon running for ever; a daemon with `schedules` configured never arms the timer.
+
 Data is stored in:
 - `<kiln_path>/.crucible/crucible-sqlite.db` (notes, metadata, FTS index, vector embeddings)
 

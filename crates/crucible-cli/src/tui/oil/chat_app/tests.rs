@@ -205,12 +205,51 @@ fn plugins_discovered_raises_notification_for_failed_plugin() {
 
     app.on_message(ChatAppMsg::PluginsDiscovered(vec![PluginStatusEntry {
         name: "broken".into(),
-        version: "0.1.0".into(),
+        version: Some("0.1.0".into()),
         state: "failed".into(),
         error: Some("bad Lua".into()),
     }]));
 
     assert!(app.has_notifications());
+}
+
+/// `/plugins` lists a plugin the daemon has discovered but not loaded.
+///
+/// Such a plugin has NO version: the version lives in the spec table, which
+/// only a load reads. The daemon reports `null`, and the list must show the
+/// name and the state without a Rust debug value ("None") and without the
+/// old "0.0.0" placeholder, which read as a real release.
+#[test]
+fn the_plugins_list_shows_no_version_for_a_plugin_that_is_not_loaded() {
+    use crucible_core::types::PluginStatusEntry;
+
+    // Built from the wire shape, not from a Rust literal, so the test also
+    // pins that the daemon may send a null version.
+    let entry: PluginStatusEntry = serde_json::from_value(serde_json::json!({
+        "name": "unloaded-plugin",
+        "version": null,
+        "state": "Discovered",
+        "error": null,
+    }))
+    .expect("the daemon reports a null version for a plugin it has not loaded");
+
+    let mut app = OilChatApp::default();
+    app.set_plugin_status(vec![entry]);
+    app.handle_plugins_command();
+
+    let rendered = last_node_text(&app, 120);
+    assert!(
+        rendered.contains("unloaded-plugin"),
+        "the plugin is missing from the list: {rendered}"
+    );
+    assert!(
+        !rendered.contains("None"),
+        "a Rust debug value reached the transcript: {rendered}"
+    );
+    assert!(
+        !rendered.contains("0.0.0"),
+        "the placeholder version reached the transcript: {rendered}"
+    );
 }
 
 // ─── US-602: shell command history storage ──────────────────────────

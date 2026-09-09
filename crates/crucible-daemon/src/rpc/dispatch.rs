@@ -200,6 +200,8 @@ rpc_methods! {
     ConfigGet = "config.get",
     ConfigSet = "config.set",
     ConfigSave = "config.save",
+    ConfigReset = "config.reset",
+    ConfigPop = "config.pop",
     ConfigOrigin = "config.origin",
     ConfigEffective = "config.effective",
     ConfigControls = "config.controls",
@@ -937,6 +939,14 @@ impl RpcDispatcher {
             RpcMethod::ConfigGet => to_response(id, self.handle_config_get(&req)),
             RpcMethod::ConfigSet => to_response(id, self.handle_config_set(&req)),
             RpcMethod::ConfigSave => to_response(id, self.handle_config_save(&req)),
+            RpcMethod::ConfigReset => to_response(
+                id,
+                self.handle_config_drop(&req, crucible_lua::reset_app_config),
+            ),
+            RpcMethod::ConfigPop => to_response(
+                id,
+                self.handle_config_drop(&req, crucible_lua::pop_app_config),
+            ),
             RpcMethod::ConfigOrigin => to_response(id, self.handle_config_origin(&req)),
             RpcMethod::ConfigEffective => to_response(id, self.handle_config_effective()),
             RpcMethod::ConfigControls => to_response(id, Ok(handle_config_controls())),
@@ -1858,39 +1868,39 @@ impl RpcDispatcher {
     ///
     /// `ok` is false when anything was refused, so a caller that ignores the
     /// detail still learns the save was not whole.
+    ///
+    /// The accepted leaves also lose their ephemeral layer, so the saved
+    /// value is the live value in this same process — see
+    /// [`ConfigStore::save`], which does the refusing and the dropping in one
+    /// walk.
+    ///
+    /// [`ConfigStore::save`]: crucible_core::config::ConfigStore::save
     fn handle_config_save(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let params: ConfigValuesParams = crate::rpc::params::parse_params(req)?;
-        let (accepted, mut refused) =
-            crucible_lua::split_pinned_app_config(serde_json::Value::Object(params.values));
-        // The state overlay's pins, by the same walk. Its leaves are not in
-        // the store, so the store's split cannot see them, and a save it let
-        // through would put a half-described provider in `settings.json` —
-        // where the next boot loads it as the config layer and it shadows the
-        // working entry `llm.json` holds.
+        // The state overlay's pins, which the store cannot see: its leaves
+        // are not in the store, and a save let through would put a
+        // half-described provider in `settings.json` — where the next boot
+        // loads it as the config layer and it shadows the working entry
+        // `llm.json` holds.
         let (_, registered) =
             self.fold_state_overlay(serde_json::Value::Object(serde_json::Map::new()));
-        let (accepted, overlay_refused) =
-            crucible_core::config::split_pinned_by(accepted, &|path| {
-                registered.get(path).and_then(SourceTag::pin)
-            });
-        refused.extend(overlay_refused);
         // The `Settings` tag and the `settings.json` write are one layer: the
         // file is what the next boot loads back under that same tag.
-        let rejected = crucible_lua::merge_app_config_tagged(
-            accepted.clone(),
-            crucible_core::config::SourceTag::Settings,
-        );
-        if !rejected.is_empty() {
+        let saved =
+            crucible_lua::save_app_config(serde_json::Value::Object(params.values), &|path| {
+                registered.get(path).and_then(SourceTag::pin)
+            });
+        if !saved.withheld.is_empty() {
             tracing::warn!(
-                keys = ?rejected,
+                keys = ?saved.withheld,
                 "config.save refused keys that name where the daemon acts; edit the config file instead"
             );
         }
-        self.persist_saved_settings(accepted, &rejected)?;
+        self.persist_saved_settings(saved.accepted, &saved.withheld)?;
         Ok(serde_json::json!({
-            "ok": refused.is_empty(),
-            "refused": refused,
-            "rejected": rejected,
+            "ok": saved.refused.is_empty(),
+            "refused": saved.refused,
+            "rejected": saved.withheld,
         }))
     }
 
@@ -1903,19 +1913,19 @@ impl RpcDispatcher {
     /// that really holds them. The refusal that protects a human's line would
     /// then be bypassed permanently, and with no sign of it anywhere.
     ///
-    /// `rejected` names the location keys the store withheld from the merge.
+    /// `withheld` names the location keys the store kept out of the merge.
     /// They are dropped here too: a key that did not reach the running store
     /// must not reach the next boot's either, or the socket would become the
     /// third door onto *where the daemon acts*.
     fn persist_saved_settings(
         &self,
         mut accepted: serde_json::Value,
-        rejected: &[String],
+        withheld: &[String],
     ) -> RpcResult<()> {
         let Some(map) = accepted.as_object_mut() else {
             return Ok(());
         };
-        for key in rejected {
+        for key in withheld {
             map.shift_remove(key);
         }
         if map.is_empty() {
@@ -1973,7 +1983,7 @@ impl RpcDispatcher {
         );
 
         Ok(match params.key {
-            Some(key) => config_origin_row(&config, &key, &leaf_origin(&registered, &key)),
+            Some(key) => self.config_leaf_row(&key),
             None => {
                 let mut rows: std::collections::BTreeMap<
                     String,
@@ -1990,6 +2000,81 @@ impl RpcDispatcher {
                 })
             }
         })
+    }
+
+    /// The origin row for ONE leaf of the effective view: the key, the value
+    /// the store holds, the source that owns it, and whether `config.save`
+    /// refuses it.
+    ///
+    /// One derivation for three doors. `config.origin`, `config.reset` and
+    /// `config.pop` all owe the caller the same answer about one leaf, and a
+    /// second derivation would let a drop verb report a value `config.origin`
+    /// does not.
+    fn config_leaf_row(&self, key: &str) -> serde_json::Value {
+        let (config, registered) = self.fold_state_overlay(
+            crucible_lua::get_app_config()
+                .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())),
+        );
+        config_origin_row(&config, key, &leaf_origin(&registered, key))
+    }
+
+    /// Drop config layers for one leaf: `config.reset` (`:set key&`) drops
+    /// the ephemeral layer `config.set` writes, and `config.pop` (`:set
+    /// key^`) drops the highest-ranked layer holding the leaf so the next one
+    /// down shows.
+    ///
+    /// One handler, because the two verbs differ only in which layers the
+    /// store drops — and the store, not this handler, decides that. What they
+    /// owe the caller is identical: what the store holds for the leaf now,
+    /// where it comes from, and which layers went. Two handlers would be two
+    /// shapes for one answer.
+    ///
+    /// **Both are in-memory only, and neither edits a file.** The layers a
+    /// file restores come back at the next boot, which is the property that
+    /// makes these verbs safe to bind to a keystroke. A reset that deleted a
+    /// leaf from `settings.json` would let a one-key undo of a session tweak
+    /// destroy a preference the user saved through the settings UI;
+    /// `config.save` writes that layer and `config.save` unwrites it.
+    fn handle_config_drop(
+        &self,
+        req: &Request,
+        drop: fn(&str) -> crucible_core::config::LayerDrop,
+    ) -> RpcResult<serde_json::Value> {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            key: String,
+        }
+
+        let params: Params = crate::rpc::params::parse_params(req)?;
+        let outcome = drop(&params.key);
+        // The row is read AFTER the drop: the point of both verbs is the
+        // value that shows once the layer is gone.
+        let mut row = self.config_leaf_row(&params.key);
+        let (name, dropped): (&str, Vec<&str>) = match &outcome {
+            crucible_core::config::LayerDrop::Withheld => {
+                tracing::warn!(
+                    key = %params.key,
+                    "a config drop refused a key that names where the daemon acts; \
+                     edit the config file instead"
+                );
+                ("withheld", Vec::new())
+            }
+            crucible_core::config::LayerDrop::Untouched => ("untouched", Vec::new()),
+            crucible_core::config::LayerDrop::Dropped(sources) => (
+                "dropped",
+                sources
+                    .iter()
+                    .map(crucible_core::config::SourceTag::short)
+                    .collect(),
+            ),
+        };
+        if let Some(object) = row.as_object_mut() {
+            object.insert("outcome".to_string(), serde_json::json!(name));
+            object.insert("dropped".to_string(), serde_json::json!(dropped));
+        }
+        Ok(row)
     }
 
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
@@ -2769,11 +2854,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let root = dir.join("plugins");
         let plugin = root.join("sandbox");
         std::fs::create_dir_all(&plugin).expect("plugin dir");
-        std::fs::write(
-            plugin.join("plugin.yaml"),
-            "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
-        )
-        .expect("plugin.yaml");
         std::fs::write(plugin.join("init.lua"), CLAIMS_ISOLATION).expect("init.lua");
 
         let (ctx, data_home) = test_context();
@@ -3118,6 +3198,12 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             serde_json::json!("lua"),
             "a refused leaf must not reach the persisted layer: {after}"
         );
+        assert_eq!(
+            after["value"],
+            serde_json::json!(8192),
+            "and a refusal drops nothing: the runtime knob the user raised still \
+             holds the leaf, so one refused save cannot undo a `:set`: {after}"
+        );
     }
 
     /// `config.effective` and `config.origin` are two doors onto one answer,
@@ -3280,6 +3366,85 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                 "{key} renders read-only, so it must say why",
             );
         }
+    }
+
+    /// A save of a key a `:set` already holds must change the LIVE value, not
+    /// only the file.
+    ///
+    /// `Rpc` outranks `Settings`, so the saved leaf lost to the scratch write
+    /// that sat above it: the settings UI wrote the file, the value on screen
+    /// did not move, and the save appeared only after a restart. The save
+    /// therefore drops the ephemeral hold on the leaves it accepts.
+    ///
+    /// It drops it on THOSE leaves and no others. One user's save must not
+    /// undo another client's scratch knob on an unrelated key.
+    #[tokio::test]
+    async fn a_save_takes_the_leaf_back_from_the_runtime_knob() {
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let set = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.set",
+                    serde_json::json!({ "values": {
+                        "a1live": { "model": "scratch", "sibling": "untouched" }
+                    }}),
+                ),
+            )
+            .await
+            .result
+            .expect("config.set answers");
+        assert_eq!(set["ok"], serde_json::json!(true), "{set}");
+
+        let save = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.save",
+                    serde_json::json!({ "values": { "a1live": { "model": "saved" } } }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.save answers");
+        assert_eq!(save["ok"], serde_json::json!(true), "{save}");
+
+        let origin = |key: &str| {
+            let key = key.to_string();
+            let dispatcher = &dispatcher;
+            async move {
+                dispatcher
+                    .dispatch(
+                        ClientId::new(),
+                        make_request("config.origin", serde_json::json!({ "key": key })),
+                    )
+                    .await
+                    .result
+                    .expect("config.origin answers")
+            }
+        };
+
+        let saved = origin("a1live.model").await;
+        assert_eq!(
+            saved["value"],
+            serde_json::json!("saved"),
+            "the saved value is the live value, in this same process: {saved}"
+        );
+        assert_eq!(
+            saved["source"],
+            serde_json::json!("settings"),
+            "and the layer that holds it is the one the file restores: {saved}"
+        );
+
+        let sibling = origin("a1live.sibling").await;
+        assert_eq!(
+            sibling["value"],
+            serde_json::json!("untouched"),
+            "a scratch knob on another key survives someone else's save: {sibling}"
+        );
+        assert_eq!(sibling["source"], serde_json::json!("rpc"), "{sibling}");
     }
 
     /// An unpinned key saves, and lands in the layer `settings.json` holds.

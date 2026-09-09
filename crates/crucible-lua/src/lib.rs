@@ -118,9 +118,10 @@ pub use config::{
     add_plugin_author_root, app_config_origin, app_config_origins, begin_boot_store,
     end_boot_phase, evaluate_config_source, get_app_config, get_app_config_provenance, get_layout,
     get_theme_config, get_ui_geometry, in_boot_phase, install_state, install_store,
-    list_available_themes, merge_app_config, merge_app_config_tagged, resolve_theme_file,
-    seed_app_config, set_author_roots, set_runtimepath_extender, snapshot_state, snapshot_store,
-    split_pinned_app_config, theme_roots, ConfigLoader, ConfigState,
+    list_available_themes, merge_app_config, merge_app_config_tagged, pop_app_config,
+    reset_app_config, resolve_theme_file, save_app_config, seed_app_config, set_author_roots,
+    set_runtimepath_extender, snapshot_state, snapshot_store, theme_roots, ConfigLoader,
+    ConfigState,
 };
 pub use config_syntax::{config_syntax_error, mark_config_syntax, ConfigSyntaxError};
 pub use context::{

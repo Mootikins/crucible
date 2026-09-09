@@ -44,7 +44,15 @@ pub type ManifestResult<T> = Result<T, ManifestError>;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginManifest {
     pub name: String,
-    pub version: String,
+
+    /// The version the plugin's spec table declares, once one has been read.
+    ///
+    /// `None` until then. Discovery walks directories and never runs Lua, so
+    /// between discovery and load the host knows no version at all. This
+    /// used to hold a synthesized `"0.0.0"`, which `plugin.list` and the
+    /// session-setup event both reported as if a release had said so.
+    #[serde(default)]
+    pub version: Option<String>,
 
     #[serde(default)]
     pub description: String,
@@ -73,20 +81,6 @@ pub struct PluginManifest {
     #[serde(default, rename = "intercept_tools", alias = "intercept-tools")]
     pub intercepts_tools: bool,
 
-    /// True when no `plugin.yaml` was found and this manifest was synthesized
-    /// from the directory.
-    ///
-    /// It decides whether the Lua spec's `name`, `version` and `description`
-    /// override it: a manifest the author actually wrote is the more specific
-    /// statement and wins; a synthesized one is a placeholder and yields.
-    ///
-    /// This used to be inferred from `version == "0.0.0"`, which is the
-    /// synthesized default — so the spec's NAME was taken only when the
-    /// VERSION happened to still be the placeholder, and a real manifest
-    /// pinned at `0.0.0` would have had its name silently replaced.
-    #[serde(skip)]
-    pub synthesized: bool,
-
     /// The name the plugin's spec table declares, when it differs from the
     /// directory it lives in.
     ///
@@ -99,9 +93,11 @@ pub struct PluginManifest {
 }
 
 impl PluginManifest {
-    /// Create a default manifest from a directory path (no plugin.yaml required).
+    /// Create a manifest from a directory path alone, with no Lua run.
     ///
-    /// Uses the directory stem as the plugin name with version "0.0.0".
+    /// Uses the directory stem as the plugin name, and NO version: the
+    /// version is the plugin's own claim, and the spec table that carries it
+    /// is only read at load.
     pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
         let name = dir
             .file_stem()
@@ -118,12 +114,11 @@ impl PluginManifest {
 
         Ok(Self {
             name,
-            version: "0.0.0".to_string(),
+            version: None,
             description: String::new(),
             author: String::new(),
             license: None,
             intercepts_tools: false,
-            synthesized: true,
             declared_name: None,
         })
     }
@@ -133,10 +128,6 @@ impl PluginManifest {
             return Err(ManifestError::MissingField("name".to_string()));
         }
 
-        if self.version.is_empty() {
-            return Err(ManifestError::MissingField("version".to_string()));
-        }
-
         if !is_valid_plugin_name(&self.name) {
             return Err(ManifestError::Validation(format!(
                 "Invalid plugin name '{}': must be lowercase alphanumeric with hyphens",
@@ -144,8 +135,16 @@ impl PluginManifest {
             )));
         }
 
-        if !is_valid_version(&self.version) {
-            return Err(ManifestError::InvalidVersion(self.version.clone()));
+        // A version is optional — an unloaded plugin has none — but a
+        // version that IS stated has to parse, or the plugin is claiming
+        // something no reader can compare.
+        if let Some(version) = &self.version {
+            if version.is_empty() {
+                return Err(ManifestError::MissingField("version".to_string()));
+            }
+            if !is_valid_version(version) {
+                return Err(ManifestError::InvalidVersion(version.clone()));
+            }
         }
 
         Ok(())
@@ -282,8 +281,9 @@ impl LoadedPlugin {
         &self.manifest.name
     }
 
-    pub fn version(&self) -> &str {
-        &self.manifest.version
+    /// The version the plugin declared, or `None` while it is unread.
+    pub fn version(&self) -> Option<&str> {
+        self.manifest.version.as_deref()
     }
 
     /// The plugin's entry file: `init.luau`, else `init.lua`.
@@ -357,7 +357,7 @@ mod tests {
         let manifest =
             PluginManifest::from_directory_defaults(Path::new("/plugins/my-plugin")).unwrap();
         assert_eq!(manifest.name, "my-plugin");
-        assert_eq!(manifest.version, "0.0.0");
+        assert_eq!(manifest.version, None);
         assert!(!manifest.intercepts_tools);
     }
 

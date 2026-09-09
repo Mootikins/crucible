@@ -436,6 +436,16 @@ pub const APP_CONTROLS: &[AppControl] = &[
         1,
     )
     .bounded(0.0, 8760.0, 1.0),
+    AppControl::new(
+        "server.idle_shutdown_minutes",
+        Control::Range,
+        "Exit when idle for",
+        "Minutes with no connected client and no running job before a daemon \
+         that owns its own process exits. Zero keeps it running for ever. \
+         Sessions are persisted, so the next command starts a fresh one.",
+        2,
+    )
+    .bounded(0.0, 1440.0, 5.0),
     // ---- top-level ----
     AppControl::new(
         "default_kiln",

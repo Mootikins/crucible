@@ -234,7 +234,9 @@ plugins/tasks/
 A plugin is one directory with one entry file: `init.luau`, or `init.lua`. A
 directory holding both is refused rather than resolved.
 
-There is no manifest. Metadata lives in the spec table the entry file returns:
+There is no manifest. Metadata lives in the spec table the entry file returns.
+Crucible reads that table when it loads the plugin, so a plugin that is
+discovered but not loaded reports no version:
 
 ```lua
 return {
@@ -394,8 +396,12 @@ cru.config.set({
 
 ## Plugin Lifecycle
 
-1. **Discovery**: Crucible scans plugin directories for manifests
-2. **Validation**: Manifests are validated (name, version, dependencies)
+1. **Discovery**: Crucible scans the plugin directories for entry files. It
+   runs no Lua here, so it knows only the directory name and the state. The
+   version comes from the spec table, so `cru plugin list`, the TUI `/plugins`
+   list and the web plugin panel show no version until the plugin loads.
+2. **Validation**: Crucible validates the name, and the version if the spec
+   table declares one
 3. **Dependency Resolution**: Load order determined by dependencies
 4. **Loading**: Each plugin is compiled/loaded by its runtime
 5. **Registration**: Tools, hooks, commands, and views are registered

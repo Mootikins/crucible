@@ -168,6 +168,43 @@ impl SourceTag {
         }
     }
 
+    /// Whether `config.reset` (`:set key&`) drops this layer's hold on a
+    /// leaf.
+    ///
+    /// `&` undoes the runtime knob, so it drops exactly the layer that knob
+    /// writes and nothing else. Every other layer is restored by a file or by
+    /// the invocation, and dropping one in memory would answer with a value
+    /// the next boot takes straight back.
+    ///
+    /// `Settings` is the interesting no. It is a durable file, so a reset
+    /// that dropped it in memory would report a value that reverts, and a
+    /// reset that deleted the leaf from the file would let a one-key undo of
+    /// a session tweak destroy a preference the user saved through the
+    /// settings UI. `config.save` writes that layer, and `config.save` is the
+    /// verb that unwrites it. `config.pop` (`:set key^`) is the door for
+    /// looking under it for one run.
+    pub fn reset_drops(&self) -> bool {
+        match self {
+            // The compiled default and a plugin's declared default are what
+            // `&` returns TO, so it cannot drop them.
+            SourceTag::Default | SourceTag::PluginDefault { .. } => false,
+            // The durable machine layer. See the doc comment above.
+            SourceTag::Settings => false,
+            // Two files a person owns. Both re-apply at every boot.
+            SourceTag::Toml(_) | SourceTag::Lua { .. } => false,
+            // Daemon state (`kilns.json`, `llm.json`). It reloads at the next
+            // boot, and `cru kiln register` is the route to change it.
+            SourceTag::Registered => false,
+            // A flag the operator typed for this invocation. It dies with the
+            // process, but it is the terms the daemon was started on, and a
+            // keystroke in one client must not erase them for every client.
+            SourceTag::Cli => false,
+            // The ephemeral runtime knob `:set` writes: the one layer a
+            // running session authors, and the one `&` undoes.
+            SourceTag::Rpc => true,
+        }
+    }
+
     /// Where the leaf came from, for `config.origin`.
     pub fn origin(&self) -> SourceOrigin {
         let (file, line) = match self {
@@ -361,6 +398,39 @@ mod tests {
             names.len(),
             count,
             "two SourceTag variants share a short name"
+        );
+    }
+
+    /// `config.reset` (`:set key&`) drops exactly one layer, and that layer
+    /// is restored by no file.
+    ///
+    /// Both halves matter. Two droppable layers would make `&` an undo of
+    /// something the user never asked to undo, and a layer with a file behind
+    /// it would come back at the next boot, so the reset would report a value
+    /// that reverts. Which layer it is comes from the other half of this gate,
+    /// in `crucible-lua`: whatever `config.set` actually writes must be the
+    /// one `reset_drops` names.
+    #[test]
+    fn a_reset_drops_exactly_one_layer_and_no_file_restores_it() {
+        let droppable: Vec<SourceTag> = SourceTag::iter().filter(SourceTag::reset_drops).collect();
+        assert_eq!(
+            droppable.len(),
+            1,
+            "`&` undoes the runtime knob and nothing else, but {droppable:?} are droppable"
+        );
+        let tag = &droppable[0];
+        assert_eq!(
+            tag.pin(),
+            None,
+            "'{}' re-applies at the next boot, so a reset of it answers with a value \
+             the next boot takes back",
+            tag.short()
+        );
+        assert_eq!(
+            tag.origin().file,
+            None,
+            "'{}' names a file, so dropping it in memory hides what that file still says",
+            tag.short()
         );
     }
 

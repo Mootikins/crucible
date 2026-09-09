@@ -16,6 +16,7 @@ mod delegation_e2e;
 mod event_seq;
 mod events;
 mod graph;
+mod idle_shutdown;
 mod isolation_param;
 mod kiln_scope_validation;
 mod lifecycle;

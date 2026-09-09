@@ -115,11 +115,6 @@ async fn load_plugin(root: &Path, init: &str) -> DaemonPluginLoader {
     let plugins = root.join("plugins");
     let dir = plugins.join("injector");
     std::fs::create_dir_all(&dir).expect("plugin dir");
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: injector\nversion: \"0.1.0\"\ndescription: context injector\n",
-    )
-    .expect("plugin.yaml");
     std::fs::write(dir.join("init.lua"), init).expect("init.lua");
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");

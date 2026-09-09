@@ -76,16 +76,25 @@ pub enum RuntimeAsset {
 ///
 /// So no extension literal appears below. Each variant names *who decides*,
 /// and the consumer resolves it in a crate that can reach that answer.
-/// `SKILL.md` and `plugin.yaml` stay literal because nothing else owns them.
+/// `SKILL.md` stays literal because nothing else owns it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryShape {
     /// A directory holding this marker file. Skills: `SKILL.md`.
     DirWithMarker(&'static str),
-    /// A plugin directory: a `plugin.yaml`, **or** a Lua entry file.
+    /// A plugin directory: one Lua entry file, and nothing else.
     ///
-    /// Bespoke because the rule is: either may identify a plugin, and a
-    /// directory holding both entry-file spellings is refused rather than
-    /// resolved (`crucible_lua::source_files::init_file`).
+    /// It carries no marker literal, so it is not a [`Self::DirWithMarker`]:
+    /// the entry-file names belong to `crucible_lua::source_files`, which
+    /// this crate must not depend on. And it is not a
+    /// [`Self::LuaEntryFile`], because a directory holding BOTH spellings is
+    /// refused rather than resolved (`source_files::init_file`) — a plugin a
+    /// user can edit needs that error, where the daemon's own `defaults/`
+    /// takes the first hit.
+    ///
+    /// A manifest identified a plugin until `plugin.yaml` was removed. There
+    /// is no manifest branch left in the loader, and
+    /// `a_directory_holding_only_the_removed_manifest_is_not_a_plugin`
+    /// (`crucible-lua`) holds that shut.
     PluginDir,
     /// Markdown files directly in the subdirectory. `is_note_file` decides.
     /// The entry name is the file stem. Cards.
@@ -122,7 +131,7 @@ impl RuntimeAsset {
 
     /// How to recognise one entry.
     ///
-    /// Plugins accept a manifest **or** a bare entry file; a directory holding
+    /// A plugin is one directory with one Lua entry file; a directory holding
     /// both entry-file spellings is an error the loader reports, not a
     /// silently dropped plugin.
     pub fn shape(self) -> EntryShape {

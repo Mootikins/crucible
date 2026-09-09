@@ -1501,10 +1501,11 @@ impl DaemonPluginLoader {
     /// Manager key (manifest `name`) for the plugin discovered at `dir`.
     ///
     /// plugins.toml declarations and clone directories go by the URL's last
-    /// segment; the plugin manager goes by `plugin.yaml`'s `name`. For a repo
-    /// `crucible-discord` whose manifest says `name: discord` the two differ,
-    /// and resolving by URL name silently misses the running plugin — the
-    /// directory is the one identity both sides share.
+    /// segment; the plugin manager goes by the name the spec table declares.
+    /// For a repo `crucible-discord` whose entry file returns
+    /// `name = "discord"` the two differ, and resolving by URL name silently
+    /// misses the running plugin — the directory is the one identity both
+    /// sides share.
     pub fn plugin_name_for_dir(&self, dir: &std::path::Path) -> Option<String> {
         self.plugin_manager
             .list()

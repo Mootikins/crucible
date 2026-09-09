@@ -227,24 +227,68 @@ pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: SourceTag) -> Ve
     }
 }
 
-/// Split an overlay against the store's pins: what `config.save` may write,
-/// and the leaves a boot-restored layer above `settings.json` refuses.
+/// Drop the runtime knob's hold on one leaf — the `config.reset` RPC, which
+/// the TUI spells `:set key&`.
 ///
-/// The refusal belongs to the store, not to the RPC handler: the pin record
-/// is the store's, and a second copy of the rule in the daemon would be a
-/// second answer to who owns a leaf.
+/// The store decides which layers go, not this function: `config.set` writes
+/// through [`merge_app_config`], and `ConfigStore::reset` drops exactly the
+/// layers [`SourceTag::reset_drops`] names.
 ///
-/// With no store — a process that never booted config — nothing is pinned and
-/// the whole overlay is accepted.
-pub fn split_pinned_app_config(
-    overlay: serde_json::Value,
-) -> (serde_json::Value, Vec<crucible_core::config::PinnedLeaf>) {
-    match get_config().read() {
-        Ok(state) => match state.app_config.as_ref() {
-            Some(store) => store.split_pinned(overlay),
-            None => (overlay, Vec::new()),
+/// With no store — a process that never booted config — there is nothing to
+/// drop.
+pub fn reset_app_config(path: &str) -> crucible_core::config::LayerDrop {
+    drop_app_config_layers(path, ConfigStore::reset)
+}
+
+/// Drop the highest-ranked layer holding one leaf — the `config.pop` RPC,
+/// which the TUI spells `:set key^`.
+pub fn pop_app_config(path: &str) -> crucible_core::config::LayerDrop {
+    drop_app_config_layers(path, ConfigStore::pop)
+}
+
+/// The shared half of [`reset_app_config`] and [`pop_app_config`]: take the
+/// write lock once, and answer `Untouched` when no store was ever seeded.
+fn drop_app_config_layers(
+    path: &str,
+    drop: impl FnOnce(&mut ConfigStore, &str) -> crucible_core::config::LayerDrop,
+) -> crucible_core::config::LayerDrop {
+    match get_config().write() {
+        Ok(mut state) => match state.app_config.as_mut() {
+            Some(store) => drop(store, path),
+            None => crucible_core::config::LayerDrop::Untouched,
         },
-        Err(_) => (overlay, Vec::new()),
+        Err(_) => crucible_core::config::LayerDrop::Untouched,
+    }
+}
+
+/// Save an overlay as the user's durable preference — the whole of the
+/// `config.save` RPC, in one call under one lock.
+///
+/// One call, because the verb is one decision. The store refuses the pinned
+/// leaves, drops the runtime knob's hold on the rest, and merges them as
+/// [`SourceTag::Settings`]; a caller that split here and merged in a second
+/// call would hold the lock twice and could clear a leaf the merge then
+/// refused.
+///
+/// `also_pinned` carries the pins the store cannot see — the daemon's
+/// `llm.json` state overlay holds leaves no layer of this store carries.
+///
+/// With no store — a process that never booted config — one is created, the
+/// same way [`merge_app_config_tagged`] creates it.
+pub fn save_app_config(
+    overlay: serde_json::Value,
+    also_pinned: &dyn Fn(&str) -> Option<crucible_core::config::SourceOrigin>,
+) -> crucible_core::config::SavedSettings {
+    match get_config().write() {
+        Ok(mut state) => state
+            .app_config
+            .get_or_insert_with(ConfigStore::runtime)
+            .save(overlay, also_pinned),
+        Err(_) => crucible_core::config::SavedSettings {
+            accepted: overlay,
+            refused: Vec::new(),
+            withheld: Vec::new(),
+        },
     }
 }
 
@@ -965,6 +1009,72 @@ mod tests {
 
     // Serialize tests that touch the global CONFIG to avoid race conditions
     static CONFIG_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// `config.reset` undoes `config.set`, so it must drop exactly the layer
+    /// `config.set` writes — no more, and no less.
+    ///
+    /// The layer is read off the running store rather than named here: the
+    /// test writes through the real door and asks the provenance which tag
+    /// landed. The other half of the gate lives in `crucible-core`
+    /// (`a_reset_drops_exactly_one_layer_and_no_file_restores_it`), where
+    /// `EnumIter` proves that exactly one layer is droppable — so together
+    /// the two say "exactly this one, and nothing else".
+    #[test]
+    fn a_reset_drops_exactly_the_layer_a_config_set_writes() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+        begin_boot_store();
+        merge_app_config(serde_json::json!({ "probe": { "leaf": 1 } }));
+
+        let written = get_app_config_provenance()
+            .expect("the store is live")
+            .get("probe.leaf")
+            .cloned()
+            .expect("config.set recorded a leaf");
+
+        assert!(
+            written.reset_drops(),
+            "config.reset must drop the layer config.set writes, and {written:?} survives it"
+        );
+    }
+
+    /// The two verbs reach the live store, so `:set key&` and `:set key^`
+    /// change what the next `cru.config.get` reads.
+    #[test]
+    fn a_reset_and_a_pop_change_what_the_live_store_holds() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+        begin_boot_store();
+        merge_app_config_tagged(
+            serde_json::json!({ "chat": { "model": "saved" } }),
+            SourceTag::Settings,
+        );
+        merge_app_config(serde_json::json!({ "chat": { "model": "for-one-turn" } }));
+
+        let dropped = reset_app_config("chat.model");
+        assert!(
+            matches!(dropped, crucible_core::config::LayerDrop::Dropped(_)),
+            "{dropped:?}"
+        );
+        assert_eq!(
+            get_app_config().expect("the store is live")["chat"]["model"],
+            serde_json::json!("saved"),
+        );
+
+        let popped = pop_app_config("chat.model");
+        assert!(
+            matches!(popped, crucible_core::config::LayerDrop::Dropped(_)),
+            "{popped:?}"
+        );
+        assert_eq!(
+            get_app_config().expect("the store is live")["chat"]
+                .get("model")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            serde_json::Value::Null,
+            "the last layer holding the leaf is gone, so the store holds nothing for it"
+        );
+    }
 
     fn create_test_lua() -> Lua {
         let lua = Lua::new();

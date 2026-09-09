@@ -26,16 +26,41 @@ pub struct ServerConfig {
     /// Auto-archive threshold in hours for inactive sessions.
     #[serde(default = "default_auto_archive_hours")]
     pub auto_archive_hours: u64,
+
+    /// Minutes of continuous idleness after which a daemon that owns its own
+    /// process exits. `0` disables the timer.
+    ///
+    /// Idle means no client holds a connection AND no background job is
+    /// running. A resident session does not count: sessions stay in memory
+    /// after they end, so counting them would make every daemon that served a
+    /// turn immortal. They are persisted, so the next client resumes them.
+    ///
+    /// The daemon is spawned detached and has no parent to reap it, so without
+    /// this an auto-spawned daemon whose client died lived for ever. Thirty
+    /// minutes is long enough that a user switching terminals still finds a
+    /// warm daemon, and short enough that a forgotten one does not survive the
+    /// working day.
+    ///
+    /// Only `cru daemon serve` and `cru daemon start` arm it. A daemon running
+    /// inside another process (`cru --standalone`) dies with its host, and a
+    /// daemon with `schedules` configured is meant to sit there unattended.
+    #[serde(default = "default_idle_shutdown_minutes")]
+    pub idle_shutdown_minutes: u64,
 }
 
 fn default_auto_archive_hours() -> u64 {
     72
 }
 
+fn default_idle_shutdown_minutes() -> u64 {
+    30
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             auto_archive_hours: default_auto_archive_hours(),
+            idle_shutdown_minutes: default_idle_shutdown_minutes(),
         }
     }
 }

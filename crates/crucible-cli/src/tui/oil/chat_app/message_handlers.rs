@@ -414,11 +414,24 @@ impl OilChatApp {
                 self.show_app_config_answer(&key, value, origin);
             }
 
+            // The daemon's answer for `:set key&` / `:set key^`. Printed and
+            // not recorded, for the same reason a read is: the layers the
+            // store dropped are the store's, and this client holds no copy.
+            ChatAppMsg::ConfigDropResolved {
+                key,
+                dropped,
+                value,
+                origin,
+            } => {
+                self.show_app_config_drop(&key, &dropped, value, &origin);
+            }
+
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::ReloadPlugin(_)
             | ChatAppMsg::EvalLua(_)
             | ChatAppMsg::ConfigSet { .. }
             | ChatAppMsg::ConfigQuery { .. }
+            | ChatAppMsg::ConfigDrop { .. }
             | ChatAppMsg::ExecuteSlashCommand(_)
             | ChatAppMsg::ExportSession(_)
             | ChatAppMsg::Undo(_) => {}

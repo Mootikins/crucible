@@ -42,7 +42,10 @@ impl PluginManager {
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Active;
         plugin.last_error = None;
-        info!("Loaded plugin: {} v{}", name, plugin.version());
+        match plugin.version() {
+            Some(version) => info!("Loaded plugin: {name} v{version}"),
+            None => info!("Loaded plugin: {name} (no version declared)"),
+        }
 
         self.call_on_load_hook(name);
 

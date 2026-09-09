@@ -26,6 +26,19 @@ pub struct PinnedLeaf {
     pub pin: SourceOrigin,
 }
 
+/// What one [`ConfigStore::save`] did with an overlay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedSettings {
+    /// The part of the overlay that reached the `Settings` layer. The caller
+    /// writes exactly this to `settings.json`, so the file and the live store
+    /// hold one delta.
+    pub accepted: Value,
+    /// The leaves a pin refused, each with the file and line that hold it.
+    pub refused: Vec<PinnedLeaf>,
+    /// The top-level location keys the policy withheld from the merge.
+    pub withheld: Vec<String>,
+}
+
 /// Whether a merge may write the keys that name a filesystem location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocationPolicy {
@@ -33,6 +46,41 @@ pub enum LocationPolicy {
     Accept,
     /// Daemon runtime: location keys are withheld and reported.
     Withhold,
+}
+
+/// What [`ConfigStore::reset`] or [`ConfigStore::pop`] did to one leaf.
+///
+/// Not `Serialize`: the RPC answers with this *and* with the leaf's new
+/// origin row, and one hand-built object is what keeps the two halves of that
+/// answer in one shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LayerDrop {
+    /// The leaf's top-level key names where the daemon acts, and the runtime
+    /// policy withholds it from every write door. The same rule
+    /// [`ConfigStore::merge`] applies to an overlay: a caller that could pop
+    /// `runtimepath` would re-point the trees the daemon reads code from
+    /// without the floor ever seeing a path.
+    Withheld,
+    /// Nothing was dropped. No retained layer of the kind asked for held the
+    /// leaf, so the value stands.
+    Untouched,
+    /// The sources whose hold on the leaf was dropped, lowest rank first.
+    Dropped(Vec<SourceTag>),
+}
+
+/// One merge, retained so the store can be rebuilt without part of it.
+///
+/// The WHOLE overlay is kept, including the leaves the rank gate refused. A
+/// refused write is exactly the layer a later [`ConfigStore::pop`] must
+/// reveal — a plugin default that lost the leaf to `settings.json` is what
+/// sits under `settings.json`.
+#[derive(Debug, Clone)]
+struct Layer {
+    source: SourceTag,
+    /// Always an object: the overlay as the caller offered it. The location
+    /// policy is applied at every replay rather than here, so a store that
+    /// has left the boot phase stops merging keys it accepted during it.
+    overlay: Value,
 }
 
 /// A merged config value with per-leaf provenance.
@@ -50,6 +98,25 @@ pub struct ConfigStore {
     /// to `config.save` and the saved value would vanish at the next boot.
     pins: ProvenanceMap,
     location_policy: LocationPolicy,
+    /// Every merge, in the order it was made.
+    ///
+    /// **The store re-merges rather than keeping an undo stack per leaf.**
+    /// `pop` has to answer "what would the merge have given without this
+    /// write", and the only answer that cannot drift from the merge is the
+    /// merge: drop the leaf from the layer that holds it, then replay the
+    /// layers. A per-leaf stack of superseded values would be a second copy
+    /// of the layer order — `SourceTag::rank`, the wholesale-replace rule and
+    /// the pin rule all over again — and the two copies would disagree the
+    /// first time one of them changed.
+    ///
+    /// The list grows by one entry per merge and nothing prunes it. Every
+    /// writer is a boot step, a `cru` command or a keystroke, so the rate is
+    /// a handful of small objects per session. Merging two adjacent
+    /// same-source layers would bound it, but the merge of two overlays is
+    /// not the merge of an overlay into a store — `REPLACE_MARKER` behaves
+    /// differently in the two — so that shortcut would be the second rule
+    /// this design exists to avoid.
+    layers: Vec<Layer>,
 }
 
 impl ConfigStore {
@@ -60,6 +127,7 @@ impl ConfigStore {
             provenance: ProvenanceMap::new(),
             pins: ProvenanceMap::new(),
             location_policy: LocationPolicy::Withhold,
+            layers: Vec::new(),
         }
         .with_policy(LocationPolicy::Accept)
     }
@@ -71,6 +139,7 @@ impl ConfigStore {
             provenance: ProvenanceMap::new(),
             pins: ProvenanceMap::new(),
             location_policy: LocationPolicy::Withhold,
+            layers: Vec::new(),
         }
     }
 
@@ -95,10 +164,28 @@ impl ConfigStore {
     /// A non-object overlay is refused wholesale: the store's value is always
     /// an object, and no caller has a scalar to contribute at the root.
     pub fn merge(&mut self, overlay: Value, source: SourceTag) -> Vec<String> {
-        let Value::Object(mut map) = overlay else {
+        let Value::Object(map) = overlay else {
             return Vec::new();
         };
+        // Retain the layer before it lands, so `reset` and `pop` can replay
+        // the store without part of it.
+        self.layers.push(Layer {
+            source: source.clone(),
+            overlay: Value::Object(map.clone()),
+        });
+        self.apply(map, source)
+    }
 
+    /// Land one layer on the value, the provenance and the pins, and answer
+    /// with the location keys the policy withheld.
+    ///
+    /// The half of [`Self::merge`] a replay repeats, the location policy
+    /// included: a store that has left the boot phase stops merging the keys
+    /// it once accepted, so a replay after `end_boot_phase` cannot put a
+    /// location back into the plugin-visible value. It records no layer of
+    /// its own — [`Self::rebuild`] walks the layers it already has, and a
+    /// second push would double them on every drop.
+    fn apply(&mut self, mut map: serde_json::Map<String, Value>, source: SourceTag) -> Vec<String> {
         let mut withheld = Vec::new();
         if self.location_policy == LocationPolicy::Withhold {
             for key in LOCATION_CONFIG_KEYS {
@@ -148,6 +235,103 @@ impl ConfigStore {
         withheld
     }
 
+    /// Drop the runtime knob's hold on one leaf: `config.reset`, which the
+    /// TUI spells `:set key&`.
+    ///
+    /// It drops every retained layer that [`SourceTag::reset_drops`] names —
+    /// the ephemeral `config.set` writes, and nothing else — then replays.
+    /// The leaf therefore returns to what the compiled defaults, the plugin
+    /// defaults and the config files give it, which is the value the next
+    /// boot would give it too.
+    pub fn reset(&mut self, path: &str) -> LayerDrop {
+        if self.withholds(path) {
+            return LayerDrop::Withheld;
+        }
+        let indices: Vec<usize> = self
+            .layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| layer.source.reset_drops() && layer_holds(layer, path))
+            .map(|(index, _)| index)
+            .collect();
+        self.drop_from_layers(&indices, path)
+    }
+
+    /// Drop the highest-ranked layer that holds one leaf, revealing the next
+    /// one down: `config.pop`, which the TUI spells `:set key^`.
+    ///
+    /// Highest RANK, not latest write, because rank is what decides the leaf:
+    /// a plugin default written after `settings.json` never held the leaf, so
+    /// dropping it would reveal nothing. Ties go to the last of them, which
+    /// is the write the merge kept.
+    ///
+    /// The drop is in memory only. Every layer returns at the next boot, and
+    /// no verb here edits a file the user owns.
+    pub fn pop(&mut self, path: &str) -> LayerDrop {
+        if self.withholds(path) {
+            return LayerDrop::Withheld;
+        }
+        let top = self
+            .layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| layer_holds(layer, path))
+            .max_by_key(|(index, layer)| (layer.source.rank(), *index))
+            .map(|(index, _)| index);
+        self.drop_from_layers(top.as_slice(), path)
+    }
+
+    /// Take `path` out of the named layers and replay what is left.
+    fn drop_from_layers(&mut self, indices: &[usize], path: &str) -> LayerDrop {
+        let mut dropped = Vec::new();
+        for &index in indices {
+            let Some(layer) = self.layers.get_mut(index) else {
+                continue;
+            };
+            if let Value::Object(map) = &mut layer.overlay {
+                if remove_leaf(map, path) {
+                    dropped.push(layer.source.clone());
+                }
+            }
+        }
+        if dropped.is_empty() {
+            return LayerDrop::Untouched;
+        }
+        dropped.sort_by_key(SourceTag::rank);
+        self.rebuild();
+        LayerDrop::Dropped(dropped)
+    }
+
+    /// Whether the policy withholds the top-level key `path` names.
+    ///
+    /// The top-level key, because that is the granularity
+    /// [`LOCATION_CONFIG_KEYS`] classifies: `kilns.notes` is part of `kilns`.
+    fn withholds(&self, path: &str) -> bool {
+        if self.location_policy == LocationPolicy::Accept {
+            return false;
+        }
+        let head = path.split('.').next().unwrap_or(path);
+        LOCATION_CONFIG_KEYS.contains(&head) || LOCATION_CONFIG_KEYS.contains(&path)
+    }
+
+    /// Merge the retained layers again, from nothing.
+    ///
+    /// The replay is the point: the value, the provenance and the pins a drop
+    /// leaves behind are whatever [`Self::merge`] gives for the layers that
+    /// remain, so the drop cannot invent a rule of its own.
+    fn rebuild(&mut self) {
+        let layers = std::mem::take(&mut self.layers);
+        self.value = Value::Object(serde_json::Map::new());
+        self.provenance = ProvenanceMap::new();
+        self.pins = ProvenanceMap::new();
+        for layer in &layers {
+            if let Value::Object(map) = &layer.overlay {
+                let _ = self.apply(map.clone(), layer.source.clone());
+            }
+        }
+        self.layers = layers;
+    }
+
     /// End the boot phase: withhold location keys from every later merge, and
     /// drop them from the stored value.
     ///
@@ -179,6 +363,69 @@ impl ConfigStore {
     /// leaf, because that is what the merge writes wholesale.
     pub fn split_pinned(&self, overlay: Value) -> (Value, Vec<PinnedLeaf>) {
         split_pinned_by(overlay, &|path| self.pin(path))
+    }
+
+    /// Save `overlay` as the durable `Settings` layer, and give the saved
+    /// leaves back to it: the ephemeral hold on each accepted leaf goes
+    /// first.
+    ///
+    /// The drop is what makes the save act. `Rpc` outranks `Settings`, so a
+    /// leaf a `:set` already holds keeps the scratch value: the settings UI
+    /// wrote the file, the screen did not move, and the saved value appeared
+    /// only after a restart. That is a write the system accepts and does not
+    /// apply. The drop is the one [`Self::reset`] performs, and it reaches
+    /// only the leaves of this overlay — another client's `:set` on an
+    /// unrelated key stands.
+    ///
+    /// **The refusal and the drop are one walk, so they cannot disagree.** A
+    /// leaf a pin refuses is neither merged nor dropped, which is what keeps
+    /// a refused save from undoing the `:set` the user raised over a pinned
+    /// line. Two walks would answer "which leaves am I saving" twice, and the
+    /// second answer would clear a value nothing replaced.
+    ///
+    /// `also_pinned` carries the pins the store cannot see: the daemon's
+    /// state overlay (`llm.json`) holds leaves no layer here carries.
+    pub fn save(
+        &mut self,
+        overlay: Value,
+        also_pinned: &dyn Fn(&str) -> Option<SourceOrigin>,
+    ) -> SavedSettings {
+        let mut refused = Vec::new();
+        let mut leaves: Vec<String> = Vec::new();
+        let accepted = split_value(
+            &mut String::new(),
+            overlay,
+            &|path| self.pin(path).or_else(|| also_pinned(path)),
+            &mut refused,
+            &mut |leaf| leaves.push(leaf.to_string()),
+        )
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
+        let mut dropped = false;
+        for layer in self
+            .layers
+            .iter_mut()
+            .filter(|layer| layer.source.reset_drops())
+        {
+            let Value::Object(map) = &mut layer.overlay else {
+                continue;
+            };
+            for leaf in &leaves {
+                dropped |= remove_leaf(map, leaf);
+            }
+        }
+        if dropped {
+            // Before the merge, not after: the rank gate reads the provenance
+            // the store holds now, and a stale `Rpc` row would refuse the very
+            // write this drop was made for.
+            self.rebuild();
+        }
+        let withheld = self.merge(accepted.clone(), SourceTag::Settings);
+        SavedSettings {
+            accepted,
+            refused,
+            withheld,
+        }
     }
 
     /// The merged value. Always an object.
@@ -255,27 +502,34 @@ impl ConfigStore {
 /// Split `overlay` into the part a caller may write and the leaves `pin`
 /// refuses.
 ///
-/// Free rather than a method, because the store is not the only source of a
-/// pin. The daemon's state overlay (`llm.json`) contributes leaves the store
-/// never holds, and `config.save` has to refuse those by the same walk: two
-/// walks would disagree about where one leaf ends.
+/// Free rather than a method, because a pin is not always the store's own:
+/// the daemon's state overlay (`llm.json`) holds leaves no layer of the store
+/// carries. [`ConfigStore::save`] weighs both hands and walks the same
+/// `split_value`, so the refusal cannot mean one thing here and another
+/// there.
 pub fn split_pinned_by(
     overlay: Value,
     pin: &dyn Fn(&str) -> Option<SourceOrigin>,
 ) -> (Value, Vec<PinnedLeaf>) {
     let mut refused = Vec::new();
-    let accepted = split_value(&mut String::new(), overlay, pin, &mut refused)
+    let accepted = split_value(&mut String::new(), overlay, pin, &mut refused, &mut |_| {})
         .unwrap_or(Value::Object(serde_json::Map::new()));
     (accepted, refused)
 }
 
 /// The recursive half of [`split_pinned_by`]. `None` means the whole subtree
 /// was refused and must not reach the merge.
+///
+/// `accepted` is called with the path of every leaf that survives the pins,
+/// so a caller that must act on those leaves reads them from this walk
+/// instead of walking the result again. [`ConfigStore::save`] is that caller:
+/// it drops the ephemeral hold on exactly the leaves it is about to merge.
 fn split_value(
     path: &mut String,
     value: Value,
     pin: &dyn Fn(&str) -> Option<SourceOrigin>,
     refused: &mut Vec<PinnedLeaf>,
+    accepted: &mut dyn FnMut(&str),
 ) -> Option<Value> {
     // The root is always walked: the overlay's own object is not a leaf, and
     // no leaf path names it.
@@ -294,7 +548,10 @@ fn split_value(
                 });
                 None
             }
-            None => Some(value),
+            None => {
+                accepted(path);
+                Some(value)
+            }
         };
     }
 
@@ -309,7 +566,7 @@ fn split_value(
             path.push('.');
         }
         path.push_str(&key);
-        if let Some(child) = split_value(path, child, pin, refused) {
+        if let Some(child) = split_value(path, child, pin, refused, accepted) {
             kept.insert(key, child);
         }
         path.truncate(saved);
@@ -319,6 +576,51 @@ fn split_value(
     // value the caller never got to write. The root stays, because the
     // merge needs an object even when it carries nothing.
     (at_root || !kept.is_empty()).then_some(Value::Object(kept))
+}
+
+/// Whether one retained layer writes anything at `path`.
+fn layer_holds(layer: &Layer, path: &str) -> bool {
+    matches!(&layer.overlay, Value::Object(map) if leaf_at(map, path).is_some())
+}
+
+/// The value one overlay writes at a dot-joined path, if it writes one.
+///
+/// The literal name comes first, for the same reason `config.origin` reads it
+/// first: a plugin owns free-form keys, and `config.set { "myplugin.debug":
+/// true }` writes ONE top-level key whose name holds a dot.
+fn leaf_at<'a>(map: &'a serde_json::Map<String, Value>, path: &str) -> Option<&'a Value> {
+    if let Some(value) = map.get(path) {
+        return Some(value);
+    }
+    let (head, rest) = path.split_once('.')?;
+    match map.get(head)? {
+        Value::Object(child) => leaf_at(child, rest),
+        _ => None,
+    }
+}
+
+/// Take `path` out of one overlay, and answer whether it was there.
+///
+/// A branch the removal empties goes too: an empty object is a leaf to
+/// [`record_leaves`], so leaving `{}` behind would replay as a write of `{}`
+/// over the value the drop was meant to reveal.
+fn remove_leaf(map: &mut serde_json::Map<String, Value>, path: &str) -> bool {
+    if map.shift_remove(path).is_some() {
+        return true;
+    }
+    let Some((head, rest)) = path.split_once('.') else {
+        return false;
+    };
+    let Some(Value::Object(child)) = map.get_mut(head) else {
+        return false;
+    };
+    if !remove_leaf(child, rest) {
+        return false;
+    }
+    if child.is_empty() {
+        map.shift_remove(head);
+    }
+    true
 }
 
 /// Record one provenance entry per leaf of `value` under `path`.
@@ -502,6 +804,78 @@ mod tests {
         assert_eq!(accepted, json!({"chat": {"model": "sonnet"}}));
         assert_eq!(refused.len(), 1);
         assert_eq!(refused[0].key, "chat.show_thinking");
+    }
+
+    /// A save changes the LIVE value, and it does so for exactly the leaves
+    /// it accepts.
+    ///
+    /// `Rpc` outranks `Settings`, so without the drop the saved leaf lost to
+    /// the `:set` sitting above it: the file changed, the value did not, and
+    /// the save appeared only at the next boot. The drop and the refusal come
+    /// from one walk, which is what keeps a refused leaf holding the value
+    /// the user raised over the pinned line.
+    #[test]
+    fn a_save_takes_back_the_leaves_it_accepts_and_no_others() {
+        let mut store = ConfigStore::runtime();
+        store.merge(
+            json!({"chat": {"show_thinking": true}}),
+            SourceTag::Lua {
+                file: "/config/init.lua".to_string(),
+                line: Some(3),
+            },
+        );
+        store.merge(
+            json!({"chat": {"show_thinking": false, "model": "scratch", "theme": "scratch"}}),
+            SourceTag::Rpc,
+        );
+
+        let saved = store.save(
+            json!({"chat": {"show_thinking": true, "model": "saved"}}),
+            &|_| None,
+        );
+
+        assert_eq!(saved.accepted, json!({"chat": {"model": "saved"}}));
+        assert_eq!(saved.refused.len(), 1, "{:?}", saved.refused);
+        assert_eq!(saved.refused[0].key, "chat.show_thinking");
+        assert!(saved.withheld.is_empty());
+
+        assert_eq!(
+            store.value()["chat"]["model"],
+            json!("saved"),
+            "the saved leaf is live at once, not at the next boot"
+        );
+        assert_eq!(store.origin("chat.model").origin.source, "settings");
+        assert_eq!(
+            store.value()["chat"]["show_thinking"],
+            json!(false),
+            "a refused leaf keeps the value the runtime knob raised: a save the \
+             daemon would not take must not undo a `:set`"
+        );
+        assert_eq!(
+            store.value()["chat"]["theme"],
+            json!("scratch"),
+            "and a scratch value on a leaf nobody saved stands"
+        );
+        assert_eq!(store.origin("chat.theme").origin.source, "rpc");
+    }
+
+    /// The drop is a drop of the ephemeral layer, not a delete of the leaf: a
+    /// `config.pop` after a save still reveals what sits under it.
+    #[test]
+    fn a_save_leaves_the_layers_under_it_intact() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "compiled"}}), SourceTag::Default);
+        store.merge(json!({"chat": {"model": "scratch"}}), SourceTag::Rpc);
+
+        store.save(json!({"chat": {"model": "saved"}}), &|_| None);
+        assert_eq!(store.value()["chat"]["model"], json!("saved"));
+
+        assert!(matches!(store.pop("chat.model"), LayerDrop::Dropped(_)));
+        assert_eq!(
+            store.value()["chat"]["model"],
+            json!("compiled"),
+            "the layer under the save is still there to reveal"
+        );
     }
 
     #[test]
@@ -836,5 +1210,254 @@ mod tests {
         store.merge(json!({"default_kiln": "notes"}), SourceTag::Rpc);
         store.merge(json!("scalar"), SourceTag::Rpc);
         assert_eq!(store.value()["default_kiln"], json!("notes"));
+    }
+
+    // ── `config.reset` and `config.pop` ──────────────────────────────────
+
+    /// A human's own line, for the drop tests.
+    fn lua_line(line: u32) -> SourceTag {
+        SourceTag::Lua {
+            file: "/config/init.lua".to_string(),
+            line: Some(line),
+        }
+    }
+
+    /// `:set key&`. The ephemeral knob goes and the layer under it stands.
+    #[test]
+    fn a_reset_drops_the_runtime_knob_and_reveals_the_layer_under_it() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
+        store.merge(json!({"chat": {"model": "for-one-turn"}}), SourceTag::Rpc);
+        assert_eq!(store.value()["chat"]["model"], json!("for-one-turn"));
+
+        let dropped = store.reset("chat.model");
+
+        assert_eq!(
+            store.value()["chat"]["model"],
+            json!("from-init"),
+            "reset must return the leaf to what the files give"
+        );
+        assert_eq!(
+            store.provenance().get("chat.model").map(SourceTag::short),
+            Some("lua"),
+            "and the provenance must name the layer that now holds it"
+        );
+        assert!(
+            matches!(&dropped, LayerDrop::Dropped(sources) if sources.len() == 1
+                && sources[0].short() == "rpc"),
+            "{dropped:?}"
+        );
+    }
+
+    /// `settings.json` is a file, so a reset leaves it standing.
+    ///
+    /// Dropping it in memory would answer with a value the next boot takes
+    /// back, and deleting the leaf from the file would make a one-key undo of
+    /// a session tweak destroy a durable preference. `config.save` writes
+    /// that layer, and `config.save` is what unwrites it.
+    #[test]
+    fn a_reset_leaves_the_saved_settings_standing() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "for-one-turn"}}), SourceTag::Rpc);
+
+        store.reset("chat.model");
+
+        assert_eq!(
+            store.value()["chat"]["model"],
+            json!("saved"),
+            "a reset must not discard what the user saved through the UI"
+        );
+    }
+
+    /// The gate. A leaf in BOTH `settings.json` and `init.lua`, popped once,
+    /// answers with the `settings.json` value and names that layer.
+    #[test]
+    fn a_pop_of_the_lua_line_reveals_the_settings_value() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
+        assert_eq!(store.value()["chat"]["model"], json!("from-init"));
+
+        let dropped = store.pop("chat.model");
+
+        assert_eq!(
+            store.value()["chat"]["model"],
+            json!("saved"),
+            "the pop must reveal the layer under the one it dropped"
+        );
+        assert_eq!(
+            store.provenance().get("chat.model").map(SourceTag::short),
+            Some("settings"),
+            "and the store must now say so"
+        );
+        assert!(
+            matches!(&dropped, LayerDrop::Dropped(sources) if sources.len() == 1
+                && sources[0].short() == "lua"),
+            "{dropped:?}"
+        );
+    }
+
+    /// A pop drops one layer per call, so repeated pops walk down the stack.
+    #[test]
+    fn a_pop_walks_down_one_layer_per_call() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "compiled"}}), SourceTag::Default);
+        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
+        store.merge(json!({"chat": {"model": "for-one-turn"}}), SourceTag::Rpc);
+
+        for expected in ["from-init", "saved", "compiled"] {
+            store.pop("chat.model");
+            assert_eq!(
+                store.value()["chat"]["model"],
+                json!(expected),
+                "the pop must reveal exactly one layer"
+            );
+        }
+
+        // The compiled default is a layer too, so one more pop leaves the
+        // leaf unheld — and only then is there nothing left to pop.
+        assert!(matches!(store.pop("chat.model"), LayerDrop::Dropped(_)));
+        assert!(
+            store.value()["chat"].get("model").is_none(),
+            "every layer is gone, so the store holds nothing for the leaf"
+        );
+        let last = store.pop("chat.model");
+        assert!(
+            matches!(last, LayerDrop::Untouched),
+            "nothing is left to pop: {last:?}"
+        );
+    }
+
+    /// A write the rank gate dropped is still retained, so popping the layer
+    /// above it reveals it.
+    ///
+    /// The plugin default below never landed — `settings.json` already held
+    /// the leaf — and a store that kept only what landed would answer the pop
+    /// with the compiled default instead of the plugin's.
+    #[test]
+    fn a_pop_reveals_a_write_the_rank_gate_refused() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(
+            json!({"chat": {"model": "plugin-default"}}),
+            plugin_default(),
+        );
+        assert_eq!(store.value()["chat"]["model"], json!("saved"));
+
+        store.pop("chat.model");
+
+        assert_eq!(
+            store.value()["chat"]["model"],
+            json!("plugin-default"),
+            "the refused write is the layer under the one that was popped"
+        );
+    }
+
+    /// A leaf no layer holds has nothing to drop, and the store says so
+    /// rather than reporting a change it did not make.
+    #[test]
+    fn a_drop_of_a_leaf_no_layer_holds_reports_nothing() {
+        let mut store = ConfigStore::runtime();
+        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+
+        assert!(matches!(store.pop("chat.retries"), LayerDrop::Untouched));
+        assert!(matches!(store.reset("chat.model"), LayerDrop::Untouched));
+        assert_eq!(store.value()["chat"]["model"], json!("saved"));
+    }
+
+    /// The rebuild IS the merge rule, so a popped store equals a store that
+    /// merged the same layers without the popped write.
+    ///
+    /// This is the property the re-merge was chosen for: a per-leaf undo
+    /// stack would be a second copy of the layer order, free to drift from
+    /// `ConfigStore::merge`.
+    #[test]
+    fn a_pop_leaves_exactly_what_the_same_layers_merged_without_it_give() {
+        let mut popped = ConfigStore::runtime();
+        popped.merge(
+            json!({"chat": {"model": "saved", "retries": 1}}),
+            SourceTag::Settings,
+        );
+        popped.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
+        popped.merge(json!({"chat": {"retries": 9}}), SourceTag::Rpc);
+        popped.pop("chat.model");
+
+        let mut merged = ConfigStore::runtime();
+        merged.merge(
+            json!({"chat": {"model": "saved", "retries": 1}}),
+            SourceTag::Settings,
+        );
+        merged.merge(json!({}), lua_line(2));
+        merged.merge(json!({"chat": {"retries": 9}}), SourceTag::Rpc);
+
+        assert_eq!(popped.value(), merged.value());
+        assert_eq!(
+            popped
+                .recorded_leaves()
+                .iter()
+                .map(|leaf| (leaf.to_string(), popped.origin(leaf)))
+                .collect::<Vec<_>>(),
+            merged
+                .recorded_leaves()
+                .iter()
+                .map(|leaf| (leaf.to_string(), merged.origin(leaf)))
+                .collect::<Vec<_>>(),
+            "the rebuild must reproduce the provenance and the pins too"
+        );
+    }
+
+    /// The keys that name where the daemon acts are withheld from `&` and
+    /// `^` under the runtime policy, exactly as they are from a merge.
+    ///
+    /// A pop is a write door: it changes what the store holds. A caller that
+    /// could pop `runtimepath` would re-point the trees the daemon reads code
+    /// from without the floor ever seeing a path.
+    #[test]
+    fn a_drop_of_a_location_key_is_withheld_at_runtime() {
+        let mut store = ConfigStore::for_load();
+        store.merge(json!({"kiln_path": "/a"}), SourceTag::Settings);
+        store.merge(json!({"kiln_path": "/b"}), lua_line(2));
+        store.end_boot_phase();
+
+        assert!(matches!(store.pop("kiln_path"), LayerDrop::Withheld));
+        assert!(matches!(store.reset("kiln_path"), LayerDrop::Withheld));
+    }
+
+    /// A drop rebuilds the store, and the rebuild must not put a location key
+    /// back into the plugin-visible value.
+    ///
+    /// The boot phase ACCEPTS `kiln_path`, so the retained layer holds it.
+    /// `end_boot_phase` drops it from the value; a replay that skipped the
+    /// location policy would merge it straight back in, and one `:set key^`
+    /// would hand every plugin the directories the daemon reads.
+    #[test]
+    fn a_drop_does_not_replay_a_location_key_back_into_the_value() {
+        let mut store = ConfigStore::for_load();
+        store.merge(
+            json!({"kiln_path": "/notes", "chat": {"model": "saved"}}),
+            SourceTag::Settings,
+        );
+        store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
+        store.end_boot_phase();
+        assert!(store.value().get("kiln_path").is_none());
+
+        store.pop("chat.model");
+
+        assert!(
+            store.value().get("kiln_path").is_none(),
+            "the replay must apply the runtime location policy: {}",
+            store.value()
+        );
+        assert_eq!(store.value()["chat"]["model"], json!("saved"));
+    }
+
+    /// A pop of a leaf under a location key is withheld too: the policy
+    /// classifies the top-level key, and the leaves under it are its parts.
+    #[test]
+    fn a_drop_under_a_location_key_is_withheld_at_runtime() {
+        let mut store = ConfigStore::runtime();
+        assert!(matches!(store.pop("kilns.notes"), LayerDrop::Withheld));
     }
 }

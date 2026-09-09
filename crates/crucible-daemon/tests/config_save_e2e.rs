@@ -119,6 +119,74 @@ async fn a_key_pinned_in_init_lua_takes_a_set_and_refuses_a_save() {
         !config_dir.join("settings.json").exists(),
         "a refused save writes no file"
     );
+    let after_refusal = conn
+        .call_method("config.get", serde_json::json!({ "key": "chat" }), 5)
+        .await;
+    assert_eq!(
+        after_refusal["result"]["value"]["show_thinking"],
+        serde_json::json!(false),
+        "and it drops nothing: the value the user raised for this run stands, \
+         so one refused save cannot undo a `:set`: {after_refusal}"
+    );
+}
+
+/// A save of a key a `:set` already holds is live at once, in this same
+/// daemon.
+///
+/// The ephemeral layer outranks the saved one, so the save landed in the file
+/// and lost to the scratch value in memory: the settings pane wrote, nothing
+/// on screen moved, and the saved value arrived only at the next start. The
+/// save therefore takes the leaf back from the runtime knob.
+#[tokio::test]
+async fn a_save_of_a_key_a_set_holds_is_live_at_once() {
+    let daemon = TestDaemon::start_with_home_setup(|home| {
+        let config_dir = home.join(".config").join("crucible");
+        std::fs::create_dir_all(&config_dir)?;
+        std::fs::write(config_dir.join("init.lua"), INIT_LUA)?;
+        Ok(())
+    })
+    .await
+    .expect("the daemon must boot with the fixture home");
+    let config_dir = daemon.home().join(".config").join("crucible");
+    let mut conn = RpcConn::connect(&daemon.socket_path)
+        .await
+        .expect("connect to the daemon");
+
+    let set = conn
+        .call_method(
+            "config.set",
+            serde_json::json!({ "values": { "chat": { "model": "scratch" } } }),
+            1,
+        )
+        .await;
+    assert_eq!(set["result"]["ok"], serde_json::json!(true), "{set}");
+
+    let save = conn
+        .call_method(
+            "config.save",
+            serde_json::json!({ "values": { "chat": { "model": "saved" } } }),
+            2,
+        )
+        .await;
+    assert_eq!(save["result"]["ok"], serde_json::json!(true), "{save}");
+
+    // `config.get` takes a top-level key, so the leaf is read out of the
+    // branch it sits in.
+    let after = conn
+        .call_method("config.get", serde_json::json!({ "key": "chat" }), 3)
+        .await;
+    assert_eq!(
+        after["result"]["value"]["model"],
+        serde_json::json!("saved"),
+        "the saved value is the live value, with no restart: {after}"
+    );
+
+    let file = std::fs::read_to_string(config_dir.join("settings.json"))
+        .expect("an accepted save writes the file");
+    assert!(
+        file.contains("saved"),
+        "and the same value outlives the process: {file}"
+    );
 }
 
 /// A key the user's file does not hold saves without a refusal, and the store
