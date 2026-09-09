@@ -94,7 +94,6 @@ mod types;
 pub mod ui;
 mod vault;
 mod vec_api;
-pub mod views;
 mod ws;
 
 #[cfg(test)]
@@ -236,5 +235,4 @@ pub use isolation::{
 };
 pub use options::{register_options_module, OptionsRegistry};
 pub use plugin_status::{register_status_module, Progress, StatusEntry, StatusRegistry};
-pub use publications::{register_publish_module, PublicationRegistry};
-pub use views::{register_views_module, ViewRegistry};
+pub use publications::{register_publish_module, PublicationChangeHook, PublicationRegistry};

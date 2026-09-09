@@ -1,9 +1,17 @@
 --!strict
 --- kanban — a board over a folder of markdown tickets.
 ---
---- The point of this plugin is not the board. It is the question the board
---- asks: can a plugin declare a whole VIEW the way `cru.plugin.options` lets
---- it declare a settings form, and have both frontends draw it?
+--- The reference implementation of the plugin contract: **a plugin owns data;
+--- each frontend draws it natively.** This file owns the tickets and nothing
+--- else. It publishes the board with `cru.plugin.publish`, which pushes a
+--- `publication_changed` event to every client, and it accepts one command to
+--- move a card. It describes no layout, no colour and no widget.
+---
+--- The earlier version of this plugin declared an Oil view that both frontends
+--- rendered. That was the wrong seam: it made a terminal's vocabulary the
+--- cross-frontend contract, so a browser inherited cells, sixteen colours and
+--- no way to say "stack when narrow". See
+--- `docs/Meta/Analysis/Oil in Documents.md`.
 ---
 --- Everything a ticket is lives in the file. A ticket is a markdown note with
 --- a `status:` in its frontmatter, and moving a card rewrites that one line —
@@ -134,6 +142,12 @@ local function move(folder: string?, kiln: string?, file: string, to: string): b
     if file:find("/", 1, true) or file:find("\\", 1, true) or file:find("..", 1, true) then
         return false
     end
+    -- A ticket is a markdown file. `tickets()` filters on that when it reads,
+    -- and without the same rule here a move would write a status line into
+    -- any file in the folder that a caller happened to name.
+    if file:sub(-3) ~= ".md" then
+        return false
+    end
     if not table.find(COLUMNS, to) then return false end
 
     local dir = board_dir(folder, kiln)
@@ -155,104 +169,62 @@ local function move(folder: string?, kiln: string?, file: string, to: string): b
     return write_file(path, replaced)
 end
 
-local COLUMN_COLOR = {
-    todo = "yellow",
-    doing = "cyan",
-    done = "green",
-}
-
---- One card. The whole card is the click target, and the action names the
---- NEXT column rather than a direction, so the tree carries no ordering the
---- renderer would have to know.
-local function card(t: Ticket, folder: string?, kiln: string?): any
-    local oil = cru.oil
-    local idx = table.find(COLUMNS, t.status) or 1
-    local next_col = COLUMNS[(idx % #COLUMNS) + 1]
-    local params: { [string]: string } = { file = t.file, to = next_col }
-    if folder then params.folder = folder end
-    if kiln then params.kiln = kiln end
-
-    return oil.action(
-        "move",
-        params,
-        oil.row({ gap = 1, padding = 1, border = "rounded" },
-            oil.text(t.title),
-            oil.spacer(),
-            oil.text("→ " .. next_col, { dim = true })
-        )
-    )
-end
-
-local function column(name: string, items: { Ticket }, folder: string?, kiln: string?): any
-    local oil = cru.oil
-    local children = {
-        oil.text(string.upper(name) .. "  (" .. #items .. ")", {
-            bold = true,
-            fg = COLUMN_COLOR[name],
-        }),
+--- The board, as data. No layout, no colour, no widget.
+---
+--- One flat list plus the column order. A renderer groups; that is a
+--- renderer's job, and a web board that wants a different grouping (by
+--- assignee, say) should not need this plugin to change.
+function M.board(folder: string?, kiln: string?)
+    local all = tickets(folder, kiln)
+    local out = {}
+    for _, t in all do
+        table.insert(out, { file = t.file, title = t.title, status = t.status })
+    end
+    return {
+        columns = COLUMNS,
+        tickets = out,
+        folder = folder or config.folder,
+        kiln = kiln,
+        dir = board_dir(folder, kiln),
     }
-    for _, t in items do
-        table.insert(children, card(t, folder, kiln))
+end
+
+--- Publish the board. Every client is told to re-read.
+---
+--- Keyed by `kanban:board` rather than `board`: a publication key is a global
+--- namespace shared by every plugin, and `board` is a word more than one
+--- plugin will want.
+function M.republish(folder: string?, kiln: string?)
+    -- `pcall` because `cru.plugin.publish` is bound per plugin by the loader,
+    -- and a plugin body also runs in the bare VM that `cru plugin check` and
+    -- the Lua test runner use. Failing to publish there must not fail the move
+    -- that preceded it.
+    pcall(function()
+        cru.plugin.publish("kanban:board", M.board(folder, kiln))
+    end)
+end
+
+--- Move a ticket, then republish so every client redraws.
+---
+--- The command is the whole write surface. A frontend never edits a file; it
+--- asks this to, and learns the result by being told the data changed.
+type MoveResult = { ok: boolean, error: string? }
+
+function M.move_command(args): MoveResult
+    if type(args) ~= "table" then
+        return { ok = false, error = "expected a table of arguments" }
     end
-    if #items == 0 then
-        table.insert(children, oil.text("nothing here", { dim = true, italic = true }))
+    local file, to = args.file, args.to
+    if type(file) ~= "string" or type(to) ~= "string" then
+        return { ok = false, error = "`file` and `to` are required" }
     end
-    return oil.col({ gap = 1, padding = 1 }, table.unpack(children))
+    local ok = move(args.folder, args.kiln, file, to)
+    if not ok then
+        return { ok = false, error = "no such ticket, or not a column this board has" }
+    end
+    M.republish(args.folder, args.kiln)
+    return { ok = true }
 end
-
---- The board tree. Exported on `M` as well as registered, so a test can call
---- it without a daemon binding underneath.
-function M.render(params)
-            local oil = cru.oil
-            local folder = if type(params) == "table" and type(params.folder) == "string"
-                then params.folder
-                else nil
-            local kiln = if type(params) == "table" and type(params.kiln) == "string"
-                then params.kiln
-                else nil
-
-            local all = tickets(folder, kiln)
-            local columns = {}
-            for _, name in COLUMNS do
-                local items: { Ticket } = {}
-                for _, t in all do
-                    if t.status == name then table.insert(items, t) end
-                end
-                table.insert(columns, column(name, items, folder, kiln))
-            end
-
-            if #all == 0 then
-                local dir = board_dir(folder, kiln) or "(no kiln named; add \"kiln\" to the fence)"
-                return oil.col({ gap = 1, padding = 1, border = "rounded" },
-                    oil.text("No tickets found", { bold = true }),
-                    oil.text(dir, { dim = true }),
-                    oil.text("A ticket is a .md file with `status: todo` in its frontmatter.", {
-                        dim = true,
-                    })
-                )
-            end
-
-            return oil.row({ gap = 2 }, table.unpack(columns))
-end
-
-function M.on_action(action, params)
-    if action ~= "move" then return end
-    if type(params) ~= "table" then return end
-    local file = params.file
-    local to = params.to
-    if type(file) ~= "string" or type(to) ~= "string" then return end
-    move(params.folder, params.kiln, file, to)
-end
-
--- `pcall` because a plugin body also runs in the test runner's bare VM, which
--- has no per-plugin `cru.plugin` binding. Failing to register there would stop
--- the module from loading at all, and the tests below exercise `M.render`
--- directly — the same functions the daemon registers.
-pcall(function()
-    cru.plugin.views({
-        board = { render = M.render, on_action = M.on_action },
-    })
-end)
 
 return {
     name = "kanban",
@@ -262,11 +234,46 @@ return {
 
     setup = M.setup,
 
-    -- The same two functions `cru.plugin.views` is given above. Declared here
-    -- as well so the shape is visible in the spec a reader opens first, and so
-    -- a test can call them without a daemon binding underneath — the way
-    -- todo-list's tests reach its tools through `spec.tools`.
-    views = {
-        board = { render = M.render, on_action = M.on_action },
+    tools = {
+        kanban_board = {
+            desc = "Read the ticket board as data",
+            params = {
+                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
+                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
+            },
+            fn = function(args: any)
+                local t = if type(args) == "table" then args else {}
+                return M.board(t.folder, t.kiln)
+            end,
+        },
+        kanban_move = {
+            desc = "Move a ticket to another column",
+            params = {
+                { name = "file", type = "string", desc = "Ticket file name" },
+                { name = "to", type = "string", desc = "Target column" },
+                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
+                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
+            },
+            fn = M.move_command,
+        },
+    },
+
+    -- Commands, not just tools: `plugin.run_command` is what a frontend can
+    -- reach over RPC, and the web board is a frontend. Tools are for agents.
+    commands = {
+        kanban = {
+            desc = "Publish the ticket board so clients redraw",
+            hint = "[folder]",
+            fn = function(args: any)
+                local t = if type(args) == "table" then args else {}
+                M.republish(t.folder, t.kiln)
+                return { ok = true }
+            end,
+        },
+        kanban_move = {
+            desc = "Move a ticket to another column",
+            hint = "<file> <column>",
+            fn = M.move_command,
+        },
     },
 }

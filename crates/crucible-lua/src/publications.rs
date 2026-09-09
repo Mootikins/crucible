@@ -24,14 +24,36 @@ use mlua::{Lua, LuaSerdeExt, Result as LuaResult};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// Told, after a publication lands, which plugin published under which key.
+///
+/// Named rather than written inline at each use: the same signature appears on
+/// the field, the setter and the daemon's closure, and three copies of a
+/// four-part `dyn` bound is what `clippy::type_complexity` is for.
+pub type PublicationChangeHook = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 /// Publications by key, then by publishing plugin.
 ///
 /// Keyed that way round because clients ask by key ("who offers isolation?"),
 /// and more than one plugin may answer. Attribution is kept so a client can
 /// tell two answers apart and a stale entry can be traced home.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct PublicationRegistry {
     entries: Arc<Mutex<HashMap<String, HashMap<String, serde_json::Value>>>>,
+    /// Called after a publication lands, with `(plugin, key)`.
+    ///
+    /// A `dyn` here on purpose, and it is the crate-dependency-firewall case:
+    /// notifying clients means emitting a daemon event, and this crate must
+    /// not know what a `SessionEventMessage` is. The daemon installs the
+    /// closure at boot; a registry with none set simply stores, which is what
+    /// every test and the `cru plugin check` path want.
+    on_change: Arc<Mutex<Option<PublicationChangeHook>>>,
+}
+
+impl std::fmt::Debug for PublicationRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.entries.lock().map(|g| g.len()).unwrap_or(0);
+        write!(f, "PublicationRegistry({n} keys)")
+    }
 }
 
 impl PublicationRegistry {
@@ -39,11 +61,27 @@ impl PublicationRegistry {
         Self::default()
     }
 
+    /// Install the change hook. The daemon calls this once at boot.
+    pub fn set_change_hook(&self, hook: PublicationChangeHook) {
+        if let Ok(mut g) = self.on_change.lock() {
+            *g = Some(hook);
+        }
+    }
+
+    /// Store a publication and tell anyone listening.
+    ///
+    /// The hook runs **after** the lock is released. Holding the entries mutex
+    /// across a callback that reaches the daemon's broadcast channel is how a
+    /// publish from inside an event handler would deadlock against itself.
     pub fn set(&self, plugin: &str, key: &str, value: serde_json::Value) {
         if let Ok(mut g) = self.entries.lock() {
             g.entry(key.to_string())
                 .or_default()
                 .insert(plugin.to_string(), value);
+        }
+        let hook = self.on_change.lock().ok().and_then(|g| g.clone());
+        if let Some(hook) = hook {
+            hook(plugin, key);
         }
     }
 
@@ -97,6 +135,21 @@ impl PublicationRegistry {
 ///
 /// `plugin` is supplied by the loader rather than the caller: a plugin naming
 /// someone else as the author of its data would make attribution worthless.
+///
+/// ## Attribution is read at CALL time, not at bind time
+///
+/// The bound `plugin` is only a fallback. Every plugin shares one `cru` table,
+/// so the closure captured here is replaced by the next plugin's registration
+/// — and a publish that happens LATER than load (from a command, a hook, a
+/// timer) would then be filed under whichever plugin was bound last. That is
+/// not hypothetical: the kanban board published itself as `web-search`.
+///
+/// [`crate::plugin_context`] already exists for exactly this, and says so:
+/// "a per-plugin rebind of the shared `cru.storage` table cannot do this work
+/// … the last rebind would win for every late caller." `cru.storage` reads the
+/// context; this now does too. The captured name still covers the one case the
+/// context cannot: a publish from a plugin's own body during boot `require`,
+/// before the loader has entered its context.
 pub fn register_publish_module(
     lua: &Lua,
     registry: PublicationRegistry,
@@ -114,7 +167,9 @@ pub fn register_publish_module(
                  userdata: {e}"
             ))
         })?;
-        registry.set(&plugin, &key, json);
+        let author =
+            crate::plugin_context::current_plugin_name(lua).unwrap_or_else(|| plugin.clone());
+        registry.set(&author, &key, json);
         Ok(())
     })?;
     crate::lua_util::get_or_create_module(lua, "plugin")?.set("publish", publish)?;
@@ -125,6 +180,75 @@ pub fn register_publish_module(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A publish that happens after load is filed under the plugin that is
+    /// RUNNING, not the one that was bound last.
+    ///
+    /// Break `register_publish_module` back to the captured name and this
+    /// fails with `web-search` — which is what production did: the kanban
+    /// board's command published itself under the last plugin the loader
+    /// happened to bind.
+    #[test]
+    fn a_late_publish_is_attributed_to_the_running_plugin() {
+        let lua = Lua::new();
+        let registry = PublicationRegistry::new();
+
+        // Two plugins bind in turn, as the loader does. `web-search` wins the
+        // shared `cru.plugin.publish` slot by going second.
+        register_publish_module(&lua, registry.clone(), "kanban".to_string()).unwrap();
+        register_publish_module(&lua, registry.clone(), "web-search".to_string()).unwrap();
+
+        // Now kanban's command runs, under kanban's context.
+        let restore = crate::plugin_context::enter_plugin(&lua, "kanban", false);
+        lua.load(r#"cru.plugin.publish("kanban:board", { tickets = {} })"#)
+            .exec()
+            .unwrap();
+        crate::plugin_context::set_plugin_context(&lua, restore);
+
+        let answers = registry.get("kanban:board");
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].0, "kanban", "attribution follows execution");
+    }
+
+    /// With no context — a boot `require` running a plugin's body before the
+    /// loader enters its context — the bound name is still right.
+    #[test]
+    fn a_publish_with_no_context_falls_back_to_the_bound_plugin() {
+        let lua = Lua::new();
+        let registry = PublicationRegistry::new();
+        register_publish_module(&lua, registry.clone(), "oci".to_string()).unwrap();
+
+        lua.load(r#"cru.plugin.publish("isolation", { available = true })"#)
+            .exec()
+            .unwrap();
+
+        assert_eq!(registry.get("isolation")[0].0, "oci");
+    }
+
+    /// The hook fires with the plugin and key, after the value has landed.
+    #[test]
+    fn a_publication_notifies_after_it_is_stored() {
+        use std::sync::{Arc, Mutex};
+        let registry = PublicationRegistry::new();
+        let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let sink = seen.clone();
+        let observed = registry.clone();
+        registry.set_change_hook(Arc::new(move |plugin: &str, key: &str| {
+            // Reading inside the hook proves the value is stored BEFORE the
+            // notification: a client told to re-read must not race the write.
+            assert_eq!(observed.get(key).len(), 1);
+            sink.lock()
+                .unwrap()
+                .push((plugin.to_string(), key.to_string()));
+        }));
+
+        registry.set("kanban", "kanban:board", json!({ "tickets": [] }));
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            &[("kanban".to_string(), "kanban:board".to_string())]
+        );
+    }
 
     fn lua_with_publish(registry: PublicationRegistry, plugin: &str) -> Lua {
         let lua = Lua::new();

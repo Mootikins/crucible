@@ -232,10 +232,10 @@ function sanitizeHtml(value: string): string {
     // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
     // marks code-block copy buttons for the reading-view click delegate.
     // `data-callout` carries the admonition kind through to the CSS.
-    // `data-oil-*` names which plugin view an ```oil fence mounts. They are
-    // three inert strings read back by mountOilViews; the daemon decides what
-    // a plugin/view pair may do, so a hand-authored fence naming one it should
-    // not reach is refused there, not here.
+    // `data-plugin-*` names which block a ```plugin fence mounts. They are
+    // three inert strings read back by mountPluginBlocks; the daemon decides
+    // what a plugin may do, so a hand-authored fence naming one it should not
+    // reach is refused there, not here.
     // `style` is NOT listed: DOMPurify allows it by default and listing it here
     // read as a decision to permit arbitrary inline CSS. What actually governs
     // it is filterInlineCss.
@@ -244,9 +244,9 @@ function sanitizeHtml(value: string): string {
       'data-copy',
       'data-callout',
       'align',
-      'data-oil-plugin',
-      'data-oil-view',
-      'data-oil-params',
+      'data-plugin-name',
+      'data-plugin-block',
+      'data-plugin-params',
     ],
     // `style`: DOMPurify empties a bare `<style>` (FORBID_CONTENTS) but keeps
     // one nested in `<svg>` intact — and an SVG `<style>` inside an HTML
@@ -432,13 +432,13 @@ async function highlightCodeBlocks(
       continue;
     }
 
-    // An ```oil fence names a plugin view. It is not rendered here: unlike
-    // mermaid, which produces an inert SVG, a view is live and interactive, so
+    // A ```plugin fence names a plugin block. It is not rendered here: unlike
+    // mermaid, which produces an inert SVG, a block is live and interactive, so
     // it needs a real component rather than a second string pass. Emit a mount
-    // point that survives DOMPurify and let mountOilViews (which runs against
-    // the DOM, after sanitizing) put a component in it.
-    if (language === 'oil') {
-      result += oilMountHtml(decodeHtml(encodedCode));
+    // point that survives DOMPurify and let mountPluginBlocks (which runs
+    // against the DOM, after sanitizing) put a component in it.
+    if (language === 'plugin') {
+      result += pluginMountHtml(decodeHtml(encodedCode));
       continue;
     }
 
@@ -475,12 +475,12 @@ export async function renderMermaidDiagram(code: string): Promise<string | null>
 }
 
 /**
- * Parse an ```oil fence into a mount point.
+ * Parse a ```plugin fence into a mount point.
  *
- * The body is deliberately tiny — `plugin/view` on the first line, optional
+ * The body is deliberately tiny — `plugin/block` on the first line, optional
  * JSON params after it:
  *
- * ```oil
+ * ```plugin
  * kanban/board
  * { "folder": "tickets" }
  * ```
@@ -493,13 +493,13 @@ export async function renderMermaidDiagram(code: string): Promise<string | null>
  *
  * A malformed fence renders as a visible error, never as nothing.
  */
-export function oilMountHtml(source: string): string {
+export function pluginMountHtml(source: string): string {
   const lines = source.trim().split('\n');
   const target = (lines[0] ?? '').trim();
   const slash = target.indexOf('/');
   if (slash <= 0 || slash === target.length - 1) {
-    return `<pre class="oil-error"><code>${escapeHtml(
-      `oil: first line must be "plugin/view", got ${JSON.stringify(target)}`,
+    return `<pre class="plugin-block-error"><code>${escapeHtml(
+      `plugin: first line must be "plugin/view", got ${JSON.stringify(target)}`,
     )}</code></pre>`;
   }
   const plugin = target.slice(0, slash);
@@ -511,15 +511,15 @@ export function oilMountHtml(source: string): string {
     try {
       params = JSON.stringify(JSON.parse(rest));
     } catch {
-      return `<pre class="oil-error"><code>${escapeHtml(
-        'oil: params after the first line must be JSON',
+      return `<pre class="plugin-block-error"><code>${escapeHtml(
+        'plugin: params after the first line must be JSON',
       )}</code></pre>`;
     }
   }
 
-  return `<div class="oil-mount" data-oil-plugin="${escapeHtml(plugin)}" data-oil-view="${escapeHtml(
+  return `<div class="plugin-mount" data-plugin-name="${escapeHtml(plugin)}" data-plugin-block="${escapeHtml(
     view,
-  )}" data-oil-params="${escapeHtml(params)}"></div>`;
+  )}" data-plugin-params="${escapeHtml(params)}"></div>`;
 }
 
 /** Placeholder emitted by {@link highlightCodeBlocks} for a ```mermaid fence;

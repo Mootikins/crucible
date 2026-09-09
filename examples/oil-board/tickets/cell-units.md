@@ -1,6 +1,6 @@
 ---
 title: Cells are not pixels
-status: todo
+status: doing
 ---
 
 Padding and gap are counted in terminal cells. The web renderer turns one cell

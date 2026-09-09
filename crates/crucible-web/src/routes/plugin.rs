@@ -1,12 +1,17 @@
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
     extract::{Path, Query, State},
     routing::{delete, get, post},
     Json, Router,
 };
+use crucible_daemon::event_map::PUBLICATION_CHANGED_EVENT;
 use crucible_daemon::server::plugins::OptionAction;
+use futures::stream::Stream;
 use serde::Deserialize;
+use std::convert::Infallible;
+use tokio_stream::StreamExt;
 
 pub fn plugin_routes() -> Router<AppState> {
     Router::new()
@@ -16,7 +21,7 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins/publications", get(list_publications))
         .route("/api/plugins/options", get(list_options))
         .route("/api/plugins/{name}/option", post(option_call))
-        .route("/api/plugins/{name}/view/{view}", post(view_call))
+        .route("/api/plugins/events", get(publication_event_stream))
         .route("/api/plugins/command", post(run_command))
 }
 
@@ -127,39 +132,35 @@ async fn option_call(
     }
 }
 
-/// One render of, or one action against, a plugin view.
+/// `GET /api/plugins/events` — a push when a plugin's published data changes.
 ///
-/// `action` absent means render only. Both answers are the same shape — a
-/// node tree — because a client that acted needs the new state and must not
-/// have a second, separately-computed description of it.
-#[derive(Debug, Deserialize)]
-struct ViewRequest {
-    #[serde(default)]
-    params: serde_json::Value,
-    #[serde(default)]
-    action: Option<String>,
-}
-
-/// `POST /api/plugins/:name/view/:view` — an Oil tree from a plugin.
+/// The counterpart to `GET /api/plugins/publications`: that answers "what is
+/// true now", this says "read it again". A panel drawing a plugin's own state
+/// would otherwise poll on a timer and still show a stale value between ticks.
 ///
-/// POST rather than GET even for a pure render: `params` is a plugin's own
-/// vocabulary and can be any JSON, which a query string cannot carry without
-/// this route inventing an encoding for it.
-///
-/// Passed through verbatim, exactly as `list_options` is. Nothing here knows
-/// what a node means — `{"box": {...}}`, `{"text": {...}}` — so a plugin that
-/// ships a new view needs no change on this side.
-async fn view_call(
+/// Same shape as the file-tree stream in `routes/fs.rs`, including the
+/// load-bearing ordering: subscribe the LOCAL broker channel before telling the
+/// daemon to forward, because `EventBroker::dispatch` drops events for a
+/// session id with no local subscriber and the window between the two calls
+/// would lose the first event.
+async fn publication_event_stream(
     State(state): State<AppState>,
-    Path((name, view)): Path<(String, String)>,
-    Json(req): Json<ViewRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
-    let node = state
-        .daemon
-        .plugin_view(&name, &view, req.params, req.action)
-        .await
-        .daemon_err()?;
-    Ok(Json(serde_json::json!({ "node": node })))
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
+    let rx = state.events.subscribe("system").await;
+    state.daemon.subscribe_sticky("system").await.daemon_err()?;
+
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+        .filter_map(|result| result.ok())
+        .filter_map(|event| {
+            // The system channel carries the file watcher and the
+            // classification prompt too; this stream is only about plugin data.
+            (event.event == PUBLICATION_CHANGED_EVENT).then(|| {
+                let data = serde_json::to_string(&event.data).unwrap_or_default();
+                Ok(Event::default().event(PUBLICATION_CHANGED_EVENT).data(data))
+            })
+        });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 /// `POST /api/plugins/command` — invoke a plugin command by name.

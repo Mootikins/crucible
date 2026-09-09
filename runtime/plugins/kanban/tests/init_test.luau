@@ -15,12 +15,30 @@ local plugin = require("kanban")
 local KILN: string = ""
 local BOARD: string = ""
 
+--- Every ticket path staged so far, as the fs mock wants it.
+---
+--- The plugin writes real bytes with `io.open` and then LISTS the folder with
+--- `cru.fs.list`, which the mock answers from this table rather than from the
+--- disk — `real_dirs` only makes `mkdir` real. So a staged ticket has to exist
+--- in both places, and `seed` re-runs setup with everything staged so far.
+local SEEDED: { [string]: string } = {}
+
+local function seed()
+    test_mocks.setup({
+        kiln = { active = "notes", roots = { notes = KILN } },
+        fs = { real_dirs = true, files = SEEDED },
+    })
+end
+
 local function ticket(name: string, status: string?, body: string?)
-    local handle = assert(io.open(BOARD .. "/" .. name, "w"))
+    local path = BOARD .. "/" .. name
+    local handle = assert(io.open(path, "w"))
     local front = "---\ntitle: " .. name:gsub("%.md$", "") .. "\n"
     if status then front = front .. "status: " .. status .. "\n" end
     handle:write(front .. "---\n" .. (body or "The body a human wrote.\n"))
     handle:close()
+    SEEDED[path] = "staged"
+    seed()
 end
 
 --- The ticket's bytes on disk. Asserts rather than returning nil: every call
@@ -37,10 +55,8 @@ describe("kanban", function()
     before_each(function()
         KILN = os.tmpname()
         os.remove(KILN)
-        test_mocks.setup({
-            kiln = { active = "notes", roots = { notes = KILN } },
-            fs = { real_dirs = true },
-        })
+        SEEDED = {}
+        seed()
         cru.fs.mkdir(KILN)
         BOARD = KILN .. "/tickets"
         cru.fs.mkdir(BOARD)
@@ -52,31 +68,52 @@ describe("kanban", function()
     end)
 
     describe("reading the folder", function()
-        it("renders a tree when the folder has tickets", function()
+        it("publishes a flat ticket list and the column order", function()
             ticket("alpha.md", "todo")
-            local tree = plugin.views.board.render({})
-            expect.equal(type(tree), "userdata")
+            local board = plugin.tools.kanban_board.fn({})
+            expect.equal(#board.tickets, 1)
+            expect.equal(board.tickets[1].file, "alpha.md")
+            expect.equal(board.tickets[1].status, "todo")
+            -- The column ORDER is data. Grouping is the renderer's job, so a
+            -- board wanting a different grouping needs no change here.
+            expect.equal(board.columns[1], "todo")
+            expect.equal(#board.columns, 3)
         end)
 
-        it("renders an explanation, not an error, for an empty folder", function()
-            local tree = plugin.views.board.render({})
-            expect.equal(type(tree), "userdata")
+        it("answers with an empty list, not an error, for an empty folder", function()
+            local board = plugin.tools.kanban_board.fn({})
+            expect.equal(#board.tickets, 0)
+            expect.equal(#board.columns, 3)
+        end)
+
+        it("names a ticket by its file when it has no title", function()
+            local path = BOARD .. "/untitled.md"
+            local handle = assert(io.open(path, "w"))
+            handle:write("---\nstatus: todo\n---\nbody\n")
+            handle:close()
+            SEEDED[path] = "staged"
+            seed()
+            local board = plugin.tools.kanban_board.fn({})
+            expect.equal(board.tickets[1].title, "untitled")
         end)
 
         it("ignores a file that is not markdown", function()
-            local handle = assert(io.open(BOARD .. "/notes.txt", "w"))
+            local path = BOARD .. "/notes.txt"
+            local handle = assert(io.open(path, "w"))
             handle:write("not a ticket")
             handle:close()
+            SEEDED[path] = "staged"
+            seed()
             -- Nothing to assert on the tree directly; the move below proves
             -- the file was never treated as a ticket.
-            expect.equal(plugin.views.board.on_action("move", { file = "notes.txt", to = "doing" }), nil)
+            expect.falsy(plugin.tools.kanban_move.fn({ file = "notes.txt", to = "doing" }).ok)
         end)
     end)
 
     describe("moving a ticket", function()
         it("rewrites the status line and leaves the body alone", function()
             ticket("alpha.md", "todo", "Body line one.\nBody line two.\n")
-            plugin.views.board.on_action("move", { file = "alpha.md", to = "doing" })
+            plugin.tools.kanban_move.fn({ file = "alpha.md", to = "doing" })
             local content = read("alpha.md")
             expect.truthy((content:find("status: doing", 1, true)))
             expect.falsy((content:find("status: todo", 1, true)))
@@ -86,7 +123,7 @@ describe("kanban", function()
 
         it("adds a status to a ticket that had none, inside the existing block", function()
             ticket("beta.md", nil)
-            plugin.views.board.on_action("move", { file = "beta.md", to = "done" })
+            plugin.tools.kanban_move.fn({ file = "beta.md", to = "done" })
             local content = read("beta.md")
             expect.truthy((content:find("status: done", 1, true)))
             -- One frontmatter block, not two.
@@ -96,7 +133,7 @@ describe("kanban", function()
 
         it("refuses a column it does not have", function()
             ticket("alpha.md", "todo")
-            plugin.views.board.on_action("move", { file = "alpha.md", to = "shipped" })
+            plugin.tools.kanban_move.fn({ file = "alpha.md", to = "shipped" })
             expect.truthy((read("alpha.md"):find("status: todo", 1, true)))
         end)
 
@@ -109,7 +146,7 @@ describe("kanban", function()
             handle:write("---\nstatus: todo\n---\nnot a ticket\n")
             handle:close()
 
-            plugin.views.board.on_action("move", { file = "../secret.md", to = "done" })
+            plugin.tools.kanban_move.fn({ file = "../secret.md", to = "done" })
 
             local after = assert(io.open(outside, "r"))
             local content = after:read("a") :: string
@@ -117,15 +154,10 @@ describe("kanban", function()
             expect.truthy((content:find("status: todo", 1, true)))
         end)
 
-        it("ignores an action it does not know", function()
-            ticket("alpha.md", "todo")
-            plugin.views.board.on_action("archive", { file = "alpha.md", to = "done" })
-            expect.truthy((read("alpha.md"):find("status: todo", 1, true)))
-        end)
 
         it("ignores params that are not a table", function()
-            expect.equal(plugin.views.board.on_action("move", nil), nil)
-            expect.equal(plugin.views.board.on_action("move", 42), nil)
+            expect.falsy(plugin.tools.kanban_move.fn(nil).ok)
+            expect.falsy(plugin.tools.kanban_move.fn(42).ok)
         end)
     end)
 
@@ -134,13 +166,15 @@ describe("kanban", function()
             local other = KILN .. "/backlog"
             cru.fs.mkdir(other)
             plugin.setup({ folder = "backlog" })
-            expect.equal(type(plugin.views.board.render({})), "userdata")
+            local board = plugin.tools.kanban_board.fn({})
+            expect.equal(board.folder, "backlog")
+            expect.equal(board.dir, other)
         end)
 
         it("ignores a non-table config instead of erroring", function()
             plugin.setup(nil)
             plugin.setup(42)
-            expect.equal(type(plugin.views.board.render({})), "userdata")
+            expect.equal(type(plugin.tools.kanban_board.fn({})), "table")
         end)
     end)
 end)

@@ -196,8 +196,6 @@ rpc_methods! {
     PluginOptionGet = "plugin.option_get",
     PluginOptionSet = "plugin.option_set",
     PluginOptionExecute = "plugin.option_execute",
-    PluginViewRender = "plugin.view_render",
-    PluginViewAction = "plugin.view_action",
     SessionStatus = "session.status",
     PluginRunCommand = "plugin.run_command",
     PluginInstall = "plugin.install",
@@ -999,22 +997,6 @@ impl RpcDispatcher {
             RpcMethod::PluginOptions => forward!(
                 id,
                 crate::server::plugins::handle_plugin_options(req.clone(), &self.ctx.plugin_loader)
-            ),
-            RpcMethod::PluginViewRender => forward!(
-                id,
-                crate::server::plugins::handle_plugin_view(
-                    req.clone(),
-                    &self.ctx.plugin_loader,
-                    false
-                )
-            ),
-            RpcMethod::PluginViewAction => forward!(
-                id,
-                crate::server::plugins::handle_plugin_view(
-                    req.clone(),
-                    &self.ctx.plugin_loader,
-                    true
-                )
             ),
             RpcMethod::PluginOptionGet => forward!(
                 id,

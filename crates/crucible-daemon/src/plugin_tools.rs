@@ -249,12 +249,12 @@ impl PluginRegistry {
             .map(|e| (e.lua.clone(), e.func.clone()))
     }
 
-    fn command_func(&self, name: &str) -> Option<(mlua::Lua, mlua::Function)> {
+    fn command_func(&self, name: &str) -> Option<(String, mlua::Lua, mlua::Function)> {
         self.commands
             .read()
             .expect("plugin commands lock poisoned")
             .get(name)
-            .map(|e| (e.lua.clone(), e.func.clone()))
+            .map(|e| (e.plugin.clone(), e.lua.clone(), e.func.clone()))
     }
 
     /// Invoke a plugin command by name. `Ok(None)` means no such command.
@@ -263,11 +263,26 @@ impl PluginRegistry {
         name: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<Option<serde_json::Value>> {
-        let Some((lua, func)) = self.command_func(name) else {
+        let Some((plugin, lua, func)) = self.command_func(name) else {
             return Ok(None);
         };
-        call_plugin_fn(&lua, &func, args)
-            .await
+        // Enter the owning plugin's context for the call, exactly as the
+        // loader does around a plugin's body and the handler dispatcher does
+        // around a handler. Without it a command runs under whatever context
+        // was left behind, and everything that reads identity at call time —
+        // `cru.storage`'s namespace, `cru.plugin.publish`'s attribution — is
+        // filed under the wrong plugin. The kanban board published itself as
+        // `web-search`, then as `reflection`, depending on load order.
+        //
+        // `may_intercept: false` because a command is not a tool-call hook and
+        // has no interception to do; the capability is granted at the hook
+        // seam, not here.
+        let restore = crucible_lua::enter_plugin(&lua, &plugin, false);
+        let result = call_plugin_fn(&lua, &func, args).await;
+        // Restored on BOTH paths: a context left behind attributes whatever
+        // runs next to this plugin.
+        crucible_lua::set_plugin_context(&lua, restore);
+        result
             .map(Some)
             .map_err(|e| anyhow::anyhow!("plugin command '{name}': {e}"))
     }

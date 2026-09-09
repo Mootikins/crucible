@@ -5,7 +5,7 @@
  * app-wide hover cards and click-to-open for free.
  */
 import { Component, createEffect, createResource, onCleanup } from 'solid-js';
-import { mountOilViews } from '@/components/oil/mount';
+import { mountPluginBlocks } from '@/components/blocks/mount';
 import { renderMarkdownDocAsync, proseClass } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
@@ -60,20 +60,20 @@ export const MarkdownPreview: Component<{
   let scrollHost: HTMLDivElement | undefined;
   let proseHost: HTMLDivElement | undefined;
 
-  // Put a live component into every ```oil placeholder once the HTML lands.
+  // Put a live component into every ```plugin placeholder once the HTML lands.
   // Re-runs whenever the rendered HTML changes, and disposes the previous
   // islands first: `innerHTML` replaces the nodes those roots were mounted on,
   // so without the disposer their effects and pending fetches outlive the DOM
   // they were drawing into.
-  let disposeOil: (() => void) | undefined;
+  let disposeBlocks: (() => void) | undefined;
   createEffect(() => {
     const rendered = html();
-    disposeOil?.();
-    disposeOil = undefined;
+    disposeBlocks?.();
+    disposeBlocks = undefined;
     if (rendered === undefined || !proseHost) return;
-    disposeOil = mountOilViews(proseHost);
+    disposeBlocks = mountPluginBlocks(proseHost);
   });
-  onCleanup(() => disposeOil?.());
+  onCleanup(() => disposeBlocks?.());
 
   // After the async render lands, jump to the wikilink that points at the
   // requested note (rendered wikilinks carry data-note = raw target text).

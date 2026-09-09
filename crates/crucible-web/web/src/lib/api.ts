@@ -1,5 +1,4 @@
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
-import type { OilTree } from './oil-types';
 import type {
   AgentProfileEntry,
   ChatEvent,
@@ -511,31 +510,6 @@ export async function getPluginOptions(): Promise<PluginOptions> {
 }
 
 /** Read one option's current value. */
-/**
- * Render one plugin view, optionally delivering an action first.
- *
- * POST even for a plain render: `params` is the plugin's own vocabulary and
- * can be any JSON, which a query string cannot carry without inventing an
- * encoding. The answer is always the tree, action or not — see OilView for
- * why the client never computes the new state itself.
- */
-export async function renderPluginView(
-  plugin: string,
-  view: string,
-  params?: Record<string, unknown>,
-  action?: string,
-): Promise<OilTree | null> {
-  const body = await request<{ node?: OilTree }>(
-    'POST',
-    `/api/plugins/${encodeURIComponent(plugin)}/view/${encodeURIComponent(view)}`,
-    {
-      ...jsonRequest({ params: params ?? {}, action }),
-      errorMessage: 'Failed to render plugin view',
-    },
-  );
-  return body.node ?? null;
-}
-
 export async function getPluginOption(plugin: string, path: string[]): Promise<unknown> {
   const body = await request<{ value?: unknown }>(
     'POST',

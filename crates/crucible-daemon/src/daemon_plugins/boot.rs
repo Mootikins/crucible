@@ -20,8 +20,7 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crucible_lua::{
-    register_options_module, register_publish_module, register_views_module, OptionsRegistry,
-    PublicationRegistry, ViewRegistry,
+    register_options_module, register_publish_module, OptionsRegistry, PublicationRegistry,
 };
 
 use super::{daemon_plugin_paths, DaemonPluginLoader};
@@ -281,7 +280,6 @@ pub async fn evaluate_boot_config_with_paths(
             PluginBindings {
                 publications: loader.publications(),
                 options: loader.options(),
-                views: loader.views(),
             },
         );
         // The UI namespaces must exist on the VM that evaluates the user's
@@ -562,7 +560,6 @@ fn refresh_plugin_dirs(
 pub(crate) struct PluginBindings {
     pub publications: PublicationRegistry,
     pub options: OptionsRegistry,
-    pub views: ViewRegistry,
 }
 
 impl PluginBindings {
@@ -575,9 +572,7 @@ impl PluginBindings {
         self.publications.release_plugin(plugin);
         register_publish_module(lua, self.publications.clone(), plugin.to_string())?;
         self.options.release_plugin(plugin);
-        register_options_module(lua, self.options.clone(), plugin.to_string())?;
-        self.views.release_plugin(plugin);
-        register_views_module(lua, self.views.clone(), plugin.to_string())
+        register_options_module(lua, self.options.clone(), plugin.to_string())
     }
 }
 

@@ -343,6 +343,30 @@ impl Server {
             },
         ));
 
+        // A publication is data a plugin owns and both frontends draw. Push it
+        // rather than making them poll: without this a web panel showing a
+        // plugin's own state re-fetches on a timer and still shows a stale
+        // board between ticks.
+        //
+        // Addressed to the system pseudo-session, like the file watcher and the
+        // kiln manager's classification prompt — these belong to the daemon,
+        // not to a conversation.
+        if let Ok(guard) = plugin_loader.try_lock() {
+            if let Some(loader) = guard.as_ref() {
+                let hook_tx = event_tx.clone();
+                loader.publications().set_change_hook(std::sync::Arc::new(
+                    move |plugin: &str, key: &str| {
+                        let event = crucible_core::protocol::SessionEventMessage::new(
+                            crate::event_map::SYSTEM_SESSION,
+                            crate::event_map::PUBLICATION_CHANGED_EVENT,
+                            serde_json::json!({ "plugin": plugin, "key": key }),
+                        );
+                        crate::event_emitter::emit_event(&hook_tx, event);
+                    },
+                ));
+            }
+        }
+
         // Workspace directories ride in on the serialized app config;
         // `scm.clone` and the startup repo scan read `root_dir` from it, and
         // `session_scratch_dir` (below) seeds the session manager's scratch-workspace

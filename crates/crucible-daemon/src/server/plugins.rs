@@ -217,51 +217,6 @@ pub(crate) async fn handle_plugin_options(
     Response::success(req.id, serde_json::json!({ "options": out }))
 }
 
-/// `plugin.view_render` and `plugin.view_action` — an Oil tree from a plugin.
-///
-/// `dispatch` selects which: false renders, true delivers the action first and
-/// then renders. Both answer with a tree, so a client that acted has the new
-/// state without a second round trip — and, more importantly, has exactly one
-/// description of that state. A handler returning its own view of what changed
-/// would be a second one, free to disagree with `render`.
-pub(crate) async fn handle_plugin_view(
-    req: Request,
-    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
-    dispatch: bool,
-) -> Response {
-    let params = match typed_params::<crate::rpc_client::PluginViewRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    if params.plugin.is_empty() || params.view.is_empty() {
-        return Response::error(
-            req.id,
-            INVALID_PARAMS,
-            "`plugin` and `view` are required".to_string(),
-        );
-    }
-
-    let loader_guard = plugin_loader.lock().await;
-    let Some(loader) = loader_guard.as_ref() else {
-        return Response::error(req.id, INTERNAL_ERROR, "no plugins loaded".to_string());
-    };
-    let registry = loader.views();
-
-    if dispatch {
-        let Some(action) = params.action.as_deref() else {
-            return Response::error(req.id, INVALID_PARAMS, "`action` is required".to_string());
-        };
-        if let Err(e) = registry.dispatch(&params.plugin, &params.view, action, &params.params) {
-            return Response::error(req.id, INVALID_PARAMS, e);
-        }
-    }
-
-    match registry.render(&params.plugin, &params.view, &params.params) {
-        Ok(node) => Response::success(req.id, serde_json::json!({ "node": node })),
-        Err(e) => Response::error(req.id, INVALID_PARAMS, e),
-    }
-}
-
 /// Which callback an option RPC reaches.
 ///
 /// An enum rather than a `&str` so a dispatch arm names a variant instead of a

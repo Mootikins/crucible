@@ -54,6 +54,14 @@ use crucible_lua::EventName;
 /// it, and the reprocess task in `server/mod.rs` filters on it.
 pub const SYSTEM_SESSION: &str = "system";
 
+/// A plugin's published data changed, so a client should re-read it.
+///
+/// Not an [`EventName`]: those are the daemon events a Lua plugin can
+/// SUBSCRIBE to, and this travels the other way — plugin to client. Adding it
+/// there would offer plugins a hook on their own writes, which is a loop
+/// waiting to happen.
+pub const PUBLICATION_CHANGED_EVENT: &str = "publication_changed";
+
 /// The session id the webhook ingress addresses its deliveries to.
 pub const WEBHOOK_SESSION: &str = "__webhook__";
 
