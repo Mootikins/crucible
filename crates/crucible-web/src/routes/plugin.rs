@@ -19,6 +19,7 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins/{name}", delete(remove_plugin))
         .route("/api/plugins/{name}/reload", post(reload_plugin))
         .route("/api/plugins/publications", get(list_publications))
+        .route("/api/plugins/commands", get(list_commands))
         .route("/api/plugins/options", get(list_options))
         .route("/api/plugins/{name}/option", post(option_call))
         .route("/api/plugins/events", get(publication_event_stream))
@@ -80,6 +81,23 @@ async fn list_publications(
 ) -> Result<Json<serde_json::Value>, WebError> {
     let publications = state.daemon.plugin_publications(q.key).await.daemon_err()?;
     Ok(Json(serde_json::json!({ "publications": publications })))
+}
+
+/// `GET /api/plugins/commands` — the executable primitives plugins declared.
+///
+/// Passed through verbatim. Each entry carries `plugin`, `name`,
+/// `description`, `hint` and `parameters`, and nothing here reads any of them:
+/// a caller offering a command as a button, with a dialog built from its
+/// declared parameters, needs no change on this side when a plugin ships a new
+/// one.
+///
+/// `parameters` crosses as opaque JSON today. It comes from the same
+/// `ToolDefinition` a tool uses, so shaping it like `signature.rs`'s JSON
+/// Schema output is what would let a dialog be generated rather than
+/// hand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.
+async fn list_commands(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
+    let commands = state.daemon.plugin_commands().await.daemon_err()?;
+    Ok(Json(serde_json::json!({ "commands": commands })))
 }
 
 /// `?key=` narrows to one contribution kind.

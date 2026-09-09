@@ -493,6 +493,38 @@ export async function getConfig(): Promise<Config> {
  * than the caller needs and — once third-party block code can run — more than
  * it should receive.
  */
+/** One executable primitive a plugin declared, and the arguments it takes. */
+export interface PluginCommand {
+  plugin: string;
+  name: string;
+  description?: string;
+  hint?: string;
+  /**
+   * The declared parameters, from the same `ToolDefinition` a tool uses.
+   *
+   * Opaque today: it crosses the wire as untyped JSON, so a caller reads it by
+   * hand. Shaping it like the JSON Schema `signature.rs` already emits is what
+   * would let an argument dialog be generated rather than written per command.
+   */
+  parameters?: unknown;
+}
+
+/**
+ * Every command loaded plugins declared.
+ *
+ * The enumeration that has to exist before a primitive can be offered as a
+ * button: the daemon has always known these, and nothing carried them to a
+ * browser, so a caller could invoke a command it had no way to discover.
+ */
+export async function getPluginCommands(): Promise<PluginCommand[]> {
+  const body = await request<{ commands?: PluginCommand[] }>(
+    'GET',
+    '/api/plugins/commands',
+    { errorMessage: 'Failed to list plugin commands' },
+  );
+  return body.commands ?? [];
+}
+
 export async function getPluginPublications(key?: string): Promise<PluginPublications> {
   // The path stays a bare literal and the query is appended to it.
   // `architecture_tests::every_frontend_api_path_has_a_backend_route` scans

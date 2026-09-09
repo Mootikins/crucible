@@ -13,6 +13,19 @@ impl ReconnectingDaemon {
             .await
     }
 
+    /// Every command loaded plugins declared, with its declared parameters.
+    ///
+    /// The enumeration a caller needs before it can offer a primitive as a
+    /// button: `commands_json` already emits `name`, `description`, `hint` and
+    /// `parameters` from the same `ToolDefinition` a tool uses, and until now
+    /// it reached the daemon's own clients and no browser.
+    pub async fn plugin_commands(&self) -> anyhow::Result<Vec<serde_json::Value>> {
+        self.call_with_reconnect("plugin.commands", |daemon| {
+            Box::pin(daemon.plugin_commands())
+        })
+        .await
+    }
+
     pub async fn plugin_publications(
         &self,
         key: Option<String>,

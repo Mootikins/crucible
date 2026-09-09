@@ -624,6 +624,18 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // Echoes the `key` it was asked for, so a contract test can prove the
         // route's `?key=` actually reaches the daemon rather than being
         // dropped and filtered client-side.
+        "plugin.commands" => json!({
+            "commands": [{
+                "plugin": "mock-plugin",
+                "name": "mock_command",
+                "description": "A mock command",
+                "hint": "<arg>",
+                "parameters": [
+                    { "name": "target", "type": "string", "desc": "What to act on" },
+                    { "name": "count", "type": "number", "desc": "How many", "optional": true },
+                ],
+            }]
+        }),
         "plugin.publications" => {
             let key = msg
                 .get("params")

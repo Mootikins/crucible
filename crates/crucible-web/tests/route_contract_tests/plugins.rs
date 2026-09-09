@@ -331,3 +331,44 @@ async fn publications_without_a_key_still_answers_everything() {
     let json = response_json(response).await;
     assert!(json["publications"].get("and-more").is_some(), "got {json}");
 }
+
+/// The enumeration a button needs, with the declared parameters a dialog would
+/// be generated from.
+///
+/// `commands_json` has always emitted this — `plugin.commands` is a daemon RPC
+/// method — but no HTTP route carried it, so a browser could invoke a command
+/// it had no way to discover. `GET /api/commands` is a different thing: it
+/// returns the hardcoded `SLASH_COMMANDS` const, not plugin commands.
+#[tokio::test]
+async fn plugin_commands_are_enumerable_with_their_parameters() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/plugins/commands")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let commands = json["commands"].as_array().expect("an array of commands");
+    assert_eq!(commands.len(), 1);
+
+    let command = &commands[0];
+    assert_eq!(command["name"], "mock_command");
+    assert_eq!(command["plugin"], "mock-plugin");
+
+    // The parameters are the point: without them a caller can invoke a command
+    // but cannot ask a user for its arguments.
+    let params = command["parameters"]
+        .as_array()
+        .expect("declared parameters, not an opaque blob");
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[0]["name"], "target");
+    assert_eq!(params[1]["optional"], true);
+}
