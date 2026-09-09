@@ -16,9 +16,10 @@
 -- is refused. Override the root with `cru -C <path>` or $CRUCIBLE_CONFIG_DIR.
 --
 -- The daemon evaluates this file once, at boot, before it loads plugins. Any
--- line may set any key, and the last write wins. `cru.config.set` deep-merges:
--- tables merge key by key, arrays and scalars replace. Put `__replace = true`
--- inside a table to replace it whole.
+-- line may set any key, and the last write wins. `cru.config.set` writes ONE
+-- leaf per value: `{ chat = { model = "x" } }` sets `chat.model` and touches no
+-- other `chat` key, and an empty table sets nothing. A write cannot remove a
+-- key — `config.unset` is that verb.
 --
 -- Values are code. Read an environment variable with `os.getenv("VAR")`, a
 -- file with `io.open(path)`, and build a table with a loop.

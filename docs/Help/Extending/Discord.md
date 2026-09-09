@@ -464,10 +464,9 @@ watcher cannot bring it back — reload bails for a disabled plugin, and the
 bail also aborts any service task still running from before the disable.
 
 > [!tip] Add the key beside the settings you already have
-> A second `cru.config.set` call merges, so the line above leaves the token and
-> the allowlists in place. Do **not** put `__replace = true` in that table: it
-> drops every key it does not restate, which empties the bot's configuration
-> rather than switching it off.
+> A second `cru.config.set` call writes only the key it names, so the line
+> above leaves the token and the allowlists in place. A write never removes a
+> key; `config.unset` is the verb that does.
 
 Editing the plugin inside the extracted runtime tree does **not** work durably:
 the tree is re-extracted whenever the binary's version or tree hash changes,

@@ -190,6 +190,12 @@ Every spelling goes to the same store:
 | `:set key&` | `config.reset` | Drop the layer `:set` writes, so the key returns to what the defaults and the config files give |
 | `:set key^` | `config.pop` | Drop the highest layer holding the key, and show the layer under it |
 
+A dotted key is a path, not a name with a dot in it: `:set myplugin.debug=1`
+writes where `cru.config.set { myplugin = { debug = true } }` writes, and
+`:set myplugin.debug?` reads it back. A write names one key and leaves every
+sibling alone; it can never remove a key. The verb that removes one,
+`config.unset`, has no `:set` spelling yet — call it over the RPC.
+
 The TUI keeps no copy of its own. If the daemon refuses the write — the seven
 keys that name where the daemon acts are refused at runtime — you get a
 warning that names the key, and no value is recorded. `&` and `^` are refused

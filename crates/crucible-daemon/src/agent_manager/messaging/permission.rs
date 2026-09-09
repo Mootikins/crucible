@@ -104,6 +104,64 @@ const FILE_TOOLS: &[&str] = &[
     "delete_note",
 ];
 
+/// Which of a [`PatternStore`]'s three rule tables owns a tool call.
+///
+/// A closed set: the store has these three tables and no fourth, so the
+/// matches below are exhaustive and there is no `Default` — a name that fits
+/// nowhere must be decided here, not fall into a table by accident.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PatternKind {
+    /// A bash rule, matched against the shell command line carried here.
+    Bash(String),
+    /// A file rule, matched against a path taken from the arguments.
+    File,
+    /// A tool rule, matched against the tool name.
+    Tool,
+}
+
+/// Classify a tool call for the pattern store.
+///
+/// **One classifier, read by the writer and the reader.** Storing a grant and
+/// checking it are two halves of one "always allow" click; if they disagree
+/// about what a call is, the click writes a rule that can never match and the
+/// user is prompted again for ever, with no way to see why.
+///
+/// They did disagree. [`PermRequest::suggested_pattern`] asks
+/// [`ToolDisplay`], which calls `shell`, `Bash` and `myserver__bash` shell
+/// tools, so it offered a command line; the routing here compared the name to
+/// the literal `"bash"`, so every other command tool filed that command line
+/// as a tool-name rule. `ToolDisplay` is the single source of truth for what
+/// a command is, and both halves now read it. Never restate its list here —
+/// a second list is exactly what drifted.
+///
+/// The projection reads the arguments, not the name alone, which is what
+/// keeps the two halves aligned in the awkward case too: a `shell` call with
+/// no `command` argument is not a command to `suggested_pattern` either, so
+/// both file it as a tool rule.
+#[deny(
+    clippy::wildcard_enum_match_arm,
+    clippy::match_wildcard_for_single_variants
+)]
+fn pattern_kind(tool_name: &str, args: &serde_json::Value) -> PatternKind {
+    use crucible_core::types::{ToolDisplay, ToolDisplayKind};
+
+    // Not a command: a path tool matches on its path, anything else on its
+    // name. Both are decided by the name alone.
+    let by_name = || {
+        if FILE_TOOLS.contains(&tool_name) {
+            PatternKind::File
+        } else {
+            PatternKind::Tool
+        }
+    };
+
+    let display = ToolDisplay::of(tool_name, args);
+    match display.kind {
+        ToolDisplayKind::Command => display.primary.map_or_else(by_name, PatternKind::Bash),
+        ToolDisplayKind::Path | ToolDisplayKind::Query | ToolDisplayKind::Other => by_name(),
+    }
+}
+
 /// The text the permission engine matches its rules against: the shell
 /// command for `bash`, the full JSON arguments for every other tool.
 fn engine_input(tool_name: &str, args: &serde_json::Value) -> String {
@@ -948,9 +1006,12 @@ impl AgentManager {
                                             )
                                         })
                                     {
-                                        if let Err(e) =
-                                            Self::store_pattern_to(&file, &tool_call.name, pattern)
-                                        {
+                                        if let Err(e) = Self::store_pattern_to(
+                                            &file,
+                                            &tool_call.name,
+                                            args,
+                                            pattern,
+                                        ) {
                                             warn!(
                                                 session_id = %stream_ctx.session_id,
                                                 tool = %tool_call.name,
@@ -1043,20 +1104,22 @@ impl AgentManager {
             .unwrap_or_default()
     }
 
+    /// Does a stored grant already answer for this call?
+    ///
+    /// Routes through [`pattern_kind`], the same classifier
+    /// [`Self::store_pattern_to`] writes with.
+    #[deny(
+        clippy::wildcard_enum_match_arm,
+        clippy::match_wildcard_for_single_variants
+    )]
     pub(in crate::agent_manager) fn check_pattern_match(
         tool_name: &str,
         args: &serde_json::Value,
         pattern_store: &PatternStore,
     ) -> bool {
-        match tool_name {
-            "bash" => {
-                if let Some(command) = args.get("command").and_then(|v| v.as_str()) {
-                    pattern_store.matches_bash(command)
-                } else {
-                    false
-                }
-            }
-            name if FILE_TOOLS.contains(&name) => {
+        match pattern_kind(tool_name, args) {
+            PatternKind::Bash(command) => pattern_store.matches_bash(&command),
+            PatternKind::File => {
                 let path = args
                     .get("path")
                     .or_else(|| args.get("file"))
@@ -1068,19 +1131,28 @@ impl AgentManager {
                     false
                 }
             }
-            _ => pattern_store.matches_tool(tool_name),
+            PatternKind::Tool => pattern_store.matches_tool(tool_name),
         }
     }
 
     /// Add `pattern` to the store at `file`, which a `Project` or `User`
     /// grant resolves through [`PatternStore::store_file_in`].
     ///
+    /// `args` are the arguments of the call the user answered about. They are
+    /// what [`pattern_kind`] reads, so the table this writes into is the table
+    /// [`Self::check_pattern_match`] will read on the next identical call.
+    ///
     /// The daemon is the only writer of a store file, so one process-wide
     /// lock serializes the load, the update and the save. Without it two
     /// sessions that grant at the same time overwrite each other.
+    #[deny(
+        clippy::wildcard_enum_match_arm,
+        clippy::match_wildcard_for_single_variants
+    )]
     pub(in crate::agent_manager) fn store_pattern_to(
         file: &std::path::Path,
         tool_name: &str,
+        args: &serde_json::Value,
         pattern: &str,
     ) -> Result<(), crucible_core::config::PatternError> {
         static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1090,10 +1162,10 @@ impl AgentManager {
 
         let mut store = PatternStore::load_file(file).unwrap_or_default();
 
-        match tool_name {
-            "bash" => store.add_bash_pattern(pattern)?,
-            name if FILE_TOOLS.contains(&name) => store.add_file_pattern(pattern)?,
-            _ => store.add_tool_pattern(pattern)?,
+        match pattern_kind(tool_name, args) {
+            PatternKind::Bash(_) => store.add_bash_pattern(pattern)?,
+            PatternKind::File => store.add_file_pattern(pattern)?,
+            PatternKind::Tool => store.add_tool_pattern(pattern)?,
         }
 
         store.save_file(file)?;

@@ -61,6 +61,7 @@ async fn concurrent_send_to_same_session_returns_error() {
         super::RequestState {
             cancel_tx: None,
             task_handle: None,
+            _work: None,
         },
     );
 
@@ -235,6 +236,7 @@ async fn scope_mutation_rejected_when_request_slot_occupied() {
         super::RequestState {
             cancel_tx: None,
             task_handle: None,
+            _work: None,
         },
     );
 

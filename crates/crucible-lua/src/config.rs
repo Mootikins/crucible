@@ -205,9 +205,9 @@ pub fn seed_app_config(config: serde_json::Value) {
     }
 }
 
-/// Deep-merge values into the app config from Rust. Used by the daemon's
-/// `config.set` RPC so the TUI/CLI write into the SAME store `:lua` and
-/// plugins read.
+/// Merge values into the app config from Rust — one leaf per terminal value.
+/// Used by the daemon's `config.set` RPC so the TUI/CLI write into the SAME
+/// store `:lua` and plugins read.
 ///
 /// Returns the top-level location keys the store's policy withheld (empty
 /// during the boot phase). One door, one rule: the store decides, and every
@@ -244,6 +244,16 @@ pub fn reset_app_config(path: &str) -> crucible_core::config::LayerDrop {
 /// which the TUI spells `:set key^`.
 pub fn pop_app_config(path: &str) -> crucible_core::config::LayerDrop {
     drop_app_config_layers(path, ConfigStore::pop)
+}
+
+/// Remove a key and everything under it — the `config.unset` RPC.
+///
+/// The verb a flat store needs and `config.set` cannot spell: a write names
+/// one leaf, so it can add a provider and change it but never say the provider
+/// is gone. Like [`reset_app_config`] it reaches only the layers a reset
+/// drops, so it edits no file.
+pub fn unset_app_config(prefix: &str) -> crucible_core::config::LayerDrop {
+    drop_app_config_layers(prefix, ConfigStore::unset)
 }
 
 /// The shared half of [`reset_app_config`] and [`pop_app_config`]: take the
@@ -543,12 +553,10 @@ fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
 /// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru
 /// namespace.
 ///
-/// - `set(table)`: DEEP-merges the table into the store — objects merge key
-///   by key, arrays and scalars replace, `__replace = true` inside a table
-///   replaces that table wholesale. The marker is the ONE replacement
-///   mechanism, spelled the same by hand here, in a TOML seed, and over the
-///   `config.set` RPC; a `cru.config.replace` sugar existed briefly and was
-///   removed as a second spelling of the same thing.
+/// - `set(table)`: writes ONE leaf per terminal value. The nested table is
+///   authoring sugar: `{ chat = { model = "x" } }` writes `chat.model`, and a
+///   dotted key writes the same path. A write therefore keeps every sibling it
+///   does not name, and it cannot remove a key — `config.unset` is that verb.
 /// - `get(key)`: returns a single top-level value.
 ///
 /// During the daemon's boot phase the store accepts location keys and a
@@ -559,17 +567,17 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
     let config_table = lua.create_table()?;
     let mut ns = crate::host_registry::Ns::over(lua, "cru.config", config_table.clone());
 
-    // cru.config.set(table) — deep-merge into the store.
+    // cru.config.set(table) — write one leaf per terminal value.
     //
     // Delegates rather than reimplementing the merge. It used to carry its own
     // copy of the same top-level-insert loop, which made it a second door into
     // one store — and after the location keys started being withheld, only one
     // of the two doors dropped them.
     //
-    // The table is not narrowed: it carries whatever keys a config has, plus
-    // the `__replace` marker at any depth, so naming fields here would reject
-    // correct config. It answers with NOTHING — a withheld location key is
-    // reported by a warning, not by a return value.
+    // The table is not narrowed: it carries whatever keys a config has, and a
+    // plugin owns free-form `plugins.<name>` keys, so naming fields here would
+    // reject correct config. It answers with NOTHING — a withheld location key
+    // is reported by a warning, not by a return value.
     ns.func(
         "set",
         "(config: { [string]: any }) -> ()",
@@ -629,9 +637,10 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
 
     cru_table.set("rtp", rtp_table)?;
 
-    // cru.config.get(key) — read a single TOP-LEVEL value. The key is one
-    // name, not a dotted path, and an unset key reads `nil` rather than
-    // raising.
+    // cru.config.get(key) — read one value at a dot-joined path. A key with
+    // no dot reads a top-level value; `myplugin.debug` reads where
+    // `cru.config.set { ["myplugin.debug"] = true }` wrote. An unset key
+    // reads `nil` rather than raising.
     ns.func("get", "(key: string) -> any", |lua, key: String| {
         let state = get_config()
             .read()
@@ -640,7 +649,7 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
         let val = state
             .app_config
             .as_ref()
-            .and_then(|store| store.value().get(&key))
+            .and_then(|store| crucible_core::config::leaf_at(store.value(), &key))
             .cloned();
 
         match val {

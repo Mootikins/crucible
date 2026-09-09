@@ -597,6 +597,11 @@ mod shipped_plugin_tests {
             // are checked against the same definitions that file gets.
             ("docs/init.lua", VmProfile::Daemon),
             ("docs/examples/config/", VmProfile::Daemon),
+            // The demo configs the recording recipes pass to `--config`. A
+            // config root's `init.lua` runs on the daemon VM, the same as the
+            // reference config above.
+            ("assets/demo-config/", VmProfile::Daemon),
+            ("assets/demo-acp-config/", VmProfile::Daemon),
             // Ordinary plugins, and the scaffold for writing one.
             ("runtime/plugins/crucible-help/", VmProfile::Daemon),
             ("examples/plugins/", VmProfile::Daemon),

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- **The config store is flat: one write, one leaf.** `cru.config.set` and the
+  `config.set` RPC now record exactly one entry per terminal value, so
+  `{ chat = { model = "x" } }` writes the single key `chat.model`. A nested
+  table is authoring sugar and no call site changes; an array and a scalar are
+  single values; an empty table sets nothing; and a dotted key names the same
+  path, so `:set myplugin.debug=1` writes and reads where a config file does.
+
+- **`__replace = true` is removed.** It had no caller outside its own tests and
+  cost three defects, all from the store holding two definitions of a leaf. A
+  flat write keeps every sibling it does not name, which is what the marker was
+  reached for; removing a key is now `config.unset`.
+
+- **`config.save` refuses a leaf a CLI flag holds** instead of answering
+  `ok: true`, writing `settings.json` and letting the rank gate drop the value.
+
+### Added
+
+- **`config.unset`** — a new RPC verb that removes a key and everything under
+  it from the layers `config.reset` drops. It edits no file. The verb a flat
+  write cannot spell: `config.set` adds a provider and changes it, but cannot
+  say the provider is gone. No TUI or web spelling yet; it is reachable over
+  the socket.
+
 ## [0.30.0] - 2026-09-05
 
 ### Breaking

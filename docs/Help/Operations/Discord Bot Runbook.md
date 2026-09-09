@@ -23,8 +23,7 @@ each other.
 ### 1. Stop it answering (keeps the process, keeps the logs)
 
 Add one line to the `plugins.discord` table in `~/.config/crucible/init.lua`. A second
-`cru.config.set` call merges, so the token and the allowlists stay; only `__replace = true`
-would drop them, which empties the configuration rather than switching the bot off:
+`cru.config.set` call writes only the key it names, so the token and the allowlists stay:
 
 ```lua
 cru.config.set({

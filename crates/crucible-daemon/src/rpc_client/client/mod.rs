@@ -55,12 +55,77 @@ impl SpawnedDaemon {
     }
 }
 
+/// How long a daemon gets to shut itself down before the reaper kills it.
+///
+/// A daemon on this path has been up for less than the connect backoff, so its
+/// shutdown has almost nothing to join and takes milliseconds. The window is
+/// wide enough to cover a loaded box and short enough that a `cru` command
+/// which is already failing does not sit here.
+const REAP_GRACE: Duration = Duration::from_secs(2);
+
+/// How often the reaper looks while it waits out [`REAP_GRACE`].
+const REAP_POLL: Duration = Duration::from_millis(20);
+
+/// Ask the daemon to stop, and kill it only if it will not.
+///
+/// SIGKILL was the whole policy here, and it is the wrong one for a reason the
+/// client cannot see from where it stands: it cannot tell "my child is still
+/// booting" from "my child bound its socket a moment after I gave up and is
+/// now serving somebody else". Boot on a loaded box — extracting the runtime
+/// tree, evaluating `init.lua`, activating plugins, opening a kiln — can
+/// outlast the ~4.6s connect backoff, and killing the daemon at that instant
+/// takes it away from a concurrent `cru` mid-write.
+///
+/// SIGTERM instead runs the daemon's own shutdown path
+/// ([`crate::lifecycle::ShutdownSignals`]): the accept loop ends, the tasks are
+/// cancelled and joined, and the socket lock is released. SIGKILL stays as the
+/// backstop for a daemon wedged badly enough to ignore the request, because the
+/// leak this guard exists to stop — an unreachable daemon nobody holds — is
+/// worse than a hard kill.
+fn reap_spawned_daemon(
+    child: &mut std::process::Child,
+) -> std::io::Result<std::process::ExitStatus> {
+    request_stop(child.id());
+
+    let deadline = std::time::Instant::now() + REAP_GRACE;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(REAP_POLL);
+    }
+
+    warn!(
+        pid = child.id(),
+        grace_ms = REAP_GRACE.as_millis() as u64,
+        "The daemon ignored SIGTERM; killing it"
+    );
+    child.kill()?;
+    child.wait()
+}
+
+/// Deliver SIGTERM to a child this process spawned and has not yet reaped.
+#[cfg(unix)]
+fn request_stop(pid: u32) {
+    // SAFETY: `kill` on the pid of a live child of this process. The pid
+    // cannot have been reused, because nothing has waited on it yet.
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+}
+
+/// No SIGTERM off Unix; the kill below is the only stop there is.
+#[cfg(not(unix))]
+fn request_stop(_pid: u32) {}
+
 impl Drop for SpawnedDaemon {
     fn drop(&mut self) {
         if let Some(mut child) = self.0.take() {
             let pid = child.id();
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = reap_spawned_daemon(&mut child);
             warn!(
                 pid,
                 "Reaped the daemon we spawned; it never became reachable"

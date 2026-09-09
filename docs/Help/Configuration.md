@@ -48,10 +48,13 @@ The full contract lives in [[Help/Lua/Configuration|Lua Configuration]]; the loa
   decides, not the order the daemon reads them in: a plugin's declared
   default never replaces what you saved, and a saved setting never replaces
   a line in your own file.
-- **`cru.config.set` deep-merges.** Tables merge key by key; arrays and
-  scalars replace. To replace a whole table instead of merging into it, put
-  `__replace = true` inside it — the one replacement mechanism, spelled the
-  same in Lua and over the `config.set` RPC.
+- **`cru.config.set` writes one leaf per value.** A nested table is spelling:
+  `{ chat = { model = "x" } }` sets the single key `chat.model`, so every
+  other `chat` key stands. An array and a scalar are single values; an empty
+  table sets nothing. A dotted key is the same path — `{ ["chat.model"] = "x" }`
+  writes where the nested table writes. A write can add a key and change a
+  key, never remove one: `config.unset` removes a key and everything under
+  it, from the layers a `:set key&` may drop.
 - **A file that does not parse stops the daemon.** Crucible names the file
   and the line, and refuses to start: a mistyped bracket says nothing about
   what you meant, and a daemon that started on the defaults would report your

@@ -76,17 +76,27 @@ recorded for that leaf, and drops a write that ranks below it
 
 Three properties follow, and each one is a test:
 
+- **One write, one leaf.** An overlay is flattened at the door
+  (`flatten_leaves`, `crucible-core/src/config/merge.rs`), so
+  `cru.config.set { chat = { model = "x" } }` is one write at `chat.model`. A
+  scalar and an array are terminal values; an empty table sets nothing. The
+  rank gate is therefore one row at one path, and the pin walk, the rank gate
+  and `config.save` all ask about the same paths — they used to hold two
+  definitions of a leaf, and the disagreement cost three defects.
+- **A dotted key is a path.** `{ ["myplugin.debug"] = true }` and
+  `{ myplugin = { debug = true } }` name one leaf, so `:set myplugin.debug=1`
+  writes where a config file writes.
 - **The decision is per leaf.** A plugin default that loses `chat.model` still
   contributes the siblings no higher layer holds.
 - **Equal rank still writes.** Two lines of one file are ordered by the file,
   and the second is the one the author meant.
-- **A replacement is ranked over its whole subtree.** `__replace` lands one
-  write over every leaf under the path, so the rank it must beat is the
-  highest rank under that path. A branch carries no provenance row of its own,
-  so reading only the row at the path would make `__replace` the door around
-  the layer order.
 
 A dropped write records nothing: no value, no provenance row, no pin.
+
+A flat write can add a key and change a key; it can never remove one. That is
+what `config.unset` is for: it takes a key and everything under it out of the
+layers `SourceTag::reset_drops` names — the same layers `config.reset` drops —
+so a stale `llm.providers.old` goes without any verb editing a file.
 
 ### The file that made the call decides the layer
 
@@ -153,10 +163,21 @@ with a warning naming the key and the Lua call site. The RPC socket has no
 authentication; these keys answer *where the daemon acts*, so they freeze at
 boot.
 
+The drop takes the keys out of the **value** only. Their provenance rows and
+their pins stay, because they answer a different question: *did anybody
+configure this*. `config.effective` reads that answer as
+`kiln_path_is_default`, and a client that gets `true` substitutes its own
+working directory (`crucible-cli/src/config.rs`). Each retained layer
+therefore records the policy in force when it was first applied, and a replay
+repeats each layer under its own — a boot layer legitimately set `kiln_path`,
+so a rebuild must restore its row. The value is stripped once at the end of
+the rebuild, which reproduces `end_boot_phase`'s post-condition. A runtime
+`config.set` of a location key is still refused whole, at every replay.
+
 ## Four verbs, one store
 
-Four RPC methods change the app-config store, and they hold different
-authority (`crucible-daemon/src/rpc/dispatch.rs`). Two write a layer; two
+Five RPC methods change the app-config store, and they hold different
+authority (`crucible-daemon/src/rpc/dispatch.rs`). Two write a layer; three
 drop one.
 
 | Verb | Layer it changes | Persists | Refuses a pin | Caller |
@@ -165,6 +186,7 @@ drop one.
 | `config.save` | writes `SourceTag::Settings`, drops `Rpc` on the leaves it writes | Yes — `settings.json` | Yes | a settings UI |
 | `config.reset` | drops `SourceTag::Rpc` | No | n/a | `:set key&` |
 | `config.pop` | drops the highest layer holding the leaf | No | n/a | `:set key^` |
+| `config.unset` | drops `SourceTag::Rpc`, for the key AND everything under it | No | n/a | removing a stale map entry |
 
 `config.set` is the runtime knob. It never refuses, because a user must be
 able to raise a value `init.lua` holds for one turn without editing a file,
@@ -185,7 +207,13 @@ ephemeral hold on every leaf it accepts, by the rule `config.reset` uses. It
 drops it on those leaves only, so a `:set` on an unrelated key survives
 someone else's save.
 
-**The refusal and the drop are one walk**
+`config.unset` is the verb a flat store needs. `config.set` writes one leaf per
+terminal value, so it can add `llm.providers.old.endpoint` and change it, but
+it can never say the provider is gone. `unset` says that, over a whole subtree,
+and it reaches the same layers `config.reset` does — so it edits no file, and a
+provider `init.lua` declares goes away only when the line goes away.
+
+**The refusal and the drop are one flatten**
 (`crucible-core/src/config/store.rs`). A leaf a pin refuses is neither merged
 nor dropped, which is what leaves the value a user raised over a pinned line
 standing after a refused save. Two walks would answer "which leaves am I
@@ -387,6 +415,12 @@ only**. The TUI reaches the three verbs that write no file — `config.set`,
 `cru config` has `init`, `show`, `migrate` and `dump`, and no write verb. One
 CLI command saves: `cru models embeddings use`, which calls `config.save` with
 two keys (`crucible-cli/src/commands/models/embeddings.rs`).
+
+`config.unset` is a fourth memory-only verb, and **no front end spells it yet**.
+It is reachable over the socket by any RPC client. The TUI has no `:set`
+spelling for it, and the web console draws no control for it; giving it one is
+its own change, because `:set` grammar and the settings pane both need a shape
+for "remove a key" that neither has today.
 
 CLAUDE.md asks a feature that ships to one front end and not the other to say
 which, and why. This is that statement.

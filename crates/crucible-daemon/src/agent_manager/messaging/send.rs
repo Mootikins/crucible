@@ -87,6 +87,10 @@ impl AgentManager {
                 e.insert(RequestState {
                     cancel_tx: Some(cancel_tx),
                     task_handle: None,
+                    // Held until the stream task releases the slot at the end
+                    // of the turn. This is what keeps the daemon from exiting
+                    // mid-turn once the client has detached.
+                    _work: Some(self.activity().start(crate::activity::WorkKind::Turn)),
                 });
             }
         }

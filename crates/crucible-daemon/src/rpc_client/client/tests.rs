@@ -884,3 +884,97 @@ fn a_daemon_that_answers_is_left_running() {
         libc::kill(pid as libc::pid_t, libc::SIGKILL);
     }
 }
+
+/// Spawn `script` under `sh` and return once it says it is ready.
+///
+/// The readiness line is not decoration. A shell that has been spawned but has
+/// not yet parsed its `trap` still carries SIGTERM's default disposition, so a
+/// signal delivered in that window kills it outright and the test reads the
+/// answer it was written to catch.
+#[cfg(unix)]
+fn spawn_ready_child(script: &str) -> std::process::Child {
+    use std::io::{BufRead, BufReader};
+
+    let mut child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("{script}\necho ready\nwait_forever"))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn the child shell");
+
+    let stdout = child.stdout.take().expect("piped stdout");
+    let mut line = String::new();
+    BufReader::new(stdout)
+        .read_line(&mut line)
+        .expect("read the readiness line");
+    assert_eq!(line.trim(), "ready", "the child never became ready");
+
+    child
+}
+
+/// A child that catches SIGTERM and exits with a status of its own choosing.
+///
+/// It stands in for the daemon, whose shutdown path (cancel the tasks, join
+/// them, release the socket lock) runs only on SIGTERM. SIGKILL skips all of
+/// it, so the exit code below is the evidence that the request was made.
+#[cfg(unix)]
+fn spawn_child_that_handles_sigterm() -> std::process::Child {
+    spawn_ready_child("trap 'exit 42' TERM\nwait_forever() { while :; do sleep 0.05; done; }")
+}
+
+/// A child that refuses to stop. The reaper must not wait on it for ever.
+#[cfg(unix)]
+fn spawn_child_that_ignores_sigterm() -> std::process::Child {
+    spawn_ready_child("trap '' TERM\nwait_forever() { while :; do sleep 0.05; done; }")
+}
+
+/// A daemon that outlived its client's patience is ASKED to stop.
+///
+/// The client cannot tell "my child is slow" from "my child bound its socket a
+/// moment ago and is now serving somebody else". SIGKILL takes the second one
+/// down mid-write and bypasses the graceful path entirely; SIGTERM lets it run
+/// that path. The exit code proves which signal arrived.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_never_answers_is_asked_to_stop_before_it_is_killed() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let mut child = spawn_child_that_handles_sigterm();
+    let status = reap_spawned_daemon(&mut child).expect("reap the child");
+
+    assert_eq!(
+        status.code(),
+        Some(42),
+        "the daemon must run its own shutdown path; it exited by signal {:?}",
+        status.signal()
+    );
+}
+
+/// And the escalation still exists: a daemon that ignores the request is
+/// killed rather than waited on for ever.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_ignores_the_request_is_still_killed() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let mut child = spawn_child_that_ignores_sigterm();
+    let started = std::time::Instant::now();
+    let status = reap_spawned_daemon(&mut child).expect("reap the child");
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGKILL),
+        "a daemon that ignores SIGTERM must still be killed"
+    );
+    assert!(
+        elapsed >= REAP_GRACE,
+        "the kill must come after the grace period, not instead of it; took {elapsed:?}"
+    );
+    assert!(
+        elapsed < REAP_GRACE * 4,
+        "the reaper must not wait far beyond the grace period; took {elapsed:?}"
+    );
+}

@@ -72,8 +72,11 @@ pub fn load_settings(config_root: &Path) -> anyhow::Result<Option<Value>> {
 /// and outrank nothing: the refusal that protects a human's line would be
 /// bypassed permanently, and silently.
 ///
-/// The merge is [`deep_merge`], the same one the store layers with, so a
-/// partial `chat` table keeps its siblings here exactly as it does there.
+/// The merge is [`deep_merge`], and it is the ONE caller that still needs a
+/// nested merge. The store is flat — it writes one leaf per terminal value —
+/// but the file stays nested JSON, because a settings UI round-trips it and a
+/// person may open it. Merging rather than replacing is what lets a hand edit
+/// survive a save that does not restate it.
 pub fn save_settings_delta(config_root: &Path, delta: Value) -> anyhow::Result<()> {
     let path = settings_path(config_root);
     let mut current = load_settings(config_root)?.unwrap_or_else(|| Value::Object(Map::new()));

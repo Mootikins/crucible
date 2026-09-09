@@ -138,13 +138,20 @@ impl SourceTag {
         }
     }
 
-    /// Whether this source writes the leaf again at the next boot, from a
-    /// layer that loads above `settings.json`.
+    /// Whether a `config.save` under this source would act nowhere.
     ///
-    /// This is the whole refusal rule of `config.save`. A saved value lands in
-    /// the `Settings` layer; if a higher layer restores the leaf at the next
-    /// boot, the saved value acts nowhere, so the save is refused rather than
-    /// lost.
+    /// This is the whole refusal rule of `config.save`, and it is one rule for
+    /// one reason: a save writes the `Settings` layer, so it acts only on a
+    /// leaf that no *undroppable* layer above `Settings` holds. A leaf that
+    /// fails that test is refused rather than accepted — the store used to
+    /// accept it, hand it to the caller for `settings.json`, and then let the
+    /// rank gate throw it away, which is an `ok: true` for a write that
+    /// changed nothing.
+    ///
+    /// "Undroppable" is what separates the two layers that outrank `Settings`
+    /// and pin nothing from the two that outrank it and do. `Rpc` is dropped
+    /// by the save itself ([`SourceTag::reset_drops`]), so it cannot block
+    /// one; `Cli` is not, so it can.
     fn pins_a_leaf(&self) -> bool {
         match self {
             // Both load below `Settings`, so a save wins over them and acts.
@@ -162,9 +169,15 @@ impl SourceTag {
             // worse than lost. It names no file a person edits; `cru kiln
             // register` and the provider surfaces are the route to change it.
             SourceTag::Registered => true,
-            // A flag typed for one invocation, and the runtime knob `:set`
-            // writes. Neither survives the process, so neither re-applies.
-            SourceTag::Cli | SourceTag::Rpc => false,
+            // A flag typed for this invocation. It dies with the process, but
+            // it outranks `Settings` for the whole of this run and no save
+            // drops it — so a value saved under it would not move the screen.
+            // Refusing names the flag; accepting wrote a file and did nothing.
+            SourceTag::Cli => true,
+            // The runtime knob `:set` writes. It outranks `Settings` too, but
+            // the save drops the ephemeral hold on every leaf it accepts, so
+            // it is gone by the time the merge reads the rank.
+            SourceTag::Rpc => false,
         }
     }
 
@@ -298,26 +311,11 @@ impl ProvenanceMap {
         self.entries.insert(path.into(), tag);
     }
 
-    /// The highest rank recorded at `prefix` or under it, if anything is.
-    ///
-    /// A merge asks this before it writes, and asks it about the WHOLE
-    /// subtree the write covers: an inserted or replaced branch lands over
-    /// every leaf under it at once, while the branch itself carries no row of
-    /// its own. Reading only the row at `prefix` would make `__replace` the
-    /// door around the layer order.
-    pub fn max_rank_at_or_under(&self, prefix: &str) -> Option<u8> {
-        let child_prefix = format!("{prefix}.");
-        self.entries
-            .iter()
-            .filter(|(path, _)| path.as_str() == prefix || path.starts_with(&child_prefix))
-            .map(|(_, tag)| tag.rank())
-            .max()
-    }
-
     /// Drop every entry at `prefix` or under it.
     ///
-    /// A replacement clears first, then records the new leaves — otherwise a
-    /// removed provider would keep a ghost provenance row.
+    /// A leaf write clears first, then records its own row. A terminal value
+    /// written where a table stood takes that table's leaves out of the value,
+    /// so their rows would otherwise linger as ghosts.
     pub fn clear_prefix(&mut self, prefix: &str) {
         let child_prefix = format!("{prefix}.");
         self.entries
@@ -434,10 +432,18 @@ mod tests {
         );
     }
 
-    /// A plugin's `setup()` write must lose to the settings UI, and a human's
-    /// own line must beat it. This is the whole point of the two new layers.
+    /// Two steps of the layer order, stated on the enum alone: a plugin's
+    /// `setup()` write ranks below `Settings`, and a human's own line ranks
+    /// above it.
+    ///
+    /// This test reads `rank` and nothing else, so it cannot see whether the
+    /// merge still consults `rank`. The VALUE gates for the same two steps
+    /// live in `store.rs` — `a_plugin_default_never_overwrites_what_the_user_saved`
+    /// and `a_human_lua_line_takes_a_leaf_the_settings_layer_holds`. Both go
+    /// red when the rank gate in `ConfigStore::apply` goes; this one stays
+    /// green, which is why it promises the order and not the outcome.
     #[test]
-    fn a_plugin_default_loses_to_settings_and_a_human_line_beats_it() {
+    fn the_plugin_layer_ranks_below_settings_and_a_human_line_ranks_above() {
         let plugin = SourceTag::PluginDefault {
             plugin: "alpha".to_string(),
             file: "/plugins/alpha/init.lua".to_string(),
@@ -449,23 +455,6 @@ mod tests {
         };
         assert!(plugin.rank() < SourceTag::Settings.rank());
         assert!(human.rank() > SourceTag::Settings.rank());
-    }
-
-    /// The refusal rule, checked against the rank rather than restated. A
-    /// source that pins must load above `Settings`, or the saved value would
-    /// have acted and the refusal took a working write away from the user.
-    #[test]
-    fn every_source_that_pins_a_leaf_loads_above_the_settings_layer() {
-        for tag in SourceTag::iter() {
-            if tag.pin().is_some() {
-                assert!(
-                    tag.rank() > SourceTag::Settings.rank(),
-                    "'{}' pins a leaf but loads at or below settings, so a save \
-                     would have taken effect",
-                    tag.short()
-                );
-            }
-        }
     }
 
     /// The two layers a `config.save` must be able to write over. A plugin's
@@ -488,7 +477,38 @@ mod tests {
     #[test]
     fn the_runtime_knob_pins_nothing() {
         assert_eq!(SourceTag::Rpc.pin(), None);
-        assert_eq!(SourceTag::Cli.pin(), None);
+    }
+
+    /// The refusal rule, derived rather than restated: a save writes the
+    /// `Settings` layer, so exactly the layers that outrank it AND survive the
+    /// drop the save performs may refuse one.
+    ///
+    /// This is a cross-check on the enumerated table, not the gate. The gates
+    /// assert the VALUES a store answers with — see
+    /// `a_save_the_rank_gate_would_drop_is_refused_and_carries_nothing_to_the_file`
+    /// and `every_layer_that_refuses_a_save_beats_the_settings_layer_in_the_store`
+    /// in `store.rs`, the second of which walks these same variants through a
+    /// store. A layer that pins when it should not locks the settings UI out
+    /// of a key; one that does not pin when it should lets a save write a file
+    /// that changes nothing.
+    #[test]
+    fn exactly_the_layers_a_save_cannot_overwrite_refuse_one() {
+        for tag in SourceTag::iter() {
+            let survives_the_save = tag.rank() > SourceTag::Settings.rank() && !tag.reset_drops();
+            assert_eq!(
+                tag.pin().is_some(),
+                survives_the_save,
+                "'{}' ranks {} and reset_drops={}, so a save {} it",
+                tag.short(),
+                tag.rank(),
+                tag.reset_drops(),
+                if survives_the_save {
+                    "cannot overwrite"
+                } else {
+                    "overwrites"
+                }
+            );
+        }
     }
 
     /// A refused save names the line to change, so the pin carries the file

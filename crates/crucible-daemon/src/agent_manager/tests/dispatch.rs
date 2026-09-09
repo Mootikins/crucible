@@ -493,6 +493,7 @@ async fn cleanup_session_cancels_pending_requests() {
         RequestState {
             cancel_tx: Some(cancel_tx),
             task_handle: None,
+            _work: None,
         },
     );
 
@@ -617,6 +618,7 @@ async fn cleanup_session_leaves_no_per_session_residue() {
         RequestState {
             cancel_tx: Some(cancel_tx),
             task_handle: None,
+            _work: None,
         },
     );
     let (_permission_id, _response_rx) =

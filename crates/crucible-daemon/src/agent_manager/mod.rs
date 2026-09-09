@@ -129,6 +129,17 @@ pub enum AgentError {
 struct RequestState {
     cancel_tx: Option<oneshot::Sender<()>>,
     task_handle: Option<JoinHandle<()>>,
+    /// Holds the daemon open for as long as this claim exists.
+    ///
+    /// The slot is the one thing every turn takes and every turn releases, so
+    /// it is where the turn reports itself to [`crate::activity`]. A turn
+    /// outlives the client that asked for it — the TUI closes and the daemon
+    /// deliberately survives — so without this the idle timer saw zero
+    /// connections and broke the accept loop mid-turn.
+    ///
+    /// `None` only where no registry was handed in: a test that inserts a
+    /// marker state by hand.
+    _work: Option<crate::activity::WorkGuard>,
 }
 
 /// Terminal status of a `send_message` turn.
@@ -184,6 +195,7 @@ impl RequestSlotGuard {
     fn acquire(
         request_state: Arc<DashMap<String, RequestState>>,
         session_id: &str,
+        activity: &Arc<crate::activity::DaemonActivity>,
     ) -> Result<Self, AgentError> {
         use dashmap::mapref::entry::Entry;
         match request_state.entry(session_id.to_string()) {
@@ -194,6 +206,7 @@ impl RequestSlotGuard {
                 e.insert(RequestState {
                     cancel_tx: None,
                     task_handle: None,
+                    _work: Some(activity.start(crate::activity::WorkKind::Turn)),
                 });
             }
         }
@@ -461,6 +474,11 @@ pub struct AgentManager {
     /// Test-support: when set, agent handles are built through this instead
     /// of the real factory. See [`AgentFactoryOverride`].
     agent_factory_override: std::sync::OnceLock<Arc<AgentFactoryOverride>>,
+    /// Where an in-flight turn reports itself, so the daemon does not exit in
+    /// the middle of one. The server hands its own registry in
+    /// ([`Self::with_activity`]); a manager built without one counts into a
+    /// registry nothing reads, which is right for a test.
+    activity: Arc<crate::activity::DaemonActivity>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -529,7 +547,21 @@ impl AgentManager {
             review: Arc::new(crate::review::ReviewLedgers::default()),
             external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
+            activity: crate::activity::DaemonActivity::new(),
         }
+    }
+
+    /// Report turns into the daemon's own activity registry rather than this
+    /// manager's private one. The server calls this at bind; nothing else
+    /// should.
+    pub fn with_activity(mut self, activity: Arc<crate::activity::DaemonActivity>) -> Self {
+        self.activity = activity;
+        self
+    }
+
+    /// The registry this manager reports turns into.
+    pub(crate) fn activity(&self) -> &Arc<crate::activity::DaemonActivity> {
+        &self.activity
     }
 
     /// The agent-card roots this daemon was bound with.

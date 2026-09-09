@@ -220,6 +220,88 @@ async fn config_reset_returns_a_key_to_what_the_files_give() {
     );
 }
 
+/// `config.unset`. A stale provider goes, and its siblings — plus the one the
+/// human's own `init.lua` declares — stand.
+///
+/// The verb a flat store needs, across the process seam. `config.set` writes
+/// one leaf per value, so it can add `llm.providers.stale.endpoint` and change
+/// it, but it can never say the provider is gone. Only a real daemon shows
+/// that the removal reaches the reader: the store, the effective config and
+/// the origin row are three doors onto one answer.
+#[tokio::test]
+async fn config_unset_removes_one_provider_and_leaves_the_others() {
+    let daemon = TestDaemon::start_with_home_setup(|home| {
+        let config_dir = home.join(".config").join("crucible");
+        std::fs::create_dir_all(&config_dir)?;
+        std::fs::write(
+            config_dir.join("init.lua"),
+            "cru.config.set { llm = { providers = { keeper = \
+             { type = \"ollama\", endpoint = \"http://keeper\" } } } }\n",
+        )?;
+        Ok(())
+    })
+    .await
+    .expect("daemon starts");
+    let mut conn = RpcConn::connect(&daemon.socket_path)
+        .await
+        .expect("connect to the daemon");
+
+    conn.call_method(
+        "config.set",
+        serde_json::json!({ "values": { "llm": { "providers": {
+            "stale": { "type": "ollama", "endpoint": "http://stale", "default_model": "m" },
+            "fresh": { "type": "ollama", "endpoint": "http://fresh" }
+        } } } }),
+        1,
+    )
+    .await;
+    let before = conn
+        .call_method("config.get", serde_json::json!({}), 2)
+        .await;
+    assert_eq!(
+        before["result"]["config"]["llm"]["providers"]["stale"]["endpoint"],
+        serde_json::json!("http://stale"),
+        "the stale provider must be there before the unset removes it: {before}"
+    );
+
+    let unset = conn
+        .call_method(
+            "config.unset",
+            serde_json::json!({ "key": "llm.providers.stale" }),
+            3,
+        )
+        .await;
+    assert_eq!(
+        unset["result"]["outcome"],
+        serde_json::json!("dropped"),
+        "{unset}"
+    );
+    assert_eq!(
+        unset["result"]["dropped"],
+        serde_json::json!(["rpc"]),
+        "an unset reaches the layers a reset reaches, and no file: {unset}"
+    );
+
+    let after = conn
+        .call_method("config.get", serde_json::json!({}), 4)
+        .await;
+    let providers = &after["result"]["config"]["llm"]["providers"];
+    assert!(
+        providers.get("stale").is_none(),
+        "the whole map entry must go, not just the leaf named: {after}"
+    );
+    assert_eq!(
+        providers["fresh"]["endpoint"],
+        serde_json::json!("http://fresh"),
+        "a sibling the caller did not name stands: {after}"
+    );
+    assert_eq!(
+        providers["keeper"]["endpoint"],
+        serde_json::json!("http://keeper"),
+        "and so does the provider the human's own init.lua declares: {after}"
+    );
+}
+
 /// `:set key^`. A key written in BOTH `settings.json` and `init.lua`, popped
 /// once, answers with the `settings.json` value and names that layer.
 ///

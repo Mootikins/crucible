@@ -200,9 +200,10 @@ end
     └── 50-cloud.lua      # cru.config.set({ llm = { providers = { cloud = … } } })
 ```
 
-Each included file calls `cru.config.set` itself, and the merge rule does the
-rest: a later file wins per key. To drop what an earlier file set rather than
-merge into it, put `__replace = true` in the table.
+Each included file calls `cru.config.set` itself, and the leaf rule does the
+rest: a later file wins per key, and a key no later file names stands. To drop
+a key an earlier file set, use `config.unset` — a `cru.config.set` write adds
+and changes keys, and never removes one.
 
 Keep a secret out of the config by reading it where it lives:
 

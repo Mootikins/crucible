@@ -156,7 +156,8 @@ impl AgentManager {
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
         apply: impl FnOnce(&mut Session) -> Result<bool, AgentError>,
     ) -> Result<Session, AgentError> {
-        let _slot = RequestSlotGuard::acquire(self.request_state.clone(), session_id)?;
+        let _slot =
+            RequestSlotGuard::acquire(self.request_state.clone(), session_id, &self.activity)?;
         let mut session = self
             .session_manager
             .get_session(session_id)

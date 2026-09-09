@@ -202,6 +202,7 @@ rpc_methods! {
     ConfigSave = "config.save",
     ConfigReset = "config.reset",
     ConfigPop = "config.pop",
+    ConfigUnset = "config.unset",
     ConfigOrigin = "config.origin",
     ConfigEffective = "config.effective",
     ConfigControls = "config.controls",
@@ -947,6 +948,10 @@ impl RpcDispatcher {
                 id,
                 self.handle_config_drop(&req, crucible_lua::pop_app_config),
             ),
+            RpcMethod::ConfigUnset => to_response(
+                id,
+                self.handle_config_drop(&req, crucible_lua::unset_app_config),
+            ),
             RpcMethod::ConfigOrigin => to_response(id, self.handle_config_origin(&req)),
             RpcMethod::ConfigEffective => to_response(id, self.handle_config_effective()),
             RpcMethod::ConfigControls => to_response(id, Ok(handle_config_controls())),
@@ -1684,8 +1689,8 @@ impl RpcDispatcher {
 
     /// Read from the app-config store — the same store `cru.config.get`
     /// exposes to Lua (seeded from TOML at daemon startup, merged by
-    /// `cru.config.set` / `config.set`). With `key`: one top-level value
-    /// (null if absent); without: the whole object.
+    /// `cru.config.set` / `config.set`). With `key`: the value at that
+    /// dot-joined path (null if absent); without: the whole object.
     fn handle_config_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
@@ -1702,7 +1707,7 @@ impl RpcDispatcher {
             Some(key) => {
                 let value = config
                     .as_ref()
-                    .and_then(|c| c.get(&key))
+                    .and_then(|c| crucible_core::config::leaf_at(c, &key))
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
                 serde_json::json!({ "value": value })
@@ -2276,7 +2281,7 @@ fn config_origin_row(
 ) -> serde_json::Value {
     let mut row = serde_json::json!({
         "key": key,
-        "value": config_value_at(config, key).cloned().unwrap_or(serde_json::Value::Null),
+        "value": crucible_core::config::leaf_at(config, key).cloned().unwrap_or(serde_json::Value::Null),
     });
     if let (Some(object), Ok(serde_json::Value::Object(origin))) =
         (row.as_object_mut(), serde_json::to_value(origin))
@@ -2312,23 +2317,6 @@ fn overlay_leaf_origin(tag: &SourceTag) -> crucible_core::config::LeafOrigin {
         pinned: tag.pin().is_some(),
         origin: tag.origin(),
     }
-}
-
-/// The value at a dot-joined leaf path.
-///
-/// The literal name comes first: a plugin owns free-form `plugins.<name>`
-/// keys, and `config.set { "myplugin.debug": true }` writes ONE top-level key
-/// whose name holds a dot. The store records that key's provenance under the
-/// same literal string, so the lookup has to try it before splitting.
-fn config_value_at<'a>(config: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
-    if let Some(value) = config.get(key) {
-        return Some(value);
-    }
-    let mut cursor = config;
-    for segment in key.split('.') {
-        cursor = cursor.get(segment)?;
-    }
-    Some(cursor)
 }
 
 /// Record `registered` provenance for every leaf under `path` of `value` —
@@ -3108,6 +3096,19 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let resp = dispatcher.dispatch(ClientId::new(), all_req).await;
         let config = resp.result.unwrap();
         assert_eq!(config["config"]["answer"], serde_json::json!(42));
+        // A dotted key is a PATH, so `:set myplugin.debug=1` writes where a
+        // config file writes. The store used to hold one top-level key whose
+        // name held a dot, which no config file and no nested read could
+        // reach.
+        assert_eq!(
+            config["config"]["myplugin"]["debug"],
+            serde_json::json!(true),
+            "a dotted key must land nested: {config}"
+        );
+        assert!(
+            config["config"].get("myplugin.debug").is_none(),
+            "and must leave no literal dotted key behind: {config}"
+        );
     }
 
     /// The two verbs, at the seam that splits them.

@@ -9,10 +9,14 @@
 //! # The policy
 //!
 //! The daemon exits after `server.idle_shutdown_minutes` of continuous
-//! idleness, where idle means BOTH of:
+//! idleness, where idle means that [`crate::activity::DaemonActivity`] has no
+//! outstanding work: no client holding a connection, no turn in flight, no
+//! background job, no maintenance mid-run.
 //!
-//! - no client holds a connection, and
-//! - no background job is running.
+//! This module asks that ONE question. It used to ask two — the connection
+//! count and the background job count — and everything the daemon spawned
+//! outside those two was invisible to it, including an in-flight turn whose
+//! client had detached. See `crate::activity` for why work now reports itself.
 //!
 //! It exits at once, without waiting out the window, when it is idle AND its
 //! socket file is gone. Nothing can reach such a daemon ever again — a client
@@ -33,8 +37,6 @@
 //! - a daemon with declarative `schedules` is meant to sit there with nobody
 //!   attached; exiting would stop the schedules from firing.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// How often the idle timer looks, and the floor and ceiling on that.
@@ -50,10 +52,11 @@ const PROBE_MAX: Duration = Duration::from_secs(60);
 /// What the daemon knows about its own usefulness at one instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct IdleSnapshot {
-    /// Clients holding a socket connection right now.
-    pub live_connections: usize,
-    /// Background jobs still running.
-    pub running_jobs: usize,
+    /// Units of work outstanding right now, of every kind
+    /// ([`crate::activity::WorkKind`]). One number from one registry: a
+    /// second thing to check is exactly what let five kinds of work go
+    /// uncounted.
+    pub outstanding_work: usize,
     /// Whether the socket this daemon bound is still on the filesystem. A
     /// client finds a daemon only by that path, so `false` means nobody can
     /// ever reach it again.
@@ -61,9 +64,9 @@ pub(super) struct IdleSnapshot {
 }
 
 impl IdleSnapshot {
-    /// Whether somebody still needs this daemon.
-    fn is_busy(self) -> bool {
-        self.live_connections > 0 || self.running_jobs > 0
+    /// Whether nobody needs this daemon right now.
+    pub(super) fn is_idle(self) -> bool {
+        self.outstanding_work == 0
     }
 }
 
@@ -101,7 +104,7 @@ impl IdleTimer {
 
     /// Answer whether the daemon should exit now.
     pub(super) fn observe(&mut self, now: Instant, snapshot: IdleSnapshot) -> bool {
-        if snapshot.is_busy() {
+        if !snapshot.is_idle() {
             self.idle_since = None;
             return false;
         }
@@ -113,36 +116,27 @@ impl IdleTimer {
     }
 }
 
-/// Counts a client connection for as long as it is being served.
-///
-/// The count has to fall when the handler task ends *however* it ends — a
-/// clean close, a client crash, a dispatch error — so it is a `Drop` rather
-/// than a decrement at the bottom of the handler.
-pub(super) struct ConnectionGuard(Arc<AtomicUsize>);
-
-impl ConnectionGuard {
-    pub(super) fn new(counter: Arc<AtomicUsize>) -> Self {
-        counter.fetch_add(1, Ordering::SeqCst);
-        Self(counter)
-    }
-}
-
-impl Drop for ConnectionGuard {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::activity::{DaemonActivity, WorkKind};
+    use std::sync::Arc;
 
     const WINDOW: Duration = Duration::from_secs(600);
 
     fn idle() -> IdleSnapshot {
         IdleSnapshot {
-            live_connections: 0,
-            running_jobs: 0,
+            outstanding_work: 0,
+            reachable: true,
+        }
+    }
+
+    /// The snapshot the running daemon builds, from the registry the running
+    /// daemon uses. Written this way so the policy tests below break if the
+    /// registry stops counting a guard.
+    fn snapshot_of(activity: &Arc<DaemonActivity>) -> IdleSnapshot {
+        IdleSnapshot {
+            outstanding_work: activity.outstanding(),
             reachable: true,
         }
     }
@@ -160,43 +154,65 @@ mod tests {
     fn a_connected_client_keeps_the_daemon_alive_for_ever() {
         let start = Instant::now();
         let mut timer = IdleTimer::new(WINDOW, start);
-        let busy = IdleSnapshot {
-            live_connections: 1,
-            running_jobs: 0,
-            reachable: true,
-        };
+        let activity = DaemonActivity::new();
+        let _client = activity.start(WorkKind::Connection);
 
-        assert!(!timer.observe(start + WINDOW * 10, busy));
-        assert!(!timer.observe(start + WINDOW * 100, busy));
+        assert!(!timer.observe(start + WINDOW * 10, snapshot_of(&activity)));
+        assert!(!timer.observe(start + WINDOW * 100, snapshot_of(&activity)));
     }
 
     #[test]
     fn a_running_background_job_keeps_the_daemon_alive() {
         let start = Instant::now();
         let mut timer = IdleTimer::new(WINDOW, start);
-        let working = IdleSnapshot {
-            live_connections: 0,
-            running_jobs: 1,
-            reachable: true,
-        };
+        let activity = DaemonActivity::new();
+        let _job = activity.start(WorkKind::BackgroundJob);
 
-        assert!(!timer.observe(start + WINDOW * 10, working));
+        assert!(!timer.observe(start + WINDOW * 10, snapshot_of(&activity)));
+    }
+
+    /// The turn the old snapshot could not see. Nobody is connected: the TUI
+    /// that started this turn has gone, and the daemon survives it on purpose.
+    #[test]
+    fn a_turn_in_flight_keeps_the_daemon_alive_with_no_connections() {
+        let start = Instant::now();
+        let mut timer = IdleTimer::new(WINDOW, start);
+        let activity = DaemonActivity::new();
+        let turn = activity.start(WorkKind::Turn);
+
+        assert!(!timer.observe(start + WINDOW * 10, snapshot_of(&activity)));
+
+        // The turn ends, and the window starts from there.
+        drop(turn);
+        assert!(!timer.observe(start + WINDOW * 10, snapshot_of(&activity)));
+        assert!(timer.observe(start + WINDOW * 11, snapshot_of(&activity)));
+    }
+
+    /// The same for the upkeep the old snapshot could not see either: a file
+    /// reprocess, an archive sweep, a startup title catch-up.
+    #[test]
+    fn maintenance_in_progress_keeps_the_daemon_alive() {
+        let start = Instant::now();
+        let mut timer = IdleTimer::new(WINDOW, start);
+        let activity = DaemonActivity::new();
+        let _sweep = activity.start(WorkKind::Maintenance);
+
+        assert!(!timer.observe(start + WINDOW * 10, snapshot_of(&activity)));
     }
 
     #[test]
     fn the_window_restarts_after_a_client_disconnects() {
         let start = Instant::now();
         let mut timer = IdleTimer::new(WINDOW, start);
+        let activity = DaemonActivity::new();
 
         // Idle for most of the window, then one client connects and leaves.
+        let client = activity.start(WorkKind::Connection);
         assert!(!timer.observe(
             start + WINDOW - Duration::from_secs(1),
-            IdleSnapshot {
-                live_connections: 1,
-                running_jobs: 0,
-                reachable: true,
-            }
+            snapshot_of(&activity)
         ));
+        drop(client);
 
         // A full window has now passed since the daemon started, but only a
         // second has passed since it last had a client. It must stay.
@@ -229,8 +245,7 @@ mod tests {
         assert!(timer.observe(
             start,
             IdleSnapshot {
-                live_connections: 0,
-                running_jobs: 0,
+                outstanding_work: 0,
                 reachable: false,
             }
         ));
@@ -240,25 +255,20 @@ mod tests {
     fn an_unreachable_daemon_still_finishes_what_it_is_doing() {
         let start = Instant::now();
         let mut timer = IdleTimer::new(WINDOW, start);
+        let activity = DaemonActivity::new();
 
         // The socket went away under a client that is still connected, or a
-        // background job that is still running. Both outlive the path.
-        assert!(!timer.observe(
-            start,
-            IdleSnapshot {
-                live_connections: 1,
-                running_jobs: 0,
-                reachable: false,
-            }
-        ));
-        assert!(!timer.observe(
-            start,
-            IdleSnapshot {
-                live_connections: 0,
-                running_jobs: 1,
-                reachable: false,
-            }
-        ));
+        // turn that is still running. Both outlive the path.
+        for kind in [WorkKind::Connection, WorkKind::Turn] {
+            let _work = activity.start(kind);
+            assert!(!timer.observe(
+                start,
+                IdleSnapshot {
+                    outstanding_work: activity.outstanding(),
+                    reachable: false,
+                }
+            ));
+        }
     }
 
     #[test]
@@ -279,19 +289,5 @@ mod tests {
             IdleTimer::probe_period(Duration::from_secs(86_400)),
             PROBE_MAX
         );
-    }
-
-    #[test]
-    fn the_connection_count_falls_however_the_handler_ends() {
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        let first = ConnectionGuard::new(counter.clone());
-        let second = ConnectionGuard::new(counter.clone());
-        assert_eq!(counter.load(Ordering::SeqCst), 2);
-
-        drop(first);
-        assert_eq!(counter.load(Ordering::SeqCst), 1);
-        drop(second);
-        assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 }

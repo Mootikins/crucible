@@ -59,6 +59,7 @@ impl AgentManager {
             plugin_tool_registry: _, // startup-bound OnceLock
             external_watch: _,   // startup-bound OnceLock; per-session watches are its own
             agent_factory_override: _, // test-support seam, set once
+            activity: _,         // daemon-wide work registry; a turn's guard lives in request_state
         } = self;
 
         let mut residue = Vec::new();
