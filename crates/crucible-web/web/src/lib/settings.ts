@@ -33,6 +33,14 @@ interface EditorSettings {
   renderMath: boolean;
   /** Render ```mermaid fences as diagrams in live preview (off = raw source). */
   renderDiagrams: boolean;
+  /**
+   * Hide the blank lines between frontmatter and the first content line, in
+   * live preview.
+   *
+   * Only live preview: the reading view renders markdown, which discards
+   * leading blank lines already, so there is nothing there to hide.
+   */
+  hideFrontmatterGap: boolean;
 }
 
 /** Appearance / typography settings */
@@ -77,6 +85,7 @@ export const defaultSettings: AppSettings = {
     hoverMode: 'reading',
     renderMath: true,
     renderDiagrams: true,
+    hideFrontmatterGap: true,
   },
   // Empty = use the built-in @theme defaults (Geist) from index.css.
   appearance: {

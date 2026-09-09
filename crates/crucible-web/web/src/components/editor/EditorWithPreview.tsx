@@ -41,6 +41,8 @@ export const EditorWithPreview: Component<{
   renderMath?: boolean;
   /** Render ```mermaid fences as diagrams in live preview (default true). */
   renderDiagrams?: boolean;
+  /** Hide the blank lines between frontmatter and the first content line. */
+  hideFrontmatterGap?: boolean;
   /** Proposed-edit review: `content` is the proposed text shown as an inline
    * diff against this original. Forces the source editor (not the reading view). */
   diffOriginal?: string;
@@ -122,6 +124,7 @@ export const EditorWithPreview: Component<{
           lineWidth={props.lineWidth}
           renderMath={props.renderMath}
           renderDiagrams={props.renderDiagrams}
+          hideFrontmatterGap={props.hideFrontmatterGap}
           onTogglePreview={isMarkdown() ? () => setMode('reading') : undefined}
           scrollToNote={props.scrollToNote}
           scrollToLine={props.scrollToLine}

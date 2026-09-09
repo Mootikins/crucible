@@ -172,7 +172,34 @@ const escapeHtml = (s: string): string =>
  * widget — and stay wired as they change. `<details>` toggles itself, keeps
  * keyboard and screen-reader behaviour for free, and survives being
  * re-rendered from scratch.
+ *
+ * ## `properties: expanded`
+ *
+ * A note opens its own card by carrying `properties: expanded` in its
+ * frontmatter; `collapsed` states the default explicitly. The card reads this
+ * from the entries it was handed rather than taking an argument, so both
+ * surfaces get the behaviour without either call site knowing about it — and
+ * they cannot drift apart later.
+ *
+ * The key renders as an ordinary row. Hiding it would leave a note's card open
+ * for a reason not visible in the note, which is worse than one row of noise —
+ * and Obsidian's `cssclasses` sets the same precedent of display metadata
+ * appearing among the rest.
  */
+
+/** How a note asked for its own card to open, if it asked at all. */
+function requestedOpenState(entries: FrontmatterEntry[]): 'expanded' | 'collapsed' | null {
+  const entry = entries.find((e) => e.key.toLowerCase() === 'properties');
+  if (!entry) return null;
+  // An array form (`properties: [expanded]`) is a plausible typo, so read the
+  // first element rather than ignoring the key entirely.
+  const raw = Array.isArray(entry.value) ? entry.value[0] : entry.value;
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === 'expanded' || value === 'open') return 'expanded';
+  if (value === 'collapsed' || value === 'closed') return 'collapsed';
+  return null;
+}
+
 export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
   const rows = entries
     .map(({ key, value }) => {
@@ -194,8 +221,9 @@ export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
   //
   // The label is visible text now, so `title`/`aria-label` are gone with it —
   // as a tooltip and an accessible-name override they only duplicated it.
+  const open = requestedOpenState(entries) === 'expanded' ? ' open' : '';
   return (
-    `<details class="fm-card" data-testid="fm-card">` +
+    `<details class="fm-card" data-testid="fm-card"${open}>` +
     `<summary class="fm-summary" data-testid="fm-summary">` +
     `<span class="fm-caret" aria-hidden="true"></span>` +
     `<span class="fm-count">${escapeHtml(label)}</span>` +

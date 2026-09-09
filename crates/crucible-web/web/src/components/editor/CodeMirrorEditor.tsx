@@ -103,6 +103,8 @@ export const CodeMirrorEditor: Component<{
   renderMath?: boolean;
   /** Render ```mermaid fences as diagrams in live preview (default true). */
   renderDiagrams?: boolean;
+  /** Hide the blank lines between frontmatter and the first content line. */
+  hideFrontmatterGap?: boolean;
   /** When set, `content` is a PROPOSED edit shown as an inline unified-merge
    * diff against this original (on-disk) content — per-chunk accept/reject. */
   diffOriginal?: string;
@@ -256,6 +258,7 @@ export const CodeMirrorEditor: Component<{
           baseDir: props.path.replace(/\/[^/]*$/, ''),
           renderMath: props.renderMath ?? true,
           renderDiagrams: props.renderDiagrams ?? true,
+          hideFrontmatterGap: props.hideFrontmatterGap ?? true,
         }),
       );
     }

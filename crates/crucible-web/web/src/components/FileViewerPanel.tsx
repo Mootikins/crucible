@@ -261,6 +261,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     void settings.editor.maxLineWidth;
     void settings.editor.renderMath;
     void settings.editor.renderDiagrams;
+    void settings.editor.hideFrontmatterGap;
     void pendingDiff()?.original;
     const view = editorView();
     if (!view) return;
@@ -488,6 +489,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   lineWidth={settings.editor.maxLineWidth}
                   renderMath={settings.editor.renderMath}
                   renderDiagrams={settings.editor.renderDiagrams}
+                hideFrontmatterGap={settings.editor.hideFrontmatterGap}
                   editorApiRef={(view) => setEditorView(() => view)}
                   initialMode={
                     props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'

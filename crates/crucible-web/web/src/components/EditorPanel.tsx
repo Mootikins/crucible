@@ -153,6 +153,7 @@ export const EditorPanel: Component = () => {
                 vimMode={settings.editor.vimMode}
                 renderMath={settings.editor.renderMath}
                 renderDiagrams={settings.editor.renderDiagrams}
+                hideFrontmatterGap={settings.editor.hideFrontmatterGap}
               />
             )}
           </Show>

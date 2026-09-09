@@ -784,6 +784,18 @@ details.callout[open] > summary.callout-title::after {
 
 /* Default accent for live-preview lines — must precede the variant rules
    below so their --callout-rgb overrides win in source order. */
+/* The blank lines between frontmatter and the first content line, hidden in
+   live preview only — the reading view renders markdown, which discards
+   leading blank lines already.
+
+   `display: none` rather than a zero height: a zero-height line still takes
+   part in layout and leaves a hairline gap. The line is revealed again the
+   moment the selection touches it (`blankLinesAfterFrontmatter`), so no text
+   becomes unreachable by hiding it. */
+.cm-lp-fm-gap {
+  display: none;
+}
+
 .cm-lp-callout {
   --callout-rgb: 96, 165, 250;
 }

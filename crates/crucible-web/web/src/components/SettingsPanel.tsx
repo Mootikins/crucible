@@ -603,6 +603,20 @@ export const EditorSettingsSection: Component = () => {
           data-testid="settings-editor-render-diagrams"
         />
       </SettingRow>
+      <SettingRow
+        label="Hide frontmatter gap"
+        description="Hide the blank lines between frontmatter and the first line of content, in live preview. The reading view never shows them."
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.hideFrontmatterGap}
+          onChange={(e) =>
+            updateSetting('editor', 'hideFrontmatterGap', e.currentTarget.checked)
+          }
+          class="h-4 w-4 cursor-pointer"
+          data-testid="settings-editor-hide-frontmatter-gap"
+        />
+      </SettingRow>
     </>
   );
 };

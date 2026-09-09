@@ -13,7 +13,10 @@ const DOC = [
   'See [[Target|alias]] link.',
 ].join('\n');
 
-function makeView(doc = DOC, opts?: { baseDir?: string }): EditorView {
+function makeView(
+  doc = DOC,
+  opts?: { baseDir?: string; hideFrontmatterGap?: boolean },
+): EditorView {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
   const view = new EditorView({
@@ -657,5 +660,46 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     );
     expect(text(view)).toContain('**bold**');
     expect(view.dom.querySelector('.cm-lp-strong')).toBeNull();
+  });
+});
+
+
+// The blank lines between frontmatter and the first content line. Live preview
+// only: the reading view renders markdown, which drops them already.
+describe('the frontmatter gap', () => {
+  const GAPPED = ['---', 'title: Foo', '---', '', '', 'First paragraph.'].join('\n');
+
+  const gapLines = (view: EditorView) =>
+    view.contentDOM.querySelectorAll('.cm-lp-fm-gap').length;
+
+  it('hides every blank line between frontmatter and the first content', () => {
+    const view = track(makeView(GAPPED));
+    expect(gapLines(view)).toBe(2);
+  });
+
+  it('leaves the gap alone when the setting is off', () => {
+    const view = track(makeView(GAPPED, { hideFrontmatterGap: false }));
+    expect(gapLines(view)).toBe(0);
+  });
+
+  // The blank line is real text. A cursor on one must not sit inside something
+  // that is not drawn — the rule every other construct here follows.
+  it('reveals a line the selection touches', () => {
+    const view = track(makeView(GAPPED));
+    const blank = view.state.doc.line(4);
+    cursorAt(view, blank.from);
+    expect(gapLines(view)).toBe(1);
+  });
+
+  // Only the gap, never a blank line a person put between two paragraphs.
+  it('stops at the first line with content', () => {
+    const doc = ['---', 'title: Foo', '---', '', 'One.', '', 'Two.'].join('\n');
+    const view = track(makeView(doc));
+    expect(gapLines(view)).toBe(1);
+  });
+
+  it('does nothing to a document with no frontmatter', () => {
+    const view = track(makeView(['', '', 'Just prose.'].join('\n')));
+    expect(gapLines(view)).toBe(0);
   });
 });

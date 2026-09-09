@@ -118,6 +118,11 @@ const renderDiagramsFacet = Facet.define<boolean, boolean>({
   combine: (values) => values[0] ?? true,
 });
 
+/** Whether to hide the blank lines between frontmatter and the first content. */
+const hideFrontmatterGapFacet = Facet.define<boolean, boolean>({
+  combine: (values) => values[0] ?? true,
+});
+
 /** A GFM task-list checkbox rendered in place of a `[ ]`/`[x]` marker.
  * Clicking toggles the marker in the source (so both states are editable);
  * the cursor entering the marker reveals the raw brackets. */
@@ -304,6 +309,36 @@ function displayMathRanges(
  * closely enough for editor parity; the settings toggle is the escape hatch. */
 const INLINE_MATH_RE = /(?<![\\$\d])\$(?!\s)((?:\\.|[^$\\\n])+?)(?<![\s\\])\$(?!\d)/g;
 
+/**
+ * The blank lines between a closing frontmatter delimiter and the first line
+ * with content, as line-start offsets.
+ *
+ * Live preview only. The reading view renders markdown, which discards leading
+ * blank lines already, so there is nothing to hide there — and a document with
+ * no frontmatter has no gap by definition.
+ *
+ * A line the selection touches is left alone, the same rule every other
+ * construct here follows: the blank line is real text, and a cursor sitting on
+ * one must not be inside something that is not drawn.
+ */
+function blankLinesAfterFrontmatter(state: EditorState): number[] {
+  const block = extractFrontmatterBlock(state.doc.toString());
+  if (!block) return [];
+
+  const doc = state.doc;
+  const firstBodyLine = doc.lineAt(block.bodyStart).number;
+  const out: number[] = [];
+  for (let n = firstBodyLine; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    // Stop at the first line with content: only the gap is hidden, never a
+    // blank line that a person put between two paragraphs.
+    if (line.text.trim() !== '') break;
+    if (selectionTouches(state, line.from, line.to)) continue;
+    out.push(line.from);
+  }
+  return out;
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   const { state } = view;
   const doc = state.doc;
@@ -318,6 +353,12 @@ function buildDecorations(view: EditorView): DecorationSet {
       decorations.push(
         Decoration.line({ class: 'cm-lp-frontmatter' }).range(doc.line(n).from),
       );
+    }
+  }
+
+  if (state.facet(hideFrontmatterGapFacet)) {
+    for (const line of blankLinesAfterFrontmatter(state)) {
+      decorations.push(Decoration.line({ class: 'cm-lp-fm-gap' }).range(line));
     }
   }
 
@@ -1169,6 +1210,7 @@ export function livePreview(opts?: {
   baseDir?: string;
   renderMath?: boolean;
   renderDiagrams?: boolean;
+  hideFrontmatterGap?: boolean;
 }): Extension {
   const width = opts?.maxLineWidth ?? 0;
   return [
@@ -1178,6 +1220,7 @@ export function livePreview(opts?: {
     baseDirFacet.of(opts?.baseDir ?? ''),
     renderMathFacet.of(opts?.renderMath ?? true),
     renderDiagramsFacet.of(opts?.renderDiagrams ?? true),
+    hideFrontmatterGapFacet.of(opts?.hideFrontmatterGap ?? true),
     // Prose wraps; horizontal scrolling is a source-mode behavior.
     EditorView.lineWrapping,
     // Readable line length (Obsidian-style): center a prose column instead

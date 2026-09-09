@@ -124,3 +124,44 @@ describe('renderFrontmatterCardHtml', () => {
     expect(html).toContain('<span class="fm-pill">kiln</span>');
   });
 });
+
+describe('properties: expanded', () => {
+  it('opens the card when a note asks for it', () => {
+    const html = renderFrontmatterCardHtml([
+      { key: 'title', value: 'Foo' },
+      { key: 'properties', value: 'expanded' },
+    ]);
+    expect(html).toContain('<details class="fm-card" data-testid="fm-card" open>');
+  });
+
+  it('leaves the card closed by default', () => {
+    const html = renderFrontmatterCardHtml([{ key: 'title', value: 'Foo' }]);
+    expect(html).not.toContain(' open>');
+  });
+
+  it('accepts `collapsed` as an explicit statement of the default', () => {
+    const html = renderFrontmatterCardHtml([{ key: 'properties', value: 'collapsed' }]);
+    expect(html).not.toContain(' open>');
+  });
+
+  it('ignores a value it does not recognise rather than guessing', () => {
+    const html = renderFrontmatterCardHtml([{ key: 'properties', value: 'yes please' }]);
+    expect(html).not.toContain(' open>');
+  });
+
+  it('reads the key case-insensitively and tolerates the array form', () => {
+    expect(renderFrontmatterCardHtml([{ key: 'Properties', value: 'Expanded' }])).toContain(
+      ' open>',
+    );
+    expect(renderFrontmatterCardHtml([{ key: 'properties', value: ['expanded'] }])).toContain(
+      ' open>',
+    );
+  });
+
+  // Hiding it would leave a card open for a reason invisible in the note.
+  it('still renders the key as an ordinary row', () => {
+    const html = renderFrontmatterCardHtml([{ key: 'properties', value: 'expanded' }]);
+    expect(html).toContain('properties');
+    expect(html).toContain('expanded');
+  });
+});
