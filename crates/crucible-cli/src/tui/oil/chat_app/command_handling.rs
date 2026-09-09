@@ -13,8 +13,8 @@ use std::path::PathBuf;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::commands::{
-    classify_key_without_value, classify_set_value, key_home, CliValue, KeyHome, SetCommand,
-    SetEffect, SetError, SetRpcAction,
+    classify_key_without_value, classify_set_value, key_home, CliValue, DropKind, KeyHome,
+    SetCommand, SetEffect, SetError, SetRpcAction,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource};
 
@@ -405,8 +405,9 @@ impl OilChatApp {
                 SetCommand::Enable { key } => self.handle_set_enable(&key),
                 SetCommand::Disable { key } => self.handle_set_disable(&key),
                 SetCommand::Toggle { key } => self.handle_set_toggle(&key),
-                SetCommand::Reset { key } => self.handle_set_drop(&key, false),
-                SetCommand::Pop { key } => self.handle_set_drop(&key, true),
+                SetCommand::Reset { key } => self.handle_set_drop(&key, DropKind::Reset),
+                SetCommand::Pop { key } => self.handle_set_drop(&key, DropKind::Pop),
+                SetCommand::Unset { key } => self.handle_set_drop(&key, DropKind::Unset),
                 SetCommand::Set { key, value } => self.dispatch_set_key(&key, value),
             },
             Err(e) => {
@@ -448,9 +449,9 @@ impl OilChatApp {
     /// the layers it merged and re-merges what is left. The client never
     /// drops a local copy of a key the daemon owns — that is two stores
     /// holding different values for one key.
-    fn handle_set_drop(&mut self, key: &str, pop: bool) -> Action<ChatAppMsg> {
+    fn handle_set_drop(&mut self, key: &str, kind: DropKind) -> Action<ChatAppMsg> {
         match key_home(key) {
-            KeyHome::Client if pop => {
+            KeyHome::Client if kind == DropKind::Pop => {
                 if self.runtime_config.pop(key).is_some() {
                     self.sync_runtime_to_fields(key);
                     let output = self.runtime_config.format_query(key);
@@ -469,7 +470,7 @@ impl OilChatApp {
             }
             KeyHome::Daemon => Action::Send(ChatAppMsg::ConfigDrop {
                 key: key.to_string(),
-                pop,
+                kind,
             }),
         }
     }

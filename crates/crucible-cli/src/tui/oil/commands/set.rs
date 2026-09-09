@@ -21,19 +21,84 @@ pub enum ParseError {
 /// The `:set` spellings. A closed set: the dispatch in `command_handling.rs`
 /// matches every variant, and the tests walk them through `EnumIter` so a new
 /// spelling cannot reach a store the other spellings do not.
+/// Which layers a `:set` drop takes away.
+///
+/// Three spellings, three answers, so a boolean cannot carry it: `&` resets,
+/// `^` pops one layer, `=` with nothing after it removes the key. An
+/// enumerated table rather than two bools, so a fourth spelling cannot be
+/// added without every match seeing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum DropKind {
+    /// `:set key&` — drop the ephemeral layer a `:set` writes.
+    Reset,
+    /// `:set key^` — drop the highest-ranked layer holding the leaf.
+    Pop,
+    /// `:set key=` — remove the key and everything under it.
+    Unset,
+}
+
+impl DropKind {
+    /// The RPC verb that performs this drop.
+    pub fn method(self) -> &'static str {
+        match self {
+            DropKind::Reset => "config.reset",
+            DropKind::Pop => "config.pop",
+            DropKind::Unset => "config.unset",
+        }
+    }
+
+    /// The spelling that asked for it, for an error message.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            DropKind::Reset => "&",
+            DropKind::Pop => "^",
+            DropKind::Unset => "=",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum SetCommand {
     ShowModified,
     ShowAll,
-    Query { key: String },
-    QueryHistory { key: String },
-    Enable { key: String },
-    Disable { key: String },
-    Toggle { key: String },
-    Reset { key: String },
-    Pop { key: String },
-    Set { key: String, value: String },
+    Query {
+        key: String,
+    },
+    QueryHistory {
+        key: String,
+    },
+    Enable {
+        key: String,
+    },
+    Disable {
+        key: String,
+    },
+    Toggle {
+        key: String,
+    },
+    Reset {
+        key: String,
+    },
+    Pop {
+        key: String,
+    },
+    /// `:set key=` — an assignment with nothing after the `=`.
+    ///
+    /// Vim spells "give me back the default" `&`, and has no spelling for
+    /// "remove this key" because its options are a fixed set that cannot be
+    /// removed. Crucible's are not: `llm.providers.<name>` is user-named, and
+    /// a stale one has to be removable. An empty assignment is the natural
+    /// spelling — the user says the value is nothing, and nothing is not the
+    /// empty string.
+    Unset {
+        key: String,
+    },
+    Set {
+        key: String,
+        value: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,7 +152,8 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
         | SetCommand::Query { .. }
         | SetCommand::QueryHistory { .. }
         | SetCommand::Reset { .. }
-        | SetCommand::Pop { .. } => Err(SetError::NotSupportedAsCli),
+        | SetCommand::Pop { .. }
+        | SetCommand::Unset { .. } => Err(SetError::NotSupportedAsCli),
         SetCommand::Enable { key } => classify_key_without_value(key, CliValue::Enable),
         SetCommand::Disable { key } => classify_key_without_value(key, CliValue::Disable),
         SetCommand::Toggle { key } => classify_key_without_value(key, CliValue::Toggle),
@@ -543,6 +609,11 @@ impl SetCommand {
             let value = value.trim();
             if key.is_empty() {
                 return Err(ParseError::InvalidSyntax("missing option name".into()));
+            }
+            if value.is_empty() {
+                return Ok(SetCommand::Unset {
+                    key: key.to_string(),
+                });
             }
             return Ok(SetCommand::Set {
                 key: key.to_string(),

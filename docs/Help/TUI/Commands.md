@@ -22,6 +22,8 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:set option??` | Show modification history |
 | `:set option!` | Toggle boolean option |
 | `:set option&` | Reset to default |
+| `:set option^` | Drop the top layer and reveal the one beneath |
+| `:set option=` | Remove the key — an assignment with nothing after it |
 | `:set` | Show modified options |
 | `:set all` | Show all options |
 | `:model` | Open model picker |
@@ -63,6 +65,7 @@ Examples:
 ### Boolean Options
 
 ```
+:set option=            # REMOVE the key (nothing after the `=`)
 :set option             # Enable boolean option
 :set nooption           # Disable boolean option (prefix with 'no')
 :set option!            # Toggle option

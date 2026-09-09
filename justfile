@@ -266,7 +266,12 @@ refs what="unread" *args:
 # `just test -p crucible-core -E 'test(parser)'` scopes a run without a recipe.
 #
 # Test: quick (default) | ignored | gated | external | full | ci | tiers | features | doc | plugin <dir> | plugins
-test tier="quick" *args:
+# The Luau checker is a DEPENDENCY, not a nicety. Without it the shipped-Lua
+# gates panic with "no Luau type checker" before they check anything, and that
+# panic masked a real PROFILES failure for four agents in a row — a missing
+# binary read as a broken gate rather than as a missing binary. The recipe is
+# a no-op once installed, so the cost is one `--version` call.
+test tier="quick" *args: luau-lsp
     #!/usr/bin/env bash
     set -euo pipefail
     tier="$1"; shift
@@ -533,7 +538,7 @@ web-test tier="e2e" *args:
 # unparseable `#[ignore]` reason before the tier derived from those reasons runs.
 #
 # Run every gate GitHub runs — do this before committing
-ci: (lint "all") (test "ci") (test "features") (test "doc") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
+ci: luau-lsp (lint "all") (test "ci") (test "features") (test "doc") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
     @echo "CI checks passed!"
 
 # The Luau typechecker, pinned. `cru plugin check` reports SKIPPED without

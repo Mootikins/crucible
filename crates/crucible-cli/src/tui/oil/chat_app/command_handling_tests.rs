@@ -857,6 +857,7 @@ fn spelling_for(command: &SetCommand, key: &str) -> Option<String> {
         SetCommand::Toggle { .. } => Some(format!("{key}!")),
         SetCommand::Reset { .. } => Some(format!("{key}&")),
         SetCommand::Pop { .. } => Some(format!("{key}^")),
+        SetCommand::Unset { .. } => Some(format!("{key}=")),
         SetCommand::Set { .. } => Some(format!("{key}=1")),
     }
 }
@@ -916,7 +917,7 @@ fn an_app_config_reset_and_pop_ask_the_daemon_for_the_right_verb() {
     assert!(
         matches!(
             app.handle_set_command("set myplugin.retries&"),
-            Action::Send(ChatAppMsg::ConfigDrop { pop: false, ref key })
+            Action::Send(ChatAppMsg::ConfigDrop { kind: DropKind::Reset, ref key })
                 if key == "myplugin.retries"
         ),
         "`:set key&` must send config.reset"
@@ -924,10 +925,49 @@ fn an_app_config_reset_and_pop_ask_the_daemon_for_the_right_verb() {
     assert!(
         matches!(
             app.handle_set_command("set myplugin.retries^"),
-            Action::Send(ChatAppMsg::ConfigDrop { pop: true, ref key })
+            Action::Send(ChatAppMsg::ConfigDrop { kind: DropKind::Pop, ref key })
                 if key == "myplugin.retries"
         ),
         "`:set key^` must send config.pop"
+    );
+}
+
+/// `:set key=` — an assignment with nothing after it — removes the key.
+///
+/// Vim has no such spelling because its option set is fixed and nothing can
+/// be removed from it. Crucible's is not: `llm.providers.<name>` is
+/// user-named, so a stale one has to go somewhere, and an empty assignment is
+/// where a Vim user would reach. It must send `config.unset`, NOT
+/// `config.reset` — a reset would put back whatever a file declares, which is
+/// the opposite of removing the key.
+#[test]
+fn an_empty_assignment_asks_the_daemon_to_unset() {
+    let mut app = app();
+    assert!(
+        matches!(
+            app.handle_set_command("set llm.providers.stale="),
+            Action::Send(ChatAppMsg::ConfigDrop { kind: DropKind::Unset, ref key })
+                if key == "llm.providers.stale"
+        ),
+        "`:set key=` must send config.unset"
+    );
+}
+
+/// The three drop spellings are three verbs, and each names its own.
+///
+/// Derived from the enum rather than written out, so a fourth spelling cannot
+/// be added without deciding which verb it maps to.
+#[test]
+fn every_drop_spelling_names_a_distinct_verb() {
+    use strum::IntoEnumIterator;
+    let verbs: Vec<&str> = DropKind::iter().map(DropKind::method).collect();
+    let mut unique = verbs.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        verbs.len(),
+        unique.len(),
+        "two DropKind variants share one RPC verb: {verbs:?}"
     );
 }
 

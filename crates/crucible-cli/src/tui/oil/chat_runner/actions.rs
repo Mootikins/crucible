@@ -1,6 +1,7 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::commands::DropKind;
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use std::io;
@@ -90,19 +91,20 @@ async fn read_app_config_key(
 /// Drop config layers for one app-config key through the daemon, and report
 /// what the store then holds.
 ///
-/// `pop` picks the verb: `config.reset` drops the ephemeral layer `:set`
-/// writes, `config.pop` drops the highest layer holding the leaf. The
-/// daemon's row is the whole answer — the value, its origin, and the layers
-/// that went — because the TUI keeps no copy of app config to update.
+/// [`DropKind`] picks the verb: `config.reset` drops the ephemeral layer a
+/// `:set` writes, `config.pop` drops the highest layer holding the leaf, and
+/// `config.unset` removes the key. The daemon's row is the whole answer — the
+/// value, its origin, and the layers that went — because the TUI keeps no
+/// copy of app config to update.
 async fn drop_app_config_key(
     key: &str,
-    pop: bool,
+    kind: DropKind,
 ) -> Result<(Vec<String>, serde_json::Value, serde_json::Value), String> {
     let client = crucible_daemon::DaemonClient::connect()
         .await
         .map_err(|e| format!("daemon connect failed: {e}"))?;
 
-    let method = if pop { "config.pop" } else { "config.reset" };
+    let method = kind.method();
     let row = client
         .call(method, serde_json::json!({ "key": key }))
         .await
@@ -680,12 +682,12 @@ impl OilChatRunner {
                     // Gated on `!self.is_replay`: a `:set key&` or `:set
                     // key^` on an app-config key CHANGES the daemon store, so
                     // replaying a transcript must not re-drop the layers.
-                    ChatAppMsg::ConfigDrop { ref key, pop } if !self.is_replay => {
+                    ChatAppMsg::ConfigDrop { ref key, kind } if !self.is_replay => {
                         let key = key.clone();
-                        let pop = *pop;
+                        let kind = *kind;
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
-                            let msg = match drop_app_config_key(&key, pop).await {
+                            let msg = match drop_app_config_key(&key, kind).await {
                                 Ok((dropped, value, origin)) => ChatAppMsg::ConfigDropResolved {
                                     key,
                                     dropped,
@@ -693,9 +695,11 @@ impl OilChatRunner {
                                     origin,
                                 },
                                 Err(e) => {
-                                    tracing::warn!(key = %key, pop, error = %e, "a config drop failed");
-                                    let spelling = if pop { "^" } else { "&" };
-                                    ChatAppMsg::Error(format!("set {key}{spelling}: {e}"))
+                                    tracing::warn!(key = %key, ?kind, error = %e, "a config drop failed");
+                                    ChatAppMsg::Error(format!(
+                                        "set {key}{}: {e}",
+                                        kind.spelling()
+                                    ))
                                 }
                             };
                             let _ = tx.send(msg);

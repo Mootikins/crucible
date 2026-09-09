@@ -251,7 +251,10 @@ pub enum ChatAppMsg {
     /// `:set key&` sends `pop: false` (`config.reset`, which drops the
     /// ephemeral layer `:set` writes); `:set key^` sends `pop: true`
     /// (`config.pop`, which drops the highest layer holding the leaf).
-    ConfigDrop { key: String, pop: bool },
+    ConfigDrop {
+        key: String,
+        kind: crate::tui::oil::commands::DropKind,
+    },
     /// **Event** (daemon → TUI): the store's answer for
     /// [`ChatAppMsg::ConfigDrop`] — what the leaf holds once the layers are
     /// gone, and which layers went.
