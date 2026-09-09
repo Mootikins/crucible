@@ -253,8 +253,10 @@ and every technical argument above is downstream of it.
 ### What would still settle the technical half
 
 1. **Is a TUI rendering of a plugin view actually wanted?** Nothing here draws
-   the kanban board in a terminal. The renderer exists; no TUI surface hosts a
-   plugin view. If the answer is no, Oil's entire advantage evaporates — it is
+   the kanban board in a terminal, and — see the status list below — nothing
+   *can* until `Node` gains `Deserialize` and an action reaches the focus
+   system. Call that prerequisite **P1**. If the answer is no, do not pay for
+   P1: Oil's entire advantage evaporates and it is
    not a cross-frontend vocabulary, it is the TUI's own renderer, and plugin
    views should be TSX with `cru.plugin.views` withdrawn rather than shipped
    half-used.
@@ -266,10 +268,52 @@ and every technical argument above is downstream of it.
    framework, grown one variant at a time, permanently capped by the terminal
    half.
 
+## P1 — what the TUI half would actually cost
+
+The spike is web-only by construction, not by omission (see the status list).
+The prerequisite has two halves, and neither is large.
+
+**P1a — `Node: Deserialize`. Mechanical, no design decisions.** Every type in
+the tree round-trips: `Color::Indexed(u8)` / `Rgb(u8,u8,u8)`,
+`Border::Custom(BorderChars)` (eight `Option<char>` fields), `Size`, `Padding`,
+`Gap` (plain `u16`), and `OverlayAnchor::FromBottom(usize)`, a one-variant enum.
+The only real work is the `skip_serializing_if = "crate::is_default"`
+attributes: an omitted field needs `#[serde(default)]` on the way back in, and
+every skipped field's type already derives `Default` — `Style`, `Padding`,
+`Gap`, `Node` itself, `Option<T>`. A container-level `#[serde(default)]` on
+roughly fifteen types covers it.
+
+**P1b — an action dispatcher. New code, small, with a template.** Verified:
+`FocusContext::register` is called from **nothing but its own tests**
+(`tui/oil/tests/focus_tests.rs`), and `chat_app/mod.rs:587` hands the overlay a
+`FocusContext::default()`. So focus is inert in the TUI today and there is no
+registration walk to extend — this is new code, not an extension.
+
+The template exists in two places, though. `overlay.rs:89` `collect_overlays`
+is already a full recursive walk that handles `Node::Action`. And
+`taffy_layout.rs` `node_to_layout_box` already computes a `rect` with offsets
+and then *discards* the action to forward to the child; carrying the action
+name onto that `LayoutBox` instead is the hit test.
+
+**Where a TUI surface would host a view.** The seam is the transcript, not the
+chrome: add a `ChatNode::PluginView { plugin, view, tree }` variant to the enum
+at `tui/oil/containers.rs:33` and one arm to `ChatNode::render` at `:81`. The
+arm paints a tree the app already holds; the fetch is an RPC in
+`chat_runner/actions.rs`, delivered as a `ChatAppMsg`. That mirrors the web,
+where a view mounts as a block inside a document — and the transcript is the
+TUI's document.
+
 ## Status and what is not done
 
-- No TUI surface hosts a plugin view. The Oil renderer can draw one; nothing
-  calls it. **This is the biggest gap, and it is the gap that decides.**
+- **The TUI cannot consume a plugin view at all.** This was first written as
+  "the renderer can draw one; nothing calls it", which was too generous. Two
+  facts, both verified: `crucible-oil/src/node.rs:8-12` derives `Serialize`
+  only — there is no `Deserialize` anywhere in the crate, so nothing can parse
+  what `plugin.view_render` returns. And `Node::Action` is *transparent* in the
+  TUI by construction: `render.rs`, and both arms in `taffy_layout.rs`, forward
+  to the child, while `FocusContext` (`focus.rs:28`) keys on `FocusId` and
+  never sees an action name. So the spike shipped a painter, not a consumer.
+  **This is the gap that decides, and it is wider than first recorded.**
 - The editor's live preview does not render the fence (finding 3).
 - `oil.input` is read-only in the browser (finding 4).
 - No `Web User Stories` entry, no W2/W3 tier. Unit coverage only
@@ -282,6 +326,34 @@ and every technical argument above is downstream of it.
 - Branched from `master`, which predates the `plugin.yaml` deletion on
   `feat/runtime-path-unification`. `runtime/plugins/kanban/plugin.yaml` has to
   go when the two meet.
+
+## Which Rust rendering could move, if P1 is paid
+
+A survey of `crucible-cli/src/tui/` ranked the candidates. All are gated on P1.
+
+| Candidate | Where it builds the tree today | Verdict |
+|---|---|---|
+| `/plugins` listing | `chat_app/command_handling.rs:810` | Move. Reads a daemon-pushed list, needs only `col`/`row`/`badge`/`text`, and `web/src/components/PluginPanel.tsx` is 410 lines of duplicate. Needs a `cru.plugin.list()` that does not exist. |
+| `/mcp` listing | `chat_app/command_handling.rs:872` | Move. Same shape. Needs `cru.mcp.list()`. Breaks US-303. |
+| Session-start banner | `chat_app/mod.rs:764`, `:795` | Move. `kv` and `text` only. The web shows no banner at all, so this *gains* a surface. Needs a proposals count nothing exposes. Breaks US-803, US-804. |
+| Shell execution card | `components/shell_render.rs:12` | Move, after a transcript seam. The cleanest pure function in the transcript — 60 lines, no spinner, no width. Needs the daemon to pass the tool record as params. |
+| Subagent card | `components/subagent_render.rs:16` | **Never.** Indexes `BRAILLE_SPINNER_FRAMES` by a caller-supplied frame. Animation is terminal frame state. |
+| Diff view | `components/diff_view.rs:109` | **Never.** Branches on `SIDE_BY_SIDE_MIN_WIDTH: usize = 120`. A tree cannot know its own width — finding 4, biting exactly where predicted. Eleven snapshots. |
+| Tool card | `components/tool_render.rs:35` | **Never.** `render_compact_with(spinner_frame, width, show_diffs)` — three arguments, all live TUI state. US-307 asserts byte-identical frames between ACP and internal fixtures; moving it puts a Lua VM inside that equality. |
+
+Also never: interaction modals and the shell modal (per-keystroke state and
+scroll offsets), autocomplete and pickers (`Node::Popup` carries
+`viewport_offset` / `max_visible` / `anchor_col`), the input area
+(`Node::Input` carries a cursor), the markdown renderer (a parser, not a view),
+and `/set` output (`RuntimeConfig` is TUI-local, so a daemon-side plugin cannot
+read it).
+
+**The statusline is not a precedent.** It was assumed to be one and it is not:
+`statusline_items.rs:113` declares a closed `StatusItem` enum, Lua picks names
+from that fixed vocabulary, and `tui/oil/components/status_items.rs:67`
+`render_bar()` builds the `Node`s in Rust every frame. That is a *vocabulary*
+projection. A plugin view is a *serialized tree*. They share no mechanism, so
+the spike has no working precedent in the tree.
 
 ## Links
 
