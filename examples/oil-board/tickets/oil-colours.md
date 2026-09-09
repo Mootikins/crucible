@@ -1,6 +1,6 @@
 ---
 title: Terminal colours in a browser
-status: todo
+status: done
 ---
 
 Oil paints with the sixteen terminal colours. The web maps them onto theme
