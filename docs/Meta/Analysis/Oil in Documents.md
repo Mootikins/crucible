@@ -268,6 +268,54 @@ and every technical argument above is downstream of it.
    framework, grown one variant at a time, permanently capped by the terminal
    half.
 
+## The counter-case, and the verdict
+
+Two arguments against paying for P1 at all. The second is the strongest
+technical objection raised anywhere in this analysis.
+
+**1. P1 buys parity, not capability.** The web half was cheap *because* the
+browser had no renderer — anything was a gain. The TUI already has one: Rust,
+typed, snapshot-tested. P1 spends the spike's cost a second time to arrive
+where the TUI already is.
+
+**2. Moving a surface degrades both frontends, and the TUI regression is a
+theme regression.** Verified: `crucible-lua/src/oil.rs` `parse::color` accepts
+named colours and hex **only** — its own error message says "Use named colors
+(red, green, …) or hex (#ff0000)". Meanwhile every Rust renderer resolves
+*semantic* colours through the active theme; `components/shell_render.rs:13`
+reads `theme::active()` and then `t.resolve_color(t.colors.success)`.
+
+So a Lua-declared tree can say "green". It cannot say "the theme's success
+colour". Moving a Rust surface to Lua would hard-code colours that today follow
+the user's theme, and regress US-905. The web renderer's mapping of sixteen
+terminal names onto theme tokens is the same information loss running the other
+way — both frontends have a semantic palette, and the wire format between them
+carries neither.
+
+**This suggests a cheaper prerequisite than P1, and a more valuable one.** Let
+`fg`/`bg` accept a highlight-group name, resolved per frontend. `cru.hl` and
+the highlight registry already exist (`crucible-lua/src/hl.rs`, `hl_lua.rs`),
+so this is a parse change plus a resolution step, not a new subsystem. Without
+it, every plugin view is themed wrong in both places. Call it **P0**, because
+it is worth doing whether or not the TUI ever renders a plugin view.
+
+### Verdict
+
+**Keep `cru.plugin.views`. Do not pay for P1 yet. Move nothing out of the
+transcript.**
+
+Withdrawing the seam would be wrong for one reason: the mechanism is already
+correct for surfaces nothing draws today. `runtime/plugins/kanban/init.luau` is
+230 lines, reads only `cru.fs.list`, `cru.kiln.path` and `cru.paths.workspace`,
+and works right now in the browser with no P1 at all. That is the case views
+were built for — *new* surfaces, not migrated ones.
+
+The sequence is therefore: answer question 2 above before funding anything.
+Build the second and third plugin view on the web-only path. If they stay
+inside the sixteen portable primitives, P1 becomes worth funding. If they
+immediately reach for a node Oil lacks, P1 would have been money spent on a
+ceiling.
+
 ## P1 — what the TUI half would actually cost
 
 The spike is web-only by construction, not by omission (see the status list).
