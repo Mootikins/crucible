@@ -208,6 +208,70 @@ So: refusing offline is cheap and should ship with the first button. Queueing
 offline is a separate piece of product work and should not be smuggled in
 beside it.
 
+## What the web API must have
+
+Derived by asking which existing panels would exercise the most surface if
+rebuilt as plugins, rather than by design from first principles.
+
+1. **Enumerate, type and mark the executable primitives.** The mechanism for a
+   parameterised read already exists — `POST /api/plugins/command` returns the
+   plugin's value verbatim, so a read-only command *is* an argument-keyed read,
+   and `kanban_board` is one. Missing: the HTTP enumeration (now built, `GET
+   /api/plugins/commands`), `parameters` crossing as a declared type rather
+   than opaque JSON, and a read/write marker the permission layer can use.
+2. **Scoped publications.** One shape exists — global, per plugin. A review
+   index wants a key scoped to a *session*; tree expansion and graph forces
+   want a key scoped to a *viewer*.
+3. **A refusal a UI can act on.** `FsMoveOutcome` is the shape to copy; a
+   command returns opaque JSON.
+4. **Declared file access.** Kanban reads and writes with `io.open`, unscoped —
+   `cru.fs` has no read and no write at all. A scoped alternative assumes
+   capability enforcement that **does not exist**: `Capability` has ten
+   variants and is checked in exactly two places, both `InterceptTools`.
+   `filesystem`, `kiln` and `config` gate nothing today.
+5. **One push channel, or a stated reason for two.** `/api/plugins/events`
+   carries `publication_changed`; `/api/fs/events` is separate.
+6. **A panel host** — now built. Blocks previously mounted only through the
+   ```plugin fence in `MarkdownPreview`, so a plugin could contribute content
+   to a document and could not contribute a panel. That blocked every
+   candidate.
+7. **A prompter for a person-invoked primitive**, so `ask` can mean ask.
+
+### The first one to rebuild
+
+**Backlinks**, not Skills. Skills would prove publish and push, which kanban
+already proves, so it forces nothing new. Backlinks is the first consumer whose
+read depends on an argument *the user moves* — the focused note — so it forces
+item 1 end to end: enumeration, the type crossing, and the read marker.
+
+Graph is the same shape at ten times the size and should follow it. Files is
+worth rebuilding as an **API consumer** and never as a Lua plugin: `/api/fs/list`
+already answers it, so it needs no Lua at all.
+
+Never: chat (the turn loop is the product), the terminal (a duplex byte stream,
+where the publication channel carries JSON snapshots), settings and plugins
+(`PluginSettings.tsx` already *is* the declaration-driven surface — rebuilding
+the host inside itself is circular), and canvas (every placement is "TS in the
+browser", so it teaches nothing about the daemon seam).
+
+### Types are hand-written on both sides
+
+No ts-rs, typeshare, utoipa or openapi anywhere in the tree. Web request structs
+are local derives; `api.ts` types are hand-written and cast (`as T`). The route
+contract tests pin shape by assertion against a mock daemon, which a generated
+client cannot consume. The cost of leaving it: a daemon field rename yields
+`undefined` at a mount point no test covers.
+
+### The strongest argument against a client package
+
+Until the sandboxed opaque origin exists, every block is in-tree and can import
+the app's own API module whatever a package exports — so extracting
+`@crucible/block-api` buys taxonomy, not safety. And if the sandbox makes
+delivery `postMessage`, the right surface is an **RPC envelope, not a function
+library**, which makes the extraction rework. Enumeration and caller-plugin
+scoping are worth doing either way, because they add the identity seam any gate
+must attach to. The package should wait until delivery is decided.
+
 ## What is still not built
 
 - **No TUI surface hosts a plugin view.** Oil is now unambiguously the TUI's

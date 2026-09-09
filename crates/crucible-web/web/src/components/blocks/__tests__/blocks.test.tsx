@@ -197,3 +197,45 @@ describe('KanbanBlock', () => {
     expect(container.textContent).toContain('todo (1)');
   });
 });
+
+// A plugin could contribute content to a document and could not contribute a
+// panel, which blocked rebuilding any existing panel as a plugin. These pin
+// the seam that unblocked it.
+describe('PluginBlockPanel', () => {
+  it('lists every published plugin/key pair', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            publications: {
+              'kanban:board': { kanban: {} },
+              'demo:list': { demo: {} },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+    const { PluginBlockPanel } = await import('../PluginBlockPanel');
+    const { container } = render(() => <PluginBlockPanel />);
+    await waitFor(() => expect(container.textContent).toContain('kanban'));
+    expect(container.textContent).toContain('board');
+    expect(container.textContent).toContain('demo');
+  });
+
+  it('says so when nothing has been published, rather than rendering blank', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ publications: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const { PluginBlockPanel } = await import('../PluginBlockPanel');
+    const { container } = render(() => <PluginBlockPanel />);
+    await waitFor(() => expect(container.textContent).toContain('No plugin has published'));
+  });
+});

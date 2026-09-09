@@ -15,6 +15,7 @@ import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { ChangesPanel } from '@/components/ChangesPanel';
 import { GraphPanel } from '@/components/graph/GraphPanel';
 import { CanvasPanel } from '@/components/canvas/CanvasPanel';
+import { PluginBlockPanel } from '@/components/blocks/PluginBlockPanel';
 
 // Tab/ribbon icons are NOT registered here — they resolve per content type
 // through lib/tab-icons.ts (SVG components, consistent monochrome chrome).
@@ -48,4 +49,8 @@ export function registerPanels(): void {
   registry.register('changes', 'Changes', ChangesPanel, 'right');
   registry.register('graph', 'Graph', GraphPanel, 'center');
   registry.register('canvas', 'Canvas', CanvasPanel, 'center');
+  // A plugin block, docked rather than embedded in a note. Until this existed
+  // a plugin could contribute content to a document and could not contribute a
+  // panel, which blocked rebuilding any existing panel as a plugin.
+  registry.register('plugin-blocks', 'Plugin Blocks', PluginBlockPanel, 'right');
 }
