@@ -262,12 +262,12 @@ impl PluginRegistry {
         out
     }
 
-    fn tool_func(&self, name: &str) -> Option<(mlua::Lua, mlua::Function)> {
+    fn tool_func(&self, name: &str) -> Option<(String, mlua::Lua, mlua::Function)> {
         self.tools
             .read()
             .expect("plugin tools lock poisoned")
             .get(name)
-            .map(|e| (e.lua.clone(), e.func.clone()))
+            .map(|e| (e.plugin.clone(), e.lua.clone(), e.func.clone()))
     }
 
     fn command_func(&self, name: &str) -> Option<(String, mlua::Lua, mlua::Function)> {
@@ -295,10 +295,16 @@ impl PluginRegistry {
         // filed under the wrong plugin. The kanban board published itself as
         // `web-search`, then as `reflection`, depending on load order.
         //
-        // `may_intercept: false` because a command is not a tool-call hook and
-        // has no interception to do; the capability is granted at the hook
-        // seam, not here.
-        let restore = crucible_lua::enter_plugin(&lua, &plugin, false);
+        // Under the plugin's own grants, so a command may reach what its
+        // manifest declared — MINUS `intercept_tools`, because a command is
+        // not a tool-call hook and has no interception to do. The grants come
+        // from what the loader recorded for this plugin, which is the same
+        // manifest the loader read.
+        let restore = crucible_lua::enter_recorded_plugin_without(
+            &lua,
+            &plugin,
+            crucible_lua::manifest::Capability::InterceptTools,
+        );
         let result = call_plugin_fn(&lua, &func, args).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
@@ -347,12 +353,24 @@ impl ToolExecutor for PluginToolExecutor {
         params: serde_json::Value,
         _context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
-        let Some((lua, func)) = self.registry.tool_func(name) else {
+        let Some((plugin, lua, func)) = self.registry.tool_func(name) else {
             return Err(ToolError::NotFound(name.to_string()));
         };
-        call_plugin_fn(&lua, &func, params)
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+        // Under the owning plugin's context, exactly as `run_command` runs.
+        // A tool used to run under whatever context was left behind, so a
+        // plugin tool reached `cru.storage`'s wrong namespace — and, once the
+        // grants are enforced, would have held the operator's own authority
+        // rather than its plugin's.
+        let restore = crucible_lua::enter_recorded_plugin_without(
+            &lua,
+            &plugin,
+            crucible_lua::manifest::Capability::InterceptTools,
+        );
+        let result = call_plugin_fn(&lua, &func, params).await;
+        // Restored on BOTH paths: a context left behind attributes whatever
+        // runs next to this plugin.
+        crucible_lua::set_plugin_context(&lua, restore);
+        result.map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {

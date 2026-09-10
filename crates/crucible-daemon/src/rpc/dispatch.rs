@@ -2482,9 +2482,15 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let root = dir.join("plugins");
         let plugin = root.join("sandbox");
         std::fs::create_dir_all(&plugin).expect("plugin dir");
+        // `intercept_tools`, because `cru.isolation.require` is gated on it —
+        // the claim's `exempt` widens what still runs on the host and its
+        // `exec` relocates execution, which is the same authority taking a
+        // tool call over carries. A double that declares nothing is refused,
+        // exactly as a real plugin would be.
         std::fs::write(
             plugin.join("plugin.yaml"),
-            "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
+            "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n\
+             capabilities:\n  - intercept_tools\n",
         )
         .expect("plugin.yaml");
         std::fs::write(plugin.join("init.lua"), CLAIMS_ISOLATION).expect("init.lua");

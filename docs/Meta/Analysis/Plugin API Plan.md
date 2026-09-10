@@ -184,7 +184,7 @@ simply has no storage primitive that honours it. What it wants, in cost order:
 **This is a storage change, not a plugin-API one.** It should be sequenced on
 its own rather than folded into the plugin work.
 
-## Step 3 — mark reads, and type the parameters
+## Step 3 — mark reads, and type the parameters — landed
 
 Both come from the same place and should land together.
 
@@ -269,7 +269,7 @@ gate belongs on the daemon side of `POST /api/plugins/command`, and the badge
 this ships is a *declaration* — shown with a title saying nothing verifies it,
 because step 4's warning about labels without gates applies to this label too.
 
-## Step 4 — path scoping, not a read/write split
+## Step 4 — path scoping, not a read/write split — landed
 
 **Research answered this, and the answer is: do not build the mode axis.** It
 was the open question; it is now closed enough to act on.
@@ -333,6 +333,62 @@ radius; it does not close this. The mitigation is the contract's invariant — a
 plugin's published state stays derivable from its files — rather than a gate,
 because a user editing their own note by hand is a legal move that a plugin must
 survive anyway.
+
+### What landed
+
+**The mapping.** `CruNamespace::required_capability` — one exhaustive match,
+under the two clippy denies the namespace table already carried. `filesystem` →
+`cru.fs`; `network` → `cru.http`; `websocket` → `cru.ws`; `shell` →
+`cru.shell`; `kiln` → `cru.kiln` and `cru.embed`; `config` → `cru.config`;
+`agent` → `cru.session`, `cru.sessions`, `cru.get_session`, `cru.context` and
+`cru.tools`; `ui` → `cru.ui` plus the five that replace the interface
+(`statusline`, `colorscheme`, `syntax`, `hl`, `geometry`); `intercept_tools` →
+`cru.isolation`, whose `exempt` widens what runs on the host and whose
+`exec_prefix` relocates execution, on top of the tool-call seam it already
+held.
+
+**The gate is `Ns::func`**, which every `cru.*` registration already goes
+through, so a new function in a gated namespace is gated by construction rather
+than by its author remembering. The check runs before mlua converts arguments:
+a refusal that read as a type error is a refusal nobody acts on. Its test walks
+the running VM and requires every gated function to refuse a plugin with no
+grants — deleting the wrap fails ~70 assertions at once.
+
+**Three seams held a plugin's name and no authority, and each was a bypass.**
+`on_session_start` hooks ran with no plugin context at all, so a plugin that
+declared nothing held everything from one; plugin TOOLS ran under whatever
+context was left behind; deferred callbacks (`cru.schedule`, `cru.timer.spawn`)
+likewise. The first two now re-enter the owning plugin's recorded grants. Each
+was also a live `cru.storage` attribution bug — consolidation's cursor writes
+from a scheduled callback have been silently failing under `pcall`.
+
+**`system` maps to nothing.** No `cru.*` namespace answers to the manifest's
+"access system information". It parses, it grants nothing, and it is a
+candidate for deletion rather than for a mapping invented to justify it.
+
+**One shipped plugin was wrong**: `oci` calls `cru.session.get` from
+`cleanup_orphans` and never declared `agent`. One line. That is the whole cost
+of making ten grants real across thirteen shipped plugins, which is the number
+the "enforcement cost is every plugin, doc and test" argument was about.
+
+**`cru.fs.read` and `cru.fs.write`** exist, gated by `filesystem` and confined
+to the roots the host binds per plugin — every registered kiln, the plugin's
+own state directory, and the working directory. `mkdir`, `list`, `copy` and
+`remove_all` are NOT confined: `worktree` checks a destination outside all
+three, so narrowing them is a separate decision with a migration behind it.
+
+### Still open after this step
+
+- **Kanban still writes with `io.open`.** The primitive is there; the migration
+  is not, and it belongs with whoever owns that file.
+- **Deferred callbacks keep the bypass.** `cru.schedule` and `cru.timer.spawn`
+  invoke their Lua from a detached task with no `&Lua` in hand, so carrying the
+  context needs a different shape than the other three seams took. Until then a
+  plugin can reach an ungranted namespace by wrapping the call in
+  `cru.schedule(0, …)`.
+- **A plugin declaring capabilities only in its returned spec table** cannot be
+  read at boot-require time: the table does not exist until the body has run.
+  Its top-level calls hold nothing; its handlers hold everything.
 
 ## Step 5 — delivery decided; the build waits on a trigger
 

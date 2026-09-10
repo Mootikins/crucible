@@ -93,19 +93,25 @@ fn every_plugin_vm_namespace_is_stubbed() {
     );
 }
 
-/// The reduced `cru.fs` surface, held in both directions, derived from the
-/// running VM and the stub file the generator renders from it — never from
-/// source text, which a change can satisfy without doing the work.
+/// The `cru.fs` surface, held in both directions, derived from the running VM
+/// and the stub file the generator renders from it — never from source text,
+/// which a change can satisfy without doing the work.
+///
+/// `read` and `write` came BACK, and the two halves of why are what this
+/// pins. They were removed as thin wrappers over `io.open`; they return as
+/// the declared and scoped alternative to it — `filesystem` in the manifest,
+/// and confined to the roots the host binds. `append` and `rename` stay
+/// removed, because `io` and `os` answer those and neither needs a scope
+/// `io.open` would defeat anyway.
 #[test]
-fn cru_fs_surface_is_reduced_on_the_vm_and_in_the_stubs() {
+fn cru_fs_offers_a_scoped_read_and_write_and_nothing_io_already_does() {
     let loader = loader();
     let lua = loader.plugin_lua();
     let cru: mlua::Table = lua.globals().get("cru").expect("cru global");
     let fs: mlua::Table = cru.get("fs").expect("cru.fs");
 
-    // Removed names are nil on the VM: with no shims, an out-of-tree caller
-    // gets Lua's own nil-call error, which names the field.
-    for name in ["read", "write", "append", "rename"] {
+    // Still removed: `io` and `os` answer these, and a wrapper buys nothing.
+    for name in ["append", "rename"] {
         let value: mlua::Value = fs.get(name).expect("table get");
         assert!(
             value.is_nil(),
@@ -113,9 +119,11 @@ fn cru_fs_surface_is_reduced_on_the_vm_and_in_the_stubs() {
         );
     }
 
-    // Surviving names are functions — `remove` among them, as the raising
+    // Present names are functions — `remove` among them, as the raising
     // data-loss guard rather than a delete.
     for name in [
+        "read",
+        "write",
         "exists",
         "is_file",
         "is_dir",
@@ -145,13 +153,13 @@ fn cru_fs_surface_is_reduced_on_the_vm_and_in_the_stubs() {
     let dir = tempfile::tempdir().expect("tempdir");
     loader.generate_stubs(dir.path()).expect("generate stubs");
     let src = std::fs::read_to_string(dir.path().join("cru.lua")).expect("cru.lua");
-    for name in ["read", "write", "append", "rename"] {
+    for name in ["append", "rename"] {
         assert!(
             !src.contains(&format!("function cru.fs.{name}(")),
             "the stubs still advertise cru.fs.{name}"
         );
     }
-    for name in ["exists", "mkdir", "remove_all"] {
+    for name in ["read", "write", "exists", "mkdir", "remove_all"] {
         assert!(
             src.contains(&format!("function cru.fs.{name}(")),
             "the stubs must document cru.fs.{name}"

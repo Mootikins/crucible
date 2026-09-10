@@ -123,7 +123,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
 
     // cru.schedule(spec, handler) -> handle_id
     let reg_schedule = registry.clone();
-    let schedule_fn = lua.create_function(move |_lua, args: mlua::Variadic<Value>| {
+    let schedule_fn = lua.create_function(move |lua, args: mlua::Variadic<Value>| {
         // Parse arguments: skip self (from __call), then spec, then handler.
         // When called via __call metamethod, first arg is the table itself.
         let (spec, handler) = match args.len() {
@@ -195,6 +195,15 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
             .insert(handle, cancel_tx);
 
         let reg_cleanup = reg_schedule.clone();
+        // The plugin that scheduled this, captured HERE and re-entered around
+        // every tick. A detached task carries no context of its own, so the
+        // callback used to run as if no plugin were running — which is the
+        // operator's own authority, and a one-line way around every capability
+        // gate (`cru.schedule(0, function() cru.shell.exec(…) end)`). It was
+        // also why `cru.storage` refused a scheduled write: the namespace is
+        // read from this same context at call time.
+        let owner = crate::plugin_context::current_plugin_context(lua);
+        let vm = lua.clone();
         tokio::spawn(async move {
             let dur = Duration::from_secs_f64(interval_secs);
             let mut interval = tokio::time::interval(dur);
@@ -205,7 +214,13 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        if let Err(e) = func.call_async::<()>(()).await {
+                        let previous =
+                            crate::plugin_context::set_plugin_context(&vm, owner.clone());
+                        let result = func.call_async::<()>(()).await;
+                        // Restored on both paths: a context left behind
+                        // attributes whatever runs next to this plugin.
+                        crate::plugin_context::set_plugin_context(&vm, previous);
+                        if let Err(e) = result {
                             tracing::warn!(handle, "scheduled callback error: {e}");
                         }
                     }

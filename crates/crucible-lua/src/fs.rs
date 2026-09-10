@@ -1,10 +1,28 @@
 //! File system module for Lua scripts — the reduced surface.
 //!
 //! Only what the Lua standard library cannot do (or cannot do safely) lives
-//! here. Files are read and written with `io.open`; this module covers
-//! directories and file-type queries:
+//! here: directories, file-type queries, and a SCOPED read and write.
+//!
+//! ## Two properties `io.open` does not have
+//!
+//! `io.open` is still there, and a plugin may still use it. What it cannot do
+//! is say who is calling or where they may reach, so a plugin reading and
+//! writing that way is unmarked and unconfined. `cru.fs.read` and
+//! `cru.fs.write` are:
+//!
+//! - **Declared.** Every function here needs the `filesystem` capability, and
+//!   a plugin that did not declare it is refused (`Ns::func` installs that
+//!   gate from `CruNamespace::required_capability`).
+//! - **Scoped.** A plugin's read and write are confined to the roots the host
+//!   binds through [`register_fs_roots_resolver`] — the registered kilns, the
+//!   workspace, and that plugin's own state directory. Code with no plugin
+//!   context is the operator's own and is not confined.
 //!
 //! ```lua
+//! local board = cru.kiln.path("notes", "tickets/one.md")
+//! local text = cru.fs.read(board)
+//! cru.fs.write(board, text .. "\nstatus: done\n")
+//!
 //! -- Create directory (with parents)
 //! cru.fs.mkdir("path/to/new/dir")
 //!
@@ -43,7 +61,33 @@ use crate::error::LuaError;
 use crate::error_ext::LuaResultExt;
 use mlua::Lua;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+/// The directories one plugin's scoped read and write may reach.
+///
+/// The host answers, per plugin, because only the host knows: which kilns are
+/// registered, where the workspace is, and which state directory belongs to
+/// this plugin. `cru.fs` holds no registry of its own — the same rule
+/// `cru.kiln.path` follows, where a plugin names a kiln and the daemon
+/// resolves it.
+pub type FsRootsResolver = Arc<dyn Fn(&str) -> Vec<PathBuf> + Send + Sync>;
+
+/// The installed resolver, in the VM's app data.
+///
+/// A newtype so the `Option` is the stored value and "no resolver installed"
+/// is distinguishable from "installed, and it answers with nothing".
+struct FsRoots(FsRootsResolver);
+
+/// Bind the roots a plugin's `cru.fs.read` and `cru.fs.write` may reach.
+///
+/// A VM with no resolver has no scope to enforce, so a PLUGIN calling either
+/// is refused there rather than allowed — an unanswerable "may I" answers no.
+/// Code with no plugin context is unaffected either way: the user's own
+/// `init.lua` has `io.open` and always has.
+pub fn register_fs_roots_resolver(lua: &Lua, resolver: FsRootsResolver) {
+    lua.set_app_data(FsRoots(resolver));
+}
 
 /// Refuse the retired `kiln://` scheme, permanently.
 ///
@@ -77,6 +121,82 @@ fn ensure_parent(path: &Path) -> Result<(), LuaError> {
     Ok(())
 }
 
+/// The nearest ancestor of `path` that exists, canonicalized, with the part
+/// that does not exist yet appended back.
+///
+/// `canonicalize` fails outright on a path whose last component is not there,
+/// which is every first write to a new file. Resolving the existing prefix is
+/// what makes `..` and a symlinked directory answer honestly while still
+/// letting a write create a file.
+fn resolve_for_containment(path: &Path) -> PathBuf {
+    let mut tail = Vec::new();
+    let mut cursor = path;
+    loop {
+        if let Ok(canonical) = cursor.canonicalize() {
+            let mut resolved = canonical;
+            for part in tail.iter().rev() {
+                resolved.push(part);
+            }
+            return resolved;
+        }
+        match (cursor.file_name(), cursor.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name.to_os_string());
+                cursor = parent;
+            }
+            // Nothing on this path exists: it cannot be inside any root, and
+            // saying so is the containment answer.
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Resolve `path` for a scoped read or write, refusing anything outside the
+/// running plugin's roots.
+///
+/// **No plugin context means no scope**, exactly as the capability gate reads
+/// it: the user's own `init.lua` is the operator's, and it already has
+/// `io.open`. What is confined is a PLUGIN, to the kilns, the workspace and
+/// the state directory the host says it may reach.
+fn scoped(lua: &Lua, path: &str, verb: &str) -> Result<PathBuf, mlua::Error> {
+    let target = checked(path)?;
+    let Some(plugin) = crate::plugin_context::current_plugin_name(lua) else {
+        return Ok(target.to_path_buf());
+    };
+
+    let roots = match lua.app_data_ref::<FsRoots>() {
+        Some(resolver) => (resolver.0)(&plugin),
+        None => {
+            return Err(mlua::Error::external(LuaError::Runtime(format!(
+                "cru.fs.{verb}('{path}'): this runtime binds no plugin file roots, \
+                 so a plugin has no scope to be checked against"
+            ))))
+        }
+    };
+
+    let resolved = resolve_for_containment(target);
+    if roots
+        .iter()
+        .any(|root| resolved.starts_with(resolve_for_containment(root)))
+    {
+        return Ok(resolved);
+    }
+
+    let allowed = roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect::<Vec<_>>();
+    let allowed = if allowed.is_empty() {
+        "nothing".to_string()
+    } else {
+        allowed.join(", ")
+    };
+    Err(mlua::Error::external(LuaError::Runtime(format!(
+        "cru.fs.{verb}('{path}'): outside the roots plugin '{plugin}' may reach ({allowed}). \
+         Use cru.kiln.path(name, rel), cru.paths.workspace() or cru.paths.state('{plugin}')."
+    ))))
+}
+
 /// Register the fs module.
 ///
 /// Every function declares its Luau type beside its closure, and `Ns` holds
@@ -93,6 +213,48 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
             .lua_runtime()
             .map_err(mlua::Error::external)
     })?;
+
+    // The two the module never had. Plugins read and write with raw
+    // `io.open`, which is unscoped and unmarked; these are gated by the
+    // `filesystem` capability (every function in `cru.fs` is — see
+    // `CruNamespace::required_capability`) and confined to the roots the host
+    // says the running plugin may reach.
+    //
+    // They RAISE rather than answering `nil, err`, as every other function
+    // here does. A refused read that returns nil reads as an empty file at the
+    // call site, which is how a scope check becomes silent data loss on the
+    // write that follows.
+    fs.func("read", "(path: string) -> string", |lua, path: String| {
+        let target = scoped(lua, &path, "read")?;
+        fs::read_to_string(&target)
+            .lua_runtime()
+            .map_err(mlua::Error::external)
+    })?;
+    fs.doc(
+        "read",
+        "Reads the whole file as a string. Raises when the file is missing, \
+         is not UTF-8, or lies outside the roots this plugin may reach.",
+    );
+
+    // Creates the parent directory, as `copy` does: a plugin writing its first
+    // ticket into a new folder should not have to `mkdir` first.
+    fs.func(
+        "write",
+        "(path: string, contents: string) -> ()",
+        |lua, (path, contents): (String, String)| {
+            let target = scoped(lua, &path, "write")?;
+            ensure_parent(&target).map_err(mlua::Error::external)?;
+            fs::write(&target, contents)
+                .lua_runtime()
+                .map_err(mlua::Error::external)
+        },
+    )?;
+    fs.doc(
+        "write",
+        "Replaces the file's whole contents, creating its parent directory. \
+         Raises when the path lies outside the roots this plugin may reach. \
+         Last write wins: there is no compare-and-set.",
+    );
 
     fs.func(
         "exists",
@@ -179,6 +341,7 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::{Capability, CapabilitySet};
     use mlua::Table;
     use tempfile::TempDir;
 
@@ -186,6 +349,160 @@ mod tests {
         let lua = Lua::new();
         register_fs_module(&lua).unwrap();
         lua
+    }
+
+    /// A VM with `filesystem` granted and one root a plugin may reach.
+    fn lua_with_root(root: &Path) -> Lua {
+        let lua = create_lua();
+        let root = root.to_path_buf();
+        register_fs_roots_resolver(&lua, Arc::new(move |_plugin| vec![root.clone()]));
+        crate::plugin_context::enter_plugin(
+            &lua,
+            "scoped",
+            [Capability::Filesystem].into_iter().collect(),
+        );
+        lua
+    }
+
+    #[test]
+    fn read_and_write_round_trip_inside_a_root() {
+        let temp = TempDir::new().unwrap();
+        let lua = lua_with_root(temp.path());
+        // A file the plugin creates in a directory that does not exist yet:
+        // `write` makes the parent, as `copy` does.
+        let target = temp.path().join("tickets/one.md");
+        let target = target.to_string_lossy().to_string();
+
+        let text: String = lua
+            .load(format!(
+                r#"
+                cru.fs.write("{target}", "status: todo")
+                return cru.fs.read("{target}")
+                "#
+            ))
+            .eval()
+            .expect("a scoped read and write inside a root must succeed");
+        assert_eq!(text, "status: todo");
+    }
+
+    /// The scope, and the traversal that would defeat a prefix check done on
+    /// the unresolved string.
+    #[test]
+    fn a_plugin_cannot_read_or_write_outside_its_roots() {
+        let temp = TempDir::new().unwrap();
+        let inside = temp.path().join("kiln");
+        let outside = temp.path().join("secrets");
+        fs::create_dir_all(&inside).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("key.txt"), "s3cret").unwrap();
+
+        let lua = lua_with_root(&inside);
+        let escapes = [
+            outside.join("key.txt").to_string_lossy().to_string(),
+            // Same file, reached by walking out of the root.
+            inside
+                .join("../secrets/key.txt")
+                .to_string_lossy()
+                .to_string(),
+        ];
+
+        for path in escapes {
+            let err = lua
+                .load(format!(r#"return cru.fs.read("{path}")"#))
+                .exec()
+                .expect_err("a read outside every root must raise");
+            assert!(
+                err.to_string().contains("outside the roots"),
+                "{path}: expected a scope refusal, got: {err}"
+            );
+
+            let err = lua
+                .load(format!(r#"cru.fs.write("{path}", "clobbered")"#))
+                .exec()
+                .expect_err("a write outside every root must raise");
+            assert!(
+                err.to_string().contains("outside the roots"),
+                "{path}: expected a scope refusal, got: {err}"
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(outside.join("key.txt")).unwrap(),
+            "s3cret",
+            "a refused write must not have happened"
+        );
+    }
+
+    /// The operator's own code has `io.open` and always has, so confining it
+    /// would buy nothing and break the user's `init.lua`.
+    #[test]
+    fn code_with_no_plugin_context_is_not_confined() {
+        let temp = TempDir::new().unwrap();
+        let target = temp.path().join("anywhere.txt");
+        let target = target.to_string_lossy().to_string();
+
+        let lua = create_lua();
+        // No resolver and no plugin context: nothing to confine.
+        lua.load(format!(r#"cru.fs.write("{target}", "ok")"#))
+            .exec()
+            .expect("code outside every plugin writes where it likes");
+        let text: String = lua
+            .load(format!(r#"return cru.fs.read("{target}")"#))
+            .eval()
+            .unwrap();
+        assert_eq!(text, "ok");
+    }
+
+    /// A runtime that binds no roots cannot answer "may this plugin reach
+    /// that", and an unanswerable question answers no. Failing open here
+    /// would make every embedded VM an unscoped one.
+    #[test]
+    fn a_plugin_is_refused_when_the_runtime_binds_no_roots() {
+        let temp = TempDir::new().unwrap();
+        let target = temp.path().join("x.txt");
+        let target = target.to_string_lossy().to_string();
+
+        let lua = create_lua();
+        crate::plugin_context::enter_plugin(
+            &lua,
+            "scoped",
+            [Capability::Filesystem].into_iter().collect(),
+        );
+        let err = lua
+            .load(format!(r#"return cru.fs.read("{target}")"#))
+            .exec()
+            .expect_err("no bound roots must refuse a plugin");
+        assert!(
+            err.to_string().contains("binds no plugin file roots"),
+            "the message must say why: {err}"
+        );
+    }
+
+    /// The capability half, on the module that gained the read and write.
+    /// `cru.fs` is `filesystem`, and a plugin that did not declare it is
+    /// refused before its argument is even converted.
+    #[test]
+    fn the_filesystem_capability_gates_the_whole_module() {
+        let temp = TempDir::new().unwrap();
+        let lua = create_lua();
+        let root = temp.path().to_path_buf();
+        register_fs_roots_resolver(&lua, Arc::new(move |_plugin| vec![root.clone()]));
+        crate::plugin_context::enter_plugin(&lua, "declares-nothing", CapabilitySet::none());
+
+        for call in [
+            r#"cru.fs.read("x")"#,
+            r#"cru.fs.write("x", "y")"#,
+            r#"cru.fs.mkdir("x")"#,
+            r#"cru.fs.exists("x")"#,
+        ] {
+            let err = match lua.load(call).exec() {
+                Ok(()) => panic!("{call}: an ungranted plugin must be refused, not answered"),
+                Err(e) => e.to_string(),
+            };
+            assert!(
+                err.contains("did not declare") && err.contains("filesystem"),
+                "{call}: expected a `filesystem` refusal, got: {err}"
+            );
+        }
     }
 
     /// `cru.fs.remove` is a data-loss guard, not a shim. The name's meaning

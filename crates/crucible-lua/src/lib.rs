@@ -133,7 +133,7 @@ pub use discovered::{
 pub use embed::{register_embed_module, register_embed_resolver, EmbedResolver};
 pub use error::{format_lua_error, LuaError};
 pub use executor::{register_log_function, LuaExecutor};
-pub use fs::register_fs_module;
+pub use fs::{register_fs_module, register_fs_roots_resolver, FsRootsResolver};
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,
     PERMISSION_BUDGET, TURN_STAGE_BUDGET,
@@ -154,7 +154,8 @@ pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
     current_may_intercept, current_plugin_context, current_plugin_name, enter_plugin,
-    set_plugin_context, PluginContext,
+    enter_recorded_plugin, enter_recorded_plugin_without, grants_for, record_plugin_grants,
+    require_capability, set_plugin_context, PluginContext,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;

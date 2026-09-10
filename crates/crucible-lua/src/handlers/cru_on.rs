@@ -179,7 +179,7 @@ pub fn register_cru_on_api(
             // holds only what its installation granted: the gate used to read
             // a Lua global with `.unwrap_or(true)`, so it failed OPEN for
             // every daemon-loaded plugin and was forgeable besides.
-            may_intercept: context.is_none_or(|c| c.may_intercept),
+            grants: context.map(|c| c.grants),
             timeout_ms,
         });
         func_guard.insert(name.clone(), key);

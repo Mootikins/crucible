@@ -321,8 +321,9 @@ impl Server {
         };
         let plugin_loader = Arc::new(Mutex::new(
             match built_loader.and_then(|loader| {
-                // `kiln://<name>/…` paths in `cru.fs` resolve through the
-                // registry inside the daemon; the directory never reaches Lua.
+                // A plugin names a kiln; the registry resolves it inside the
+                // daemon. The same call binds the roots `cru.fs.read` and
+                // `cru.fs.write` may reach, so the two cannot drift apart.
                 loader
                     .with_kiln_path_resolver(kiln_registry.clone())?
                     // The named kiln reads and `cru.embed` reach the open

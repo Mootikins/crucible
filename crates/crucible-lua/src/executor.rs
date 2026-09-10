@@ -30,6 +30,9 @@ pub struct LuaExecutor {
     /// Parallel to `on_session_start_hooks`: whether each opted into refusing
     /// the session on failure via `{ required = true }`.
     on_session_start_required: Vec<bool>,
+    /// Parallel to `on_session_start_hooks`: the plugin that registered each
+    /// hook, or `None` for the user's own `init.lua`.
+    on_session_start_owners: Vec<Option<String>>,
     on_session_end_hooks: Vec<RegistryKey>,
     /// Parallel to `on_session_end_hooks`: the plugin that registered each
     /// hook, or `None` for the user's own `init.lua`.
@@ -57,6 +60,7 @@ impl LuaExecutor {
             current_session,
             on_session_start_hooks: Vec::new(),
             on_session_start_required: Vec::new(),
+            on_session_start_owners: Vec::new(),
             on_session_end_hooks: Vec::new(),
             on_session_end_owners: Vec::new(),
         })
@@ -74,9 +78,12 @@ impl LuaExecutor {
 
     /// Sync session start hooks from Lua environment
     pub fn sync_session_start_hooks(&mut self) -> Result<(), LuaError> {
-        use crate::hooks::{get_session_start_hooks, get_session_start_required_flags};
+        use crate::hooks::{
+            get_session_start_hooks, get_session_start_owners, get_session_start_required_flags,
+        };
         self.on_session_start_hooks = get_session_start_hooks(&self.lua)?;
         self.on_session_start_required = get_session_start_required_flags(&self.lua)?;
+        self.on_session_start_owners = get_session_start_owners(&self.lua)?;
         Ok(())
     }
 
@@ -111,10 +118,18 @@ impl LuaExecutor {
                 .unwrap_or(false);
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    if let Err(e) = self
+                    // Under the plugin that registered it, exactly as the end
+                    // path runs. A hook with no owner is the user's own
+                    // `init.lua` and carries the operator's authority; a
+                    // plugin's hook carries only what its manifest declared,
+                    // so `on_session_start` is not a way around the gate.
+                    let owner = self.on_session_start_owners.get(i).cloned().flatten();
+                    let previous = self.enter_hook_owner(owner);
+                    let result = self
                         .call_lifecycle_hook(&func, session, "session_start")
-                        .await
-                    {
+                        .await;
+                    crate::plugin_context::set_plugin_context(&self.lua, previous);
+                    if let Err(e) = result {
                         tracing::error!(required, "Session start hook failed: {}", e);
                         if required {
                             failures.push(e.to_string());
@@ -140,6 +155,22 @@ impl LuaExecutor {
                 "session_start hook(s) failed: {}",
                 failures.join("; ")
             )))
+        }
+    }
+
+    /// Install the hook owner's plugin context; answer with what it replaced,
+    /// for the caller to restore on every exit path.
+    ///
+    /// The grants come from what the loader recorded for that plugin, not from
+    /// the hook: a hook holds exactly its plugin's authority, and the owner
+    /// name is all the hook table carries.
+    fn enter_hook_owner(
+        &self,
+        owner: Option<String>,
+    ) -> Option<crate::plugin_context::PluginContext> {
+        match owner {
+            Some(name) => crate::plugin_context::enter_recorded_plugin(&self.lua, &name),
+            None => crate::plugin_context::set_plugin_context(&self.lua, None),
         }
     }
 
@@ -186,18 +217,13 @@ impl LuaExecutor {
     /// handler does. `cru.storage` refuses a call with no plugin context, so
     /// without this a plugin cannot read at session end what it stored
     /// during the session. An absent owner (the user's `init.lua`) runs with
-    /// no context. The hook may not intercept: the session is over, and the
-    /// grant is for `pre_tool_call` only.
+    /// no context.
     pub async fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
         for (i, key) in self.on_session_end_hooks.iter().enumerate() {
             let owner = self.on_session_end_owners.get(i).cloned().flatten();
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    let context = owner.map(|name| crate::plugin_context::PluginContext {
-                        name,
-                        may_intercept: false,
-                    });
-                    let previous = crate::plugin_context::set_plugin_context(&self.lua, context);
+                    let previous = self.enter_hook_owner(owner);
                     let result = self
                         .call_lifecycle_hook(&func, session, "session_end")
                         .await;
@@ -613,7 +639,11 @@ mod tests {
         .unwrap();
 
         // Register the hook as the `reflection` plugin does: inside its load.
-        let previous = crate::plugin_context::enter_plugin(executor.lua(), "reflection", false);
+        let previous = crate::plugin_context::enter_plugin(
+            executor.lua(),
+            "reflection",
+            crate::manifest::CapabilitySet::none(),
+        );
         executor
             .lua()
             .load(

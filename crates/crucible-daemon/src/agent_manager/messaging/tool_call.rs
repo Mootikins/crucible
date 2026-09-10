@@ -103,7 +103,7 @@ async fn run_pre_tool_call_handlers(
                 );
             }
             Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate })
-                if handler.may_intercept =>
+                if handler.may_intercept() =>
             {
                 debug!(
                     session_id = %stream_ctx.session_id,
@@ -127,7 +127,7 @@ async fn run_pre_tool_call_handlers(
                     terminate,
                 });
             }
-            Ok(crucible_lua::ScriptHandlerResult::Transform(val)) if handler.may_intercept => {
+            Ok(crucible_lua::ScriptHandlerResult::Transform(val)) if handler.may_intercept() => {
                 if let Some(new_args) = val.get("args") {
                     if new_args.is_object() {
                         debug!(

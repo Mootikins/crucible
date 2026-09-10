@@ -18,8 +18,8 @@ tags:
 >
 > The plugin system Crucible ships is **Luau**: plugins are directories
 > with an `init.lua` returning a spec table (tools, commands, services), hooks
-> register via `cru.on()`, and manifest capabilities are informational
-> rather than sandbox-enforced. See [[Help/Extending/Creating Plugins]] and
+> register via `cru.on()`, and manifest capabilities are enforced per CALL
+> rather than by a sandbox. See [[Help/Extending/Creating Plugins]] and
 > [[Help/Extending/Plugin Manifest]] for the real system, and
 > [[Help/Extending/Event Hooks]] for the real event set.
 
@@ -36,7 +36,7 @@ so in Lua form:
 | Priority-ordered `EventSubscription` | `cru.on(..., { priority = N })`, ascending order |
 | Lifecycle-aware registration with auto-cleanup | Plugin reload clears the plugin's handlers, tools, and services |
 | VSCode-style contribution points | The spec table (`tools`, `commands`, `services`) |
-| WASM sandbox with granted capabilities | Not built — one shared Lua VM; manifest `capabilities` are documentation only |
+| WASM sandbox with granted capabilities | Not built — one shared Lua VM. Manifest `capabilities` ARE enforced, at each `cru.*` call rather than by isolation |
 | Advice/interception system | `pre_tool_call` returning cancel / transform / handled |
 
 The unbuilt remainder — the event bus with dead-letter queues, lazy

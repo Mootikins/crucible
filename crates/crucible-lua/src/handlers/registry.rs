@@ -59,18 +59,34 @@ pub struct RuntimeHandler {
     /// without it, every reload appends another copy of every handler and the
     /// stale ones keep firing against dead state.
     pub plugin: Option<String>,
-    /// Whether this handler's plugin declared `intercept_tools`.
+    /// What the registering plugin's installation granted, or `None` for a
+    /// handler registered outside every plugin load — a user's own
+    /// `init.lua`, which carries the operator's authority.
     ///
     /// Decided at registration from the plugin's manifest, not at the call
     /// site: authorization is a property of the plugin the operator installed.
-    /// A handler without it may observe and may `cancel`; its `handled` and
-    /// transform results are refused, because `handled` returns before the
-    /// permission gate. Handlers registered outside a plugin load — a user's
-    /// own `init.lua` — are trusted, having the same authority as the config.
-    pub may_intercept: bool,
+    /// The dispatcher re-enters exactly this, so a handler firing three turns
+    /// later reaches no more than its plugin ever could.
+    pub grants: Option<crate::manifest::CapabilitySet>,
     /// What the registration asked for with `{ timeout_ms = … }`, in
     /// milliseconds. `None` takes the budget of the name it registered for.
     pub timeout_ms: Option<u64>,
+}
+
+impl RuntimeHandler {
+    /// Whether this handler may take a tool call over — return
+    /// `{ handled = true, … }` or a transform from `pre_tool_call`.
+    ///
+    /// A handler without it may observe and may `cancel`; its `handled` and
+    /// transform results are refused, because `handled` returns before the
+    /// permission gate. A handler with no grants recorded was registered
+    /// outside a plugin load and is trusted, having the same authority as the
+    /// configuration that registered it.
+    pub fn may_intercept(&self) -> bool {
+        self.grants
+            .as_ref()
+            .is_none_or(|grants| grants.holds(crate::manifest::Capability::InterceptTools))
+    }
 }
 
 impl LuaScriptHandlerRegistry {
@@ -227,7 +243,10 @@ impl LuaScriptHandlerRegistry {
                 Some(h) => (
                     h.plugin
                         .as_ref()
-                        .map(|plugin| (plugin.clone(), h.may_intercept)),
+                        .map(|plugin| crate::plugin_context::PluginContext {
+                            name: plugin.clone(),
+                            grants: h.grants.clone().unwrap_or_default(),
+                        }),
                     h.event_type.clone(),
                     h.timeout_ms,
                 ),
@@ -259,15 +278,7 @@ impl LuaScriptHandlerRegistry {
             ctx_table.set("session_id", id)?;
         }
 
-        let previous = crate::plugin_context::set_plugin_context(
-            lua,
-            context.map(
-                |(name, may_intercept)| crate::plugin_context::PluginContext {
-                    name,
-                    may_intercept,
-                },
-            ),
-        );
+        let previous = crate::plugin_context::set_plugin_context(lua, context);
         // Two mechanisms, because one is not enough. The tokio timeout ends a
         // handler that AWAITS — a sleep, an http call, a shell command — by
         // cancelling the future at an await point. It cannot end

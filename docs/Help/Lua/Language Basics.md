@@ -51,10 +51,15 @@ All built-in modules live under the `cru` namespace — the one Lua global.
 There are no standalone globals: `http`, `fs`, `shell`, `paths` and `graph`
 were removed, and referencing one is a nil-index error naming the field.
 
-Crucible adds what Lua lacks and nothing more. Reading and writing files is
-`io`'s job, joining strings is the language's, and formatting is
-`string.format` — so `cru.fs.read`/`write`/`append`/`rename`, `cru.paths.join`
-and `cru.fmt` are gone.
+Crucible adds what Lua lacks and nothing more. Joining strings is the
+language's job and formatting is `string.format`, so `cru.paths.join` and
+`cru.fmt` are gone.
+
+Reading and writing a whole file is available two ways, and a plugin should
+prefer the Crucible one. `io.open` says nothing about who is calling or where
+they may reach. `cru.fs.read` and `cru.fs.write` need the `filesystem`
+capability and are confined to the kilns, the workspace and the plugin's own
+state directory (see [[Help/Extending/Plugin Manifest]]).
 
 ```lua
 -- Canonical access
@@ -64,9 +69,13 @@ cru.log("info", "message")
 cru.json.encode(tbl)
 cru.json.decode(str)
 
--- Files are plain Lua
-local f = assert(io.open(path, "r"))
-local body = f:read("a")
+-- Whole-file read and write, declared and scoped
+local body = cru.fs.read(path)
+cru.fs.write(path, body .. "\n")
+
+-- `io` is still there for streaming and for appending
+local f = assert(io.open(path, "a"))
+f:write(line)
 f:close()
 ```
 
@@ -85,7 +94,7 @@ f:close()
 | `cru.json` | `encode(table)`, `decode(string)`, and `array(table)` (mark a table as a JSON list so an empty one encodes as `[]`, not `{}`) |
 | `cru.http` | HTTP client: `get`, `post`, `put`, `patch`, `delete`, `request` |
 | `cru.ws` | WebSocket client: `connect(url, opts?)` returning a connection object |
-| `cru.fs` | The filesystem gap Lua's `io` does not cover: `exists`, `is_file`, `is_dir`, `list`, `mkdir`, `copy`, `remove_all`. Read and write with `io`. |
+| `cru.fs` | Files: `read`, `write` (declared and scoped), plus the gap `io` does not cover — `exists`, `is_file`, `is_dir`, `list`, `mkdir`, `copy`, `remove_all`. |
 | `cru.shell` | Shell command execution |
 | `cru.oq` | Data query/transform: `parse`, `yaml`, `toml`, `toon`, `query`, `format` (JSON is `cru.json`) |
 | `cru.paths` | Directories the host owns: `config`, `workspace`, `session`, `state(plugin)`. Join with `..`. |
@@ -107,12 +116,12 @@ silently creating a `./kiln:/...` directory.
 ```lua
 local root = cru.kiln.path("notes")
 local dir  = cru.kiln.path("notes", ".crucible/proposals")
-cru.fs.mkdir(dir)
-
-local f = assert(io.open(dir .. "/idea.md", "w"))
-f:write(body)
-f:close()
+cru.fs.write(dir .. "/idea.md", body)
 ```
+
+A kiln root is one of the places `cru.fs.read` and `cru.fs.write` may reach,
+which is why this is the idiom: resolve the root by name, join the relative
+part, write.
 
 The relative part must be plain components — `..`, `.` and absolute parts
 are refused. That is a bug lint, not a boundary: a plugin builds the

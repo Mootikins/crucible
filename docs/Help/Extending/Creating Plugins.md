@@ -237,11 +237,11 @@ author: Your Name
 dependencies:
   - name: core-utils
 
-# Optional: declared capabilities — INFORMATIONAL. All plugins share one
-# Lua VM, so per-plugin module gating is not enforced; treat this as
-# documentation of what the plugin touches. Valid values: filesystem,
-# network, shell, kiln, agent, ui, config, system, websocket. An invalid
-# value fails manifest parsing and the plugin never loads.
+# Declared capabilities — ENFORCED. A call into a namespace this list does
+# not cover is refused, naming the grant to add. Valid values: filesystem,
+# network, shell, kiln, agent, ui, config, websocket, intercept_tools
+# (`system` parses and grants nothing). An invalid value fails manifest
+# parsing and the plugin never loads.
 capabilities:
   - filesystem
   - kiln
