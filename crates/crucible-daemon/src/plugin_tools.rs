@@ -16,7 +16,8 @@ use crucible_core::traits::tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };
 use crucible_lua::{
-    discovered_params_to_json_schema, json_to_lua, lua_to_json, DiscoveredCommand, DiscoveredTool,
+    discovered_params_to_json_schema, json_to_lua, lua_to_json, CommandEffect, DiscoveredCommand,
+    DiscoveredTool,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -28,6 +29,10 @@ struct PluginCallable {
     plugin: String,
     definition: ToolDefinition,
     input_hint: Option<String>,
+    /// A command's declared effect. `None` for a tool: a tool is dispatched by
+    /// an agent through the permission gate, which asks its own question, so a
+    /// tool has no button for this to describe.
+    effect: Option<CommandEffect>,
     /// The VM the function belongs to. Held alongside the function because
     /// JSON↔Lua conversion must happen in the *same* state, and a `Function`
     /// alone doesn't hand its `Lua` back.
@@ -152,6 +157,7 @@ impl PluginRegistry {
                         required_permissions: vec![],
                     },
                     input_hint: None,
+                    effect: None,
                     lua: lua.clone(),
                     func: func.clone(),
                 },
@@ -199,6 +205,7 @@ impl PluginRegistry {
                         required_permissions: vec![],
                     },
                     input_hint: command.input_hint.clone(),
+                    effect: Some(command.effect),
                     lua: lua.clone(),
                     func: func.clone(),
                 },
@@ -223,6 +230,10 @@ impl PluginRegistry {
     }
 
     /// Commands as JSON for RPC clients, sorted by name.
+    ///
+    /// `parameters` is the JSON Schema a caller generates an argument dialog
+    /// from; `effect` is what tells that caller whether pressing the button is
+    /// safe to do without asking first.
     pub fn commands_json(&self) -> Vec<serde_json::Value> {
         let commands = self.commands.read().expect("plugin commands lock poisoned");
         let mut out: Vec<serde_json::Value> = commands
@@ -234,6 +245,16 @@ impl PluginRegistry {
                     "description": entry.definition.description,
                     "hint": entry.input_hint,
                     "parameters": entry.definition.parameters,
+                    // Declared by the plugin, verified by nothing. A consumer
+                    // must present it as a claim and a permission layer must
+                    // treat it as a hint about what to ask — never as
+                    // permission to skip asking. See `CommandEffect`.
+                    //
+                    // A string, never null: only commands are in this map, so
+                    // the `None` here is unreachable, and answering `write`
+                    // rather than null keeps a client from having to invent
+                    // its own answer for a value the wire says nothing about.
+                    "effect": entry.effect.unwrap_or(CommandEffect::Write).as_str(),
                 })
             })
             .collect();
@@ -402,6 +423,7 @@ mod tests {
             description: format!("{name} description"),
             params: vec![],
             input_hint: Some("[args]".to_string()),
+            effect: CommandEffect::Write,
             source_path: "test".to_string(),
             handler_fn: name.to_string(),
         }

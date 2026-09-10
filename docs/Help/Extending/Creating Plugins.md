@@ -544,15 +544,21 @@ raises rather than returning nil.
 
 ## Providing Commands
 
-Commands are slash-commands that users can invoke in the TUI:
+Commands are the primitives a *person* invokes: slash-commands in the TUI, and
+`POST /api/plugins/command` in the web.
 
 ```lua
 commands = {
     tasks = {
         desc = "Manage tasks",
         hint = "[add|list|done] <args>",
+        effect = "write",
+        params = {
+            { name = "action", type = "string", desc = "add, list or done" },
+            { name = "text", type = "string", desc = "Task text", optional = true },
+        },
         fn = function(args)
-            return "tasks: " .. (args and args.input or "list")
+            return "tasks: " .. (args and args.action or "list")
         end,
     },
 }
@@ -561,6 +567,46 @@ commands = {
 A command's `fn` receives the argument table and returns any
 JSON-representable value; the TUI shows it as a system message. Commands
 surface as `/name` with autocomplete (tagged `(plugin)`).
+
+### `hint` and `params` are both worth declaring
+
+They answer different questions and neither replaces the other.
+
+`hint` is one line of free text describing the argument line. It is for a
+person: no client parses it, and no client can — `"[add|list|done] <args>"`
+does not say that there are two arguments. (The TUI's slash autocomplete shows
+`desc`, not `hint`, so today the hint reaches the wire and no screen.)
+
+`params` is the same declaration a tool uses, with the same type vocabulary
+(see [[Help/Plugins/Lua Runtime API]] for the grammar). It becomes the JSON
+Schema an agent sees and the **argument dialog the web generates** — one
+control per parameter, drawn from the declared type, for a command the dialog
+code has never seen. A command with no `params` still runs; it just gets a
+dialog with no fields.
+
+A declared type the host cannot read refuses the load and names the command
+and the parameter, exactly as it does for a tool.
+
+### `effect` — read or write
+
+`effect = "read"` says the command changes nothing a user could lose. It may
+compute, it may cache, and it may publish derived state — `kanban`'s republish
+re-derives the board from the ticket files and is a read. It may not write a
+note, a file, or a setting.
+
+`effect = "write"` is everything else, and is what a command gets when it
+declares nothing: an undeclared command is unknown, and unknown costs a
+question rather than a file. Declare `read` when it is one, so a client can
+offer the command without a confirmation step.
+
+Two things to be honest about:
+
+- **Nothing verifies the claim.** The plugin declares it about itself. A client
+  must show it as a declaration, and a permission layer must treat it as a hint
+  about what to *ask*, never as permission to skip asking.
+- **A misspelt effect refuses the load.** `effect = "raed"` is an error naming
+  the command, not a silent fallback to `write` — the author who wrote it meant
+  `read`, and answering the opposite in silence is the worst of the options.
 
 ## Providing Views
 

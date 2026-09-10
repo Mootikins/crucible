@@ -260,10 +260,24 @@ return {
 
     -- Commands, not just tools: `plugin.run_command` is what a frontend can
     -- reach over RPC, and the web board is a frontend. Tools are for agents.
+    --
+    -- These two are the plugin API's pair of shapes. `kanban` re-derives the
+    -- board from the ticket files and publishes it: it changes nothing a user
+    -- could lose, so it is a `read` even though something observable moves.
+    -- `kanban_move` rewrites a ticket's `status:` line, so it is a `write` and
+    -- a UI must not press it for you without asking.
+    --
+    -- Both keep their `hint`: it is one line of free text for a person, and a
+    -- dialog is generated from `params` instead.
     commands = {
         kanban = {
             desc = "Publish the ticket board so clients redraw",
             hint = "[folder]",
+            effect = "read",
+            params = {
+                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
+                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
+            },
             fn = function(args: any)
                 local t = if type(args) == "table" then args else {}
                 M.republish(t.folder, t.kiln)
@@ -273,6 +287,13 @@ return {
         kanban_move = {
             desc = "Move a ticket to another column",
             hint = "<file> <column>",
+            effect = "write",
+            params = {
+                { name = "file", type = "string", desc = "Ticket file name" },
+                { name = "to", type = "string", desc = "Target column" },
+                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
+                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
+            },
             fn = M.move_command,
         },
     },

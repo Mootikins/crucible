@@ -12,7 +12,7 @@ use crate::agent_manager::AgentManager;
 use crate::observe::events::LogEvent;
 use crate::session_manager::SessionManager;
 use crucible_core::session::SessionType;
-use crucible_lua::{DiscoveredCommand, PublicationRegistry};
+use crucible_lua::{CommandEffect, DiscoveredCommand, PublicationRegistry};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -67,6 +67,7 @@ fn install_titler(
             description: "scripted titler".to_string(),
             params: Vec::new(),
             input_hint: None,
+            effect: CommandEffect::Write,
             source_path: "test".to_string(),
             handler_fn: "fn".to_string(),
         }],

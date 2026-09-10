@@ -1,4 +1,5 @@
 use super::{LifecycleError, LifecycleResult};
+use crate::command_effect::CommandEffect;
 use crate::discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };
@@ -102,17 +103,25 @@ pub fn load_plugin_spec(init_path: &Path) -> LifecycleResult<Option<PluginSpec>>
 
 /// Refuse a parameter whose declared type the host cannot read.
 ///
-/// The type text is not decoration: it becomes the JSON Schema an agent sees
-/// and the Luau declaration a plugin is checked against. An unreadable
-/// declaration used to become `"type": "string"` in the schema and `any` in
-/// the stub — two different wrong answers, neither of which the author was
-/// told about. Now the plugin does not load, and the message names the tool,
-/// the parameter and the text.
-fn validate_declared_types(tool: &str, params: &[DiscoveredParam]) -> LifecycleResult<()> {
+/// The type text is not decoration: it becomes the JSON Schema an agent sees,
+/// the Luau declaration a plugin is checked against, and the control a
+/// generated argument dialog draws. An unreadable declaration used to become
+/// `"type": "string"` in the schema and `any` in the stub — two different
+/// wrong answers, neither of which the author was told about. Now the plugin
+/// does not load, and the message names the declaration, the parameter and the
+/// text.
+///
+/// `kind` is `tool` or `command`. Both reach the same schema, so both are
+/// checked; only the tool half used to be.
+fn validate_declared_types(
+    kind: &str,
+    name: &str,
+    params: &[DiscoveredParam],
+) -> LifecycleResult<()> {
     for param in params {
         if let Err(error) = crate::signature::LuaType::parse(&param.param_type) {
             return Err(LifecycleError::InvalidDeclaration(format!(
-                "tool '{tool}', parameter '{}': {error}. Declare one of: \
+                "{kind} '{name}', parameter '{}': {error}. Declare one of: \
                  string, number, boolean, any, a name, `T?`, `T[]`, \
                  `array<T>`, `table<K, V>`, `T|U`, or `{{ field: T }}`",
                 param.name
@@ -120,6 +129,38 @@ fn validate_declared_types(tool: &str, params: &[DiscoveredParam]) -> LifecycleR
         }
     }
     Ok(())
+}
+
+/// Read a command's declared effect, or refuse the load.
+///
+/// Three cases, and only one of them is a fallback:
+///
+/// - declared and readable — that effect;
+/// - declared and unreadable (`effect = "raed"`) — **refused**, exactly as an
+///   unreadable parameter type is. Falling back would answer `Write` to an
+///   author who was trying to say `read`, and say nothing;
+/// - absent — [`CommandEffect::Write`]. Every command written before this
+///   field existed lands here, and the conservative answer costs a question
+///   while the permissive one costs a file. `CommandEffect` derives no
+///   `Default`, so this is the single place that choice is made.
+fn command_effect(command: &str, def: &mlua::Table) -> LifecycleResult<CommandEffect> {
+    match def.get::<Value>("effect") {
+        Ok(Value::String(text)) => {
+            let text = text.to_string_lossy();
+            CommandEffect::parse(&text).ok_or_else(|| {
+                LifecycleError::InvalidDeclaration(format!(
+                    "command '{command}': cannot read the effect '{text}'. Declare one of: {}",
+                    CommandEffect::declarable()
+                ))
+            })
+        }
+        Ok(Value::Nil) | Err(_) => Ok(CommandEffect::Write),
+        Ok(other) => Err(LifecycleError::InvalidDeclaration(format!(
+            "command '{command}': `effect` must be a string, got {}. Declare one of: {}",
+            other.type_name(),
+            CommandEffect::declarable()
+        ))),
+    }
 }
 
 /// Extract `DiscoveredParam` entries from a Lua params table.
@@ -205,7 +246,7 @@ pub(crate) fn load_plugin_spec_from_source(
                 let desc = tool_def.get::<String>("desc").unwrap_or_default();
 
                 let params = extract_params_from_table(&tool_def);
-                validate_declared_types(&tool_name, &params)?;
+                validate_declared_types("tool", &tool_name, &params)?;
 
                 spec.tools.push(DiscoveredTool {
                     name: tool_name,
@@ -225,14 +266,20 @@ pub(crate) fn load_plugin_spec_from_source(
                 let desc = cmd_def.get::<String>("desc").unwrap_or_default();
                 let hint = cmd_def.get::<String>("hint").ok();
 
-                // Extract params if present
+                // Extract params if present. A command's `params` and its
+                // `hint` are not alternatives: the hint is one line of free
+                // text for a person to read, the params are the typed
+                // declaration a client generates a dialog from.
                 let params = extract_params_from_table(&cmd_def);
+                validate_declared_types("command", &cmd_name, &params)?;
+                let effect = command_effect(&cmd_name, &cmd_def)?;
 
                 spec.commands.push(DiscoveredCommand {
                     name: cmd_name.clone(),
                     description: desc,
                     params,
                     input_hint: hint,
+                    effect,
                     source_path: source_path_str.clone(),
                     handler_fn: cmd_name,
                 });

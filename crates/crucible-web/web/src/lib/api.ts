@@ -535,13 +535,26 @@ export interface PluginCommand {
   description?: string;
   hint?: string;
   /**
-   * The declared parameters, from the same `ToolDefinition` a tool uses.
+   * The declared parameters, as the JSON Schema `signature.rs` emits.
    *
-   * Opaque today: it crosses the wire as untyped JSON, so a caller reads it by
-   * hand. Shaping it like the JSON Schema `signature.rs` already emits is what
-   * would let an argument dialog be generated rather than written per command.
+   * Read it with `commandFields` in `@/lib/command-form`, which turns it into
+   * the controls a dialog draws. It stays `unknown` here because the schema is
+   * open-ended and this file hand-writes its types with no codegen behind
+   * them — narrowing happens once, in the reader, rather than by a cast here.
    */
   parameters?: unknown;
+  /**
+   * Whether running this changes state a user could lose: `'read'` or
+   * `'write'`.
+   *
+   * **Declared by the plugin and verified by nothing.** Present it as a claim
+   * the plugin makes — a `read` badge that reads as a guarantee teaches a user
+   * to trust a promise nothing keeps. A command that declares nothing arrives
+   * as `'write'`, because an undeclared command is unknown and unknown must
+   * cost a question rather than a file. See
+   * `crates/crucible-lua/src/command_effect.rs`.
+   */
+  effect?: 'read' | 'write';
 }
 
 /**

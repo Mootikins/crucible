@@ -257,6 +257,55 @@ describe('PluginBlockPanel', () => {
     expect(container.textContent).toContain('demo');
   });
 
+  /**
+   * `getPluginCommands` had zero callers: the daemon knew every executable
+   * primitive a plugin declared and no surface offered one. This is the gate
+   * on the consumer — the panel lists them, and pressing one opens the
+   * GENERATED dialog rather than a hand-written form.
+   */
+  it('offers each declared command, with the effect the plugin declared', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const body = url.includes('/api/plugins/commands')
+          ? {
+              commands: [
+                {
+                  plugin: 'kanban',
+                  name: 'kanban_move',
+                  description: 'Move a ticket',
+                  effect: 'write',
+                  parameters: {
+                    type: 'object',
+                    properties: { file: { type: 'string', description: 'Ticket file' } },
+                    required: ['file'],
+                  },
+                },
+                { plugin: 'graph', name: 'graph_neighborhood', effect: 'read' },
+              ],
+            }
+          : { publications: {} };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    const { PluginBlockPanel } = await import('../PluginBlockPanel');
+    const { container, getByText } = render(() => <PluginBlockPanel />);
+
+    await waitFor(() => expect(container.textContent).toContain('kanban_move'));
+    expect(container.textContent).toContain('graph_neighborhood');
+    expect(container.textContent).toContain('write');
+    expect(container.textContent).toContain('read');
+
+    fireEvent.click(getByText('kanban_move'));
+    await waitFor(() =>
+      expect(container.querySelector('#plugin-command-field-file')).toBeTruthy(),
+    );
+  });
+
   it('says so when nothing has been published, rather than rendering blank', async () => {
     vi.stubGlobal(
       'fetch',

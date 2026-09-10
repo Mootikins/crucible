@@ -2,7 +2,8 @@ import { Component, For, Show, createResource, createSignal } from 'solid-js';
 import { PanelShell } from '../PanelShell';
 import { PanelHeader } from '../PanelHeader';
 import { PluginBlock } from './PluginBlock';
-import { getPluginPublications } from '@/lib/api';
+import { PluginCommandDialog } from './PluginCommandDialog';
+import { getPluginCommands, getPluginPublications, type PluginCommand } from '@/lib/api';
 
 /**
  * A plugin block as a dockable panel, rather than as a block inside a note.
@@ -34,6 +35,22 @@ async function publishedBlocks(): Promise<Array<{ plugin: string; key: string }>
 }
 
 /**
+ * Every declared command, grouped by plugin through the sort.
+ *
+ * `getPluginCommands` had no caller at all until this one: the daemon has
+ * always known what a plugin can be asked to do, and nothing carried it to a
+ * place a person could press. This is that place — the panel host that already
+ * exists, rather than a new surface, because the *placement* is the expensive
+ * half of offering a primitive as a button and this one is already paid for.
+ */
+async function offeredCommands(): Promise<PluginCommand[]> {
+  const commands = await getPluginCommands();
+  return [...commands].sort((a, b) =>
+    `${a.plugin}/${a.name}`.localeCompare(`${b.plugin}/${b.name}`),
+  );
+}
+
+/**
  * A publication key is `<plugin>:<block>` by convention (kanban publishes
  * `kanban:board`). Split on the first colon so a panel can address the block;
  * a key with no colon addresses a block of the same name.
@@ -46,6 +63,8 @@ function blockNameOf(key: string): string {
 export const PluginBlockPanel: Component = () => {
   const [selected, setSelected] = createSignal<{ plugin: string; key: string } | null>(null);
   const [available] = createResource(publishedBlocks);
+  const [commands] = createResource(offeredCommands);
+  const [running, setRunning] = createSignal<PluginCommand | null>(null);
 
   return (
     <PanelShell class="overflow-hidden">
@@ -98,7 +117,44 @@ export const PluginBlockPanel: Component = () => {
             </div>
           )}
         </Show>
+
+        <Show when={!selected() && (commands() ?? []).length > 0}>
+          <div class="mt-4 border-t border-hairline pt-3">
+            <div class="mb-2 text-xs uppercase tracking-wide text-muted">Commands</div>
+            <div class="flex flex-col gap-1">
+              <For each={commands() ?? []}>
+                {(command) => (
+                  <button
+                    type="button"
+                    class="flex items-center gap-2 text-left rounded border border-hairline
+                           px-2 py-1.5 text-sm hover:border-primary transition-colors"
+                    onClick={() => setRunning(command)}
+                  >
+                    <span class="min-w-0 flex-1 truncate">
+                      <span class="text-muted">{command.plugin} / </span>
+                      <span class="font-mono">{command.name}</span>
+                    </span>
+                    {/* Declared by the plugin, verified by nothing — the title
+                        says so, because a badge that reads as a guarantee is
+                        the failure mode the plan names. */}
+                    <span
+                      class={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase ${
+                        command.effect === 'read'
+                          ? 'text-muted border-hairline'
+                          : 'text-attention border-attention/50'
+                      }`}
+                      title="The plugin declares this about itself. Nothing verifies it."
+                    >
+                      {command.effect ?? 'write'}
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
       </div>
+      <PluginCommandDialog command={running()} onClose={() => setRunning(null)} />
     </PanelShell>
   );
 };

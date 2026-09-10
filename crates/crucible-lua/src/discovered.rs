@@ -13,6 +13,7 @@
 //! with `cru.on`. A plugin is the single import mechanism; these are the
 //! shapes its declarations land in.
 
+use crate::command_effect::CommandEffect;
 use crate::types::{LuaTool, ToolParam};
 
 /// Discovered tool from Luau source
@@ -57,6 +58,12 @@ pub struct DiscoveredCommand {
     pub params: Vec<DiscoveredParam>,
     /// Hint shown after command name in UI
     pub input_hint: Option<String>,
+    /// Whether running this changes state a user could lose.
+    ///
+    /// Declared by the plugin and verified by nothing — see
+    /// [`CommandEffect`] for what the two values mean and why an absent
+    /// declaration becomes [`CommandEffect::Write`].
+    pub effect: CommandEffect,
     /// Path to source file containing the handler
     pub source_path: String,
     /// Name of the handler function in the source

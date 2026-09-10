@@ -192,10 +192,25 @@ return {
     -- A COMMAND, not only a tool. `POST /api/plugins/command` reaches a
     -- command; it cannot reach a tool, and a tool is for an agent. A block in
     -- the browser is a frontend, so the command is the half that matters here.
+    --
+    -- `params` and `hint` are both here on purpose. The hint is one line of
+    -- free text for a person; the params are the typed declaration a web
+    -- dialog is GENERATED from, and no dialog can be drawn from
+    -- "<path> [depth] [limit]".
+    --
+    -- `effect = "read"` says this walk changes nothing a user could lose. It
+    -- is a claim this plugin makes about itself and nothing verifies it — see
+    -- `crates/crucible-lua/src/command_effect.rs`.
     commands = {
         graph_neighborhood = {
             desc = "Notes within N hops of a note, grouped by hop distance",
             hint = "<path> [depth] [limit]",
+            effect = "read",
+            params = {
+                { name = "path", type = "string", desc = "Kiln-relative note path" },
+                { name = "depth", type = "number", desc = "Hops to walk, 1-4", optional = true },
+                { name = "limit", type = "number", desc = "Most notes to return", optional = true },
+            },
             fn = M.neighborhood_command,
         },
     },

@@ -210,6 +210,65 @@ them separately or this step's done-when slips.
 a command the dialog code has never seen, **and** a read is distinguishable
 from a write without reading the plugin's source.
 
+### What landed
+
+**The marker is `effect = "read" | "write"`, per command.** Not a capability:
+step 4 rejects a read/write axis in the *capability* vocabulary, and this is
+not one — a capability is a grant, and this is a property of one callable.
+`CommandEffect` (`crucible-lua/src/command_effect.rs`) carries it,
+`commands_json` ships it, `PluginCommand.effect` receives it.
+
+Three decisions inside that shape, each of which could have gone the other way:
+
+- **Absent means `write`.** Every command that predates the field lands there.
+  Defaulting to `read` would advertise an undeclared write as safe to press,
+  costing a file; defaulting to `write` costs a question. The type derives no
+  `Default`, so the choice is made once, where the absence is seen.
+- **A misspelt effect refuses the load**, as a misspelt type does. A fallback
+  would answer `write` to an author who wrote `raed` meaning `read`.
+- **`read` means "changes nothing a user could lose"**, not "touches nothing".
+  `kanban`'s republish re-derives the board and publishes it: a read. That line
+  is the one worth writing down, because the other reading makes every command
+  that emits an event a write.
+
+**A command's declared types were never validated.** `validate_declared_types`
+ran on tools only, so a command's `type = "array<"` became `any` in the schema
+in silence. Both are checked now.
+
+**The dialog is generated, and `web/src/lib/command-form.ts` is the whole
+generator**: JSON Schema in, one of five controls per parameter out, coerced
+values on the way back. `PluginCommandDialog` draws it and knows no command
+name. `PluginBlockPanel` is the placement — the panel host step 0 built,
+rather than a new surface. The test that proves generation invents a command
+(`spectrometer_calibrate`) that exists nowhere else in the tree.
+
+**Web only, deliberately.** The TUI reaches commands through slash
+autocomplete, which carries `(name, description)` and not even `hint` today;
+widening that tuple and its stories is a separate change, and a typed dialog
+has no home on a command line a person is already typing arguments into.
+
+### The verdict the dialog produced: the type vocabulary has no enum
+
+Asked to draw `kanban_move`, the generator gives `to` a free-text box. `to` is
+a column name, and its whole domain is the four columns that board has. **The
+Luau type grammar has no string-literal type**, so `"todo"|"doing"` cannot be
+declared, `to_json_schema` never emits `enum`, and no work in the dialog can
+produce a dropdown. The same gap costs a note-path picker (`path` is `string`),
+a default value, and a range.
+
+This matters more than the dialog does. A generated form is only as good as
+what the declaration can say, and the first parameter anyone would want a
+control for is the first one the vocabulary cannot describe. Widening
+`LuaType` — a literal type, and `enum` in the emitted schema — is the change
+that makes generated forms worth having, and it is small: one primary in the
+grammar, one arm in `to_json_schema`, one control here.
+
+**A permission prompt is still absent**, as budgeted. `PluginCommandDialog`
+names the place: a `write` invoked from a button is the contract's item 7, the
+gate belongs on the daemon side of `POST /api/plugins/command`, and the badge
+this ships is a *declaration* — shown with a title saying nothing verifies it,
+because step 4's warning about labels without gates applies to this label too.
+
 ## Step 4 — path scoping, not a read/write split
 
 **Research answered this, and the answer is: do not build the mode axis.** It

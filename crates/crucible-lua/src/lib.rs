@@ -45,6 +45,7 @@
 
 pub mod auth_plugin;
 pub mod check;
+pub mod command_effect;
 mod context;
 mod context_attach;
 pub mod discovered;
@@ -111,6 +112,7 @@ pub mod theme_wire;
 pub mod ui_geometry;
 
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
+pub use command_effect::CommandEffect;
 pub use config::{
     begin_boot_store, end_boot_phase, evaluate_config_source, get_app_config,
     get_app_config_provenance, get_layout, get_theme_config, get_ui_geometry, in_boot_phase,

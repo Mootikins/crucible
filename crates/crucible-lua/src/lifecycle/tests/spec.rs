@@ -1,5 +1,6 @@
 use super::{create_spec_plugin, create_test_plugin};
-use crate::lifecycle::{load_plugin_spec_from_source, PluginManager};
+use crate::command_effect::CommandEffect;
+use crate::lifecycle::{load_plugin_spec_from_source, LifecycleError, PluginManager};
 use crate::manifest::{Capability, PluginState};
 use std::path::Path;
 use tempfile::TempDir;
@@ -204,6 +205,148 @@ return {
     assert_eq!(spec.commands[0].name, "daily");
     assert_eq!(spec.commands[0].description, "Create daily note");
     assert_eq!(spec.commands[0].input_hint, Some("[title]".to_string()));
+}
+
+/// A declared `params` list and a free-text `hint` are not alternatives.
+///
+/// The hint is one line of free text for a person; the params are the typed
+/// declaration a dialog is generated from. A plugin that gains one must not
+/// lose the other.
+#[test]
+fn test_command_carries_params_and_hint_together() {
+    let source = r#"
+return {
+    name = "cmd-test",
+    version = "1.0.0",
+    commands = {
+        daily = {
+            desc = "Create daily note",
+            hint = "[title]",
+            effect = "write",
+            params = {
+                { name = "title", type = "string", desc = "Note title", optional = true },
+            },
+        },
+    },
+}
+"#;
+    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(spec.commands[0].input_hint, Some("[title]".to_string()));
+    assert_eq!(spec.commands[0].params.len(), 1);
+    assert_eq!(spec.commands[0].params[0].name, "title");
+    assert!(spec.commands[0].params[0].optional);
+    assert_eq!(spec.commands[0].effect, CommandEffect::Write);
+}
+
+#[test]
+fn test_command_effect_is_read_when_declared_read() {
+    let source = r#"
+return {
+    name = "cmd-test",
+    version = "1.0.0",
+    commands = {
+        board = { desc = "Read the board", effect = "read" },
+    },
+}
+"#;
+    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(spec.commands[0].effect, CommandEffect::Read);
+}
+
+/// An undeclared command is unknown, and unknown must cost a question rather
+/// than a file. See `command_effect.rs` for the whole argument.
+#[test]
+fn test_command_effect_defaults_to_write_when_absent() {
+    let source = r#"
+return {
+    name = "cmd-test",
+    version = "1.0.0",
+    commands = {
+        legacy = { desc = "Declared before effects existed" },
+    },
+}
+"#;
+    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(spec.commands[0].effect, CommandEffect::Write);
+}
+
+/// A misspelt effect must refuse the load, exactly as a misspelt type does.
+///
+/// Falling back to the default would turn `effect = "raed"` into a write and
+/// tell the author nothing — and the author who wrote it wanted a read, so the
+/// silent answer is the opposite of the intent.
+#[test]
+fn test_command_effect_unreadable_refuses_the_load() {
+    let source = r#"
+return {
+    name = "cmd-test",
+    version = "1.0.0",
+    commands = {
+        board = { desc = "Read the board", effect = "raed" },
+    },
+}
+"#;
+    let error = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+        .expect_err("an unreadable effect must refuse the load");
+
+    let message = error.to_string();
+    assert!(
+        matches!(error, LifecycleError::InvalidDeclaration(_)),
+        "expected InvalidDeclaration, got {error:?}"
+    );
+    assert!(
+        message.contains("board") && message.contains("raed") && message.contains("read"),
+        "the message must name the command, the bad text and the options: {message}"
+    );
+}
+
+/// A command's declared types are checked, exactly as a tool's are.
+///
+/// They became the same JSON Schema and now generate the same dialog, so an
+/// unreadable one is the same wrong answer on either surface. Only the tool
+/// half was validated.
+///
+/// `array<` and not a misspelt `strig`: a bare name is a *legal* declaration
+/// (`LuaType::Named`, a type the plugin declares elsewhere), so a typo of a
+/// primitive is readable text that means something else. That gap is real and
+/// is the parser's, not this check's — it is the same on the tool side.
+#[test]
+fn test_command_param_types_are_validated() {
+    let source = r#"
+return {
+    name = "cmd-test",
+    version = "1.0.0",
+    commands = {
+        board = {
+            desc = "Read the board",
+            params = {
+                { name = "folder", type = "array<" },
+            },
+        },
+    },
+}
+"#;
+    let error = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+        .expect_err("an unreadable command parameter type must refuse the load");
+
+    assert!(
+        matches!(error, LifecycleError::InvalidDeclaration(_)),
+        "expected InvalidDeclaration, got {error:?}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("board") && message.contains("folder"),
+        "the message must name the command and the parameter: {message}"
+    );
 }
 
 #[test]
