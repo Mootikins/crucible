@@ -28,9 +28,8 @@
 mod types;
 
 pub use types::{
-    validate_output, ChildLedgerRef, Comment, CommentAuthor, ComposedHunk, ContextStrategy,
-    GateBlock, HunkId, Integrity, Interval, InvalidSessionId, Ledger, LineRange, OutputValidation,
-    PhysicalRoot, RecordingMode, ReviewState, RootBase, RootInterval, RootStatus, Session,
-    SessionAgent, SessionId, SessionState, SessionSummary, SessionType, Skip, SkipKind, TreeSha,
-    Verdict,
+    ChildLedgerRef, Comment, CommentAuthor, ComposedHunk, ContextStrategy, GateBlock, HunkId,
+    Integrity, Interval, InvalidSessionId, Ledger, LineRange, PhysicalRoot, RecordingMode,
+    ReviewState, RootBase, RootInterval, RootStatus, Session, SessionAgent, SessionId,
+    SessionState, SessionSummary, SessionType, Skip, SkipKind, TreeSha, Verdict,
 };

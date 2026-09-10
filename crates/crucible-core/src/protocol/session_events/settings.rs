@@ -62,14 +62,6 @@ pub enum SettingsPayload {
         #[serde(default)]
         context_strategy: String,
     },
-    OutputValidationChanged {
-        #[serde(default)]
-        output_validation: String,
-    },
-    ValidationRetriesChanged {
-        #[serde(default)]
-        validation_retries: u32,
-    },
 }
 
 impl SettingsPayload {

@@ -10,7 +10,7 @@
 
 use anyhow::Result;
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::SessionAgent;
 use crucible_daemon::{DaemonClient, Server};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -116,8 +116,6 @@ fn mock_agent_config() -> SessionAgent {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,

@@ -13,17 +13,13 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 const mockSetters = vi.hoisted(() => ({
   setContextBudget: vi.fn(),
   setAutocompactThreshold: vi.fn(),
-  setValidationRetries: vi.fn(),
   setContextStrategy: vi.fn(),
-  setOutputValidation: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({
   getContextBudget: vi.fn().mockResolvedValue(111),
   getAutocompactThreshold: vi.fn().mockResolvedValue(0.75),
-  getValidationRetries: vi.fn().mockResolvedValue(5),
   getContextStrategy: vi.fn().mockResolvedValue('recent'),
-  getOutputValidation: vi.fn().mockResolvedValue('strict'),
   ...mockSetters,
 }));
 
@@ -60,12 +56,8 @@ describe('AdvancedSessionSettings', () => {
     expect((screen.getByTestId('autocompact-threshold-input') as HTMLInputElement).value).toBe(
       '0.75',
     );
-    expect((screen.getByTestId('validation-retries-input') as HTMLInputElement).value).toBe('5');
     expect((screen.getByTestId('context-strategy-select') as HTMLSelectElement).value).toBe(
       'recent',
-    );
-    expect((screen.getByTestId('output-validation-select') as HTMLSelectElement).value).toBe(
-      'strict',
     );
   });
 
@@ -75,7 +67,6 @@ describe('AdvancedSessionSettings', () => {
 
     const cases: [string, keyof typeof mockSetters, string, number][] = [
       ['context-budget-input', 'setContextBudget', '8000', 8000],
-      ['validation-retries-input', 'setValidationRetries', '3', 3],
     ];
 
     for (const [testId, setter, typed, expected] of cases) {
@@ -99,18 +90,7 @@ describe('AdvancedSessionSettings', () => {
     await waitFor(() => expect(mockSetters.setContextBudget).toHaveBeenCalledWith('s1', null));
   });
 
-  it('leaves an empty validation-retries alone, because the knob is not nullable', async () => {
-    renderSection();
-    await waitFor(() => screen.getByTestId('validation-retries-input'));
-
-    const input = screen.getByTestId('validation-retries-input');
-    fireEvent.input(input, { target: { value: '' } });
-    fireEvent.blur(input);
-
-    expect(mockSetters.setValidationRetries).not.toHaveBeenCalled();
-  });
-
-  it('sends the enum knobs by their string spelling', async () => {
+  it('sends the enum knob by its string spelling', async () => {
     renderSection();
     await waitFor(() => screen.getByTestId('context-strategy-select'));
 
@@ -119,13 +99,6 @@ describe('AdvancedSessionSettings', () => {
     });
     await waitFor(() =>
       expect(mockSetters.setContextStrategy).toHaveBeenCalledWith('s1', 'truncate'),
-    );
-
-    fireEvent.change(screen.getByTestId('output-validation-select'), {
-      target: { value: 'lenient' },
-    });
-    await waitFor(() =>
-      expect(mockSetters.setOutputValidation).toHaveBeenCalledWith('s1', 'lenient'),
     );
   });
 

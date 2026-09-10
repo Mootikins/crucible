@@ -363,15 +363,9 @@ impl AgentManager {
             session_dir: session.storage_path(self.session_manager.sessions_root()),
             whitelists_dir: self.whitelists_dir(),
             agent_stream_config: {
-                let (lua_validators, plugin_lua) = match self.lua_validators() {
-                    Some((r, l)) => (Some(r), Some(l)),
-                    None => (None, None),
-                };
                 AgentStreamConfig::from_session_agent(
                     &agent_config,
                     TurnEnvironment {
-                        lua_validators,
-                        plugin_lua,
                         plugin_handlers: self.plugin_handlers(),
                         daemon_permissions: self.daemon_permissions(),
                         isolation: self.isolation(),
@@ -420,7 +414,6 @@ impl AgentManager {
                 stream_config,
                 &mut accumulated_response,
                 false,
-                0,
             );
 
             let (status, error) = tokio::select! {

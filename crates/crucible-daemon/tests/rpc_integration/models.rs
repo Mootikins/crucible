@@ -7,7 +7,7 @@ use super::server::TestServer;
 
 #[tokio::test]
 async fn test_session_switch_model() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -53,8 +53,6 @@ async fn test_session_switch_model() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };
@@ -86,7 +84,7 @@ async fn test_session_switch_model() {
 
 #[tokio::test]
 async fn test_daemon_agent_handle_switch_model() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
     use crucible_core::traits::chat::SessionKnobs;
     use crucible_daemon::DaemonAgentHandle;
 
@@ -135,8 +133,6 @@ async fn test_daemon_agent_handle_switch_model() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };
@@ -180,7 +176,7 @@ async fn test_daemon_agent_handle_switch_model() {
 /// both ride this RPC.
 #[tokio::test]
 async fn test_session_set_mode_round_trip() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -222,8 +218,6 @@ async fn test_session_set_mode_round_trip() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };
@@ -279,7 +273,7 @@ async fn test_session_set_mode_round_trip() {
 /// mode cosmetic for every daemon-backed session).
 #[tokio::test]
 async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
     use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::DaemonAgentHandle;
 
@@ -324,8 +318,6 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };

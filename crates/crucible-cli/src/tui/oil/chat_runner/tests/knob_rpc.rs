@@ -74,17 +74,6 @@ impl SessionKnobs for KnobRecordingAgent {
         self.calls.push("set_context_strategy");
         Ok(())
     }
-    async fn set_output_validation(
-        &mut self,
-        _validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        self.calls.push("set_output_validation");
-        Ok(())
-    }
-    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
-        self.calls.push("set_validation_retries");
-        Ok(())
-    }
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         self.calls.push("set_precognition");
         Ok(())
@@ -116,14 +105,6 @@ impl SessionKnobs for KnobRecordingAgent {
 
     fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
         crucible_core::session::ContextStrategy::default()
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &crucible_core::session::OutputValidation::None
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        3
     }
 
     fn get_autocompact_threshold(&self) -> Option<f32> {
@@ -170,8 +151,6 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("model=gpt-4o", "switch_model" ; "model")]
 #[test_case("contextbudget=128000", "set_context_budget" ; "context budget")]
 #[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
-#[test_case("outputvalidation=json", "set_output_validation" ; "output validation")]
-#[test_case("validationretries=2", "set_validation_retries" ; "validation retries")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
 #[test_case("precognition.results=8", "set_precognition_results" ; "precognition results")]
 #[test_case("autocompact_threshold=0.8", "set_autocompact_threshold" ; "autocompact threshold")]
@@ -331,25 +310,6 @@ impl SessionKnobs for ModeListingAgent {
 
     fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
         crucible_core::session::ContextStrategy::default()
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        _validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_output_validation".into()))
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &crucible_core::session::OutputValidation::None
-    }
-
-    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_validation_retries".into()))
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        3
     }
 
     async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {

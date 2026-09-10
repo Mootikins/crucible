@@ -146,10 +146,6 @@ rpc_methods! {
     SessionGetContextBudget = "session.get_context_budget",
     SessionSetContextStrategy = "session.set_context_strategy",
     SessionGetContextStrategy = "session.get_context_strategy",
-    SessionSetOutputValidation = "session.set_output_validation",
-    SessionGetOutputValidation = "session.get_output_validation",
-    SessionSetValidationRetries = "session.set_validation_retries",
-    SessionGetValidationRetries = "session.get_validation_retries",
     SessionSetPrecognition = "session.set_precognition",
     SessionGetPrecognition = "session.get_precognition",
     SessionSetPrecognitionResults = "session.set_precognition_results",
@@ -354,8 +350,6 @@ impl RpcDispatcher {
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
             RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
-            | RpcMethod::SessionSetOutputValidation
-            | RpcMethod::SessionSetValidationRetries
             | RpcMethod::SessionSetPrecognition
             | RpcMethod::SessionSetPrecognitionResults
             | RpcMethod::SessionSetAutocompactThreshold => {
@@ -364,8 +358,6 @@ impl RpcDispatcher {
             RpcMethod::SessionGetMode
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
-            | RpcMethod::SessionGetOutputValidation
-            | RpcMethod::SessionGetValidationRetries
             | RpcMethod::SessionGetPrecognition
             | RpcMethod::SessionGetPrecognitionResults
             | RpcMethod::SessionGetAutocompactThreshold => {
@@ -1319,8 +1311,6 @@ impl RpcDispatcher {
         let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
-            "session.set_output_validation" => handle_session_set_output_validation,
-            "session.set_validation_retries" => handle_session_set_validation_retries,
             "session.set_precognition" => handle_session_set_precognition,
             "session.set_precognition_results" => handle_session_set_precognition_results,
             "session.set_autocompact_threshold" => handle_session_set_autocompact_threshold,
@@ -1336,8 +1326,6 @@ impl RpcDispatcher {
             "session.get_mode" => handle_session_get_mode,
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
-            "session.get_output_validation" => handle_session_get_output_validation,
-            "session.get_validation_retries" => handle_session_get_validation_retries,
             "session.get_precognition" => handle_session_get_precognition,
             "session.get_precognition_results" => handle_session_get_precognition_results,
             "session.get_autocompact_threshold" => handle_session_get_autocompact_threshold,

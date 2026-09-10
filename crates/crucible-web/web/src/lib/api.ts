@@ -1331,30 +1331,6 @@ export async function setAutocompactThreshold(
   );
 }
 
-/** Get how many times a failed output validation is retried. */
-export async function getValidationRetries(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ validation_retries: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/validation-retries`,
-      { errorMessage: 'Failed to get validation retries' },
-    )
-  ).validation_retries;
-}
-
-/** Set how many times a failed output validation is retried. Required, not nullable. */
-export async function setValidationRetries(sessionId: string, retries: number): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/validation-retries`,
-    {
-      errorMessage: 'Failed to set validation retries',
-      parseAs: 'none',
-      ...jsonRequest({ validation_retries: retries }),
-    },
-  );
-}
-
 /** Get the context-assembly strategy, by its string spelling. */
 export async function getContextStrategy(sessionId: string): Promise<string | null> {
   return (
@@ -1381,30 +1357,6 @@ export async function setContextStrategy(sessionId: string, strategy: string): P
       errorMessage: 'Failed to set context strategy',
       parseAs: 'none',
       ...jsonRequest({ context_strategy: strategy }),
-    },
-  );
-}
-
-/** Get the output-validation mode, by its string spelling. */
-export async function getOutputValidation(sessionId: string): Promise<string | null> {
-  return (
-    await request<{ output_validation: string | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/output-validation`,
-      { errorMessage: 'Failed to get output validation' },
-    )
-  ).output_validation;
-}
-
-/** Set the output-validation mode. The daemon validates the name; see above. */
-export async function setOutputValidation(sessionId: string, validation: string): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/output-validation`,
-    {
-      errorMessage: 'Failed to set output validation',
-      parseAs: 'none',
-      ...jsonRequest({ output_validation: validation }),
     },
   );
 }

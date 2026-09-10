@@ -5,9 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::config::{
-    default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
-};
+use super::config::{default_precognition_results, ContextStrategy};
 use crate::serde_helpers::default_true;
 
 /// Agent configuration bound to a session.
@@ -81,14 +79,6 @@ pub struct SessionAgent {
     #[serde(default)]
     pub context_strategy: ContextStrategy,
 
-    /// Output validation mode for agent text responses.
-    #[serde(default)]
-    pub output_validation: OutputValidation,
-
-    /// Maximum retries when output validation fails (default: 3).
-    #[serde(default = "default_validation_retries")]
-    pub validation_retries: u32,
-
     /// Trigger auto-compaction when estimated message tokens exceed
     /// `context_budget * autocompact_threshold`. `None` uses the default
     /// (0.95). Set to `Some(0.0)` (or surface "off" in user-facing
@@ -146,8 +136,6 @@ impl SessionAgent {
             precognition_results: default_precognition_results(),
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            output_validation: OutputValidation::default(),
-            validation_retries: default_validation_retries(),
             autocompact_threshold: None,
             tool_policy: None,
             mode: None,
@@ -264,8 +252,6 @@ impl SessionAgent {
             precognition_results: base.precognition_results,
             context_budget: base.context_budget,
             context_strategy: base.context_strategy.clone(),
-            output_validation: base.output_validation.clone(),
-            validation_retries: base.validation_retries,
             autocompact_threshold: base.autocompact_threshold,
             // `mode` is deliberately left alone. Modes are an open set declared
             // in Lua (`cru.modes.<name> = ...`) whose permission stance this
@@ -346,8 +332,6 @@ impl SessionAgent {
             precognition_results: default_precognition_results(),
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            output_validation: OutputValidation::default(),
-            validation_retries: default_validation_retries(),
             autocompact_threshold: None,
             tool_policy: None,
             mode: None,

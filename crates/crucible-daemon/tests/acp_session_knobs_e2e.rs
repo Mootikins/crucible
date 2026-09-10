@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::{AgentManager, AgentManagerParams, BackgroundJobManager, KilnManager};
@@ -94,8 +94,6 @@ fn acp_agent() -> SessionAgent {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -249,9 +247,9 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
 
     let attempts = [
         (
-            "output_validation",
+            "autocompact_threshold",
             h.agent_manager
-                .set_output_validation(id, crucible_core::session::OutputValidation::Json, None)
+                .set_autocompact_threshold(id, Some(0.8), None)
                 .await,
         ),
         (

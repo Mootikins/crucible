@@ -97,25 +97,6 @@ impl SessionKnobs for RpcCountingAgent {
         crucible_core::session::ContextStrategy::default()
     }
 
-    async fn set_output_validation(
-        &mut self,
-        _validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_output_validation".into()))
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &crucible_core::session::OutputValidation::None
-    }
-
-    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_validation_retries".into()))
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        3
-    }
-
     async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_autocompact_threshold".into()))
     }

@@ -12,7 +12,7 @@ mod review;
 mod session_json;
 
 use crucible_core::config::{BackendType, LlmConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -102,8 +102,6 @@ fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
         precognition_results: 5,
         context_budget,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     }

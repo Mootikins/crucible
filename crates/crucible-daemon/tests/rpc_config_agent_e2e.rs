@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;
 use std::path::PathBuf;
@@ -123,8 +123,6 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };
@@ -228,8 +226,6 @@ async fn test_configure_agent_sets_agent() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };
@@ -357,18 +353,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         client.session_set_context_strategy(&sid, "sliding_window"),
         client.session_get_context_strategy(&sid),
         Some("sliding_window".to_string())
-    );
-    round_trip!(
-        "output_validation",
-        client.session_set_output_validation(&sid, "json"),
-        client.session_get_output_validation(&sid),
-        Some("json".to_string())
-    );
-    round_trip!(
-        "validation_retries",
-        client.session_set_validation_retries(&sid, 5),
-        client.session_get_validation_retries(&sid),
-        Some(5)
     );
     round_trip!(
         "autocompact_threshold",

@@ -52,38 +52,3 @@ pub(crate) async fn get_context_strategy(
         .daemon_err()?;
     Ok(Json(ContextStrategyResponse { context_strategy }))
 }
-
-#[derive(Debug, Serialize)]
-pub(crate) struct OutputValidationResponse {
-    output_validation: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetOutputValidationRequest {
-    output_validation: String,
-}
-
-pub(crate) async fn set_output_validation(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetOutputValidationRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_output_validation(&id, &req.output_validation)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_output_validation(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<OutputValidationResponse>, WebError> {
-    let output_validation = state
-        .daemon
-        .session_get_output_validation(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(OutputValidationResponse { output_validation }))
-}

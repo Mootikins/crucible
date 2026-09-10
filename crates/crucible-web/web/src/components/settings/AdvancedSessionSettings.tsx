@@ -1,8 +1,7 @@
 // src/components/settings/AdvancedSessionSettings.tsx
 //
 // The session config knobs the daemon advertises that do not belong in the
-// model panel: context budget, autocompact threshold, validation retries,
-// context strategy and output validation.
+// model panel: context budget, autocompact threshold and context strategy.
 //
 // Its own file rather than a tenth section inside SettingsPanel.tsx, which was
 // already 961 lines — the same reason the Rust routes became
@@ -20,13 +19,9 @@ import {
   getAutocompactThreshold,
   getContextBudget,
   getContextStrategy,
-  getOutputValidation,
-  getValidationRetries,
   setAutocompactThreshold,
   setContextBudget,
   setContextStrategy,
-  setOutputValidation,
-  setValidationRetries,
 } from '@/lib/api';
 
 import { SettingRow, SettingsSectionState } from './primitives';
@@ -35,7 +30,7 @@ const inputClass =
   'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
 
 /**
- * The strategy and validation names offered in the dropdowns.
+ * The strategy names offered in the dropdown.
  *
  * A convenience list, NOT a validator: the daemon parses the string and answers
  * 422 for one it does not know, so nothing here rejects a value. A `<select>`
@@ -44,7 +39,6 @@ const inputClass =
  * already in it.
  */
 const CONTEXT_STRATEGIES = ['full', 'recent', 'truncate', 'summarize'];
-const OUTPUT_VALIDATIONS = ['none', 'lenient', 'strict'];
 
 /** Empty input → `null`, meaning "restore the daemon's default". */
 function parseOptionalInt(raw: string): number | null | undefined {
@@ -59,9 +53,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
 
   const [contextBudget, setContextBudgetSig] = createSignal('');
   const [autocompact, setAutocompactSig] = createSignal('');
-  const [validationRetries, setValidationRetriesSig] = createSignal('');
   const [contextStrategy, setContextStrategySig] = createSignal('');
-  const [outputValidation, setOutputValidationSig] = createSignal('');
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -78,20 +70,16 @@ export const AdvancedSessionSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, threshold, retries, strategy, validation] =
+      const [budget, threshold, strategy] =
         await Promise.all([
           getContextBudget(s.id),
           getAutocompactThreshold(s.id),
-          getValidationRetries(s.id),
           getContextStrategy(s.id),
-          getOutputValidation(s.id),
         ]);
       const text = (v: number | null) => (v === null ? '' : String(v));
       setContextBudgetSig(text(budget));
       setAutocompactSig(threshold === null ? '' : String(threshold));
-      setValidationRetriesSig(text(retries));
       setContextStrategySig(strategy ?? '');
-      setOutputValidationSig(validation ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load advanced settings');
     } finally {
@@ -175,31 +163,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
         />
       </SettingRow>
 
-      <SettingRow label="Validation Retries" description="Retries after a failed validation">
-        <input
-          type="number"
-          min={0}
-          value={validationRetries()}
-          data-testid="validation-retries-input"
-          onInput={(e) => setValidationRetriesSig((e.target as HTMLInputElement).value)}
-          onBlur={async (e) => {
-            const raw = (e.target as HTMLInputElement).value.trim();
-            const s = session.currentSession();
-            // Required, not nullable: the daemon's setter takes a bare u32, so
-            // an empty field has nothing to send.
-            if (!s || raw === '') return;
-            const val = parseInt(raw, 10);
-            if (Number.isNaN(val)) return;
-            try {
-              await setValidationRetries(s.id, val);
-            } catch (err) {
-              fail('validation retries')(err);
-            }
-          }}
-          class={`${inputClass} w-20 text-right`}
-        />
-      </SettingRow>
-
       <SettingRow label="Context Strategy" description="How history is assembled">
         <select
           value={contextStrategy()}
@@ -218,29 +181,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
           class={`cru-select ${inputClass} w-32`}
         >
           {options(CONTEXT_STRATEGIES, contextStrategy()).map((name) => (
-            <option value={name}>{name}</option>
-          ))}
-        </select>
-      </SettingRow>
-
-      <SettingRow label="Output Validation" description="Strictness of response checks">
-        <select
-          value={outputValidation()}
-          data-testid="output-validation-select"
-          onChange={async (e) => {
-            const val = (e.target as HTMLSelectElement).value;
-            setOutputValidationSig(val);
-            const s = session.currentSession();
-            if (!s) return;
-            try {
-              await setOutputValidation(s.id, val);
-            } catch (err) {
-              fail('output validation')(err);
-            }
-          }}
-          class={`${inputClass} w-32`}
-        >
-          {options(OUTPUT_VALIDATIONS, outputValidation()).map((name) => (
             <option value={name}>{name}</option>
           ))}
         </select>

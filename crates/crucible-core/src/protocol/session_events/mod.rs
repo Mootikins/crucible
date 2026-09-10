@@ -167,9 +167,7 @@ impl Group {
             | "precognition_results_changed"
             | "context_budget_changed"
             | "autocompact_threshold_changed"
-            | "context_strategy_changed"
-            | "output_validation_changed"
-            | "validation_retries_changed" => Self::Settings,
+            | "context_strategy_changed" => Self::Settings,
             // Job (7)
             "delegation_spawned"
             | "delegation_completed"

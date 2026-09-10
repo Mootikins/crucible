@@ -198,7 +198,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Context Strategies** `P1` — `ContextStrategy::{Truncate, SlidingWindow, Summarize}` · `crucible-core`, `crucible-daemon`
   - **Gets you:** the session's strategy and budget reach the handle, so an over-budget conversation is really trimmed before the request goes out. `:set context_strategy=sliding_window` changes what the model sees.
   - **Proof:** `crates/crucible-daemon/src/agent_factory.rs`::session_generation_and_context_settings_reach_the_agent_handle — the factory chained only `with_deferrable_tools`/`with_plugin_tools`/`with_modes`, so `context_budget` was permanently `None` and `enforce_context_budget` returned `NoChange` on every request; strategy behaviour itself in `provider/genai_handle.rs` `mod tests`. _Caveat: Summarize still elides to the static `[summary placeholder]`. The LLM recap the prose promises is untested at every level — `summarize_via_backend` has zero test references._
-- [ ] **Lua Context Strategies** `P1` — `ContextStrategy::Lua { name }` registered via `cru.context.register_strategy`, mirroring the shipped `OutputValidation::Lua { name }` seam exactly. Lets a plugin compact into a **kiln note** — which joins the graph and is retrievable by precognition later — instead of the static `[summary placeholder]` at `genai_handle.rs:629`. A strategy callback may not trigger a turn on its own session · `crucible-core`, `crucible-lua`, `crucible-daemon`
+- [ ] **Lua Context Strategies** `P1` — `ContextStrategy::Lua { name }` registered via `cru.context.register_strategy`. The `OutputValidation::Lua { name }` seam it was going to mirror is gone (removed 2026-09-10), so this one builds the registry rather than copying it. Lets a plugin compact into a **kiln note** — which joins the graph and is retrievable by precognition later — instead of the static `[summary placeholder]` at `genai_handle.rs:629`. A strategy callback may not trigger a turn on its own session · `crucible-core`, `crucible-lua`, `crucible-daemon`
 - [x] **Lua Context Operations** `P1` — `cru.context.{usage, messages, remove, estimate_tokens}` · `crucible-lua`, `crucible-core`, `crucible-daemon`
   - **Gets you:** `cru.context.remove(id, {type="last", n=2})` actually shortens the conversation path the next turn is built from; `usage` returns a populated table.
   - **Proof:** `crates/crucible-daemon/src/session_bridge.rs`::remove_messages_last_n_rewinds_tree (seeds 3 nodes, removes 2, asserts the tree path), `::remove_messages_indices_truncates_from_start`, `::context_usage_returns_expected_shape`. The tree is authoritative for the prompt (`agent_manager/messaging/stream.rs:258-260`). `compact` is the one member of this module that does nothing — see **Auto-Compaction**.
@@ -224,17 +224,18 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ### Output Validation
 
-- [x] **Output Validation** `P1` — `validate_output` runs after each assistant turn in `execute_agent_stream`; `OutputValidation::None` (default) is a zero-cost early return · `crucible-daemon`, `crucible-core`
-  - **Gets you:** a response failing validation with no retries left ends the turn with `ended.reason == "error: output validation exhausted retries"`, and the default setting lets anything through untouched.
-  - **Proof:** `crates/crucible-daemon/src/agent_manager/tests/messaging.rs`::test_validate_retry_zero_retries_emits_exhausted_ended (asserts the event body) and `::test_validate_retry_none_validation_passes_freely`
-- [-] **Validation Retry Re-entry** `P1` — a failure with retries remaining injects a regenerate-prompt and re-enters the stream · `crucible-daemon`
-  - **Gets you:** unproven. Nothing asserts a second turn is ever issued with the regenerate prompt, so nothing shows the loop terminates.
-  - **Proof:** _none — every validation test in the repo sets `validation_retries = 0`, so `ValidationOutcome::Retry` is never constructed under test and the recursive re-entry is never taken via the validation branch._
-- [x] **Lua Validators** `P1` — `OutputValidation::Lua { name }` registered via `cru.context.register_validator(name, fn)`, enabled per session via `cru.session.set_output_validation` · `crucible-core`, `crucible-lua`, `crucible-daemon`
-  - **Gets you:** a validator you register from Lua is actually invoked against the assistant's text and its verdict changes the turn's outcome. An unregistered name or an unbound runtime degrades to validation failure, not a panic.
-  - **Proof:** `crates/crucible-daemon/src/agent_manager/tests/messaging.rs`::test_lua_validator_failure_triggers_retry_and_exhausts (registers a real closure in a real Lua VM), `::test_lua_validator_pass_no_retry`, `::test_lua_validator_unregistered_name_errors`; registry mechanics in `crates/crucible-lua/src/context.rs`::register_validator_stores_callback_and_runs
-
-## AI Chat & Agents
+- [~] **Output validation, removed 2026-09-10** — `OutputValidation`,
+  `validate_output`, `validation_retries`, the stream loop's validate-retry
+  branch, `cru.context.register_validator`, `cru.session.set_output_validation`,
+  the four `session.*_output_validation` / `*_validation_retries` RPCs, the two
+  HTTP routes and the web controls are all gone.
+  - **Why:** the retry re-entry was never proven — every test in the repo set
+    `validation_retries = 0`, so `ValidationOutcome::Retry` was never
+    constructed under test and the recursive re-entry was never taken. The
+    knob's default was `None`, so on a normal session it governed nothing, and
+    `validation_retries` was a parameter of a setting nobody turned on.
+  - **If it comes back**, it belongs to a request or a task, not to a session:
+    a caller that wants JSON back asks for JSON on that call.
 
 ### Conversation & Sessions
 

@@ -23,13 +23,12 @@ use crucible_core::config::{
 };
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
-use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
+use crucible_core::session::{ContextStrategy, SessionAgent};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::types::{AcpKnob, SessionKnob};
 use crucible_lua::{
-    execute_permission_hooks, LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHookResult,
-    PermissionRequest,
+    execute_permission_hooks, LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest,
 };
 use dashmap::DashMap;
 use mlua::Lua;
@@ -389,16 +388,10 @@ pub struct AgentManager {
     context_config: Option<crucible_core::config::ContextConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
-    /// Lua validator registry + plugin `Lua` handle. Populated once at
-    /// daemon startup via [`AgentManager::set_lua_validators`] after the
-    /// plugin loader has finished initializing. `OnceLock` keeps the
-    /// hot validation path lock-free; tests and isolated managers leave
-    /// it empty and `OutputValidation::Lua` surfaces as a validation
-    /// failure with a clear reason instead of panicking.
-    lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
     /// Plugin `cru.on` handler registry + the plugin `Lua` handle.
-    /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
-    /// isolated managers, where plugin hooks simply don't fire.
+    /// Bound once at daemon startup, after the plugin loader has finished
+    /// initializing. Empty in tests and isolated managers, where plugin hooks
+    /// simply don't fire.
     plugin_handlers: std::sync::OnceLock<PluginHandlers>,
     /// `cru.permissions.on_request` hooks from the daemon VM — the only VM
     /// that runs Lua files, so the only place they can be registered.
@@ -526,7 +519,6 @@ impl AgentManager {
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
             card_roots: params.card_roots,
-            lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
             daemon_permissions: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
@@ -580,24 +572,6 @@ impl AgentManager {
 
     pub(crate) fn agent_factory_override(&self) -> Option<Arc<AgentFactoryOverride>> {
         self.agent_factory_override.get().cloned()
-    }
-
-    /// Bind the plugin loader's validator registry + `Lua` handle.
-    ///
-    /// Called once during daemon startup after the plugin loader has
-    /// initialized. Subsequent calls are silently ignored (`OnceLock`
-    /// semantics) so reload paths can re-call without panicking; the
-    /// registry itself is shared by `Arc` and stays live across reloads.
-    pub fn set_lua_validators(&self, registry: Arc<LuaValidatorRegistry>, lua: Arc<Lua>) {
-        let _ = self.lua_validators.set((registry, lua));
-    }
-
-    /// Snapshot of `(registry, lua)` for the agent stream loop. `None`
-    /// when no plugin loader has bound validators (test contexts).
-    pub(crate) fn lua_validators(&self) -> Option<(Arc<LuaValidatorRegistry>, Arc<Lua>)> {
-        self.lua_validators
-            .get()
-            .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
     }
 
     /// Bind the plugin loader's `cru.on` registry + `Lua` handle, so

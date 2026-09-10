@@ -47,6 +47,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **Output validation is gone, with its retry loop and its Lua surface.** The
+  session knobs `output_validation` and `validation_retries`, the
+  `OutputValidation` enum, `validate_output`, the validate-retry branch in
+  `execute_agent_stream`, `cru.context.register_validator`,
+  `cru.session.set_output_validation`, the four `session.*` RPCs, the
+  `PUT`/`GET /api/session/{id}/config/{output-validation,validation-retries}`
+  routes, the web controls and the `:set outputvalidation` / `:set
+  validationretries` keys are all removed.
+
+  The default was `OutputValidation::None`, so on a normal session neither knob
+  governed anything, and `validation_retries` was a parameter of a setting
+  nobody turned on. The retry re-entry was never proven either: every test in
+  the repo set `validation_retries = 0`, so `ValidationOutcome::Retry` was
+  never constructed under test. Validation belongs to a request, not to a
+  session — a caller that wants JSON back asks for JSON on that call.
+
+
 - **The thinking budget is gone, not deprecated.** A cap on reasoning tokens
   truncates a current model mid-thought, and the model's own default is what
   we want, so the whole knob is deleted: the `llm.thinking_budget` config key,

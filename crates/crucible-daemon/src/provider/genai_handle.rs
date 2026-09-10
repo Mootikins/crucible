@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use crucible_core::session::{ContextStrategy, OutputValidation};
+use crucible_core::session::ContextStrategy;
 use crucible_core::traits::chat::{
     AgentHandle, ChatError, ChatResult, ChatToolCall, ChatToolResult, SessionKnobs,
 };
@@ -401,8 +401,6 @@ pub struct GenaiAgentHandle {
     max_tool_depth: usize,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
-    output_validation: OutputValidation,
-    validation_retries: u32,
     autocompact_threshold: Option<f32>,
     /// Tool names eligible for progressive disclosure. The daemon's agent
     /// factory populates this with the gateway (user MCP) tool names; kiln
@@ -780,8 +778,6 @@ impl GenaiAgentHandle {
             max_tool_depth: usize::MAX,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
             autocompact_threshold: None,
             deferrable_tool_names: std::collections::HashSet::new(),
             plugin_tool_names: std::collections::HashSet::new(),
@@ -1515,27 +1511,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     fn get_context_strategy(&self) -> ContextStrategy {
         self.context_strategy.clone()
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        self.output_validation = validation;
-        Ok(())
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &self.output_validation
-    }
-
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
-        self.validation_retries = retries;
-        Ok(())
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        self.validation_retries
     }
 
     async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {

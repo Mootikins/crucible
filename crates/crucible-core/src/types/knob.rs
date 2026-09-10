@@ -43,10 +43,6 @@ pub enum SessionKnob {
     ContextBudget,
     /// How context is assembled when it does not fit.
     ContextStrategy,
-    /// What the turn's output is checked against.
-    OutputValidation,
-    /// How many times a failed validation is retried.
-    ValidationRetries,
     /// The fraction of the window that triggers a compaction.
     AutocompactThreshold,
     /// Whether the kiln is searched before the first message.
@@ -172,8 +168,6 @@ impl SessionKnob {
         Self::Mode,
         Self::ContextBudget,
         Self::ContextStrategy,
-        Self::OutputValidation,
-        Self::ValidationRetries,
         Self::AutocompactThreshold,
         Self::Precognition,
         Self::PrecognitionResults,
@@ -184,8 +178,6 @@ impl SessionKnob {
         match self {
             Self::ContextBudget => "context_budget",
             Self::ContextStrategy => "context_strategy",
-            Self::OutputValidation => "output_validation",
-            Self::ValidationRetries => "validation_retries",
             Self::AutocompactThreshold => "autocompact_threshold",
             Self::Precognition => "precognition",
             Self::PrecognitionResults => "precognition_results",
@@ -207,9 +199,6 @@ impl SessionKnob {
             Self::ContextBudget | Self::ContextStrategy | Self::AutocompactThreshold => {
                 AcpKnob::Absent
             }
-
-            // Validation runs over a turn the daemon drives.
-            Self::OutputValidation | Self::ValidationRetries => AcpKnob::Absent,
 
             // Retrieval is the daemon's, and it reaches an external agent as
             // injected prompt text. An ACP session uses it exactly as an

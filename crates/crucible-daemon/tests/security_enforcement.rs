@@ -10,7 +10,7 @@
 
 use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::config::{BackendType, DelegationConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{StopReason, TurnEvent};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
@@ -64,8 +64,6 @@ fn internal_agent() -> SessionAgent {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         mode: None,
         tool_policy: None,

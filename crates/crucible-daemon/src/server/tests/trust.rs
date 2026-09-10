@@ -358,8 +358,6 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: Default::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };
@@ -450,8 +448,6 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: Default::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };

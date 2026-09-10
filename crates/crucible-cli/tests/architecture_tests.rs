@@ -387,10 +387,8 @@ const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
     ("autocompact_threshold", "autocompact-threshold"),
     ("context_budget", "context-budget"),
     ("context_strategy", "context-strategy"),
-    ("output_validation", "output-validation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition/results"),
-    ("validation_retries", "validation-retries"),
     // Not a Crucible knob: the settings the external agent advertised for
     // itself. One route serves both directions — GET lists them, POST sets one
     // — because the value belongs to the agent and is read back from its list.
@@ -508,10 +506,8 @@ const TUI_SET_KEYS: &[(&str, &str)] = &[
     ("autocompact_threshold", "autocompactthreshold"),
     ("context_budget", "contextbudget"),
     ("context_strategy", "contextstrategy"),
-    ("output_validation", "outputvalidation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition.results"),
-    ("validation_retries", "validationretries"),
 ];
 
 /// Knobs the TUI cannot set at all. REMOVE entries as keys land; never add.

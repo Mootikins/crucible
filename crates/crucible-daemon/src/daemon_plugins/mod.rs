@@ -28,15 +28,15 @@ use crate::plugin_tools::PluginRegistry;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_attach, register_context_module, register_context_validators,
-    register_cru_on_api, register_isolation_module, register_oq_module, register_paths_module,
-    register_publish_module, register_schedule_module, register_sessions_module,
-    register_shell_module, register_status_module, register_storage_module,
-    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_ui_module, register_ui_module_with_api, register_vault_module, register_ws_module,
-    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
-    LuaScriptHandlerRegistry, LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager,
-    PluginShellPolicy, PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
+    register_context_attach, register_context_module, register_cru_on_api,
+    register_isolation_module, register_oq_module, register_paths_module, register_publish_module,
+    register_schedule_module, register_sessions_module, register_shell_module,
+    register_status_module, register_storage_module, register_storage_module_with_store,
+    register_tools_module, register_tools_module_with_api, register_ui_module,
+    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
+    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
+    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
+    PublicationRegistry, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -147,11 +147,9 @@ pub struct DaemonPluginLoader {
     ///
     /// Plugins call `cru.context.register_validator(name, fn)` which inserts
     /// a `RegistryKey` into this map; the agent stream loop dispatches
-    /// validations by name without re-entering Lua's globals table.
-    validator_registry: Arc<LuaValidatorRegistry>,
     /// Handlers registered by plugins via `cru.on(event, opts, fn)`.
     ///
-    /// Paired with [`Self::plugin_lua`] the same way `validator_registry` is:
+    /// Paired with [`Self::plugin_lua`]:
     /// the handler bodies are `RegistryKey`s into *this* loader's Lua state,
     /// so dispatching them requires both halves. Plugin hooks live here rather
     /// than in the per-session registry because plugins are loaded once, at
@@ -307,16 +305,16 @@ impl DaemonPluginLoader {
             ),
         )?;
 
-        let plugin_manager = PluginManager::new();
+        // `cru.context` must exist from init, not only after
+        // `upgrade_with_sessions` mounts the daemon-backed methods. The stub
+        // carries the pure half (`estimate_tokens`) and answers "no daemon
+        // connected" for the rest, and `register_context_module` mounts OVER
+        // this table rather than replacing it. Without this the namespace is
+        // absent on a loader that never upgrades, which
+        // `the_plugin_vm_exposes_exactly_the_declared_namespaces` catches.
+        reg("context", crucible_lua::register_context_module_stub(lua))?;
 
-        // Validator registry is created up front so plugins can register
-        // validators during init — even before `upgrade_with_sessions`
-        // wires the daemon-backed `cru.context.*` methods. The same Arc
-        // is shared with `AgentManager` so the stream loop can dispatch
-        // by name without re-entering Lua's symbol table.
-        let validator_registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(lua, Arc::clone(&validator_registry))
-            .map_err(|e| anyhow::anyhow!("context validators: {e}"))?;
+        let plugin_manager = PluginManager::new();
 
         // `cru.on` must exist on *this* VM. Registering it only on the
         // per-session and `lua.init_session` runtimes left it nil for plugins,
@@ -368,7 +366,6 @@ impl DaemonPluginLoader {
             modes,
             permission_hooks,
             permission_functions,
-            validator_registry,
             handler_registry,
             plugin_config,
             plugin_registry: Arc::new(PluginRegistry::new()),
@@ -613,15 +610,6 @@ impl DaemonPluginLoader {
     /// stale.
     pub fn plugin_registry(&self) -> Arc<PluginRegistry> {
         Arc::clone(&self.plugin_registry)
-    }
-
-    /// Shared registry of Lua-defined output validators.
-    ///
-    /// Hand this `Arc` to `AgentManager::set_lua_validators` together with
-    /// [`Self::plugin_lua`] so the agent stream loop can resolve
-    /// `OutputValidation::Lua { name }` against plugin-registered functions.
-    pub fn validator_registry(&self) -> Arc<LuaValidatorRegistry> {
-        Arc::clone(&self.validator_registry)
     }
 
     /// The mode store this VM writes.

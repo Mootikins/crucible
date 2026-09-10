@@ -72,20 +72,6 @@ pub struct SessionSetContextStrategyRequest {
     pub context_strategy: String,
 }
 
-/// Request for `session.set_output_validation`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetOutputValidationRequest {
-    pub session_id: String,
-    pub output_validation: String,
-}
-
-/// Request for `session.set_validation_retries`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetValidationRetriesRequest {
-    pub session_id: String,
-    pub validation_retries: u32,
-}
-
 /// Request for `session.set_autocompact_threshold`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetAutocompactThresholdRequest {
@@ -607,56 +593,6 @@ impl DaemonClient {
             session_id,
             "context_strategy",
             |v| v.as_str().map(String::from),
-        )
-        .await
-    }
-
-    pub async fn session_set_output_validation(
-        &self,
-        session_id: &str,
-        validation: &str,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_output_validation",
-            SessionSetOutputValidationRequest {
-                session_id: session_id.to_string(),
-                output_validation: validation.to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_output_validation(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option(
-            "session.get_output_validation",
-            session_id,
-            "output_validation",
-            |v| v.as_str().map(String::from),
-        )
-        .await
-    }
-
-    pub async fn session_set_validation_retries(
-        &self,
-        session_id: &str,
-        retries: u32,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_validation_retries",
-            SessionSetValidationRetriesRequest {
-                session_id: session_id.to_string(),
-                validation_retries: retries,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_validation_retries(&self, session_id: &str) -> Result<Option<u32>> {
-        self.get_session_option(
-            "session.get_validation_retries",
-            session_id,
-            "validation_retries",
-            |v| v.as_u64().map(|n| n as u32),
         )
         .await
     }

@@ -48,7 +48,6 @@ impl AgentManager {
             permission_config: _, // daemon config
             card_roots: _,       // daemon config
             plugin_loader: _,    // shared service
-            lua_validators: _,   // startup-bound OnceLock
             plugin_handlers: _,  // startup-bound OnceLock
             daemon_permissions: _, // startup-bound OnceLock; one registry for the process
             isolation: _,        // startup-bound OnceLock

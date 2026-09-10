@@ -349,7 +349,7 @@ field the old plain table exposed (`session.id`, `session.state`,
   `configure_agent`, `send_message`, `cancel`, `pause`, `resume`,
   `end_session`, `interaction_respond`, `subscribe`, `unsubscribe`,
   `send_and_collect`, `inject`, `messages`, `fork`, `cache_stats`, `complete`,
-  `set_output_validation`, `undo`, `can_undo`, `undo_depth`, `undo_history`,
+  `undo`, `can_undo`, `undo_depth`, `undo_history`,
   `review_list_hunks`, `review_set_state`, `review_comment`,
   `review_resolve_comment`.
 - On the *current session's* handle (`cru.session.current()`), the live config
@@ -839,21 +839,6 @@ Returns `(true, nil)` when queued, `(false, reason)` when dropped. Dropping is n
 - **Duplicate key** — `opts.key` deduplicates for the whole session (surviving drains), so a handler firing on every tool call attaches once.
 - **Budget exhausted** — a cumulative 2000-character budget per session, spent permanently. Deliberately tight: every attached character is re-sent on each subsequent LLM call.
 - **Empty content.**
-
-### cru.context.register_validator(name, fn)
-
-Register a named output validator. `fn` receives the agent's text response and returns `true`, `false`, or `(false, reason)`. A validator runs when a session agent's `output_validation` is set to `lua:<name>` — via `cru.session.set_output_validation(session_id, "lua:<name>")` (which also accepts the table form `{ type = "lua", name = "<name>" }`) or the `session.set_output_validation` RPC; on failure the reason is fed back to the agent for retry (`validation_retries`, default 3). A non-boolean or missing first return value counts as a failure with a descriptive reason, as does naming a validator that was never registered.
-
-```lua
-cru.context.register_validator("has_sources", function(text)
-  if text:match("%[%[") then return true end
-  return false, "response cites no notes"
-end)
-```
-
-Registered at plugin load, before the daemon-backed `cru.context` methods are wired — so registering validators from a plugin's `init.lua` works.
-
-## Rate Limiting
 
 ### cru.ratelimit.new(opts)
 

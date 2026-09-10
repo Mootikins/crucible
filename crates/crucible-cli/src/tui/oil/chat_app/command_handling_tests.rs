@@ -164,7 +164,6 @@ fn set_then_query_round_trips() {
 // Invalid values surface a warning and do NOT emit a daemon sync.
 #[test_case("contextbudget=abc" ; "non-numeric budget")]
 #[test_case("contextstrategy=nonsense" ; "unknown strategy")]
-#[test_case("validationretries=-1" ; "negative retries")]
 fn set_invalid_value_warns_and_no_send(body: &str) {
     let mut app = app();
     let action = run_set(&mut app, body);

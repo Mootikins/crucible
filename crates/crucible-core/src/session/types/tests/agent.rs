@@ -1,7 +1,5 @@
 use super::super::agent::SessionAgent;
-use super::super::config::{
-    default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
-};
+use super::super::config::{default_precognition_results, ContextStrategy};
 use crate::config::BackendType;
 use std::collections::HashMap;
 
@@ -25,8 +23,6 @@ fn test_session_agent_serialization() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -66,8 +62,6 @@ fn test_session_agent_typed_provider_serialization() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -112,8 +106,6 @@ fn test_session_agent_typed_provider_round_trip() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -151,8 +143,6 @@ fn test_session_agent_with_capabilities() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -184,8 +174,6 @@ fn test_session_agent_with_agent_description() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -234,8 +222,6 @@ fn test_session_agent_with_delegation_config() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -310,8 +296,6 @@ fn test_session_agent_round_trip_with_all_fields() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,

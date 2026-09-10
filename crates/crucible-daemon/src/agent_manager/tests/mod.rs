@@ -484,7 +484,7 @@ impl ReactorTestHarness {
     }
 
     /// Re-run `configure_agent` with a non-default `SessionAgent` (e.g. a
-    /// custom `output_validation`). Safe to call after
+    /// custom `autocompact_threshold`). Safe to call after
     /// `new()`'s default configuration — it's an idempotent overwrite.
     async fn reconfigure(&self, agent: SessionAgent) {
         self.agent_manager
@@ -513,15 +513,6 @@ impl ReactorTestHarness {
         )
         .unwrap();
         loader
-    }
-
-    /// Bind a Lua validator registry for `OutputValidation::Lua` tests.
-    fn set_lua_validators(
-        &self,
-        registry: Arc<crucible_lua::LuaValidatorRegistry>,
-        lua: Arc<mlua::Lua>,
-    ) {
-        self.agent_manager.set_lua_validators(registry, lua);
     }
 
     /// Bind a plugin isolation registry, as the daemon does at startup.
@@ -619,8 +610,6 @@ fn test_agent() -> SessionAgent {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     }

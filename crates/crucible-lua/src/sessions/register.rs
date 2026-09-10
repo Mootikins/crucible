@@ -111,18 +111,6 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
         "complete",
         "(session_id: string, options: { [string]: any } | string) -> (string?, string?)",
     ),
-    // `type` picks which of the other two fields is read: `pattern` for
-    // `regex`, `name` for `lua`, neither for `none` and `json`.
-    // Raises, deliberately, when the SPEC is malformed — an unknown `type`,
-    // a `regex` with no `pattern` — and the daemon never sees the call
-    // (`sessions_set_output_validation_rejects_unknown_type` pins it). The
-    // `(value, err)` pair below is for what the daemon answers. No type
-    // states "raises", so it is stated here.
-    (
-        "set_output_validation",
-        "(session_id: string, spec: { type: string, pattern: string?, name: string? } | string) \
-         -> (boolean?, string?)",
-    ),
     // The number is the count of turns UNDONE. `count` defaults to 1 and
     // clamps up to 1; a bare number is that same count.
     (
@@ -635,58 +623,6 @@ pub(crate) async fn complete_op(
     }
 }
 
-/// set_output_validation(session_id, spec) -> (true, nil) or (nil, err)
-///
-/// `spec` accepts either:
-///   - a string: "none" | "json" | "regex:<pattern>" | "lua:<name>"
-///   - a table: `{ type = "none" | "json" }`, `{ type = "regex", pattern =
-///     "..." }` or `{ type = "lua", name = "..." }`
-///
-/// The Lua API normalises both forms to the canonical string before
-/// crossing the trait boundary. The daemon then runs it through
-/// `OutputValidation::from_str` for full validation (e.g. regex
-/// compile errors surface here, not at agent-turn time).
-pub(crate) async fn set_output_validation_op(
-    lua: &Lua,
-    api: &Arc<dyn DaemonSessionApi>,
-    sid: &str,
-    spec: Value,
-) -> mlua::Result<(Value, Value)> {
-    let serialized = match spec {
-        Value::String(s) => s.to_str()?.to_string(),
-        Value::Table(t) => {
-            let ty: String = t.get("type")?;
-            match ty.as_str() {
-                "none" => "none".to_string(),
-                "json" => "json".to_string(),
-                "regex" => {
-                    let pattern: String = t.get("pattern")?;
-                    format!("regex:{pattern}")
-                }
-                "lua" => {
-                    let name: String = t.get("name")?;
-                    format!("lua:{name}")
-                }
-                other => {
-                    return Err(mlua::Error::runtime(format!(
-                        "unknown validation type '{other}'; want none|json|regex|lua"
-                    )));
-                }
-            }
-        }
-        other => {
-            return Err(mlua::Error::runtime(format!(
-                "validation spec must be string or table, got {}",
-                other.type_name()
-            )));
-        }
-    };
-    match api.set_output_validation(sid.to_string(), serialized).await {
-        Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
-        Err(e) => err_pair(lua, e),
-    }
-}
-
 /// undo(session_id, count?) -> (turns_undone, nil) | (nil, err)
 /// `count` defaults to 1; non-positive values clamp to 1. The trait
 /// boundary takes a `usize`; the binding accepts integers and tables
@@ -873,7 +809,6 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("fork", (String, Value));
     stub_async!("cache_stats", String);
     stub_async!("complete", (String, Value));
-    stub_async!("set_output_validation", (String, Value));
     stub_async!("undo", (String, Value));
     stub_async!("can_undo", String);
     stub_async!("undo_depth", String);
@@ -1176,16 +1111,6 @@ fn register_sessions_inner(
         move |lua, (sid, opts): (String, Value)| {
             let a = Arc::clone(&a);
             async move { complete_op(&lua, &a, &sid, opts).await }
-        },
-    )?;
-
-    let a = Arc::clone(&api);
-    ns.async_func(
-        "set_output_validation",
-        decl("set_output_validation")?,
-        move |lua, (sid, spec): (String, Value)| {
-            let a = Arc::clone(&a);
-            async move { set_output_validation_op(&lua, &a, &sid, spec).await }
         },
     )?;
 

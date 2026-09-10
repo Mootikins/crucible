@@ -169,9 +169,7 @@ pub enum ChatAppMsg {
     SetContextStrategy(String),
     /// **Command** (TUI → daemon): Set sliding window size (message pairs).
     /// **Command** (TUI → daemon): Set output validation mode.
-    SetOutputValidation(String),
     /// **Command** (TUI → daemon): Set validation retry count.
-    SetValidationRetries(u32),
     /// **Command** (TUI → daemon): Turn precognition (auto-RAG) on or off.
     SetPrecognition(bool),
     /// **Command** (TUI → daemon): Set precognition search results count.
@@ -353,8 +351,6 @@ impl ChatAppMsg {
             | Self::ModesLoaded(_)
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
-            | Self::SetOutputValidation(_)
-            | Self::SetValidationRetries(_)
             | Self::SetPrecognition(_)
             | Self::SetPrecognitionResults(_)
             | Self::SetAutocompactThreshold(_)

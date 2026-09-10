@@ -214,8 +214,6 @@ mod tests {
             precognition_results: 5,
             context_budget: None,
             context_strategy: Default::default(),
-            output_validation: Default::default(),
-            validation_retries: 3,
             autocompact_threshold: None,
             tool_policy: None,
         }

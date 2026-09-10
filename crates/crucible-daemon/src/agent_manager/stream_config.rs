@@ -27,10 +27,6 @@ pub(crate) struct AgentStreamConfig {
     /// [`crate::agent_manager::autocompact`].
     pub(crate) autocompact_threshold: Option<f32>,
     /// Validation mode for assistant text responses. Drives the
-    /// validate-retry loop in `execute_agent_stream`.
-    pub(crate) output_validation: OutputValidation,
-    /// Maximum retry count when output validation fails.
-    pub(crate) validation_retries: u32,
     /// From the session's `delegation_config.timeout_secs`; sizes the
     /// tool-dispatch timeout for `delegate_session` (a blocking delegation
     /// legitimately outlives the standard 30 s tool timeout).
@@ -38,22 +34,13 @@ pub(crate) struct AgentStreamConfig {
     /// Per-tool policy from the session's agent card: Deny blocks execution,
     /// Ask forces a prompt (even for safe tools), Allow skips the gate.
     pub(crate) tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
-    /// Registry of Lua-defined validators, populated when the daemon
-    /// has a plugin loader. The agent stream loop dispatches
-    /// `OutputValidation::Lua { name }` against this registry.
-    /// `None` outside daemon contexts (tests, isolated managers) — the
-    /// stream loop treats that as a validation failure with a clear reason.
-    pub(crate) lua_validators: Option<Arc<LuaValidatorRegistry>>,
-    /// Plugin runtime `Lua` handle used to call into validator functions.
-    /// Paired with `lua_validators`; both are `Some` together or both `None`.
-    pub(crate) plugin_lua: Option<Arc<Lua>>,
     /// Hooks registered by plugins via `cru.on`, with the `Lua` state
     /// their bodies live in. Separate from the per-session registry: plugins
     /// load once into the loader's VM, and a `RegistryKey` is only valid
     /// against the state that created it.
     pub(crate) plugin_handlers: Option<PluginHandlers>,
     /// `cru.permissions.on_request` hooks, from the one VM that runs files.
-    /// Paired with `plugin_lua`, which is the state their bodies live in.
+    /// The `Lua` travels with them: see `DaemonPermissions`.
     pub(crate) daemon_permissions: Option<super::DaemonPermissions>,
     /// Sessions a plugin claimed isolation for. When set and the session is
     /// claimed, a host-touching tool that no handler took over is refused.
@@ -107,8 +94,6 @@ pub(crate) struct AgentStreamConfig {
 /// Every field is snapshotted per turn, so a plugin loaded or a mode redefined
 /// mid-run cannot reshape a turn already in progress.
 pub(crate) struct TurnEnvironment {
-    pub(crate) lua_validators: Option<Arc<LuaValidatorRegistry>>,
-    pub(crate) plugin_lua: Option<Arc<Lua>>,
     pub(crate) plugin_handlers: Option<PluginHandlers>,
     pub(crate) daemon_permissions: Option<super::DaemonPermissions>,
     pub(crate) isolation: Option<crucible_lua::IsolationRegistry>,
@@ -120,8 +105,6 @@ pub(crate) struct TurnEnvironment {
 impl AgentStreamConfig {
     pub(crate) fn from_session_agent(session_agent: &SessionAgent, env: TurnEnvironment) -> Self {
         let TurnEnvironment {
-            lua_validators,
-            plugin_lua,
             plugin_handlers,
             daemon_permissions,
             isolation,
@@ -133,15 +116,11 @@ impl AgentStreamConfig {
             model: session_agent.model.clone(),
             context_budget: session_agent.context_budget,
             autocompact_threshold: session_agent.autocompact_threshold,
-            output_validation: session_agent.output_validation.clone(),
-            validation_retries: session_agent.validation_retries,
             delegation_timeout_secs: session_agent
                 .delegation_config
                 .as_ref()
                 .map(|c| c.timeout_secs),
             tool_policy: session_agent.tool_policy.clone(),
-            lua_validators,
-            plugin_lua,
             plugin_handlers,
             daemon_permissions,
             isolation,

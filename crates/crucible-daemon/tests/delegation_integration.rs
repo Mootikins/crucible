@@ -9,7 +9,7 @@
 
 use crucible_core::background::JobStatus;
 use crucible_core::config::{BackendType, DelegationConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::agent_manager::AgentFactoryOverride;
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
@@ -62,8 +62,6 @@ fn parent_agent(delegation: Option<DelegationConfig>) -> SessionAgent {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,

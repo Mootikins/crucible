@@ -28,12 +28,6 @@ impl Server {
                 warn!("Failed to upgrade the Lua notify sink: {}", e);
             }
 
-            // Hand the validator registry + plugin Lua handle to the
-            // agent manager so the stream loop can dispatch
-            // `OutputValidation::Lua { name }` against plugin-registered
-            // validators. Bind once; `set_lua_validators` is idempotent.
-            self.agent_manager
-                .set_lua_validators(loader.validator_registry(), loader.plugin_lua());
             // Same pairing for `cru.on` hooks — without this bind,
             // plugins register handlers into a registry the stream loop
             // never reads.

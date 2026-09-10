@@ -246,46 +246,6 @@ impl SessionKnobs for DaemonAgentHandle {
             .unwrap_or_default()
     }
 
-    async fn set_output_validation(
-        &mut self,
-        validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        let validation_str = validation.to_string();
-        tracing::info!(session_id = %self.session_id, output_validation = %validation_str, "Setting output_validation via daemon");
-        self.client
-            .session_set_output_validation(&self.session_id, &validation_str)
-            .await
-            .chat_comm()?;
-        self.cached_output_validation = Some(validation_str);
-        Ok(())
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        // We can't return a reference to a parsed value from cached string,
-        // so use a static for the default and parse-match for known variants
-        static NONE: crucible_core::session::OutputValidation =
-            crucible_core::session::OutputValidation::None;
-        static JSON: crucible_core::session::OutputValidation =
-            crucible_core::session::OutputValidation::Json;
-        match self.cached_output_validation.as_deref() {
-            Some("json") => &JSON,
-            Some("none") | None => &NONE,
-            // For regex variants we can't return a reference to a local.
-            // Fall back to None; the daemon holds the authoritative value.
-            Some(_) => &NONE,
-        }
-    }
-
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, validation_retries = retries, "Setting validation_retries via daemon");
-        self.client
-            .session_set_validation_retries(&self.session_id, retries)
-            .await
-            .chat_comm()?;
-        self.cached_validation_retries = Some(retries);
-        Ok(())
-    }
-
     async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
         tracing::info!(
             session_id = %self.session_id,
@@ -302,10 +262,6 @@ impl SessionKnobs for DaemonAgentHandle {
 
     fn get_autocompact_threshold(&self) -> Option<f32> {
         self.cached_autocompact_threshold
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        self.cached_validation_retries.unwrap_or(3)
     }
 
     async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {

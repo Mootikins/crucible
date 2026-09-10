@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType, EmbeddingProviderConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
@@ -100,8 +100,6 @@ fn acp_agent(precognition_enabled: bool) -> SessionAgent {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,

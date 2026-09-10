@@ -228,21 +228,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Get the current context truncation strategy.
     fn get_context_strategy(&self) -> crate::session::ContextStrategy;
 
-    /// Set output validation mode for agent text responses.
-    async fn set_output_validation(
-        &mut self,
-        validation: crate::session::OutputValidation,
-    ) -> ChatResult<()>;
-
-    /// Get the current output validation mode.
-    fn get_output_validation(&self) -> &crate::session::OutputValidation;
-
-    /// Set maximum retry count when output validation fails.
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()>;
-
-    /// Get the current validation retry count.
-    fn get_validation_retries(&self) -> u32;
-
     /// Set the auto-compaction threshold (fraction of `context_budget`).
     /// `None` resets to the daemon default; `Some(0.0)` explicitly disables.
     async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()>;
@@ -318,28 +303,6 @@ macro_rules! impl_unsupported_session_knobs {
             }
             fn get_context_strategy(&self) -> $crate::session::ContextStrategy {
                 $crate::session::ContextStrategy::default()
-            }
-            async fn set_output_validation(
-                &mut self,
-                _validation: $crate::session::OutputValidation,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_output_validation".into(),
-                ))
-            }
-            fn get_output_validation(&self) -> &$crate::session::OutputValidation {
-                &$crate::session::OutputValidation::None
-            }
-            async fn set_validation_retries(
-                &mut self,
-                _retries: u32,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_validation_retries".into(),
-                ))
-            }
-            fn get_validation_retries(&self) -> u32 {
-                3
             }
             async fn set_autocompact_threshold(
                 &mut self,
@@ -598,25 +561,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_context_strategy(&self) -> crate::session::ContextStrategy {
         (**self).get_context_strategy()
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        validation: crate::session::OutputValidation,
-    ) -> ChatResult<()> {
-        (**self).set_output_validation(validation).await
-    }
-
-    fn get_output_validation(&self) -> &crate::session::OutputValidation {
-        (**self).get_output_validation()
-    }
-
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
-        (**self).set_validation_retries(retries).await
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        (**self).get_validation_retries()
     }
 
     async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {

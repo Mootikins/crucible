@@ -586,14 +586,6 @@ impl OilChatApp {
                     .set_str(key, normalized, ModSource::Command);
                 self.send_setting_ack("context_strategy", normalized);
             }
-            SetRpcAction::SetOutputValidation(v) => {
-                self.runtime_config.set_str(key, v, ModSource::Command);
-                self.send_setting_ack("output_validation", v);
-            }
-            SetRpcAction::SetValidationRetries(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                self.send_setting_ack("validation_retries", n);
-            }
             SetRpcAction::SetPrecognition(enabled) => {
                 // Keep the local copy in step: it is what `:set` and the
                 // replay banner read back. The daemon owns the setting; this
@@ -775,18 +767,6 @@ impl OilChatApp {
             .get("context_strategy")
             .unwrap_or(ConfigValue::String("truncate".to_string()));
         output.push_str(&format!("  context_strategy: {}\n", ctx_strategy));
-
-        let out_val = self
-            .runtime_config
-            .get("output_validation")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  output_validation: {}\n", out_val));
-
-        let val_retries = self
-            .runtime_config
-            .get("validation_retries")
-            .unwrap_or(ConfigValue::String("3".to_string()));
-        output.push_str(&format!("  validation_retries: {}\n", val_retries));
 
         self.add_system_message(output);
         Action::Continue

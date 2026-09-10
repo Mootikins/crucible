@@ -30,8 +30,8 @@ use crate::sessions::register::{
     cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
     fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
     review_comment_op, review_list_hunks_op, review_resolve_comment_op, review_set_state_op,
-    send_and_collect_op, send_message_op, set_output_validation_op, subscribe_op, undo_depth_op,
-    undo_history_op, undo_op, unsubscribe_op,
+    send_and_collect_op, send_message_op, subscribe_op, undo_depth_op, undo_history_op, undo_op,
+    unsubscribe_op,
 };
 use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
@@ -453,12 +453,6 @@ impl UserData for Session {
         session_method!(methods, "fork", fork_op, opts: Value);
         session_method!(methods, "cache_stats", cache_stats_op);
         session_method!(methods, "complete", complete_op, opts: Value);
-        session_method!(
-            methods,
-            "set_output_validation",
-            set_output_validation_op,
-            spec: Value
-        );
         session_method!(methods, "undo", undo_op, opts: Value);
         session_method!(methods, "can_undo", can_undo_op);
         session_method!(methods, "undo_depth", undo_depth_op);

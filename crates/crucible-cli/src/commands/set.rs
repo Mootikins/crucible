@@ -137,18 +137,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set context strategy: {}", e))?;
             }
-            SetRpcAction::SetOutputValidation(validation) => {
-                client
-                    .session_set_output_validation(&session_id, validation)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set output validation: {}", e))?;
-            }
-            SetRpcAction::SetValidationRetries(retries) => {
-                client
-                    .session_set_validation_retries(&session_id, *retries)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set validation retries: {}", e))?;
-            }
             SetRpcAction::SetPrecognition(enabled) => {
                 client
                     .session_set_precognition(&session_id, *enabled)

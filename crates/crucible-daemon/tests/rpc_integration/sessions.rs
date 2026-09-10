@@ -143,7 +143,7 @@ async fn test_daemon_agent_handle_creation() {
 
 #[tokio::test]
 async fn test_session_configure_agent() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -189,8 +189,6 @@ async fn test_session_configure_agent() {
         precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
     };

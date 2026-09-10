@@ -286,7 +286,7 @@ fn cru_kiln_path_resolves_a_registered_name_through_the_registry() {
 /// `cru.shell.exec(command: string, ...)` writes the call and expects it to
 /// exist. This test's first form asked whether the rendered text contained
 /// `"{leaf}: ("`, which for `cru.on` is `on: (` — a needle that matches
-/// `option: (` and `set_output_validation: (`. It passed while `cru.on` was
+/// `option: (` and `session: (`. It passed while `cru.on` was
 /// absent from the file entirely.
 #[tokio::test]
 async fn every_declared_signature_exists_on_the_vm() {

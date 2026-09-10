@@ -138,8 +138,6 @@ These sync to the daemon and are session-scoped:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `outputvalidation` | string | Output validation mode |
-| `validationretries` | number | Retries when output validation fails |
 
 ### Context Management
 

@@ -106,8 +106,6 @@ pub enum SetRpcAction {
     SwitchModel(String),
     SetContextBudget(Option<usize>),
     SetContextStrategy(String),
-    SetOutputValidation(String),
-    SetValidationRetries(u32),
     SetPrecognition(bool),
     SetPrecognitionResults(usize),
     /// Auto-compaction threshold as a fraction of `context_budget`.
@@ -249,30 +247,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 }),
             }
         }
-        "outputvalidation" | "output_validation" => {
-            // Validate the value parses correctly
-            value
-                .parse::<crucible_core::session::OutputValidation>()
-                .map_err(|message| SetError::InvalidValue {
-                    key: key.clone(),
-                    message,
-                })?;
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetOutputValidation(
-                value,
-            )))
-        }
-        "validationretries" | "validation_retries" => {
-            let retries = value.parse::<u32>().map_err(|_| SetError::InvalidValue {
-                key: key.clone(),
-                message: format!(
-                    "invalid validation_retries value: {} (use a non-negative integer)",
-                    value
-                ),
-            })?;
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetValidationRetries(
-                retries,
-            )))
-        }
         "perm.show_diff" | "perm.autoconfirm_session" | "perm.full_commands" => {
             parse_bool(&value).map_err(|message| SetError::InvalidValue {
                 key: key.clone(),
@@ -376,8 +350,6 @@ impl SetRpcAction {
             SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
             SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
-            SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
-            SetRpcAction::SetValidationRetries(n) => Some(ChatAppMsg::SetValidationRetries(n)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
             SetRpcAction::SetPrecognitionResults(n) => Some(ChatAppMsg::SetPrecognitionResults(n)),
             SetRpcAction::SetAutocompactThreshold(t) => {
@@ -474,10 +446,6 @@ fn is_daemon_rpc_key(key: &str) -> bool {
             | "context_budget"
             | "contextstrategy"
             | "context_strategy"
-            | "outputvalidation"
-            | "output_validation"
-            | "validationretries"
-            | "validation_retries"
             | "autocompactthreshold"
             | "autocompact_threshold"
             | "precognition.results"

@@ -124,10 +124,7 @@ pub use config::{
     ConfigLoader, ConfigState,
 };
 pub use config_syntax::{config_syntax_error, mark_config_syntax, ConfigSyntaxError};
-pub use context::{
-    register_context_module, register_context_module_stub, register_context_validators,
-    LuaValidatorRegistry,
-};
+pub use context::{register_context_module, register_context_module_stub};
 pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };

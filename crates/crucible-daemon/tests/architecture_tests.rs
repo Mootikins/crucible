@@ -248,16 +248,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "context_strategy",
     },
     ConfigMethod {
-        suffix: "output_validation",
-        request_field: "output_validation",
-        result_field: "output_validation",
-    },
-    ConfigMethod {
-        suffix: "validation_retries",
-        request_field: "validation_retries",
-        result_field: "validation_retries",
-    },
-    ConfigMethod {
         suffix: "autocompact_threshold",
         request_field: "autocompact_threshold",
         result_field: "autocompact_threshold",

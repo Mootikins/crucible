@@ -111,7 +111,6 @@ entry but no shipped proof.
 | F48 | Turn undo `/undo [N]`: file rollback plus message truncation | P, T |
 | F49 | Undo Lua API `cru.session.{undo, can_undo, undo_depth, undo_history}` | P |
 | F50 | Output validation after each assistant turn, with retries | P, W |
-| F51 | Lua validators `cru.context.register_validator` | P |
 
 ### 2.4 Chat, sessions and agents
 
@@ -607,11 +606,8 @@ pub struct SessionConfig {
     autocompact_threshold: f32,      // default 0.95
     max_iterations: Option<u32>,     // default 10
     execution_timeout_secs: Option<u32>,
-    validation_retries: u32,
-    output_validation: OutputValidation,
 }
 pub enum ContextStrategy { Truncate, SlidingWindow, Summarize, Lua { name: String } }
-pub enum OutputValidation { None, Lua { name: String } }
 ```
 
 Owner: **SessionManager**.
@@ -1732,10 +1728,10 @@ is on `runtimepath`. [D7]
 `Personal`, `Workspace`, `Kiln`, `Bundled`. A higher scope shadows a lower one.
 [D6]
 
-### 8.18 Context strategies, output validations
+### 8.18 Context strategies
 
 `ContextStrategy::{Truncate, SlidingWindow, Summarize, Lua{name}}`.
-`OutputValidation::{None, Lua{name}}`.
+Output validation was removed on 2026-09-10: see the Product backlog.
 
 ### 8.19 Built-in ACP profiles
 
@@ -1791,10 +1787,9 @@ Declare `cru.modes.<id> = { tools = selector, permissions = { default, allow,
 deny, ask }, label, color }` in `init.lua`. The TUI derives the badge, the
 BackTab cycle and the `/<id>` command from `session.list_modes`.
 
-### 9.7 A context strategy or validator
+### 9.7 A context strategy
 
-Call `cru.context.register_strategy(name, fn)` or
-`cru.context.register_validator(name, fn)`. `SessionConfig` enables one per
+Call `cru.context.register_strategy(name, fn)`. `SessionConfig` enables one per
 session. A strategy may not trigger a turn on its own session. An unregistered
 name degrades to a failure, not a panic.
 

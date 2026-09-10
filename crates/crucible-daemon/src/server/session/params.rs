@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::{optional_param, require_param};
 
-use crucible_core::session::{ContextStrategy, OutputValidation};
+use crucible_core::session::ContextStrategy;
 
 // The session config-knob handlers are token-identical except for the knob's
 // wire field name, the `AgentManager` method, and how the value is extracted.
@@ -153,14 +153,6 @@ session_config_setter!(
 );
 
 session_config_setter!(
-    handle_session_set_validation_retries,
-    req,
-    set_validation_retries,
-    "validation_retries",
-    require_param!(req, "validation_retries", as_u64) as u32
-);
-
-session_config_setter!(
     handle_session_set_autocompact_threshold,
     req,
     set_autocompact_threshold,
@@ -187,11 +179,6 @@ session_config_getter!(
     "context_budget"
 );
 session_config_getter!(
-    handle_session_get_validation_retries,
-    get_validation_retries,
-    "validation_retries"
-);
-session_config_getter!(
     handle_session_get_autocompact_threshold,
     get_autocompact_threshold,
     "autocompact_threshold"
@@ -202,18 +189,12 @@ session_config_getter!(
     "context_strategy",
     display
 );
-session_config_getter!(
-    handle_session_get_output_validation,
-    get_output_validation,
-    "output_validation",
-    display
-);
 
 // ── Hand-written handlers (deviate from the uniform macro shape) ────────────
 //
-// These knobs can't be macro-generated: `set_context_strategy` /
-// `set_output_validation` parse-and-validate the incoming string and
-// short-circuit with INVALID_PARAMS on a bad value.
+// This knob can't be macro-generated: `set_context_strategy`
+// parses-and-validates the incoming string and short-circuits with
+// INVALID_PARAMS on a bad value.
 //
 // The A1 field-name parity gate in `tests/architecture_tests.rs` covers these
 // alongside the macro-generated knobs — it reads each handler's wire field
@@ -241,34 +222,6 @@ pub(crate) async fn handle_session_set_context_strategy(
             serde_json::json!({
                 "session_id": session_id,
                 "context_strategy": strategy_str,
-            }),
-        ),
-        Err(e) => agent_error_to_response(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_set_output_validation(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let validation_str = require_param!(req, "output_validation", as_str);
-
-    let validation = match validation_str.parse::<OutputValidation>() {
-        Ok(v) => v,
-        Err(e) => return Response::error(req.id, INVALID_PARAMS, e),
-    };
-
-    match am
-        .set_output_validation(session_id, validation, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "output_validation": validation_str,
             }),
         ),
         Err(e) => agent_error_to_response(req.id, e),

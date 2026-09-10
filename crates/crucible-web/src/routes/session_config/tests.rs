@@ -133,18 +133,6 @@ async fn autocompact_threshold_round_trips() {
 
 // ── Execution ─────────────────────────────────────────────────────────────
 
-#[tokio::test]
-async fn validation_retries_round_trips() {
-    assert_put_reaches_daemon(
-        "validation-retries",
-        "session.set_validation_retries",
-        "validation_retries",
-        json!(3),
-    )
-    .await;
-    assert_get_returns("validation-retries", "validation_retries", json!(5)).await;
-}
-
 // ── Prompt and enum-valued knobs ──────────────────────────────────────────
 
 #[tokio::test]
@@ -157,18 +145,6 @@ async fn context_strategy_round_trips_its_string_spelling() {
     )
     .await;
     assert_get_returns("context-strategy", "context_strategy", json!("recent")).await;
-}
-
-#[tokio::test]
-async fn output_validation_round_trips_its_string_spelling() {
-    assert_put_reaches_daemon(
-        "output-validation",
-        "session.set_output_validation",
-        "output_validation",
-        json!("lenient"),
-    )
-    .await;
-    assert_get_returns("output-validation", "output_validation", json!("strict")).await;
 }
 
 // ── Nullable knobs ────────────────────────────────────────────────────────

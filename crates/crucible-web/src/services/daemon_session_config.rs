@@ -85,35 +85,6 @@ impl ReconnectingDaemon {
 
     // ── Execution ─────────────────────────────────────────────────────────
 
-    pub async fn session_set_validation_retries(
-        &self,
-        session_id: &str,
-        retries: u32,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_validation_retries", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_validation_retries(&session_id, retries)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_validation_retries(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<u32>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_validation_retries", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_validation_retries(&session_id).await })
-        })
-        .await
-    }
-
     // ── Prompt and enum-valued knobs ──────────────────────────────────────
 
     pub async fn session_set_context_strategy(
@@ -143,37 +114,6 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("session.get_context_strategy", move |daemon| {
             let session_id = session_id.clone();
             Box::pin(async move { daemon.session_get_context_strategy(&session_id).await })
-        })
-        .await
-    }
-
-    pub async fn session_set_output_validation(
-        &self,
-        session_id: &str,
-        validation: &str,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let validation = validation.to_string();
-        self.call_with_reconnect("session.set_output_validation", move |daemon| {
-            let session_id = session_id.clone();
-            let validation = validation.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_output_validation(&session_id, &validation)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_output_validation(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<String>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_output_validation", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_output_validation(&session_id).await })
         })
         .await
     }

@@ -444,56 +444,6 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::SetOutputValidation(ref validation_str) => {
-                        tracing::info!(output_validation = %validation_str, "Setting output_validation");
-                        match validation_str.parse::<crucible_core::session::OutputValidation>() {
-                            Ok(validation) => {
-                                match params.agent.set_output_validation(validation).await {
-                                    Ok(()) => {
-                                        tracing::info!(output_validation = %validation_str, "Output validation set successfully");
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(error = %e, "set_output_validation failed");
-                                        params.app.add_notification(
-                                            crucible_core::types::Notification::warning(format!(
-                                                "Set output_validation failed: {}",
-                                                e
-                                            )),
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "Invalid output validation");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Invalid output_validation: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetValidationRetries(retries) => {
-                        tracing::info!(validation_retries = retries, "Setting validation_retries");
-                        match params.agent.set_validation_retries(*retries).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    validation_retries = retries,
-                                    "Validation retries set successfully"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(validation_retries = retries, error = %e, "set_validation_retries failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set validation_retries failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetPrecognition(enabled) => {
                         tracing::info!(precognition = enabled, "Setting precognition");
                         match params.agent.set_precognition(*enabled).await {

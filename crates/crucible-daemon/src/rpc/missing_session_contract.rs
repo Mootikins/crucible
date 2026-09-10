@@ -195,17 +195,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ),
         ("session.get_context_strategy", json!({}), not_found()),
         (
-            "session.set_output_validation",
-            json!({"output_validation": "off"}),
-            not_found(),
-        ),
-        ("session.get_output_validation", json!({}), not_found()),
-        (
-            "session.set_validation_retries",
-            json!({"validation_retries": 3}),
-            not_found(),
-        ),
-        (
             "session.set_precognition",
             json!({"precognition": true}),
             not_found(),

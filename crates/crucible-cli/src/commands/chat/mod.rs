@@ -904,19 +904,6 @@ async fn apply_rpc_action(
                 Err(e) => Err(e),
             }
         }
-        SetRpcAction::SetOutputValidation(ref validation_str) => {
-            match validation_str.parse::<crucible_core::session::OutputValidation>() {
-                Ok(validation) => handle
-                    .set_output_validation(validation)
-                    .await
-                    .map_err(|e| e.to_string()),
-                Err(e) => Err(e),
-            }
-        }
-        SetRpcAction::SetValidationRetries(retries) => handle
-            .set_validation_retries(retries)
-            .await
-            .map_err(|e| e.to_string()),
         SetRpcAction::SetPrecognition(enabled) => handle
             .set_precognition(enabled)
             .await

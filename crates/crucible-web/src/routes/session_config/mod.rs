@@ -25,7 +25,6 @@ use crate::services::daemon::AppState;
 
 pub(super) mod basic;
 pub(super) mod context;
-pub(super) mod execution;
 pub(super) mod prompt;
 
 #[cfg(test)]
@@ -38,10 +37,8 @@ pub(super) use basic::{
 pub(super) use context::{
     get_autocompact_threshold, get_context_budget, set_autocompact_threshold, set_context_budget,
 };
-pub(super) use execution::{get_validation_retries, set_validation_retries};
-pub(super) use prompt::{
-    get_context_strategy, get_output_validation, set_context_strategy, set_output_validation,
-};
+
+pub(super) use prompt::{get_context_strategy, set_context_strategy};
 
 /// Every `/api/session/{id}/config/...` route, as a standalone router the session
 /// group merges in.
@@ -88,15 +85,7 @@ pub(super) fn config_routes() -> Router<AppState> {
             put(set_autocompact_threshold).get(get_autocompact_threshold),
         )
         .route(
-            "/api/session/{id}/config/validation-retries",
-            put(set_validation_retries).get(get_validation_retries),
-        )
-        .route(
             "/api/session/{id}/config/context-strategy",
             put(set_context_strategy).get(get_context_strategy),
-        )
-        .route(
-            "/api/session/{id}/config/output-validation",
-            put(set_output_validation).get(get_output_validation),
         )
 }

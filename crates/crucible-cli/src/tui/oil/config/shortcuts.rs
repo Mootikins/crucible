@@ -109,18 +109,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         completions: CompletionSource::Static(&["truncate", "sliding_window"]),
         description: "Context overflow strategy",
     },
-    ConfigShortcut {
-        short: "outputvalidation",
-        target: ShortcutTarget::Path("llm.output_validation"),
-        completions: CompletionSource::None,
-        description: "Output validation mode (none, json, regex:<pat>)",
-    },
-    ConfigShortcut {
-        short: "validationretries",
-        target: ShortcutTarget::Path("llm.validation_retries"),
-        completions: CompletionSource::None,
-        description: "Retries when output validation fails",
-    },
     // Permission settings (session-scoped, TUI-only)
     ConfigShortcut {
         short: "perm.show_diff",
@@ -264,8 +252,6 @@ mod tests {
         assert!(shorts.contains(&"precognition.results"));
         assert!(shorts.contains(&"contextbudget"));
         assert!(shorts.contains(&"contextstrategy"));
-        assert!(shorts.contains(&"outputvalidation"));
-        assert!(shorts.contains(&"validationretries"));
         assert!(shorts.contains(&"perm.show_diff"));
         assert!(shorts.contains(&"perm.autoconfirm_session"));
         assert!(shorts.contains(&"perm.full_commands"));

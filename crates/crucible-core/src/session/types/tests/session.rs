@@ -1,7 +1,5 @@
 use super::super::agent::SessionAgent;
-use super::super::config::{
-    default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
-};
+use super::super::config::{default_precognition_results, ContextStrategy};
 use super::super::enums::{SessionState, SessionType};
 use super::super::session::Session;
 use super::super::summary::SessionSummary;
@@ -301,8 +299,6 @@ fn test_session_with_agent() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
@@ -358,8 +354,6 @@ fn test_session_summary_includes_agent_model() {
         precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
         autocompact_threshold: None,
         tool_policy: None,
         mode: None,
