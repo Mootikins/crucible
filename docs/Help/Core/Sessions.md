@@ -258,10 +258,10 @@ Send a message to a session and stream the response. Both the session ID and mes
 cru session configure chat-20250102-1430-a1b2 -p openai -m gpt-4o
 ```
 
-Configure the agent backend for a session: provider, model, and endpoint. For runtime parameter tweaks (model, thinking budget), use `cru set` instead:
+Configure the agent backend for a session: provider, model, and endpoint. For runtime parameter tweaks (model, context budget), use `cru set` instead:
 
 ```bash
-cru set chat-20250102-1430-a1b2 thinkingbudget=high
+cru set chat-20250102-1430-a1b2 contextbudget=128000
 ```
 
 #### Load a Session
@@ -412,14 +412,14 @@ cru.config.set({
 Each session tracks agent configuration:
 
 - **Model** — LLM model (e.g., `claude-3-5-sonnet`, `gpt-4o`)
-- **Thinking Budget** — Token budget for extended thinking
+- **Context Budget** — Token budget for the assembled context
 - **Tools** — Available MCP tools
 
 Change mid-session via `:set` or `:model`:
 
 ```
 :set model claude-3-5-sonnet
-:set thinkingbudget 8000
+:set contextbudget 128000
 :model gpt-4o                   # Opens model picker
 ```
 

@@ -80,9 +80,9 @@ return {
 ///    `cru.defaults.system_prompt` itself. The daemon VM runs the two files
 ///    in order — defaults, then this one — so ordinary assignment decides it.
 ///
-/// Two keys, because they prove different halves. `thinking_budget` is a key
-/// the shipped file never touches; `system_prompt` is one it always sets, so
-/// only the second proves the order.
+/// `system_prompt` proves both halves at once: a nil `cru.defaults` on the
+/// daemon VM would raise on the assignment, and the shipped file sets the same
+/// key, so the value that arrives is the one the later file wrote.
 #[tokio::test]
 async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
     let daemon = TestDaemon::start_with_home_setup(|home| {
@@ -90,7 +90,7 @@ async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
         std::fs::create_dir_all(&config_dir)?;
         std::fs::write(
             config_dir.join("init.lua"),
-            "cru.defaults.thinking_budget = 4242\ncru.defaults.system_prompt = \"Only haiku.\"",
+            "cru.defaults.system_prompt = \"Only haiku.\"",
         )?;
         Ok(())
     })
@@ -113,7 +113,7 @@ async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
         .unwrap_or_else(|| panic!("session.create failed: {created}"))
         .to_string();
 
-    // An agent that names no budget of its own, so the default has to fill it.
+    // An agent that names no prompt of its own, so the default has to fill it.
     let configured = conn
         .call_method(
             "session.configure_agent",
@@ -142,14 +142,10 @@ async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
         )
         .await;
     assert_eq!(
-        session["result"]["agent"]["thinking_budget"].as_i64(),
-        Some(4242),
-        "the user's init.lua default must reach the session: {session}"
-    );
-    assert_eq!(
         session["result"]["agent"]["system_prompt"].as_str(),
         Some("Only haiku."),
-        "and must win over the shipped defaults file, which sets it too: {session}"
+        "the user's init.lua default must reach the session, and must win over \
+         the shipped defaults file, which sets it too: {session}"
     );
 }
 

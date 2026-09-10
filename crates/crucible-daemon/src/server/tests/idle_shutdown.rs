@@ -159,7 +159,6 @@ fn parked_turn_agent_card() -> crucible_core::session::SessionAgent {
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: Vec::new(),

@@ -773,29 +773,24 @@ pub async fn create_agent_from_session_config(
         &skills_catalog,
     );
 
-    let handle = GenaiAgentHandle::new(
-        genai_client,
-        model_iden,
-        &enriched_prompt.stable,
-        tool_defs,
-        agent_config.thinking_budget,
-    )
-    // Separate from the prompt above so it can carry its own cache breakpoint;
-    // it is the half that changes per session.
-    .with_session_context(enriched_prompt.volatile)
-    .with_deferrable_tools(deferrable_tool_names)
-    .with_plugin_tools(plugin_tool_names)
-    // Everything the session decided about generation and context. This is
-    // the only hop where it can arrive: every setter that writes these to
-    // `SessionAgent` — RPC, `cru.defaults`, an agent card, `[llm]` config —
-    // invalidates the agent cache, so the handle is always rebuilt here.
-    // Omitting them left `context_budget` permanently `None`, so every
-    // context strategy was dead and tool-schema deferral guessed at the
-    // window.
-    .with_context_settings(
-        agent_config.context_budget,
-        agent_config.context_strategy.clone(),
-    );
+    let handle =
+        GenaiAgentHandle::new(genai_client, model_iden, &enriched_prompt.stable, tool_defs)
+            // Separate from the prompt above so it can carry its own cache breakpoint;
+            // it is the half that changes per session.
+            .with_session_context(enriched_prompt.volatile)
+            .with_deferrable_tools(deferrable_tool_names)
+            .with_plugin_tools(plugin_tool_names)
+            // Everything the session decided about generation and context. This is
+            // the only hop where it can arrive: every setter that writes these to
+            // `SessionAgent` — RPC, `cru.defaults`, an agent card, `[llm]` config —
+            // invalidates the agent cache, so the handle is always rebuilt here.
+            // Omitting them left `context_budget` permanently `None`, so every
+            // context strategy was dead and tool-schema deferral guessed at the
+            // window.
+            .with_context_settings(
+                agent_config.context_budget,
+                agent_config.context_strategy.clone(),
+            );
     let handle = match modes.clone() {
         Some(registry) => handle.with_modes(registry),
         None => handle,

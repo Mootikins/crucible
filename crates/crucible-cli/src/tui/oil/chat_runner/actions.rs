@@ -397,23 +397,6 @@ impl OilChatRunner {
                     ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
                     }
-                    ChatAppMsg::SetThinkingBudget(budget) => {
-                        tracing::info!(budget = budget, "Setting thinking budget");
-                        match params.agent.set_thinking_budget(*budget).await {
-                            Ok(()) => {
-                                tracing::info!(budget = budget, "Thinking budget set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(budget = budget, error = %e, "set_thinking_budget failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set thinking_budget failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetContextBudget(budget) => {
                         tracing::info!(context_budget = ?budget, "Setting context_budget");
                         match params.agent.set_context_budget(*budget).await {

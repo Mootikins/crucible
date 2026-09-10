@@ -106,7 +106,6 @@ fn mock_agent_config() -> SessionAgent {
         model: "test-model".to_string(),
         system_prompt: "You are a helpful test assistant.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],

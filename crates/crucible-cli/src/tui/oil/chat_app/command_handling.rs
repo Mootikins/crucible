@@ -97,8 +97,7 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set thinkingbudget=medium    — Thinking budget preset\n\
-             :set contextbudget=128000     — Context token budget (or 'none')\n\
+            ":set contextbudget=128000     — Context token budget (or 'none')\n\
              :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
              :set precognition             — Toggle auto-RAG\n\
              :set thinking           — Show thinking blocks\n\
@@ -577,11 +576,6 @@ impl OilChatApp {
                 );
                 self.send_setting_ack("model", model);
             }
-            SetRpcAction::SetThinkingBudget(budget) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let budget = budget.unwrap_or_default();
-                self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
-            }
             SetRpcAction::SetContextBudget(n) => {
                 self.runtime_config.set_str(key, value, ModSource::Command);
                 let display = n.map_or("none".to_string(), |n| n.to_string());
@@ -754,12 +748,6 @@ impl OilChatApp {
 
     pub(super) fn handle_config_show_command(&mut self) -> Action<ChatAppMsg> {
         let mut output = String::from("Configuration:\n");
-
-        let budget = self
-            .runtime_config
-            .get("thinkingbudget")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  thinking_budget: {}\n", budget));
 
         let mode = self
             .runtime_config

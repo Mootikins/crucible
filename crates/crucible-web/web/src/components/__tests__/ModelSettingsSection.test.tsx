@@ -19,8 +19,6 @@ vi.mock('@/lib/api', () => ({
   listKnobs: (...a: unknown[]) => listKnobs(...a),
   listAgentOptions: (...a: unknown[]) => listAgentOptions(...a),
   setAgentOption: (...a: unknown[]) => setAgentOption(...a),
-  getThinkingBudget: vi.fn(async () => 8192),
-  setThinkingBudget: vi.fn(async () => {}),
   getPrecognition: vi.fn(async () => true),
   setPrecognition: vi.fn(async () => {}),
   getPrecognitionResults: vi.fn(async () => 5),
@@ -42,16 +40,20 @@ import { ModelSettingsSection } from '../SettingsPanel';
 /** What the daemon answers for a session that has every setting. */
 const ALL_SUPPORTED = {
   knobs: [
-    { id: 'thinking_budget', supported: true },
     { id: 'precognition', supported: true },
+    { id: 'precognition_results', supported: true },
   ],
 };
 
-/** What it answers for an ACP session: the protocol carries none of these. */
-const ACP_SESSION = {
+/**
+ * A session that refuses one of them. Which knobs a session refuses depends on
+ * the session, so what these tests pin is that the panel obeys the answer it
+ * is given rather than a set of rows compiled into the client.
+ */
+const ONE_UNSUPPORTED = {
   knobs: [
-    { id: 'thinking_budget', supported: false },
     { id: 'precognition', supported: true },
+    { id: 'precognition_results', supported: false },
   ],
 };
 
@@ -73,11 +75,11 @@ describe('ModelSettingsSection', () => {
     // `waitFor`, not a bare assertion: the call landing is not the render
     // landing, and asserting between the two passes against a panel that
     // never drew anything.
-    await waitFor(() => expect(screen.getByText('Thinking Budget')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Results per query')).toBeTruthy());
   });
 
   it('draws no control for a setting the session does not have', async () => {
-    listKnobs.mockResolvedValue(ACP_SESSION);
+    listKnobs.mockResolvedValue(ONE_UNSUPPORTED);
     render(() => <ModelSettingsSection />);
 
     await waitFor(() => expect(listKnobs).toHaveBeenCalledWith('s1'));
@@ -85,7 +87,7 @@ describe('ModelSettingsSection', () => {
     // — without it this could pass against a panel that never rendered at all.
     await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
 
-    expect(screen.queryByText('Thinking Budget')).toBeNull();
+    expect(screen.queryByText('Results per query')).toBeNull();
   });
 
   it('draws nothing rather than guessing when the answer lists nothing', async () => {
@@ -99,12 +101,14 @@ describe('ModelSettingsSection', () => {
     listKnobs.mockResolvedValue({ knobs: [] });
     render(() => <ModelSettingsSection />);
 
-    // Wait for a row that is never gated, so the absence below is a decision
-    // and not a render that has yet to happen. Asserting straight after the
-    // call was made passed against a panel with no gating at all.
-    await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
+    // Wait for the agent-options loop, which is never gated on the knob list,
+    // so the absence below is a decision and not a render that has yet to
+    // happen. Asserting straight after the call was made passed against a
+    // panel with no gating at all.
+    await waitFor(() => expect(listAgentOptions).toHaveBeenCalledWith('s1'));
 
-    expect(screen.queryByText('Thinking Budget')).toBeNull();
+    expect(screen.queryByText('Precognition')).toBeNull();
+    expect(screen.queryByText('Results per query')).toBeNull();
   });
 });
 

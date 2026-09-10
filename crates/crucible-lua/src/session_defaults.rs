@@ -47,7 +47,6 @@ use crate::session_api::{SessionConfigRpc, SessionVariables, UnsupportedSessionR
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionDefaultValues {
     pub system_prompt: Option<String>,
-    pub thinking_budget: Option<i64>,
     /// Starting mode. Settable from an `on_session_start` hook, which is why
     /// it lives here rather than only on `SessionAgent`: the hook runs before
     /// the agent is built, so it is choosing what the agent starts as.
@@ -101,10 +100,6 @@ impl UserData for SessionDefaults {
                     Some(s) => lua.create_string(&s).map(Value::String),
                     None => Ok(Value::Nil),
                 },
-                "thinking_budget" => Ok(values
-                    .thinking_budget
-                    .map(Value::Integer)
-                    .unwrap_or(Value::Nil)),
                 // Naming an option that doesn't exist is a typo, and silent nil
                 // is how a typo becomes a config that mysteriously does nothing.
                 _ => Err(mlua::Error::runtime(format!(
@@ -122,14 +117,6 @@ impl UserData for SessionDefaults {
                         other => Some(lua.unpack::<String>(other)?),
                     };
                     this.update(|v| v.system_prompt = prompt);
-                    Ok(())
-                }
-                "thinking_budget" => {
-                    let budget = match val {
-                        Value::Nil => None,
-                        other => Some(lua.unpack::<i64>(other)?),
-                    };
-                    this.update(|v| v.thinking_budget = budget);
                     Ok(())
                 }
                 _ => Err(mlua::Error::runtime(format!(
@@ -189,21 +176,12 @@ impl SessionConfigRpc for SessionDefaultsRpc {
         Ok(())
     }
 
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.store.get().thinking_budget
-    }
-
     fn get_mode(&self) -> String {
         self.store.get().mode.unwrap_or_else(|| "chat".to_string())
     }
 
     fn set_mode(&self, mode: &str) -> Result<(), String> {
         self.store.update(|v| v.mode = Some(mode.to_string()));
-        Ok(())
-    }
-
-    fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
-        self.store.update(|v| v.thinking_budget = Some(budget));
         Ok(())
     }
 
@@ -235,16 +213,12 @@ impl SessionConfigRpc for SessionDefaultsRpc {
 pub fn register_session_defaults(lua: &Lua, defaults: SessionDefaults) -> LuaResult<()> {
     crate::lua_util::get_or_create_namespace(lua, "cru")?.set("defaults", defaults)?;
     // A CLOSED record, unlike `cru.modes`: the `__index` above raises on a key
-    // it does not know, so the two names here are the whole surface. Luau
+    // it does not know, so the one name here is the whole surface. Luau
     // therefore catches a misspelled default at check time, which is the one
     // place in `cru.*` where a typo in an all-optional table IS caught — the
     // record is exact, so an unknown key reads as absent from the type.
-    crate::host_registry::declare_value(
-        lua,
-        "cru.defaults",
-        "{ system_prompt: string?, thinking_budget: number? }",
-    )
-    .map_err(|e| mlua::Error::external(e.to_string()))?;
+    crate::host_registry::declare_value(lua, "cru.defaults", "{ system_prompt: string? }")
+        .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
 }
 
@@ -297,13 +271,13 @@ mod tests {
     #[test]
     fn last_write_wins() {
         let (lua, defaults) = lua_with_defaults();
-        lua.load(r#"cru.defaults.thinking_budget = 100"#)
+        lua.load(r#"cru.defaults.system_prompt = "first""#)
             .exec()
             .unwrap();
-        lua.load(r#"cru.defaults.thinking_budget = 900"#)
+        lua.load(r#"cru.defaults.system_prompt = "second""#)
             .exec()
             .unwrap();
-        assert_eq!(defaults.get().thinking_budget, Some(900));
+        assert_eq!(defaults.get().system_prompt.as_deref(), Some("second"));
     }
 
     #[test]

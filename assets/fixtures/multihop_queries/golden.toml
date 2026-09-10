@@ -178,12 +178,10 @@ question = "PageUp and PageDown are not bound in the chat view but the shell mod
 expect_note = "Shell Execution"
 
 # S: Help/TUI/Keybindings.md — [[Help/TUI/Commands]]
-#   T: Help/TUI/Commands.md — "`high` | 8192 | Thorough reasoning ... `thinkingbudget` accepts presets only — a raw token count ... is rejected"
-#   lenient: Help/CLI/chat.md also lists the preset token counts.
+#   T: Help/TUI/Commands.md — "Use `:set option??` to see where a value came from ... [Command] ... [File] ... (base config)"
 [[queries]]
-question = "the thinking budget takes presets like high, medium and low; how many tokens is high, and is a raw token count accepted?"
+question = "a runtime option is not the value the config file sets; which :set suffix shows where the current value came from, and what does it list?"
 expect_note = "Commands"
-lenient = true
 
 # S: Help/Extending/Discord.md — [[Help/Operations/Discord Bot Runbook]]
 #   T: Help/Operations/Discord Bot Runbook.md — "1. Stop it answering (keeps the process, keeps the logs) ... `enabled = false # <- the only line you add`"

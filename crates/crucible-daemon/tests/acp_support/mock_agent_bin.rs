@@ -54,7 +54,6 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         model: "mock-model".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],

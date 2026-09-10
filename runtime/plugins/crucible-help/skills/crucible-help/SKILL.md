@@ -38,7 +38,7 @@ A local-first AI assistant where every conversation becomes a searchable, linkab
 | `cru stats` | Show kiln statistics |
 | `cru init` | Initialize a new kiln |
 
-**In-chat:** `/plan` (read-only), `/act` (write), `:model` (switch model), `:set thinkingbudget=high` (thinking), `BackTab` (cycle modes).
+**In-chat:** `/plan` (read-only), `/act` (write), `:model` (switch model), `:set thinking` (show reasoning), `BackTab` (cycle modes).
 
 ## Tools Available
 

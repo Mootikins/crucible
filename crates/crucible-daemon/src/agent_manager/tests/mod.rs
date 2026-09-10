@@ -609,7 +609,6 @@ fn test_agent() -> SessionAgent {
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),

@@ -24,6 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`config.save` refuses a leaf a CLI flag holds** instead of answering
   `ok: true`, writing `settings.json` and letting the rank gate drop the value.
 
+### Removed
+
+- **The thinking budget is gone, not deprecated.** A cap on reasoning tokens
+  truncates a current model mid-thought, and the model's own default is what
+  we want, so the whole knob is deleted: the `llm.thinking_budget` config key,
+  the `session.set_thinking_budget` / `session.get_thinking_budget` RPCs, the
+  `thinking_budget` entry in `daemon.capabilities`, the
+  `thinking_budget_changed` session event, the `thinking_budget` field on the
+  session agent record, the `PUT`/`GET /api/session/{id}/config/thinking-budget`
+  routes and the web control, the `:set thinkingbudget` key with its six
+  presets, `cru set thinkingbudget=…`, and `cru.defaults.thinking_budget` /
+  `session.thinking_budget` in Lua. `Ctrl+T` and `:set thinking` still toggle
+  whether the TUI shows reasoning; only the cap is removed. ACP's own
+  `thought_level` is untouched — it belongs to the external agent and reaches
+  a client through `session.list_agent_options`.
+
 ### Added
 
 - **`config.unset`** — a new RPC verb that removes a key and everything under

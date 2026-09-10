@@ -576,8 +576,6 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "workspace": workspace,
             })
         }
-        "session.set_thinking_budget" => json!(null),
-        "session.get_thinking_budget" => json!({"thinking_budget": 1024}),
         "session.set_precognition" => json!(null),
         "session.get_precognition" => json!({"precognition_enabled": true}),
         "session.set_precognition_results" => json!(null),

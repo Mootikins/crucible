@@ -179,7 +179,6 @@ async fn test_session_configure_agent() {
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],

@@ -57,7 +57,7 @@ default. On a terminal, text output includes `export CRU_SESSION=...` lines to c
 Sets the session's agent backend: `-p/--provider` (e.g. `ollama`, `openai`,
 `anthropic`), `-m/--model`, optional `-e/--endpoint <url>`, `-f text|json`. This
 replaces the whole agent config with an internal agent using those values. For runtime
-parameter tweaks on a live session (model, thinking budget), use `cru set` instead.
+parameter tweaks on a live session (model, context budget), use `cru set` instead.
 
 ### `cru session send [<id>] <message>`
 

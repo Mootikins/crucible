@@ -42,7 +42,6 @@ pub struct DaemonAgentHandle {
     pub(super) raw_event_rx: Option<mpsc::UnboundedReceiver<SessionEvent>>,
     pub(super) mode_id: String,
     pub(super) cached_model: Option<String>,
-    pub(super) cached_thinking_budget: Option<i64>,
     pub(super) cached_context_budget: Option<usize>,
     pub(super) cached_context_strategy: Option<String>,
     pub(super) cached_output_validation: Option<String>,
@@ -79,7 +78,6 @@ impl DaemonAgentHandle {
             raw_event_rx: None,
             mode_id: "ask".to_string(),
             cached_model: None,
-            cached_thinking_budget: None,
             cached_context_budget: None,
             cached_context_strategy: None,
             cached_output_validation: None,
@@ -200,11 +198,6 @@ impl DaemonAgentHandle {
 
     /// Fetch initial cached values from daemon (best-effort, default to None on failure).
     async fn fetch_cached_values(&mut self, client: &Arc<DaemonClient>, session_id: &str) {
-        self.cached_thinking_budget = client
-            .session_get_thinking_budget(session_id)
-            .await
-            .ok()
-            .flatten();
         self.cached_context_budget = client
             .session_get_context_budget(session_id)
             .await

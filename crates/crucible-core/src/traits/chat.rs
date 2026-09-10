@@ -182,10 +182,11 @@ pub trait SessionKnobs: Send + Sync {
     /// The session settings the external agent advertised for itself.
     ///
     /// ACP agents list these in the `session/new` reply; the model selector
-    /// is one of them, and `thought_level` is the other Crucible has a knob
-    /// for. The empty default is a true answer, not a stub: an internal
-    /// agent advertises nothing, because Crucible defines its settings
-    /// rather than discovering them.
+    /// is one of them, and `thought_level` is another. `thought_level`
+    /// belongs to the agent: Crucible has no equivalent knob and does not
+    /// interpret it. The empty default is a true answer, not a stub: an
+    /// internal agent advertises nothing, because Crucible defines its
+    /// settings rather than discovering them.
     fn agent_config_options(&self) -> &[crate::types::acp::schema::SessionConfigOption] {
         &[]
     }
@@ -211,14 +212,6 @@ pub trait SessionKnobs: Send + Sync {
     /// from a runtime setter. It stays on the trait because it is the one
     /// place a test can prove that AGENTS.md rules reached the model.
     fn get_system_prompt(&self) -> Option<String>;
-
-    /// Set the thinking budget for reasoning models.
-    ///
-    /// Values: -1 = unlimited, 0 = disabled, >0 = max tokens
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()>;
-
-    /// Get the current thinking budget.
-    fn get_thinking_budget(&self) -> Option<i64>;
 
     /// Set the context token budget. None = no limit.
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()>;
@@ -300,17 +293,6 @@ macro_rules! impl_unsupported_session_knobs {
             }
             async fn fetch_available_modes(&mut self) -> Vec<String> {
                 Vec::new()
-            }
-            async fn set_thinking_budget(
-                &mut self,
-                _budget: i64,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_thinking_budget".into(),
-                ))
-            }
-            fn get_thinking_budget(&self) -> Option<i64> {
-                None
             }
             async fn set_context_budget(
                 &mut self,
@@ -593,14 +575,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         (**self).fetch_available_modes().await
-    }
-
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        (**self).set_thinking_budget(budget).await
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        (**self).get_thinking_budget()
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {

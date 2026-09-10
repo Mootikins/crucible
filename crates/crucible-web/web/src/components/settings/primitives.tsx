@@ -1,6 +1,6 @@
 // src/components/settings/primitives.tsx
 //
-// The row/section/debounce scaffolding shared by every settings subsection.
+// The row/section scaffolding shared by every settings subsection.
 //
 // Extracted from SettingsPanel.tsx so a second file can build sections without
 // importing from the panel that renders it — SettingsPanel imports
@@ -156,22 +156,6 @@ export const SettingsSectionState: Component<{
     </Show>
   </>
 );
-
-// =============================================================================
-// Debounce helper
-// =============================================================================
-
-export function createDebounce<T extends (...args: unknown[]) => void>(fn: T, delay: number) {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const debounced = (...args: Parameters<T>) => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
-  const cleanup = () => {
-    if (timer) clearTimeout(timer);
-  };
-  return { debounced, cleanup };
-}
 
 // =============================================================================
 // Model Settings Section

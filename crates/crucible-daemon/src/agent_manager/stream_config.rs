@@ -9,10 +9,10 @@ use super::*;
 #[derive(Clone)]
 pub(crate) struct AgentStreamConfig {
     pub(crate) model: String,
-    // No thinking_budget or system_prompt here. Those reach the LLM through
-    // the agent handle, built from the same `SessionAgent` — the copies that
-    // used to sit in this struct were never read, and a second place to look
-    // for the authoritative value is worse than none.
+    // No system_prompt here. It reaches the LLM through the agent handle,
+    // built from the same `SessionAgent` — the copy that used to sit in this
+    // struct was never read, and a second place to look for the authoritative
+    // value is worse than none.
     //
     // Deleting a copy is only safe when the factory sets the real one. It was
     // not for temperature/max_tokens: the factory dropped those two, so

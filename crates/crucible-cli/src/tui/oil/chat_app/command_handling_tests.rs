@@ -65,7 +65,7 @@ fn app() -> OilChatApp {
     OilChatApp::default()
 }
 
-/// Run a `:set` body (e.g. `"thinkingbudget=high"`) through the real
+/// Run a `:set` body (e.g. `"contextbudget=128000"`) through the real
 /// command handler and return the resulting action.
 fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
     app.handle_set_command(&format!("set {body}"))
@@ -74,7 +74,6 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 // Every session-scoped key must emit a daemon-sync `Action::Send` so
 // multi-client state stays consistent (see AGENTS.md cross-layer checklist).
 #[test_case("model=gpt-4o" ; "model")]
-#[test_case("thinkingbudget=high" ; "thinking budget")]
 #[test_case("contextbudget=128000" ; "context budget")]
 #[test_case("contextstrategy=truncate" ; "context strategy")]
 #[test_case("outputvalidation=off" ; "output validation")]
@@ -94,15 +93,6 @@ fn set_session_key_emits_daemon_sync(body: &str) {
 }
 
 // Precise variant mapping for the load-bearing keys.
-#[test]
-fn set_thinkingbudget_maps_to_set_thinking_budget() {
-    let mut app = app();
-    assert!(matches!(
-        run_set(&mut app, "thinkingbudget=high"),
-        Action::Send(ChatAppMsg::SetThinkingBudget(_))
-    ));
-}
-
 #[test]
 fn set_model_maps_to_switch_model() {
     let mut app = app();
@@ -163,17 +153,16 @@ fn set_contextstrategy_normalizes_value() {
 #[test]
 fn set_then_query_round_trips() {
     let mut app = app();
-    run_set(&mut app, "thinkingbudget=high");
+    run_set(&mut app, "contextstrategy=truncate");
     let stored = app
         .runtime_config
-        .get("thinkingbudget")
+        .get("contextstrategy")
         .expect("value stored");
-    assert_eq!(stored.as_string(), Some("high"));
+    assert_eq!(stored.as_string(), Some("truncate"));
 }
 
 // Invalid values surface a warning and do NOT emit a daemon sync.
 #[test_case("contextbudget=abc" ; "non-numeric budget")]
-#[test_case("thinkingbudget=boguspreset" ; "unknown preset")]
 #[test_case("contextstrategy=nonsense" ; "unknown strategy")]
 #[test_case("validationretries=-1" ; "negative retries")]
 fn set_invalid_value_warns_and_no_send(body: &str) {
@@ -401,7 +390,7 @@ fn set_reset_returns_to_base() {
 #[test]
 fn set_query_unmodified_key_is_continue() {
     let mut app = app();
-    let action = app.handle_set_command("set thinkingbudget?");
+    let action = app.handle_set_command("set contextbudget?");
     assert!(matches!(action, Action::Continue));
 }
 

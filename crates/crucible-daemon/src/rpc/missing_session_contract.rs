@@ -184,12 +184,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.set_mode", json!({"mode_id": "ask"}), not_found()),
         ("session.get_mode", json!({}), not_found()),
         (
-            "session.set_thinking_budget",
-            json!({"thinking_budget": 100}),
-            not_found(),
-        ),
-        ("session.get_thinking_budget", json!({}), not_found()),
-        (
             "session.set_context_budget",
             json!({"context_budget": 3}),
             not_found(),

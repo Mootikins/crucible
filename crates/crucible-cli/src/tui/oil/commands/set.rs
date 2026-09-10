@@ -8,7 +8,7 @@
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::match_wildcard_for_single_variants)]
 
-use crate::tui::oil::config::{ConfigValue, ThinkingPreset};
+use crate::tui::oil::config::ConfigValue;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParseError {
@@ -104,7 +104,6 @@ pub enum SetCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetRpcAction {
     SwitchModel(String),
-    SetThinkingBudget(Option<i64>),
     SetContextBudget(Option<usize>),
     SetContextStrategy(String),
     SetOutputValidation(String),
@@ -170,19 +169,6 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
 pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetError> {
     match key.as_str() {
         "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
-        "thinkingbudget" => {
-            if let Some(preset) = ThinkingPreset::by_name(&value) {
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(
-                    preset.to_budget(),
-                ))))
-            } else {
-                let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
-                Err(SetError::InvalidValue {
-                    key,
-                    message: format!("unknown preset '{}'. Valid: {}", value, valid),
-                })
-            }
-        }
         "contextbudget" | "context_budget" => {
             let budget = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
             {
@@ -383,14 +369,11 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
 impl SetRpcAction {
     /// Map to the TUI message that performs the daemon sync.
     ///
-    /// `None` for actions with no message equivalent (clearing the thinking
-    /// budget is a CLI-only no-op).
+    /// `None` for actions with no message equivalent.
     pub fn into_chat_msg(self) -> Option<crate::tui::oil::chat_app::ChatAppMsg> {
         use crate::tui::oil::chat_app::ChatAppMsg;
         match self {
             SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
-            SetRpcAction::SetThinkingBudget(Some(b)) => Some(ChatAppMsg::SetThinkingBudget(b)),
-            SetRpcAction::SetThinkingBudget(None) => None,
             SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
             SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
@@ -487,7 +470,6 @@ fn is_daemon_rpc_key(key: &str) -> bool {
     matches!(
         key,
         "model"
-            | "thinkingbudget"
             | "contextbudget"
             | "context_budget"
             | "contextstrategy"
@@ -884,10 +866,10 @@ mod tests {
             })
         );
         assert_eq!(
-            SetCommand::parse(":set thinkingbudget high"),
+            SetCommand::parse(":set contextbudget 32000"),
             Ok(SetCommand::Set {
-                key: "thinkingbudget".into(),
-                value: "high".into()
+                key: "contextbudget".into(),
+                value: "32000".into()
             })
         );
     }

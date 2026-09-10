@@ -5,7 +5,7 @@
 //! ChatAppMsg serves a dual purpose in the TUI event loop:
 //!
 //! 1. **Commands (TUI → daemon)**: User actions that trigger side effects
-//!    - Examples: `UserMessage`, `SwitchModel`, `SetThinkingBudget`
+//!    - Examples: `UserMessage`, `SwitchModel`, `SetContextBudget`
 //!    - Flow: User input → `process_action()` → RPC call to daemon
 //!
 //! 2. **Events (daemon → TUI)**: Responses from the daemon that update display state
@@ -161,8 +161,6 @@ pub enum ChatAppMsg {
     ModesLoaded(Vec<String>),
     /// **Event** (daemon → TUI): Plugin status loaded.
     PluginStatusLoaded(Vec<PluginStatusEntry>),
-    /// **Command** (TUI → daemon): Set LLM thinking budget (extended thinking).
-    SetThinkingBudget(i64),
     /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.
     /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
     /// **Command** (TUI → daemon): Set context token budget.
@@ -353,7 +351,6 @@ impl ChatAppMsg {
             | Self::ModelsFetchFailed(_)
             | Self::FetchModes
             | Self::ModesLoaded(_)
-            | Self::SetThinkingBudget(_)
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
             | Self::SetOutputValidation(_)

@@ -136,54 +136,6 @@ async fn test_models_list_rpc_no_session() {
     server.shutdown().await;
 }
 
-#[tokio::test]
-async fn test_session_set_thinking_budget_rpc_success_and_missing_session_id_error() {
-    let server = TestServer::start().await;
-    let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, TestServer::KILN, 100).await;
-    let configure_response =
-        configure_internal_mock_agent(&mut client, &session_id, 101, "mock-budget").await;
-    assert!(
-        configure_response["error"].is_null(),
-        "configure failed: {configure_response:?}"
-    );
-
-    let ok_response = rpc_call(
-        &mut client,
-        json!({
-            "jsonrpc": "2.0",
-            "id": 102,
-            "method": "session.set_thinking_budget",
-            "params": {
-                "session_id": session_id,
-                "thinking_budget": 256
-            }
-        }),
-    )
-    .await;
-    assert!(
-        ok_response["error"].is_null(),
-        "session.set_thinking_budget failed: {ok_response:?}"
-    );
-    assert_eq!(ok_response["result"]["thinking_budget"], 256);
-
-    let err_response = rpc_call(
-        &mut client,
-        json!({
-            "jsonrpc": "2.0",
-            "id": 103,
-            "method": "session.set_thinking_budget",
-            "params": {
-                "thinking_budget": 1
-            }
-        }),
-    )
-    .await;
-    assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
-
-    server.shutdown().await;
-}
-
 /// `session.list_modes` must agree with `session.get_mode`. The two are
 /// separate RPCs, so nothing structurally forces it: `session_modes()` used to
 /// derive `current_mode_id` from declaration order, which meant a session in

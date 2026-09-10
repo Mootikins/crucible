@@ -32,8 +32,8 @@ pub(super) mod prompt;
 mod tests;
 
 pub(super) use basic::{
-    get_precognition, get_precognition_results, get_thinking_budget, list_agent_options,
-    set_agent_option, set_precognition, set_precognition_results, set_thinking_budget,
+    get_precognition, get_precognition_results, list_agent_options, set_agent_option,
+    set_precognition, set_precognition_results,
 };
 pub(super) use context::{
     get_autocompact_threshold, get_context_budget, set_autocompact_threshold, set_context_budget,
@@ -58,10 +58,6 @@ pub(super) use prompt::{
 /// inheriting them.
 pub(super) fn config_routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/api/session/{id}/config/thinking-budget",
-            put(set_thinking_budget).get(get_thinking_budget),
-        )
         .route(
             "/api/session/{id}/config/precognition",
             put(set_precognition).get(get_precognition),

@@ -390,7 +390,6 @@ const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
     ("output_validation", "output-validation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition/results"),
-    ("thinking_budget", "thinking-budget"),
     ("validation_retries", "validation-retries"),
     // Not a Crucible knob: the settings the external agent advertised for
     // itself. One route serves both directions — GET lists them, POST sets one
@@ -512,7 +511,6 @@ const TUI_SET_KEYS: &[(&str, &str)] = &[
     ("output_validation", "outputvalidation"),
     ("precognition", "precognition"),
     ("precognition_results", "precognition.results"),
-    ("thinking_budget", "thinkingbudget"),
     ("validation_retries", "validationretries"),
 ];
 

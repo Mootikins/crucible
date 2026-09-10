@@ -157,7 +157,6 @@ async fn test_tui_daemon_agent_full_flow() {
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],

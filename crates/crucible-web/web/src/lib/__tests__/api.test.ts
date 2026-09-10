@@ -9,8 +9,6 @@ import {
   executeCommand,
   listProviders,
   switchModel,
-  setThinkingBudget,
-  getThinkingBudget,
   saveNote,
   respondToInteraction,
   searchSessions,
@@ -342,59 +340,6 @@ describe('switchModel', () => {
     const [, init] = mockFetch.mock.calls[0];
     expect(init!.method).toBe('POST');
     expect(JSON.parse(init!.body as string)).toEqual({ model_id: 'openai:gpt-4' });
-  });
-});
-
-// =============================================================================
-// setThinkingBudget / getThinkingBudget
-// =============================================================================
-
-describe('setThinkingBudget', () => {
-  it('sends PUT to config/thinking-budget with budget value', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/thinking-budget': { body: {} },
-    });
-    global.fetch = mockFetch;
-
-    await setThinkingBudget('ses-1', 4096);
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.method).toBe('PUT');
-    expect(JSON.parse(init!.body as string)).toEqual({ thinking_budget: 4096 });
-  });
-
-  it('sends null budget to disable thinking', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/thinking-budget': { body: {} },
-    });
-    global.fetch = mockFetch;
-
-    await setThinkingBudget('ses-1', null);
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(JSON.parse(init!.body as string)).toEqual({ thinking_budget: null });
-  });
-});
-
-describe('getThinkingBudget', () => {
-  it('fetches thinking budget and returns number', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/config/thinking-budget': { body: { thinking_budget: 2048 } },
-    });
-    global.fetch = mockFetch;
-
-    const result = await getThinkingBudget('ses-1');
-    expect(result).toBe(2048);
-  });
-
-  it('returns null when thinking is disabled', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/config/thinking-budget': { body: { thinking_budget: null } },
-    });
-    global.fetch = mockFetch;
-
-    const result = await getThinkingBudget('ses-1');
-    expect(result).toBeNull();
   });
 });
 

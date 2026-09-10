@@ -135,7 +135,7 @@ pub enum Commands {
         env: Vec<String>,
 
         /// Session configuration overrides in vim-style format (can be repeated)
-        /// Same syntax as TUI :set — examples: --set model=llama3 --set thinkingbudget=high
+        /// Same syntax as TUI :set — examples: --set model=llama3 --set contextbudget=128000
         /// Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
         #[arg(long = "set", value_name = "KEY[=VALUE]")]
         set_overrides: Vec<String>,
@@ -501,10 +501,10 @@ Examples:
     /// Requires session targeting via --session or CRU_SESSION env var.
     /// Examples:
     ///   cru set model=llama3 --session chat-20260217-1030
-    ///   CRU_SESSION=chat-20260217-1030 cru set thinkingbudget=high
+    ///   CRU_SESSION=chat-20260217-1030 cru set contextbudget=128000
     #[command(
         name = "set",
-        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires session targeting via positional SESSION_ID or CRU_SESSION env var.\nOnly daemon-synced settings (model, thinkingbudget, maxiterations) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set chat-20260217-1030 model=llama3\n\n  # Set thinking budget using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set thinkingbudget=high\n\n  # Set multiple settings at once\n  cru set chat-20260217-1030 model=llama3 thinkingbudget=high"
+        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires session targeting via positional SESSION_ID or CRU_SESSION env var.\nOnly daemon-synced settings (model, contextbudget, maxiterations) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set chat-20260217-1030 model=llama3\n\n  # Set the context budget using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set contextbudget=128000\n\n  # Set multiple settings at once\n  cru set chat-20260217-1030 model=llama3 contextbudget=128000"
     )]
     Set {
         /// Session ID and/or settings (positional args, or use CRU_SESSION env var)

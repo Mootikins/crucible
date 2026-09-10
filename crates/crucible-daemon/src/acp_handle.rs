@@ -80,7 +80,6 @@ pub struct AcpAgentHandle {
     /// which a client renders and the daemon does not interpret.
     config_options: Vec<crucible_core::types::acp::schema::SessionConfigOption>,
     session_id: Option<String>,
-    cached_thinking_budget: Option<i64>,
 }
 
 /// Parameters for creating a new ACP agent handle.
@@ -321,7 +320,6 @@ impl AcpAgentHandle {
             model,
             config_options,
             session_id: Some(session_id),
-            cached_thinking_budget: agent_config.thinking_budget,
         })
     }
 }
@@ -413,16 +411,6 @@ impl SessionKnobs for AcpAgentHandle {
     /// ACP carries no system prompt; the agent owns its own.
     fn get_system_prompt(&self) -> Option<String> {
         None
-    }
-
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        debug!(budget, "Caching thinking budget for ACP agent");
-        self.cached_thinking_budget = Some(budget);
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.cached_thinking_budget
     }
 
     /// Switch the agent's model through `session/set_config_option`.

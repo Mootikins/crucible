@@ -421,8 +421,8 @@ impl AgentManager {
         let is_acp = agent_config.agent_type == "acp";
 
         // A setting the session's agent cannot carry is refused, not stored.
-        // `AcpAgentHandle` used to cache temperature, thinking budget and max
-        // tokens in fields nothing read, so the value was accepted, reported
+        // `AcpAgentHandle` used to cache temperature and max tokens in
+        // fields nothing read, so the value was accepted, reported
         // back, and never reached the agent process. Storing it here has the
         // same effect one layer up, because these setters never ask the
         // handle at all — they write the session's config and stop.
@@ -470,42 +470,9 @@ impl AgentManager {
         Ok(())
     }
 
-    pub async fn set_thinking_budget(
-        &self,
-        session_id: &str,
-        budget: i64,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ThinkingBudget,
-            event_tx,
-            "thinking_budget_changed",
-            serde_json::json!({ "budget": budget }),
-            "Failed to emit thinking_budget_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.thinking_budget = Some(budget);
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    budget = budget,
-                    "Thinking budget updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
     pub fn get_mode(&self, session_id: &str) -> Result<Option<String>, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.mode)
-    }
-
-    pub fn get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.thinking_budget)
     }
 
     pub async fn set_precognition(

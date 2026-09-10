@@ -35,14 +35,6 @@ pub struct SessionSetModeRequest {
     pub mode_id: String,
 }
 
-/// Request for `session.set_thinking_budget`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetThinkingBudgetRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking_budget: Option<i64>,
-}
-
 /// Request for `session.set_precognition`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetPrecognitionRequest {
@@ -474,44 +466,6 @@ impl DaemonClient {
             })
             .unwrap_or_default();
         Ok(providers)
-    }
-
-    /// Set the thinking budget for a session's agent.
-    ///
-    /// The thinking budget controls reasoning token allocation for thinking models
-    /// (e.g., Qwen, DeepSeek R1):
-    /// - `None` - Use model's default behavior
-    /// - `Some(-1)` - Unlimited thinking tokens
-    /// - `Some(0)` - Disable thinking/reasoning
-    /// - `Some(n)` where n > 0 - Maximum thinking tokens
-    ///
-    /// Changes take effect on the next message. Invalidates cached agent handles.
-    pub async fn session_set_thinking_budget(
-        &self,
-        session_id: &str,
-        budget: Option<i64>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_thinking_budget",
-            SessionSetThinkingBudgetRequest {
-                session_id: session_id.to_string(),
-                thinking_budget: budget,
-            },
-        )
-        .await
-    }
-
-    /// Get the current thinking budget for a session's agent.
-    ///
-    /// Returns the configured thinking budget, or `None` if not set (using defaults).
-    pub async fn session_get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>> {
-        self.get_session_option(
-            "session.get_thinking_budget",
-            session_id,
-            "thinking_budget",
-            |v| v.as_i64(),
-        )
-        .await
     }
 
     /// Set whether Precognition (auto-RAG) is enabled for a session.

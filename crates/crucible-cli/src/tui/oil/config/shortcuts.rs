@@ -37,8 +37,6 @@ pub enum CompletionSource {
     Models,
     /// Use available themes.
     Themes,
-    /// Use `THINKING_PRESETS.names()`.
-    ThinkingPresets,
     /// Fixed list of values.
     Static(&'static [&'static str]),
     /// No completions (bool toggle, free-form input).
@@ -78,12 +76,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         target: ShortcutTarget::Virtual,
         completions: CompletionSource::None,
         description: "Show diff bodies for Edit/Write tool calls",
-    },
-    ConfigShortcut {
-        short: "thinkingbudget",
-        target: ShortcutTarget::Path("llm.thinking_budget"),
-        completions: CompletionSource::ThinkingPresets,
-        description: "Thinking token budget preset",
     },
     ConfigShortcut {
         // `theme` alone was ambiguous once the UI gained a colorscheme and a
@@ -244,10 +236,6 @@ mod tests {
             registry.reverse_lookup("cli.highlighting.theme"),
             Some("syntax_theme")
         );
-        assert_eq!(
-            registry.reverse_lookup("llm.thinking_budget"),
-            Some("thinkingbudget")
-        );
 
         // Non-existent path returns None
         assert_eq!(registry.reverse_lookup("nonexistent.path"), None);
@@ -271,7 +259,6 @@ mod tests {
         assert!(shorts.contains(&"model"));
         assert!(shorts.contains(&"thinking"));
         assert!(shorts.contains(&"show_diffs"));
-        assert!(shorts.contains(&"thinkingbudget"));
         assert!(shorts.contains(&"syntax_theme"));
         assert!(shorts.contains(&"precognition"));
         assert!(shorts.contains(&"precognition.results"));
@@ -304,10 +291,6 @@ mod tests {
         assert_eq!(
             registry.completions_for("syntax_theme"),
             CompletionSource::Themes
-        );
-        assert_eq!(
-            registry.completions_for("thinkingbudget"),
-            CompletionSource::ThinkingPresets
         );
         assert_eq!(registry.completions_for("thinking"), CompletionSource::None);
         // Non-existent defaults to None

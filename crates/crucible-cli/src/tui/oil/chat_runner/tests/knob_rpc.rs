@@ -2,9 +2,9 @@
 //!
 //! The `:set` dispatch matrix (chat_app/command_handling.rs) stops at
 //! `Action::Send(msg)`, and the startup-override regression test
-//! (initial_sets.rs) covers only thinking_budget + model. Nothing verified
+//! (initial_sets.rs) covers only context_budget + model. Nothing verified
 //! that each knob message's arm in `process_action` invokes the *matching*
-//! `AgentHandle` RPC — the "budget vs thinking_budget" miswiring class from
+//! `AgentHandle` RPC — the "budget vs context_budget" miswiring class from
 //! the AGENTS.md cross-layer checklist. This matrix drives every
 //! daemon-scoped knob end-to-end: real keystrokes (`:set …` + Enter) through
 //! `OilChatApp::update`, then the resulting action through the real
@@ -63,10 +63,6 @@ impl SessionKnobs for KnobRecordingAgent {
         self.calls.push("switch_model");
         Ok(())
     }
-    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-        self.calls.push("set_thinking_budget");
-        Ok(())
-    }
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
         self.calls.push("set_context_budget");
         Ok(())
@@ -112,10 +108,6 @@ impl SessionKnobs for KnobRecordingAgent {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
     }
 
     fn get_context_budget(&self) -> Option<usize> {
@@ -176,7 +168,6 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 }
 
 #[test_case("model=gpt-4o", "switch_model" ; "model")]
-#[test_case("thinkingbudget=high", "set_thinking_budget" ; "thinking budget")]
 #[test_case("contextbudget=128000", "set_context_budget" ; "context budget")]
 #[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
 #[test_case("outputvalidation=json", "set_output_validation" ; "output validation")]
@@ -321,14 +312,6 @@ impl SessionKnobs for ModeListingAgent {
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_thinking_budget".into()))
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
     }
 
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {

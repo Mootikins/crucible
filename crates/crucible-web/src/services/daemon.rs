@@ -887,35 +887,6 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_set_thinking_budget(
-        &self,
-        session_id: &str,
-        budget: Option<i64>,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_thinking_budget", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_thinking_budget(&session_id, budget)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_thinking_budget(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<i64>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_thinking_budget", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_thinking_budget(&session_id).await })
-        })
-        .await
-    }
-
     pub async fn session_set_precognition(
         &self,
         session_id: &str,

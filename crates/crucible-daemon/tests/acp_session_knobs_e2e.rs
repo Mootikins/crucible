@@ -84,7 +84,6 @@ fn acp_agent() -> SessionAgent {
         model: "mock-acp".to_string(),
         system_prompt: String::new(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -239,7 +238,7 @@ fn the_mock_agent_binary_is_available() {
 /// A setting ACP cannot carry is refused rather than stored.
 ///
 /// These setters never ask the handle: they write the session's config and
-/// stop. So an accepted `set_thinking_budget` was a value the agent process
+/// stop. So an accepted `set_context_budget` was a value the agent process
 /// would never see, reported back to the caller as though it had taken
 /// effect. The error names the setting, because "not supported" alone leaves
 /// a user guessing which control just failed.
@@ -249,10 +248,6 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
     let id = h.session_id.as_str();
 
     let attempts = [
-        (
-            "thinking_budget",
-            h.agent_manager.set_thinking_budget(id, 4096, None).await,
-        ),
         (
             "output_validation",
             h.agent_manager
@@ -315,10 +310,6 @@ async fn a_session_reports_which_settings_it_supports() {
             .unwrap_or_else(|| panic!("`{id}` is missing from the answer"))
     };
 
-    assert!(
-        !supported("thinking_budget"),
-        "ACP's reasoning control is a select of names, not a token count"
-    );
     assert!(
         !supported("context_budget"),
         "the agent owns its history, so the daemon budgets nothing"

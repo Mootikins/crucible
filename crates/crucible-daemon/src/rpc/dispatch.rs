@@ -132,8 +132,6 @@ rpc_methods! {
     SessionListKnobs = "session.list_knobs",
     SessionListAgentOptions = "session.list_agent_options",
     SessionSetAgentOption = "session.set_agent_option",
-    SessionSetThinkingBudget = "session.set_thinking_budget",
-    SessionGetThinkingBudget = "session.get_thinking_budget",
     SessionCacheStats = "session.cache_stats",
     SessionSetAutocompactThreshold = "session.set_autocompact_threshold",
     SessionGetAutocompactThreshold = "session.get_autocompact_threshold",
@@ -354,8 +352,7 @@ impl RpcDispatcher {
 
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
-            RpcMethod::SessionSetThinkingBudget
-            | RpcMethod::SessionSetContextBudget
+            RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
             | RpcMethod::SessionSetOutputValidation
             | RpcMethod::SessionSetValidationRetries
@@ -364,8 +361,7 @@ impl RpcDispatcher {
             | RpcMethod::SessionSetAutocompactThreshold => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
-            RpcMethod::SessionGetThinkingBudget
-            | RpcMethod::SessionGetMode
+            RpcMethod::SessionGetMode
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
             | RpcMethod::SessionGetOutputValidation
@@ -1220,7 +1216,6 @@ impl RpcDispatcher {
                 "sessions": true,
                 "agents": true,
                 "events": true,
-                "thinking_budget": true,
                 "model_switching": true,
             },
             "methods": METHODS,
@@ -1319,10 +1314,9 @@ impl RpcDispatcher {
     /// Route a `session.set_*` method to the corresponding server handler.
     ///
     /// All session config setters share the signature `(Request, &AgentManager, &Sender) -> Response`.
-    /// This avoids 13 near-identical one-line forwarding methods.
+    /// This avoids a dozen near-identical one-line forwarding methods.
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
-            "session.set_thinking_budget" => handle_session_set_thinking_budget,
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
             "session.set_output_validation" => handle_session_set_output_validation,
@@ -1339,7 +1333,6 @@ impl RpcDispatcher {
     /// All session config getters share the signature `(Request, &AgentManager) -> Response`.
     async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_getter!(req, &self.ctx.agents, {
-            "session.get_thinking_budget" => handle_session_get_thinking_budget,
             "session.get_mode" => handle_session_get_mode,
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
@@ -2941,7 +2934,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         assert!(METHODS.contains(&"ping"));
         assert!(METHODS.contains(&"daemon.capabilities"));
         assert!(METHODS.contains(&"session.subscribe"));
-        assert!(METHODS.contains(&"session.set_thinking_budget"));
+        assert!(METHODS.contains(&"session.set_context_budget"));
         assert!(METHODS.contains(&"session.cache_stats"));
         assert!(METHODS.contains(&"subagent.collect"));
     }
@@ -3579,7 +3572,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let result = resp.result.unwrap();
         let methods = result["methods"].as_array().unwrap();
         assert!(methods.iter().any(|m| m == "ping"));
-        assert!(methods.iter().any(|m| m == "session.set_thinking_budget"));
+        assert!(methods.iter().any(|m| m == "session.set_context_budget"));
     }
 
     #[tokio::test]

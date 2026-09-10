@@ -203,8 +203,7 @@ impl OilChatApp {
                 self.plugin_status = entries;
             }
             // Command-only: side effects handled by chat_runner::process_action
-            ChatAppMsg::SetThinkingBudget(_)
-            | ChatAppMsg::SetContextBudget(_)
+            ChatAppMsg::SetContextBudget(_)
             | ChatAppMsg::SetContextStrategy(_)
             | ChatAppMsg::SetOutputValidation(_)
             | ChatAppMsg::SetValidationRetries(_)

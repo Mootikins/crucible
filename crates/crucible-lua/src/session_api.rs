@@ -4,7 +4,7 @@
 //!
 //! ```lua
 //! local s = cru.get_session()
-//! s.thinking_budget = 1024
+//! s.system_prompt = "Answer in one sentence."
 //! s.model = "claude-sonnet-4"  -- in an on_session_start hook
 //! ```
 //!
@@ -51,7 +51,7 @@ fn unsupported(field: &str) -> String {
 /// backing that forgot one still compiled, and a Lua knob could be half
 /// wired: `NoopSessionRpc` was `impl SessionConfigRpc for NoopSessionRpc {}`
 /// and was bound at every daemon site, so a plugin that wrote
-/// `session.thinking_budget = 4096` was told it worked and nothing
+/// `session.system_prompt = "..."` was told it worked and nothing
 /// happened. A backing that supports nothing now says so by name:
 /// [`UnsupportedSessionRpc`]. A backing that supports some knobs delegates
 /// the rest to it, so the compiler lists each knob it does not answer.
@@ -60,8 +60,6 @@ fn unsupported(field: &str) -> String {
 /// Getters return `None`, because an absent value is honestly `nil` in Lua,
 /// and an error on a read would break `session.x or fallback`.
 pub trait SessionConfigRpc: Send + Sync {
-    fn get_thinking_budget(&self) -> Option<i64>;
-    fn set_thinking_budget(&self, budget: i64) -> Result<(), String>;
     fn get_model(&self) -> Option<String>;
     fn switch_model(&self, model: &str) -> Result<(), String>;
     fn get_mode(&self) -> String;
@@ -81,12 +79,6 @@ pub trait SessionConfigRpc: Send + Sync {
 pub struct UnsupportedSessionRpc;
 
 impl SessionConfigRpc for UnsupportedSessionRpc {
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> {
-        Err(unsupported("thinking_budget"))
-    }
     fn get_model(&self) -> Option<String> {
         None
     }
@@ -355,9 +347,6 @@ impl UserData for Session {
                     Some(v) => lua.to_value(v),
                     None => Ok(Value::Nil),
                 },
-                "thinking_budget" => this
-                    .with_rpc(|r| Ok(r.get_thinking_budget()))
-                    .map(|v| v.map(Value::Integer).unwrap_or(Value::Nil)),
                 // A handle from `get`/`list` binds no RPC, so the daemon's
                 // record is the only place the model can come from. A bound
                 // handle still answers with the live value.
@@ -405,10 +394,6 @@ impl UserData for Session {
                 "model" => {
                     let model: String = lua.unpack(val)?;
                     this.with_rpc(|r| r.switch_model(&model))
-                }
-                "thinking_budget" => {
-                    let budget: i64 = lua.unpack(val)?;
-                    this.with_rpc(|r| r.set_thinking_budget(budget))
                 }
                 "mode" => {
                     let mode: String = lua.unpack(val)?;
@@ -638,12 +623,6 @@ pub mod tests {
         fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
             self.variables.read().unwrap().get(key).cloned()
         }
-        fn get_thinking_budget(&self) -> Option<i64> {
-            UnsupportedSessionRpc.get_thinking_budget()
-        }
-        fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
-            UnsupportedSessionRpc.set_thinking_budget(budget)
-        }
         fn set_mode(&self, mode: &str) -> Result<(), String> {
             UnsupportedSessionRpc.set_mode(mode)
         }
@@ -865,7 +844,7 @@ mod unsupported_rpc_tests {
     ///
     /// The trait once defaulted every setter to `Ok(())`, and the daemon
     /// bound that empty impl at every site, so a plugin that wrote
-    /// `session.thinking_budget = 4096` was told it worked and nothing
+    /// `session.system_prompt = "..."` was told it worked and nothing
     /// happened. The methods are required now; the one backing that
     /// supports nothing must still say so.
     #[test]
@@ -873,7 +852,6 @@ mod unsupported_rpc_tests {
         let rpc = UnsupportedSessionRpc;
 
         for (name, result) in [
-            ("thinking_budget", rpc.set_thinking_budget(4096)),
             ("model", rpc.switch_model("gpt-4o")),
             ("mode", rpc.set_mode("plan")),
             ("system_prompt", rpc.set_system_prompt("hi")),
@@ -893,6 +871,6 @@ mod unsupported_rpc_tests {
     fn unsupported_getters_stay_silent() {
         let rpc = UnsupportedSessionRpc;
         assert_eq!(rpc.get_model(), None);
-        assert_eq!(rpc.get_thinking_budget(), None);
+        assert_eq!(rpc.get_system_prompt(), None);
     }
 }

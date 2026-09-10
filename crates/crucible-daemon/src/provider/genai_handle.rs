@@ -11,8 +11,8 @@ use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use genai::chat::{
-    CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart,
-    ReasoningEffort, Tool, ToolCall, ToolResponse,
+    CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart, Tool,
+    ToolCall, ToolResponse,
 };
 use genai::ModelIden;
 
@@ -399,7 +399,6 @@ pub struct GenaiAgentHandle {
     modes: Option<crucible_lua::ModeRegistry>,
     mode_context_sent: bool,
     max_tool_depth: usize,
-    thinking_budget: Option<i64>,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
     output_validation: OutputValidation,
@@ -764,7 +763,6 @@ impl GenaiAgentHandle {
         model: ModelIden,
         system_prompt: &str,
         tools: Vec<LlmToolDefinition>,
-        thinking_budget: Option<i64>,
     ) -> Self {
         let mode_state = default_internal_modes();
         let current_mode_id = mode_state.current_mode_id.0.to_string();
@@ -780,7 +778,6 @@ impl GenaiAgentHandle {
             modes: None,
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
-            thinking_budget,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
             output_validation: OutputValidation::default(),
@@ -820,20 +817,16 @@ impl GenaiAgentHandle {
     /// Each `Option` is applied only when set, so an unset value means "the
     /// provider decides" rather than a value chosen here.
     fn build_chat_options(&self) -> ChatOptions {
-        let mut options = ChatOptions::default()
+        let options = ChatOptions::default()
             .with_capture_tool_calls(true)
             .with_capture_content(true)
             .with_capture_usage(true)
             .with_capture_reasoning_content(true);
-        if let Some(budget) = self.thinking_budget {
-            options = options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32,
-            ));
-        }
-        // No temperature and no max_tokens. Both are per-model inference
-        // settings, so genai picks the right default for the model actually
-        // being called — Crucible's own 4096 cap truncated every Anthropic
-        // reply that genai would have allowed 64000.
+        // No temperature, no max_tokens and no reasoning budget. All three
+        // are per-model inference settings, so genai picks the right default
+        // for the model actually being called — Crucible's own 4096 cap
+        // truncated every Anthropic reply that genai would have allowed
+        // 64000, and a reasoning cap cut the model off mid-thought.
         options
     }
 
@@ -1504,17 +1497,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    /// `build_chat_options` reads this field on every request, so the
-    /// knob answers from the same field.
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        self.thinking_budget = Some(budget);
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.thinking_budget
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
@@ -2197,66 +2179,15 @@ mod tests {
         }]
     }
 
-    /// The session reads the budget back through `SessionKnobs`, so the
-    /// knob answers from the field the turn reads.
-    #[tokio::test]
-    async fn thinking_budget_knob_answers_from_the_field() {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("gpt-4o-mini")
-            .build();
-        let chat_client = ChatClient::new(&config);
-        let client = chat_client.inner().clone();
-        let model = chat_client
-            .model_iden("gpt-4o-mini")
-            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
-
-        let mut handle = GenaiAgentHandle::new(client, model, "system", Vec::new(), Some(1024));
-        assert_eq!(SessionKnobs::get_thinking_budget(&handle), Some(1024));
-
-        SessionKnobs::set_thinking_budget(&mut handle, 2048)
-            .await
-            .expect("the genai handle holds the budget");
-        assert_eq!(handle.thinking_budget, Some(2048));
-        assert_eq!(SessionKnobs::get_thinking_budget(&handle), Some(2048));
-    }
-
-    #[test]
-    fn test_thinking_budget_stored_and_clamped() {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("gpt-4o-mini")
-            .build();
-        let chat_client = ChatClient::new(&config);
-        let client = chat_client.inner().clone();
-        let model = chat_client
-            .model_iden("gpt-4o-mini")
-            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
-
-        let negative_budget_handle = GenaiAgentHandle::new(
-            client.clone(),
-            model.clone(),
-            "system",
-            Vec::new(),
-            Some(-5),
-        );
-        assert_eq!(negative_budget_handle.thinking_budget, Some(-5));
-
-        let max_budget_handle =
-            GenaiAgentHandle::new(client, model, "system", Vec::new(), Some(i64::MAX));
-        assert_eq!(max_budget_handle.thinking_budget, Some(i64::MAX));
-
-        let clamped_negative = (-5_i64).clamp(0, u32::MAX as i64) as u32;
-        let clamped_overflow = i64::MAX.clamp(0, u32::MAX as i64) as u32;
-
-        assert_eq!(clamped_negative, 0);
-        assert_eq!(clamped_overflow, u32::MAX);
-    }
-    /// The request carries no temperature and no token cap.
+    /// The request carries no temperature, no token cap and no reasoning
+    /// budget.
     ///
-    /// Both were removed: they are per-model inference settings, so genai
+    /// All three were removed: they are per-model inference settings, so genai
     /// picks the right default for the model actually being called. Crucible's
     /// own 4096 cap truncated every Anthropic reply that genai would have
-    /// allowed 64000. `ChatOptions` is what genai puts on the wire, so this
-    /// asserts there rather than on a field.
+    /// allowed 64000, and a reasoning cap cut the model off mid-thought.
+    /// `ChatOptions` is what genai puts on the wire, so this asserts there
+    /// rather than on a field.
     #[test]
     fn the_request_leaves_sampling_to_the_provider() {
         let handle = test_handle_with_tools(Vec::new());
@@ -2264,6 +2195,7 @@ mod tests {
 
         assert_eq!(options.temperature, None);
         assert_eq!(options.max_tokens, None);
+        assert!(options.reasoning_effort.is_none());
         // The capture flags the stream loop depends on must survive.
         assert_eq!(options.capture_tool_calls, Some(true));
         assert_eq!(options.capture_usage, Some(true));
@@ -2280,7 +2212,7 @@ mod tests {
         let model = chat_client
             .model_iden("gpt-4o-mini")
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
-        GenaiAgentHandle::new(client, model, "system", tools, None)
+        GenaiAgentHandle::new(client, model, "system", tools)
     }
 
     /// Regression: a handle must accept a mode the Lua registry declares.

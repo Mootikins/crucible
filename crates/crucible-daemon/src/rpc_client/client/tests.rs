@@ -366,12 +366,11 @@ async fn test_client_capabilities() {
     assert!(caps.capabilities.sessions);
     assert!(caps.capabilities.agents);
     assert!(caps.capabilities.events);
-    assert!(caps.capabilities.thinking_budget);
     assert!(caps.capabilities.model_switching);
     assert!(caps.methods.contains(&"ping".to_string()));
     assert!(caps
         .methods
-        .contains(&"session.set_thinking_budget".to_string()));
+        .contains(&"session.set_context_budget".to_string()));
 }
 
 #[tokio::test]
@@ -530,77 +529,6 @@ async fn test_session_subscribe_unsubscribe() {
 
     let unsub_result = client.session_unsubscribe(&[session_id]).await;
     assert!(unsub_result.is_ok());
-
-    let _ = client.session_end(session_id).await;
-}
-
-/// The thinking budget is a property of a session's AGENT, so the session
-/// has to have one — creating agent-less and asking for the budget answers
-/// "No agent configured", which is what this test spent its life doing
-/// against whatever daemon happened to be running.
-#[tokio::test]
-async fn test_session_thinking_budget() {
-    let (_srv, sock, _handle) = setup_test_server().await;
-    let client = DaemonClient::connect_to(&sock).await.unwrap();
-    let _tmp = TempDir::new().unwrap();
-
-    let result = client
-        .session_create_with_agent(
-            SessionCreateParams {
-                session_type: "chat".to_string(),
-                kilns: vec![crate::test_support::kiln_name("kiln")],
-                workspace: None,
-                recording_mode: None,
-                recording_path: None,
-                agent_type: Some("internal".to_string()),
-                isolation: None,
-            },
-            crate::rpc_client::SessionAgentSpec {
-                provider: Some("ollama".to_string()),
-                model: Some("llama3.2".to_string()),
-                endpoint: Some("http://localhost:11434".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    let session_id = result["session_id"].as_str().unwrap();
-
-    let initial = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert!(initial.is_none(), "Initial budget should be None");
-
-    client
-        .session_set_thinking_budget(session_id, Some(10000))
-        .await
-        .unwrap();
-    let budget = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert_eq!(budget, Some(10000));
-
-    client
-        .session_set_thinking_budget(session_id, Some(-1))
-        .await
-        .unwrap();
-    let unlimited = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert_eq!(unlimited, Some(-1));
-
-    client
-        .session_set_thinking_budget(session_id, Some(0))
-        .await
-        .unwrap();
-    let cleared = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert_eq!(cleared, Some(0), "Budget should be 0 (disabled)");
 
     let _ = client.session_end(session_id).await;
 }

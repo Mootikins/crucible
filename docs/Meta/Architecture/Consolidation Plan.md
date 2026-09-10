@@ -1066,7 +1066,7 @@ last group.
 
 ### crucible-core
 
-- `traits/chat.rs`: `clear_history` still defaults to `Ok(())`; make it required. `GenaiAgentHandle` holds a `thinking_budget` field but its `SessionKnobs` answers `NotSupported`; `Genai` and `Acp` handles answer empty for `max_iterations`, `execution_timeout` and precognition because the daemon session owns them. [A1]
+- `traits/chat.rs`: `clear_history` still defaults to `Ok(())`; make it required. `Genai` and `Acp` handles answer empty for `max_iterations`, `execution_timeout` and precognition because the daemon session owns them. [A1]
 - `storage/traits.rs`: the `StorageClient` doc names `DirectStorageClient` and `crucible-rpc`, which do not exist; `MockStorageClient` under `test-utils` has no caller. [A4, A6]
 - `types/hashing.rs`: `FileHashInfo`, `BlockHashInfo`, `HashAlgorithm` and the `FileHash` alias have no callers outside re-exports; delete the file (Gaps G53). [B14]
 - `types/acp.rs`: `ToolCallInfo` is still re-exported from `acp/streaming.rs`; `FileDiff` is live in `TurnEvent::ToolCall`, so re-check B11's premise before deleting the family; `test_tool_definition_from_traits` belongs in `traits/tools.rs`. [B10, B11]
@@ -1151,7 +1151,6 @@ matches every chained statement. `just ci` and the web unit tests pass.
 
 ### 5b. Tier 6 — follow-ups from Tier 5
 
-- [T5-01] The DaemonAgentHandle mirror path for thinking_budget (session.set_thinking_budget RPC to the Genai handle) was not traced end to end; verify the daemon forwards the RPC value into GenaiAgentHandle::set_thinking_budget rather than only into AgentConfig.
 - [T5-02] docs/Meta/Architecture/Gaps.md and Actual.md still cite types/hashing.rs; a docs pass should mark G53 fully closed (file deleted).
 - [T5-02] docs/Meta/Analysis/Systems.md still cites crucible-core/src/hashing/algorithm.rs, which no longer exists.
 - [T5-03] types/mod.rs still re-exports the ACP schema types and traits::tools types at the types:: level; a later pass could check which of those re-export paths have callers.

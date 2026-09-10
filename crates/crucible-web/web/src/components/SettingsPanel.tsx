@@ -1,9 +1,9 @@
 // src/components/SettingsPanel.tsx
-import { Component, Show, For, ErrorBoundary, createSignal, onMount, onCleanup } from 'solid-js';
+import { Component, Show, For, ErrorBoundary, createSignal, onMount } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { AlertTriangle, Brain, Key, Link2, Mic, Package, Palette, Pencil, Terminal } from '@/lib/icons';
 
-import { createDebounce, SectionHeader, SettingRow, SettingsSectionState } from './settings/primitives';
+import { SectionHeader, SettingRow, SettingsSectionState } from './settings/primitives';
 import { settingsSections } from './settings/sections';
 import { PluginInstallRows } from './settings/PluginInstall';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -14,8 +14,6 @@ import { pluginVersionLabel } from '@/lib/plugin-version';
 import type { AgentConfigOption } from '@/lib/types';
 import {
   login,
-  getThinkingBudget,
-  setThinkingBudget as apiSetThinkingBudget,
   getPrecognition,
   setPrecognition as apiSetPrecognition,
   getPrecognitionResults,
@@ -31,7 +29,6 @@ import {
 export const ModelSettingsSection: Component = () => {
   const session = useSessionSafe();
 
-  const [thinkingBudget, setThinkingBudget] = createSignal<number | null>(null);
   const [precognition, setPrecognition] = createSignal(true);
   const [precognitionResults, setPrecognitionResults] = createSignal(5);
   const [loading, setLoading] = createSignal(true);
@@ -59,20 +56,6 @@ export const ModelSettingsSection: Component = () => {
    */
   const [agentOptions, setAgentOptions] = createSignal<AgentConfigOption[]>([]);
 
-  // Debounced API callers
-  const budgetDebounce = createDebounce(async (...args: unknown[]) => {
-    const [sid, val] = args as [string, number | null];
-    try {
-      await apiSetThinkingBudget(sid, val);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set thinking budget');
-    }
-  }, 300);
-
-  onCleanup(() => {
-    budgetDebounce.cleanup();
-  });
-
   const loadSettings = async () => {
     const s = session.currentSession();
     if (!s) {
@@ -83,18 +66,16 @@ export const ModelSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [knobs, agentOpts, budget, precog, precogResults] = await Promise.all([
+      const [knobs, agentOpts, precog, precogResults] = await Promise.all([
         listKnobs(s.id),
         // An older daemon has no such method; an empty list is the right
         // answer there, and is what an internal session gives anyway.
         listAgentOptions(s.id).catch(() => ({ options: [] as AgentConfigOption[] })),
-        getThinkingBudget(s.id),
         getPrecognition(s.id),
         getPrecognitionResults(s.id),
       ]);
       setSupported(new Set(knobs.knobs.filter((k) => k.supported).map((k) => k.id)));
       setAgentOptions(agentOpts.options);
-      setThinkingBudget(budget);
       setPrecognition(precog);
       setPrecognitionResults(precogResults);
     } catch (err) {
@@ -125,14 +106,6 @@ export const ModelSettingsSection: Component = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to set ${option.name}`);
     }
-  };
-
-  const handleBudgetChange = (e: Event) => {
-    const val = parseInt((e.target as HTMLInputElement).value, 10);
-    const budget = isNaN(val) ? null : Math.max(0, Math.min(32768, val));
-    setThinkingBudget(budget);
-    const s = session.currentSession();
-    if (s) budgetDebounce.debounced(s.id, budget);
   };
 
   const handlePrecognitionToggle = async () => {
@@ -176,21 +149,7 @@ export const ModelSettingsSection: Component = () => {
       hasSession={!!session.currentSession()}
       noSessionMessage="No active session — start a chat to configure model settings."
     >
-      <Show when={has('thinking_budget')}>
-      <SettingRow label="Thinking Budget" description="0–32768 tokens">
-        <input
-          type="number"
-          min={0}
-          max={32768}
-          step={1024}
-          value={thinkingBudget() ?? ''}
-          onInput={handleBudgetChange}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Auto"
-        />
-      </SettingRow>
-      </Show>
-
+      <Show when={has('precognition')}>
       <SettingRow label="Precognition" description="Auto-inject context">
         <button
           onClick={handlePrecognitionToggle}
@@ -206,7 +165,9 @@ export const ModelSettingsSection: Component = () => {
           />
         </button>
       </SettingRow>
+      </Show>
 
+      <Show when={has('precognition_results')}>
       <SettingRow label="Results per query" description="1–20 notes injected">
         <input
           type="number"
@@ -220,6 +181,7 @@ export const ModelSettingsSection: Component = () => {
           class={`${inputClass} w-20 text-right ${!precognition() ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
       </SettingRow>
+      </Show>
 
       {/*
         The external agent's own settings. Crucible has no knob for these and

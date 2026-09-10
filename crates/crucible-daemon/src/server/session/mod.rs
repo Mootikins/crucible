@@ -51,12 +51,12 @@ pub(crate) use params::{
     handle_session_cache_stats, handle_session_can_undo, handle_session_get_autocompact_threshold,
     handle_session_get_context_budget, handle_session_get_context_strategy,
     handle_session_get_mode, handle_session_get_output_validation, handle_session_get_precognition,
-    handle_session_get_precognition_results, handle_session_get_thinking_budget,
-    handle_session_get_validation_retries, handle_session_set_autocompact_threshold,
-    handle_session_set_context_budget, handle_session_set_context_strategy,
-    handle_session_set_mode, handle_session_set_output_validation, handle_session_set_precognition,
-    handle_session_set_precognition_results, handle_session_set_thinking_budget,
-    handle_session_set_validation_retries, handle_session_undo, handle_session_undo_depth,
+    handle_session_get_precognition_results, handle_session_get_validation_retries,
+    handle_session_set_autocompact_threshold, handle_session_set_context_budget,
+    handle_session_set_context_strategy, handle_session_set_mode,
+    handle_session_set_output_validation, handle_session_set_precognition,
+    handle_session_set_precognition_results, handle_session_set_validation_retries,
+    handle_session_undo, handle_session_undo_depth,
 };
 pub(crate) use review::{
     handle_review_comment, handle_review_list_hunks, handle_review_rebase,

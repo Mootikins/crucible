@@ -59,7 +59,7 @@ Crucible's `:set` command follows Vim conventions for runtime configuration.
 Examples:
 ```
 :set model=claude-3-5-sonnet
-:set thinkingbudget=high
+:set contextbudget=128000
 ```
 
 ### Boolean Options
@@ -114,26 +114,14 @@ start.
 | Option | Type | Description |
 |--------|------|-------------|
 | `thinking` | bool | Show thinking/reasoning tokens in this client (TUI-local) |
-| `thinkingbudget` | preset | Token budget for extended thinking (presets only) |
 
-**Thinking Budget Presets:**
-
-| Preset | Tokens | Description |
-|--------|--------|-------------|
-| `off` | 0 | Disable extended thinking |
-| `minimal` | 512 | Brief reasoning |
-| `low` | 1024 | Light reasoning |
-| `medium` | 4096 | Moderate reasoning |
-| `high` | 8192 | Thorough reasoning |
-| `max` | unlimited | Maximum reasoning |
-
-`thinkingbudget` accepts presets only — a raw token count like
-`:set thinkingbudget=8000` is rejected with the list of valid presets.
+Crucible sets no cap on how much a model reasons: the model decides, and the
+provider default applies. `thinking` controls the display only.
 
 Examples:
 ```
-:set thinkingbudget=high        # Use preset
-:set thinkingbudget=off         # Disable thinking
+:set thinking                   # Show reasoning blocks
+:set nothinking                 # Hide them
 ```
 
 ### Display
@@ -305,11 +293,11 @@ Runtime changes do **not** persist to config files. They last for the current se
 Use `:set option??` to see where a value came from:
 
 ```
-:set thinkingbudget??
+:set contextbudget??
 # Output:
-# thinkingbudget = high
-#   [Command] high (2025-01-20 14:30:00)
-#   [File] medium (base config)
+# contextbudget = 128000
+#   [Command] 128000 (2025-01-20 14:30:00)
+#   [File] 64000 (base config)
 ```
 
 ## Option Shortcuts
@@ -320,7 +308,6 @@ Some options have short aliases:
 |----------|-----------|
 | `model` | (dynamic — resolved per provider) |
 | `thinking` | (virtual, TUI-only) |
-| `thinkingbudget` | `llm.thinking_budget` |
 | `syntax_theme` | `cli.highlighting.theme` |
 
 ## Examples
@@ -330,21 +317,20 @@ Some options have short aliases:
 :model gpt-4o
 ```
 
-### Enable Extended Thinking
+### Show Extended Thinking
 ```
 :set thinking
-:set thinkingbudget=high
 ```
 
 ### Check Current Config
 ```
 :set model?
-:set thinkingbudget?
+:set contextbudget?
 ```
 
 ### Reset to Defaults
 ```
-:set thinkingbudget&
+:set contextbudget&
 ```
 
 ### Debug Configuration

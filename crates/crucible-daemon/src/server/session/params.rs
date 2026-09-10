@@ -171,11 +171,6 @@ session_config_setter!(
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
 session_config_getter!(
-    handle_session_get_thinking_budget,
-    get_thinking_budget,
-    "thinking_budget"
-);
-session_config_getter!(
     handle_session_get_precognition,
     get_precognition,
     "precognition_enabled"
@@ -216,40 +211,13 @@ session_config_getter!(
 
 // ── Hand-written handlers (deviate from the uniform macro shape) ────────────
 //
-// These knobs can't be macro-generated: `set_thinking_budget` echoes back a
-// different value than it stores (the raw Option, not the clamped effective
-// budget); `set_context_strategy` / `set_output_validation` parse-and-validate
-// the incoming string and short-circuit with INVALID_PARAMS on a bad value.
+// These knobs can't be macro-generated: `set_context_strategy` /
+// `set_output_validation` parse-and-validate the incoming string and
+// short-circuit with INVALID_PARAMS on a bad value.
 //
 // The A1 field-name parity gate in `tests/architecture_tests.rs` covers these
 // alongside the macro-generated knobs — it reads each handler's wire field
 // names from whichever form (fn body or macro invocation) the knob uses.
-
-pub(crate) async fn handle_session_set_thinking_budget(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let budget = optional_param!(req, "thinking_budget", as_i64);
-
-    // When budget is None, clear the thinking budget override
-    let effective_budget = budget.unwrap_or(0);
-
-    match am
-        .set_thinking_budget(session_id, effective_budget, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "thinking_budget": budget,
-            }),
-        ),
-        Err(e) => agent_error_to_response(req.id, e),
-    }
-}
 
 pub(crate) async fn handle_session_set_context_strategy(
     req: Request,

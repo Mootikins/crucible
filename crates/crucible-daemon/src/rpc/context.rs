@@ -378,13 +378,13 @@ mod effective_config_tests {
     /// in the same process, not only across a restart.
     #[test]
     fn a_later_store_write_reaches_the_reader() {
-        let bound = json!({ "chat": { "thinking_budget": 1024 } });
-        let live = json!({ "chat": { "thinking_budget": 4096 } });
+        let bound = json!({ "chat": { "context_budget": 1024 } });
+        let live = json!({ "chat": { "context_budget": 4096 } });
 
         let effective = fold_locations(Some(live), Some(&bound)).expect("a bound config");
 
         assert_eq!(
-            effective.pointer("/chat/thinking_budget"),
+            effective.pointer("/chat/context_budget"),
             Some(&json!(4096)),
             "the store is the live truth; the bind snapshot is not"
         );
@@ -451,7 +451,7 @@ mod effective_config_tests {
     /// No store yet serves the snapshot unchanged.
     #[test]
     fn no_live_store_serves_the_snapshot() {
-        let bound = json!({ "chat": { "thinking_budget": 1024 } });
+        let bound = json!({ "chat": { "context_budget": 1024 } });
         assert_eq!(fold_locations(None, Some(&bound)), Some(bound));
     }
 }

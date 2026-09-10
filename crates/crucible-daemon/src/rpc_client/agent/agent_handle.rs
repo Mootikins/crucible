@@ -112,7 +112,6 @@ impl AgentHandle for DaemonAgentHandle {
             if let Some(model) = &self.cached_model {
                 config.model = model.clone();
             }
-            config.thinking_budget = self.cached_thinking_budget;
             if let Some(count) = self.cached_precognition_results {
                 config.precognition_results = count;
             }
@@ -210,22 +209,6 @@ impl SessionKnobs for DaemonAgentHandle {
                 Vec::new()
             }
         }
-    }
-
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, budget = budget, "Setting thinking budget via daemon");
-        self.client
-            .session_set_thinking_budget(&self.session_id, Some(budget))
-            .await
-            .map_err(|e| {
-                ChatError::Communication(format!("Failed to set thinking budget: {}", e))
-            })?;
-        self.cached_thinking_budget = Some(budget);
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.cached_thinking_budget
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {

@@ -1,6 +1,6 @@
-//! The eighteen session-settings events.
+//! The twelve session-settings events.
 //!
-//! Fourteen of them are one-field acknowledgements routed through
+//! Most of them are one-field acknowledgements routed through
 //! `AgentManager::update_agent_config_and_emit`; the field name in each variant
 //! is already the JSON key that helper wrote by hand, so these variants are a
 //! rename with no shape change.
@@ -37,10 +37,6 @@ pub enum SettingsPayload {
     TitleChanged {
         #[serde(default)]
         title: String,
-    },
-    ThinkingBudgetChanged {
-        #[serde(default)]
-        budget: i64,
     },
     SystemPromptChanged {
         #[serde(default)]

@@ -61,7 +61,6 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G22 | session | `AgentHandle` has three required methods; `configure` takes the whole record (4.9, D2) | 3 required, 41 defaulted; the `Box<dyn>` forwarder re-lists 44 (`crucible-core/src/traits/chat.rs:143,486`); `MockSubagentHandle` implements 3 | code-wrong | L |
 | G23 | session | One handle trait (4.9) | Two contracts: `Agent::turn` yields `TurnEvent` to the runtime (`crucible-core/src/turn/mod.rs:346`); `AgentHandle` faces clients and `DaemonAgentHandle` re-implements it over RPC (`rpc_client/agent/mod.rs:29`) | expectation-wrong | - |
 | G24 | session | `SessionState` is `Active`, `Paused`, `Streaming`, `Ended` (8.10) | `Active`, `Paused`, `Compacting`, `Ended`; `Compacting` is never assigned (`session/types/enums.rs:90`); no `Streaming` | code-wrong | S |
-| G25 | session | `ThinkingBudget` is an enum `Off`..`Max` (8.18) | `thinking_budget: Option<i64>` (`agent.rs:55`); the setter stores `unwrap_or(0)` (`server/session/params.rs:311-325`) | code-wrong | S |
 | G26 | session | `ContextStrategy::Lua { name }` (8.18) | Three arms, no Lua arm (`session/types/config.rs:8`) | not-built | - |
 | G27 | session | A `Turn` record with `TurnId` and `TurnOutcome` (3.11) | No turn id; the turn is `RequestState`, `StreamContext`, `AgentStreamConfig`, `TurnEnvironment` (`agent_manager/mod.rs:133,294`, `stream_config.rs:10,110`) | both-acceptable | - |
 | G28 | session | `TurnOutcome` carries `DepthCapped` (3.11) | `StopReason::MaxToolDepth` is never built (`crucible-core/src/turn/mod.rs:169`) | code-wrong | S |
@@ -298,10 +297,6 @@ the 16 knob setters one `configure(&SessionAgent, &SessionConfig)` on
 **G24.** Target: `SessionState::{Active, Paused, Streaming { turn }, Ended}`.
 First step: delete `Compacting`, then set `Streaming` in `send_message` and
 clear it in the `TurnOutcome` path.
-
-**G25.** Target: `enum ThinkingBudget` with six levels and a
-`From<i64>`. First step: add the enum in core, keep the `i64` on the wire
-through `serde(from, into)`.
 
 **G28.** Target: build `StopReason::MaxToolDepth` at the depth cap. First step:
 find the `DepthCapHit` emit in `stream.rs:751` and set the reason there.
@@ -673,8 +668,8 @@ to wire it or withdraw it.
    G62, G66, G69, G70, G88, G116, G117, G159, G169.
 4. **Flat records where the clean room expected sums.** `SessionAgent` with
    `agent_type: String`, `WorkspaceSnapshot` with three shapes in four fields,
-   `ThinkingBudget` as `Option<i64>`, `LinkResolution` as an `Option` plus a
-   flag, `JobResult` with `output: None`. Rows: G20, G21, G25, G35, G56, G86.
+   `LinkResolution` as an `Option` plus a flag, `JobResult` with
+   `output: None`. Rows: G20, G21, G35, G56, G86.
 5. **Wire types shared where the clean room expected privacy.** ACP helpers
    reach the CLI; `rmcp` conversions exist five times; the web imports daemon
    server modules; the CLI reads the session directory and builds a

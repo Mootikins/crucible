@@ -103,7 +103,6 @@ impl AgentManager {
                 agent.system_prompt = prompt;
             }
         }
-        agent.thinking_budget = agent.thinking_budget.or(defaults.thinking_budget);
         agent.mode = agent.mode.or(defaults.mode);
         // `model` is never empty on the incoming agent, so a hook's choice
         // replaces it instead of filling a gap.
@@ -128,8 +127,8 @@ impl AgentManager {
         // its kilns have already passed the attach-time trust check.
         //
         // Checked on the incoming agent, before `apply_session_defaults` — the
-        // defaults only fill in prompt/temperature/max_tokens/thinking_budget/
-        // mode/model, none of which `resolve_provider_trust` reads, and refusing
+        // defaults only fill in prompt/mode/model, none of which
+        // `resolve_provider_trust` reads, and refusing
         // first avoids spinning up a session Lua VM for a call that cannot
         // succeed.
         self.refuse_untrusted_for_attached_kilns(&session, &agent)?;

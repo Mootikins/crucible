@@ -45,7 +45,6 @@ fn test_agent_config() -> SessionAgent {
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -330,8 +329,8 @@ async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway()
     let model = chat_client
         .model_iden("gpt-4o-mini")
         .expect("model iden for gpt-4o-mini");
-    let mut handle = GenaiAgentHandle::new(client, model, "system", defs, None)
-        .with_deferrable_tools(deferrable);
+    let mut handle =
+        GenaiAgentHandle::new(client, model, "system", defs).with_deferrable_tools(deferrable);
     // Tiny budget → the tool schemas exceed the 15% share.
     handle.set_context_budget(Some(1_000)).await.unwrap();
 

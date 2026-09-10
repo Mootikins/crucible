@@ -41,11 +41,6 @@ pub struct SessionAgent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_context_tokens: Option<usize>,
 
-    /// Thinking/reasoning token budget for models that support extended thinking.
-    /// -1 = unlimited, 0 = disabled, >0 = max tokens for thinking
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking_budget: Option<i64>,
-
     /// Custom endpoint URL (for self-hosted models)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
@@ -139,7 +134,6 @@ impl SessionAgent {
             model: agent_name.to_string(),
             system_prompt: String::new(),
             max_context_tokens: None,
-            thinking_budget: None,
             endpoint: None,
             // The profile's map is BTreeMap (stable config rendering); the
             // session type keeps its own shape.
@@ -239,7 +233,6 @@ impl SessionAgent {
                 .unwrap_or_else(|| base.model.clone()),
             system_prompt: card.system_prompt.clone(),
             max_context_tokens: base.max_context_tokens,
-            thinking_budget: base.thinking_budget,
             // Endpoint follows the provider: a card that switches provider
             // must not inherit the base's endpoint for a different backend.
             endpoint: if provider.is_some() && provider != Some(base.provider) {
@@ -343,7 +336,6 @@ impl SessionAgent {
             model,
             system_prompt: String::new(),
             max_context_tokens: None,
-            thinking_budget: None,
             endpoint,
             env_overrides: HashMap::new(),
             mcp_servers,

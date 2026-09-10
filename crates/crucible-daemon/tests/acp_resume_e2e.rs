@@ -80,7 +80,6 @@ fn acp_agent() -> SessionAgent {
         model: "mock-acp".to_string(),
         system_prompt: String::new(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],

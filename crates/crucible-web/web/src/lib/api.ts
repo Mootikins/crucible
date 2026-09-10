@@ -1229,26 +1229,6 @@ export async function listAllModels(): Promise<string[]> {
 // Session Config Endpoints
 // =============================================================================
 
-/** Get the thinking budget for a session. */
-export async function getThinkingBudget(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ thinking_budget: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`,
-      { errorMessage: 'Failed to get thinking budget' },
-    )
-  ).thinking_budget;
-}
-
-/** Set the thinking budget for a session. */
-export async function setThinkingBudget(sessionId: string, budget: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`, {
-    errorMessage: 'Failed to set thinking budget',
-    parseAs: 'none',
-    ...jsonRequest({ thinking_budget: budget }),
-  });
-}
-
 /** Get the precognition state for a session. */
 export async function getPrecognition(sessionId: string): Promise<boolean> {
   return (

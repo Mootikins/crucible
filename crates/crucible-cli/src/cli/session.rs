@@ -219,7 +219,7 @@ pub enum SessionCommands {
     },
 
     /// Configure agent backend (provider + model + endpoint) for a session.
-    /// Use `cru set` for runtime parameter tweaks (model, thinking_budget, etc.)
+    /// Use `cru set` for runtime parameter tweaks (model, context_budget, etc.)
     Configure {
         /// Session ID
         #[arg(value_name = "SESSION_ID")]

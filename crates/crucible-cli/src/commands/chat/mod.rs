@@ -891,11 +891,6 @@ async fn apply_rpc_action(
                 .await
                 .map_err(|e| e.to_string())
         }
-        SetRpcAction::SetThinkingBudget(Some(budget)) => handle
-            .set_thinking_budget(budget)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetThinkingBudget(None) => Ok(()),
         SetRpcAction::SetContextBudget(budget) => handle
             .set_context_budget(budget)
             .await

@@ -1,7 +1,7 @@
 //! Integration tests for config + agent + model RPC methods.
 //!
-//! Tests set/get round-trips for thinking_budget,
-//! precognition, and session.configure_agent / session.list_models.
+//! Tests set/get round-trips for precognition, and
+//! session.configure_agent / session.list_models.
 
 use anyhow::Result;
 use crucible_core::config::BackendType;
@@ -113,7 +113,6 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         model: "llama3.2".to_string(),
         system_prompt: "Test assistant.".to_string(),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -140,52 +139,6 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
     std::mem::forget(kiln_dir);
 
     (session_id, client)
-}
-
-// =============================================================================
-// 1. Thinking budget round-trip
-// =============================================================================
-
-#[tokio::test]
-async fn test_thinking_budget_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Set thinking budget to 1024
-    client
-        .session_set_thinking_budget(&session_id, Some(1024))
-        .await
-        .expect("set_thinking_budget failed");
-
-    let budget = client
-        .session_get_thinking_budget(&session_id)
-        .await
-        .expect("get_thinking_budget failed");
-
-    assert_eq!(
-        budget,
-        Some(1024),
-        "Thinking budget should round-trip to 1024"
-    );
-
-    // Update to unlimited (-1)
-    client
-        .session_set_thinking_budget(&session_id, Some(-1))
-        .await
-        .expect("set_thinking_budget -1 failed");
-
-    let budget = client
-        .session_get_thinking_budget(&session_id)
-        .await
-        .expect("get_thinking_budget failed");
-
-    assert_eq!(
-        budget,
-        Some(-1),
-        "Thinking budget should round-trip to -1 (unlimited)"
-    );
-
-    server.shutdown().await;
 }
 
 // =============================================================================
@@ -265,7 +218,6 @@ async fn test_configure_agent_sets_agent() {
         model: "gpt-4o".to_string(),
         system_prompt: "Test configure.".to_string(),
         max_context_tokens: None,
-        thinking_budget: Some(512),
         endpoint: None,
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -334,29 +286,6 @@ async fn test_list_models_returns_list() {
 }
 
 // =============================================================================
-// 7. Thinking budget default value
-// =============================================================================
-
-#[tokio::test]
-async fn test_thinking_budget_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Agent was configured with thinking_budget: None — get should return None
-    let budget = client
-        .session_get_thinking_budget(&session_id)
-        .await
-        .expect("get_thinking_budget failed");
-
-    assert_eq!(
-        budget, None,
-        "Thinking budget should be None when agent configured without one"
-    );
-
-    server.shutdown().await;
-}
-
-// =============================================================================
 // 10. Precognition default value (bonus)
 // =============================================================================
 
@@ -411,12 +340,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         }};
     }
 
-    round_trip!(
-        "thinking_budget",
-        client.session_set_thinking_budget(&sid, Some(1024)),
-        client.session_get_thinking_budget(&sid),
-        Some(1024)
-    );
     round_trip!(
         "precognition_results",
         client.session_set_precognition_results(&sid, 9),
@@ -488,11 +411,11 @@ async fn test_config_get_on_nonexistent_session_fails() {
         .expect("Failed to connect");
 
     let result = client
-        .session_get_thinking_budget("nonexistent-session-id")
+        .session_get_context_budget("nonexistent-session-id")
         .await;
     assert!(
         result.is_err(),
-        "get_thinking_budget should fail for nonexistent session"
+        "get_context_budget should fail for nonexistent session"
     );
 
     server.shutdown().await;

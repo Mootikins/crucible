@@ -60,13 +60,13 @@ See [[Help/TUI/Modes]] for details on what each mode does.
 
 ## Thinking Display
 
-When using models that support extended thinking (Claude with thinking
-budget, Qwen3-thinking, DeepSeek-R1, etc.), press `Ctrl+T` to show or hide
+When using models that reason (Claude with extended thinking,
+Qwen3-thinking, DeepSeek-R1, etc.), press `Ctrl+T` to show or hide
 thinking blocks. This works during streaming too, and applies retroactively
 to visible blocks. A toast confirms the new state.
 
-**Thinking Budget:** Configure via `:set thinkingbudget=<preset>` using
-presets like `high`, `medium`, `low`. See [[Help/TUI/Commands]] for details.
+Crucible sets no cap on how much a model reasons. `Ctrl+T` controls the
+display only. See [[Help/TUI/Commands]] for details.
 
 ## Popup Navigation
 

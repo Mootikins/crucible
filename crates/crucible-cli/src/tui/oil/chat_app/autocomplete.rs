@@ -306,7 +306,7 @@ impl OilChatApp {
         option: Option<&str>,
         filter: &str,
     ) -> Vec<PopupItemNode> {
-        use crate::tui::oil::config::{CompletionSource, SHORTCUTS, THINKING_PRESETS};
+        use crate::tui::oil::config::{CompletionSource, SHORTCUTS};
 
         match option {
             None => {
@@ -337,29 +337,6 @@ impl OilChatApp {
                 match source {
                     CompletionSource::Models => {
                         Self::filter_to_popup_items(&self.available_models, filter, "model", 100)
-                    }
-                    CompletionSource::ThinkingPresets => {
-                        let labels: Vec<String> = THINKING_PRESETS
-                            .iter()
-                            .map(|p| p.name.to_string())
-                            .collect();
-                        let indices = if filter.is_empty() {
-                            (0..labels.len()).map(|i| (i, 0u32)).collect::<Vec<_>>()
-                        } else {
-                            let mut matcher = FuzzyMatcher::new();
-                            matcher.match_items(filter, &labels)
-                        };
-                        indices
-                            .into_iter()
-                            .map(|(idx, _)| {
-                                let p = &THINKING_PRESETS[idx];
-                                PopupItemNode {
-                                    label: p.name.to_string(),
-                                    description: p.tokens.map(|t| format!("~{} tokens", t)),
-                                    kind: Some("preset".to_string()),
-                                }
-                            })
-                            .collect()
                     }
                     CompletionSource::Themes => Self::filter_commands(
                         &[

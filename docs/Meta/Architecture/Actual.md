@@ -302,8 +302,7 @@ sweep runs every 30 min with a 72 h default (`server/mod.rs:664-667`).
   agent config (`session_bridge.rs:395`); three hand-built JSON projections of
   `Session` differ on `title` (`session_bridge.rs:89,100,118`).
 - `spawn_setup_task` indexes only the first kiln of the flat set
-  (`server/session/mod.rs:126-131`). `session.set_thinking_budget` stores
-  `unwrap_or(0)` and echoes the raw `Option` (`server/session/params.rs:311-325`).
+  (`server/session/mod.rs:126-131`).
 - `inject_context_impl` returns `Result<(), String>` and the handler classifies
   by `starts_with` (`server/session/messaging.rs:161-162`).
 - `StreamingChunk` (`acp/streaming.rs:23`, 7 variants) is a translation layer

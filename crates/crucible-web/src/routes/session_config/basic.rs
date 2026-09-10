@@ -1,5 +1,5 @@
-//! The five session config knobs the web has always had: thinking budget,
-//! temperature, max tokens, precognition, precognition results.
+//! The session config knobs the web has always had: precognition and
+//! precognition results.
 //!
 //! Moved here verbatim when `session_config.rs` became a directory — nine more
 //! knob pairs would have taken one file past the 1000-line module budget.
@@ -13,12 +13,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::super::session::OkResponse;
-
-/// Response for thinking budget config.
-#[derive(Debug, Serialize)]
-pub(crate) struct ThinkingBudgetResponse {
-    thinking_budget: Option<i64>,
-}
 
 /// Response for precognition config.
 #[derive(Debug, Serialize)]
@@ -35,36 +29,6 @@ pub(crate) struct PrecognitionResultsResponse {
 #[derive(Debug, Deserialize)]
 pub(crate) struct SetPrecognitionResultsRequest {
     count: usize,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetThinkingBudgetRequest {
-    thinking_budget: Option<i64>,
-}
-
-pub(crate) async fn set_thinking_budget(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetThinkingBudgetRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_thinking_budget(&id, req.thinking_budget)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_thinking_budget(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ThinkingBudgetResponse>, WebError> {
-    let thinking_budget = state
-        .daemon
-        .session_get_thinking_budget(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(ThinkingBudgetResponse { thinking_budget }))
 }
 
 #[derive(Debug, Deserialize)]

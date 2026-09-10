@@ -194,7 +194,7 @@ fn captures(re: &str, hay: &str) -> BTreeSet<String> {
 // A1 — RPC field-name parity for session config get/set pairs.
 //
 // The historical bug class: the client serializes a request field under one
-// JSON name (e.g. `thinking_budget`) while the daemon handler reads a
+// JSON name (e.g. `context_budget`) while the daemon handler reads a
 // different name (e.g. `budget`), so the value is silently dropped. These
 // gates diff the field-name *sets* used on each side of the wire per method.
 //
@@ -226,11 +226,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         suffix: "mode",
         request_field: "mode_id",
         result_field: "mode",
-    },
-    ConfigMethod {
-        suffix: "thinking_budget",
-        request_field: "thinking_budget",
-        result_field: "thinking_budget",
     },
     ConfigMethod {
         suffix: "precognition",

@@ -133,7 +133,7 @@ entry but no shipped proof.
 | F65 | An internal agent with session memory and tool access | P |
 | F66 | Chat providers: Ollama, OpenAI, Anthropic, Cohere, VertexAI, OpenRouter, GitHubCopilot, ZAI; FastEmbed for embeddings | P, R |
 | F67 | Model switching `:model <name>` and the web picker, with a lazy model list | P, T, W |
-| F68 | Extended thinking budget presets; Ctrl+T toggles the display | P, T |
+| F68 | Ctrl+T toggles the reasoning display; Crucible caps no reasoning | P, T |
 | F69 | Layered system prompt: workspace, kiln, base prompt, rules files, skills catalog, deferral note | P |
 | F70 | Environment overrides `--env KEY=VALUE` for an ACP subprocess | P |
 | F71 | Agent cancellation from Esc, Ctrl+C or the web stop control | P, T, W |
@@ -176,7 +176,7 @@ entry but no shipped proof.
 | F103 | `cru.ui.{ask, ask_batch, edit, show, permission, popup, panel}` open a modal and await | P |
 | F104 | Session event handlers: `turn:complete` can inject a follow-up message | P |
 | F105 | Plugin-published session status `cru.plugin.set_status{}` | P |
-| F106 | Scripted agent control: `session.thinking_budget`, `session.mode`, `temperature`, `max_tokens` | P |
+| F106 | Scripted agent control: `session.mode`, `session.model`, `session.system_prompt` | P |
 
 ### 2.6 TUI
 
@@ -588,8 +588,8 @@ pub struct AcpAgent {
 }
 ```
 
-Lifecycle: built at `session.create`; rebuilt on `switch_model`, `set_mode`,
-`set_thinking_budget` or a card change. A rebuild invalidates the cached handle.
+Lifecycle: built at `session.create`; rebuilt on `switch_model`, `set_mode`
+or a card change. A rebuild invalidates the cached handle.
 
 Owner: **SessionManager** holds the record. **AgentFactory** builds the handle.
 
@@ -609,11 +609,9 @@ pub struct SessionConfig {
     execution_timeout_secs: Option<u32>,
     validation_retries: u32,
     output_validation: OutputValidation,
-    thinking_budget: ThinkingBudget,
 }
 pub enum ContextStrategy { Truncate, SlidingWindow, Summarize, Lua { name: String } }
 pub enum OutputValidation { None, Lua { name: String } }
-pub enum ThinkingBudget { Off, Minimal, Low, Medium, High, Max }
 ```
 
 Owner: **SessionManager**.
@@ -1734,9 +1732,8 @@ is on `runtimepath`. [D7]
 `Personal`, `Workspace`, `Kiln`, `Bundled`. A higher scope shadows a lower one.
 [D6]
 
-### 8.18 Thinking budgets, context strategies, output validations
+### 8.18 Context strategies, output validations
 
-`ThinkingBudget::{Off, Minimal, Low, Medium, High, Max}`.
 `ContextStrategy::{Truncate, SlidingWindow, Summarize, Lua{name}}`.
 `OutputValidation::{None, Lua{name}}`.
 
