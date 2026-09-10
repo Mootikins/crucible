@@ -237,11 +237,11 @@ author: Your Name
 dependencies:
   - name: core-utils
 
-# Declared capabilities — ENFORCED. A call into a namespace this list does
-# not cover is refused, naming the grant to add. Valid values: filesystem,
-# network, shell, kiln, agent, ui, config, websocket, intercept_tools
-# (`system` parses and grants nothing). An invalid value fails manifest
-# parsing and the plugin never loads.
+# Declared capabilities — DECLARATIVE. They document what the plugin
+# touches; they do not restrict the `cru.*` API. Only `intercept_tools` is
+# enforced. Valid values: filesystem, network, shell, kiln, agent, ui,
+# config, system, websocket, intercept_tools. An invalid value fails
+# manifest parsing and the plugin never loads.
 capabilities:
   - filesystem
   - kiln

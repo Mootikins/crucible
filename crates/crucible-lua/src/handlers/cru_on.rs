@@ -176,9 +176,9 @@ pub fn register_cru_on_api(
             plugin: plugin.clone(),
             // Absent means "not loading a plugin" — a user's own init.lua,
             // which carries the operator's own authority. A LOADING plugin
-            // holds only what its installation granted: the gate used to read
-            // a Lua global with `.unwrap_or(true)`, so it failed OPEN for
-            // every daemon-loaded plugin and was forgeable besides.
+            // holds what its installation declared: `intercept_tools` used to
+            // be read from a Lua global with `.unwrap_or(true)`, so it failed
+            // OPEN for every daemon-loaded plugin and was forgeable besides.
             grants: context.map(|c| c.grants),
             timeout_ms,
         });

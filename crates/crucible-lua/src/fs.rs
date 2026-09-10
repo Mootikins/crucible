@@ -10,9 +10,8 @@
 //! writing that way is unmarked and unconfined. `cru.fs.read` and
 //! `cru.fs.write` are:
 //!
-//! - **Declared.** Every function here needs the `filesystem` capability, and
-//!   a plugin that did not declare it is refused (`Ns::func` installs that
-//!   gate from `CruNamespace::required_capability`).
+//! - **Attributed.** They know which plugin is calling, so the roots they may
+//!   reach are that plugin's.
 //! - **Scoped.** A plugin's read and write are confined to the roots the host
 //!   binds through [`register_fs_roots_resolver`] — the registered kilns, the
 //!   workspace, and that plugin's own state directory. Code with no plugin
@@ -154,10 +153,10 @@ fn resolve_for_containment(path: &Path) -> PathBuf {
 /// Resolve `path` for a scoped read or write, refusing anything outside the
 /// running plugin's roots.
 ///
-/// **No plugin context means no scope**, exactly as the capability gate reads
-/// it: the user's own `init.lua` is the operator's, and it already has
-/// `io.open`. What is confined is a PLUGIN, to the kilns, the workspace and
-/// the state directory the host says it may reach.
+/// **No plugin context means no scope**: the user's own `init.lua` is the
+/// operator's, and it already has `io.open`. What is confined is a PLUGIN, to
+/// the kilns, the workspace and the state directory the host says it may
+/// reach.
 fn scoped(lua: &Lua, path: &str, verb: &str) -> Result<PathBuf, mlua::Error> {
     let target = checked(path)?;
     let Some(plugin) = crate::plugin_context::current_plugin_name(lua) else {
@@ -215,10 +214,9 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
 
     // The two the module never had. Plugins read and write with raw
-    // `io.open`, which is unscoped and unmarked; these are gated by the
-    // `filesystem` capability (every function in `cru.fs` is — see
-    // `CruNamespace::required_capability`) and confined to the roots the host
-    // says the running plugin may reach.
+    // `io.open`, which is unscoped and says nothing about who is calling;
+    // these are confined to the roots the host says the running plugin may
+    // reach.
     //
     // They RAISE rather than answering `nil, err`, as every other function
     // here does. A refused read that returns nil reads as an empty file at the
@@ -341,7 +339,7 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::{Capability, CapabilitySet};
+    use crate::manifest::CapabilitySet;
     use mlua::Table;
     use tempfile::TempDir;
 
@@ -351,16 +349,12 @@ mod tests {
         lua
     }
 
-    /// A VM with `filesystem` granted and one root a plugin may reach.
+    /// A VM running as a plugin with one root it may reach.
     fn lua_with_root(root: &Path) -> Lua {
         let lua = create_lua();
         let root = root.to_path_buf();
         register_fs_roots_resolver(&lua, Arc::new(move |_plugin| vec![root.clone()]));
-        crate::plugin_context::enter_plugin(
-            &lua,
-            "scoped",
-            [Capability::Filesystem].into_iter().collect(),
-        );
+        crate::plugin_context::enter_plugin(&lua, "scoped", CapabilitySet::none());
         lua
     }
 
@@ -462,11 +456,7 @@ mod tests {
         let target = target.to_string_lossy().to_string();
 
         let lua = create_lua();
-        crate::plugin_context::enter_plugin(
-            &lua,
-            "scoped",
-            [Capability::Filesystem].into_iter().collect(),
-        );
+        crate::plugin_context::enter_plugin(&lua, "scoped", CapabilitySet::none());
         let err = lua
             .load(format!(r#"return cru.fs.read("{target}")"#))
             .exec()
@@ -475,34 +465,6 @@ mod tests {
             err.to_string().contains("binds no plugin file roots"),
             "the message must say why: {err}"
         );
-    }
-
-    /// The capability half, on the module that gained the read and write.
-    /// `cru.fs` is `filesystem`, and a plugin that did not declare it is
-    /// refused before its argument is even converted.
-    #[test]
-    fn the_filesystem_capability_gates_the_whole_module() {
-        let temp = TempDir::new().unwrap();
-        let lua = create_lua();
-        let root = temp.path().to_path_buf();
-        register_fs_roots_resolver(&lua, Arc::new(move |_plugin| vec![root.clone()]));
-        crate::plugin_context::enter_plugin(&lua, "declares-nothing", CapabilitySet::none());
-
-        for call in [
-            r#"cru.fs.read("x")"#,
-            r#"cru.fs.write("x", "y")"#,
-            r#"cru.fs.mkdir("x")"#,
-            r#"cru.fs.exists("x")"#,
-        ] {
-            let err = match lua.load(call).exec() {
-                Ok(()) => panic!("{call}: an ungranted plugin must be refused, not answered"),
-                Err(e) => e.to_string(),
-            };
-            assert!(
-                err.contains("did not declare") && err.contains("filesystem"),
-                "{call}: expected a `filesystem` refusal, got: {err}"
-            );
-        }
     }
 
     /// `cru.fs.remove` is a data-loss guard, not a shim. The name's meaning

@@ -29,13 +29,19 @@
 //!
 //! Missing any of them is not a cosmetic gap. An ABSENT context means no
 //! plugin is running — the user's own `init.lua`, or a session VM — and that
-//! code carries the OPERATOR's authority: it may intercept, and it passes
-//! every capability gate. So a seam that forgot to re-enter its plugin handed
-//! that plugin more authority than its manifest granted, not less. Three of
-//! the six above were added for exactly that reason.
+//! code carries the OPERATOR's authority: it may intercept. So a seam that
+//! forgot to re-enter its plugin ATTRIBUTED that plugin's work to the
+//! operator, and handed it more authority than its manifest declared. Three
+//! of the six above were added for exactly that reason.
 //!
 //! An absent context still has no storage namespace, and `cru.storage`
 //! refuses it, as it always has.
+//!
+//! The grants a context carries are the manifest's DECLARATION. Only
+//! `intercept_tools` is enforced from them (see [`PluginContext::may_intercept`]);
+//! the rest are a statement of intent, and restricting the `cru.*` API by
+//! them is deliberately out of scope — a plugin is code the operator
+//! installed, and it gets the API the way an editor plugin gets the editor.
 
 use crate::manifest::{Capability, CapabilitySet};
 use mlua::Lua;
@@ -45,12 +51,12 @@ use mlua::Lua;
 pub struct PluginContext {
     /// The plugin's name. Scopes `cru.storage` and attributes registrations.
     pub name: String,
-    /// What this plugin's installation granted it.
+    /// What this plugin's installation declared.
     ///
     /// Decided by the manifest the operator installed, never by the plugin:
-    /// the set is stamped here at load and read at each call, so a plugin has
-    /// no assignment that widens it. Every gated `cru.*` namespace is checked
-    /// against this set — see `CruNamespace::required_capability`.
+    /// the set is stamped here at load, so a plugin has no assignment that
+    /// widens it. `intercept_tools` is read from it and enforced; the other
+    /// grants are declarative.
     pub grants: CapabilitySet,
 }
 
@@ -144,9 +150,10 @@ pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> Option<PluginContext> {
 
 /// Enter `name`'s recorded context with `cap` dropped from it.
 ///
-/// One caller, and the narrowing is the point: a plugin COMMAND runs under its
-/// plugin's grants minus `intercept_tools`. It does not re-record, so the
-/// narrowing applies to this call and not to the plugin.
+/// Two callers, and the narrowing is the point: a plugin COMMAND and a plugin
+/// TOOL run under their plugin's grants minus `intercept_tools`, because
+/// neither is a tool-call hook and neither has interception to do. It does not
+/// re-record, so the narrowing applies to this call and not to the plugin.
 pub fn enter_recorded_plugin_without(
     lua: &Lua,
     name: &str,
@@ -180,38 +187,6 @@ pub fn current_plugin_name(lua: &Lua) -> Option<String> {
 /// granted.
 pub fn current_may_intercept(lua: &Lua) -> bool {
     current_plugin_context(lua).is_none_or(|context| context.may_intercept())
-}
-
-/// Refuse a call into a gated `cru.*` namespace that the running plugin's
-/// installation did not grant.
-///
-/// **An ABSENT context is allowed, and that is the whole design.** No context
-/// means no plugin is running: the user's own `init.lua`, a session VM, the
-/// compiled-in defaults. That code carries the operator's authority, and
-/// gating it would refuse the operator access to their own daemon. What is
-/// gated is a PLUGIN, whose authority is exactly what its manifest declared.
-///
-/// The message names the plugin, the function, the missing grant and what to
-/// add, because the first reader of this error is a plugin author who wrote
-/// correct code and forgot one manifest line.
-pub fn require_capability(lua: &Lua, cap: Capability, path: &str) -> mlua::Result<()> {
-    let Some(context) = current_plugin_context(lua) else {
-        return Ok(());
-    };
-    if context.grants.holds(cap) {
-        return Ok(());
-    }
-    let held = context.grants.names();
-    let held = if held.is_empty() {
-        "none".to_string()
-    } else {
-        held.join(", ")
-    };
-    Err(mlua::Error::runtime(format!(
-        "{path}: plugin '{}' did not declare the '{cap}' capability \
-         (it declared: {held}). Add `{cap}` to its manifest capabilities.",
-        context.name
-    )))
 }
 
 #[cfg(test)]
@@ -278,33 +253,5 @@ mod tests {
             "the plugin context must not be reachable from Lua"
         );
         assert!(!current_may_intercept(&lua));
-    }
-
-    /// The gate's default. Code with no plugin context is the operator's own,
-    /// and gating it would refuse the operator access to their own daemon.
-    #[test]
-    fn an_absent_context_holds_every_capability() {
-        let lua = Lua::new();
-        for cap in <Capability as strum::IntoEnumIterator>::iter() {
-            require_capability(&lua, cap, "cru.probe.fn")
-                .unwrap_or_else(|e| panic!("an absent context must hold '{cap}': {e}"));
-        }
-    }
-
-    /// …and a plugin holds exactly what it declared, no more.
-    #[test]
-    fn a_plugin_holds_only_what_it_declared() {
-        let lua = Lua::new();
-        enter_plugin(&lua, "narrow", [Capability::Network].into_iter().collect());
-        require_capability(&lua, Capability::Network, "cru.http.get").expect("declared");
-
-        let err = require_capability(&lua, Capability::Shell, "cru.shell.exec")
-            .expect_err("an undeclared capability must be refused");
-        let text = err.to_string();
-        // The author reading this wrote correct code and forgot one manifest
-        // line, so the message must name all four of these.
-        for expected in ["cru.shell.exec", "narrow", "shell", "network"] {
-            assert!(text.contains(expected), "{expected:?} missing from: {text}");
-        }
     }
 }

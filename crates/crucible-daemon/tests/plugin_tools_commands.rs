@@ -38,6 +38,9 @@ capabilities: []
 local M = {}
 
 function M.shout(args)
+    -- `_probe` is absent unless a test installs one; see
+    -- `a_plugin_tool_runs_under_its_own_plugins_context`.
+    if _probe then _probe() end
     return { shouted = string.upper(args.text) }
 end
 
@@ -134,6 +137,70 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         result,
         serde_json::json!({ "shouted": "HELLO" }),
         "plugin tool should return its Lua result"
+    );
+}
+
+/// A plugin tool runs under its OWN plugin's context.
+///
+/// `PluginToolExecutor::execute_tool` used to call the Lua function under
+/// whatever context was left behind, so a tool's `cru.storage` writes landed
+/// in another plugin's namespace and `cru.plugin.publish` filed them under
+/// another plugin's name.
+///
+/// The probe is a Rust closure, because the running plugin's name lives in the
+/// VM's app data and Lua deliberately cannot read it.
+#[tokio::test]
+async fn a_plugin_tool_runs_under_its_own_plugins_context() {
+    use std::sync::Mutex;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let loader = loader_with_fixture(tmp.path()).await;
+    let lua = loader.plugin_lua();
+
+    let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let recorder = Arc::clone(&seen);
+    let probe = lua
+        .create_function(move |lua, ()| {
+            *recorder.lock().expect("probe lock") = crucible_lua::current_plugin_name(lua);
+            Ok(())
+        })
+        .expect("probe");
+    lua.globals().set("_probe", probe).expect("install probe");
+
+    let session_manager = temp_session_manager();
+    let (event_tx, _rx) = broadcast::channel(16);
+    let manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
+        card_roots: Default::default(),
+    });
+
+    let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
+    let dispatcher = manager.get_or_create_session_dispatcher(&session).await;
+    dispatcher
+        .dispatch_tool(
+            "shout",
+            serde_json::json!({ "text": "hello" }),
+            Default::default(),
+        )
+        .await
+        .expect("plugin tool should dispatch");
+
+    assert_eq!(
+        seen.lock().expect("probe lock").as_deref(),
+        Some("shout"),
+        "the tool body must run under the plugin that declared it"
+    );
+    assert!(
+        crucible_lua::current_plugin_context(&lua).is_none(),
+        "the executor must restore the previous (absent) context"
     );
 }
 

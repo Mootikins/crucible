@@ -57,9 +57,9 @@ language's job and formatting is `string.format`, so `cru.paths.join` and
 
 Reading and writing a whole file is available two ways, and a plugin should
 prefer the Crucible one. `io.open` says nothing about who is calling or where
-they may reach. `cru.fs.read` and `cru.fs.write` need the `filesystem`
-capability and are confined to the kilns, the workspace and the plugin's own
-state directory (see [[Help/Extending/Plugin Manifest]]).
+they may reach. `cru.fs.read` and `cru.fs.write` know which plugin is calling,
+and they confine it to the kilns, the workspace and that plugin's own state
+directory.
 
 ```lua
 -- Canonical access
@@ -69,7 +69,7 @@ cru.log("info", "message")
 cru.json.encode(tbl)
 cru.json.decode(str)
 
--- Whole-file read and write, declared and scoped
+-- Whole-file read and write, scoped to the plugin's roots
 local body = cru.fs.read(path)
 cru.fs.write(path, body .. "\n")
 
@@ -94,7 +94,7 @@ f:close()
 | `cru.json` | `encode(table)`, `decode(string)`, and `array(table)` (mark a table as a JSON list so an empty one encodes as `[]`, not `{}`) |
 | `cru.http` | HTTP client: `get`, `post`, `put`, `patch`, `delete`, `request` |
 | `cru.ws` | WebSocket client: `connect(url, opts?)` returning a connection object |
-| `cru.fs` | Files: `read`, `write` (declared and scoped), plus the gap `io` does not cover — `exists`, `is_file`, `is_dir`, `list`, `mkdir`, `copy`, `remove_all`. |
+| `cru.fs` | Files: `read`, `write` (scoped to the plugin's roots), plus the gap `io` does not cover — `exists`, `is_file`, `is_dir`, `list`, `mkdir`, `copy`, `remove_all`. |
 | `cru.shell` | Shell command execution |
 | `cru.oq` | Data query/transform: `parse`, `yaml`, `toml`, `toon`, `query`, `format` (JSON is `cru.json`) |
 | `cru.paths` | Directories the host owns: `config`, `workspace`, `session`, `state(plugin)`. Join with `..`. |

@@ -305,10 +305,9 @@ before it closes it.
 
 ### What to build instead
 
-1. **Enforce the ten variants that already exist.** `filesystem`, `kiln`,
-   `config` and five others gate nothing. Declared-and-ungated is the state
-   Obsidian is shipping toward and being criticised for; we are already there
-   by accident.
+1. ~~**Enforce the ten variants that already exist.**~~ **Ruled out by the
+   owner** — see *What landed*. Restricting the Lua API is not in scope. The
+   ten variants stay declarative, which is where Obsidian also landed.
 2. **Path scoping.** Scope answers "which files", which is the question that
    actually binds. `cru.fs` has no read and no write at all, so plugins use raw
    `io.open` unscoped — kanban included. A scoped read and write is the real
@@ -318,12 +317,11 @@ before it closes it.
 
 ### The web half: do not pretend
 
-A block is same-origin script that can call any endpoint. That is Obsidian's
-position, not ours — our Lua half can be enforced and our web half cannot, yet.
-So enforce on the Lua side where the daemon owns the door, and **do not print a
-capability label on a web block until real isolation exists**. A label without a
-gate teaches a user to trust a promise nothing keeps, which is precisely the
-criticism Obsidian is now taking.
+A block is same-origin script that can call any endpoint. **Do not print a
+capability label on a web block.** A label without a gate teaches a user to
+trust a promise nothing keeps, which is precisely the criticism Obsidian is now
+taking — and with the Lua half declarative too, there is no gate anywhere for
+such a label to stand on.
 
 ### The residual, unchanged
 
@@ -336,59 +334,67 @@ survive anyway.
 
 ### What landed
 
-**The mapping.** `CruNamespace::required_capability` — one exhaustive match,
-under the two clippy denies the namespace table already carried. `filesystem` →
-`cru.fs`; `network` → `cru.http`; `websocket` → `cru.ws`; `shell` →
-`cru.shell`; `kiln` → `cru.kiln` and `cru.embed`; `config` → `cru.config`;
-`agent` → `cru.session`, `cru.sessions`, `cru.get_session`, `cru.context` and
-`cru.tools`; `ui` → `cru.ui` plus the five that replace the interface
-(`statusline`, `colorscheme`, `syntax`, `hl`, `geometry`); `intercept_tools` →
-`cru.isolation`, whose `exempt` widens what runs on the host and whose
-`exec_prefix` relocates execution, on top of the tool-call seam it already
-held.
+**The owner ruled Lua-API restriction out of scope.** In their words: *like
+Neovim, restricting the Lua API is NOT in scope; only direct agent/model output
+should ever have to go through validation steps.* A plugin is trusted code the
+operator installed. It gets the API, the way an nvim plugin gets the editor. So
+item 1 above — capability-gating the `cru.*` namespaces — was built, reviewed
+and then **removed**. `CruNamespace::required_capability`, the `GRANTS_NOTHING`
+list and the `Ns::func` wrap are gone.
 
-**The gate is `Ns::func`**, which every `cru.*` registration already goes
-through, so a new function in a gated namespace is gated by construction rather
-than by its author remembering. The check runs before mlua converts arguments:
-a refusal that read as a type error is a refusal nobody acts on. Its test walks
-the running VM and requires every gated function to refuse a plugin with no
-grants — deleting the wrap fails ~70 assertions at once.
+**Capabilities stay declarative.** A manifest's `capabilities` list states what
+the plugin touches. It is not a sandbox and it restricts nothing, which is where
+Obsidian's May 2026 disclosures also landed. The one exception predates this
+work and stays: `intercept_tools`, enforced at the tool-call seam, because
+`handled` fabricates a result the model reads as the tool's own and returns
+before the permission gate.
 
-**Three seams held a plugin's name and no authority, and each was a bypass.**
-`on_session_start` hooks ran with no plugin context at all, so a plugin that
-declared nothing held everything from one; plugin TOOLS ran under whatever
-context was left behind; deferred callbacks (`cru.schedule`, `cru.timer.spawn`)
-likewise. The first two now re-enter the owning plugin's recorded grants. Each
-was also a live `cru.storage` attribution bug — consolidation's cursor writes
-from a scheduled callback have been silently failing under `pcall`.
+**Validation belongs on direct agent and model output**, not on plugin code.
+That surface is untrusted in a way a plugin is not, and it is a separate
+assessment — nothing in this plan covers it yet.
 
-**`system` maps to nothing.** No `cru.*` namespace answers to the manifest's
-"access system information". It parses, it grants nothing, and it is a
-candidate for deletion rather than for a mapping invented to justify it.
+#### What was kept, and why
 
-**One shipped plugin was wrong**: `oci` calls `cru.session.get` from
-`cleanup_orphans` and never declared `agent`. One line. That is the whole cost
-of making ten grants real across thirteen shipped plugins, which is the number
-the "enforcement cost is every plugin, doc and test" argument was about.
+The same work fixed three seams that ran a plugin's code with **no plugin
+context at all**. Those are ATTRIBUTION fixes, not restriction, and they survive
+the removal:
 
-**`cru.fs.read` and `cru.fs.write`** exist, gated by `filesystem` and confined
-to the roots the host binds per plugin — every registered kiln, the plugin's
-own state directory, and the working directory. `mkdir`, `list`, `copy` and
-`remove_all` are NOT confined: `worktree` checks a destination outside all
-three, so narrowing them is a separate decision with a migration behind it.
+- **`on_session_start` hooks.** The owner table had been written since hooks
+  were owner-tagged; only the end path read it.
+- **Plugin tool execution.** A tool ran under whatever context was left behind,
+  so `PluginToolExecutor::execute_tool` filed one plugin's storage under
+  another plugin's name.
+- **Deferred callbacks** — `cru.schedule` and `cru.timer.spawn`. A detached task
+  carries no context of its own.
 
-### Still open after this step
+An absent context is how the host spells the OPERATOR's authority, and it is
+also what `cru.storage` keys its namespace on and what `cru.plugin.publish`
+attributes by. So each was a live bug independent of capabilities:
+consolidation's cursor writes from its scheduled callback have been failing
+silently under `pcall` since they were written.
 
-- **Kanban still writes with `io.open`.** The primitive is there; the migration
-  is not, and it belongs with whoever owns that file.
-- **Deferred callbacks keep the bypass.** `cru.schedule` and `cru.timer.spawn`
-  invoke their Lua from a detached task with no `&Lua` in hand, so carrying the
-  context needs a different shape than the other three seams took. Until then a
-  plugin can reach an ungranted namespace by wrapping the call in
-  `cru.schedule(0, …)`.
-- **A plugin declaring capabilities only in its returned spec table** cannot be
-  read at boot-require time: the table does not exist until the body has run.
-  Its top-level calls hold nothing; its handlers hold everything.
+**`cru.fs.read` and `cru.fs.write`** stay — item 2, the real work. Plugins wrote
+with raw `io.open`; these are the missing primitives, and they are confined to
+the roots the host binds per plugin: every registered kiln, the plugin's own
+state directory, the working directory. `mkdir`, `list`, `copy` and `remove_all`
+are NOT confined — `worktree` checks a destination outside all three — so
+narrowing those is a separate decision with a migration behind it. Kanban still
+writes with `io.open`; the primitive is here, the migration is not.
+
+**`system` maps to no `cru.*` namespace.** Nothing in `cru.*` answers to the
+manifest's "access system information". It is a dead variant, worth deleting
+rather than keeping as a name a plugin can declare and a reader can misread.
+
+#### The measured cost of the road not taken
+
+Enforcement was implemented far enough to price it, and the price is worth
+recording: **three manifest lines across thirteen shipped plugins.** One was a
+real omission — `oci` calls `cru.session.get` from `cleanup_orphans` and never
+declared `agent`; the other two were test doubles that claimed isolation without
+declaring `intercept_tools`. The "enforcement cost is every plugin, doc and
+test" argument, at our scale, was worth three lines. That is evidence about a
+road not taken, not an argument to take it: the ruling above is about scope, not
+about cost.
 
 ## Step 5 — delivery decided; the build waits on a trigger
 

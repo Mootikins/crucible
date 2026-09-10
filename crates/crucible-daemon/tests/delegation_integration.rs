@@ -170,15 +170,9 @@ async fn load_test_plugin(temp: &Path, init: &str) -> DaemonPluginLoader {
     let root = temp.join("plugins");
     let dir = root.join("sandbox");
     std::fs::create_dir_all(&dir).expect("plugin dir");
-    // `intercept_tools`, because `cru.isolation.require` is gated on it — the
-    // claim's `exempt` widens what still runs on the host and its `exec`
-    // relocates execution, which is the same authority taking a tool call over
-    // carries. A double that declares nothing is refused, exactly as a real
-    // plugin would be.
     std::fs::write(
         dir.join("plugin.yaml"),
-        "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n\
-         capabilities:\n  - intercept_tools\n",
+        "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
     )
     .expect("plugin.yaml");
     std::fs::write(dir.join("init.lua"), init).expect("init.lua");

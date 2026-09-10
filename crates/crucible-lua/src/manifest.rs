@@ -1,17 +1,15 @@
 //! Plugin manifest parsing and validation
 //!
 //! Plugins declare metadata, dependencies, and capabilities in a `plugin.yaml`
-//! manifest, in the spec table their `init.lua` returns, or in both — what a
-//! plugin runs under is the union.
+//! manifest.
 //!
-//! **A capability is a grant, not a label.** [`PluginManifest::grants`] is
-//! stamped into the VM's plugin context at load
-//! ([`crate::plugin_context`]), and every `cru.*` namespace that names a
-//! required capability refuses a plugin that did not declare it. Which
-//! namespace needs which grant is one exhaustive match, in
-//! [`crate::namespace::CruNamespace::required_capability`]; the gate that
-//! reads it is [`crate::host_registry::Ns::func`], so a new function in a
-//! gated namespace is gated by construction.
+//! **A capability is a declaration, not a sandbox.** [`PluginManifest::grants`]
+//! is stamped into the VM's plugin context at load
+//! ([`crate::plugin_context`]) so the running plugin's declaration is always
+//! readable, and `intercept_tools` is enforced from it at the tool-call seam.
+//! The rest state what the plugin touches. Restricting the `cru.*` API by them
+//! is out of scope on purpose: a plugin is code the operator installed, and it
+//! gets the API the way an editor plugin gets the editor.
 //!
 //! ## Example Manifest
 //!
@@ -86,22 +84,8 @@ fn default_main() -> String {
     "init.lua".to_string()
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    strum::EnumIter,
-    strum::IntoStaticStr,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
 pub enum Capability {
     Filesystem,
     Network,
@@ -113,7 +97,6 @@ pub enum Capability {
     Config,
     System,
     #[serde(rename = "websocket", alias = "web_socket")]
-    #[strum(serialize = "websocket")]
     WebSocket,
     /// Take over a tool call: return `{ handled = true, result = … }` to
     /// replace execution, or rewrite its arguments before dispatch.
@@ -128,25 +111,15 @@ pub enum Capability {
     InterceptTools,
 }
 
-impl Capability {
-    /// The name a manifest spells this capability with.
-    pub fn name(self) -> &'static str {
-        self.into()
-    }
-}
-
-impl std::fmt::Display for Capability {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
-/// What one plugin's installation granted it.
+/// What one plugin's installation declared.
 ///
 /// A set rather than a `Vec<Capability>`, because the only question asked of
 /// it is "does this hold X". An ABSENT set and an EMPTY one mean different
 /// things: absent means no plugin is running at all, which
 /// [`crate::plugin_context`] states by having no context, not by an empty set.
+///
+/// Only `intercept_tools` is READ as authority. The others are what the
+/// manifest says the plugin touches.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CapabilitySet(std::collections::BTreeSet<Capability>);
 
@@ -163,18 +136,14 @@ impl CapabilitySet {
 
     /// The same grants without `cap`.
     ///
-    /// One caller: a plugin COMMAND runs under its plugin's grants minus
-    /// `intercept_tools`, because a command is not a tool-call hook and has
-    /// no interception to do. See `plugin_tools.rs`.
+    /// Two callers: a plugin COMMAND and a plugin TOOL run under their
+    /// plugin's grants minus `intercept_tools`, because neither is a
+    /// tool-call hook and neither has interception to do. See
+    /// `plugin_tools.rs`.
     pub fn without(&self, cap: Capability) -> Self {
         let mut narrowed = self.clone();
         narrowed.0.remove(&cap);
         narrowed
-    }
-
-    /// Every grant held, in a stable order, for a message to name.
-    pub fn names(&self) -> Vec<&'static str> {
-        self.0.iter().map(|cap| cap.name()).collect()
     }
 }
 
@@ -185,7 +154,7 @@ impl FromIterator<Capability> for CapabilitySet {
 }
 
 impl PluginManifest {
-    /// The grants this installation declared.
+    /// What this installation declared.
     pub fn grants(&self) -> CapabilitySet {
         self.capabilities.iter().copied().collect()
     }

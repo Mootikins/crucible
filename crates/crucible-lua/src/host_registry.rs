@@ -8,7 +8,7 @@
 //! declaration to the code it described.
 //!
 //! [`Ns`] does. `ns.func(name, "(path: string) -> ()", closure)` registers the
-//! closure AND declares its type, and three things follow:
+//! closure AND declares its type, and two things follow:
 //!
 //! - **At compile time**, the bound. `A: LuauArgs` and `R: LuauValue` mean a
 //!   closure whose argument or return type the host cannot name does not
@@ -17,12 +17,6 @@
 //!   checked against the Rust types: arity, primitives and optionality must
 //!   agree. A mismatch fails the VM's construction, so every test that builds
 //!   a plugin VM reports it.
-//! - **At registration**, the capability gate. If the namespace names a
-//!   required capability
-//!   ([`crate::namespace::CruNamespace::required_capability`]), the function
-//!   is wrapped so a plugin that did not declare that grant is refused. There
-//!   is no opt-out, which is the point: a new function in `cru.http` is gated
-//!   because it is in `cru.http`, not because its author remembered.
 //!
 //! ## Refinement, not equality
 //!
@@ -341,61 +335,7 @@ impl<'lua> Ns<'lua> {
         &self.table
     }
 
-    /// The grant a plugin must hold to call anything in this namespace.
-    fn required_capability(&self, member: &str) -> Option<crate::manifest::Capability> {
-        crate::namespace::CruNamespace::for_member(&self.path, member)
-            .and_then(crate::namespace::CruNamespace::required_capability)
-    }
-
-    /// Wrap `inner` so a plugin without `cap` is refused before the call.
-    ///
-    /// BEFORE argument conversion, deliberately. mlua converts a call's
-    /// arguments to the closure's Rust types first, so a check inside the
-    /// closure would report a type error for a plugin that called a gated
-    /// function wrongly — and a refusal that reads as a type error is a
-    /// refusal nobody acts on.
-    fn gate(
-        &self,
-        cap: crate::manifest::Capability,
-        path: String,
-        inner: mlua::Function,
-    ) -> Result<mlua::Function, LuaError> {
-        Ok(self
-            .lua
-            .create_function(move |lua, args: mlua::MultiValue| {
-                crate::plugin_context::require_capability(lua, cap, &path)?;
-                inner.call::<mlua::MultiValue>(args)
-            })?)
-    }
-
-    /// The async half of [`Self::gate`]. A synchronous wrapper would call the
-    /// inner function without yielding, which is the whole point of an async
-    /// registration.
-    fn gate_async(
-        &self,
-        cap: crate::manifest::Capability,
-        path: String,
-        inner: mlua::Function,
-    ) -> Result<mlua::Function, LuaError> {
-        Ok(self
-            .lua
-            .create_async_function(move |lua, args: mlua::MultiValue| {
-                let inner = inner.clone();
-                let path = path.clone();
-                async move {
-                    crate::plugin_context::require_capability(&lua, cap, &path)?;
-                    inner.call_async::<mlua::MultiValue>(args).await
-                }
-            })?)
-    }
-
     /// Register a function and declare its type.
-    ///
-    /// In a namespace that names a required capability
-    /// (`CruNamespace::required_capability`), the registered function is
-    /// wrapped in that gate. There is no way to opt out, which is the point:
-    /// a new function in `cru.http` is gated because it is in `cru.http`, not
-    /// because its author remembered.
     pub fn func<F, A, R>(&mut self, name: &str, decl: &str, f: F) -> Result<(), LuaError>
     where
         F: Fn(&Lua, A) -> mlua::Result<R> + MaybeSend + 'static,
@@ -403,14 +343,9 @@ impl<'lua> Ns<'lua> {
         R: IntoLuaMulti + LuauReturns,
     {
         let signature = self.check::<A, R>(name, decl)?;
-        let path = format!("{}.{name}", self.path);
-        let function = self.lua.create_function(f)?;
-        let function = match self.required_capability(name) {
-            Some(cap) => self.gate(cap, path.clone(), function)?,
-            None => function,
-        };
-        self.table.set(name, function)?;
-        self.signatures.record(&path, signature);
+        self.table.set(name, self.lua.create_function(f)?)?;
+        self.signatures
+            .record(&format!("{}.{name}", self.path), signature);
         Ok(())
     }
 
@@ -423,14 +358,9 @@ impl<'lua> Ns<'lua> {
         FR: Future<Output = mlua::Result<R>> + MaybeSend + 'static,
     {
         let signature = self.check::<A, R>(name, decl)?;
-        let path = format!("{}.{name}", self.path);
-        let function = self.lua.create_async_function(f)?;
-        let function = match self.required_capability(name) {
-            Some(cap) => self.gate_async(cap, path.clone(), function)?,
-            None => function,
-        };
-        self.table.set(name, function)?;
-        self.signatures.record(&path, signature);
+        self.table.set(name, self.lua.create_async_function(f)?)?;
+        self.signatures
+            .record(&format!("{}.{name}", self.path), signature);
         Ok(())
     }
 

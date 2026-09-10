@@ -1072,17 +1072,6 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("spec load for '{}': {e}", name))?
             .ok_or_else(|| anyhow::anyhow!("plugin '{}' returned no spec", name))?;
 
-        // A plugin declares its capabilities in `plugin.yaml`, in the spec
-        // table it returns, or in both; what it runs under is the union. This
-        // loader used to read only the manifest, which was invisible while
-        // nothing was enforced and is a refusal now that everything is.
-        for unknown in self
-            .plugin_manager
-            .merge_spec_capabilities(name, spec.capabilities.iter().map(String::as_str))
-        {
-            warn!("Plugin '{name}' declares unknown capability '{unknown}'; ignoring");
-        }
-
         // Execute the plugin in the daemon's real Lua runtime using eval_async
         // so that async Lua functions (gateway.connect, etc.) can yield.
         // Also extract service/tool/command Function refs from the returned
@@ -1349,13 +1338,13 @@ impl DaemonPluginLoader {
         }
     }
 
-    /// What this plugin's installation granted it, from the manifest the
+    /// What this plugin's installation declared, from the manifest the
     /// operator installed.
     ///
-    /// An unknown plugin gets NOTHING. Every grant here opens a door — the
-    /// filesystem, the network, a shell, the agent runtime, interception,
-    /// which fabricates a result the model reads as the tool's own and returns
-    /// BEFORE the permission gate — so an unanswerable question answers "no".
+    /// An unknown plugin gets NOTHING. The one grant read as authority is
+    /// `intercept_tools`, which fabricates a result the model reads as the
+    /// tool's own and returns BEFORE the permission gate — so an unanswerable
+    /// question answers "no".
     fn plugin_grants(&self, name: &str) -> crucible_lua::manifest::CapabilitySet {
         self.plugin_manager
             .get(name)

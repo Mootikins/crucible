@@ -53,8 +53,8 @@ license: MIT
 
 main: lua/init.lua
 
-# Enforced: a call into an undeclared namespace is refused. An invalid value
-# fails manifest parsing and the plugin never loads.
+# Declarative — what the plugin touches. Only `intercept_tools` is enforced.
+# An invalid value fails manifest parsing and the plugin never loads.
 capabilities:
   - filesystem
   - shell
@@ -93,9 +93,10 @@ enabled: true
 
 ### Capabilities
 
-**Capabilities are enforced.** A plugin that calls into a namespace it did not
-declare is refused at the call, with an error naming the plugin, the function
-and the grant to add. Declare what your plugin uses:
+**Capabilities are declarative.** They say what the plugin touches. They are
+not a sandbox and they do not restrict the `cru.*` API: a plugin is code the
+operator chose to install, and it gets the API the way an editor plugin gets
+the editor. Declare what your plugin uses:
 
 ```yaml
 capabilities:
@@ -107,38 +108,31 @@ capabilities:
   - agent         # cru.session, cru.get_session, cru.context, cru.tools
   - ui            # cru.ui, cru.statusline, cru.colorscheme, cru.syntax, cru.hl, cru.geometry
   - config        # cru.config (NOT cru.plugin.config, which is your own)
-  - intercept_tools  # cru.isolation, and `handled`/transform from pre_tool_call
+  - intercept_tools  # ENFORCED: see below
+  - system        # maps to no `cru.*` namespace; a candidate for deletion
 ```
 
-`system` parses and grants nothing: no `cru.*` namespace answers to "access
-system information", so declaring it has no effect. An invalid value fails
-manifest parsing and the plugin never loads.
+An invalid value fails manifest parsing and the plugin never loads.
 
-Everything not listed above needs no grant, and that is a claim rather than an
-omission. `cru.log`, `cru.plugin`, `cru.storage` and `cru.paths` are already
-scoped to the calling plugin, so a grant would gate a plugin against itself.
-`cru.json`, `cru.oq`, `cru.vec`, `cru.check`, `cru.oil` and the rest compute
-over values the caller already holds. `cru.timer`, `cru.schedule` and
-`cru.service` defer work; what the deferred body calls is gated when it calls
-it, because the registering plugin's grants are carried into the callback.
+### `intercept_tools` is the one enforced grant
 
-### What enforcement does and does not cover
+A `pre_tool_call` handler that returns `{ handled = true, result = ... }`, or
+that rewrites the call's arguments, needs `intercept_tools` in the manifest. A
+plugin without it is refused and the call dispatches normally. The reason is
+narrow: `handled` fabricates a result the model reads as the tool's own, and it
+returns BEFORE the permission gate. `cancel` needs no grant, because refusing a
+call can only narrow what happens.
 
-- **It covers a plugin.** Code with no plugin behind it — your own
-  `init.lua`, a session VM, the shipped defaults — carries the operator's
-  authority and is not gated.
-- **It follows deferred work.** A plugin's `cru.on` handler, its
-  `on_session_start` and `on_session_end` hooks, its tools and its commands all
-  run under its own grants, not under whatever ran last.
-- **A command holds every grant except `intercept_tools`.** A command is not a
-  tool-call hook and has no interception to do.
-- **It is a Lua-side gate.** A web block calling a plugin's command over HTTP
-  is a separate question, answered by
-  [[Meta/Analysis/Plugin API Plan]] step 1's caller identity. No capability
-  label is printed in the web UI, because the web half has no gate to back one.
-- **It is not a sandbox.** All plugins still share one Lua VM. What a grant
-  buys is that an *undeclared* reach is refused and visible — not that a
-  declared one is contained.
+Its one intended holder is the container-isolation plugin, where taking the
+call over *is* the sandbox.
+
+### Why the rest are not enforced
+
+Restricting the Lua API is out of scope, the way it is in Neovim. Validation
+belongs on direct agent and model output, which is untrusted; a plugin is not.
+Declaring `network` therefore documents that the plugin makes HTTP requests. It
+does not stop it, and reading it as a promise of containment would be reading
+more than it says.
 
 ### Dependencies
 

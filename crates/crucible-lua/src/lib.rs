@@ -155,7 +155,7 @@ pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
     current_may_intercept, current_plugin_context, current_plugin_name, enter_plugin,
     enter_recorded_plugin, enter_recorded_plugin_without, grants_for, record_plugin_grants,
-    require_capability, set_plugin_context, PluginContext,
+    set_plugin_context, PluginContext,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;

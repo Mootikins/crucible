@@ -1,5 +1,5 @@
 use super::registration::RegisteredItem;
-use super::spec::{load_plugin_spec, PluginSpec};
+use super::spec::{load_plugin_spec, parse_capability, PluginSpec};
 use super::{LifecycleError, LifecycleResult, PluginManager};
 use crate::error::format_lua_error;
 use crate::manifest::{LoadedPlugin, PluginManifest, PluginSource};
@@ -254,17 +254,22 @@ impl PluginManager {
                                 plugin.manifest.description = spec_desc.clone();
                             }
                         }
-                    }
-                    // Merge capabilities from spec. An unrecognised name is a
-                    // typo in the plugin, not a no-op — say so rather than
-                    // dropping it the way the manifest path used to.
-                    for unknown in self
-                        .merge_spec_capabilities(name, spec.capabilities.iter().map(String::as_str))
-                    {
-                        warn!(
-                            "Plugin {} declares unknown capability '{}' in its spec table; ignoring",
-                            name, unknown
-                        );
+                        // Merge capabilities from spec. An unrecognised name is
+                        // a typo in the plugin, not a no-op — say so rather
+                        // than dropping it the way the manifest path used to.
+                        for cap_str in &spec.capabilities {
+                            match parse_capability(cap_str) {
+                                Some(cap) => {
+                                    if !plugin.manifest.capabilities.contains(&cap) {
+                                        plugin.manifest.capabilities.push(cap);
+                                    }
+                                }
+                                None => warn!(
+                                    "Plugin {} declares unknown capability '{}' in its spec table; ignoring",
+                                    name, cap_str
+                                ),
+                            }
+                        }
                     }
 
                     // Register all exports from spec
@@ -311,9 +316,9 @@ impl PluginManager {
         // globals they were forgeable: a plugin assigned itself another
         // plugin's storage namespace, or the interception right, in one line.
         //
-        // Stamped at LOAD, read at every call and at every registration: what
-        // a plugin may reach is a property of the plugin the operator
-        // installed, not of the call it later makes.
+        // Stamped at LOAD, read at registration: whether a handler may take a
+        // tool call over is a property of the plugin the operator installed,
+        // not of the call it later intercepts.
         let previous = crate::plugin_context::enter_plugin(&self.lua, name, grants);
 
         let load_result = (|| -> LifecycleResult<()> {

@@ -66,7 +66,8 @@ pub struct RuntimeHandler {
     /// Decided at registration from the plugin's manifest, not at the call
     /// site: authorization is a property of the plugin the operator installed.
     /// The dispatcher re-enters exactly this, so a handler firing three turns
-    /// later reaches no more than its plugin ever could.
+    /// later still runs as its own plugin — which is what `cru.storage` keys
+    /// on and what `intercept_tools` is read from.
     pub grants: Option<crate::manifest::CapabilitySet>,
     /// What the registration asked for with `{ timeout_ms = … }`, in
     /// milliseconds. `None` takes the budget of the name it registered for.

@@ -276,9 +276,9 @@ pub fn get_session_start_required_flags(lua: &Lua) -> LuaResult<Vec<bool>> {
 ///
 /// The owner table has been written since hooks were owner-tagged; only the
 /// end path read it. Without this the start path ran every hook with NO plugin
-/// context, which reads as the operator's own authority — so a plugin that
-/// declared nothing held everything from `on_session_start`, and the
-/// capability gate had a one-line bypass.
+/// context: `cru.storage` had no namespace to key on, `cru.plugin.publish`
+/// had nobody to attribute to, and the absent context read as the operator's
+/// own authority to intercept.
 pub fn get_session_start_owners(lua: &Lua) -> LuaResult<Vec<Option<String>>> {
     owners_by_name(lua, "on_session_start_owners")
 }

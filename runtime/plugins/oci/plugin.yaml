@@ -16,8 +16,3 @@ capabilities:
   - intercept_tools
   # Reads .devcontainer/devcontainer.json out of the session's workspace.
   - filesystem
-  # `cleanup_orphans` asks `cru.session.get(id)` whether a container's session
-  # is still alive before removing it. Undeclared until the grants became real,
-  # and the `cru.session and` guard in front of it would have hidden the
-  # refusal as "no such API" rather than reporting it.
-  - agent

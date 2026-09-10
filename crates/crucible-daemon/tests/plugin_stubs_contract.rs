@@ -97,11 +97,10 @@ fn every_plugin_vm_namespace_is_stubbed() {
 /// and the stub file the generator renders from it — never from source text,
 /// which a change can satisfy without doing the work.
 ///
-/// `read` and `write` came BACK, and the two halves of why are what this
-/// pins. They were removed as thin wrappers over `io.open`; they return as
-/// the declared and scoped alternative to it — `filesystem` in the manifest,
-/// and confined to the roots the host binds. `append` and `rename` stay
-/// removed, because `io` and `os` answer those and neither needs a scope
+/// `read` and `write` came BACK, and why is what this pins. They were removed
+/// as thin wrappers over `io.open`; they return as the scoped alternative to
+/// it, confined to the roots the host binds per plugin. `append` and `rename`
+/// stay removed, because `io` and `os` answer those and neither needs a scope
 /// `io.open` would defeat anyway.
 #[test]
 fn cru_fs_offers_a_scoped_read_and_write_and_nothing_io_already_does() {

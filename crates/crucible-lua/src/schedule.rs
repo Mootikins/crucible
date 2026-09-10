@@ -197,11 +197,11 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
         let reg_cleanup = reg_schedule.clone();
         // The plugin that scheduled this, captured HERE and re-entered around
         // every tick. A detached task carries no context of its own, so the
-        // callback used to run as if no plugin were running — which is the
-        // operator's own authority, and a one-line way around every capability
-        // gate (`cru.schedule(0, function() cru.shell.exec(…) end)`). It was
-        // also why `cru.storage` refused a scheduled write: the namespace is
-        // read from this same context at call time.
+        // callback used to run as if no plugin were running. That is why
+        // `cru.storage` refused a scheduled write — the namespace is read
+        // from this same context at call time, and consolidation's cursor
+        // writes have been failing under `pcall` ever since. An absent
+        // context is also how the host spells the operator's own authority.
         let owner = crate::plugin_context::current_plugin_context(lua);
         let vm = lua.clone();
         tokio::spawn(async move {
@@ -282,6 +282,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::CapabilitySet;
     use mlua::Lua;
 
     #[test]
@@ -383,6 +384,51 @@ mod tests {
         assert_eq!(
             count_at_cancel, count_after,
             "callback should stop after cancel"
+        );
+    }
+
+    /// A scheduled callback runs under the plugin that scheduled it.
+    ///
+    /// The task is detached, so it carries no context of its own. Without the
+    /// capture the callback ran as if NO plugin were running: `cru.storage`
+    /// had no namespace to key on and refused the write, which is why
+    /// consolidation's cursor writes failed silently under `pcall`.
+    #[cfg(feature = "send")]
+    #[tokio::test]
+    async fn a_scheduled_callback_runs_under_the_plugin_that_scheduled_it() {
+        use std::sync::{Arc, Mutex};
+
+        let lua = Lua::new();
+        crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
+        register_schedule_module(&lua).unwrap();
+
+        // A probe, because the plugin name lives in Rust-side app data and
+        // Lua deliberately cannot read it.
+        let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let recorder = Arc::clone(&seen);
+        let probe = lua
+            .create_function(move |lua, ()| {
+                *recorder.lock().expect("probe lock") =
+                    crate::plugin_context::current_plugin_name(lua);
+                Ok(())
+            })
+            .unwrap();
+        lua.globals().set("_probe", probe).unwrap();
+
+        let previous =
+            crate::plugin_context::enter_plugin(&lua, "consolidation", CapabilitySet::none());
+        lua.load(r#"cru.schedule(0.05, function() _probe() end)"#)
+            .eval_async::<Value>()
+            .await
+            .unwrap();
+        // The scheduling call has returned; the plugin is no longer current.
+        crate::plugin_context::set_plugin_context(&lua, previous);
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert_eq!(
+            seen.lock().expect("probe lock").as_deref(),
+            Some("consolidation"),
+            "the tick must run under the scheduling plugin, not under nobody"
         );
     }
 

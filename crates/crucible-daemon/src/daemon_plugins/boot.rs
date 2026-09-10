@@ -641,23 +641,12 @@ fn boot_load_plugin_module(
     // Context restored on every exit path: an unrestored context would
     // misattribute whatever the user's file registers next.
     //
-    // The grants come from the manifest on disk, because this runs BEFORE
-    // discovery: the user's `init.lua` requires a plugin, and nothing has read
-    // a `PluginManager` entry for it yet. A plugin that declares its
-    // capabilities only in the spec table it RETURNS cannot be read here at
-    // all — the table does not exist until the body finishes — so its
-    // top-level calls hold nothing and its handlers hold everything, once
-    // activation merges the two sources.
-    let grants = file
-        .parent()
-        .and_then(|dir| {
-            crucible_lua::manifest::PluginManifest::discover(dir)
-                .ok()
-                .flatten()
-        })
-        .map(|manifest| manifest.grants())
-        .unwrap_or_default();
-    let previous = crucible_lua::enter_plugin(lua, plugin, grants);
+    // No grants: this runs BEFORE discovery, so nothing has read a
+    // `PluginManager` entry for the plugin yet. The one grant read as
+    // authority is `intercept_tools`, and a boot-time require must not carry
+    // it on a manifest nobody has admitted.
+    let previous =
+        crucible_lua::enter_plugin(lua, plugin, crucible_lua::manifest::CapabilitySet::none());
     let result: mlua::Result<Value> = lua
         .load(&source)
         .set_name(format!("@{}", file.display()))

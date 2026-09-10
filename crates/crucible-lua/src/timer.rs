@@ -98,9 +98,9 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
     #[cfg(feature = "send")]
     timer.func("spawn", "(task: () -> ()) -> ()", |lua, func: Function| {
         // The plugin that spawned this, re-entered around the task, for the
-        // reason `cru.schedule` gives: a detached task carries no context, and
-        // "no context" means the operator's own authority — so deferring a
-        // call was a way around every capability gate.
+        // reason `cru.schedule` gives: a detached task carries no context of
+        // its own, so the task lost its plugin's name — and "no context" is
+        // also how the host spells the operator's own authority.
         let owner = crate::plugin_context::current_plugin_context(lua);
         let vm = lua.clone();
         tokio::spawn(async move {
@@ -172,6 +172,60 @@ mod tests {
         // The task is independent, so give the runtime a turn to run it.
         for _ in 0..50 {
             if lua.globals().get::<bool>("ran").unwrap() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the spawned function never ran");
+    }
+
+    /// A spawned task runs under the plugin that spawned it.
+    ///
+    /// Same reason `cru.schedule` carries its owner: the task is detached and
+    /// carries no context of its own, so without the capture a plugin's
+    /// deferred work lost the name `cru.storage` keys on.
+    #[cfg(feature = "send")]
+    #[tokio::test]
+    async fn a_spawned_task_runs_under_the_plugin_that_spawned_it() {
+        use std::sync::{Arc, Mutex};
+
+        let lua = Lua::new();
+        lua.load("cru = cru or {}").exec().unwrap();
+        register_timer_module(&lua).unwrap();
+
+        // A probe, because the plugin name lives in Rust-side app data and
+        // Lua deliberately cannot read it.
+        let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let recorder = Arc::clone(&seen);
+        let probe = lua
+            .create_function(move |lua, ()| {
+                *recorder.lock().expect("probe lock") =
+                    crate::plugin_context::current_plugin_name(lua);
+                Ok(true)
+            })
+            .unwrap();
+        lua.globals().set("_probe", probe).unwrap();
+        lua.globals().set("ran", false).unwrap();
+
+        let previous = crate::plugin_context::enter_plugin(
+            &lua,
+            "kanban",
+            crate::manifest::CapabilitySet::none(),
+        );
+        lua.load(r#"cru.timer.spawn(function() ran = _probe() end)"#)
+            .exec_async()
+            .await
+            .unwrap();
+        // The spawning call has returned; the plugin is no longer current.
+        crate::plugin_context::set_plugin_context(&lua, previous);
+
+        for _ in 0..50 {
+            if lua.globals().get::<bool>("ran").unwrap() {
+                assert_eq!(
+                    seen.lock().expect("probe lock").as_deref(),
+                    Some("kanban"),
+                    "the task must run under the spawning plugin, not under nobody"
+                );
                 return;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;

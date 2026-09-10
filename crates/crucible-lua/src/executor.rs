@@ -119,10 +119,11 @@ impl LuaExecutor {
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
                     // Under the plugin that registered it, exactly as the end
-                    // path runs. A hook with no owner is the user's own
-                    // `init.lua` and carries the operator's authority; a
-                    // plugin's hook carries only what its manifest declared,
-                    // so `on_session_start` is not a way around the gate.
+                    // path runs. Without this the hook ran with NO context,
+                    // so `cru.storage` refused its writes and
+                    // `cru.plugin.publish` attributed them to nobody — and
+                    // an absent context is also how the host spells the
+                    // operator's own authority to intercept.
                     let owner = self.on_session_start_owners.get(i).cloned().flatten();
                     let previous = self.enter_hook_owner(owner);
                     let result = self
@@ -673,6 +674,70 @@ mod tests {
         executor.fire_session_end_hooks(&session).await.unwrap();
 
         let read: Option<String> = executor.lua().load("return end_hook_read").eval().unwrap();
+        assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
+        assert!(
+            crate::plugin_context::current_plugin_context(executor.lua()).is_none(),
+            "the fire path must restore the previous (absent) context"
+        );
+    }
+
+    /// …and so does a session-START hook. The start path ran every hook with
+    /// NO plugin context, so `cru.storage` refused the call and a plugin
+    /// reading its own state at session start got nothing.
+    #[tokio::test]
+    async fn session_start_hook_runs_in_the_context_of_its_plugin() {
+        use crate::session_api::Session;
+        use crate::test_support::MemoryPropertyStore;
+        use crucible_core::storage::PropertyStore;
+        use std::sync::Arc;
+
+        let mut executor = LuaExecutor::new().unwrap();
+        let store = Arc::new(MemoryPropertyStore::new());
+        crate::register_storage_module(executor.lua()).unwrap();
+        crate::register_storage_module_with_store(
+            executor.lua(),
+            Arc::clone(&store) as Arc<dyn PropertyStore>,
+        )
+        .unwrap();
+
+        let previous = crate::plugin_context::enter_plugin(
+            executor.lua(),
+            "reflection",
+            crate::manifest::CapabilitySet::none(),
+        );
+        executor
+            .lua()
+            .load(
+                r#"
+            cru.on_session_start(function(s)
+                start_hook_read = cru.storage.get(s.id, "injected_titles")
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        crate::plugin_context::set_plugin_context(executor.lua(), previous);
+        executor.sync_session_start_hooks().unwrap();
+
+        store
+            .property_set(
+                "test",
+                "plugin:reflection",
+                "injected_titles",
+                "[\"Kilns\"]",
+            )
+            .await
+            .unwrap();
+
+        let session = Session::new("test".to_string());
+        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        executor.fire_session_start_hooks(&session).await.unwrap();
+
+        let read: Option<String> = executor
+            .lua()
+            .load("return start_hook_read")
+            .eval()
+            .unwrap();
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
             crate::plugin_context::current_plugin_context(executor.lua()).is_none(),
