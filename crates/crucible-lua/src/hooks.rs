@@ -271,6 +271,18 @@ pub fn get_session_start_required_flags(lua: &Lua) -> LuaResult<Vec<bool>> {
     Ok(out)
 }
 
+/// Which plugin registered each START hook, by index; `None` for a hook the
+/// user's own `init.lua` registered.
+///
+/// The owner table has been written since hooks were owner-tagged; only the
+/// end path read it. Without this the start path ran every hook with NO plugin
+/// context, which reads as the operator's own authority — so a plugin that
+/// declared nothing held everything from `on_session_start`, and the
+/// capability gate had a one-line bypass.
+pub fn get_session_start_owners(lua: &Lua) -> LuaResult<Vec<Option<String>>> {
+    owners_by_name(lua, "on_session_start_owners")
+}
+
 pub fn get_session_end_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
     get_hooks_by_name(lua, "on_session_end")
 }
@@ -282,11 +294,16 @@ pub fn get_session_end_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
 /// context around the call, so `cru.storage` resolves the namespace the
 /// plugin wrote to during the session.
 pub fn get_session_end_owners(lua: &Lua) -> LuaResult<Vec<Option<String>>> {
+    owners_by_name(lua, "on_session_end_owners")
+}
+
+/// One owner table, read into a list parallel to its hook list.
+fn owners_by_name(lua: &Lua, table_name: &str) -> LuaResult<Vec<Option<String>>> {
     let globals = lua.globals();
     let Ok(hooks_table) = globals.get::<Table>("__crucible_hooks__") else {
         return Ok(Vec::new());
     };
-    let Ok(owners) = hooks_table.get::<Table>("on_session_end_owners") else {
+    let Ok(owners) = hooks_table.get::<Table>(table_name) else {
         return Ok(Vec::new());
     };
     let len = owners.raw_len();
@@ -424,11 +441,11 @@ mod tests {
     fn clearing_a_plugins_hooks_removes_only_that_plugins_and_keeps_flags_aligned() {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
-        crate::plugin_context::enter_plugin(&lua, "alpha", false);
+        crate::plugin_context::enter_plugin(&lua, "alpha", crate::manifest::CapabilitySet::none());
         lua.load(r#"cru.on_session_start(function(s) end, { required = true })"#)
             .exec()
             .unwrap();
-        crate::plugin_context::enter_plugin(&lua, "beta", false);
+        crate::plugin_context::enter_plugin(&lua, "beta", crate::manifest::CapabilitySet::none());
         lua.load(
             r#"
             cru.on_session_start(function(s) end)

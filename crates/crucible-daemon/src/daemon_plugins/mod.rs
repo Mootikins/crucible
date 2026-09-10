@@ -391,11 +391,46 @@ impl DaemonPluginLoader {
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> anyhow::Result<Self> {
+        // The same registry answers the two questions a plugin's file access
+        // asks: "where is kiln X" and "which directories may I read and write
+        // at all". Binding them together is what keeps the second from
+        // drifting behind the first.
+        self.bind_fs_roots(Arc::clone(&registry));
         let resolver: crucible_lua::KilnPathResolver =
             Arc::new(move |name: &str| registered_kiln_path(&registry, name).map(|(_, path)| path));
         crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
             .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)
+    }
+
+    /// Bind where a plugin's `cru.fs.read` and `cru.fs.write` may reach.
+    ///
+    /// Three kinds of root, and each is a place the plugin was already meant
+    /// to work in: every registered kiln (its notes are the data plugins
+    /// exist to handle), the daemon's plugin-state directory (a plugin's own
+    /// files), and the process working directory (the invocation's workspace,
+    /// which is what `cru.paths.workspace()` answers with when one is set).
+    ///
+    /// It does NOT confine `mkdir`, `list`, `copy` or `remove_all`, which
+    /// predate it and are used against paths outside all three — `worktree`
+    /// checks a destination it is about to create. Narrowing those is a
+    /// separate decision with a migration behind it; the two NEW functions
+    /// start scoped, which is the direction to move the rest in.
+    fn bind_fs_roots(&self, registry: Arc<crate::kiln_registry::KilnRegistry>) {
+        let state_root = crucible_core::config::crucible_home().join("plugin-state");
+        let resolver: crucible_lua::FsRootsResolver = Arc::new(move |plugin: &str| {
+            let mut roots: Vec<PathBuf> = registry
+                .entries()
+                .iter()
+                .map(|kiln| kiln.path().to_path_buf())
+                .collect();
+            roots.push(state_root.join(plugin));
+            if let Ok(cwd) = std::env::current_dir() {
+                roots.push(cwd);
+            }
+            roots
+        });
+        crucible_lua::register_fs_roots_resolver(self.executor.lua(), resolver);
     }
 
     /// Wire the named kiln reads — `cru.kiln.blocks`, `note`, `notes`,
@@ -1037,6 +1072,17 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("spec load for '{}': {e}", name))?
             .ok_or_else(|| anyhow::anyhow!("plugin '{}' returned no spec", name))?;
 
+        // A plugin declares its capabilities in `plugin.yaml`, in the spec
+        // table it returns, or in both; what it runs under is the union. This
+        // loader used to read only the manifest, which was invisible while
+        // nothing was enforced and is a refusal now that everything is.
+        for unknown in self
+            .plugin_manager
+            .merge_spec_capabilities(name, spec.capabilities.iter().map(String::as_str))
+        {
+            warn!("Plugin '{name}' declares unknown capability '{unknown}'; ignoring");
+        }
+
         // Execute the plugin in the daemon's real Lua runtime using eval_async
         // so that async Lua functions (gateway.connect, etc.) can yield.
         // Also extract service/tool/command Function refs from the returned
@@ -1224,7 +1270,7 @@ impl DaemonPluginLoader {
         // operator installed. This VM used to stamp neither — daemon-side
         // `cru.storage` errored, and the interception gate read a Lua global
         // with `.unwrap_or(true)`, so it failed OPEN for every plugin here.
-        let previous = crucible_lua::enter_plugin(lua, name, self.plugin_may_intercept(name));
+        let previous = crucible_lua::enter_plugin(lua, name, self.plugin_grants(name));
 
         // Execute init.lua with eval_async — captures return value AND enables
         // async Lua. Results are captured, not `?`-ed: the context restore
@@ -1303,18 +1349,18 @@ impl DaemonPluginLoader {
         }
     }
 
-    /// Whether this plugin's installation granted it the right to take a tool
-    /// call over (`intercept_tools` in its manifest).
+    /// What this plugin's installation granted it, from the manifest the
+    /// operator installed.
     ///
-    /// An unknown plugin gets `false`. Interception fabricates a result the
-    /// model reads as the tool's own, and it returns BEFORE the permission
-    /// gate, so an unanswerable question must answer "no".
-    fn plugin_may_intercept(&self, name: &str) -> bool {
-        self.plugin_manager.get(name).is_some_and(|plugin| {
-            plugin
-                .manifest
-                .has_capability(crucible_lua::manifest::Capability::InterceptTools)
-        })
+    /// An unknown plugin gets NOTHING. Every grant here opens a door — the
+    /// filesystem, the network, a shell, the agent runtime, interception,
+    /// which fabricates a result the model reads as the tool's own and returns
+    /// BEFORE the permission gate — so an unanswerable question answers "no".
+    fn plugin_grants(&self, name: &str) -> crucible_lua::manifest::CapabilitySet {
+        self.plugin_manager
+            .get(name)
+            .map(|plugin| plugin.manifest.grants())
+            .unwrap_or_default()
     }
 
     /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.

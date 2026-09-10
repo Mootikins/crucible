@@ -238,7 +238,11 @@ fn runtime_handlers_for_returns_matching_handlers() {
             priority: 100,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
@@ -247,7 +251,11 @@ fn runtime_handlers_for_returns_matching_handlers() {
             priority: 50,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
@@ -256,7 +264,11 @@ fn runtime_handlers_for_returns_matching_handlers() {
             priority: 200,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
     }
@@ -286,7 +298,11 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             priority: 200,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
@@ -295,7 +311,11 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             priority: 10,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
@@ -304,7 +324,11 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             priority: 100,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
     }
@@ -330,7 +354,11 @@ fn pattern_filtering_matches_exact_tool_name() {
             priority: 10,
             pattern: Some("bash".to_string()),
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
@@ -339,7 +367,11 @@ fn pattern_filtering_matches_exact_tool_name() {
             priority: 100,
             pattern: None,
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
     }
@@ -372,7 +404,11 @@ fn pattern_filtering_supports_glob() {
             priority: 10,
             pattern: Some("read_*".to_string()),
             plugin: None,
-            may_intercept: true,
+            grants: Some(
+                [crate::manifest::Capability::InterceptTools]
+                    .into_iter()
+                    .collect(),
+            ),
             timeout_ms: None,
         });
     }
@@ -491,7 +527,7 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
     .unwrap();
 
     // Two plugins, loaded in order, exactly as the loader does it.
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha", crate::manifest::CapabilitySet::none());
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -501,7 +537,7 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
     .exec()
     .unwrap();
 
-    crate::plugin_context::enter_plugin(&lua, "beta", false);
+    crate::plugin_context::enter_plugin(&lua, "beta", crate::manifest::CapabilitySet::none());
     lua.load(r#"cru.on("pre_tool_call", function() end)"#)
         .exec()
         .unwrap();
@@ -515,7 +551,7 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
 
     // Reload alpha: drop its handlers, then let it register again.
     registry.clear_plugin_handlers("alpha");
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha", crate::manifest::CapabilitySet::none());
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -639,7 +675,7 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
     )
     .unwrap();
 
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha", crate::manifest::CapabilitySet::none());
     lua.load(r#"cru.on("pre_tool_call", function() return { cancel = true } end)"#)
         .exec()
         .unwrap();

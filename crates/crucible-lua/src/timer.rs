@@ -96,9 +96,18 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
     // The task is called with no arguments and anything it answers is
     // dropped, so it is declared `() -> ()`.
     #[cfg(feature = "send")]
-    timer.func("spawn", "(task: () -> ()) -> ()", |_lua, func: Function| {
+    timer.func("spawn", "(task: () -> ()) -> ()", |lua, func: Function| {
+        // The plugin that spawned this, re-entered around the task, for the
+        // reason `cru.schedule` gives: a detached task carries no context, and
+        // "no context" means the operator's own authority — so deferring a
+        // call was a way around every capability gate.
+        let owner = crate::plugin_context::current_plugin_context(lua);
+        let vm = lua.clone();
         tokio::spawn(async move {
-            if let Err(e) = func.call_async::<()>(()).await {
+            let previous = crate::plugin_context::set_plugin_context(&vm, owner);
+            let result = func.call_async::<()>(()).await;
+            crate::plugin_context::set_plugin_context(&vm, previous);
+            if let Err(e) = result {
                 tracing::warn!("Spawned Lua task error: {}", e);
             }
         });
