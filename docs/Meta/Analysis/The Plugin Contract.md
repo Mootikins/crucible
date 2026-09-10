@@ -328,7 +328,9 @@ must attach to. The package should wait until delivery is decided.
   `script-src 'self'`, so the CSP would admit it and protect nothing, and the
   service worker's root scope leans on that same bound. Block components ship
   in-tree until a sandboxed opaque origin and a `postMessage` bridge exist.
-  That is the largest single piece of work this design implies.
+  That is the largest single piece of work this design implies, and the
+  mechanism is now decided and measured — see
+  [[Meta/Analysis/Plugin Web Delivery]].
 - **The editor's live preview** still shows the fence as source; only the
   reading view mounts blocks.
 - **Latency is unresolved for the TUI.** A file tree tolerates an RPC per

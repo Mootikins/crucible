@@ -275,15 +275,45 @@ plugin's published state stays derivable from its files — rather than a gate,
 because a user editing their own note by hand is a legal move that a plugin must
 survive anyway.
 
-## Step 5 — decide delivery, then package
+## Step 5 — delivery decided; the build waits on a trigger
 
-**Not before.** The choice is a sandboxed opaque origin with a `postMessage`
-bridge, versus something else. It determines whether the plugin-facing surface
-is a function library or an RPC envelope, and packaging the wrong one is the
-expensive mistake available here.
+**Decided: a sandboxed iframe on an opaque origin with a `MessageChannel`
+bridge. The plugin-facing surface is an RPC envelope, not a function library.**
+Evidence, alternatives, the envelope, the costs and the trigger are in
+[[Meta/Analysis/Plugin Web Delivery]]; the measurement is reproducible from
+`scripts/spikes/plugin-bridge/`.
 
-Once decided: extract the safe subset, make `KanbanBlock` consume it instead of
-`@/lib/api`, and let that prove sufficiency before anything third-party exists.
+The latency objection is dead: a bridged call costs **under 0.1 ms** more than
+a direct one, and a block costs about 9 ms to mount. A Web Worker cannot be
+given an opaque origin at all, so it isolates the DOM and leaves the API open —
+the wrong half.
+
+**What follows immediately, at no cost.**
+
+- Do not extract `@crucible/block-api` as a function library. It is a
+  `call(method, params)` client over the envelope.
+- Do not print a capability label on a web block. The bridge is what would make
+  one true, and it is not built.
+- The bridge is what keeps `web/src/pwa-options.ts`'s residual honest: plugin
+  JS never runs on the app origin, so `script-src 'self'` keeps meaning what
+  that file says it means.
+
+**The build waits, and the trigger is named.** Nothing third-party exists, so
+the ten days would buy a proved identity in a system with no third-party
+callers. The trigger is a plugin installed through `POST /api/plugins` that
+ships web assets — and the loader should *refuse* to serve them until the
+bridge exists, so the trigger fires as a refusal someone reads rather than as a
+memory someone has.
+
+**Enforce before you isolate.** Step 4's item 1 — enforcing the ten capability
+variants that already gate nothing — is Lua-side work the daemon can win today,
+and it is worth more per day than this. Isolation without enforcement is a
+truthful name for an ungated door.
+
+Once built: extract the envelope client, make `KanbanBlock` consume it instead
+of `@/lib/api`, and let that prove sufficiency. `GraphBlock` is the harder
+proof — it imports the app's editor context, so it needs host methods that are
+not plugin data at all.
 
 ## On the write path, and a correction
 
