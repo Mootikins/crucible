@@ -49,7 +49,7 @@ pub(crate) struct SessionSlot {
     /// `on_session_start` hooks. `None` until the VM has run — a manager whose
     /// VM construction failed outright falls back to the raw globals, which is
     /// a different answer from "the VM ran and captured nothing".
-    overrides: Mutex<Option<crucible_lua::SessionDefaultValues>>,
+    overrides: Mutex<Option<crucible_lua::SessionStartValues>>,
     /// The live copy of the session's `session:set_variable` map. The VM
     /// builder seeds it from the persisted session before the start hooks
     /// run, so a hook that runs after a resume reads what it stored before.
@@ -280,7 +280,7 @@ impl SessionSlot {
     }
 
     /// This session's captured starting values, or `None` if its VM never ran.
-    pub(crate) fn overrides(&self) -> Option<crucible_lua::SessionDefaultValues> {
+    pub(crate) fn overrides(&self) -> Option<crucible_lua::SessionStartValues> {
         self.overrides
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -293,7 +293,7 @@ impl SessionSlot {
     }
 
     /// Record what `on_session_start` left in the session's scope.
-    pub(crate) fn set_overrides(&self, values: crucible_lua::SessionDefaultValues) {
+    pub(crate) fn set_overrides(&self, values: crucible_lua::SessionStartValues) {
         *self
             .overrides
             .lock()

@@ -17,6 +17,33 @@ pub enum AgentPreference {
     Crucible,
 }
 
+/// The system prompt a session starts with when nothing else sets one.
+///
+/// This lives here, rather than in `runtime/defaults/init.luau`, because a
+/// shipped value is [`SourceTag::Default`] — the lowest layer. Written from
+/// Lua it would have outranked `settings.json`, so the settings UI could not
+/// have changed it.
+///
+/// [`SourceTag::Default`]: crate::config::SourceTag::Default
+pub const DEFAULT_SYSTEM_PROMPT: &str = "\
+You are Crucible, a knowledge-grounded agent working alongside the user.
+
+Ground your answers in the notes and context you are given. When context
+is missing, say so and offer to look \u{2014} never invent a note, a path, or a
+quotation. Reference notes by title, and link them with [[wikilinks]] when
+you write to the kiln.
+
+Use your tools rather than guessing: read a file before describing it, and
+verify a change before reporting it done. Prefer one decisive action over a
+list of options.
+
+Be concise. Match the depth of the question \u{2014} a short question gets a short
+answer, and code or structure only when it earns its place.";
+
+fn default_system_prompt() -> String {
+    DEFAULT_SYSTEM_PROMPT.to_string()
+}
+
 /// Simple chat configuration - only essential user settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
@@ -41,6 +68,13 @@ pub struct ChatConfig {
     /// Useful for trimming visual noise in long sessions.
     #[serde(default = "default_true")]
     pub show_diffs: bool,
+    /// The system prompt a new session starts from.
+    ///
+    /// An agent card's own prompt wins; this fills a card that names none.
+    /// A start hook reads it through `session.system_prompt` and may extend
+    /// it, which is the per-session tier.
+    #[serde(default = "default_system_prompt")]
+    pub system_prompt: String,
 }
 
 impl Default for ChatConfig {
@@ -51,6 +85,7 @@ impl Default for ChatConfig {
             endpoint: None,
             show_thinking: false,
             show_diffs: true,
+            system_prompt: default_system_prompt(),
         }
     }
 }

@@ -782,7 +782,7 @@ pub async fn create_agent_from_session_config(
             .with_plugin_tools(plugin_tool_names)
             // Everything the session decided about generation and context. This is
             // the only hop where it can arrive: every setter that writes these to
-            // `SessionAgent` — RPC, `cru.defaults`, an agent card, `[llm]` config —
+            // `SessionAgent` — RPC, a start hook, an agent card, `[llm]` config —
             // invalidates the agent cache, so the handle is always rebuilt here.
             // Omitting them left `context_budget` permanently `None`, so every
             // context strategy was dead and tool-schema deferral guessed at the

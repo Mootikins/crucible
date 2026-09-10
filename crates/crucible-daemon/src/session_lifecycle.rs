@@ -256,7 +256,7 @@ pub(crate) async fn fire_start_hooks(
     let scope = agents.map(|agents| {
         let (scope, variables) = agents.start_hook_scope(session_id);
         session.bind(Box::new(
-            crucible_lua::SessionDefaultsRpc::new(scope.clone()).with_variables(variables),
+            crucible_lua::SessionStartScopeRpc::new(scope.clone()).with_variables(variables),
         ));
         scope
     });

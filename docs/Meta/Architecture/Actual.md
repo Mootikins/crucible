@@ -841,7 +841,7 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `DaemonSessionBridge` | `crucible-daemon/src/session_bridge.rs:23` | The one production `DaemonSessionApi` |
 | `DaemonToolsApi`, `DaemonToolsBridge` | `crucible-lua/src/tools_api.rs:95`, `crucible-daemon/src/tools_bridge.rs:19` | `cru.tools.*` contract and impl |
 | `SessionConfigRpc`, `Session`, `CurrentSession` | `crucible-lua/src/session_api.rs:67,297,489` | Lua `session` userdata and its knob contract |
-| `SessionDefaults`, `SessionDefaultValues`, `SessionDefaultsRpc` | `crucible-lua/src/session_defaults.rs:70,52,199` | `cru.defaults` |
+| `SessionStartScope`, `SessionStartValues`, `SessionStartScopeRpc` | `crucible-lua/src/session_start_scope.rs` | the scope an `on_session_start` hook writes |
 | `ModeRegistry`, `ModeDefinition`, `ModePermissions`, `ModeStance`, `ToolSelector` | `crucible-lua/src/modes.rs:161,149,132,42,77` | `cru.modes`; permission modes live here |
 | `IsolationRegistry` | `crucible-lua/src/isolation.rs:122` | `cru.isolation.require` |
 | `StatusRegistry`, `PublicationRegistry`, `ContextAttachRegistry`, `OptionsRegistry`, `StatuslineExprRegistry`, `LuaValidatorRegistry` | `plugin_status.rs:54`, `publications.rs:33`, `context_attach.rs:74`, `options.rs:65`, `statusline_exprs.rs:68`, `context.rs:187` | Daemon-read registries behind `Arc<Mutex>` |
@@ -907,8 +907,9 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   parsed and serialized but no renderer reads them.
 - `cru.log.notify` appends to a queue only tests drain (`notify.rs:78,110,241,262`)
   while `docs/Help/Lua/Language Basics.md:74` documents it.
-- `cru.defaults.mode` is stored but never exposed to Lua
-  (`session_defaults.rs:92-175`).
+- `mode` and `model` on the start scope are settable only from an
+  `on_session_start` hook, never as a config key. That is deliberate: a global
+  `model` would silently replace the one the caller named on the command line.
 - `CONFIG` is process-global (`config.rs:55`); every VM shares theme state.
 - `daemon_plugin_paths` (`daemon_plugins/bootstrap.rs:33`) and
   `PluginManager::with_standard_paths` (`lifecycle/mod.rs:112`) both compute

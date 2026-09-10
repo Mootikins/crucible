@@ -36,7 +36,6 @@ impl AgentManager {
             titles_in_flight: _, // InFlightGuard owns its lifetime (title.rs:13)
             model_cache: _,      // keyed by provider classification, not session
             runtimepath: _,      // daemon config
-            session_defaults: _, // global Lua defaults tier
             modes: _,            // global mode registry
             kiln_manager: _,     // shared service
             session_manager: _,  // shared service

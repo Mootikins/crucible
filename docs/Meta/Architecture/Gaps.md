@@ -166,7 +166,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G128 | lua | `Skill` carries `shadowed_by`; `name == dir` is checked (3.19) | The rule is documented and not checked (`skills/types.rs:95`); `content_hash` is computed and never read; `platform.rs:66-180` copies fields by hand and drops five | code-wrong | S |
 | G129 | lua | `cru.permissions.on_request` is available to plugins (9.4) | `register_permission_hook_api` is called only from `session_vm.rs:113`; the plugin loader never registers it | code-wrong | S |
 | G130 | lua | Hooks are named by the name table, not by position (9.3) | `register_permission_hook_api` names hooks from `guard.len()` (`handlers/permission.rs:132`) | code-wrong | S |
-| G131 | lua | `cru.defaults` exposes every default (F183) | `cru.defaults.mode` is stored but never exposed (`session_defaults.rs:92-175`) | code-wrong | S |
+| G131 | lua | ~~`cru.defaults` exposes every default (F183)~~ | RESOLVED 2026-09-10: `cru.defaults` is gone. `system_prompt` is the config key `chat.system_prompt`; `mode` and `model` are per-session by design, set by an `on_session_start` hook | resolved | — |
 | G132 | lua | One plugin path computation (8.15) | `daemon_plugin_paths` and `PluginManager::with_standard_paths` both compute it (`bootstrap.rs:33`, `lifecycle/mod.rs:112`) | code-wrong | S |
 | G133 | lua | A plugin spec loads once (3.20) | `load_plugin_spec` runs the file in a throwaway VM, then the daemon runs it again in the real VM (`spec.rs:140`, `discovery.rs:295`) | code-wrong | S |
 | G134 | lua | No dead cross-crate path (4.17) | `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command` form a dead path; `with_session_command_receiver` has no caller | code-wrong | S |
@@ -505,9 +505,10 @@ checked. First step: replace the hand copy at `platform.rs:66-180` with
 with ids from the handler registry. First step: call
 `register_permission_hook_api` from `DaemonPluginLoader`.
 
-**G131, G132, G133, G134, G135, G138.** Target: expose `cru.defaults.mode`;
-one plugin path list; load a spec once; delete the dead channel path, the
-duplicate tool shapes and the temp-dir write. First step: one commit per item.
+**G132, G133, G134, G135, G138.** Target: one plugin path list; load a spec
+once; delete the dead channel path, the duplicate tool shapes and the temp-dir
+write. First step: one commit per item. (G131 is resolved: the tier it named no
+longer exists.)
 
 **G139.** Target: `:set` parses locally and sends `session.set_config`; the
 overlay engine shrinks to the TUI-local keys; the permission rule write becomes

@@ -24,6 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`config.save` refuses a leaf a CLI flag holds** instead of answering
   `ok: true`, writing `settings.json` and letting the rank gate drop the value.
 
+- **`cru.defaults` is folded into the config store.** It was a second global
+  tier: one key, its own lock, no provenance — so `settings.json`, `:set`,
+  `config.origin` and the settings UI all passed it by. The one key it held is
+  now `chat.system_prompt`, and it behaves like every other config key.
+
+  | Was | Is |
+  |---|---|
+  | `cru.defaults.system_prompt = "…"` | `cru.config.set { chat = { system_prompt = "…" } }` |
+  | `cru.defaults.system_prompt .. "…"` | `cru.config.get("chat").system_prompt .. "…"` |
+
+  The shipped prompt moves out of `runtime/defaults/init.luau` and into
+  `ChatConfig::default()`, which puts it on the store's `Default` layer. Written
+  from Lua it carried the `Lua` layer, which outranks `settings.json`, so the
+  settings UI could not have changed it. `session.system_prompt` inside an
+  `on_session_start` hook is unchanged and still reads the inherited value
+  before it overrides.
+
+  `cru.defaults.mode` and `cru.defaults.model` never existed as keys and still
+  do not: a hook sets those per session, because a global model would silently
+  replace the one the caller named on the command line.
+
 ### Removed
 
 - **The thinking budget is gone, not deprecated.** A cap on reasoning tokens

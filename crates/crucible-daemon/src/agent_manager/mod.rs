@@ -367,12 +367,6 @@ pub struct AgentManager {
     /// through to `CRUCIBLE_RUNTIME`, then exe-relative, then the compiled-in
     /// copy. See [`crate::runtime_defaults`].
     runtimepath: Vec<PathBuf>,
-    /// Global session defaults set from Lua (`cru.defaults.x = …`) — the
-    /// values a NEW session starts from, applied in `configure_agent` to any
-    /// field the agent card left unset. The per-session override is
-    /// `session.x`; see `crucible_lua::session_defaults` for why this tier is
-    /// not called `cru.o`.
-    session_defaults: crucible_lua::SessionDefaults,
     /// Modes declared from Lua (`cru.modes.<name> = {…}`). Empty until a
     /// daemon VM has run its files; every read falls back to
     /// `default_internal_modes()` in that case, so a daemon whose Lua failed
@@ -519,7 +513,6 @@ impl AgentManager {
             request_state: Arc::new(DashMap::new()),
             slots: Arc::new(DashMap::new()),
             runtimepath: Vec::new(),
-            session_defaults: crucible_lua::SessionDefaults::new(),
             modes: crucible_lua::ModeRegistry::new(),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
@@ -665,12 +658,6 @@ impl AgentManager {
     /// later leaves earlier VMs holding a nil function forever.
     pub fn statusline_exprs(&self) -> std::sync::Arc<crucible_lua::StatuslineExprRegistry> {
         self.statusline_exprs.clone()
-    }
-
-    /// The global session defaults store (`cru.defaults`).
-    #[cfg(test)]
-    pub(crate) fn session_defaults(&self) -> &crucible_lua::SessionDefaults {
-        &self.session_defaults
     }
 
     /// The operator's daemon-global `[permissions]` rules.
@@ -888,27 +875,16 @@ impl AgentManager {
         }
     }
 
-    /// Set the config `runtimepath` used to resolve `runtime/defaults/init.lua`.
+    /// Adopt the mode registry the plugin loader's VM writes.
     ///
-    /// A setter rather than a `AgentManagerParams` field: every test
-    /// constructing a manager wants the fall-through behaviour (empty →
-    /// exe-relative → built-in), and only the daemon has a configured path to
-    /// pass. Call before the daemon VM loads its files; later calls do not
-    /// re-run defaults for VMs that already exist.
-    /// Adopt the daemon VM's session-default and mode stores.
+    /// Both VMs run the same two files, so both must write the same registry
+    /// or the daemon VM's copy would be a second, invisible tier.
     ///
-    /// Both VMs run the same two files, so both must write the same stores or
-    /// the daemon VM's copy would be a second, invisible tier.
-    ///
-    /// `None` is the loader-less case (most tests): keep the stores this
+    /// `None` is the loader-less case (most tests): keep the registry this
     /// manager made for itself.
     #[must_use]
-    pub fn with_session_stores(
-        mut self,
-        stores: Option<(crucible_lua::SessionDefaults, crucible_lua::ModeRegistry)>,
-    ) -> Self {
-        if let Some((defaults, modes)) = stores {
-            self.session_defaults = defaults;
+    pub fn with_modes(mut self, modes: Option<crucible_lua::ModeRegistry>) -> Self {
+        if let Some(modes) = modes {
             self.modes = modes;
         }
         self

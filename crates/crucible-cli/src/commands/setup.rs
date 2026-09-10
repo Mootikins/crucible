@@ -103,7 +103,7 @@ fn custom_runtime_dir_instructions(target: &Path) -> String {
 /// nobody who ran this command.
 ///
 /// The override point for defaults is `~/.config/crucible/init.lua`. It writes
-/// the same `cru.defaults` and `cru.modes` stores, and the daemon re-applies
+/// the same config store and `cru.modes` registry, and the daemon re-applies
 /// what it set over every session's freshly-loaded defaults — Vim's `after/`
 /// in everything but name, and it exists precisely so nobody forks a runtime
 /// file.

@@ -31,6 +31,13 @@ async fn session_with_lua(
     Arc<SessionManager>,
     String,
 ) {
+    // The seed `daemon_plugins::boot` lays down before any Lua runs.
+    // `chat.system_prompt` lives on that Default layer now, so a fixture that
+    // reads or extends it needs the same seed production has.
+    crucible_lua::seed_app_config(
+        serde_json::to_value(crucible_core::config::CliAppConfig::default())
+            .expect("serialize default config"),
+    );
     let mut loader =
         crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
             .expect("daemon VM");
@@ -49,8 +56,7 @@ async fn session_with_lua(
         .await
         .expect("session");
     let agent_manager = Arc::new(
-        create_test_agent_manager(session_manager.clone())
-            .with_session_stores(Some(loader.session_stores())),
+        create_test_agent_manager(session_manager.clone()).with_modes(Some(loader.mode_registry())),
     );
     agent_manager.set_daemon_permissions(loader.permission_registry());
     agent_manager.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
@@ -172,7 +178,7 @@ async fn request_without_a_mode_falls_through_to_the_prompt() {
 
 /// `configure_agent` is where a default becomes real, so the assertions run
 /// through it rather than through the Lua store — a value that reaches
-/// `cru.defaults` but never reaches `AgentConfig` is exactly the failure
+/// the start scope but never reaches `AgentConfig` is exactly the failure
 /// the previous `transform_context` approach had.
 async fn configured_agent(
     agent_manager: &AgentManager,
@@ -254,8 +260,12 @@ async fn an_agent_card_prompt_wins_over_the_default() {
 #[tokio::test]
 async fn a_user_init_lua_can_append_to_a_shipped_default() {
     let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
-        r#"cru.defaults.system_prompt =
-             cru.defaults.system_prompt .. "\n\nAnswer in British English.""#,
+        r#"cru.config.set {
+             chat = {
+               system_prompt = cru.config.get("chat").system_prompt
+                 .. "\n\nAnswer in British English.",
+             },
+           }"#,
     )
     .await;
 
@@ -746,12 +756,12 @@ async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
 
 /// A mode chosen in an `on_session_start` hook reaches the agent.
 ///
-/// `session.mode = "plan"` had no backing on `SessionDefaultsRpc`, so it hit
+/// `session.mode = "plan"` had no backing on `SessionStartScopeRpc`, so it hit
 /// the trait default. That default used to be `Ok(())` — silently inert — and
 /// then became an error, which aborts the hook body and takes every line after
 /// it down too. Neither is a session that starts in plan mode. Asserted
 /// through `configure_agent` for the reason the helper above gives: a value
-/// that reaches `cru.defaults` and not `SessionAgent` is the failure mode.
+/// that reaches the start scope and not `SessionAgent` is the failure mode.
 #[tokio::test]
 async fn a_mode_set_in_a_session_start_hook_reaches_the_agent() {
     let (_vm, agent_manager, session_manager, session_id) = session_with_lua(
@@ -774,13 +784,10 @@ async fn a_mode_set_in_a_session_start_hook_reaches_the_agent() {
 /// do not overrule a choice already made.
 #[tokio::test]
 async fn an_agents_own_mode_outranks_the_default() {
-    let (_vm, agent_manager, _sm, session_id) = session_with_lua("").await;
+    let (_vm, agent_manager, _sm, session_id) =
+        session_with_lua(r#"cru.on_session_start(function(session) session.mode = "plan" end)"#)
+            .await;
     let session_manager = agent_manager.session_manager.clone();
-
-    let defaults = agent_manager.session_defaults();
-    let mut values = defaults.get();
-    values.mode = Some("plan".to_string());
-    defaults.set(values);
 
     let mut agent = bare_agent();
     agent.mode = Some("ask".to_string());

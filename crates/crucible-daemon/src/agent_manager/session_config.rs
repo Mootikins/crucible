@@ -14,7 +14,11 @@
 //! `on_session_start` fires once per session, from `SessionLifecycle`, and
 //! writes into the scope [`AgentManager::start_hook_scope`] hands it.
 //! [`AgentManager::apply_session_defaults`] reads that scope back when the
-//! agent is built — the global defaults are the fallback, not the source.
+//! agent is built — the global tier is the fallback, not the source.
+//!
+//! That global tier is the config store: `chat.system_prompt`. It is read
+//! live, not snapshotted at boot, because `config.set` and the settings UI
+//! both write the store while the daemon runs.
 
 use super::*;
 
@@ -22,9 +26,9 @@ impl AgentManager {
     /// The scope a session's `on_session_start` hooks write into, and the
     /// variables they read.
     ///
-    /// Seeded from the global defaults so `session.x` reads the inherited
-    /// value — `session.system_prompt = session.system_prompt .. "…"` extends
-    /// the default instead of clobbering it.
+    /// Seeded from the config store so `session.x` reads the inherited value
+    /// — `session.system_prompt = session.system_prompt .. "…"` extends the
+    /// configured prompt instead of clobbering it.
     ///
     /// Paired with [`Self::commit_start_hook_scope`]. `SessionLifecycle` runs
     /// the hooks between the two, because that is where the plugin loader and
@@ -33,11 +37,11 @@ impl AgentManager {
         &self,
         session_id: &str,
     ) -> (
-        crucible_lua::SessionDefaults,
+        crucible_lua::SessionStartScope,
         crucible_lua::SessionVariables,
     ) {
-        let scope = crucible_lua::SessionDefaults::new();
-        scope.set(self.session_defaults.get());
+        let scope = crucible_lua::SessionStartScope::new();
+        scope.set(configured_start_values());
 
         // Seed the variables from storage before the hooks run, so
         // `session:get_variable` reads what an earlier life of this session
@@ -54,7 +58,7 @@ impl AgentManager {
     pub(crate) fn commit_start_hook_scope(
         &self,
         session_id: &str,
-        scope: &crucible_lua::SessionDefaults,
+        scope: &crucible_lua::SessionStartScope,
     ) {
         self.slot(session_id).set_overrides(scope.get());
         self.schedule_variable_persist(session_id);
@@ -89,14 +93,14 @@ impl AgentManager {
 
     fn apply_session_defaults(&self, session_id: &str, mut agent: SessionAgent) -> SessionAgent {
         // Creating the VM ran `on_session_start`, which captured this
-        // session's values into the slot's `overrides` — already seeded from the
-        // globals, so it is the complete picture. Fall back to the raw globals
-        // only if no VM state was recorded (a manager whose VM construction
-        // failed outright).
+        // session's values into the slot's `overrides` — already seeded from
+        // the store, so it is the complete picture. Fall back to the store
+        // itself only if no VM state was recorded (a manager whose VM
+        // construction failed outright).
         let defaults = self
             .slot(session_id)
             .overrides()
-            .unwrap_or_else(|| self.session_defaults.get());
+            .unwrap_or_else(configured_start_values);
 
         if agent.system_prompt.is_empty() {
             if let Some(prompt) = defaults.system_prompt {
@@ -174,4 +178,35 @@ async fn persist_variables(
         .update_session(&session)
         .await
         .map_err(AgentError::Session)
+}
+
+/// The values a session starts from before any hook runs.
+///
+/// Only `system_prompt` has a global tier. `mode` and `model` are deliberately
+/// per-session: a hook chooses them, because a global `model` would silently
+/// replace the one the caller named on the command line.
+///
+/// Read from the live store rather than a boot snapshot, so a `config.set` RPC
+/// or a settings-UI save reaches the next session without a restart.
+fn configured_start_values() -> crucible_lua::SessionStartValues {
+    crucible_lua::SessionStartValues {
+        system_prompt: configured_system_prompt(),
+        ..Default::default()
+    }
+}
+
+/// `chat.system_prompt` from the config store.
+///
+/// Falls back to the compiled-in constant, which is the same string the store
+/// carries on its `Default` layer. The fallback runs only before the store is
+/// seeded — a test that builds a VM directly, rather than booting a daemon.
+fn configured_system_prompt() -> Option<String> {
+    let configured = crucible_lua::get_app_config()
+        .as_ref()
+        .and_then(|config| crucible_core::config::leaf_at(config, "chat.system_prompt"))
+        .and_then(|leaf| leaf.as_str())
+        .map(str::to_string);
+    Some(configured.unwrap_or_else(|| {
+        crucible_core::config::components::chat::DEFAULT_SYSTEM_PROMPT.to_string()
+    }))
 }

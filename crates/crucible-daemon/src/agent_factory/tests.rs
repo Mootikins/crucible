@@ -463,7 +463,7 @@ async fn rules_file_contents_reach_the_system_prompt() {
 /// the handle that talks to the model.
 ///
 /// Asserted on the factory rather than on the setters, because the setters
-/// were never the broken part: `session.set_temperature`, `cru.defaults`,
+/// were never the broken part: `session.set_temperature`, a start hook,
 /// `[llm] temperature` and an agent card's `temperature:` all write to
 /// `SessionAgent` correctly, and every one of those writes invalidates the
 /// agent cache so the handle is rebuilt *here*. This is the single hop

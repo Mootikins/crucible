@@ -398,7 +398,7 @@ cru.config.set({
 -- See Help/Lua/Configuration.md.
 --
 -- cru.on("pre_tool_call", function(ctx) end)
--- cru.defaults.model = "claude-sonnet-5"
+-- cru.config.set { chat = { model = "claude-sonnet-5" } }
 -- cru.rtp.append("~/team-kit")
 --
 -- Split a long config with `require`: a module in ~/.config/crucible/lua/

@@ -137,7 +137,6 @@ pub struct DaemonPluginLoader {
     ///
     /// Shared with `AgentManager`, which registers the same handle into every
     /// session reads, so one write at boot reaches every session.
-    session_defaults: crucible_lua::SessionDefaults,
     /// The mode registry, shared the same way and for the same reason.
     modes: crucible_lua::ModeRegistry,
     /// `cru.permissions.on_request` hooks and their bodies. The tool gate
@@ -285,18 +284,13 @@ impl DaemonPluginLoader {
             crucible_lua::config::register_ui_namespaces(lua),
         )?;
 
-        // `cru.defaults` and `cru.modes`. The stores are the SAME handles the
-        // sessions read, so `cru.defaults.system_prompt = …` in the user's
-        // `~/.config/crucible/init.lua` reaches every session with no copy
-        // step. `AgentManager` adopts them at bind time.
+        // `cru.modes`. The store is the SAME handle the sessions read, so a
+        // mode declared in the user's `~/.config/crucible/init.lua` reaches
+        // every session with no copy step. `AgentManager` adopts it at bind
+        // time.
         //
-        // A workspace cannot reach these: no workspace file runs on any VM.
+        // A workspace cannot reach this: no workspace file runs on any VM.
         // This file and the runtimepath's defaults file are the only writers.
-        let session_defaults = crucible_lua::SessionDefaults::new();
-        reg(
-            "defaults",
-            crucible_lua::register_session_defaults(lua, session_defaults.clone()),
-        )?;
         let modes = crucible_lua::ModeRegistry::new();
         reg("modes", crucible_lua::register_modes(lua, modes.clone()))?;
 
@@ -371,7 +365,6 @@ impl DaemonPluginLoader {
             session_api: std::sync::Mutex::new(None),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
-            session_defaults,
             modes,
             permission_hooks,
             permission_functions,
@@ -631,12 +624,12 @@ impl DaemonPluginLoader {
         Arc::clone(&self.validator_registry)
     }
 
-    /// The session-default and mode stores this VM writes.
+    /// The mode store this VM writes.
     ///
-    /// `AgentManager` adopts both handles, so `cru.defaults.model = …` in the
-    /// user's `init.lua` is read by every session built afterwards.
-    pub fn session_stores(&self) -> (crucible_lua::SessionDefaults, crucible_lua::ModeRegistry) {
-        (self.session_defaults.clone(), self.modes.clone())
+    /// `AgentManager` adopts the handle, so a mode declared in the user's
+    /// `init.lua` is read by every session built afterwards.
+    pub fn mode_registry(&self) -> crucible_lua::ModeRegistry {
+        self.modes.clone()
     }
 
     /// The permission hooks registered on this VM, for the tool gate.

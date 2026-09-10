@@ -52,7 +52,9 @@ all: ACP's come from `agent_client_protocol`, MCP's from `rmcp`. (Neither is *ve
 **Lua is not only a shim.** Projection modules (theme, statusline, geometry, oil, json, fs,
 notify, paths) are safe in isolation. Interception is not: `runtime/defaults/init.lua` is
 compiled in as `BUILTIN_INIT_LUA` and is the *only* definition of the three permission modes,
-the plan-mode deny hook, the default system prompt and the precognition formatter.
+the plan-mode deny hook and the precognition formatter. The default system prompt is NOT
+there: it ships as `chat.system_prompt` from `ChatConfig::default()`, so it lands on the
+config store's `Default` layer and `settings.json` can outrank it.
 `ModeRegistry` has no Rust default and no fallback.
 
 **The runtime is Luau, and `require` is the host's.** Luau ships no

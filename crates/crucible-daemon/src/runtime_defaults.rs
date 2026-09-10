@@ -259,7 +259,7 @@ mod tests {
             "the resolved path is reported so logs can say which file is in force"
         );
         assert!(
-            !source.contains("cru.defaults"),
+            !source.contains("cru.on("),
             "shadowing must REPLACE the shipped defaults, not append to them"
         );
     }
@@ -272,7 +272,7 @@ mod tests {
 
         assert_eq!(origin, DefaultsSource::Builtin);
         assert!(
-            source.contains("cru.defaults.system_prompt"),
+            source.contains("cru.on(\"precognition_format\""),
             "the built-in copy must carry the shipped defaults"
         );
     }
@@ -288,6 +288,6 @@ mod tests {
         let (source, origin) = load_defaults_from(&[tmp.path().to_path_buf()], None, &[]);
 
         assert_eq!(origin, DefaultsSource::Builtin);
-        assert!(source.contains("cru.defaults.system_prompt"));
+        assert!(source.contains("cru.on(\"precognition_format\""));
     }
 }

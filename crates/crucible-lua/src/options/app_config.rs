@@ -293,6 +293,14 @@ pub const APP_CONTROLS: &[AppControl] = &[
          the header alone.",
         5,
     ),
+    AppControl::new(
+        "chat.system_prompt",
+        Control::Text,
+        "System prompt",
+        "What a new session tells the model about itself. An agent card's own \
+         prompt wins, and an on_session_start hook can extend this one.",
+        6,
+    ),
     // ---- cli ----
     AppControl::group(
         "cli",

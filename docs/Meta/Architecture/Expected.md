@@ -268,7 +268,7 @@ entry but no shipped proof.
 | F180 | `cru.storage` per-plugin key-value store | P |
 | F181 | Plugin config: `[plugins.<name>]` TOML, then `setup{}` in `init.lua` wins | P |
 | F182 | Lua config beats TOML; `cru.config` reads and writes app config | P |
-| F183 | `cru.defaults` session default tier; `cru.modes` mode declarations | P |
+| F183 | `chat.system_prompt` session default tier; `cru.modes` mode declarations | P |
 | F184 | Plugin-declared commands reachable as `/name` and over RPC | P |
 | F185 | Plugin file watcher `[plugins] watch = true` | P |
 | F186 | HTTP client `cru.http` | P |
@@ -1168,9 +1168,9 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 ### 4.17 PluginHost (Lua)
 
 - Responsibility: the daemon plugin VM and the per-session VM; discovery, load, reload, hooks, modes, defaults, services, schedules, theme projection, type stubs.
-- Owns: `Plugin`, `HookReg`, `ModeDecl`, `ScheduleSpec`, `ServiceDesc`, `UiConfig`, `cru.storage` keys, `cru.defaults`.
+- Owns: `Plugin`, `HookReg`, `ModeDecl`, `ScheduleSpec`, `ServiceDesc`, `UiConfig`, `cru.storage` keys.
 - Operations: `plugin.list|reload|install|remove|commands|run_command|options|set_option|publications`, `lua.eval`, `lua.init_session`, `fire_stage(stage, ctx) -> StageResult`, `broadcast_event(event)`, `modes()`, `stubs.generate`.
-- Two VMs exist. The daemon plugin VM runs plugins, `cru lua` and `:lua`. The session VM runs `cru.defaults` and `session.*` hooks. `cru.*` and `crucible.*` name the same tables.
+- Two VMs exist. The daemon plugin VM runs plugins, `cru lua` and `:lua`. The session VM runs `session.*` hooks. `cru.*` and `crucible.*` name the same tables.
 - Projection modules are safe alone: theme, statusline, geometry, oil, json, fs, notify, paths. Interception modules are capability-grade: `pre_tool_call` handled or transform, `on_request`, `precognition_select`, `transform_context`, validators, strategies.
 - The shipped `init.lua` is compiled into the binary. It is the only definition of the three modes, the plan-mode deny hook, the default system prompt and the precognition formatter. `ModeRegistry` has no Rust fallback.
 - It calls back into the daemon through a `DaemonBridge` trait: sessions, tools, kiln, context, ui, storage.
@@ -1932,7 +1932,7 @@ determine the design.
 11. **`cru.session.fork`.** The Lua path copies history with no agent config. Whether fork copies the agent, the mode and the kiln set is unspecified.
 12. **`cru.session.inject`.** Writes the log only. Whether inject also appends to the conversation tree for the next turn is unspecified. `cru.context.attach` covers this turn.
 13. **Two Lua objects named `session`.** The hook parameter reaches `SessionAgent`. The `cru.get_session()` object on the plugin VM does not. One of them should go, or the plugin VM should reach session state only through `cru.session.*`. — *Resolved 2026-08: one canonical `cru.session` module (lifecycle verbs, `current()`, handle-returning `create`/`get`/`list`/`fork`); `cru.get_session()` and the plural `cru.sessions` are deprecated aliases into it. The hook parameter remains a distinct argument-passed `Session` — same type, different delivery — with its gap to `SessionAgent` unchanged.*
-14. **Session VM versus plugin VM.** `cru.defaults` lives on the session VM, so `cru lua` cannot see it. Should the two VMs merge, or should the plugin VM get a read-only view?
+14. **Session VM versus plugin VM.** RESOLVED: the session default tier is the config store, which both VMs read, so `cru lua` sees it.
 15. **`cru.oil` versus `cru.ui`.** `cru.oil` builds nodes that no client consumes. `cru.ui` opens real modals. Withdraw `cru.oil` or wire it.
 16. **Review gate for ACP agents.** The daemon cannot hold an external agent at a pre-write gate. The effective policy for an ACP session is "review at turn end". Whether to block the turn's result is open.
 17. **Kiln attach from the web composer.** `session.connect_kiln` exists, yet the web story says the daemon has no RPC to change a live session's kiln set. One of the two docs is stale. The design keeps the RPC.

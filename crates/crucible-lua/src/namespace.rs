@@ -29,10 +29,6 @@ pub enum CruNamespace {
     Colorscheme,
     Config,
     Context,
-    /// Seeded session defaults (`cru.defaults.x = …`). On the daemon VM,
-    /// where the user's `init.lua` runs, against the
-    /// same store.
-    Defaults,
     /// The kiln's own embedding provider: `cru.embed(kiln, text)`.
     Embed,
     Emitter,
@@ -115,7 +111,6 @@ impl CruNamespace {
             | Self::Colorscheme
             | Self::Config
             | Self::Context
-            | Self::Defaults
             | Self::Embed
             | Self::Emitter
             | Self::Errors

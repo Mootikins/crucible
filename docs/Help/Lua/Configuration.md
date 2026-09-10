@@ -9,7 +9,7 @@ tags:
 
 # Lua Configuration
 
-Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. This file can configure the TUI, define keybindings, and customize behavior. It runs on the daemon VM, which registers neither `cru.defaults` nor `cru.modes` — those belong to the defaults file, described below.
+Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. This file can configure the TUI, define keybindings, and customize behavior. It runs on the daemon VM, which does not register `cru.modes` — that belongs to the defaults file, described below.
 
 ## Quick Start
 
@@ -53,7 +53,7 @@ re-applies: a later file wins by ordinary assignment, and `= nil` removes.
 
 | Written in `init.lua` | Effect |
 |---|---|
-| `cru.defaults.x = …` | every new session starts with `x` |
+| `cru.config.set{ chat = { system_prompt = … } }` | every new session starts with that prompt |
 | `cru.modes.<name> = {…}` | a new mode, in the TUI cycle and the web picker |
 | `cru.config.set{…}` | app config |
 
@@ -148,12 +148,25 @@ See [[Help/Extending/Creating Plugins]] for writing your own plugins.
 
 ## Session Defaults and Modes
 
-`cru.defaults` sets the value every new session starts with — the Neovim
+The config store holds the value every new session starts with — the Neovim
 `vim.o` tier. `session.x` inside a handler changes one session, the `vim.bo`
 tier.
 
 ```lua
-cru.defaults.system_prompt = "Answer in British English."
+cru.config.set { chat = { system_prompt = "Answer in British English." } }
+```
+
+The shipped prompt sits on the `Default` layer, below both `settings.json` and
+your `init.lua`, so either can replace it. To extend it rather than replace it,
+read it back first:
+
+```lua
+cru.config.set {
+  chat = {
+    system_prompt = cru.config.get("chat").system_prompt
+      .. "\n\nAnswer in British English.",
+  },
+}
 ```
 
 Modes are declared, not built in. `cru.modes.<name>` takes a tool set and a

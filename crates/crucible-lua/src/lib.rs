@@ -82,7 +82,7 @@ mod ratelimit;
 pub mod schedule;
 pub mod schema;
 pub mod session_api;
-mod session_defaults;
+mod session_start_scope;
 mod sessions;
 mod shell;
 pub mod signature;
@@ -224,9 +224,7 @@ pub use session_api::{
     register_session_module, CurrentSession, Session, SessionConfigRpc, SessionVariables,
     UnsupportedSessionRpc,
 };
-pub use session_defaults::{
-    register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,
-};
+pub use session_start_scope::{SessionStartScope, SessionStartScopeRpc, SessionStartValues};
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api,
     register_sessions_module_with_api_and_current, DaemonSessionApi, ResponsePart,

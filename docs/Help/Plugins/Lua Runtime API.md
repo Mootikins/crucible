@@ -1273,9 +1273,11 @@ end
 
 The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The old "vault" name survives in exactly one Lua-facing place: a plugin manifest may declare `capabilities: [vault]`, which parses as the `kiln` capability. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
 
-## Session-VM-only: cru.defaults and cru.modes
+## Session-VM-only: cru.modes
 
-`cru.defaults` (session default values like `system_prompt`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — and on the daemon VM, against the same stores. A write from `~/.config/crucible/init.lua` at boot therefore reaches every session, and the daemon re-applies it over each session's freshly-loaded defaults file. `cru.permissions` is the one that stays session-only.
+`cru.modes` (mode definitions) is registered **only on the per-session Lua VM** — and on the daemon VM, against the same store. A write from `~/.config/crucible/init.lua` at boot therefore reaches every session, and the daemon re-applies it over each session's freshly-loaded defaults file. `cru.permissions` is the one that stays session-only.
+
+Session default *values* are not here at all. `system_prompt` is a config key, `chat.system_prompt`, written with `cru.config.set`; `session.system_prompt` inside an `on_session_start` hook is the per-session tier.
 
 ## See Also
 

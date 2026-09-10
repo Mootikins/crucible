@@ -69,28 +69,28 @@ return {
     );
 }
 
-/// `cru.defaults` in the user's `init.lua` reaches a real session.
+/// `chat.system_prompt` in the user's `init.lua` reaches a real session.
 ///
-/// The two halves this proves, neither of which held before:
+/// The two halves this proves:
 ///
-/// 1. `cru.defaults` exists on the daemon VM. It was registered only on
-///    session VMs only, so this assignment was a nil-index error and the user's
-///    only route to it was a workspace file the daemon no longer executes.
-/// 2. The value wins over the shipped defaults file, which assigns
-///    `cru.defaults.system_prompt` itself. The daemon VM runs the two files
-///    in order — defaults, then this one — so ordinary assignment decides it.
+/// 1. `cru.config.set` on the daemon VM reaches the store every session
+///    reads. The user's only other route would be a workspace file, which the
+///    daemon no longer executes.
+/// 2. The value outranks the shipped prompt. That prompt ships on the
+///    `Default` layer, from `ChatConfig::default()`; a write from the user's
+///    `init.lua` carries the `Lua` layer, which is higher, so it wins.
 ///
-/// `system_prompt` proves both halves at once: a nil `cru.defaults` on the
-/// daemon VM would raise on the assignment, and the shipped file sets the same
-/// key, so the value that arrives is the one the later file wrote.
+/// `system_prompt` proves both at once: an unreachable store would leave the
+/// shipped prompt in place, and a layer that did not outrank `Default` would
+/// too.
 #[tokio::test]
-async fn cru_defaults_in_the_users_init_lua_reaches_a_new_session() {
+async fn a_configured_system_prompt_reaches_a_new_session() {
     let daemon = TestDaemon::start_with_home_setup(|home| {
         let config_dir = home.join(".config").join("crucible");
         std::fs::create_dir_all(&config_dir)?;
         std::fs::write(
             config_dir.join("init.lua"),
-            "cru.defaults.system_prompt = \"Only haiku.\"",
+            "cru.config.set { chat = { system_prompt = \"Only haiku.\" } }",
         )?;
         Ok(())
     })
