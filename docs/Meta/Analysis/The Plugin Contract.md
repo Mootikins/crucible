@@ -293,6 +293,22 @@ where the publication channel carries JSON snapshots), settings and plugins
 the host inside itself is circular), and canvas (every placement is "TS in the
 browser", so it teaches nothing about the daemon seam).
 
+### A declared type is checked less than it reads
+
+`CLAUDE.md` says an unreadable declaration refuses the load, and that is true of
+a *malformed* one: `array<` is refused, on tools and — since step 3 — on
+commands too, which had never been validated at all.
+
+It is **not** true of a misspelt primitive. `strig` is a legal `LuaType::Named`,
+because a bare name is how a plugin references a type it declares elsewhere. So
+it passes validation and schemas to `{"$comment": "plugin type strig"}` — no
+type at all, silently. A generated form gives such a parameter its fallback
+control and a JSON Schema consumer learns nothing.
+
+This predates the plugin work and belongs to the parser. Closing it means
+deciding whether a `Named` type that resolves to nothing is an error, which is a
+question about the type system rather than about plugins.
+
 ### Types are hand-written on both sides
 
 No ts-rs, typeshare, utoipa or openapi anywhere in the tree. Web request structs
