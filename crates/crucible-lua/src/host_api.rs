@@ -332,6 +332,14 @@ declare test_mocks: {
     reset: () -> (),
     get_calls: (namespace: string, name: string) -> { any },
     mock: (partial: any) -> any,
+    -- Read back one declared surface as the mock registry holds it:
+    -- `{ opts, rows, version }`, or nil when nothing declared it. On
+    -- `test_mocks` rather than on `cru.surface`, because that namespace has
+    -- declared types and an extra key there would fail every file touching it.
+    surface: (plugin: string, name: string) -> any,
+    -- Fire the handlers a plugin registered with `cru.on` for one event name.
+    -- Without it a plugin whose only behaviour is a hook cannot be tested.
+    fire: (event: string, payload: any?) -> (),
 }
 
 -- A deliberate stand-in for a host namespace. Identity at run time; it exists

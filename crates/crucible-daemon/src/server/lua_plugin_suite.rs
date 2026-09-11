@@ -770,6 +770,7 @@ mod shipped_plugin_tests {
     #[test_case("reflection")]
     #[test_case("retrieval-lab")]
     #[test_case("review")]
+    #[test_case("session-board")]
     #[test_case("todo-list")]
     #[test_case("web-search")]
     #[test_case("worktree")]

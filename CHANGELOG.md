@@ -192,6 +192,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   choice. Registered on the left rail but not seeded, because a surface exists
   only once a plugin declares one.
 
+- **`session-board`, the reference surface plugin** — ships in
+  `runtime/plugins/`. Declares a `list` surface of every live session and
+  redraws it from the two session hooks. `:surfaces` in the TUI, the
+  **Surfaces** panel in the browser.
+
+### Fixed
+
+- **`cru.session.list` is now mockable, and its mock matches the real API.**
+  The test mock returned a bare `{}` — one value where the real call returns a
+  value *and* an error, and always empty. A plugin that ignored the error half
+  therefore passed its tests and raised in production, and no plugin that listed
+  sessions could be tested at all. Stage the answer with `sessions.list` and a
+  failure with `sessions.list_error`; a failure deliberately does not look like
+  "no sessions". `test_mocks.fire` and `test_mocks.surface` are new alongside it,
+  which is what makes a hook-driven or surface-declaring plugin testable.
+
 - **`config.unset`** — a new RPC verb that removes a key and everything under
   it from the layers `config.reset` drops. It edits no file. The verb a flat
   write cannot spell: `config.set` adds a provider and changes it, but cannot

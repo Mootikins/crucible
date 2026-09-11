@@ -40,6 +40,11 @@ statusline layout.
 | `cru.geometry` | surface geometry, prompt glyphs, layout |
 | `cru.syntax` | code highlighting inside fenced blocks |
 
+A fourth namespace on this page is **not** theming, and shares a word with the
+first three by accident: `cru.surface` declares a panel of rows for every client
+to draw. Styling decides how the chrome looks; a plugin surface is content. See
+[[#Plugin surfaces]].
+
 ## Colorscheme
 
 A colorscheme is a palette. Define one inline, or drop a file in
@@ -96,7 +101,13 @@ time, so swapping the palette moves every group that references it.
 `link` is a base to override, not a rename: attributes set on the linking group
 beat the target, so you can say "like `Visual`, but red".
 
-## Surfaces
+## Surface geometry
+
+> **Two meanings of "surface", and they are not interchangeable.** This section is
+> about the *chrome* a renderer draws — a popup, a modal, a drawer. A **plugin
+> surface** is a different thing: a panel of rows a plugin declares, described
+> under [[#Plugin surfaces]] below. Geometry is closed because the renderer must
+> know each one; a plugin surface is open because the plugin supplies only data.
 
 Geometry is a closed set — the renderer has to know how to draw each surface.
 
@@ -159,6 +170,93 @@ authoritative — override any slot that reads wrong.
 Terminal slots survive into code blocks, even though syntect's own colour type
 is RGB-only, so a colorscheme written against terminal colours applies to code
 as well as to chrome.
+
+## Plugin surfaces
+
+A **surface** in this sense is a panel a plugin declares and every client draws:
+a session list, a review queue, a file tree. The plugin states *what it has*;
+neither client is told *how* to draw it.
+
+```lua
+cru.surface.declare{
+  plugin = "session-board",
+  name   = "sessions",
+  title  = "Sessions",
+  shape  = "list",
+}
+
+cru.surface.set_rows{
+  plugin = "session-board",
+  name   = "sessions",
+  rows = {
+    { id = "s1", text = "crucible", mark = "busy" },
+    { id = "s2", text = "web-fix",  mark = "blocked", detail = "waiting" },
+  },
+}
+```
+
+A user opens it with `:surfaces` in the TUI, or the **Surfaces** panel in the
+browser. `runtime/plugins/session-board/` is the reference implementation.
+
+### A row is data, never presentation
+
+A row carries `id`, `text`, an optional `detail`, and an optional `mark` from a
+closed set: `busy`, `blocked`, `ok`, `failed`. **The client picks the glyph.** The
+TUI draws `●`, `⏸`, `○`, `✗`; the browser draws a coloured dot. A plugin that
+shipped the character would bind one client's medium into a contract both have to
+honour, and the browser cannot afford a cell grid — it would forfeit screen-reader
+roles, real text inputs, find-and-select and reflow.
+
+A mark this build does not know renders blank rather than as a placeholder: a
+client that cannot name a status should say nothing about it, not assert a fault.
+
+`id` is the row's stable identity. A refresh keeps the reader's cursor on the same
+`id`, so a row arriving above it does not move the selection.
+
+### `declare` is idempotent; `set_rows` is the update
+
+A reload re-runs your `init.luau`, so `declare` runs again on a live surface. It
+keeps the existing rows and version and refreshes only the title, shape and
+session — which is what lets a panel a user has open survive a reload. Surfaces
+are keyed by `(plugin, name)`, never by a generated id, so the same declaration
+lands on the same surface every time.
+
+### Staying current
+
+`set_rows` broadcasts `surface_changed`, and both clients refetch. The event
+carries the identity and the new version and **never the rows**, because a surface
+is unbounded where an event is not.
+
+Redraw from the daemon-wide session hooks, which fire for every session rather
+than only the one a handler runs in:
+
+```lua
+cru.on("session:created", refresh)
+cru.on("session:ended", refresh)
+```
+
+A `surface_changed` refreshes a panel a user has open. It will never *open* one:
+a plugin pushes rows at a moment the user did not choose, and a full-screen panel
+over someone's typing is not acceptable.
+
+### Caps, and what is stripped
+
+Titles and every row string are sanitised and length-capped by the daemon, not by
+a renderer — a row reaches a terminal that parses ANSI out of plain strings, so an
+escape in a row would be an injection. Row count is capped too. A plugin that
+pushes more is truncated rather than refused: losing the tail of a list beats
+losing the list.
+
+### Limits worth knowing
+
+- `shape` accepts `list` today. A shape arrives *with* its renderer, never ahead
+  of one, so a declaration naming an undrawable shape is refused at the call.
+- There is no action verb yet: a row cannot be clicked into a behaviour. That
+  needs per-client addressing, because an action fires against a surface and two
+  clients must not run each other's keypresses.
+- `cru.session.list()` is **singular**, and it returns a value *and* an error.
+  Read the error half; `ipairs` on a failed call raises, which turns a background
+  refresh into a broken panel.
 
 ## Statusline
 

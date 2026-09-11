@@ -45,6 +45,10 @@ local function default_fixtures()
             info = { id = "mock-session", session_type = "chat", state = "active", kilns = { "mock-kiln" } },
             messages = {},
             response_parts = {},
+            -- What `cru.session.list` answers. Empty by default: a plugin that
+            -- lists sessions should be tested against the list it declares, and
+            -- a default population would make an empty-case test pass by luck.
+            list = {},
         },
     }
 end
@@ -273,9 +277,19 @@ local function create_session_mock(fixtures)
             record_call("session", "get", id)
             return deep_copy(f.info)
         end,
+        -- A value-plus-error pair, like the real one, and fixture-driven.
+        --
+        -- This used to return a bare `{}`: one value, never an error, and always
+        -- empty. A plugin that ignored the error half therefore passed here and
+        -- raised in production, and a plugin that listed sessions could not be
+        -- tested at all. `sessions.list` stages the answer; `sessions.list_error`
+        -- stages a failure, which must NOT look the same as "no sessions".
         list = function()
             record_call("session", "list")
-            return {}
+            if f.list_error ~= nil then
+                return nil, f.list_error
+            end
+            return deep_copy(f.list or {}), nil
         end,
         current = function()
             record_call("session", "current")
@@ -372,6 +386,57 @@ local function install_tools_mock()
     end
 end
 
+--- `cru.surface` — declared panels, recorded rather than rendered.
+---
+--- Keeps the surfaces it is given so a test can read back what a plugin pushed,
+--- which is the only way to assert a row's shape without a client attached.
+--- `declare` is idempotent here for the same reason it is in the daemon: a
+--- reload re-runs a plugin's `init.luau`, and the rows must survive it.
+local function create_surface_mock()
+    local declared = {}
+    return {
+        declare = function(opts)
+            record_call("surface", "declare", opts)
+            local key = tostring(opts.plugin) .. "/" .. tostring(opts.name)
+            if declared[key] == nil then
+                declared[key] = { opts = opts, rows = {}, version = 0 }
+            else
+                declared[key].opts = opts
+            end
+        end,
+        set_rows = function(opts)
+            record_call("surface", "set_rows", opts)
+            local key = tostring(opts.plugin) .. "/" .. tostring(opts.name)
+            local entry = declared[key]
+            if entry ~= nil then
+                entry.rows = opts.rows or {}
+                entry.version = entry.version + 1
+            end
+        end,
+    }, declared
+end
+
+--- `cru.on` — records the handler instead of wiring it to a daemon bus.
+---
+--- A plugin's `setup` registers hooks at load, so without this every surface or
+--- event plugin is untestable: `setup` raises on the first `cru.on`. The handler
+--- is kept callable so a test can fire the event it registered for.
+local function install_hook_mock()
+    local handlers = {}
+    cru.on = function(name, a, b)
+        local handler = if type(a) == "function" then a else b
+        record_call("on", tostring(name), handler)
+        handlers[name] = handlers[name] or {}
+        table.insert(handlers[name], handler)
+    end
+    --- Test-only: fire every handler registered for `name`.
+    test_mocks.fire = function(name, payload)
+        for _, h in ipairs(handlers[name] or {}) do
+            h(payload)
+        end
+    end
+end
+
 function test_mocks.setup(overrides)
     overrides = overrides or {}
     _fixtures = default_fixtures()
@@ -387,6 +452,15 @@ function test_mocks.setup(overrides)
     cru.fs = create_fs_mock(_fixtures)
     cru.paths = create_paths_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
+    -- The read-back table is exposed through `test_mocks`, never on
+    -- `cru.surface`: that namespace has declared types, and an extra key on it
+    -- would fail the Luau checker in every test file that touched it.
+    local surface_mock, surface_state = create_surface_mock()
+    cru.surface = surface_mock
+    test_mocks.surface = function(plugin, name)
+        return surface_state[tostring(plugin) .. "/" .. tostring(name)]
+    end
+    install_hook_mock()
     -- The deprecated plural alias, mirroring the real module's forwarding.
     cru.sessions = cru.session
     cru.storage = create_storage_mock()
