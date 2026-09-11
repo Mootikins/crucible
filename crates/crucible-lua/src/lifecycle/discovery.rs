@@ -18,6 +18,27 @@ pub struct PluginDiscoveryError {
     pub error: String,
 }
 
+/// Every entry in `dir`, in ascending order of file name.
+///
+/// `std::fs::read_dir` returns entries in an order the platform does not
+/// specify. The order changes with the file system, so the plugin load order
+/// was a property of the disk and not of Crucible.
+///
+/// The load order is observable. Handler dispatch sorts by priority with a
+/// stable sort (`handlers/registry.rs`), so two handlers of equal priority run
+/// in load order. That tie-break must give the same answer on every machine.
+///
+/// The file name is the key because the directory name IS a plugin's
+/// identity — the only name the host knows before it runs any Lua. File names
+/// are unique inside one directory, so the order is total.
+fn sorted_entries(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut paths = std::fs::read_dir(dir)?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<PathBuf>>>()?;
+    paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    Ok(paths)
+}
+
 impl PluginManager {
     /// Directories that failed discovery on the last [`Self::discover`] call.
     pub fn discovery_errors(&self) -> &[PluginDiscoveryError] {
@@ -80,10 +101,7 @@ impl PluginManager {
                 continue;
             }
 
-            for entry in std::fs::read_dir(search_path)? {
-                let entry = entry?;
-                let path = entry.path();
-
+            for path in sorted_entries(search_path)? {
                 if path.is_dir() {
                     // A plugin is a directory with an entry file.
                     //

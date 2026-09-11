@@ -160,6 +160,11 @@ impl LuaScriptHandlerRegistry {
     /// Returns handlers registered via `crucible.on()` that match the given event type,
     /// sorted by priority (lower priority values execute first).
     ///
+    /// The sort is stable, so two handlers of equal priority run in
+    /// registration order, which is the plugin load order. That order is
+    /// total: search paths rank by `runtime_path::Origin`, and
+    /// `lifecycle::discovery` sorts each directory by name.
+    ///
     /// # Arguments
     ///
     /// * `event_type` - The event type to filter by (exact match)
