@@ -1408,16 +1408,19 @@ New files:
 
 ```
 src/stores/deviceStore.ts          the compact test, decided once at load
+src/lib/shell-boot.ts              layout persistence on the desktop branch only
+src/components/AppShell.tsx        draws one shell, never both
+src/components/mobile/ContentSurface.tsx  one tab's panel, rendered as Pane does
 src/lib/tab-host.ts                the TabHost seam and its two hosts (section 6)
-src/mobile/MobileShell.tsx         app bar, drawers, content surface
-src/mobile/Drawer.tsx              the gesture, the scrim, the focus trap
-src/mobile/NavStack.ts             the popstate bridge for the back button
-src/mobile/SessionsDrawer.tsx      project switcher, cross-project Inbox, sessions
-src/mobile/FilesDrawer.tsx         mounts FilesPanel as is; the right-rail tabs
-src/mobile/BottomSheet.tsx         the option pickers and the action menus
-src/mobile/NewSessionSheet.tsx     the three steps in section 9
-src/mobile/MobileEditorBar.tsx     Read/Write and the toolbar
-src/mobile/TabOverview.tsx         the tab card list
+src/components/mobile/MobileShell.tsx         app bar, drawers, content surface
+src/components/mobile/Drawer.tsx              the gesture, the scrim, the focus trap
+src/components/mobile/NavStack.ts             the popstate bridge for the back button
+src/components/mobile/SessionsDrawer.tsx      project switcher, cross-project Inbox, sessions
+src/components/mobile/FilesDrawer.tsx         mounts FilesPanel as is; the right-rail tabs
+src/components/mobile/BottomSheet.tsx         the option pickers and the action menus
+src/components/mobile/NewSessionSheet.tsx     the three steps in section 9
+src/components/mobile/MobileEditorBar.tsx     Read/Write and the toolbar
+src/components/mobile/TabOverview.tsx         the tab card list
 src/stores/tabStackStore.ts        one TabGroup, no panes
 src/lib/offline/db.ts              the IndexedDB schema: mirror, outbox, meta
 src/lib/offline/mirror.ts          read-through the mirror, then the network

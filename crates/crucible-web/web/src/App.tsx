@@ -3,14 +3,15 @@ import { SettingsProvider } from '@/contexts/SettingsContext';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { SessionProvider } from '@/contexts/SessionContext';
 import { EditorProvider } from '@/contexts/EditorContext';
-import { WindowManager } from '@/components/windowing/WindowManager';
+import { AppShell } from '@/components/AppShell';
 import { CommandPalette, type PaletteCommand, type PaletteMode } from '@/components/CommandPalette';
 import { shellActions } from '@/stores/shellStore';
 import { registerPanels } from '@/lib/register-panels';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import type { TabContentType } from '@/types/windowTypes';
 import { getConfig } from '@/lib/api';
-import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persistence';
+import { startLayoutPersistence } from '@/lib/shell-boot';
+import { isCompact } from '@/stores/deviceStore';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';
@@ -244,9 +245,9 @@ const App: Component = () => {
 
     // No landing page: a fresh shell (no persisted center content) shows the
     // center composer — context chips + first-message box + quick actions.
-    // Users build their own home from panels.
-    void loadLayoutOnStartup();
-    setupLayoutAutoSave();
+    // Users build their own home from panels. The compact shell has no layout,
+    // and must never save one: see `startLayoutPersistence`.
+    startLayoutPersistence({ compact: isCompact() });
 
     const onGlobalKeyDown = (event: KeyboardEvent) => {
       if (isCommandPaletteOpen() && event.key === 'Escape') {
@@ -326,7 +327,7 @@ const App: Component = () => {
       <ProjectProvider>
         <SessionProvider initialKiln={kilnPath()}>
           <EditorProvider>
-            <WindowManager />
+            <AppShell />
           </EditorProvider>
           <NotificationToast />
           {/* WikilinkHoverPreview mounts inside WindowManager's DnD provider

@@ -1416,3 +1416,15 @@ details.callout[open] > summary.callout-title::after {
 .canvas-group.canvas-card-selected {
   border-color: var(--canvas-select);
 }
+
+/* ── Device insets for the compact shell ───────────────────────────────
+ * A notch, a rounded corner or a gesture bar covers part of a phone's screen.
+ * The compact shell pads its app bar and its bottom edge by these, so no
+ * control sits under the hardware. They are 0 on a desktop, and 0 on iOS
+ * unless the viewport meta carries `viewport-fit=cover` (see index.html). */
+:root {
+  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-right: env(safe-area-inset-right, 0px);
+  --inset-bottom: env(safe-area-inset-bottom, 0px);
+  --inset-left: env(safe-area-inset-left, 0px);
+}
