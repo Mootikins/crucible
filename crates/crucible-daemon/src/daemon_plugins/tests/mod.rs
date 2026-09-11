@@ -1021,3 +1021,68 @@ mod kiln_graph {
         );
     }
 }
+
+/// `with_kiln_path_resolver` must also bind the fs roots, because a plugin's
+/// `cru.fs.read` and `cru.fs.write` raise on every path when no resolver is
+/// registered.
+///
+/// Regression: the merge that deleted the capability system took
+/// `bind_fs_roots` with it. The call had ONE caller and no test, so the whole
+/// workspace still compiled and `just ci` still passed with `cru.fs` bound to
+/// nothing in production. A grep on the source text would have been satisfied
+/// by the function's own definition; this asks the running VM instead.
+///
+/// The plugin context matters: `scoped` returns the path unchecked when no
+/// plugin is running, so a test that skips `enter_plugin` passes either way.
+#[tokio::test]
+async fn binding_the_kiln_resolver_also_scopes_a_plugins_file_access() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let kiln = dir.path().join("kiln");
+    std::fs::create_dir_all(&kiln).expect("create kiln dir");
+
+    let registry = Arc::new(
+        crate::kiln_registry::KilnRegistry::from_app_config(
+            crate::kiln_registry::KilnRegistryContext::new(
+                dir.path().to_path_buf(),
+                None,
+                dir.path().join("data"),
+            ),
+            Some(&serde_json::json!({ "kiln_path": kiln.to_string_lossy() })),
+        )
+        .expect("registry"),
+    );
+    assert!(
+        !registry.entries().is_empty(),
+        "the fixture must register a kiln, or the positive assertion below proves nothing"
+    );
+
+    let loader = DaemonPluginLoader::new(HashMap::new())
+        .expect("loader")
+        .with_kiln_path_resolver(registry)
+        .expect("kiln path resolver");
+
+    let lua = loader.executor().lua();
+    crucible_lua::enter_plugin(lua, "probe", false);
+
+    // `cru.fs.write` returns nothing and RAISES when a path lies outside the
+    // roots, so `pcall` is what separates the two answers.
+    let check = |path: &std::path::Path| -> bool {
+        lua.load(format!(
+            r#"return (pcall(cru.fs.write, {:?}, "x"))"#,
+            path.to_string_lossy()
+        ))
+        .eval::<bool>()
+        .expect("the pcall itself evaluates")
+    };
+
+    assert!(
+        check(&kiln.join("ticket.md")),
+        "a path inside a registered kiln must be writable; the fs roots resolver is not bound"
+    );
+    // Without the resolver the first assertion already fails, so this one
+    // cannot carry the test alone.
+    assert!(
+        !check(&dir.path().join("elsewhere.md")),
+        "a path outside every root must be refused"
+    );
+}

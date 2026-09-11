@@ -220,7 +220,7 @@ condition — that the capabilities gate something — can never become true.
 
 **C3. Stop calling path scoping the answer to containment.**
 `Plugin API Plan.md:311` calls a scoped read and write "the real work" of step 4.
-`crates/crucible-lua/src/luau_compat.rs:265-283` opens the raw path with no root
+`crates/crucible-lua/src/luau_compat.rs:306` opens the raw path with no root
 check, and `register_stdlib_compat` installs that for every plugin. A plugin that
 wants to write outside its roots calls `io.open`. Kanban does exactly that at
 `runtime/plugins/kanban/init.luau:78`.
@@ -232,7 +232,7 @@ plugin is trusted code, and no gate binds it.
 **C4. Correct the residual list.** Remove the `system` variant and
 `Capability::Kiln`; the target deletes both. Add two facts the list omits: every
 plugin holds an unscoped `io.open`, and
-`crates/crucible-daemon/src/daemon_plugins/mod.rs:428-430` adds the process
+`crates/crucible-daemon/src/daemon_plugins/mod.rs:464` adds the process
 working directory to every plugin's roots. A daemon started from the home
 directory grants every plugin the whole home directory through `cru.fs`.
 
@@ -255,7 +255,7 @@ four lines.
 | `daemon_plugins/mod.rs:427-429` | lines 428-430 |
 | `vault/mod.rs:664` reads `visible_paths` | line 662 |
 | `vault/mod.rs:670` reads `store.graph_links()` | line 671 |
-| `vault/mod.rs:691` discards the hop count | line 695 returns `sorted_unique(visited)` |
+| `vault/mod.rs:691` discards the hop count | line 694 returns `sorted_unique(visited)` |
 | `routes/plugin.rs:33-42` registers nine routes | lines 34-42 |
 | conflict lines 162, 109, 67, 28, 26 | 162, 107, 65, 26, 24 |
 
@@ -264,14 +264,13 @@ review. Correct both.
 
 ## Step D — two items the review unblocked
 
-**D1. Return the hop count.** `crates/crucible-lua/src/vault/mod.rs:682-692`
+**D1. Return the hop count.** `crates/crucible-lua/src/vault/mod.rs:683`
 already computes it. The walk carries `(String, usize)`, tests `hops >= depth`,
-and enqueues `hops + 1`. Line 695 then discards the number. A return of the
+and enqueues `hops + 1`. Line 694 then discards the number. A return of the
 pairs is a change to the return type plus about five lines, and it needs no
 storage work. It removes the per-hop call the plugin makes.
 
-The indexed query is the separate half, and it is real storage work. Lines 662
-and 671 read `visible_paths` and `store.graph_links()` in full on every call, so
+The indexed query is the separate half, and it is real storage work. Lines 662 and 671 read `visible_paths` and `store.graph_links()` in full on every call, so
 a smaller result saves the wire and saves the daemon nothing. Step 2's negative
 verdict does not depend on either half, because depth 1 already costs 58 per
 cent of a whole-graph fetch.
@@ -285,7 +284,7 @@ unrelated sources in `web/`. The target added `cru.rtp`, so a plugin can arrive
 through a runtime root and miss the install path.
 
 Write the rule as a comment beside the route table at
-`crates/crucible-web/src/routes/plugin.rs:34-42`, where the engineer who would
+`crates/crucible-web/src/routes/plugin.rs:34`, where the engineer who would
 add a bundle route reads it.
 
 ## Order

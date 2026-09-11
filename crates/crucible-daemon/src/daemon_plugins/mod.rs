@@ -423,11 +423,50 @@ impl DaemonPluginLoader {
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> anyhow::Result<Self> {
+        // The same registry answers the two questions a plugin's file access
+        // asks: "where is kiln X" and "which directories may I read and write
+        // at all". Binding them together is what keeps the second from
+        // drifting behind the first.
+        self.bind_fs_roots(Arc::clone(&registry));
         let resolver: crucible_lua::KilnPathResolver =
             Arc::new(move |name: &str| registered_kiln_path(&registry, name).map(|(_, path)| path));
         crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
             .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)
+    }
+
+    /// Bind where a plugin's `cru.fs.read` and `cru.fs.write` may reach.
+    ///
+    /// Three kinds of root, and each is a place the plugin was already meant
+    /// to work in: every registered kiln (its notes are the data plugins
+    /// exist to handle), the daemon's plugin-state directory (a plugin's own
+    /// files), and the process working directory (the invocation's workspace,
+    /// which is what `cru.paths.workspace()` answers with when one is set).
+    ///
+    /// It does NOT confine `mkdir`, `list`, `copy` or `remove_all`, which
+    /// predate it and are used against paths outside all three — `worktree`
+    /// checks a destination it is about to create. Narrowing those is a
+    /// separate decision with a migration behind it; the two NEW functions
+    /// start scoped, which is the direction to move the rest in.
+    ///
+    /// It is ergonomics, not a boundary: `register_stdlib_compat` installs an
+    /// unscoped `io.open` for every plugin, so a plugin that wants to leave
+    /// its roots calls that instead. See [[Meta/Analysis/Plugin Merge Plan]].
+    fn bind_fs_roots(&self, registry: Arc<crate::kiln_registry::KilnRegistry>) {
+        let state_root = crucible_core::config::crucible_home().join("plugin-state");
+        let resolver: crucible_lua::FsRootsResolver = Arc::new(move |plugin: &str| {
+            let mut roots: Vec<PathBuf> = registry
+                .entries()
+                .iter()
+                .map(|kiln| kiln.path().to_path_buf())
+                .collect();
+            roots.push(state_root.join(plugin));
+            if let Ok(cwd) = std::env::current_dir() {
+                roots.push(cwd);
+            }
+            roots
+        });
+        crucible_lua::register_fs_roots_resolver(self.executor.lua(), resolver);
     }
 
     /// Wire the named kiln reads — `cru.kiln.blocks`, `note`, `notes`,
