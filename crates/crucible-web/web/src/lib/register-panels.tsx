@@ -16,6 +16,7 @@ import { ChangesPanel } from '@/components/ChangesPanel';
 import { GraphPanel } from '@/components/graph/GraphPanel';
 import { CanvasPanel } from '@/components/canvas/CanvasPanel';
 import { PluginBlockPanel } from '@/components/blocks/PluginBlockPanel';
+import { SurfacesPanel } from '@/components/SurfacesPanel';
 
 // Tab/ribbon icons are NOT registered here — they resolve per content type
 // through lib/tab-icons.ts (SVG components, consistent monochrome chrome).
@@ -53,4 +54,8 @@ export function registerPanels(): void {
   // a plugin could contribute content to a document and could not contribute a
   // panel, which blocked rebuilding any existing panel as a plugin.
   registry.register('plugin-blocks', 'Plugin Blocks', PluginBlockPanel, 'right');
+  // Panels plugins declared. Registered but not seeded: a surface exists only
+  // once some plugin declares one, so seeding an empty rail would advertise a
+  // feature the box may not have.
+  registry.register('surfaces', 'Surfaces', SurfacesPanel, 'left');
 }

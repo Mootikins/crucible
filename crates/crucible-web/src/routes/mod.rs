@@ -20,6 +20,7 @@ mod session_config;
 mod session_status;
 mod shell;
 mod skills;
+mod surface;
 mod terminal;
 mod webhook;
 
@@ -41,5 +42,6 @@ pub use search::search_routes;
 pub use session::{session_routes_fail_closed, session_routes_with, EndpointPolicy};
 pub use shell::shell_routes;
 pub use skills::skills_routes;
+pub use surface::surface_routes;
 pub use terminal::terminal_routes;
 pub use webhook::webhook_routes;

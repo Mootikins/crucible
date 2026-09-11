@@ -1561,6 +1561,95 @@ export function executeShell(
  * carries provenance (source), lifecycle state, capability counts, and
  * an absolute `dir`.
  */
+/** One row of a plugin surface. The mark is declared; the client picks the glyph. */
+export interface SurfaceRow {
+  id: string;
+  text: string;
+  detail?: string | null;
+  /** `busy` | `blocked` | `ok` | `failed`, or null. Unknown values render blank. */
+  mark?: string | null;
+}
+
+/** A panel a plugin declared, as the daemon reports it. */
+export interface Surface {
+  plugin: string;
+  name: string;
+  title: string;
+  /** Only `list` today. A shape arrives with its renderer, never before it. */
+  shape: string;
+  session?: string | null;
+  version: number;
+  rows: SurfaceRow[];
+}
+
+/** A surface changed: identity and version, never the rows. */
+export interface SurfaceChangedEvent {
+  plugin: string;
+  name: string;
+  version: number;
+  session?: string | null;
+}
+
+/**
+ * Every surface a plugin declared (`GET /api/surfaces`).
+ *
+ * Rows come with the list, so a panel draws on first paint rather than showing an
+ * empty sidebar and filling in.
+ */
+export async function getSurfaces(): Promise<Surface[]> {
+  return (
+    await request<{ surfaces: Surface[] }>('GET', '/api/surfaces', {
+      errorMessage: 'Failed to list plugin surfaces',
+    })
+  ).surfaces;
+}
+
+/**
+ * Subscribe to surface changes (`GET /api/surfaces/events`). Mirrors
+ * `subscribeToFsEvents`: one `EventSource` with exponential-backoff reconnect.
+ * Returns a cleanup function that closes the stream.
+ */
+export function subscribeToSurfaceEvents(
+  onEvent: (event: SurfaceChangedEvent) => void,
+): () => void {
+  const url = '/api/surfaces/events';
+  let source: EventSource | null = null;
+  let reconnectAttempts = 0;
+  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  function connect() {
+    if (closed) return;
+    source = new EventSource(url);
+
+    source.addEventListener('surface_changed', (e: MessageEvent) => {
+      reconnectAttempts = 0;
+      try {
+        onEvent(JSON.parse(e.data) as SurfaceChangedEvent);
+      } catch {
+        console.warn('Failed to parse surface SSE event:', e.data);
+      }
+    });
+
+    source.onerror = () => {
+      if (closed) return;
+      source?.close();
+      source = null;
+      reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+      reconnectTimeout = setTimeout(connect, delay);
+    };
+  }
+
+  connect();
+
+  return () => {
+    closed = true;
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    source?.close();
+  };
+}
+
 export interface PluginInfo {
   name: string;
   /** Null until the plugin loads: the version is declared in its spec table. */

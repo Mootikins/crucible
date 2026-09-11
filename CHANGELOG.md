@@ -183,7 +183,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `j`/`k` and `g`/`G` to move and `esc` to close. A `surface_changed` refreshes
   an open panel in place and keeps the cursor on the same row id; it will never
   open a closed one, because a plugin pushes rows at a moment the user did not
-  choose. The web spelling is not built yet.
+  choose.
+
+- **A Surfaces panel in the web app** — the same declared rows, drawn as a
+  browser panel with `GET /api/surfaces` and a live `GET /api/surfaces/events`
+  stream. Each client picks its own glyph from the declared mark: the TUI draws
+  `●`/`⏸`/`○`/`✗` and the browser a coloured dot, and neither knows the other's
+  choice. Registered on the left rail but not seeded, because a surface exists
+  only once a plugin declares one.
 
 - **`config.unset`** — a new RPC verb that removes a key and everything under
   it from the layers `config.reset` drops. It edits no file. The verb a flat

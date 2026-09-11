@@ -18,7 +18,8 @@ export type TabContentType =
   | 'activity'
   | 'backlinks'
   | 'graph'
-  | 'canvas';
+  | 'canvas'
+  | 'surfaces';
 
 export interface Tab {
   id: string;

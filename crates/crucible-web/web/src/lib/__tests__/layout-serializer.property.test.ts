@@ -15,7 +15,7 @@ import type { WindowState } from '@/stores/windowStore';
 // (prunes session-less ones, migrates the rest out of center groups into
 // the right edge panel), so round-trip identity does not hold for layouts
 // carrying chat tabs — those paths are pinned by unit tests instead.
-const arbTabContentType = fc.constantFrom('file', 'tool', 'terminal', 'settings', 'sessions', 'files', 'skills', 'plugins', 'activity', 'backlinks');
+const arbTabContentType = fc.constantFrom('file', 'tool', 'terminal', 'settings', 'sessions', 'files', 'skills', 'plugins', 'activity', 'backlinks', 'surfaces');
 
 const arbTab = fc.record({
   id: fc.uuid(),

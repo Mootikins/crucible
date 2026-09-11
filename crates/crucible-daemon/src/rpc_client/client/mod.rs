@@ -964,6 +964,38 @@ impl DaemonClient {
             .unwrap_or_else(|| serde_json::json!({})))
     }
 
+    /// Every surface a plugin declared, rows included.
+    ///
+    /// Rows come with the list because a surface is a panel, not a feed: a
+    /// client that had to fetch each one separately would draw an empty sidebar
+    /// first. The registry's row cap is what keeps the response bounded.
+    pub async fn surface_list(&self) -> Result<serde_json::Value> {
+        let result: serde_json::Value = self
+            .typed_call("surface.list", crate::rpc_client::SurfaceRequest::default())
+            .await?;
+        Ok(result
+            .get("surfaces")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([])))
+    }
+
+    /// One surface by name, or `null` when nothing declares it.
+    pub async fn surface_get(&self, name: &str) -> Result<serde_json::Value> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "surface.get",
+                crate::rpc_client::SurfaceRequest {
+                    plugin: None,
+                    name: Some(name.to_string()),
+                },
+            )
+            .await?;
+        Ok(result
+            .get("surface")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null))
+    }
+
     /// Settings trees plugins declared, as `plugin -> tree`.
     ///
     /// `ui` is the frontend asking ("tui" or "web"); it drives the per-frontend

@@ -26,6 +26,17 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Surfaces plugins declared, rows included.
+    ///
+    /// Passed through verbatim, exactly as publications are: nothing on this
+    /// side knows what a plugin's rows mean. A row is `{id, text, detail, mark}`
+    /// and the component draws it from that, so a plugin shipped tomorrow gets a
+    /// panel with no change here.
+    pub async fn surfaces(&self) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("surface.list", |daemon| Box::pin(daemon.surface_list()))
+            .await
+    }
+
     pub async fn plugin_publications(
         &self,
         key: Option<String>,
