@@ -10,6 +10,16 @@
 -- The daemon knows nothing about containers — every container decision is made
 -- here, through generic cru.on() hooks with pattern matching and the
 -- Handled result convention.
+--
+-- WHAT THE SANDBOX COVERS: the AGENT's tool calls, and nothing else. The
+-- handlers key on tool names, so a tool the model asks for goes into the
+-- container. Another PLUGIN's Lua does not. A plugin that calls cru.shell,
+-- os.execute or io.popen runs on the host, beside the container rather than
+-- inside it, and it always has — cru.shell has no path into the tool seam,
+-- so pre_tool_call never sees it.
+--
+-- That is the owner's ruling rather than a gap to close: a plugin is code the
+-- operator installed, and it gets the API. The sandbox's subject is the model.
 
 local container = require("container")
 local devcontainer = require("devcontainer")

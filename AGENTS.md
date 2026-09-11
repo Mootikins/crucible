@@ -63,9 +63,14 @@ config store's `Default` layer and `settings.json` can outrank it.
 in a `package.loaded` compatibility table, a plugin's own `lua/` directory is
 private to it and cached by path — and `luau_compat.rs` provides `io`,
 `os.getenv`, `os.tmpname`, `os.remove` and `os.rename`. Never reintroduce
-`package.path`: lookup is import authority, so it belongs to the host. A
-plugin that wants to run a command uses `cru.shell`, which the permission
-layer gates; there is deliberately no `io.popen` and no `os.execute`.
+`package.path`: lookup is import authority, so it belongs to the host.
+`io.popen` and `os.execute` are there too. The host once held them back to
+make `cru.shell` the one gated door to a process, and that reading was wrong:
+`PluginShellPolicy::default()` blocks four command names with no allow-list,
+and the check reads the command name and never the arguments, so
+`cru.shell.exec("sh", { "-c", … })` runs anything. A plugin is code the
+operator installed. `loadlib` and `os.exit` stay out, for reasons the module
+doc of `luau_compat.rs` records.
 
 **A declared type is checked, not decorated.** `signature.rs` reads a tool's
 declared parameter types and renders them as JSON Schema, as Luau

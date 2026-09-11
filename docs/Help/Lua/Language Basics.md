@@ -42,8 +42,15 @@ Luau is not PUC Lua 5.4, and three differences reach plugin authors:
 
 Crucible provides `io` and the file half of `os` (`getenv`, `tmpname`,
 `remove`, `rename`) itself, so a plugin reads and writes files exactly as it
-did under PUC Lua. There is deliberately no `io.popen` and no `os.execute`:
-running a command is `cru.shell`'s job, which the permission layer gates.
+did under PUC Lua. `io.popen` and `os.execute` are there too, and they follow
+PUC Lua 5.4: `os.execute(cmd)` answers `true` or `nil`, then `"exit"` or
+`"signal"`, then the number, and `handle:close()` on a pipe answers the same
+three values. `cru.shell` remains the richer call — it takes a working
+directory, a deadline and an argument list, and the permission layer sees it.
+
+Two names stay absent. `loadlib` loads native code, which no policy can read.
+`os.exit` ends the daemon process, and with it every session, every socket and
+every write that has not landed.
 
 ## The `cru` Namespace
 

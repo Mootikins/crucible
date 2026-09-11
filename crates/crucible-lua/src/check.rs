@@ -715,6 +715,45 @@ mod tests {
             .then(|| CheckerChoice::Use(Checker::at(pinned)))
     }
 
+    /// A strict plugin calls the two process functions, and the checker
+    /// agrees that it may.
+    ///
+    /// `HOST_ENVIRONMENT` is what `cru plugin check` and `.luarc.json` read.
+    /// A function the host provides and does not declare turns correct code
+    /// into a type error, so the declarations must move with the runtime.
+    #[test]
+    fn a_strict_plugin_may_call_the_process_functions() {
+        let Some(checker) = installed_checker() else {
+            return;
+        };
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        crate::stubs::StubGenerator::generate(tmp.path()).expect("declarations");
+        let definitions = tmp.path().join("cru.d.luau");
+
+        let file = tmp.path().join("uses_process.luau");
+        std::fs::write(
+            &file,
+            "--!strict\n\
+             local ran, reason, code = os.execute(\"exit 0\")\n\
+             print(ran, reason, code)\n\
+             local pipe = io.popen(\"printf hi\", \"r\")\n\
+             if pipe then\n\
+             \tprint(pipe:read(\"a\"))\n\
+             \tprint(pipe:close())\n\
+             end\n\
+             print(os.execute())\n\
+             return {}\n",
+        )
+        .expect("write the plugin file");
+
+        let report = check_file_using(&file, Some(&definitions), &checker).expect("check runs");
+        assert!(
+            report.passed(),
+            "a plugin that calls io.popen and os.execute must typecheck: {:?}",
+            report.findings
+        );
+    }
+
     #[test]
     fn a_syntax_error_is_reported_with_its_file() {
         let tmp = plugin(&[("init.lua", "return {\n")]);

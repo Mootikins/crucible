@@ -267,6 +267,11 @@ pub fn is_signed(path: &str) -> bool {
 /// replaces the type it names, so listing only the host's additions would
 /// take `os.time` away.
 ///
+/// `io.popen` and `os.execute` are declared because the host now provides
+/// them; see the module doc of `luau_compat.rs` for why it does. `close`
+/// carries three results for the same reason: a handle `io.popen` made
+/// answers the child's exit status, exactly as PUC Lua's does.
+///
 /// The test-harness globals are here too. They exist only while a suite runs,
 /// so a non-test file could call them without complaint — the alternative, a
 /// second definitions file selected per file, buys strictness a plugin author
@@ -274,8 +279,9 @@ pub fn is_signed(path: &str) -> bool {
 const HOST_ENVIRONMENT: &str = r#"
 declare io: {
     open: (path: string, mode: string?) -> (LuaFile?, string?),
+    popen: (command: string, mode: string?) -> (LuaFile?, string?, number?),
     lines: (path: string, format: (string | number)?) -> ((LuaFile) -> string?, LuaFile),
-    close: (file: LuaFile) -> boolean,
+    close: (file: LuaFile) -> (boolean?, string?, number?),
     type: (value: any) -> string?,
 }
 
@@ -284,6 +290,7 @@ declare os: {
     date: (format: string?, when: number?) -> any,
     clock: () -> number,
     difftime: (later: number, earlier: number) -> number,
+    execute: (command: string?) -> (boolean?, string?, number?),
     getenv: (name: string) -> string?,
     tmpname: () -> string,
     remove: (path: string) -> (boolean?, string?),
@@ -447,7 +454,7 @@ export type LuaFile = {
     write: (self: LuaFile, ...any) -> LuaFile,
     seek: (self: LuaFile, whence: string?, offset: number?) -> number?,
     flush: (self: LuaFile) -> LuaFile,
-    close: (self: LuaFile) -> boolean,
+    close: (self: LuaFile) -> (boolean?, string?, number?),
 }
 "#;
 
