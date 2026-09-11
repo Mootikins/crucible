@@ -294,12 +294,30 @@ pub const APP_CONTROLS: &[AppControl] = &[
         5,
     ),
     AppControl::new(
+        "chat.precognition_results",
+        Control::Range,
+        "Precognition results",
+        "How many notes the pre-turn kiln search injects. It runs on a \
+         session's first message only.",
+        6,
+    )
+    .bounded(0.0, 25.0, 1.0),
+    AppControl::new(
+        "chat.autocompact_threshold",
+        Control::Range,
+        "Autocompact threshold",
+        "Compact the transcript once it passes this fraction of the context \
+         budget. 0 turns it off.",
+        7,
+    )
+    .bounded(0.0, 1.0, 0.05),
+    AppControl::new(
         "chat.system_prompt",
         Control::Text,
         "System prompt",
         "What a new session tells the model about itself. An agent card's own \
          prompt wins, and an on_session_start hook can extend this one.",
-        6,
+        8,
     ),
     // ---- cli ----
     AppControl::group(

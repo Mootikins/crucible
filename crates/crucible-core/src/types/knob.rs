@@ -43,12 +43,8 @@ pub enum SessionKnob {
     ContextBudget,
     /// How context is assembled when it does not fit.
     ContextStrategy,
-    /// The fraction of the window that triggers a compaction.
-    AutocompactThreshold,
     /// Whether the kiln is searched before the first message.
     Precognition,
-    /// How many notes that search injects.
-    PrecognitionResults,
     /// Which model answers.
     Model,
     /// Which permission mode the session runs in.
@@ -168,9 +164,7 @@ impl SessionKnob {
         Self::Mode,
         Self::ContextBudget,
         Self::ContextStrategy,
-        Self::AutocompactThreshold,
         Self::Precognition,
-        Self::PrecognitionResults,
     ];
 
     /// The wire id, which is also the `session.set_*` suffix.
@@ -178,9 +172,7 @@ impl SessionKnob {
         match self {
             Self::ContextBudget => "context_budget",
             Self::ContextStrategy => "context_strategy",
-            Self::AutocompactThreshold => "autocompact_threshold",
             Self::Precognition => "precognition",
-            Self::PrecognitionResults => "precognition_results",
             Self::Model => "model",
             Self::Mode => "mode",
         }
@@ -196,14 +188,12 @@ impl SessionKnob {
         match self {
             // The agent owns its history, so the daemon assembles no context
             // to budget, trim or compact.
-            Self::ContextBudget | Self::ContextStrategy | Self::AutocompactThreshold => {
-                AcpKnob::Absent
-            }
+            Self::ContextBudget | Self::ContextStrategy => AcpKnob::Absent,
 
             // Retrieval is the daemon's, and it reaches an external agent as
             // injected prompt text. An ACP session uses it exactly as an
             // internal one does.
-            Self::Precognition | Self::PrecognitionResults => AcpKnob::Daemon,
+            Self::Precognition => AcpKnob::Daemon,
 
             // `session/set_config_option`, when the agent lists a selector.
             Self::Model => AcpKnob::AdvertisedModel,
@@ -336,7 +326,6 @@ mod tests {
     #[test]
     fn precognition_stays_available_to_an_acp_session() {
         assert_eq!(SessionKnob::Precognition.on_acp(), AcpKnob::Daemon);
-        assert_eq!(SessionKnob::PrecognitionResults.on_acp(), AcpKnob::Daemon);
     }
 
     /// The model is the one knob whose support depends on what the agent

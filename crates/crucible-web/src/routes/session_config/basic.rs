@@ -20,17 +20,6 @@ pub(crate) struct PrecognitionResponse {
     precognition_enabled: bool,
 }
 
-/// Response for precognition results-count config.
-#[derive(Debug, Serialize)]
-pub(crate) struct PrecognitionResultsResponse {
-    precognition_results: usize,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetPrecognitionResultsRequest {
-    count: usize,
-}
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct SetPrecognitionRequest {
     enabled: bool,
@@ -47,43 +36,6 @@ pub(crate) async fn set_precognition(
         .await
         .daemon_err()?;
     Ok(OkResponse::success())
-}
-
-pub(crate) async fn set_precognition_results(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetPrecognitionResultsRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    // Range guard for the web UX. The daemon accepts any usize today —
-    // this is a user-friendly clamp matching the TUI's settings UI, not
-    // an authoritative limit. If we ever tighten the daemon-side bounds,
-    // mirror them here.
-    if !(1..=20).contains(&req.count) {
-        return Err(WebError::Validation(format!(
-            "precognition results count must be in 1..=20, got {}",
-            req.count
-        )));
-    }
-    state
-        .daemon
-        .session_set_precognition_results(&id, req.count)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-pub(crate) async fn get_precognition_results(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<PrecognitionResultsResponse>, WebError> {
-    let count = state
-        .daemon
-        .session_get_precognition_results(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(PrecognitionResultsResponse {
-        precognition_results: count,
-    }))
 }
 
 pub(crate) async fn get_precognition(

@@ -401,7 +401,6 @@ pub struct GenaiAgentHandle {
     max_tool_depth: usize,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
-    autocompact_threshold: Option<f32>,
     /// Tool names eligible for progressive disclosure. The daemon's agent
     /// factory populates this with the gateway (user MCP) tool names; kiln
     /// and workspace tools are never deferrable. Empty means the handle
@@ -778,7 +777,6 @@ impl GenaiAgentHandle {
             max_tool_depth: usize::MAX,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            autocompact_threshold: None,
             deferrable_tool_names: std::collections::HashSet::new(),
             plugin_tool_names: std::collections::HashSet::new(),
             active_tools: None,
@@ -1513,29 +1511,12 @@ impl SessionKnobs for GenaiAgentHandle {
         self.context_strategy.clone()
     }
 
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
-        self.autocompact_threshold = threshold;
-        Ok(())
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        self.autocompact_threshold
-    }
-
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition".into()))
     }
 
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition_results".into()))
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 

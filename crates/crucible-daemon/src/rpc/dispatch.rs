@@ -133,8 +133,6 @@ rpc_methods! {
     SessionListAgentOptions = "session.list_agent_options",
     SessionSetAgentOption = "session.set_agent_option",
     SessionCacheStats = "session.cache_stats",
-    SessionSetAutocompactThreshold = "session.set_autocompact_threshold",
-    SessionGetAutocompactThreshold = "session.get_autocompact_threshold",
     SessionAddNotification = "session.add_notification",
     SessionListNotifications = "session.list_notifications",
     SessionDismissNotification = "session.dismiss_notification",
@@ -148,8 +146,6 @@ rpc_methods! {
     SessionGetContextStrategy = "session.get_context_strategy",
     SessionSetPrecognition = "session.set_precognition",
     SessionGetPrecognition = "session.get_precognition",
-    SessionSetPrecognitionResults = "session.set_precognition_results",
-    SessionGetPrecognitionResults = "session.get_precognition_results",
     SessionInjectContext = "session.inject_context",
     SessionTestInteraction = "session.test_interaction",
     SessionFork = "session.fork",
@@ -350,17 +346,13 @@ impl RpcDispatcher {
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
             RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
-            | RpcMethod::SessionSetPrecognition
-            | RpcMethod::SessionSetPrecognitionResults
-            | RpcMethod::SessionSetAutocompactThreshold => {
+            | RpcMethod::SessionSetPrecognition => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             RpcMethod::SessionGetMode
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
-            | RpcMethod::SessionGetPrecognition
-            | RpcMethod::SessionGetPrecognitionResults
-            | RpcMethod::SessionGetAutocompactThreshold => {
+            | RpcMethod::SessionGetPrecognition => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
             RpcMethod::SessionCacheStats => forward!(
@@ -1312,8 +1304,6 @@ impl RpcDispatcher {
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
             "session.set_precognition" => handle_session_set_precognition,
-            "session.set_precognition_results" => handle_session_set_precognition_results,
-            "session.set_autocompact_threshold" => handle_session_set_autocompact_threshold,
         });
         map_server_resp(resp)
     }
@@ -1327,8 +1317,6 @@ impl RpcDispatcher {
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
             "session.get_precognition" => handle_session_get_precognition,
-            "session.get_precognition_results" => handle_session_get_precognition_results,
-            "session.get_autocompact_threshold" => handle_session_get_autocompact_threshold,
         });
         map_server_resp(resp)
     }

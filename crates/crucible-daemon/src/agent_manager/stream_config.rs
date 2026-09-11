@@ -25,7 +25,7 @@ pub(crate) struct AgentStreamConfig {
     /// Fraction of `context_budget` that triggers auto-compaction.
     /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
     /// [`crate::agent_manager::autocompact`].
-    pub(crate) autocompact_threshold: Option<f32>,
+    pub(crate) autocompact_threshold: f32,
     /// Validation mode for assistant text responses. Drives the
     /// From the session's `delegation_config.timeout_secs`; sizes the
     /// tool-dispatch timeout for `delegate_session` (a blocking delegation
@@ -115,7 +115,7 @@ impl AgentStreamConfig {
         Self {
             model: session_agent.model.clone(),
             context_budget: session_agent.context_budget,
-            autocompact_threshold: session_agent.autocompact_threshold,
+            autocompact_threshold: super::configured::autocompact_threshold(),
             delegation_timeout_secs: session_agent
                 .delegation_config
                 .as_ref()

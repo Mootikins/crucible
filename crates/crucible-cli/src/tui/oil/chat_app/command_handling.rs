@@ -598,19 +598,6 @@ impl OilChatApp {
                     .set(key, ConfigValue::Bool(*enabled), ModSource::Command);
                 self.send_setting_ack("precognition", enabled);
             }
-            SetRpcAction::SetPrecognitionResults(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                self.send_setting_ack("precognition.results", n);
-            }
-            SetRpcAction::SetAutocompactThreshold(t) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = match t {
-                    Some(v) if *v == 0.0 => "off".to_string(),
-                    Some(v) => v.to_string(),
-                    None => "default".to_string(),
-                };
-                self.send_setting_ack("autocompact_threshold", &display);
-            }
         }
         match action.into_chat_msg() {
             Some(msg) => Action::Send(msg),
@@ -751,10 +738,6 @@ impl OilChatApp {
             "  precognition: {}\n",
             self.precognition.precognition
         ));
-        output.push_str(&format!(
-            "  precognition.results: {}\n",
-            self.precognition.precognition_results
-        ));
 
         let ctx_budget = self
             .runtime_config
@@ -857,13 +840,6 @@ impl OilChatApp {
             "precognition" => {
                 if let Some(val) = self.runtime_config.get("precognition") {
                     self.precognition.precognition = val.as_bool().unwrap_or(true);
-                }
-            }
-            "precognition.results" => {
-                if let Some(val) = self.runtime_config.get("precognition.results") {
-                    if let Some(n) = val.as_int() {
-                        self.precognition.precognition_results = (n as usize).clamp(1, 20);
-                    }
                 }
             }
             _ => {}

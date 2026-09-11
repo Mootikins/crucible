@@ -107,10 +107,6 @@ cru chat --no-context "What's 2+2?"
 
 Maximum context window tokens (default: 16384).
 
-#### `--context-size <N>`
-
-Number of context results to include (default: 5).
-
 ### Mode & Configuration
 
 #### `--plan`

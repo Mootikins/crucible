@@ -1249,30 +1249,6 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
   });
 }
 
-/** Get the precognition results-per-query count (1..=20) for a session. */
-export async function getPrecognitionResults(sessionId: string): Promise<number> {
-  return (
-    await request<{ precognition_results: number }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/precognition/results`,
-      { errorMessage: 'Failed to get precognition results' },
-    )
-  ).precognition_results;
-}
-
-/** Set the precognition results-per-query count (1..=20) for a session. */
-export async function setPrecognitionResults(sessionId: string, count: number): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/precognition/results`,
-    {
-      errorMessage: 'Failed to set precognition results',
-      parseAs: 'none',
-      ...jsonRequest({ count }),
-    },
-  );
-}
-
 // -----------------------------------------------------------------------------
 // The nine session config knobs the daemon advertised but the web could not
 // reach. Gate A2e (crucible-cli/tests/architecture_tests.rs) fails when a knob
@@ -1302,33 +1278,6 @@ export async function setContextBudget(sessionId: string, budget: number | null)
     parseAs: 'none',
     ...jsonRequest({ context_budget: budget }),
   });
-}
-
-/** Get the autocompact threshold (0..1 fraction of the window). */
-export async function getAutocompactThreshold(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ autocompact_threshold: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/autocompact-threshold`,
-      { errorMessage: 'Failed to get autocompact threshold' },
-    )
-  ).autocompact_threshold;
-}
-
-/** Set the autocompact threshold. `null` restores the daemon's default. */
-export async function setAutocompactThreshold(
-  sessionId: string,
-  threshold: number | null,
-): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/autocompact-threshold`,
-    {
-      errorMessage: 'Failed to set autocompact threshold',
-      parseAs: 'none',
-      ...jsonRequest({ autocompact_threshold: threshold }),
-    },
-  );
 }
 
 /** Get the context-assembly strategy, by its string spelling. */

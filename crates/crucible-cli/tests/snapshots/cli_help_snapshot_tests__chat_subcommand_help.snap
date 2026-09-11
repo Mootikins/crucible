@@ -1,6 +1,5 @@
 ---
 source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
-assertion_line: 118
 expression: help
 ---
 Interactive AI chat with session persistence and tool access.
@@ -52,9 +51,6 @@ Options:
 
       --no-context
           Turn off knowledge-base grounding for this session (Precognition). Session state, so it persists across resume — same as `:set noprecognition`
-
-      --context-size <CONTEXT_SIZE>
-          Number of knowledge-base notes to ground with (daemon default: 5). Session state, so it persists across resume
 
       --plan
           Start in plan mode (read-only) instead of normal mode (full access) Can be toggled during session with /plan and /normal commands

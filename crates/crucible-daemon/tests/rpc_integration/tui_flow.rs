@@ -164,10 +164,8 @@ async fn test_tui_daemon_agent_full_flow() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
 

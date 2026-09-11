@@ -1,7 +1,7 @@
 // src/components/settings/AdvancedSessionSettings.tsx
 //
 // The session config knobs the daemon advertises that do not belong in the
-// model panel: context budget, autocompact threshold and context strategy.
+// model panel: context budget and context strategy.
 //
 // Its own file rather than a tenth section inside SettingsPanel.tsx, which was
 // already 961 lines — the same reason the Rust routes became
@@ -16,10 +16,8 @@ import { Component, createSignal, onMount } from 'solid-js';
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
-  getAutocompactThreshold,
   getContextBudget,
   getContextStrategy,
-  setAutocompactThreshold,
   setContextBudget,
   setContextStrategy,
 } from '@/lib/api';
@@ -52,7 +50,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
 
   const [contextBudget, setContextBudgetSig] = createSignal('');
-  const [autocompact, setAutocompactSig] = createSignal('');
   const [contextStrategy, setContextStrategySig] = createSignal('');
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -70,15 +67,13 @@ export const AdvancedSessionSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, threshold, strategy] =
+      const [budget, strategy] =
         await Promise.all([
           getContextBudget(s.id),
-          getAutocompactThreshold(s.id),
           getContextStrategy(s.id),
         ]);
       const text = (v: number | null) => (v === null ? '' : String(v));
       setContextBudgetSig(text(budget));
-      setAutocompactSig(threshold === null ? '' : String(threshold));
       setContextStrategySig(strategy ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load advanced settings');
@@ -132,32 +127,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
           data-testid="context-budget-input"
           onInput={(e) => setContextBudgetSig((e.target as HTMLInputElement).value)}
           onBlur={commitOptionalInt(setContextBudgetSig, setContextBudget, 'context budget')}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Default"
-        />
-      </SettingRow>
-
-      <SettingRow label="Autocompact Threshold" description="0–1 fraction of the window">
-        <input
-          type="number"
-          min={0}
-          max={1}
-          step={0.05}
-          value={autocompact()}
-          data-testid="autocompact-threshold-input"
-          onInput={(e) => setAutocompactSig((e.target as HTMLInputElement).value)}
-          onBlur={async (e) => {
-            const raw = (e.target as HTMLInputElement).value.trim();
-            const s = session.currentSession();
-            if (!s) return;
-            const val = raw === '' ? null : parseFloat(raw);
-            if (val !== null && Number.isNaN(val)) return;
-            try {
-              await setAutocompactThreshold(s.id, val);
-            } catch (err) {
-              fail('autocompact threshold')(err);
-            }
-          }}
           class={`${inputClass} w-28 text-right`}
           placeholder="Default"
         />

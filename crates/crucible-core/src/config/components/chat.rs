@@ -40,6 +40,16 @@ list of options.
 Be concise. Match the depth of the question \u{2014} a short question gets a short
 answer, and code or structure only when it earns its place.";
 
+/// Matches `crucible_daemon::agent_manager::autocompact::DEFAULT_AUTOCOMPACT_THRESHOLD`,
+/// which is the constant the trigger used before this became a config key.
+fn default_autocompact_threshold() -> f32 {
+    0.95
+}
+
+fn default_precognition_results() -> usize {
+    5
+}
+
 fn default_system_prompt() -> String {
     DEFAULT_SYSTEM_PROMPT.to_string()
 }
@@ -68,6 +78,18 @@ pub struct ChatConfig {
     /// Useful for trimming visual noise in long sessions.
     #[serde(default = "default_true")]
     pub show_diffs: bool,
+    /// How many notes a Precognition search injects.
+    ///
+    /// Read once per session, on the first user message: `should_run_precognition`
+    /// gates the search to that turn.
+    #[serde(default = "default_precognition_results")]
+    pub precognition_results: usize,
+    /// The fraction of `context_budget` that triggers an auto-compaction.
+    ///
+    /// `0.0` disables it. A tuning constant, not a per-session decision, which
+    /// is why it is here and not a session knob.
+    #[serde(default = "default_autocompact_threshold")]
+    pub autocompact_threshold: f32,
     /// The system prompt a new session starts from.
     ///
     /// An agent card's own prompt wins; this fills a card that names none.
@@ -85,6 +107,8 @@ impl Default for ChatConfig {
             endpoint: None,
             show_thinking: false,
             show_diffs: true,
+            precognition_results: default_precognition_results(),
+            autocompact_threshold: default_autocompact_threshold(),
             system_prompt: default_system_prompt(),
         }
     }

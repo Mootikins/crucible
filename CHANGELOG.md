@@ -47,6 +47,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **`precognition_results` and `autocompact_threshold` are config keys, not
+  session knobs.** They are tuning values with one right answer per install,
+  not decisions a session makes for itself, so they move to
+  `chat.precognition_results` and `chat.autocompact_threshold` and gain
+  provenance, `settings.json`, `config.origin` and a control in the settings
+  pane.
+
+  | Was | Is |
+  |---|---|
+  | `:set precognition.results=3` | `:set chat.precognition_results=3` |
+  | `:set autocompact_threshold=0.8` | `:set chat.autocompact_threshold=0.8` |
+  | `session.{set,get}_precognition_results` | `config.set` / `config.get` |
+  | `session.{set,get}_autocompact_threshold` | `config.set` / `config.get` |
+
+  The HTTP routes `/config/precognition/results` and
+  `/config/autocompact-threshold`, the session events
+  `precognition_results_changed` and `autocompact_threshold_changed`, and the
+  two fields on the session agent record are gone with them.
+
+  `cru chat --context-size N` is removed. It set the per-session result count,
+  and there is no longer a per-session value to set; writing the config key
+  from a per-invocation flag would change the setting for every session, which
+  is not what the flag meant.
+
+  `:set precognition` stays a session knob — turning grounding off for one
+  session is a real per-session choice.
+
+
 - **Output validation is gone, with its retry loop and its Lua surface.** The
   session knobs `output_validation` and `validation_retries`, the
   `OutputValidation` enum, `validate_output`, the validate-retry branch in

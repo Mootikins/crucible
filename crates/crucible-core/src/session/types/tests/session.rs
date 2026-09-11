@@ -1,5 +1,5 @@
 use super::super::agent::SessionAgent;
-use super::super::config::{default_precognition_results, ContextStrategy};
+use super::super::config::ContextStrategy;
 use super::super::enums::{SessionState, SessionType};
 use super::super::session::Session;
 use super::super::summary::SessionSummary;
@@ -296,10 +296,8 @@ fn test_session_with_agent() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -351,10 +349,8 @@ fn test_session_summary_includes_agent_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };

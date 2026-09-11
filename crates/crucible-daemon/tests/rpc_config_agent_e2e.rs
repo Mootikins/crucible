@@ -120,10 +120,8 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -223,10 +221,8 @@ async fn test_configure_agent_sets_agent() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -337,12 +333,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
     }
 
     round_trip!(
-        "precognition_results",
-        client.session_set_precognition_results(&sid, 9),
-        client.session_get_precognition_results(&sid),
-        Some(9)
-    );
-    round_trip!(
         "context_budget",
         client.session_set_context_budget(&sid, Some(32000)),
         client.session_get_context_budget(&sid),
@@ -353,12 +343,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         client.session_set_context_strategy(&sid, "sliding_window"),
         client.session_get_context_strategy(&sid),
         Some("sliding_window".to_string())
-    );
-    round_trip!(
-        "autocompact_threshold",
-        client.session_set_autocompact_threshold(&sid, Some(0.75)),
-        client.session_get_autocompact_threshold(&sid),
-        Some(0.75)
     );
 
     // precognition's getter returns bool (not Option) — check it directly.

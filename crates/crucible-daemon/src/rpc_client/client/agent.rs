@@ -42,13 +42,6 @@ pub struct SessionSetPrecognitionRequest {
     pub precognition_enabled: bool,
 }
 
-/// Request for `session.set_precognition_results`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetPrecognitionResultsRequest {
-    pub session_id: String,
-    pub precognition_results: usize,
-}
-
 /// Request for `session.undo`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionUndoRequest {
@@ -70,14 +63,6 @@ pub struct SessionSetContextBudgetRequest {
 pub struct SessionSetContextStrategyRequest {
     pub session_id: String,
     pub context_strategy: String,
-}
-
-/// Request for `session.set_autocompact_threshold`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetAutocompactThresholdRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub autocompact_threshold: Option<f32>,
 }
 
 /// Request for `models.list` (no active session required).
@@ -485,36 +470,6 @@ impl DaemonClient {
         Ok(enabled)
     }
 
-    /// Set the maximum number of Precognition search results for a session.
-    pub async fn session_set_precognition_results(
-        &self,
-        session_id: &str,
-        count: usize,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_precognition_results",
-            SessionSetPrecognitionResultsRequest {
-                session_id: session_id.to_string(),
-                precognition_results: count,
-            },
-        )
-        .await
-    }
-
-    /// Get the maximum number of Precognition search results for a session.
-    pub async fn session_get_precognition_results(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<usize>> {
-        self.get_session_option(
-            "session.get_precognition_results",
-            session_id,
-            "precognition_results",
-            |v| v.as_u64().map(|n| n as usize),
-        )
-        .await
-    }
-
     pub async fn session_get_mode(&self, session_id: &str) -> Result<Option<String>> {
         self.get_session_option("session.get_mode", session_id, "mode", |v| {
             v.as_str().map(|s| s.to_string())
@@ -543,31 +498,6 @@ impl DaemonClient {
             session_id,
             "context_budget",
             |v| v.as_u64().map(|n| n as usize),
-        )
-        .await
-    }
-
-    pub async fn session_set_autocompact_threshold(
-        &self,
-        session_id: &str,
-        threshold: Option<f32>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_autocompact_threshold",
-            SessionSetAutocompactThresholdRequest {
-                session_id: session_id.to_string(),
-                autocompact_threshold: threshold,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_autocompact_threshold(&self, session_id: &str) -> Result<Option<f32>> {
-        self.get_session_option(
-            "session.get_autocompact_threshold",
-            session_id,
-            "autocompact_threshold",
-            |v| v.as_f64().map(|n| n as f32),
         )
         .await
     }

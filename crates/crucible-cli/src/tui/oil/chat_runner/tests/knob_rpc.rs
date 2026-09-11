@@ -78,15 +78,6 @@ impl SessionKnobs for KnobRecordingAgent {
         self.calls.push("set_precognition");
         Ok(())
     }
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        self.calls.push("set_precognition_results");
-        Ok(())
-    }
-    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
-        self.calls.push("set_autocompact_threshold");
-        Ok(())
-    }
-
     fn current_model(&self) -> Option<&str> {
         None
     }
@@ -107,16 +98,8 @@ impl SessionKnobs for KnobRecordingAgent {
         crucible_core::session::ContextStrategy::default()
     }
 
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        None
-    }
-
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 
@@ -152,8 +135,6 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("contextbudget=128000", "set_context_budget" ; "context budget")]
 #[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
-#[test_case("precognition.results=8", "set_precognition_results" ; "precognition results")]
-#[test_case("autocompact_threshold=0.8", "set_autocompact_threshold" ; "autocompact threshold")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
     let mut app = OilChatApp::default();
@@ -312,28 +293,12 @@ impl SessionKnobs for ModeListingAgent {
         crucible_core::session::ContextStrategy::default()
     }
 
-    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        None
-    }
-
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition".into()))
     }
 
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition_results".into()))
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 

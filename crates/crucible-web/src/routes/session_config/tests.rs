@@ -99,38 +99,6 @@ async fn context_budget_round_trips() {
     assert_get_returns("context-budget", "context_budget", json!(111)).await;
 }
 
-/// Compared with a tolerance, not for equality: the daemon's setter takes
-/// `Option<f32>`, so `0.9` from the browser is narrowed to f32 and widened again
-/// for JSON, arriving as `0.8999999761581421`. That is the daemon's field type,
-/// not a fault in this route — asserting exact equality here would encode a
-/// precision the wire does not have. `0.75` survives exactly because it is
-/// representable in binary.
-#[tokio::test]
-async fn autocompact_threshold_round_trips() {
-    let uri = "/api/session/s1/config/autocompact-threshold";
-    let (status, _, mock) = call("PUT", uri, Some(json!({ "autocompact_threshold": 0.9 }))).await;
-    assert_eq!(status, StatusCode::OK);
-
-    let params = mock
-        .received_params("session.set_autocompact_threshold")
-        .expect("PUT did not call session.set_autocompact_threshold");
-    let sent = params
-        .get("autocompact_threshold")
-        .and_then(Value::as_f64)
-        .unwrap_or_else(|| panic!("autocompact_threshold missing from {params}"));
-    assert!(
-        (sent - 0.9).abs() < 1e-6,
-        "PUT must forward ~0.9, got {sent} (params {params})"
-    );
-
-    assert_get_returns(
-        "autocompact-threshold",
-        "autocompact_threshold",
-        json!(0.75),
-    )
-    .await;
-}
-
 // ── Execution ─────────────────────────────────────────────────────────────
 
 // ── Prompt and enum-valued knobs ──────────────────────────────────────────
@@ -164,18 +132,11 @@ async fn context_strategy_round_trips_its_string_spelling() {
 /// wire. That is what this asserts.
 #[tokio::test]
 async fn clearing_an_optional_knob_never_sends_a_value() {
-    for (tail, rpc_method, wire_field) in [
-        (
-            "context-budget",
-            "session.set_context_budget",
-            "context_budget",
-        ),
-        (
-            "autocompact-threshold",
-            "session.set_autocompact_threshold",
-            "autocompact_threshold",
-        ),
-    ] {
+    for (tail, rpc_method, wire_field) in [(
+        "context-budget",
+        "session.set_context_budget",
+        "context_budget",
+    )] {
         let uri = format!("/api/session/s1/config/{tail}");
         let (status, _, mock) = call("PUT", &uri, Some(json!({ wire_field: Value::Null }))).await;
         assert_eq!(status, StatusCode::OK, "PUT {uri} with null should succeed");

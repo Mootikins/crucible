@@ -149,17 +149,6 @@ fn test_chat_with_no_context_flag() {
 }
 
 #[test]
-fn test_chat_with_context_size_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("chat")
-        .arg("--context-size")
-        .arg("10")
-        .arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
 fn test_chat_with_plan_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("chat").arg("--plan").arg("--help");
@@ -174,8 +163,6 @@ fn test_chat_all_flags_combined() {
         .arg("--agent")
         .arg("claude-code")
         .arg("--no-context")
-        .arg("--context-size")
-        .arg("10")
         .arg("--plan")
         .arg("--help");
 
@@ -505,16 +492,6 @@ fn test_invalid_global_flag() {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("unexpected argument"));
-}
-
-#[test]
-fn test_invalid_context_size_value() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("chat").arg("--context-size").arg("not-a-number");
-
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("invalid value"));
 }
 
 #[test]

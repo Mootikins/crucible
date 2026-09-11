@@ -233,11 +233,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "precognition_enabled",
     },
     ConfigMethod {
-        suffix: "precognition_results",
-        request_field: "precognition_results",
-        result_field: "precognition_results",
-    },
-    ConfigMethod {
         suffix: "context_budget",
         request_field: "context_budget",
         result_field: "context_budget",
@@ -246,11 +241,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         suffix: "context_strategy",
         request_field: "context_strategy",
         result_field: "context_strategy",
-    },
-    ConfigMethod {
-        suffix: "autocompact_threshold",
-        request_field: "autocompact_threshold",
-        result_field: "autocompact_threshold",
     },
 ];
 

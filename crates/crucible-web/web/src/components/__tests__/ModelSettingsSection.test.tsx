@@ -21,8 +21,6 @@ vi.mock('@/lib/api', () => ({
   setAgentOption: (...a: unknown[]) => setAgentOption(...a),
   getPrecognition: vi.fn(async () => true),
   setPrecognition: vi.fn(async () => {}),
-  getPrecognitionResults: vi.fn(async () => 5),
-  setPrecognitionResults: vi.fn(async () => {}),
   getPlugins: vi.fn(async () => []),
   reloadPlugin: vi.fn(async () => {}),
   getMcpStatus: vi.fn(async () => ({ servers: [] })),
@@ -39,22 +37,16 @@ import { ModelSettingsSection } from '../SettingsPanel';
 
 /** What the daemon answers for a session that has every setting. */
 const ALL_SUPPORTED = {
-  knobs: [
-    { id: 'precognition', supported: true },
-    { id: 'precognition_results', supported: true },
-  ],
+  knobs: [{ id: 'precognition', supported: true }],
 };
 
 /**
- * A session that refuses one of them. Which knobs a session refuses depends on
- * the session, so what these tests pin is that the panel obeys the answer it
- * is given rather than a set of rows compiled into the client.
+ * A session that refuses it. Which knobs a session refuses depends on the
+ * session, so what these tests pin is that the panel obeys the answer it is
+ * given rather than a set of rows compiled into the client.
  */
 const ONE_UNSUPPORTED = {
-  knobs: [
-    { id: 'precognition', supported: true },
-    { id: 'precognition_results', supported: false },
-  ],
+  knobs: [{ id: 'precognition', supported: false }],
 };
 
 beforeEach(() => {
@@ -75,7 +67,7 @@ describe('ModelSettingsSection', () => {
     // `waitFor`, not a bare assertion: the call landing is not the render
     // landing, and asserting between the two passes against a panel that
     // never drew anything.
-    await waitFor(() => expect(screen.getByText('Results per query')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
   });
 
   it('draws no control for a setting the session does not have', async () => {
@@ -83,11 +75,12 @@ describe('ModelSettingsSection', () => {
     render(() => <ModelSettingsSection />);
 
     await waitFor(() => expect(listKnobs).toHaveBeenCalledWith('s1'));
-    // Precognition is supported, so its arrival is what says the answer landed
-    // — without it this could pass against a panel that never rendered at all.
-    await waitFor(() => expect(screen.getByText('Precognition')).toBeTruthy());
+    // The agent-options loop is never gated on the knob list, so waiting on it
+    // means the absence below is a decision rather than a render that has yet
+    // to happen.
+    await waitFor(() => expect(listAgentOptions).toHaveBeenCalledWith('s1'));
 
-    expect(screen.queryByText('Results per query')).toBeNull();
+    expect(screen.queryByText('Precognition')).toBeNull();
   });
 
   it('draws nothing rather than guessing when the answer lists nothing', async () => {
@@ -108,7 +101,6 @@ describe('ModelSettingsSection', () => {
     await waitFor(() => expect(listAgentOptions).toHaveBeenCalledWith('s1'));
 
     expect(screen.queryByText('Precognition')).toBeNull();
-    expect(screen.queryByText('Results per query')).toBeNull();
   });
 });
 

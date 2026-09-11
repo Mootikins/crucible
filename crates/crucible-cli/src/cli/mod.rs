@@ -153,11 +153,6 @@ pub enum Commands {
         #[arg(long)]
         no_context: bool,
 
-        /// Number of knowledge-base notes to ground with (daemon default: 5).
-        /// Session state, so it persists across resume
-        #[arg(long)]
-        context_size: Option<usize>,
-
         /// Start in plan mode (read-only) instead of normal mode (full access)
         /// Can be toggled during session with /plan and /normal commands
         #[arg(long)]

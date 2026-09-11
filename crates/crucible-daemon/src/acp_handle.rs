@@ -535,28 +535,12 @@ impl SessionKnobs for AcpAgentHandle {
         crucible_core::session::ContextStrategy::default()
     }
 
-    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        None
-    }
-
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition".into()))
     }
 
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition_results".into()))
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 

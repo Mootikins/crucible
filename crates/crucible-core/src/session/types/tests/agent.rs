@@ -1,5 +1,5 @@
 use super::super::agent::SessionAgent;
-use super::super::config::{default_precognition_results, ContextStrategy};
+use super::super::config::ContextStrategy;
 use crate::config::BackendType;
 use std::collections::HashMap;
 
@@ -20,10 +20,8 @@ fn test_session_agent_serialization() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -59,10 +57,8 @@ fn test_session_agent_typed_provider_serialization() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -103,10 +99,8 @@ fn test_session_agent_typed_provider_round_trip() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -140,10 +134,8 @@ fn test_session_agent_with_capabilities() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -171,10 +163,8 @@ fn test_session_agent_with_agent_description() {
         agent_description: Some("Claude AI assistant".to_string()),
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -219,10 +209,8 @@ fn test_session_agent_with_delegation_config() {
         agent_description: None,
         delegation_config: Some(delegation),
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -293,10 +281,8 @@ fn test_session_agent_round_trip_with_all_fields() {
         agent_description: Some("A full-featured agent".to_string()),
         delegation_config: Some(delegation),
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };

@@ -254,23 +254,4 @@ fn one_shot_context_flags_become_daemon_session_state() {
         "--no-context must stop the daemon grounding the turn at all, but a \
          precognition_complete event was emitted"
     );
-
-    // `--context-size N` is the result count Precognition retrieves. Unset, the
-    // daemon's own default (5) must stand — the flag used to carry clap's
-    // `default_value = "5"`, which would have overwritten a resumed session's
-    // stored value with 5 on every one-shot turn.
-    let sized = run_one_shot(&["--context-size", "3"]);
-    let sized_agent = read_json(&sole_session_dir(&sized).join("meta.json"))["agent"].clone();
-    assert_eq!(
-        sized_agent["precognition_results"].as_u64(),
-        Some(3),
-        "--context-size must reach the daemon as \
-         session.set_precognition_results. cru stderr:\n{}",
-        stderr(&sized)
-    );
-    assert_eq!(
-        sized_agent["precognition_enabled"].as_bool(),
-        Some(true),
-        "--context-size must not disable grounding"
-    );
 }

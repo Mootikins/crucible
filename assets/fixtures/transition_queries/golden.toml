@@ -159,11 +159,11 @@ expect_text = ["If embeddings aren't available, Precognition silently disables i
 
 # TRANSITION Help/Concepts/Session Compaction.md
 #   "## The threshold" — "Once the session is in `compacting` state, later triggers fail their state guard silently"
-#   "## Setting it" — ":set autocompact_threshold=0.8"
+#   "## Setting it" — ":set chat.autocompact_threshold=0.8"
 [[queries]]
 question = "when does automatic compaction fire, and how do I change its threshold from the chat?"
 expect_note = "Session Compaction"
-expect_text = ["Once the session is in `compacting` state, later triggers fail their state guard silently", ":set autocompact_threshold=0.8"]
+expect_text = ["Once the session is in `compacting` state, later triggers fail their state guard silently", ":set chat.autocompact_threshold=0.8"]
 
 # TRANSITION Help/Concepts/Session Replay.md
 #   "## TUI Replay" — "Add `--replay-auto-exit` to close the TUI automatically when playback finishes."

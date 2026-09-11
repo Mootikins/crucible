@@ -46,17 +46,9 @@ pub enum SettingsPayload {
         #[serde(default)]
         enabled: bool,
     },
-    PrecognitionResultsChanged {
-        #[serde(default)]
-        precognition_results: usize,
-    },
     ContextBudgetChanged {
         #[serde(default)]
         context_budget: Option<usize>,
-    },
-    AutocompactThresholdChanged {
-        #[serde(default)]
-        autocompact_threshold: Option<f32>,
     },
     ContextStrategyChanged {
         #[serde(default)]

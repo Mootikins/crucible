@@ -45,7 +45,3 @@ impl FromStr for ContextStrategy {
         }
     }
 }
-
-pub(super) fn default_precognition_results() -> usize {
-    5
-}

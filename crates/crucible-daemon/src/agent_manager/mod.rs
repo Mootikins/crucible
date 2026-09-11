@@ -1555,6 +1555,7 @@ pub(crate) mod attachments;
 pub mod autocompact;
 pub mod cache_stats;
 pub(crate) mod completion;
+pub(crate) mod configured;
 pub mod context_length;
 mod interaction;
 mod iter;

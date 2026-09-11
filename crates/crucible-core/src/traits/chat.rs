@@ -228,14 +228,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Get the current context truncation strategy.
     fn get_context_strategy(&self) -> crate::session::ContextStrategy;
 
-    /// Set the auto-compaction threshold (fraction of `context_budget`).
-    /// `None` resets to the daemon default; `Some(0.0)` explicitly disables.
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()>;
-
-    /// Get the current auto-compaction threshold. `None` indicates the
-    /// daemon default is in effect.
-    fn get_autocompact_threshold(&self) -> Option<f32>;
-
     /// Turn Precognition (auto-RAG context injection) on or off for this
     /// session. Session-scoped, not display state: every client attached to
     /// the session sees the change.
@@ -244,12 +236,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Whether Precognition is currently enabled. `AgentConfig` defaults
     /// to on.
     fn get_precognition(&self) -> bool;
-
-    /// Set the maximum number of Precognition search results.
-    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()>;
-
-    /// Get the current Precognition search results count.
-    fn get_precognition_results(&self) -> usize;
 }
 
 /// The empty answer for every knob: each setter returns
@@ -304,17 +290,6 @@ macro_rules! impl_unsupported_session_knobs {
             fn get_context_strategy(&self) -> $crate::session::ContextStrategy {
                 $crate::session::ContextStrategy::default()
             }
-            async fn set_autocompact_threshold(
-                &mut self,
-                _threshold: Option<f32>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_autocompact_threshold".into(),
-                ))
-            }
-            fn get_autocompact_threshold(&self) -> Option<f32> {
-                None
-            }
             async fn set_precognition(
                 &mut self,
                 _enabled: bool,
@@ -325,17 +300,6 @@ macro_rules! impl_unsupported_session_knobs {
             }
             fn get_precognition(&self) -> bool {
                 true
-            }
-            async fn set_precognition_results(
-                &mut self,
-                _count: usize,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_precognition_results".into(),
-                ))
-            }
-            fn get_precognition_results(&self) -> usize {
-                5
             }
         }
     };
@@ -563,28 +527,12 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
         (**self).get_context_strategy()
     }
 
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
-        (**self).set_autocompact_threshold(threshold).await
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        (**self).get_autocompact_threshold()
-    }
-
     async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {
         (**self).set_precognition(enabled).await
     }
 
     fn get_precognition(&self) -> bool {
         (**self).get_precognition()
-    }
-
-    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {
-        (**self).set_precognition_results(count).await
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        (**self).get_precognition_results()
     }
 }
 

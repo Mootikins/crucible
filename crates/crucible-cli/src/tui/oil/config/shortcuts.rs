@@ -92,12 +92,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Auto-inject knowledge base context (auto-RAG)",
     },
     ConfigShortcut {
-        short: "precognition.results",
-        target: ShortcutTarget::Virtual,
-        completions: CompletionSource::None,
-        description: "Number of context results to inject (1-20)",
-    },
-    ConfigShortcut {
         short: "contextbudget",
         target: ShortcutTarget::Path("llm.context_budget"),
         completions: CompletionSource::None,
@@ -249,7 +243,6 @@ mod tests {
         assert!(shorts.contains(&"show_diffs"));
         assert!(shorts.contains(&"syntax_theme"));
         assert!(shorts.contains(&"precognition"));
-        assert!(shorts.contains(&"precognition.results"));
         assert!(shorts.contains(&"contextbudget"));
         assert!(shorts.contains(&"contextstrategy"));
         assert!(shorts.contains(&"perm.show_diff"));

@@ -16,8 +16,6 @@ import {
   login,
   getPrecognition,
   setPrecognition as apiSetPrecognition,
-  getPrecognitionResults,
-  setPrecognitionResults as apiSetPrecognitionResults,
   getPlugins,
   reloadPlugin,
   getMcpStatus,
@@ -30,7 +28,6 @@ export const ModelSettingsSection: Component = () => {
   const session = useSessionSafe();
 
   const [precognition, setPrecognition] = createSignal(true);
-  const [precognitionResults, setPrecognitionResults] = createSignal(5);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   /**
@@ -66,18 +63,16 @@ export const ModelSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [knobs, agentOpts, precog, precogResults] = await Promise.all([
+      const [knobs, agentOpts, precog] = await Promise.all([
         listKnobs(s.id),
         // An older daemon has no such method; an empty list is the right
         // answer there, and is what an internal session gives anyway.
         listAgentOptions(s.id).catch(() => ({ options: [] as AgentConfigOption[] })),
         getPrecognition(s.id),
-        getPrecognitionResults(s.id),
       ]);
       setSupported(new Set(knobs.knobs.filter((k) => k.supported).map((k) => k.id)));
       setAgentOptions(agentOpts.options);
       setPrecognition(precog);
-      setPrecognitionResults(precogResults);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
@@ -122,22 +117,6 @@ export const ModelSettingsSection: Component = () => {
     }
   };
 
-  const handlePrecognitionResultsChange = async (e: Event) => {
-    const s = session.currentSession();
-    if (!s) return;
-    const raw = parseInt((e.target as HTMLInputElement).value, 10);
-    if (Number.isNaN(raw)) return;
-    const clamped = Math.max(1, Math.min(20, raw));
-    const previous = precognitionResults();
-    setPrecognitionResults(clamped);
-    try {
-      await apiSetPrecognitionResults(s.id, clamped);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set precognition results');
-      setPrecognitionResults(previous);
-    }
-  };
-
   return (
     <SettingsSectionState
       title="Model Settings"
@@ -167,21 +146,6 @@ export const ModelSettingsSection: Component = () => {
       </SettingRow>
       </Show>
 
-      <Show when={has('precognition_results')}>
-      <SettingRow label="Results per query" description="1–20 notes injected">
-        <input
-          type="number"
-          min={1}
-          max={20}
-          step={1}
-          value={precognitionResults()}
-          onChange={handlePrecognitionResultsChange}
-          disabled={!precognition()}
-          data-testid="precognition-results-input"
-          class={`${inputClass} w-20 text-right ${!precognition() ? 'opacity-50 cursor-not-allowed' : ''}`}
-        />
-      </SettingRow>
-      </Show>
 
       {/*
         The external agent's own settings. Crucible has no knob for these and

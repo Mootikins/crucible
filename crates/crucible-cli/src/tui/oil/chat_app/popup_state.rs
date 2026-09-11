@@ -68,15 +68,10 @@ impl Default for ShellHistoryState {
 pub(crate) struct PrecognitionState {
     /// Whether to auto-enrich user messages with knowledge base context (precognition / auto-RAG)
     pub precognition: bool,
-    /// Number of context results to inject per precognition query (1-20)
-    pub precognition_results: usize,
 }
 
 impl Default for PrecognitionState {
     fn default() -> Self {
-        Self {
-            precognition: true,
-            precognition_results: 5,
-        }
+        Self { precognition: true }
     }
 }

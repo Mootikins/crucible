@@ -164,9 +164,7 @@ impl Group {
             | "title_changed"
             | "system_prompt_changed"
             | "precognition_toggled"
-            | "precognition_results_changed"
             | "context_budget_changed"
-            | "autocompact_threshold_changed"
             | "context_strategy_changed" => Self::Settings,
             // Job (7)
             "delegation_spawned"

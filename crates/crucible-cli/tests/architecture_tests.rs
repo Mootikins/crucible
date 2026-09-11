@@ -352,8 +352,8 @@ fn the_cli_does_not_build_its_own_context_block() {
         offenders.is_empty(),
         "The CLI is formatting knowledge-base context into a prompt. Grounding \
          belongs to the daemon (agent_manager/precognition/); the CLI's job is \
-         to set `session.set_precognition` / `session.set_precognition_results` \
-         and render the `precognition_complete` event:\n  - {}",
+         to set `session.set_precognition` and render the \
+         `precognition_complete` event:\n  - {}",
         offenders.join("\n  - ")
     );
 }
@@ -380,15 +380,12 @@ fn captures(re: &str, hay: &str) -> BTreeSet<String> {
 
 /// `session.set_<suffix>` → the `/api/session/{}/config/<path>` tail.
 ///
-/// Declared rather than derived: `precognition_results` maps to
-/// `precognition/results`, not `precognition-results`, so a naive snake→kebab
-/// transform is wrong and would need special-casing anyway.
+/// Declared rather than derived: a knob's route is not always its name in
+/// kebab case, so a naive snake→kebab transform would need special-casing.
 const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
-    ("autocompact_threshold", "autocompact-threshold"),
     ("context_budget", "context-budget"),
     ("context_strategy", "context-strategy"),
     ("precognition", "precognition"),
-    ("precognition_results", "precognition/results"),
     // Not a Crucible knob: the settings the external agent advertised for
     // itself. One route serves both directions — GET lists them, POST sets one
     // — because the value belongs to the agent and is read back from its list.
@@ -498,16 +495,14 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
 /// `session.set_<suffix>` → the `:set` key that reaches it.
 ///
 /// Declared rather than derived, like `WEB_CONFIG_ROUTES`: the TUI spells most
-/// keys without underscores (`maxiterations`), some with an alias for both
-/// (`contextbudget` / `context_budget`), and one with a dot
-/// (`precognition.results`). No transform covers that, and a knob whose key
-/// is spelled differently in the two front ends is worth stating once here.
+/// keys without underscores (`maxiterations`) and some with an alias for both
+/// (`contextbudget` / `context_budget`). No transform covers that, and a knob
+/// whose key is spelled differently in the two front ends is worth stating
+/// once here.
 const TUI_SET_KEYS: &[(&str, &str)] = &[
-    ("autocompact_threshold", "autocompactthreshold"),
     ("context_budget", "contextbudget"),
     ("context_strategy", "contextstrategy"),
     ("precognition", "precognition"),
-    ("precognition_results", "precognition.results"),
 ];
 
 /// Knobs the TUI cannot set at all. REMOVE entries as keys land; never add.

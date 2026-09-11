@@ -30,13 +30,8 @@ pub(super) mod prompt;
 #[cfg(test)]
 mod tests;
 
-pub(super) use basic::{
-    get_precognition, get_precognition_results, list_agent_options, set_agent_option,
-    set_precognition, set_precognition_results,
-};
-pub(super) use context::{
-    get_autocompact_threshold, get_context_budget, set_autocompact_threshold, set_context_budget,
-};
+pub(super) use basic::{get_precognition, list_agent_options, set_agent_option, set_precognition};
+pub(super) use context::{get_context_budget, set_context_budget};
 
 pub(super) use prompt::{get_context_strategy, set_context_strategy};
 
@@ -59,10 +54,6 @@ pub(super) fn config_routes() -> Router<AppState> {
             "/api/session/{id}/config/precognition",
             put(set_precognition).get(get_precognition),
         )
-        .route(
-            "/api/session/{id}/config/precognition/results",
-            put(set_precognition_results).get(get_precognition_results),
-        )
         // Not one of Crucible's knobs: the settings the external agent
         // advertised for itself. One path serves both directions because the
         // value belongs to the agent — GET lists what it has, POST sets one,
@@ -79,10 +70,6 @@ pub(super) fn config_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/context-budget",
             put(set_context_budget).get(get_context_budget),
-        )
-        .route(
-            "/api/session/{id}/config/autocompact-threshold",
-            put(set_autocompact_threshold).get(get_autocompact_threshold),
         )
         .route(
             "/api/session/{id}/config/context-strategy",

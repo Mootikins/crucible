@@ -78,9 +78,6 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 #[test_case("contextstrategy=truncate" ; "context strategy")]
 #[test_case("outputvalidation=off" ; "output validation")]
 #[test_case("validationretries=2" ; "validation retries")]
-#[test_case("precognition.results=8" ; "precognition results")]
-#[test_case("autocompact_threshold=0.8" ; "autocompact threshold")]
-#[test_case("autocompactthreshold=0.8" ; "autocompact threshold alias")]
 #[test_case("contextstrategy=summarize" ; "context strategy summarize")]
 fn set_session_key_emits_daemon_sync(body: &str) {
     let mut app = app();
@@ -100,34 +97,6 @@ fn set_model_maps_to_switch_model() {
         run_set(&mut app, "model=gpt-4o"),
         Action::Send(ChatAppMsg::SwitchModel(m)) if m == "gpt-4o"
     ));
-}
-
-// Regression: `:set autocompact_threshold=…` used to fall through to the
-// generic runtime-config arm and silently skip the daemon RPC while the
-// CLI `--set` path handled it (routing-seam drift).
-#[test]
-fn set_autocompact_threshold_maps_to_daemon_msg() {
-    let mut app = app();
-    assert!(matches!(
-        run_set(&mut app, "autocompact_threshold=0.8"),
-        Action::Send(ChatAppMsg::SetAutocompactThreshold(Some(t))) if (t - 0.8).abs() < f32::EPSILON
-    ));
-    assert!(matches!(
-        run_set(&mut app, "autocompact_threshold=off"),
-        Action::Send(ChatAppMsg::SetAutocompactThreshold(Some(t))) if t == 0.0
-    ));
-    assert!(matches!(
-        run_set(&mut app, "autocompact_threshold=default"),
-        Action::Send(ChatAppMsg::SetAutocompactThreshold(None))
-    ));
-}
-
-#[test]
-fn set_autocompact_threshold_out_of_range_warns() {
-    let mut app = app();
-    let action = run_set(&mut app, "autocompact_threshold=1.5");
-    assert!(matches!(action, Action::Continue));
-    assert!(app.has_notifications());
 }
 
 // Regression: live `:set` rejected `summarize` while `--set` accepted it.

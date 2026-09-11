@@ -44,9 +44,7 @@ pub struct DaemonAgentHandle {
     pub(super) cached_model: Option<String>,
     pub(super) cached_context_budget: Option<usize>,
     pub(super) cached_context_strategy: Option<String>,
-    pub(super) cached_autocompact_threshold: Option<f32>,
     pub(super) cached_precognition: Option<bool>,
-    pub(super) cached_precognition_results: Option<usize>,
     /// The kiln NAME a `/clear` re-create should attach. Names, not paths:
     /// the daemon resolves them against its `[kilns]` registry.
     pub(super) kiln: Option<crucible_core::config::KilnName>,
@@ -78,9 +76,7 @@ impl DaemonAgentHandle {
             cached_model: None,
             cached_context_budget: None,
             cached_context_strategy: None,
-            cached_autocompact_threshold: None,
             cached_precognition: None,
-            cached_precognition_results: None,
             kiln: None,
             workspace: None,
             cached_agent_config: None,
@@ -201,11 +197,6 @@ impl DaemonAgentHandle {
             .flatten();
         self.cached_context_strategy = client
             .session_get_context_strategy(session_id)
-            .await
-            .ok()
-            .flatten();
-        self.cached_precognition_results = client
-            .session_get_precognition_results(session_id)
             .await
             .ok()
             .flatten();

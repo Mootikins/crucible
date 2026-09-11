@@ -773,8 +773,7 @@ to resume and close. MCP: `InProcessMcpHost` URL goes into
   `routes/webhook.rs:149`, `routes/auth.rs:92`). `OkResponse`
   (`routes/session/mod.rs:21`) beside eight `json!({"ok": true})` literals.
   `NoteListItem` is a positional 5-tuple (`routes/helpers.rs:22`).
-  `session_get_precognition_results` hides `unwrap_or(5)` in the transport
-  wrapper (`services/daemon.rs:1038`). `KeepAlive.shell` is never `Some`
+  `KeepAlive.shell` is never `Some`
   (`routes/terminal.rs:56`). `handle_webhook` returns `Result<Json, Response>`
   (`routes/webhook.rs:68`). Dead wrappers: `capabilities`, `note_upsert`,
   `lua_discover_plugins`, `lua_plugin_health`, `session_create`,

@@ -5,7 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::config::{default_precognition_results, ContextStrategy};
+use super::config::ContextStrategy;
 use crate::serde_helpers::default_true;
 
 /// Agent configuration bound to a session.
@@ -67,10 +67,6 @@ pub struct SessionAgent {
     #[serde(default = "default_true")]
     pub precognition_enabled: bool,
 
-    /// Maximum number of unique notes to return from Precognition search (default: 5).
-    #[serde(default = "default_precognition_results")]
-    pub precognition_results: usize,
-
     /// Context window token budget. None = no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_budget: Option<usize>,
@@ -78,13 +74,6 @@ pub struct SessionAgent {
     /// Strategy for truncating context when over budget.
     #[serde(default)]
     pub context_strategy: ContextStrategy,
-
-    /// Trigger auto-compaction when estimated message tokens exceed
-    /// `context_budget * autocompact_threshold`. `None` uses the default
-    /// (0.95). Set to `Some(0.0)` (or surface "off" in user-facing
-    /// parsers) to disable. Range: 0.0..=1.0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub autocompact_threshold: Option<f32>,
 
     /// Session mode id ("ask" | "plan" | "auto"). Persisted so a mode set
     /// before the first message (no live handle yet) still applies when the
@@ -133,10 +122,8 @@ impl SessionAgent {
             agent_description: profile.description.clone(),
             delegation_config: profile.delegation.clone(),
             precognition_enabled: true,
-            precognition_results: default_precognition_results(),
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            autocompact_threshold: None,
             tool_policy: None,
             mode: None,
         }
@@ -249,10 +236,8 @@ impl SessionAgent {
             agent_description: Some(card.description.clone()),
             delegation_config: base.delegation_config.clone(),
             precognition_enabled: base.precognition_enabled,
-            precognition_results: base.precognition_results,
             context_budget: base.context_budget,
             context_strategy: base.context_strategy.clone(),
-            autocompact_threshold: base.autocompact_threshold,
             // `mode` is deliberately left alone. Modes are an open set declared
             // in Lua (`cru.modes.<name> = ...`) whose permission stance this
             // crate cannot see, so there is no ordering here to take a minimum
@@ -329,10 +314,8 @@ impl SessionAgent {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
-            precognition_results: default_precognition_results(),
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            autocompact_threshold: None,
             tool_policy: None,
             mode: None,
         }

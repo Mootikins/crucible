@@ -107,11 +107,6 @@ pub enum SetRpcAction {
     SetContextBudget(Option<usize>),
     SetContextStrategy(String),
     SetPrecognition(bool),
-    SetPrecognitionResults(usize),
-    /// Auto-compaction threshold as a fraction of `context_budget`.
-    /// `None` clears the override (daemon falls back to its default).
-    /// `Some(0.0)` is "explicitly disabled" — emitted by `:set autocompact_threshold=off`.
-    SetAutocompactThreshold(Option<f32>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -186,44 +181,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 }
             };
             Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
-        }
-        "autocompactthreshold" | "autocompact_threshold" => {
-            let v = if value.eq_ignore_ascii_case("off")
-                || value == "0"
-                || value.eq_ignore_ascii_case("false")
-            {
-                Some(0.0_f32)
-            } else if value.eq_ignore_ascii_case("none")
-                || value.eq_ignore_ascii_case("null")
-                || value.eq_ignore_ascii_case("default")
-            {
-                None
-            } else {
-                match value.parse::<f32>() {
-                    Ok(t) if (0.0..=1.0).contains(&t) => Some(t),
-                    Ok(_) => {
-                        return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "autocompact_threshold {} out of range; expected 0.0..=1.0, 'off', or 'default'",
-                                    value
-                                ),
-                            });
-                    }
-                    Err(_) => {
-                        return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "invalid autocompact_threshold {}; expected a number in 0.0..=1.0, 'off', or 'default'",
-                                    value
-                                ),
-                            });
-                    }
-                }
-            };
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetAutocompactThreshold(
-                v,
-            )))
         }
         "contextstrategy" | "context_strategy" => {
             // Validate the strategy value
@@ -321,21 +278,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 ),
             }),
         },
-        "precognition.results" => {
-            let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
-                key: key.clone(),
-                message: "precognition.results must be 1-20".to_string(),
-            })?;
-            if !(1..=20).contains(&parsed) {
-                return Err(SetError::InvalidValue {
-                    key,
-                    message: "precognition.results must be 1-20".to_string(),
-                });
-            }
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognitionResults(
-                parsed,
-            )))
-        }
         _ => Err(SetError::UnknownKey(key)),
     }
 }
@@ -351,10 +293,6 @@ impl SetRpcAction {
             SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
-            SetRpcAction::SetPrecognitionResults(n) => Some(ChatAppMsg::SetPrecognitionResults(n)),
-            SetRpcAction::SetAutocompactThreshold(t) => {
-                Some(ChatAppMsg::SetAutocompactThreshold(t))
-            }
         }
     }
 }
@@ -441,14 +379,7 @@ fn is_tui_local_key(key: &str) -> bool {
 fn is_daemon_rpc_key(key: &str) -> bool {
     matches!(
         key,
-        "model"
-            | "contextbudget"
-            | "context_budget"
-            | "contextstrategy"
-            | "context_strategy"
-            | "autocompactthreshold"
-            | "autocompact_threshold"
-            | "precognition.results"
+        "model" | "contextbudget" | "context_budget" | "contextstrategy" | "context_strategy"
     )
 }
 

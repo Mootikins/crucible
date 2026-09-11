@@ -102,7 +102,7 @@ entry but no shipped proof.
 | F39 | Anthropic cache control on the system prompt and the second-to-last turn | P |
 | F40 | Cache statistics: `session.cache_stats`, `cru.session.cache_stats`, `sl.cache` | P, T |
 | F41 | Token budget tracking with `context_budget` and a chars/4 estimate | P, T, W |
-| F42 | Auto-compaction request at `context_budget * autocompact_threshold` *(in progress)* | P, T |
+| F42 | Auto-compaction request at `context_budget * chat.autocompact_threshold` *(in progress)* | P, T |
 | F43 | Context strategies: Truncate, SlidingWindow, Summarize; Lua strategies *(planned)* | P |
 | F44 | Lua context operations `cru.context.{usage, messages, remove, estimate_tokens}` | P |
 | F45 | `cru.context.attach`: mid-turn attachment, deduplicated by key, capped by budget | P |
@@ -603,7 +603,6 @@ pub struct SessionConfig {
     context_budget: Option<u32>,
     context_window: Option<u32>,
     context_strategy: ContextStrategy,
-    autocompact_threshold: f32,      // default 0.95
     max_iterations: Option<u32>,     // default 10
     execution_timeout_secs: Option<u32>,
 }

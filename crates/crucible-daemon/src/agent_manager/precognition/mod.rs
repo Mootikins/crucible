@@ -381,7 +381,7 @@ impl AgentManager {
         match search_across_kilns_with_stage(
             params.sources,
             params.query_embedding,
-            params.agent_config.precognition_results,
+            crate::agent_manager::configured::precognition_results(),
             Some(provider_trust),
             params.session.workspace.as_deref(),
             Some(params.rerank),

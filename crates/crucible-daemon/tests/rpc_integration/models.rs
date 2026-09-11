@@ -50,10 +50,8 @@ async fn test_session_switch_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -130,10 +128,8 @@ async fn test_daemon_agent_handle_switch_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -215,10 +211,8 @@ async fn test_session_set_mode_round_trip() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
     client
@@ -315,10 +309,8 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
     client

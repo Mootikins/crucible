@@ -12,13 +12,11 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 // initialization" at import time, not at assert time.
 const mockSetters = vi.hoisted(() => ({
   setContextBudget: vi.fn(),
-  setAutocompactThreshold: vi.fn(),
   setContextStrategy: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({
   getContextBudget: vi.fn().mockResolvedValue(111),
-  getAutocompactThreshold: vi.fn().mockResolvedValue(0.75),
   getContextStrategy: vi.fn().mockResolvedValue('recent'),
   ...mockSetters,
 }));
@@ -52,9 +50,6 @@ describe('AdvancedSessionSettings', () => {
 
     await waitFor(() =>
       expect((screen.getByTestId('context-budget-input') as HTMLInputElement).value).toBe('111'),
-    );
-    expect((screen.getByTestId('autocompact-threshold-input') as HTMLInputElement).value).toBe(
-      '0.75',
     );
     expect((screen.getByTestId('context-strategy-select') as HTMLSelectElement).value).toBe(
       'recent',

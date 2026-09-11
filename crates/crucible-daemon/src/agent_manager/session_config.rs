@@ -190,23 +190,7 @@ async fn persist_variables(
 /// or a settings-UI save reaches the next session without a restart.
 fn configured_start_values() -> crucible_lua::SessionStartValues {
     crucible_lua::SessionStartValues {
-        system_prompt: configured_system_prompt(),
+        system_prompt: super::configured::system_prompt(),
         ..Default::default()
     }
-}
-
-/// `chat.system_prompt` from the config store.
-///
-/// Falls back to the compiled-in constant, which is the same string the store
-/// carries on its `Default` layer. The fallback runs only before the store is
-/// seeded — a test that builds a VM directly, rather than booting a daemon.
-fn configured_system_prompt() -> Option<String> {
-    let configured = crucible_lua::get_app_config()
-        .as_ref()
-        .and_then(|config| crucible_core::config::leaf_at(config, "chat.system_prompt"))
-        .and_then(|leaf| leaf.as_str())
-        .map(str::to_string);
-    Some(configured.unwrap_or_else(|| {
-        crucible_core::config::components::chat::DEFAULT_SYSTEM_PROMPT.to_string()
-    }))
 }

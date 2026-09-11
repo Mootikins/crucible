@@ -143,18 +143,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set precognition: {}", e))?;
             }
-            SetRpcAction::SetPrecognitionResults(count) => {
-                client
-                    .session_set_precognition_results(&session_id, *count)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set precognition results: {}", e))?;
-            }
-            SetRpcAction::SetAutocompactThreshold(threshold) => {
-                client
-                    .session_set_autocompact_threshold(&session_id, *threshold)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set autocompact threshold: {}", e))?;
-            }
         }
         println!("Set {} on session {}", setting_str, session_id);
     }

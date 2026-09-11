@@ -469,44 +469,6 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::SetPrecognitionResults(count) => {
-                        tracing::info!(
-                            precognition_results = count,
-                            "Setting precognition_results"
-                        );
-                        match params.agent.set_precognition_results(*count).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    precognition_results = count,
-                                    "Precognition results count set successfully"
-                                );
-                                params.app.set_precognition_results(*count);
-                            }
-                            Err(e) => {
-                                tracing::warn!(precognition_results = count, error = %e, "Precognition results not supported by this agent");
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetAutocompactThreshold(threshold) => {
-                        tracing::info!(autocompact_threshold = ?threshold, "Setting autocompact_threshold");
-                        match params.agent.set_autocompact_threshold(*threshold).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    autocompact_threshold = ?threshold,
-                                    "Autocompact threshold set successfully"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(autocompact_threshold = ?threshold, error = %e, "set_autocompact_threshold failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set autocompact_threshold failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::CloseInteraction {
                         request_id,
                         response,

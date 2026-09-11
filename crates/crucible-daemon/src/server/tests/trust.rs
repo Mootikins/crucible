@@ -355,10 +355,8 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
     am.configure_agent(&session_id, agent)
@@ -445,10 +443,8 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
     };
     am.configure_agent(&session_id, agent)

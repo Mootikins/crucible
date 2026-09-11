@@ -173,10 +173,8 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Turn precognition (auto-RAG) on or off.
     SetPrecognition(bool),
     /// **Command** (TUI → daemon): Set precognition search results count.
-    SetPrecognitionResults(usize),
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
     /// `None` clears the override; `Some(0.0)` disables auto-compaction.
-    SetAutocompactThreshold(Option<f32>),
     /// **Event** (daemon → TUI): Latest prompt-cache hit rate from
     /// `message_complete`. `None` indicates "no cache data this turn".
     /// Drives the optional `cache_hit_rate` statusline component.
@@ -352,8 +350,6 @@ impl ChatAppMsg {
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
             | Self::SetPrecognition(_)
-            | Self::SetPrecognitionResults(_)
-            | Self::SetAutocompactThreshold(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
             Self::SubagentSpawned { .. }

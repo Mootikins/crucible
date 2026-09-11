@@ -135,14 +135,6 @@ session_config_setter!(
     optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true)
 );
 
-session_config_setter!(
-    handle_session_set_precognition_results,
-    req,
-    set_precognition_results,
-    "precognition_results",
-    optional_param!(req, "precognition_results", as_u64).unwrap_or(5) as usize
-);
-
 // timeout_secs can be null to clear the timeout, so we use optional.
 session_config_setter!(
     handle_session_set_context_budget,
@@ -152,14 +144,6 @@ session_config_setter!(
     optional_param!(req, "context_budget", as_u64).map(|v| v as usize)
 );
 
-session_config_setter!(
-    handle_session_set_autocompact_threshold,
-    req,
-    set_autocompact_threshold,
-    "autocompact_threshold",
-    optional_param!(req, "autocompact_threshold", as_f64).map(|v| v as f32)
-);
-
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
 session_config_getter!(
@@ -167,21 +151,11 @@ session_config_getter!(
     get_precognition,
     "precognition_enabled"
 );
-session_config_getter!(
-    handle_session_get_precognition_results,
-    get_precognition_results,
-    "precognition_results"
-);
 session_config_getter!(handle_session_get_mode, get_mode, "mode");
 session_config_getter!(
     handle_session_get_context_budget,
     get_context_budget,
     "context_budget"
-);
-session_config_getter!(
-    handle_session_get_autocompact_threshold,
-    get_autocompact_threshold,
-    "autocompact_threshold"
 );
 session_config_getter!(
     handle_session_get_context_strategy,

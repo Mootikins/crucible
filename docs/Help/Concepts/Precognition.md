@@ -57,11 +57,15 @@ Precognition is **on by default**. You can control it from within a chat session
 
 ### Number of Results
 
-Control how many notes get injected per message (1 to 20, default is 5):
+How many notes get injected per message is a config key, `chat.precognition_results`
+(default 5). It is one value per install rather than per session:
+
+```lua
+cru.config.set { chat = { precognition_results = 3 } }
+```
 
 ```
-:set precognition.results=3    # inject up to 3 notes
-:set precognition.results=10   # inject up to 10 notes
+:set chat.precognition_results=10
 ```
 
 More results means more context for the agent, but also uses more of the context window. Start with the default and adjust based on how your conversations feel.
@@ -72,7 +76,7 @@ More results means more context for the agent, but also uses more of the context
 :settings
 ```
 
-This shows all current values, including `precognition` and `precognition.results`.
+This shows all current values, including `precognition`. The result count is a config key — `:config` shows it with the rest of `chat`.
 
 ### Customizing with Lua
 
@@ -153,7 +157,7 @@ They work well together. Let Precognition handle the background context while yo
 - Verify an embedding provider is configured
 
 **Too much irrelevant context**
-- Lower the result count: `:set precognition.results=2`
+- Lower the result count: `:set chat.precognition_results=2`
 - Your notes might need clearer, more focused content
 
 **Responses are slow**

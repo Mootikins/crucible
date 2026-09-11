@@ -112,9 +112,6 @@ impl AgentHandle for DaemonAgentHandle {
             if let Some(model) = &self.cached_model {
                 config.model = model.clone();
             }
-            if let Some(count) = self.cached_precognition_results {
-                config.precognition_results = count;
-            }
             if let Some(enabled) = self.cached_precognition {
                 config.precognition_enabled = enabled;
             }
@@ -246,24 +243,6 @@ impl SessionKnobs for DaemonAgentHandle {
             .unwrap_or_default()
     }
 
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
-        tracing::info!(
-            session_id = %self.session_id,
-            autocompact_threshold = ?threshold,
-            "Setting autocompact_threshold via daemon"
-        );
-        self.client
-            .session_set_autocompact_threshold(&self.session_id, threshold)
-            .await
-            .chat_comm()?;
-        self.cached_autocompact_threshold = threshold;
-        Ok(())
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        self.cached_autocompact_threshold
-    }
-
     async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, precognition = enabled, "Setting precognition via daemon");
         self.client
@@ -276,19 +255,5 @@ impl SessionKnobs for DaemonAgentHandle {
 
     fn get_precognition(&self) -> bool {
         self.cached_precognition.unwrap_or(true)
-    }
-
-    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, precognition_results = count, "Setting precognition_results via daemon");
-        self.client
-            .session_set_precognition_results(&self.session_id, count)
-            .await
-            .chat_comm()?;
-        self.cached_precognition_results = Some(count);
-        Ok(())
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        self.cached_precognition_results.unwrap_or(5)
     }
 }

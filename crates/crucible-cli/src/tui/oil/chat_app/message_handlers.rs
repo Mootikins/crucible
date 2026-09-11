@@ -205,9 +205,7 @@ impl OilChatApp {
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::SetContextBudget(_)
             | ChatAppMsg::SetContextStrategy(_)
-            | ChatAppMsg::SetPrecognition(_)
-            | ChatAppMsg::SetPrecognitionResults(_)
-            | ChatAppMsg::SetAutocompactThreshold(_) => {}
+            | ChatAppMsg::SetPrecognition(_) => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
             }

@@ -624,10 +624,6 @@ impl OilChatApp {
         self.precognition.precognition = val;
     }
 
-    pub(crate) fn set_precognition_results(&mut self, count: usize) {
-        self.precognition.precognition_results = count;
-    }
-
     #[cfg(test)]
     pub(crate) fn container_list(&self) -> &crate::tui::oil::containers::ContainerList {
         &self.container_list

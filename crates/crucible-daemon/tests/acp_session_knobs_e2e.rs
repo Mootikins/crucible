@@ -91,10 +91,8 @@ fn acp_agent() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
         context_budget: None,
         context_strategy: Default::default(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }
@@ -206,10 +204,6 @@ async fn no_knob_restarts_the_agent_process() {
         .set_precognition(id, true, None)
         .await
         .expect("precognition");
-    h.agent_manager
-        .set_precognition_results(id, 3, None)
-        .await
-        .expect("precognition results");
 
     run_a_turn(&h).await;
 
@@ -247,9 +241,9 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
 
     let attempts = [
         (
-            "autocompact_threshold",
+            "context_strategy",
             h.agent_manager
-                .set_autocompact_threshold(id, Some(0.8), None)
+                .set_context_strategy(id, crucible_core::session::ContextStrategy::Truncate, None)
                 .await,
         ),
         (
@@ -283,10 +277,6 @@ async fn a_setting_the_daemon_implements_is_still_accepted() {
         .set_precognition(id, true, None)
         .await
         .expect("precognition is the daemon's own work");
-    h.agent_manager
-        .set_precognition_results(id, 7, None)
-        .await
-        .expect("and so is how many notes it injects");
 }
 
 /// A client asks the session which settings it has, and gets an answer that
