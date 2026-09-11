@@ -335,10 +335,17 @@ impl SurfaceRegistry {
     /// Drop one surface.
     pub fn remove(&self, plugin: &str, name: &str) {
         let key = (plugin.to_string(), name.to_string());
-        self.entries
+        // Announce AFTER the lock is released, and only for a surface that was
+        // really there. A client learns of a surface through the emitter and
+        // nowhere else, so a silent removal leaves the panel painted.
+        let withdrawn = self
+            .entries
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&key);
+        if let Some(surface) = withdrawn {
+            self.announce(&surface);
+        }
     }
 
     /// Drop every surface a plugin declared.
@@ -346,10 +353,21 @@ impl SurfaceRegistry {
     /// For an uninstall, **not** for a reload. A reload that called this would
     /// orphan every window pointing at the surfaces it is about to re-declare.
     pub fn release_plugin(&self, plugin: &str) {
-        self.entries
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .retain(|(p, _), _| p != plugin);
+        // Collected under the lock, announced after it. Every dropped surface
+        // has a client drawing it, and each one needs telling.
+        let withdrawn: Vec<Surface> = {
+            let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+            let dropped: Vec<Surface> = entries
+                .iter()
+                .filter(|((p, _), _)| p == plugin)
+                .map(|(_, surface)| surface.clone())
+                .collect();
+            entries.retain(|(p, _), _| p != plugin);
+            dropped
+        };
+        for surface in &withdrawn {
+            self.announce(surface);
+        }
     }
 }
 
@@ -693,6 +711,80 @@ mod tests {
             .expect_err("a row with no id is refused");
         assert!(err.to_string().contains("id"), "{err}");
         assert!(reg.get("p", "s").unwrap().rows.is_empty());
+    }
+
+    /// A withdrawn surface must announce too, or every client keeps drawing a
+    /// panel whose plugin is gone.
+    ///
+    /// `remove` and `release_plugin` dropped their entries and returned. The
+    /// client learns of a surface only through the emitter, so nothing told it
+    /// to stop: an uninstalled plugin left its panel painted until something
+    /// else happened to wake the client.
+    #[test]
+    fn withdrawing_a_surface_announces_it() {
+        let seen: Arc<Mutex<Vec<SurfaceChange>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let reg = SurfaceRegistry::new();
+        assert!(reg.set_emitter(Arc::new(move |change| {
+            sink.lock().unwrap().push(change);
+        })));
+
+        reg.declare("p", "sessions", "Sessions", Shape::List, Some("s1".into()));
+        reg.remove("p", "sessions");
+
+        let changes = seen.lock().unwrap();
+        assert_eq!(changes.len(), 1, "a removal is a change a client must see");
+        assert_eq!(changes[0].plugin, "p");
+        assert_eq!(changes[0].name, "sessions");
+        assert_eq!(
+            changes[0].session.as_deref(),
+            Some("s1"),
+            "the announcement names the session whose panel must go"
+        );
+    }
+
+    /// Removing what is not there announces nothing. A client redraw costs a
+    /// round trip, so a no-op must stay silent.
+    #[test]
+    fn removing_an_absent_surface_announces_nothing() {
+        let seen: Arc<Mutex<Vec<SurfaceChange>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let reg = SurfaceRegistry::new();
+        assert!(reg.set_emitter(Arc::new(move |change| {
+            sink.lock().unwrap().push(change);
+        })));
+
+        reg.remove("p", "never-declared");
+        reg.release_plugin("no-such-plugin");
+
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    /// An uninstall drops every surface a plugin declared, so every one of
+    /// them has a client to tell.
+    #[test]
+    fn releasing_a_plugin_announces_each_surface_it_drops() {
+        let seen: Arc<Mutex<Vec<SurfaceChange>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let reg = SurfaceRegistry::new();
+        assert!(reg.set_emitter(Arc::new(move |change| {
+            sink.lock().unwrap().push(change);
+        })));
+
+        reg.declare("p", "one", "One", Shape::List, None);
+        reg.declare("p", "two", "Two", Shape::List, None);
+        reg.declare("other", "keep", "Keep", Shape::List, None);
+        reg.release_plugin("p");
+
+        let changes = seen.lock().unwrap();
+        assert_eq!(changes.len(), 2, "one announcement per dropped surface");
+        let mut names: Vec<&str> = changes.iter().map(|c| c.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["one", "two"]);
+        assert!(
+            reg.get("other", "keep").is_some(),
+            "and the other plugin's surface stays"
+        );
     }
 
     /// The emitter is what makes a client redraw. A `set_rows` that did not
