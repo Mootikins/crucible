@@ -206,6 +206,14 @@ mobile work:
   closes it.
 - A velocity above 0.5 px/ms wins over the position test.
 
+**Android's gesture navigation claims the same edges.** On a phone set to gesture
+navigation, a swipe in from either edge is the system's Back, and a web page
+cannot exclude a region the way a native app can. There the edge swipe fires
+`popstate`, and the back stack treats it as Back: it closes an open drawer or
+does nothing harmful. The swipe still works on iOS, on Android with button
+navigation, and inside an open drawer. This is why the button, below, is the
+guaranteed input and the swipe is only the preferred one.
+
 ### The button
 
 The gesture is the preferred input. The button is the guaranteed input.
