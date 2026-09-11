@@ -464,6 +464,19 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
         },
     )?;
 
+    // The stub carries the declaration the Luau checker reads, so a function
+    // registered only on the store-backed path is a type error in every
+    // plugin that calls it. `every_shipped_plugin_typechecks` caught exactly
+    // that when `neighbors_with_hops` landed here late.
+    kiln.async_func(
+        "neighbors_with_hops",
+        decl::NEIGHBORS_WITH_HOPS,
+        |lua, (_path, _depth): (String, Option<usize>)| async move {
+            let table = lua.create_table()?;
+            Ok(Value::Table(table))
+        },
+    )?;
+
     // Async like its resolver-backed replacement, for the same reason as the
     // graph stubs above.
     kiln.async_func(
