@@ -13,6 +13,7 @@ pub(crate) mod status_bar;
 pub(crate) mod status_component;
 pub(crate) mod status_items;
 mod subagent_render;
+mod surface_modal;
 pub(crate) mod thinking_component;
 pub(crate) mod tool_render;
 mod turn_indicator;
@@ -38,6 +39,7 @@ pub use shell_render::render_shell_execution;
 pub use status_bar::{NotificationToastKind, StatusBar};
 pub use status_component::StatusComponent;
 pub use subagent_render::render_subagent;
+pub use surface_modal::{SurfaceModal, SurfaceModalOutcome, SurfaceModalRow};
 pub use thinking_component::ThinkingComponent;
 pub use tool_render::{
     format_streaming_output, format_tool_args, format_tool_result, summarize_tool_result,

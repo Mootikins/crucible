@@ -629,6 +629,57 @@ impl OilChatRunner {
                             let _ = tx.send(msg);
                         }));
                     }
+                    // Same replay gate as the reload below: this opens its own
+                    // `DaemonClient::connect()`, and a replay must reach no daemon.
+                    ChatAppMsg::OpenSurface(ref name) if !self.is_replay => {
+                        let name = name.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            match crucible_daemon::DaemonClient::connect().await {
+                                Ok(client) => {
+                                    match fetch_surface(&client, name.as_deref(), true).await {
+                                        Ok(Some(msg)) => {
+                                            let _ = tx.send(msg);
+                                        }
+                                        Ok(None) => {
+                                            let _ = tx.send(ChatAppMsg::Status(
+                                                "No plugin surfaces declared".to_string(),
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(ChatAppMsg::Error(format!(
+                                                "Surface fetch failed: {e}"
+                                            )));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(ChatAppMsg::Error(format!(
+                                        "Daemon unreachable: {e}"
+                                    )));
+                                }
+                            }
+                        }));
+                    }
+                    // A `surface_changed` refetch. Same replay gate, and
+                    // `open_if_closed = false`: this must refresh what is open and
+                    // never open anything.
+                    ChatAppMsg::RefreshSurface(ref name) if !self.is_replay => {
+                        let name = name.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            if let Ok(client) = crucible_daemon::DaemonClient::connect().await {
+                                if let Ok(Some(msg)) =
+                                    fetch_surface(&client, Some(&name), false).await
+                                {
+                                    let _ = tx.send(msg);
+                                }
+                            }
+                            // Deliberately silent on failure: this is a background
+                            // refresh nobody asked for, so a warning about it would
+                            // be noise the user cannot act on.
+                        }));
+                    }
                     // Gated on `!self.is_replay`: plugin reload opens a fresh
                     // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
@@ -814,6 +865,8 @@ impl OilChatRunner {
                     // side-effect for these variants must stay behind that
                     // guard so the TUI-only guarantee holds.
                     ChatAppMsg::ReloadPlugin(_)
+                    | ChatAppMsg::OpenSurface(_)
+                    | ChatAppMsg::RefreshSurface(_)
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ConfigQuery { .. }
@@ -858,4 +911,73 @@ impl OilChatRunner {
             }
         }
     }
+}
+
+/// Fetch one surface for the modal, or the first declared when none is named.
+///
+/// Returns `Ok(None)` when no surface exists at all, which is a fact to report
+/// rather than an error: a user asking to see surfaces before any plugin
+/// declares one has done nothing wrong.
+async fn fetch_surface(
+    client: &crucible_daemon::DaemonClient,
+    name: Option<&str>,
+    open_if_closed: bool,
+) -> anyhow::Result<Option<ChatAppMsg>> {
+    let value = match name {
+        Some(name) => client
+            .call("surface.get", serde_json::json!({ "name": name }))
+            .await?["surface"]
+            .clone(),
+        // No name: take the first of the list, so `:surfaces` shows something
+        // instead of asking the user to know a name they have not been told.
+        None => client
+            .call("surface.list", serde_json::json!({}))
+            .await?
+            .get("surfaces")
+            .and_then(|s| s.as_array())
+            .and_then(|a| a.first())
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    };
+
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    let rows = value
+        .get("rows")
+        .and_then(|r| r.as_array())
+        .map(|rows| {
+            rows.iter()
+                .map(|row| crate::tui::oil::components::SurfaceModalRow {
+                    id: row
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    text: row
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    detail: row
+                        .get("detail")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    mark: row.get("mark").and_then(|v| v.as_str()).map(str::to_string),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(Some(ChatAppMsg::SurfaceLoaded {
+        title: value
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Surface")
+            .to_string(),
+        rows,
+        version: value.get("version").and_then(|v| v.as_u64()).unwrap_or(0),
+        open_if_closed,
+    }))
 }

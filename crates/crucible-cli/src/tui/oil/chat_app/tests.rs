@@ -567,3 +567,155 @@ fn the_wall_clock_alone_never_splits_a_tool() {
     );
     assert_eq!(app.container_list().background_task_count(), 0);
 }
+
+// ── Plugin surfaces ─────────────────────────────────────────────────────────
+
+fn surface_rows(ids: &[&str]) -> Vec<crate::tui::oil::components::SurfaceModalRow> {
+    ids.iter()
+        .map(|id| crate::tui::oil::components::SurfaceModalRow {
+            id: (*id).to_string(),
+            text: format!("session {id}"),
+            detail: None,
+            mark: Some("busy".to_string()),
+        })
+        .collect()
+}
+
+fn surface_loaded(ids: &[&str], version: u64) -> ChatAppMsg {
+    ChatAppMsg::SurfaceLoaded {
+        title: "Sessions".to_string(),
+        rows: surface_rows(ids),
+        version,
+        open_if_closed: true,
+    }
+}
+
+/// What a background `surface_changed` refetch produces: rows, no permission to
+/// take the screen.
+fn surface_refreshed(ids: &[&str], version: u64) -> ChatAppMsg {
+    ChatAppMsg::SurfaceLoaded {
+        title: "Sessions".to_string(),
+        rows: surface_rows(ids),
+        version,
+        open_if_closed: false,
+    }
+}
+
+/// A surface arriving opens it, and the runner must switch to the fullscreen
+/// path — otherwise the modal draws inline with the transcript behind it.
+#[test]
+fn a_loaded_surface_opens_full_screen() {
+    let mut app = OilChatApp::default();
+    assert!(!app.has_fullscreen_modal());
+
+    app.on_message(surface_loaded(&["a", "b"], 1));
+
+    assert!(app.has_fullscreen_modal(), "the runner must go fullscreen");
+    let modal = app.surface_modal().expect("the surface is open");
+    assert_eq!(modal.row_count(), 2);
+    assert_eq!(modal.selected_id(), Some("a"));
+}
+
+/// A second load refreshes in place rather than stacking a new modal, and keeps
+/// the reader's place.
+#[test]
+fn a_second_load_refreshes_the_open_surface() {
+    let mut app = OilChatApp::default();
+    app.on_message(surface_loaded(&["a", "b"], 1));
+    app.handle_surface_modal_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('j'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert_eq!(app.surface_modal().unwrap().selected_id(), Some("b"));
+
+    app.on_message(surface_loaded(&["new", "a", "b"], 2));
+
+    let modal = app.surface_modal().expect("still one surface");
+    assert_eq!(modal.row_count(), 3);
+    assert_eq!(modal.version(), 2);
+    assert_eq!(
+        modal.selected_id(),
+        Some("b"),
+        "a refresh kept the reader's row"
+    );
+}
+
+/// Escape closes it and hands the screen back to the transcript.
+#[test]
+fn escape_closes_the_surface_and_returns_to_the_transcript() {
+    let mut app = OilChatApp::default();
+    app.on_message(surface_loaded(&["a"], 1));
+    assert!(app.has_fullscreen_modal());
+
+    let consumed = app.handle_surface_modal_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+
+    assert!(consumed, "the modal consumed the key");
+    assert!(!app.has_fullscreen_modal(), "the screen went back");
+    assert!(app.surface_modal().is_none());
+}
+
+/// With no surface open the modal must not eat keys, or the prompt stops
+/// accepting input the moment a surface has ever been opened and closed.
+#[test]
+fn a_closed_surface_consumes_no_keys() {
+    let mut app = OilChatApp::default();
+    assert!(
+        !app.handle_surface_modal_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('j'),
+            crossterm::event::KeyModifiers::NONE,
+        ))
+    );
+}
+
+/// `:surfaces` asks the runner to fetch, and `:surfaces sessions` names one.
+/// The reducer itself must not try to reach the daemon.
+#[test]
+fn the_surfaces_command_asks_the_runner_to_fetch() {
+    let mut app = OilChatApp::default();
+    match app.handle_repl_command(":surfaces") {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::OpenSurface(name)) => {
+            assert_eq!(name, None, "no argument means the first surface");
+        }
+        other => panic!("expected a fetch, got {other:?}"),
+    }
+    match app.handle_repl_command(":surfaces sessions") {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::OpenSurface(name)) => {
+            assert_eq!(name.as_deref(), Some("sessions"));
+        }
+        other => panic!("expected a named fetch, got {other:?}"),
+    }
+}
+
+/// **A plugin must never take the screen.** A `surface_changed` arrives whenever
+/// a plugin pushes rows, which can be at any moment; if that opened the modal,
+/// a background plugin would drop a full-screen panel over whatever the user was
+/// reading or typing.
+#[test]
+fn a_background_refresh_does_not_open_a_closed_surface() {
+    let mut app = OilChatApp::default();
+
+    app.on_message(surface_refreshed(&["a", "b"], 7));
+
+    assert!(
+        !app.has_fullscreen_modal(),
+        "a plugin pushing rows must not seize the screen"
+    );
+    assert!(app.surface_modal().is_none());
+}
+
+/// The same refresh *does* update a surface the user already has open — that is
+/// the whole point of the event.
+#[test]
+fn a_background_refresh_updates_an_open_surface() {
+    let mut app = OilChatApp::default();
+    app.on_message(surface_loaded(&["a"], 1));
+
+    app.on_message(surface_refreshed(&["a", "b"], 2));
+
+    let modal = app.surface_modal().expect("still open");
+    assert_eq!(modal.row_count(), 2, "the open surface refreshed");
+    assert_eq!(modal.version(), 2);
+}

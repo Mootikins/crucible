@@ -397,6 +397,16 @@ fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
             crate::tui::oil::theme::apply_ui_config(&config);
             vec![ChatAppMsg::StyleChanged]
         }
+        // A surface moved. Re-request it rather than carrying rows on the event:
+        // the event says *what* changed, and the fetch answers with the content,
+        // which is why `SurfaceChanged` has a version and no rows.
+        //
+        // A refresh, never an open: a plugin that pushes rows must not put a
+        // full-screen modal over whatever the user is doing. The reducer drops
+        // the result when nothing is open.
+        SystemPayload::SurfaceChanged { name, .. } => {
+            vec![ChatAppMsg::RefreshSurface(name)]
+        }
         // `replay_complete` is consumed by the stateful wrapper, not here.
         _ => vec![],
     }

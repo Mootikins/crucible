@@ -235,6 +235,10 @@ impl OilChatApp {
                 Action::Continue
             }
             ReplCommand::Pick => self.open_picker(arg),
+            // The fetch is the runner's, because a surface lives in the daemon.
+            // `arg` is already `None` for a bare `:surfaces` — the split above
+            // filters an empty remainder — so no name means "the first one".
+            ReplCommand::Surfaces => Action::Send(ChatAppMsg::OpenSurface(arg.map(str::to_string))),
             ReplCommand::Plugins => {
                 self.handle_plugins_command();
                 Action::Continue

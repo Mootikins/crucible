@@ -2,6 +2,7 @@ use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     CommandPanel, InputComponent, InteractionModal, NotificationArea, ShellModal, StatusComponent,
+    SurfaceModal, SurfaceModalOutcome,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
@@ -90,6 +91,11 @@ pub struct OilChatApp {
     interaction_modal: Option<InteractionModal>,
     /// Shell command modal overlay
     shell_modal: Option<ShellModal>,
+    /// A plugin's surface, open full-screen.
+    ///
+    /// A modal rather than a pane: a pane needs the window layer, and nothing
+    /// owns a transcript scroll offset yet. See `components/surface_modal.rs`.
+    surface_modal: Option<SurfaceModal>,
     /// Spinner animation start time (frame derived from elapsed time, not ticks)
     spinner_epoch: std::time::Instant,
     /// The frame clock. See [`OilChatApp::set_frame_time`].
@@ -150,6 +156,11 @@ impl OilChatApp {
         self.terminal_size.set(ctx.terminal_size);
 
         if let Some(ref modal) = self.shell_modal {
+            let (w, h) = ctx.terminal_size;
+            return modal.view(w as usize, h as usize);
+        }
+
+        if let Some(ref modal) = self.surface_modal {
             let (w, h) = ctx.terminal_size;
             return modal.view(w as usize, h as usize);
         }
@@ -699,6 +710,51 @@ impl OilChatApp {
         self.interaction_modal.is_some()
     }
 
+    /// Whether anything is drawn full-screen, so the runner picks
+    /// `render_fullscreen` over the inline path.
+    ///
+    /// Every full-screen surface must be named here. A modal the runner does not
+    /// know about is drawn inline, which leaves the transcript behind it and the
+    /// prompt on top of it.
+    pub(crate) fn has_fullscreen_modal(&self) -> bool {
+        self.shell_modal.is_some() || self.surface_modal.is_some()
+    }
+
+    /// The open surface. Test-only: production reads it through the view and
+    /// the key router, never by asking for it.
+    #[cfg(test)]
+    pub(crate) fn surface_modal(&self) -> Option<&SurfaceModal> {
+        self.surface_modal.as_ref()
+    }
+
+    pub(crate) fn open_surface_modal(&mut self, modal: SurfaceModal) {
+        self.surface_modal = Some(modal);
+        self.needs_full_redraw = true;
+    }
+
+    pub(crate) fn close_surface_modal(&mut self) {
+        self.surface_modal = None;
+        self.needs_full_redraw = true;
+    }
+
+    /// Route a key to the open surface, reporting whether it consumed it.
+    pub(crate) fn handle_surface_modal_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        let Some(modal) = self.surface_modal.as_mut() else {
+            return false;
+        };
+        match modal.handle_key(key) {
+            SurfaceModalOutcome::Close => {
+                self.close_surface_modal();
+                true
+            }
+            SurfaceModalOutcome::Handled => true,
+        }
+    }
+
+    /// Test-only since the runner asks [`Self::has_fullscreen_modal`] instead.
+    /// Kept because a test asserting "the *shell* modal is open" should not have
+    /// to settle for "something is".
+    #[cfg(test)]
     pub(crate) fn has_shell_modal(&self) -> bool {
         self.shell_modal.is_some()
     }

@@ -268,6 +268,24 @@ impl OilChatApp {
             ChatAppMsg::Status(status) => {
                 self.status = status;
             }
+            // Opens the modal, or refreshes the one already open. Refresh keeps
+            // the cursor on the same row id — see `SurfaceModal::update`.
+            ChatAppMsg::SurfaceLoaded {
+                title,
+                rows,
+                version,
+                open_if_closed,
+            } => match self.surface_modal.as_mut() {
+                Some(open) => open.update(rows, version),
+                // Nothing open and nobody asked: a plugin pushing rows must not
+                // take the screen from whatever the user is doing.
+                None if !open_if_closed => {}
+                None => self.open_surface_modal(crate::tui::oil::components::SurfaceModal::new(
+                    title, rows, version,
+                )),
+            },
+            // Both fetches are the runner's work; nothing for the reducer to do.
+            ChatAppMsg::OpenSurface(_) | ChatAppMsg::RefreshSurface(_) => {}
             ChatAppMsg::LuaEvaled { output, is_error } => {
                 if is_error {
                     self.add_notification(crucible_core::types::Notification::warning(format!(

@@ -33,6 +33,8 @@ pub(super) enum ReplCommand {
     Reload,
     Config,
     Lua,
+    /// Open a plugin's surface full-screen.
+    Surfaces,
 }
 
 impl ReplCommand {
@@ -53,6 +55,7 @@ impl ReplCommand {
         Self::Reload,
         Self::Config,
         Self::Lua,
+        Self::Surfaces,
     ];
 
     /// The word after `:` that runs this command.
@@ -73,6 +76,7 @@ impl ReplCommand {
             Self::Reload => "reload",
             Self::Config => "config",
             Self::Lua => "lua",
+            Self::Surfaces => "surfaces",
         }
     }
 
@@ -93,7 +97,8 @@ impl ReplCommand {
             | Self::Plugins
             | Self::Reload
             | Self::Config
-            | Self::Lua => &[],
+            | Self::Lua
+            | Self::Surfaces => &[],
         }
     }
 
@@ -115,6 +120,7 @@ impl ReplCommand {
             Self::Reload => ":reload <name>",
             Self::Config => ":config",
             Self::Lua => ":lua <expr>",
+            Self::Surfaces => ":surfaces [name]",
         }
     }
 
@@ -136,6 +142,7 @@ impl ReplCommand {
             Self::Reload => "Reload plugin(s)",
             Self::Config => "Show current configuration",
             Self::Lua => "Evaluate Lua (daemon-side; := shorthand)",
+            Self::Surfaces => "Open a plugin surface (lists them with no name)",
         }
     }
 
@@ -156,7 +163,8 @@ impl ReplCommand {
             | Self::Plugins
             | Self::Reload
             | Self::Config
-            | Self::Lua => "core",
+            | Self::Lua
+            | Self::Surfaces => "core",
         }
     }
 
@@ -183,6 +191,7 @@ impl ReplCommand {
             Self::Reload => ":reload",
             Self::Config => ":config",
             Self::Lua => ":lua",
+            Self::Surfaces => ":surfaces",
         }
     }
 

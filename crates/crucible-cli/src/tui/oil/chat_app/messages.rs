@@ -209,6 +209,28 @@ pub enum ChatAppMsg {
     },
     /// **Command** (TUI → daemon): Reload a Lua/Fennel plugin.
     ReloadPlugin(String),
+    /// **Command** (TUI → daemon): Fetch a plugin surface and open it.
+    ///
+    /// `None` opens the first surface declared, which is what `:surfaces` with no
+    /// argument means.
+    OpenSurface(Option<String>),
+    /// **Command** (TUI → daemon): a surface changed, so refetch it — but only
+    /// refresh what is already open.
+    ///
+    /// Separate from [`Self::OpenSurface`] because a plugin pushing rows must
+    /// never take the screen. A `surface_changed` for a surface nobody is looking
+    /// at has to stay invisible.
+    RefreshSurface(String),
+    /// **Event** (daemon → TUI): a surface arrived.
+    ///
+    /// `open_if_closed` carries the user's intent from the request that caused
+    /// this. `:surfaces` sets it; a `surface_changed` refetch does not.
+    SurfaceLoaded {
+        title: String,
+        rows: Vec<crate::tui::oil::components::SurfaceModalRow>,
+        version: u64,
+        open_if_closed: bool,
+    },
     /// **Command** (TUI → daemon): Evaluate a Lua expression via `lua.eval`
     /// (the `:lua` / `:=` escape hatch).
     EvalLua(String),
@@ -373,6 +395,9 @@ impl ChatAppMsg {
             | Self::RunPluginCommand { .. }
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)
+            | Self::OpenSurface(_)
+            | Self::RefreshSurface(_)
+            | Self::SurfaceLoaded { .. }
             | Self::EvalLua(_)
             | Self::LuaEvaled { .. }
             | Self::ConfigSet { .. }

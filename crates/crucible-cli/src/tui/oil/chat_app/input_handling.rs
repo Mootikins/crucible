@@ -22,6 +22,12 @@ impl OilChatApp {
         if self.shell_modal.is_some() {
             return self.handle_shell_modal_key(key);
         }
+        // A surface owns the screen while it is open, so it takes the key before
+        // the prompt does. Routed here rather than in the runner because the
+        // prompt is the thing it has to win against.
+        if self.surface_modal.is_some() && self.handle_surface_modal_key(key) {
+            return Action::Continue;
+        }
         if self.interaction_modal.is_some() {
             return self.handle_interaction_key(key);
         }
