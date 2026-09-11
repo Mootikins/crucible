@@ -639,10 +639,16 @@ pub fn register_vault_module_with_store_scoped(
                 let reached = scoped_neighbors(s.as_ref(), &auth, &path, depth.unwrap_or(1))
                     .await
                     .map_err(kiln_error)?;
-                // Paths only. This signature is what plugins already call, so
-                // the hop counts go through `neighbors_with_hops` beside it
-                // rather than changing this return shape.
-                let paths: Vec<String> = reached.into_iter().map(|(p, _)| p).collect();
+                // Paths only, SORTED BY PATH. This signature is what plugins
+                // already call, so the hop counts go through
+                // `neighbors_with_hops` beside it rather than changing this
+                // return shape — and the order is part of that shape.
+                //
+                // `scoped_neighbors` sorts hop-major now, for the rings its
+                // other caller draws. Re-sorting here is what keeps this
+                // answer byte-identical to the one it gave before.
+                let mut paths: Vec<String> = reached.into_iter().map(|(p, _)| p).collect();
+                paths.sort();
                 string_vec_to_lua_table(&lua, &paths)
             }
         },

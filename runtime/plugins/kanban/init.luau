@@ -162,22 +162,30 @@ local function move(folder: string?, kiln: string?, file: string, to: string): b
     -- document rewrote the first `status:` ANYWHERE, which for such a ticket
     -- is a line in prose or inside a fenced code block that a human wrote.
     local replaced
-    local head_end = content:sub(1, 4) == "---\n" and content:find("\n---", 4, true) or nil
-    if head_end then
-        local block = content:sub(5, head_end)
-        local rewritten, count = block:gsub("(\nstatus:%s*)[%w_-]+", "%1" .. to, 1)
+    -- The opening fence is `---` then a line ending. A CRLF file spells that
+    -- `---\r\n`, and a test for `---\n` alone gave such a ticket a whole
+    -- SECOND frontmatter block in front of the one it already had.
+    local fence = content:match("^%-%-%-\r?\n")
+    local head_end = fence and content:find("\n%-%-%-")
+    if fence and head_end then
+        local block = content:sub(#fence + 1, head_end)
+        -- The value runs to the end of the line. A narrower class — `[%w_-]+`
+        -- was here — matches neither `"todo"` nor `to do`, so a value a human
+        -- typed and the reader cannot parse took the insert path below and
+        -- produced a second `status:` key in one block.
+        local rewritten, count = block:gsub("(\nstatus:%s*)[^\r\n]*", "%1" .. to, 1)
         if count == 0 then
             -- `parse` also accepts `^status:`, where the pattern above finds
             -- no leading newline. `block` starts after the opening fence, so
             -- the two readers agree only when this case is handled too.
-            rewritten, count = block:gsub("^(status:%s*)[%w_-]+", "%1" .. to, 1)
+            rewritten, count = block:gsub("^(status:%s*)[^\r\n]*", "%1" .. to, 1)
         end
         if count == 0 then
             -- No status key yet: add one inside the existing block rather
             -- than creating a second block.
             rewritten = "status: " .. to .. "\n" .. block
         end
-        replaced = content:sub(1, 4) .. rewritten .. content:sub(head_end + 1)
+        replaced = fence .. rewritten .. content:sub(head_end + 1)
     else
         replaced = "---\nstatus: " .. to .. "\n---\n" .. content
     end

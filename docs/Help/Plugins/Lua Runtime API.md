@@ -981,7 +981,6 @@ Services are declared in the plugin's spec table (returned from `init.lua`):
 return {
     name = "my-plugin",
     version = "1.0.0",
-    capabilities = { "network", "agent" },
 
     services = {
         my_service = {

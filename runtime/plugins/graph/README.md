@@ -32,8 +32,9 @@ It is the smallest honest test of one question: **does a parameterised read
 belong behind a plugin command?**
 
 `GET /api/kiln/graph` hands the browser the whole edge list of a kiln, and the
-web traverses it there. No route serves a neighbourhood. `cru.kiln.neighbors`
-does — scope-filtered per hop and cycle-safe — and Lua is its only caller. So
+web traverses it there. No route serves a neighbourhood.
+`cru.kiln.neighbors_with_hops` does — scope-filtered, cycle-safe — and Lua is
+its only caller. So
 this plugin sends the small answer instead of the large input, which is the
 placement rule in `docs/Meta/Analysis/The Plugin Contract.md`: *reduce where
 the data is*.
@@ -44,14 +45,19 @@ on every move of the depth control. That is the latency question
 
 ## Rings, not edges
 
-`cru.kiln.neighbors(path, depth)` is cumulative and attaches no distance, so
-one call cannot say how far away each note is. This walks one call per hop and
-differences each ring against the nearer ones.
+`cru.kiln.neighbors_with_hops(path, depth)` answers every neighbour within
+`depth` with the hop count the walk reached it at, sorted hop-major. A ring is
+therefore a run of rows, and this groups one answer.
+
+It used to call `cru.kiln.neighbors(path, hop)` once per depth and difference
+each ring against the nearer ones, because that read is cumulative and
+attaches no distance. Each call re-read the whole note list and the whole link
+table. The walk always knew the hop count and threw it away.
 
 A ring carries paths, not `{source, target}` pairs, because the Lua surface has
 no bulk edge read. `cru.kiln.outlinks(path)` answers for one note and each call
 re-reads the whole scoped note list plus the whole link table, so edges among N
-returned notes would cost N full graph scans against this walk's `depth` scans.
+returned notes would cost N full graph scans against this walk's one.
 An edge view wants a bulk primitive first.
 
 ## What it cost

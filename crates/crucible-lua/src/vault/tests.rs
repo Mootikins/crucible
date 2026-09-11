@@ -682,7 +682,7 @@ mod graph_tests {
         let flat = eval_paths(&lua, r#"return cru.kiln.neighbors("a.md", 2)"#).await;
 
         let lua = TestLuaBuilder::new().with_vault_store(store(notes)).build();
-        let mut paired = lua
+        let paired = lua
             .load(
                 r#"
                 local out = {}
@@ -695,9 +695,37 @@ mod graph_tests {
             .eval_async::<Vec<String>>()
             .await
             .expect("neighbors_with_hops evaluates");
-        paired.sort();
 
-        assert_eq!(flat, paired);
+        // Same notes, and the two orders differ on purpose: `neighbors` sorts
+        // by path, `neighbors_with_hops` sorts hop-major for the rings its
+        // caller draws. Sorting `paired` here would hide a change to either.
+        let mut paired_sorted = paired.clone();
+        paired_sorted.sort();
+        assert_eq!(flat, paired_sorted);
+    }
+
+    /// `cru.kiln.neighbors` answers sorted BY PATH, and a plugin outside this
+    /// tree may rely on it.
+    ///
+    /// The hop count landed by making `scoped_neighbors` sort hop-major, which
+    /// silently reordered this answer. No test caught it: the fixtures that
+    /// existed were chains, where path order and hop order agree. This one
+    /// puts a late-alphabet note one hop out and an early-alphabet note two
+    /// hops out, so the two orders disagree.
+    #[tokio::test]
+    async fn neighbors_answers_in_path_order_not_hop_order() {
+        let lua = TestLuaBuilder::new()
+            .with_vault_store(store(vec![
+                note("a.md", &["z.md"]),
+                note("z.md", &["b.md"]),
+                note("b.md", &[]),
+            ]))
+            .build();
+
+        let paths = eval_paths(&lua, r#"return cru.kiln.neighbors("a.md", 2)"#).await;
+
+        // Hop order would be z.md then b.md.
+        assert_eq!(paths, ["b.md", "z.md"]);
     }
 
     #[tokio::test]

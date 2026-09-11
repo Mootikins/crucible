@@ -135,7 +135,7 @@ impl EventName {
 /// the operation, `Transform` rewrites the value the next link sees, and
 /// `Handled` replaces execution outright — which is why `Handled` and
 /// `Transform` are capability-grade on [`Self::PreToolCall`] and gated by
-/// `Capability::InterceptTools`.
+/// the `intercepts_tools` declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum StageId {

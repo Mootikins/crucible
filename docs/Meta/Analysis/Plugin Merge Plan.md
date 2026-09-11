@@ -220,7 +220,7 @@ condition — that the capabilities gate something — can never become true.
 
 **C3. Stop calling path scoping the answer to containment.**
 `Plugin API Plan.md:311` calls a scoped read and write "the real work" of step 4.
-`crates/crucible-lua/src/luau_compat.rs:306` opens the raw path with no root
+`crates/crucible-lua/src/luau_compat.rs:349` opens the raw path with no root
 check, and `register_stdlib_compat` installs that for every plugin. A plugin that
 wants to write outside its roots calls `io.open`. Kanban does exactly that at
 `runtime/plugins/kanban/init.luau:78`.
@@ -255,7 +255,7 @@ four lines.
 | `daemon_plugins/mod.rs:427-429` | lines 428-430 |
 | `vault/mod.rs:664` reads `visible_paths` | line 662 |
 | `vault/mod.rs:670` reads `store.graph_links()` | line 671 |
-| `vault/mod.rs:691` discards the hop count | line 694 returns `sorted_unique(visited)` |
+| `vault/mod.rs:691` discards the hop count | it did, at the old line 695; D1 removed that line, so the walk keeps the number now |
 | `routes/plugin.rs:33-42` registers nine routes | lines 34-42 |
 | conflict lines 162, 109, 67, 28, 26 | 162, 107, 65, 26, 24 |
 
@@ -299,7 +299,11 @@ the trigger, and says why it is not an install refusal.
 
 ## What happened when this ran
 
-Every step landed. Three things the plan did not predict:
+Every step landed except B2a, which is recorded rather than fixed: the
+`send`-feature packaging and the schedule test's fixed sleep are both still
+there. Neither breaks a run; both mislead the next engineer who scopes one.
+
+Three things the plan did not predict:
 
 **The merge lost work the conflict never named.** `git checkout --theirs` on
 `daemon_plugins/mod.rs` took the whole file, not only the capability machinery

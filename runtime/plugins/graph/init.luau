@@ -7,16 +7,21 @@
 --- `GET /api/kiln/graph` hands the browser the WHOLE edge list of a kiln and
 --- the web traverses it there. That is the right shape for a small kiln and
 --- the wrong one for a large kiln, and no HTTP route serves a neighbourhood.
---- `cru.kiln.neighbors(path, depth)` does serve one — scope-filtered per hop
---- and cycle-safe — and Lua is the only caller that can reach it. So the
---- reduction happens here, on the daemon, and a client receives the small
---- answer rather than the large input.
+--- `cru.kiln.neighbors_with_hops(path, depth)` does serve one —
+--- scope-filtered, cycle-safe, and Lua is the only caller that can reach it.
+--- So the reduction happens here, on the daemon, and a client receives the
+--- small answer rather than the large input.
 ---
---- **Rings, not a flat list.** `cru.kiln.neighbors` answers "within N hops",
---- so a single call cannot say how far away each note is. One call per hop,
---- differenced against what nearer hops already claimed, gives hop distance
---- per note. That is a reduction a browser could only perform by holding the
---- whole edge list — which is the thing this plugin exists to avoid sending.
+--- **Rings, not a flat list.** The read answers every neighbour within
+--- `depth` with the hop count the walk reached it at, sorted hop-major, so a
+--- ring is a run of rows. That is a reduction a browser could only perform by
+--- holding the whole edge list — which is the thing this plugin exists to
+--- avoid sending.
+---
+--- This used to call `cru.kiln.neighbors(path, hop)` once per depth and
+--- difference the answers, because that read is cumulative and attaches no
+--- distance. Each call re-read the whole note list and the whole link table
+--- daemon-side. The walk always knew the hop count and discarded it.
 ---
 --- **Why no edges.** A ring carries paths, not `{source, target}` pairs. The
 --- Lua surface has no bulk edge read: `cru.kiln.outlinks(path)` answers for
@@ -101,9 +106,9 @@ end
 
 --- Notes within `depth` hops of `path`, grouped by how far away they are.
 ---
---- `cru.kiln.neighbors` filters per hop against what this daemon's authority
---- may read, so a note the caller cannot see is absent from every ring and
---- cannot be reached THROUGH either. Nothing here re-checks that, and nothing
+--- `cru.kiln.neighbors_with_hops` filters the walk against what this daemon's
+--- authority may read, so a note the caller cannot see is absent from every
+--- ring and cannot be reached THROUGH either. Nothing here re-checks that, and nothing
 --- here should: the scope answer belongs to the store.
 function M.neighborhood(path: string?, depth: number?, limit: number?): Neighborhood
     local root = if type(path) == "string" then path else ""

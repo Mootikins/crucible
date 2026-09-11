@@ -178,6 +178,31 @@ describe("kanban", function()
             expect.equal(keys, 1)
         end)
 
+        it("replaces a quoted status rather than adding a second key", function()
+            -- `[%w_-]+` matches neither `"todo"` nor `to do`, so the rewrite
+            -- found nothing and the insert path wrote a SECOND `status:` key
+            -- into the same block. A value the reader cannot parse is still a
+            -- value a human typed.
+            raw_ticket("quoted.md", '---\ntitle: q\nstatus: "todo"\n---\nBody.\n')
+            plugin.tools.kanban_move.fn({ file = "quoted.md", to = "doing" })
+            local content = read("quoted.md")
+            local _, keys = content:gsub("status:", "")
+            expect.equal(keys, 1)
+            expect.truthy((content:find("status: doing", 1, true)))
+        end)
+
+        it("does not prepend a second block to a CRLF ticket", function()
+            -- The fence test read `---\n`, which a CRLF file spells `---\r\n`.
+            -- The ticket then took a whole second frontmatter block in front
+            -- of the one it already had.
+            raw_ticket("crlf.md", "---\r\ntitle: c\r\nstatus: todo\r\n---\r\nBody.\r\n")
+            plugin.tools.kanban_move.fn({ file = "crlf.md", to = "done" })
+            local content = read("crlf.md")
+            local _, blocks = content:gsub("%-%-%-", "")
+            expect.equal(blocks, 2)
+            expect.truthy((content:find("status: done", 1, true)))
+        end)
+
         it("refuses a column it does not have", function()
             ticket("alpha.md", "todo")
             plugin.tools.kanban_move.fn({ file = "alpha.md", to = "shipped" })

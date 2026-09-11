@@ -326,7 +326,7 @@ Our enum enforced one variant of ten, and then
    ten variants stay declarative, which is where Obsidian also landed.
 2. **Path scoping — ergonomics, not a boundary.** An earlier draft called this
    "the real work" and said scope answers the question that actually binds. It
-   does not bind. `crates/crucible-lua/src/luau_compat.rs:306` installs
+   does not bind. `crates/crucible-lua/src/luau_compat.rs:530` installs
    `io.open` for every plugin, with any mode and no containment, and
    `lifecycle/mod.rs` installs that unconditionally. A plugin that wants to
    write outside its roots calls `io.open` instead. Kanban does exactly that
@@ -363,7 +363,7 @@ editing their own note by hand is a legal move that a plugin must survive.
 anything it did hold.**
 
 - Every plugin holds an unscoped `io.open`
-  (`crates/crucible-lua/src/luau_compat.rs:306`), installed unconditionally.
+  (`crates/crucible-lua/src/luau_compat.rs:530`), installed unconditionally.
   `cru.fs`'s roots are ergonomics beside it.
 - Every plugin holds the process working directory as a root
   (`crates/crucible-daemon/src/daemon_plugins/mod.rs:464`). A daemon started
