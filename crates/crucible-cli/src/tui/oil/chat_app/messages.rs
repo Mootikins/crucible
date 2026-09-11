@@ -225,12 +225,29 @@ pub enum ChatAppMsg {
     ///
     /// `open_if_closed` carries the user's intent from the request that caused
     /// this. `:surfaces` sets it; a `surface_changed` refetch does not.
+    ///
+    /// `name` is the plugin's own name for the surface, which the daemon sends
+    /// with the rows. The modal keeps it, so a later withdrawal can name the
+    /// surface it withdraws. `:surfaces` with no argument asks for no name at
+    /// all, and the answer still carries one.
     SurfaceLoaded {
+        name: String,
         title: String,
         rows: Vec<crate::tui::oil::components::SurfaceModalRow>,
         version: u64,
         open_if_closed: bool,
     },
+    /// **Event** (daemon → TUI): the named surface is gone.
+    ///
+    /// A plugin uninstall drops a surface, and the registry announces the
+    /// withdrawal through the same `surface_changed` event a row push uses. The
+    /// refetch then finds nothing. The app closes the modal only when the modal
+    /// shows this surface; a withdrawal of another surface changes nothing.
+    ///
+    /// Sent **only** when the daemon answers that the surface is absent. A
+    /// refetch that fails sends nothing, because an unreachable daemon is not a
+    /// withdrawal and must not close a panel the user reads.
+    SurfaceWithdrawn(String),
     /// **Command** (TUI → daemon): Evaluate a Lua expression via `lua.eval`
     /// (the `:lua` / `:=` escape hatch).
     EvalLua(String),
@@ -398,6 +415,7 @@ impl ChatAppMsg {
             | Self::OpenSurface(_)
             | Self::RefreshSurface(_)
             | Self::SurfaceLoaded { .. }
+            | Self::SurfaceWithdrawn(_)
             | Self::EvalLua(_)
             | Self::LuaEvaled { .. }
             | Self::ConfigSet { .. }

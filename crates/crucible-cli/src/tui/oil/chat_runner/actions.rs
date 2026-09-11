@@ -668,16 +668,15 @@ impl OilChatRunner {
                         let name = name.clone();
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
-                            if let Ok(client) = crucible_daemon::DaemonClient::connect().await {
-                                if let Ok(Some(msg)) =
-                                    fetch_surface(&client, Some(&name), false).await
-                                {
-                                    let _ = tx.send(msg);
-                                }
+                            // A daemon this client cannot reach says nothing about
+                            // the surface, so the refetch reports no outcome.
+                            let Ok(client) = crucible_daemon::DaemonClient::connect().await else {
+                                return;
+                            };
+                            let fetched = fetch_surface(&client, Some(&name), false).await;
+                            if let Some(msg) = refresh_outcome(&name, fetched) {
+                                let _ = tx.send(msg);
                             }
-                            // Deliberately silent on failure: this is a background
-                            // refresh nobody asked for, so a warning about it would
-                            // be noise the user cannot act on.
                         }));
                     }
                     // Gated on `!self.is_replay`: plugin reload opens a fresh
@@ -913,6 +912,31 @@ impl OilChatRunner {
     }
 }
 
+/// What a background refetch of `name` tells the app.
+///
+/// The two empty answers mean different things, and this function is where the
+/// difference lives:
+///
+/// - `Ok(None)`: the daemon answered, and the answer is that the surface is
+///   absent. A plugin uninstall does this. The app must stop drawing the panel,
+///   so this reports a withdrawal.
+/// - `Err(_)`: the refetch itself failed. A daemon under load, or one that is
+///   briefly unreachable, produces this. The surface may still exist, so this
+///   reports nothing and the open panel stays as it is.
+///
+/// The failure path also stays silent because a background refresh is work the
+/// user did not ask for. A warning about it is noise the user cannot act on.
+pub(super) fn refresh_outcome(
+    name: &str,
+    fetched: anyhow::Result<Option<ChatAppMsg>>,
+) -> Option<ChatAppMsg> {
+    match fetched {
+        Ok(Some(msg)) => Some(msg),
+        Ok(None) => Some(ChatAppMsg::SurfaceWithdrawn(name.to_string())),
+        Err(_) => None,
+    }
+}
+
 /// Fetch one surface for the modal, or the first declared when none is named.
 ///
 /// Returns `Ok(None)` when no surface exists at all, which is a fact to report
@@ -971,6 +995,14 @@ async fn fetch_surface(
         .unwrap_or_default();
 
     Ok(Some(ChatAppMsg::SurfaceLoaded {
+        // The daemon's own name for the surface, not the argument. `:surfaces`
+        // with no argument names nothing, and the modal still needs the name to
+        // compare a later withdrawal against.
+        name: value
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
         title: value
             .get("title")
             .and_then(|v| v.as_str())

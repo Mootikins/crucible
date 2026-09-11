@@ -271,6 +271,7 @@ impl OilChatApp {
             // Opens the modal, or refreshes the one already open. Refresh keeps
             // the cursor on the same row id — see `SurfaceModal::update`.
             ChatAppMsg::SurfaceLoaded {
+                name,
                 title,
                 rows,
                 version,
@@ -281,9 +282,12 @@ impl OilChatApp {
                 // take the screen from whatever the user is doing.
                 None if !open_if_closed => {}
                 None => self.open_surface_modal(crate::tui::oil::components::SurfaceModal::new(
-                    title, rows, version,
+                    name, title, rows, version,
                 )),
             },
+            // The plugin is gone, so the panel must go too. This closes; it
+            // never opens, and it never touches another surface's panel.
+            ChatAppMsg::SurfaceWithdrawn(name) => self.close_withdrawn_surface(&name),
             // Both fetches are the runner's work; nothing for the reducer to do.
             ChatAppMsg::OpenSurface(_) | ChatAppMsg::RefreshSurface(_) => {}
             ChatAppMsg::LuaEvaled { output, is_error } => {
