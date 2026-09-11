@@ -30,7 +30,14 @@ fn rows() -> Vec<SurfaceModalRow> {
 }
 
 fn loaded(open_if_closed: bool) -> ChatAppMsg {
+    named("sessions", open_if_closed)
+}
+
+/// One surface, named. The title stays "Sessions" for every one of them: a
+/// title is a label a plugin picks, and a name is what the wire talks about.
+fn named(name: &str, open_if_closed: bool) -> ChatAppMsg {
     ChatAppMsg::SurfaceLoaded {
+        name: name.into(),
         title: "Sessions".into(),
         rows: rows(),
         version: 1,
@@ -127,6 +134,7 @@ fn a_plugin_pushing_rows_refreshes_an_open_surface() {
     story.send(loaded(true));
 
     story.send(ChatAppMsg::SurfaceLoaded {
+        name: "sessions".into(),
         title: "Sessions".into(),
         rows: vec![SurfaceModalRow {
             id: "s9".into(),
@@ -151,6 +159,7 @@ fn a_plugin_pushing_rows_refreshes_an_open_surface() {
 fn an_empty_surface_says_so() {
     let mut story = StoryRuntime::new(80, 24);
     story.send(ChatAppMsg::SurfaceLoaded {
+        name: "sessions".into(),
         title: "Sessions".into(),
         rows: vec![],
         version: 1,
@@ -162,4 +171,56 @@ fn an_empty_surface_says_so() {
         screen.contains("nothing here yet"),
         "an empty surface explains itself:\n{screen}"
     );
+}
+
+/// A plugin uninstall withdraws the surface, so the panel must leave the screen
+/// and give the transcript back.
+///
+/// `fresh_screen` draws into a new terminal, exactly as a real full redraw
+/// does. `screen` keeps what earlier frames painted, so it cannot prove that
+/// rows went away.
+///
+/// RED-verify by making the reducer ignore the withdrawal, which is the shape
+/// the defect had: the rows stayed drawn for a plugin that was gone.
+#[test]
+fn a_withdrawn_surface_stops_being_drawn() {
+    let mut story = StoryRuntime::new(80, 24);
+    story.send(ChatAppMsg::UserMessage("mid-sentence".into()));
+    story.send(loaded(true));
+    assert!(
+        story.fresh_screen().contains("crucible"),
+        "the panel drew first"
+    );
+
+    story.send(ChatAppMsg::SurfaceWithdrawn("sessions".into()));
+
+    let screen = story.fresh_screen();
+    assert!(
+        !screen.contains("web-fix"),
+        "the withdrawn rows are gone:\n{screen}"
+    );
+    assert!(
+        screen.contains("mid-sentence"),
+        "the transcript is back:\n{screen}"
+    );
+}
+
+/// **The negative.** One plugin goes away while the user reads another plugin's
+/// panel. That panel must stay on screen, with its rows.
+///
+/// Both surfaces carry the title "Sessions". A reducer that compared titles
+/// would clear the screen here.
+#[test]
+fn a_withdrawal_of_another_surface_leaves_the_panel_drawn() {
+    let mut story = StoryRuntime::new(80, 24);
+    story.send(named("reviews", true));
+
+    story.send(ChatAppMsg::SurfaceWithdrawn("sessions".into()));
+
+    let screen = story.fresh_screen();
+    assert!(
+        screen.contains("crucible") && screen.contains("web-fix"),
+        "another plugin's rows stay drawn:\n{screen}"
+    );
+    assert!(screen.contains("2 rows"), "the count stands:\n{screen}");
 }

@@ -737,6 +737,23 @@ impl OilChatApp {
         self.needs_full_redraw = true;
     }
 
+    /// Close the modal when it shows the withdrawn surface.
+    ///
+    /// The comparison is on the surface name, never on the title. A plugin
+    /// chooses a title, and two plugins can choose the same one, so a title
+    /// match would close a panel that belongs to another plugin.
+    ///
+    /// A withdrawal of a surface the user does not have open changes nothing.
+    pub(crate) fn close_withdrawn_surface(&mut self, name: &str) {
+        if self
+            .surface_modal
+            .as_ref()
+            .is_some_and(|modal| modal.name() == name)
+        {
+            self.close_surface_modal();
+        }
+    }
+
     /// Route a key to the open surface, reporting whether it consumed it.
     pub(crate) fn handle_surface_modal_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         let Some(modal) = self.surface_modal.as_mut() else {

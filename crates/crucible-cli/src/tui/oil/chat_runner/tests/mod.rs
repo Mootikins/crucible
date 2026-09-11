@@ -4,4 +4,5 @@ mod knob_rpc;
 mod model_prefetch;
 mod replay;
 mod stream_gap;
+mod surface_refresh;
 mod translate;

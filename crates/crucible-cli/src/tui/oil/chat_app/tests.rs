@@ -582,22 +582,24 @@ fn surface_rows(ids: &[&str]) -> Vec<crate::tui::oil::components::SurfaceModalRo
 }
 
 fn surface_loaded(ids: &[&str], version: u64) -> ChatAppMsg {
-    ChatAppMsg::SurfaceLoaded {
-        title: "Sessions".to_string(),
-        rows: surface_rows(ids),
-        version,
-        open_if_closed: true,
-    }
+    surface_named("sessions", ids, version, true)
 }
 
 /// What a background `surface_changed` refetch produces: rows, no permission to
 /// take the screen.
 fn surface_refreshed(ids: &[&str], version: u64) -> ChatAppMsg {
+    surface_named("sessions", ids, version, false)
+}
+
+/// One surface, named. Every surface here carries the title "Sessions", because
+/// a title is a label a plugin chooses and two surfaces can share one.
+fn surface_named(name: &str, ids: &[&str], version: u64, open_if_closed: bool) -> ChatAppMsg {
     ChatAppMsg::SurfaceLoaded {
+        name: name.to_string(),
         title: "Sessions".to_string(),
         rows: surface_rows(ids),
         version,
-        open_if_closed: false,
+        open_if_closed,
     }
 }
 
@@ -718,4 +720,64 @@ fn a_background_refresh_updates_an_open_surface() {
     let modal = app.surface_modal().expect("still open");
     assert_eq!(modal.row_count(), 2, "the open surface refreshed");
     assert_eq!(modal.version(), 2);
+}
+
+/// An uninstall drops the plugin, so the panel must stop being drawn. Before
+/// this, the refetch answered nothing and the reducer kept the old rows on
+/// screen for a plugin that no longer existed.
+#[test]
+fn a_withdrawal_closes_the_surface_it_names() {
+    let mut app = OilChatApp::default();
+    app.on_message(surface_loaded(&["a", "b"], 1));
+    assert!(app.has_fullscreen_modal());
+
+    app.on_message(ChatAppMsg::SurfaceWithdrawn("sessions".to_string()));
+
+    assert!(app.surface_modal().is_none(), "the panel went away");
+    assert!(!app.has_fullscreen_modal(), "the screen went back");
+}
+
+/// **The negative.** Two plugins each declare a surface. One plugin goes away.
+/// The other plugin's open panel must stay exactly as it is.
+///
+/// Both surfaces carry the title "Sessions", so a comparison on the title would
+/// close the wrong panel and this test would fail.
+#[test]
+fn a_withdrawal_of_another_surface_leaves_the_open_one_alone() {
+    let mut app = OilChatApp::default();
+    app.on_message(surface_named("reviews", &["a", "b"], 1, true));
+
+    app.on_message(ChatAppMsg::SurfaceWithdrawn("sessions".to_string()));
+
+    let modal = app.surface_modal().expect("another plugin's panel stays");
+    assert_eq!(modal.name(), "reviews");
+    assert_eq!(modal.row_count(), 2, "the rows are untouched");
+    assert!(app.has_fullscreen_modal());
+}
+
+/// A withdrawal must never open anything, and it must not panic when the user
+/// has no panel open.
+#[test]
+fn a_withdrawal_with_no_open_surface_opens_nothing() {
+    let mut app = OilChatApp::default();
+
+    app.on_message(ChatAppMsg::SurfaceWithdrawn("sessions".to_string()));
+
+    assert!(app.surface_modal().is_none());
+    assert!(!app.has_fullscreen_modal());
+}
+
+/// The name comes from the daemon's answer, not from the request. `:surfaces`
+/// with no argument names no surface, and the panel it opens must still know
+/// which surface a later withdrawal talks about.
+#[test]
+fn an_unnamed_request_still_opens_a_named_surface() {
+    let mut app = OilChatApp::default();
+    app.on_message(surface_named("sessions", &["a"], 1, true));
+
+    assert_eq!(app.surface_modal().expect("open").name(), "sessions");
+
+    app.on_message(ChatAppMsg::SurfaceWithdrawn("sessions".to_string()));
+
+    assert!(app.surface_modal().is_none());
 }

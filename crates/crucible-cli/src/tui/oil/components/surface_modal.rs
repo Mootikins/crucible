@@ -42,6 +42,10 @@ pub enum SurfaceModalOutcome {
 /// A surface, open full-screen.
 #[derive(Debug, Clone, Default)]
 pub struct SurfaceModal {
+    /// The plugin's own name for the surface, which is the identity the wire
+    /// uses. The title is a label a plugin can choose freely, and two surfaces
+    /// can carry the same one, so a title cannot answer "which surface is this".
+    name: String,
     title: String,
     rows: Vec<SurfaceModalRow>,
     cursor: usize,
@@ -53,14 +57,24 @@ pub struct SurfaceModal {
 
 impl SurfaceModal {
     #[must_use]
-    pub fn new(title: String, rows: Vec<SurfaceModalRow>, version: u64) -> Self {
+    pub fn new(name: String, title: String, rows: Vec<SurfaceModalRow>, version: u64) -> Self {
         Self {
+            name,
             title,
             rows,
             cursor: 0,
             scroll_offset: 0,
             version,
         }
+    }
+
+    /// The name of the surface on screen.
+    ///
+    /// A withdrawal names a surface. The app compares that name with this one,
+    /// so a withdrawal of another surface leaves this modal open.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Replace the rows after a refetch, keeping the cursor on the same row id.
@@ -250,7 +264,7 @@ mod tests {
     }
 
     fn modal(ids: &[&str]) -> SurfaceModal {
-        SurfaceModal::new("Sessions".into(), rows(ids), 1)
+        SurfaceModal::new("sessions".into(), "Sessions".into(), rows(ids), 1)
     }
 
     #[test]
@@ -320,12 +334,31 @@ mod tests {
 
     #[test]
     fn an_empty_surface_has_no_selection_and_does_not_panic() {
-        let mut m = SurfaceModal::new("Empty".into(), vec![], 1);
+        let mut m = SurfaceModal::new("empty".into(), "Empty".into(), vec![], 1);
         assert_eq!(m.selected_id(), None);
         m.handle_key(key(KeyCode::Char('j')));
         m.handle_key(key(KeyCode::Char('G')));
         assert_eq!(m.selected_id(), None);
         assert_eq!(m.row_count(), 0);
+    }
+
+    /// The modal reports the surface name it holds, and the name is not the
+    /// title. A withdrawal names a surface, so a comparison against the title
+    /// would compare the wrong string.
+    #[test]
+    fn the_modal_reports_its_surface_name_and_not_its_title() {
+        let m = modal(&["a"]);
+        assert_eq!(m.name(), "sessions");
+        assert_ne!(m.name(), m.title, "the name and the title stay separate");
+    }
+
+    /// A refetch replaces the rows. The name identifies the surface, so a
+    /// refetch must never change it.
+    #[test]
+    fn a_refetch_keeps_the_surface_name() {
+        let mut m = modal(&["a", "b"]);
+        m.update(rows(&["c"]), 2);
+        assert_eq!(m.name(), "sessions");
     }
 
     /// The plugin states a status; this file owns the glyph. An unknown mark
