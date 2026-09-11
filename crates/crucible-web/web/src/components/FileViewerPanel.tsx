@@ -317,12 +317,15 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     }
   });
 
-  // Autosave: a dirty buffer saves after `autosaveSeconds` of idle (each
-  // edit resets the timer via the content dependency). 0 disables.
+  // Autosave: a dirty NOTE saves after `autosaveSeconds` of idle (each edit
+  // resets the timer via the content dependency). 0 disables. Only a file
+  // inside a kiln qualifies: a project file — code, config — saves by hand,
+  // because a save there can fire watchers and builds mid-edit.
   createEffect(() => {
     const seconds = settings.editor.autosaveSeconds;
     const file = fileData();
     if (!seconds || seconds <= 0 || !file?.dirty) return;
+    if (!owningKiln(props.filePath)) return;
     // Depend on content so every keystroke restarts the countdown.
     void file.content;
     const timer = window.setTimeout(() => {

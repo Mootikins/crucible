@@ -366,8 +366,8 @@ export const EditorSettingsSection: Component = () => {
         />
       </SettingRow>
       <SettingRow
-        label="Autosave interval"
-        description="Save dirty buffers after this many idle seconds. 0 disables autosave."
+        label="Autosave notes"
+        description="Save a note this many seconds after the last edit. Files outside a kiln save only when you ask. 0 turns autosave off."
       >
         <input
           type="number"

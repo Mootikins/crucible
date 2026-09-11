@@ -11,6 +11,7 @@ import {
   defaultSettings,
   loadSettings,
   saveSettings,
+  type SettingsSection,
 } from '@/lib/settings';
 
 /** Context value type for settings */
@@ -18,7 +19,7 @@ export interface SettingsContextValue {
   /** Current settings (reactive store) */
   settings: AppSettings;
   /** Update a single setting value */
-  updateSetting: <K extends keyof AppSettings>(
+  updateSetting: <K extends SettingsSection>(
     section: K,
     key: keyof AppSettings[K],
     value: AppSettings[K][keyof AppSettings[K]]
@@ -50,7 +51,7 @@ export const SettingsProvider: ParentComponent = (props) => {
     else root.style.removeProperty('--font-mono');
   });
 
-  const updateSetting = <K extends keyof AppSettings>(
+  const updateSetting = <K extends SettingsSection>(
     section: K,
     key: keyof AppSettings[K],
     value: AppSettings[K][keyof AppSettings[K]]

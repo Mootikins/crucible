@@ -90,9 +90,9 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Tests:** W1 SHIPPED 2026-07-18 — the tree *UI* GAP is now covered: `FileTreeView.test.tsx` (real zag machine — `role=tree`, `aria-level`, folders-first order, click→open-leaf-exactly-once routing-seam guard, branch-click-does-not-open, `aria-current="page"`), `kiln-builder`/`collection`/`reconcile`/`tree-root`/`treeRootStore` suites. **Remaining GAP:** W2 Playwright (context-menu interactive open, drag) and W4 live (`fs.list_dir` project walk against a real daemon) still deferred; the daemon `fs.list_dir` security properties are Rust-unit-covered (`server::fs::tests`).
 
 ### WS-202: Edit a note and save it
-**As a user**, I open a note in the CodeMirror editor, type, see a dirty ● on the tab, save (button/Cmd-S), and the dot clears.
-**Acceptance:** edits hit `PUT /api/notes/:name`; success clears dirty; failure keeps dirty + shows a toast; content round-trips exactly (frontmatter, unicode, wikilinks untouched).
-**Tests:** W2 full round-trip via the real editor harness (`editor-roundtrip.story.spec.ts` — open → dirty ● → PUT body → clean; save-failure keeps dirty), **W2 through the SHIPPED app** (`editor-shipped-app.story.spec.ts` — real `App` mount, file opened via the product `openFileInEditor` path, real `FileViewerPanel`, Save button + Cmd-S), W4 save-lands-on-disk (`kiln-truth.live.spec.ts` — byte-exact temp-kiln file).
+**As a user**, I open a note in the CodeMirror editor, type, and see a dirty ● on the tab. The note saves itself 2 s after my last edit, or at once on Cmd-S or the Save button, and the dot clears. A file outside every kiln — project code, config — saves only when I ask.
+**Acceptance:** edits hit `PUT /api/notes/:name`; success clears dirty; failure keeps dirty + shows a toast; content round-trips exactly (frontmatter, unicode, wikilinks untouched). Autosave (decision log 2026-09-11) arms only for a file inside a kiln; a stored `autosaveSeconds: 0` from before settings version 2 migrates once to 2, and a 0 chosen after it is kept.
+**Tests:** W1 autosave (`FileViewerPanel.test.tsx` — a note autosaves after the interval, a project file never does, 0 stays off) and the migration (`lib/settings.test.ts`); W2 full round-trip via the real editor harness (`editor-roundtrip.story.spec.ts` — open → dirty ● → PUT body → clean; save-failure keeps dirty), **W2 through the SHIPPED app** (`editor-shipped-app.story.spec.ts` — real `App` mount, file opened via the product `openFileInEditor` path, real `FileViewerPanel`, Save button + Cmd-S), W4 save-lands-on-disk (`kiln-truth.live.spec.ts` — byte-exact temp-kiln file).
 **Product bugs — FIXED (were bugs 3/4/8):** (3) `App.tsx` now mounts `<EditorProvider>` around `WindowManager` (+ a `crucible:open-file` event to open a path in the editor programmatically), so the editor is reachable in the shipped app; (4) `FileViewerPanel` now has a Save button + Cmd/Ctrl-S wired to `EditorContext.saveFile`; (8) the editor now loads AND saves by absolute path through `/api/kiln/file` (`getFileContent`/`saveFileContent`) — the old `getNote()` returned metadata only (`get_note_by_name` has no `content`), and `saveNote()`'s note-name route broke for notes in subdirectories (URL-encoded slash). `GET`/`PUT /api/kiln/file` were also fixed server-side to accept absolute paths (containment is still enforced by `find_enclosing_kiln` + within-kiln canonicalization); previously the absolute-path ban made those routes reject every real editor request.
 **Latent loop fixed alongside:** with the editor finally reachable, `FileViewerPanel`'s dirty-sync effect read `windowStore` (via `findTabByFilePath`) and wrote it (via `updateTab`) in one tracked scope → self-retriggering stack overflow; the write is now `untrack`ed, and `Pane.renderContent` re-renders only on tab identity/type change (not on `updateTab` ref churn) so edits are not discarded.
 
@@ -395,6 +395,17 @@ unchanged, the declared options render).
 **As a user**, on a non-localhost deployment a 401 pops a sign-in modal; pasting the API key (from `cru web key`) signs me in without the key ever being readable by page JS.
 **Acceptance (stub):** the api layer dispatches `crucible:auth-required` on 401 → `AuthTokenPrompt` modal → `POST /api/auth/login` exchanges the key for an HttpOnly session cookie → reload; Settings also accepts the key. `POST /api/auth/logout` revokes the presented session server-side, but **no UI affordance calls it yet** (GAP).
 **Tests:** W1 (`AuthTokenPrompt.test.tsx`, `lib/__tests__/api-token.test.ts`); Rust (`routes/auth.rs` login/logout/expiry suite).
+
+---
+
+## 5. Mobile shell
+
+Design: `docs/Meta/Architecture/Mobile Shell.md`. Product record: **Mobile Shell** (`P2`) in `docs/Meta/Product.md`.
+
+### WS-317: Use Crucible on a phone
+**As a user** on a phone-width screen, I get a shell made for it — an app bar over one content surface, with sessions and files as tabs in a left drawer and the open note's backlinks in a right drawer — not the desktop window manager squeezed.
+**Acceptance:** below 768 px the page draws the compact shell, decided once at load; the compact shell never loads or saves the desktop layout (`/api/layout`); each drawer opens from its app-bar button and from an edge swipe, and closes on a scrim tap, Escape, a swipe or the hardware back button, one drawer at a time; a closed drawer is `inert`; an open one is a labelled modal dialog that traps Tab and returns focus; back never strips a hash deep link (`/#note=…`); app-bar buttons and drawer tabs are 44 px targets. On Android with gesture navigation the edge swipe is the system's Back — the buttons are the guaranteed input.
+**Tests:** W1 (`stores/__tests__/deviceStore.test.ts`, `lib/__tests__/shell-boot.test.ts`, `components/mobile/__tests__/*` — shell choice, layout guard, content surface keyed on identity, drawer, back stack, swipe, tabs). W2 GAP — no phone-viewport Playwright story yet; blocked on nothing, owed with Track A step 3. Opening a note or a session from a drawer lands in step 3 (the tab host).
 
 ---
 

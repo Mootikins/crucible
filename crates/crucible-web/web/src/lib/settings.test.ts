@@ -5,6 +5,7 @@ import {
   saveSettings,
   defaultSettings,
   SETTINGS_STORAGE_KEY,
+  SETTINGS_VERSION,
 } from './settings';
 
 describe('settings', () => {
@@ -78,6 +79,42 @@ describe('settings', () => {
       const settings = loadSettings();
       expect(settings.appearance.fontSans).toBe('"Inter", sans-serif');
       expect(settings.appearance.fontMono).toBe(''); // merged from defaults
+    });
+  });
+
+  // Notes save themselves (decision log, 2026-09-11). The old default was 0,
+  // and every browser that ever saved a setting stored that 0 explicitly, so a
+  // new default alone would change nothing for an existing install.
+  describe('autosave', () => {
+    it('saves notes two seconds after the last edit, by default', () => {
+      expect(defaultSettings.editor.autosaveSeconds).toBe(2);
+    });
+
+    it('turns autosave on once for settings stored before the change', () => {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+        editor: { autosaveSeconds: 0, vimMode: true },
+      }));
+      expect(loadSettings().editor.autosaveSeconds).toBe(2);
+    });
+
+    it('keeps an interval the user chose before the change', () => {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+        editor: { autosaveSeconds: 5 },
+      }));
+      expect(loadSettings().editor.autosaveSeconds).toBe(5);
+    });
+
+    it('respects "off" chosen after the change', () => {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+        version: SETTINGS_VERSION,
+        editor: { autosaveSeconds: 0 },
+      }));
+      expect(loadSettings().editor.autosaveSeconds).toBe(0);
+    });
+
+    it('stamps the current version, so the next save records the migration', () => {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ editor: { autosaveSeconds: 0 } }));
+      expect(loadSettings().version).toBe(SETTINGS_VERSION);
     });
   });
 

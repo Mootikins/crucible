@@ -20,7 +20,9 @@ interface TranscriptionSettings {
 interface EditorSettings {
   /** Modal vim keybindings (@replit/codemirror-vim) */
   vimMode: boolean;
-  /** Autosave dirty buffers after this many idle seconds (0 = off). */
+  /** Save a NOTE — a file inside a kiln — this many idle seconds after its
+   * last edit (0 = off). A project file always saves by hand: autosaving code
+   * would fire watchers and builds mid-edit. */
   autosaveSeconds: number;
   /** Readable line length for editing/reading views, px (0 = full width). */
   maxLineWidth: number;
@@ -60,16 +62,31 @@ interface TerminalSettings {
   fontSize: number;
 }
 
+/**
+ * The stored settings' shape version. Bump it with a migration in
+ * `loadSettings` when a default changes meaning.
+ *
+ * 2 — notes autosave by default. Version 1 stored `autosaveSeconds: 0`, the old
+ * default, in every browser that ever saved a setting, so a new default alone
+ * would have reached no existing install.
+ */
+export const SETTINGS_VERSION = 2;
+
 /** Root application settings structure */
 export interface AppSettings {
+  version: number;
   transcription: TranscriptionSettings;
   editor: EditorSettings;
   appearance: AppearanceSettings;
   terminal: TerminalSettings;
 }
 
+/** The settings a user edits: every section, never the stored `version`. */
+export type SettingsSection = Exclude<keyof AppSettings, 'version'>;
+
 /** Default settings values */
 export const defaultSettings: AppSettings = {
+  version: SETTINGS_VERSION,
   transcription: {
     provider: 'local',
     serverUrl: '',
@@ -78,7 +95,7 @@ export const defaultSettings: AppSettings = {
   },
   editor: {
     vimMode: true,
-    autosaveSeconds: 0,
+    autosaveSeconds: 2,
     showSaveButton: true,
     // Matches the reading view's prose column (max-w-3xl).
     maxLineWidth: 768,
@@ -110,7 +127,7 @@ export function loadSettings(): AppSettings {
     const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return {
+      const merged: AppSettings = {
         ...defaultSettings,
         ...parsed,
         transcription: {
@@ -130,16 +147,30 @@ export function loadSettings(): AppSettings {
           ...parsed.terminal,
         },
       };
+      return migrate(merged, typeof parsed.version === 'number' ? parsed.version : 1);
     }
   } catch (e) {
     console.warn('Failed to load settings:', e);
   }
   return {
+    version: SETTINGS_VERSION,
     transcription: { ...defaultSettings.transcription },
     editor: { ...defaultSettings.editor },
     appearance: { ...defaultSettings.appearance },
     terminal: { ...defaultSettings.terminal },
   };
+}
+
+/** Bring settings stored at `from` up to `SETTINGS_VERSION`. */
+function migrate(settings: AppSettings, from: number): AppSettings {
+  if (from < 2 && settings.editor.autosaveSeconds === 0) {
+    // A stored 0 at version 1 is almost always the old default, saved along
+    // with some unrelated setting. A user who wanted it off turns it off once
+    // more; that choice is stored at version 2 and kept.
+    settings.editor.autosaveSeconds = defaultSettings.editor.autosaveSeconds;
+  }
+  settings.version = SETTINGS_VERSION;
+  return settings;
 }
 
 /**

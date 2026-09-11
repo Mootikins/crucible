@@ -17,6 +17,14 @@ let activeFileValue: string | null = null;
 let autosaveSeconds = 0;
 
 // Mock EditorContext — FileViewerPanel calls useEditorSafe()
+// The kilns the panel believes in. Autosave applies to files inside one.
+let kilnsValue: { path: string }[] = [{ path: '/kiln' }];
+vi.mock('@/lib/local-cache', () => ({
+  swrLocal: (key: string, _fetch: unknown, apply: (v: unknown) => void) => {
+    if (key === 'kilns') apply(kilnsValue);
+  },
+}));
+
 vi.mock('@/contexts/EditorContext', () => ({
   useEditorSafe: () => ({
     openFiles: () => openFilesValue,
@@ -225,6 +233,18 @@ describe('FileViewerPanel — save UX', () => {
     expect(saveFile).not.toHaveBeenCalled();
     vi.advanceTimersByTime(2100);
     expect(saveFile).toHaveBeenCalledWith(FILE_PATH);
+  });
+
+  // Notes save themselves; a project file — code, config — saves only when
+  // the user asks. Autosaving code would fire watchers and builds mid-edit.
+  it('does not autosave a file outside every kiln', () => {
+    autosaveSeconds = 2;
+    const projectFile = '/work/app/src/main.rs';
+    openFilesValue = [{ path: projectFile, content: 'fn main() {}', dirty: true }];
+    activeFileValue = projectFile;
+    render(() => <FileViewerPanel filePath={projectFile} />);
+    vi.advanceTimersByTime(10_000);
+    expect(saveFile).not.toHaveBeenCalled();
   });
 
   it('autosave stays off at 0 seconds', () => {
