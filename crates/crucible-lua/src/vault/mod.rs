@@ -66,12 +66,11 @@
 
 use crate::error::LuaError;
 use crucible_core::storage::{
-    scoped_backlinks, scoped_outlinks, sorted_unique, visible_paths, NoteStore, Scope,
-    StorageError, StorageResult,
+    scoped_backlinks, scoped_outlinks, visible_paths, NoteStore, Scope, StorageError, StorageResult,
 };
 use futures_util::future::BoxFuture;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -165,6 +164,15 @@ mod decl {
 
     /// `depth` counts hops and defaults to 1 — direct links only.
     pub const NEIGHBORS: &str = "(path: string, depth: number?) -> { string }";
+
+    /// Every neighbour within `depth`, each with the hop count at which the
+    /// walk first reached it.
+    ///
+    /// `NEIGHBORS` answers "within N hops" and says nothing about WHICH hop,
+    /// so a caller that wants rings calls it once per depth and pays a full
+    /// scan each time. The walk already computes the number; this returns it.
+    pub const NEIGHBORS_WITH_HOPS: &str =
+        "(path: string, depth: number?) -> { { path: string, hops: number } }";
 
     /// One stored block, as [`super::block_record_to_lua`] builds it. The
     /// vector is absent when the block fell under the word floor.
@@ -606,6 +614,8 @@ pub fn register_vault_module_with_store_scoped(
         }
     })?;
 
+    let store_for_hops = Arc::clone(&store);
+    let authority_for_hops = authority.clone();
     kiln.async_func(
         "neighbors",
         decl::NEIGHBORS,
@@ -613,10 +623,36 @@ pub fn register_vault_module_with_store_scoped(
             let s = Arc::clone(&store);
             let auth = authority.clone();
             async move {
-                let paths = scoped_neighbors(s.as_ref(), &auth, &path, depth.unwrap_or(1))
+                let reached = scoped_neighbors(s.as_ref(), &auth, &path, depth.unwrap_or(1))
                     .await
                     .map_err(kiln_error)?;
+                // Paths only. This signature is what plugins already call, so
+                // the hop counts go through `neighbors_with_hops` beside it
+                // rather than changing this return shape.
+                let paths: Vec<String> = reached.into_iter().map(|(p, _)| p).collect();
                 string_vec_to_lua_table(&lua, &paths)
+            }
+        },
+    )?;
+
+    kiln.async_func(
+        "neighbors_with_hops",
+        decl::NEIGHBORS_WITH_HOPS,
+        move |lua, (path, depth): (String, Option<usize>)| {
+            let s = Arc::clone(&store_for_hops);
+            let auth = authority_for_hops.clone();
+            async move {
+                let reached = scoped_neighbors(s.as_ref(), &auth, &path, depth.unwrap_or(1))
+                    .await
+                    .map_err(kiln_error)?;
+                let out = lua.create_table()?;
+                for (index, (p, hops)) in reached.into_iter().enumerate() {
+                    let row = lua.create_table()?;
+                    row.set("path", p)?;
+                    row.set("hops", hops)?;
+                    out.set(index + 1, row)?;
+                }
+                Ok(Value::Table(out))
             }
         },
     )?;
@@ -654,7 +690,7 @@ async fn scoped_neighbors(
     authority: &Scope,
     path: &str,
     depth: usize,
-) -> StorageResult<Vec<String>> {
+) -> StorageResult<Vec<(String, usize)>> {
     if depth == 0 {
         return Ok(Vec::new());
     }
@@ -678,21 +714,32 @@ async fn scoped_neighbors(
         adjacency.entry(link.target).or_default().push(link.source);
     }
 
-    let mut visited: HashSet<String> = HashSet::from([path.to_string()]);
+    // The walk always knew the hop count; it used to discard it here. A caller
+    // that wants rings otherwise calls this once per depth, and each call
+    // re-reads the whole note list and the whole link table.
+    //
+    // BFS reaches a node first at its shortest hop count, and a node is
+    // enqueued at most once, so the recorded number is the distance.
+    let mut reached: HashMap<String, usize> = HashMap::from([(path.to_string(), 0)]);
     let mut queue: VecDeque<(String, usize)> = VecDeque::from([(path.to_string(), 0)]);
     while let Some((current, hops)) = queue.pop_front() {
         if hops >= depth {
             continue;
         }
         for neighbor in adjacency.get(&current).into_iter().flatten() {
-            if visited.insert(neighbor.clone()) {
+            if !reached.contains_key(neighbor) {
+                reached.insert(neighbor.clone(), hops + 1);
                 queue.push_back((neighbor.clone(), hops + 1));
             }
         }
     }
 
-    visited.remove(path);
-    Ok(sorted_unique(visited))
+    reached.remove(path);
+    let mut pairs: Vec<(String, usize)> = reached.into_iter().collect();
+    // Sorted by hop, then by path: the ring order a caller draws, and stable
+    // so plugin output stays reproducible.
+    pairs.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    Ok(pairs)
 }
 
 fn kiln_error(e: StorageError) -> mlua::Error {

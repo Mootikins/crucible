@@ -613,6 +613,93 @@ mod graph_tests {
         assert_eq!(paths, ["backlink/from-a.md", "linked/a.md", "linked/b.md"]);
     }
 
+    /// The hop count the walk always computed, now returned.
+    ///
+    /// `neighbors` answers "within N hops" and says nothing about WHICH hop,
+    /// so a caller that wants rings called it once per depth and paid a full
+    /// read of the note list and the link table each time. The BFS reaches a
+    /// node first at its shortest distance, so the number was already correct
+    /// when it was discarded.
+    #[tokio::test]
+    async fn neighbors_with_hops_reports_the_distance_to_each_note() {
+        // a.md -> b.md -> c.md -> d.md, and a second note one hop out, so a
+        // ring with two members proves the grouping rather than the order.
+        let lua = TestLuaBuilder::new()
+            .with_vault_store(store(vec![
+                note("a.md", &["b.md", "z.md"]),
+                note("b.md", &["c.md"]),
+                note("c.md", &["d.md"]),
+                note("d.md", &[]),
+                note("z.md", &[]),
+            ]))
+            .build();
+
+        let rows: Vec<(String, usize)> = lua
+            .load(
+                r#"
+                local out = {}
+                for _, row in cru.kiln.neighbors_with_hops("a.md", 3) do
+                    table.insert(out, row.path .. ":" .. tostring(row.hops))
+                end
+                return out
+                "#,
+            )
+            .eval_async::<Vec<String>>()
+            .await
+            .expect("neighbors_with_hops evaluates")
+            .into_iter()
+            .map(|row| {
+                let (path, hops) = row.rsplit_once(':').expect("row carries a hop count");
+                (path.to_string(), hops.parse().expect("hops is a number"))
+            })
+            .collect();
+
+        // Sorted by hop, then by path: the ring order a caller draws.
+        assert_eq!(
+            rows,
+            [
+                ("b.md".to_string(), 1),
+                ("z.md".to_string(), 1),
+                ("c.md".to_string(), 2),
+                ("d.md".to_string(), 3),
+            ]
+        );
+    }
+
+    /// The two reads must agree, or a caller that switches gets a different
+    /// neighbourhood rather than the same one with distances attached.
+    #[tokio::test]
+    async fn neighbors_with_hops_returns_what_neighbors_returns() {
+        let notes = vec![
+            note("a.md", &["b.md"]),
+            note("b.md", &["c.md"]),
+            note("c.md", &[]),
+        ];
+
+        let lua = TestLuaBuilder::new()
+            .with_vault_store(store(notes.clone()))
+            .build();
+        let flat = eval_paths(&lua, r#"return cru.kiln.neighbors("a.md", 2)"#).await;
+
+        let lua = TestLuaBuilder::new().with_vault_store(store(notes)).build();
+        let mut paired = lua
+            .load(
+                r#"
+                local out = {}
+                for _, row in cru.kiln.neighbors_with_hops("a.md", 2) do
+                    table.insert(out, row.path)
+                end
+                return out
+                "#,
+            )
+            .eval_async::<Vec<String>>()
+            .await
+            .expect("neighbors_with_hops evaluates");
+        paired.sort();
+
+        assert_eq!(flat, paired);
+    }
+
     #[tokio::test]
     async fn neighbors_reaches_further_hops_with_a_greater_depth() {
         // a.md -> b.md -> c.md -> d.md

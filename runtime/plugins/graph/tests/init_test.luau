@@ -2,36 +2,41 @@
 --- Tests for the graph plugin.
 ---
 --- The property under test is the REDUCTION, because the reduction is the only
---- reason this plugin exists. `cru.kiln.neighbors(path, depth)` answers
---- "everything within depth hops" — cumulative, and with no distance attached.
---- Turning that into rings is what a browser cannot do without the whole edge
---- list, so every ring assertion below is an assertion about work staying on
---- the daemon.
+--- reason this plugin exists. `cru.kiln.neighbors_with_hops(path, depth)`
+--- answers every neighbour within `depth`, each with the hop count the walk
+--- reached it at, sorted by hop then by path. Turning that into rings is what
+--- a browser cannot do without the whole edge list, so every ring assertion
+--- below is an assertion about work staying on the daemon.
 ---
---- The bundled `cru.kiln.neighbors` mock keys its answer on the path alone and
---- ignores depth (`crucible-lua/src/prelude/test_mocks.rs`), so it cannot
---- express "further away". These tests install their own stub with the real
---- cumulative semantics, and record what depth each call asked for.
+--- The plugin used to call `cru.kiln.neighbors(path, hop)` once per depth, and
+--- each call re-read the whole note list and the whole link table. The walk
+--- always knew the hop count and discarded it. These tests record HOW MANY
+--- calls the plugin makes, because one call is the property that changed.
 
 local plugin = require("graph")
 
---- Depths the plugin asked the store for, in order.
+--- Depths the plugin asked the store for, in order. One entry now.
 local ASKED: { number } = {}
 
---- Stand in for `cru.kiln.neighbors` with the semantics the daemon has:
+--- Stand in for `cru.kiln.neighbors_with_hops` with the daemon's semantics:
 --- `rings[hop]` is exactly `hop` steps away, and a call at depth `d` returns
---- the union of rings 1..d.
+--- rows for rings 1..d, sorted by hop then by path.
 local function stub_rings(rings: { { string } })
     ASKED = {}
-    cru.kiln.neighbors = function(_path: string, depth: number?): { string }
+    cru.kiln.neighbors_with_hops = function(
+        _path: string,
+        depth: number?
+    ): { { path: string, hops: number } }
         local d = depth or 1
         table.insert(ASKED, d)
-        local out: { string } = {}
+        local out: { { path: string, hops: number } } = {}
         for hop = 1, d do
             local ring = rings[hop]
             if ring then
-                for _, path in ring do
-                    table.insert(out, path)
+                local sorted = table.clone(ring)
+                table.sort(sorted)
+                for _, path in sorted do
+                    table.insert(out, { path = path, hops = hop })
                 end
             end
         end
@@ -76,14 +81,15 @@ describe("graph", function()
             expect.equal(answer.rings[2].paths[1], "c.md")
         end)
 
-        it("asks the store once per hop, with that hop as the depth", function()
+        -- The change this test exists for. Three hops used to cost three
+        -- calls, and each one re-read the whole note list and the whole link
+        -- table. The hop count comes back with the rows now.
+        it("asks the store exactly once, at the full depth", function()
             stub_rings({ { "b.md" }, { "c.md" }, { "d.md" } })
             plugin.commands.graph_neighborhood.fn({ path = "a.md", depth = 3 })
 
-            expect.equal(#ASKED, 3)
-            expect.equal(ASKED[1], 1)
-            expect.equal(ASKED[2], 2)
-            expect.equal(ASKED[3], 3)
+            expect.equal(#ASKED, 1)
+            expect.equal(ASKED[1], 3)
         end)
 
         -- A self-link, or a cycle, would otherwise put the focused note in its
@@ -114,16 +120,21 @@ describe("graph", function()
             local answer = plugin.commands.graph_neighborhood.fn({ path = "a.md", depth = 99 })
 
             expect.equal(answer.depth, 4)
-            expect.equal(#ASKED, 4)
+            -- One call, and the clamped depth is what it asks for. The clamp
+            -- still matters: depth bounds the walk the daemon runs.
+            expect.equal(#ASKED, 1)
+            expect.equal(ASKED[1], 4)
         end)
 
-        -- Each hop is a full scan of the scoped link table daemon-side, so a
-        -- walk that has run out of graph must stop asking for more of it.
-        it("stops asking once a hop adds nothing", function()
+        -- The old walk stopped asking when a hop added nothing, because each
+        -- further hop cost a full scan. One call makes that moot: an
+        -- exhausted component simply returns no rows past its last ring.
+        it("returns only the rings the graph actually has", function()
             stub_rings({ { "b.md" } })
             local answer = plugin.commands.graph_neighborhood.fn({ path = "a.md", depth = 4 })
 
-            expect.equal(#ASKED, 2)
+            expect.equal(#ASKED, 1)
+            expect.equal(#answer.rings, 1)
             expect.equal(answer.total, 1)
         end)
 
@@ -160,7 +171,8 @@ describe("graph", function()
             local answer = plugin.commands.graph_neighborhood.fn({ path = "a.md" })
 
             expect.equal(answer.depth, 3)
-            expect.equal(#ASKED, 3)
+            expect.equal(#ASKED, 1)
+            expect.equal(ASKED[1], 3)
         end)
     end)
 
@@ -182,7 +194,10 @@ describe("graph", function()
         end)
 
         it("reports a store failure rather than raising through the command", function()
-            cru.kiln.neighbors = function(_path: string, _depth: number?): { string }
+            cru.kiln.neighbors_with_hops = function(
+                _path: string,
+                _depth: number?
+            ): { { path: string, hops: number } }
                 error("no kiln is open")
             end
             local answer = plugin.commands.graph_neighborhood.fn({ path = "a.md" })

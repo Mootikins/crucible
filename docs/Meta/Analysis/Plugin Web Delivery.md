@@ -401,21 +401,20 @@ where telling the truth already grants nearly everything. That is Obsidian's
 position with more machinery — which is precisely the criticism step 4 says we
 must not earn.
 
-**The order that answers it: enforce first, isolate second.** Step 4's item 1 —
-enforcing the ten capability variants that already exist — is Lua-side work
-where the daemon owns the door and nothing can forge anything. It is worth
-doing today, it is independent of delivery, and it is worth more per day than
-this is.
+**An earlier draft answered it with an ordering: enforce first, isolate
+second.** That answer is void. The owner ruled Lua-API enforcement out of
+scope, and `feat/runtime-path-unification` then deleted nine of the ten
+capability variants, so there is no enforcement to put first.
 
-The two are complements, and neither is sufficient alone: enforcement without
-isolation is a gate on a door anyone can walk around, and isolation without
-enforcement is a truthful name for an ungated door. But they are not
-simultaneous, and enforcement is first.
+**The objection above therefore stands unanswered, and that is the honest
+position.** The ten days buy a proved identity in a system where telling the
+truth grants nearly everything. Nothing in this plan closes that gap, because
+the gap is a consequence of a ruling rather than a task nobody has done yet.
 
-**Which sharpens the trigger.** The bridge should be built when a third-party
-web block wants in *and* the capabilities it would be gated by actually gate
-something. If the second is not true when the first arrives, build the gate on
-the way.
+**Which simplifies the trigger rather than sharpening it.** The bridge is built
+when a third-party web block wants in. The second condition — that the
+capabilities it would be gated by actually gate something — is struck, because
+it can never become true.
 
 ## Links
 

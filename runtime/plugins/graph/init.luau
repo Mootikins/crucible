@@ -123,41 +123,48 @@ function M.neighborhood(path: string?, depth: number?, limit: number?): Neighbor
         return answer
     end
 
-    -- The root is claimed up front so it never lands in a ring. `neighbors`
-    -- already excludes the starting note, and a note that links to itself
-    -- would otherwise arrive at hop 1 through a second route.
-    local claimed: { [string]: boolean } = { [root] = true }
-
-    for hop = 1, hops do
-        local ok, reached = pcall(cru.kiln.neighbors, root, hop)
-        if not ok then
-            answer.error = tostring(reached)
-            return answer
-        end
-        if type(reached) ~= "table" then break end
-
-        local ring: { string } = {}
-        for _, note in reached do
-            if type(note) == "string" and not claimed[note] then
-                if answer.total >= cap then
-                    answer.truncated = true
-                    break
-                end
-                claimed[note] = true
-                answer.total += 1
-                table.insert(ring, note)
-            end
-        end
-        table.sort(ring)
-        table.insert(answer.rings, { hops = hop, paths = ring })
-        if answer.truncated then break end
-        -- An empty ring means the connected component is exhausted, and the
-        -- walk is monotone, so no further hop can add anything. Stopping here
-        -- is not a micro-optimisation: each hop is a full scan of the scoped
-        -- link table daemon-side, measured at ~80 ms on a 2000-note kiln, so
-        -- an isolated note otherwise pays four scans to learn nothing.
-        if hop > 1 and #ring == 0 then break end
+    -- One call, not one per hop. `neighbors_with_hops` returns the hop count
+    -- the walk already computes, so the rings are a grouping of one answer.
+    -- The old loop called `cru.kiln.neighbors(root, hop)` for each depth, and
+    -- every call re-read the whole note list and the whole link table
+    -- daemon-side — measured at about 80 ms on a 2000-note kiln.
+    local ok, reached = pcall(cru.kiln.neighbors_with_hops, root, hops)
+    if not ok then
+        answer.error = tostring(reached)
+        return answer
     end
+    if type(reached) ~= "table" then
+        return answer
+    end
+
+    -- Sorted by hop then by path daemon-side, so a ring is a run of rows and
+    -- the paths inside it are already in order.
+    local current_hop = 0
+    local ring: { string } = {}
+    local function close_ring()
+        if current_hop > 0 then
+            table.insert(answer.rings, { hops = current_hop, paths = ring })
+        end
+    end
+
+    for _, row in reached do
+        if type(row) ~= "table" or type(row.path) ~= "string" then continue end
+        -- The root never appears: the walk removes it, so a self-link and a
+        -- cycle both fail to bring it back.
+        if row.path == root then continue end
+        if answer.total >= cap then
+            answer.truncated = true
+            break
+        end
+        if row.hops ~= current_hop then
+            close_ring()
+            current_hop = row.hops
+            ring = {}
+        end
+        answer.total += 1
+        table.insert(ring, row.path)
+    end
+    close_ring()
 
     return answer
 end

@@ -259,8 +259,15 @@ four lines.
 | `routes/plugin.rs:33-42` registers nine routes | lines 34-42 |
 | conflict lines 162, 109, 67, 28, 26 | 162, 107, 65, 26, 24 |
 
-The `vault/mod.rs:691` error also sits in the findings file for the first
-review. Correct both.
+**The gate takes a single line, never a range.** `dev_kiln_code_references_exist`
+splits a citation on its last colon and requires the text after it to be all
+digits. So `path.rs:1-9` is not a line-anchored citation at all — the whole
+string becomes the path, and the file does not exist. Four citations in this
+plan were ranges, and CI refused them. Cite the first line instead.
+
+That gate is also what caught the lost `bind_fs_roots` call, indirectly: it
+failed on a moved line number, which sent a reader back into the file. No test
+covered the loss.
 
 ## Step D — two items the review unblocked
 

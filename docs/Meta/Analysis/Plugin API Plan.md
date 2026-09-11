@@ -171,9 +171,21 @@ depend on that multiplier — at depth 1, a single scan, it is already 58%.
 The contract's "reduce where the data is" rule holds as written. This read
 simply has no storage primitive that honours it. What it wants, in cost order:
 
-1. **A neighbourhood the store can answer** — a recursive CTE over the link
-   table returning `(path, hops)`. One indexed query instead of a scan, and the
-   only change that makes a per-move read defensible.
+1. **A neighbourhood the store can answer.** This is TWO wants of very
+   different size, and an earlier draft recorded them as one item, so the
+   cheap half read as blocked work nobody would take.
+
+   *The hop distance is free today.* The walk at
+   `crates/crucible-lua/src/vault/mod.rs:683` already carries `(String, usize)`
+   through its queue, tests `hops >= depth`, and enqueues `hops + 1`. Line 694
+   then discards the number and returns a flat sorted set. Returning the pairs
+   is a change to the return type plus about five lines, and it needs no
+   storage work at all. It removes the per-hop call the plugin makes, which is
+   the depth multiplier this step describes.
+
+   *The indexed query is real storage work.* A recursive CTE over the link
+   table, so one query replaces a scan. That is the change that makes a
+   per-move read defensible, and it is the one that stays blocked.
 2. **A bulk edge read in `cru.kiln`.** There is none, so no block can draw edges
    at all: `outlinks` answers for one note and rescans to do it, making edges
    among N notes cost N scans. The graph block ships rings without edges for
@@ -308,10 +320,19 @@ before it closes it.
 1. ~~**Enforce the ten variants that already exist.**~~ **Ruled out by the
    owner** — see *What landed*. Restricting the Lua API is not in scope. The
    ten variants stay declarative, which is where Obsidian also landed.
-2. **Path scoping.** Scope answers "which files", which is the question that
-   actually binds. `cru.fs` has no read and no write at all, so plugins use raw
-   `io.open` unscoped — kanban included. A scoped read and write is the real
-   work, and it is a `cru.fs` change, not a capability change.
+2. **Path scoping — ergonomics, not a boundary.** An earlier draft called this
+   "the real work" and said scope answers the question that actually binds. It
+   does not bind. `crates/crucible-lua/src/luau_compat.rs:306` installs
+   `io.open` for every plugin, with any mode and no containment, and
+   `lifecycle/mod.rs` installs that unconditionally. A plugin that wants to
+   write outside its roots calls `io.open` instead. Kanban does exactly that
+   (`runtime/plugins/kanban/init.luau:78`).
+
+   `cru.fs.read` and `cru.fs.write` are still worth having, and they landed:
+   they are correct by default, and `crates/crucible-lua/src/fs.rs:166` does
+   scope them. Describe them that way. Under the owner's ruling a plugin is
+   trusted code, and no gate binds it — so a doc that promises a boundary here
+   earns the criticism this plan says the project must avoid.
 3. **A mode axis only where read alone is the whole attack.** We have no
    clipboard case today. If one appears, split that one and nothing else.
 
@@ -323,14 +344,30 @@ trust a promise nothing keeps, which is precisely the criticism Obsidian is now
 taking — and with the Lua half declarative too, there is no gate anywhere for
 such a label to stand on.
 
-### The residual, unchanged
+### The residual, rewritten
 
-`Capability::Kiln` still cannot say "read the kiln, write nothing", so a block
-that needs `getNote` gets `saveNote` with it. Path scoping narrows the blast
-radius; it does not close this. The mitigation is the contract's invariant — a
-plugin's published state stays derivable from its files — rather than a gate,
-because a user editing their own note by hand is a legal move that a plugin must
-survive anyway.
+An earlier draft named one item here: `Capability::Kiln` cannot say "read the
+kiln, write nothing". **That item is gone, and not because anyone fixed it.**
+`feat/runtime-path-unification` deleted the enum, so the name no longer exists
+to be split. The `system` variant went the same way.
+
+The mitigation was never the gate anyway. It is the contract's invariant — a
+plugin's published state stays derivable from its files — because a user
+editing their own note by hand is a legal move that a plugin must survive.
+
+**Two facts belong here that the list never held, and both are wider than
+anything it did hold.**
+
+- Every plugin holds an unscoped `io.open`
+  (`crates/crucible-lua/src/luau_compat.rs:306`), installed unconditionally.
+  `cru.fs`'s roots are ergonomics beside it.
+- Every plugin holds the process working directory as a root
+  (`crates/crucible-daemon/src/daemon_plugins/mod.rs:464`). A daemon started
+  from the home directory grants every plugin the whole home directory through
+  `cru.fs`.
+
+Neither is a defect under the owner's ruling. Both are facts a reader of this
+plan should not have to discover.
 
 ### What landed
 
@@ -342,12 +379,24 @@ item 1 above — capability-gating the `cru.*` namespaces — was built, reviewe
 and then **removed**. `CruNamespace::required_capability`, the `GRANTS_NOTHING`
 list and the `Ns::func` wrap are gone.
 
-**Capabilities stay declarative.** A manifest's `capabilities` list states what
-the plugin touches. It is not a sandbox and it restricts nothing, which is where
-Obsidian's May 2026 disclosures also landed. The one exception predates this
-work and stays: `intercept_tools`, enforced at the tool-call seam, because
-`handled` fabricates a result the model reads as the tool's own and returns
-before the permission gate.
+**Then the vocabulary itself went.** `feat/runtime-path-unification` deleted the
+ten-name `Capability` enum and replaced it with one boolean,
+`intercepts_tools` (`crates/crucible-lua/src/manifest.rs:82`). Its reason is the
+one this plan never gave: nine of the ten names had no call site outside the
+parser's own tests, and could not have had one, because
+`register_stdlib_compat` runs for every plugin whatever it declared. So every
+plugin holds `io` and `os.remove` whether or not it declared `filesystem`.
+
+The ruling above said the ten names stay declarative. That branch went one step
+further and deleted the nine that described nothing. What remains is the one
+exception that predates this work: `intercepts_tools`, enforced at the tool-call
+seam, because `handled` fabricates a result the model reads as the tool's own
+and returns before the permission gate.
+
+Two items left the residual list with the enum. Nobody can scope
+`Capability::Kiln`, and nobody can delete the `system` variant, because neither
+name exists. Obsidian's May 2026 disclosures landed on the declarative half of
+this; they did not go as far as the deletion.
 
 **Validation belongs on direct agent and model output**, not on plugin code.
 That surface is untrusted in a way a plugin is not, and it is a separate
@@ -426,10 +475,15 @@ ships web assets — and the loader should *refuse* to serve them until the
 bridge exists, so the trigger fires as a refusal someone reads rather than as a
 memory someone has.
 
-**Enforce before you isolate.** Step 4's item 1 — enforcing the ten capability
-variants that already gate nothing — is Lua-side work the daemon can win today,
-and it is worth more per day than this. Isolation without enforcement is a
-truthful name for an ungated door.
+**The enforcement half of this ordering is void.** An earlier draft said
+"enforce before you isolate", and named step 4's item 1 as the work worth more
+per day. The owner ruled that work out, and
+`feat/runtime-path-unification` then deleted nine of the ten variants
+outright. There is no enforcement to come first.
+
+So the trigger loses its second condition rather than gaining a new one. The
+bridge is built when a third-party web block wants in. Nothing else has to be
+true, because nothing else is going to become true.
 
 Once built: extract the envelope client, make `KanbanBlock` consume it instead
 of `@/lib/api`, and let that prove sufficiency. `GraphBlock` is the harder
@@ -452,6 +506,22 @@ key, and a character class terminating the value. A bare-substring `expect`
 matches inside a longer word, inside a fenced code block, and in prose — and
 *under*-matches when a document holds two identical lines, which refuses the
 edit rather than performing it.
+
+**A qualifier this comparison needed, found by testing it.** Kanban wins
+against a match inside a longer word, because the leading newline and the
+`[%w_-]` class bound both ends. It used to TIE inside a fenced code block,
+which is one of the three cases named above: the pattern was precise, but the
+`gsub` ran over the whole document while `parse` read the frontmatter block
+only. A ticket with no status key in its block is legal, and the move rewrote
+the first `status:` anywhere — in prose, or in a fence. That was a real defect
+and it is fixed; the comparison above holds only against the fixed code.
+
+The review that found it also reported a second case — a status line opening
+the block — as a live defect. It was not one. The old `gsub` ran against the
+whole document, where the newline after the opening fence supplies the anchor.
+The first test written for that case passed against unfixed code, which is what
+exposed the error. Fixing the real defect moved the rewrite onto the block,
+and THAT made the first-position case load-bearing, so it now has a test.
 
 So the two halves come from different places: precision from a line-anchored
 pattern, detection from the anchor being re-validated at apply time. A write
