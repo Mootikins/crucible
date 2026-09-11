@@ -1,6 +1,6 @@
 ---
 title: Mobile Shell
-description: A draft design for the small-screen web shell — edge drawers, a tab stack, a sessions drawer with a project switcher, a files drawer with a root picker, a plain editor, a stepped new-session flow, an offline kiln with a sync, and what Oil views cost on a phone.
+description: A draft design for the small-screen web shell — edge drawers (sessions and files as tabs on the left, backlinks on the right), a tab stack, a plain editor that autosaves notes, a stepped new-session flow, an offline kiln with a sync, and what plugin blocks and surfaces cost on a phone.
 tags: [meta, architecture, web, mobile, ux, draft]
 status: draft
 ---
@@ -88,16 +88,18 @@ revision departed from that in four places. Three are now resolved, on
 
 | The record | Resolved as | Where |
 |---|---|---|
-| File tree and session as the two drawers | **Adopted.** Sessions left, files right, each with tabs that never move | Sections 4, 7 |
-| A kiln/project picker | **Adopted,** in the files drawer, above the tree. The sessions drawer gains its own **project switcher**, so a user can leave the recency list | Section 7 |
-| No vim mode | **Changed:** vim is OFF by default on a phone, with its own setting. The decision log records the change | Section 8 |
+| File tree and session as the two drawers | **Changed:** sessions and files are two tabs in the LEFT drawer; the right drawer holds Backlinks. Tabs never move | Sections 4, 7 |
+| A kiln/project picker in the left drawer | **Adopted as written:** the Files tab's root picker, in the left drawer. The Sessions tab gains its own **project switcher**, so a user can leave the recency list | Section 7 |
+| No vim mode | **Changed:** vim is OFF by default on a phone, with its own setting | Section 8 |
 | Online only | **Kept.** Sections 11 and 13 design the `P3` entries Offline Kiln Cache and Offline Note Capture. Build the shell without them | Sections 11, 13 |
 
-**One departure remains, and it is small: the side.** Row 78 puts the picker "in
-the left drawer". This draft puts the files drawer, and so the picker, on the
-RIGHT, because the desktop rails do: `sessions` registers `left` and `files`
-registers `right`. That contradicts the row, so it needs a yes or a swap before
-it ships. A swap costs one line in `MobileShell.tsx`.
+Two decisions reach past the phone, and the decision log records both:
+
+- **Notes autosave on both shells** (section 8). The desktop editor changes too.
+- **The desktop layout belongs to the desktop shell alone.** The compact shell
+  never loads it, never saves it, and has no concept of it; its own tab stack
+  persists in this browser (section 6). The layout stays one per daemon, shared
+  by every desktop — per-machine desktop layouts would be a separate change.
 
 (An earlier revision said the compact shell should honour the desktop's **Swap
 Side Panels**. It cannot: that command mirrors the layout trees and stores
@@ -156,17 +158,19 @@ Three regions, and one content surface.
 └──────────────────────────────────┘
 ```
 
-- **The app bar** holds the sessions-drawer button on the left. This is the
+- **The app bar** holds the left-drawer button on the left. This is the
   minimum requirement. It holds the title in the middle. It holds an overflow
-  menu and the files-drawer button on the right.
-- **The left drawer is Sessions.** It switches projects and lists that
-  project's sessions. Section 7 describes it.
-- **The right drawer is Files.** It picks a root and shows its tree. Section 7
-  describes it.
-- **Each drawer carries tabs, and the tabs never move.** This is the record's
-  "edge drawers with tabs but no tab MOVEMENT". The sessions drawer holds
-  Sessions and Surfaces. The files drawer holds Files, Backlinks, Changes,
-  Activity and Plugin Blocks — the right-rail panels of the desktop.
+  menu and the right-drawer button on the right.
+- **The left drawer is where a user goes: Sessions and Files, as two tabs.**
+  Both pickers live together, so a user moves between a session and a note
+  without crossing the screen. Section 7 describes it.
+- **The right drawer is the open note's context: Backlinks.** Nothing else,
+  for now; open question 14 asks whether a second pane earns a place there.
+- **The tabs never move.** This is the record's "edge drawers with tabs but no
+  tab MOVEMENT".
+- **Every other panel opens from the overflow menu, as a content tab.**
+  Surfaces, Changes, Activity, Plugin Blocks, Search, Skills and the rest are
+  things a user visits, not context kept beside a note.
 - **The content surface** shows exactly one registered panel.
 
 **Render it the way `Pane` does, not by spreading metadata.** Copy
@@ -346,11 +350,14 @@ leaves it alone.
 
 ## 7. The two drawers
 
-The record's split, adopted: sessions in one drawer, files in the other. They
-follow the desktop's rails, where `sessions` registers `left` and `files`
-registers `right` (`register-panels.tsx`).
+**Decided 2026-09-11:** the file picker and the session picker share the LEFT
+drawer, as two tabs, and the right drawer holds Backlinks. This puts the picker
+where decision row 78 put it — "a kiln/project picker in the left drawer" — and
+supersedes that row's two-drawer split. The tabs stay mounted while hidden, so
+the file tree keeps its expansion and the session list its scroll
+(`DrawerTabs.tsx`).
 
-### The sessions drawer (left)
+### The Sessions tab (left drawer)
 
 ```
 ┌ crucible ▾ ───────────────── ⊕ ┐   project switcher + New Session
@@ -390,7 +397,7 @@ first, with the rest reachable by scroll.
   carries no project label (`SessionTree.tsx:16-26,51`). The drawer needs 44 px
   rows, and each Inbox row must name its project.
 
-### The files drawer (right)
+### The Files tab (left drawer)
 
 A root picker above a tree — the desktop `FilesPanel` shape, and the record's
 "kiln/project picker".
@@ -485,16 +492,24 @@ laptop window and a phone-width window, and `localStorage` holds one value.
 | Setting | Desktop | Compact | Reason | Needs a split key? |
 |---------|---------|---------|--------|--------------------|
 | `vimMode` | true | false | No `Escape`, no modifier row | **Yes** — `vimModeCompact` |
-| `autosaveSeconds` | 0 | 3 | A phone has no `Ctrl+S` | **Yes** — `autosaveSecondsCompact`, read at `FileViewerPanel.tsx:323` |
+| `autosaveSeconds` | 2 | 2 | Notes save themselves on both shells | **No** — see below |
 | `maxLineWidth` | 768 | 0 | The viewport is already narrow | **No** — derive it, do not store it |
 | `showSaveButton` | true | true | unchanged | No |
 
-**The split-key argument applies to more than vim mode, and the earlier draft
-only followed it once.** `localStorage` holds one settings object per browser
-profile (`web/src/lib/settings.ts:80-88`), so a laptop and a phone sharing a
-profile share every value. That is the exact reason `vimModeCompact` exists, and
-`autosaveSeconds` has the same problem: 3 seconds is wrong on a desktop and 0 is
-data loss on a phone. Give it a key too.
+**Notes autosave on both shells — decided 2026-09-11.** An earlier revision
+gave the phone its own autosave key, because the desktop default was 0 and 0 on
+a phone loses writing. The decision removes the reason: a note now saves 2
+seconds after its last edit everywhere, so one key serves both shells.
+
+- **Notes only.** Autosave applies to a file inside a kiln. A project file —
+  code, config — still saves by hand, because a save there can fire watchers
+  and builds mid-edit. `FileViewerPanel` checks the owning kiln before it arms
+  the timer.
+- **Existing installs are migrated once.** Every browser that ever saved a
+  setting stored the old default, `autosaveSeconds: 0`, explicitly, so a new
+  default alone would reach no one. `SETTINGS_VERSION` 2 turns a stored 0 into 2
+  once; a user who wants it off turns it off again, and that choice is kept.
+- **`Ctrl+S` and `:w` still save at once.** Autosave only removes the need.
 
 `maxLineWidth` does not need one. A narrow viewport already clamps the column,
 so the compact shell can ignore the setting rather than store a second value.
@@ -604,18 +619,18 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 | chat-draft | full-height sheet | Section 9. |
 | file | content surface | Section 8. |
 | sessions | left drawer, Sessions tab | Section 7. |
-| files | right drawer, Files tab | Section 7. |
+| files | left drawer, Files tab | Section 7. |
 | search | content surface | Results need width. |
 | inbox | content surface | |
-| activity | right drawer, a tab | A right-rail panel on the desktop. |
-| backlinks | right drawer, a tab | A right-rail panel on the desktop. |
-| changes | right drawer, a tab | A right-rail panel on the desktop. |
+| activity | content tab, from the overflow menu | A feed a user visits. |
+| backlinks | right drawer | The open note's context. |
+| changes | content tab, from the overflow menu | A review queue a user visits. |
 | settings | full-height sheet | |
 | skills | content surface | |
 | plugins | content surface | |
 | graph | content surface, read only | Pan and zoom work. Node drag does not. |
-| plugin-blocks | right drawer, a tab | Registered `right` (`register-panels.tsx:56`). A plugin block is working context. |
-| surfaces | left drawer, Surfaces tab | Registered `left` (`register-panels.tsx:60`). A surface is a list of rows with a closed set of marks; it reflows to any width without help (section 12). |
+| plugin-blocks | content tab, from the overflow menu | Registered `right` (`register-panels.tsx:56`). A plugin block is working context. |
+| surfaces | content tab, from the overflow menu | Registered `left` (`register-panels.tsx:60`). A surface is a list of rows with a closed set of marks; it reflows to any width without help (section 12). |
 | canvas | not offered | It needs drag and a large field. |
 | terminal | not offered | It needs a keyboard. |
 
@@ -1423,8 +1438,9 @@ src/lib/tab-host.ts                the TabHost seam and its two hosts (section 6
 src/components/mobile/MobileShell.tsx         app bar, drawers, content surface
 src/components/mobile/Drawer.tsx              the gesture, the scrim, the focus trap
 src/components/mobile/NavStack.ts             the popstate bridge for the back button
-src/components/mobile/SessionsDrawer.tsx      project switcher, cross-project Inbox, sessions
-src/components/mobile/FilesDrawer.tsx         mounts FilesPanel as is; the right-rail tabs
+src/components/mobile/DrawerTabs.tsx          fixed tabs, every panel kept mounted
+src/components/mobile/SessionsTab.tsx         project switcher, cross-project Inbox, sessions
+(the Files tab mounts FilesPanel as it is; the right drawer mounts BacklinksPanel)
 src/components/mobile/BottomSheet.tsx         the option pickers and the action menus
 src/components/mobile/NewSessionSheet.tsx     the three steps in section 9
 src/components/mobile/MobileEditorBar.tsx     Read/Write and the toolbar
@@ -1547,8 +1563,8 @@ means duplicating it, or extracting it first.
 3. **The graph.** Is a read-only graph worth the bundle on a phone?
 4. **Settings storage.** `localStorage` holds one settings object per browser
    profile. A desktop and a phone that share a profile share every other
-   setting too. Vim mode and autosave get split keys in this draft. Fonts and
-   the terminal font do not.
+   setting too. Only vim mode gets a split key in this draft; autosave no
+   longer needs one (section 8). Fonts and the terminal font do not.
 5. **The mirror cap.** Section 11 mirrors the last 20 opened notes, which is
    `MAX_RECENTS` today. Twenty is a starting number, not a measured one.
 6. **Eviction, and the browser's own eviction.** IndexedDB has no fixed quota,
@@ -1593,3 +1609,8 @@ means duplicating it, or extracting it first.
     mirror the next time it reaches the daemon? It cannot erase it before then.
     The outbox must never be erased this way, because it may hold the only copy
     of the user's writing.
+14. **A second pane in the right drawer.** Backlinks is the only one today.
+    Obsidian's mobile right sidebar adds an outline and tags; Crucible has
+    neither panel. Of the panels that exist, Changes is the likeliest — reviewing
+    an agent's edits beside the note — but it is a queue a user visits, not
+    context, so it is not added.

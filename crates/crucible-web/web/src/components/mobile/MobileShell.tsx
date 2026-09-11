@@ -5,7 +5,9 @@ import { createEdgeSwipe, type SwipePoint } from '@/components/mobile/edge-swipe
 import type { DrawerSide } from '@/components/mobile/drawer-gesture';
 import { SessionsPanel } from '@/components/SessionsPanel';
 import { FilesPanel } from '@/components/FilesPanel';
-import { ClipboardList, FolderTree } from '@/lib/icons';
+import { BacklinksPanel } from '@/components/BacklinksPanel';
+import { DrawerTabs } from '@/components/mobile/DrawerTabs';
+import { FolderTree, Link2 } from '@/lib/icons';
 import type { Tab } from '@/types/windowTypes';
 
 /** `min(85vw, 320px)`, in px, because the swipe measures against it. */
@@ -13,8 +15,9 @@ const drawerWidthFor = (viewport: number) => Math.min(Math.round(viewport * 0.85
 
 /**
  * The compact shell: an app bar over one content surface, with an edge drawer
- * on each side — sessions on the left and files on the right, as the desktop
- * rails place them. See `docs/Meta/Architecture/Mobile Shell.md`.
+ * on each side. The left drawer is where a user goes — sessions and files, as
+ * tabs. The right drawer is the open note's context — its backlinks. Decision
+ * log 2026-09-11; see `docs/Meta/Architecture/Mobile Shell.md`.
  *
  * The tab stack and the drawers' own tabs arrive in later steps of Track A.
  */
@@ -86,11 +89,11 @@ export const MobileShell: Component = () => {
         class="shrink-0 flex items-center gap-1 h-12 px-1 border-b border-hairline bg-surface-base"
         style={{ 'padding-top': 'var(--inset-top)', 'box-sizing': 'content-box' }}
       >
-        <DrawerButton side="left" label="Sessions" icon={ClipboardList} />
+        <DrawerButton side="left" label="Sessions and files" icon={FolderTree} />
         <h1 class="flex-1 truncate text-sm font-medium text-shell-ink px-1">
           {activeTab()?.title ?? 'Crucible'}
         </h1>
-        <DrawerButton side="right" label="Files" icon={FolderTree} />
+        <DrawerButton side="right" label="Backlinks" icon={Link2} />
       </header>
       <main
         class="flex-1 min-h-0 flex flex-col"
@@ -109,25 +112,31 @@ export const MobileShell: Component = () => {
       <div data-drawer-part="left">
         <Drawer
           side="left"
-          label="Sessions"
+          label="Sessions and files"
           open={openSide() === 'left'}
           onOpenChange={setSide('left')}
           dragPx={leftSwipe.dragPx()}
           width={width()}
         >
-          <SessionsPanel />
+          <DrawerTabs
+            label="Sessions and files"
+            tabs={[
+              { id: 'sessions', label: 'Sessions', content: () => <SessionsPanel /> },
+              { id: 'files', label: 'Files', content: () => <FilesPanel /> },
+            ]}
+          />
         </Drawer>
       </div>
       <div data-drawer-part="right">
         <Drawer
           side="right"
-          label="Files"
+          label="Backlinks"
           open={openSide() === 'right'}
           onOpenChange={setSide('right')}
           dragPx={rightSwipe.dragPx()}
           width={width()}
         >
-          <FilesPanel />
+          <BacklinksPanel />
         </Drawer>
       </div>
     </div>
