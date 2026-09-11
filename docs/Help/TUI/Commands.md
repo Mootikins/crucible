@@ -143,7 +143,7 @@ These sync to the daemon and are session-scoped:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `contextstrategy` | enum | `truncate`, `sliding_window`, or `summarize` |
+| `contextstrategy` | enum | `truncate` or `summarize` |
 
 ### Precognition
 

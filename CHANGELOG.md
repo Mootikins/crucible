@@ -61,6 +61,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **`ContextStrategy::SlidingWindow` is gone.** It drained exactly what
+  `Summarize` drains — everything between the system prefix and the last ten
+  message pairs — and left nothing in the hole. Same turns lost, with no
+  marker telling the model they were. `Summarize` puts an LLM recap there,
+  and a static `[N earlier turns elided]` line when that call fails.
+
+  Two strategies remain: `truncate` and `summarize`. The old name is refused
+  rather than ignored — `:set contextstrategy=sliding_window` and a stored
+  session config both fail loudly, instead of silently falling back to the
+  default and changing the strategy without saying so.
+
+  The web settings dropdown also offered `full` and `recent`, which the daemon
+  never accepted and answered 422 for. It now lists what exists.
+
+
 - **`context_budget` is no longer a session knob.** It is derived, not chosen,
   so `session.{set,get}_context_budget`, `PUT`/`GET
   /api/session/{id}/config/context-budget`, `:set contextbudget`, the

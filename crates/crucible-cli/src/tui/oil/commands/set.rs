@@ -164,22 +164,12 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
         "contextstrategy" | "context_strategy" => {
             // Validate the strategy value
             match value.to_lowercase().as_str() {
-                "truncate" | "sliding_window" | "slidingwindow" | "summarize" => {
-                    let normalized = if value.to_lowercase() == "slidingwindow" {
-                        "sliding_window".to_string()
-                    } else {
-                        value.to_lowercase()
-                    };
-                    Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextStrategy(
-                        normalized,
-                    )))
-                }
+                strategy @ ("truncate" | "summarize") => Ok(SetEffect::DaemonRpc(
+                    SetRpcAction::SetContextStrategy(strategy.to_string()),
+                )),
                 _ => Err(SetError::InvalidValue {
                     key,
-                    message: format!(
-                        "unknown strategy '{}'. Valid: truncate, sliding_window, summarize",
-                        value
-                    ),
+                    message: format!("unknown strategy '{}'. Valid: truncate, summarize", value),
                 }),
             }
         }

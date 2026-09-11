@@ -103,7 +103,7 @@ entry but no shipped proof.
 | F40 | Cache statistics: `session.cache_stats`, `cru.session.cache_stats`, `sl.cache` | P, T |
 | F41 | Token budget tracking with `context_budget` and a chars/4 estimate | P, T, W |
 | F42 | Auto-compaction request at `context_budget * chat.autocompact_threshold` *(in progress)* | P, T |
-| F43 | Context strategies: Truncate, SlidingWindow, Summarize; Lua strategies *(planned)* | P |
+| F43 | Context strategies: Truncate, Summarize; Lua strategies *(planned)* | P |
 | F44 | Lua context operations `cru.context.{usage, messages, remove, estimate_tokens}` | P |
 | F45 | `cru.context.attach`: mid-turn attachment, deduplicated by key, capped by budget | P |
 | F46 | Max iterations: a depth cap replays the prompt and the turn ends with text | P, W |
@@ -606,7 +606,7 @@ pub struct SessionConfig {
     max_iterations: Option<u32>,     // default 10
     execution_timeout_secs: Option<u32>,
 }
-pub enum ContextStrategy { Truncate, SlidingWindow, Summarize, Lua { name: String } }
+pub enum ContextStrategy { Truncate, Summarize, Lua { name: String } }
 ```
 
 Owner: **SessionManager**.
@@ -1729,7 +1729,7 @@ is on `runtimepath`. [D7]
 
 ### 8.18 Context strategies
 
-`ContextStrategy::{Truncate, SlidingWindow, Summarize, Lua{name}}`.
+`ContextStrategy::{Truncate, Summarize, Lua{name}}`.
 Output validation was removed on 2026-09-10: see the Product backlog.
 
 ### 8.19 Built-in ACP profiles

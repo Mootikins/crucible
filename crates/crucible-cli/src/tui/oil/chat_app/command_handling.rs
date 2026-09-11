@@ -97,7 +97,7 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
+            ":set contextstrategy=truncate — Context strategy (truncate|summarize)\n\
              :set precognition             — Toggle auto-RAG\n\
              :set thinking           — Show thinking blocks\n\
              :set model=<name>       — Switch LLM model\n\

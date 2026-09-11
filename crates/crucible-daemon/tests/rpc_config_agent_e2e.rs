@@ -334,9 +334,9 @@ async fn all_config_knobs_round_trip_over_the_wire() {
 
     round_trip!(
         "context_strategy",
-        client.session_set_context_strategy(&sid, "sliding_window"),
+        client.session_set_context_strategy(&sid, "summarize"),
         client.session_get_context_strategy(&sid),
-        Some("sliding_window".to_string())
+        Some("summarize".to_string())
     );
 
     // precognition's getter returns bool (not Option) — check it directly.

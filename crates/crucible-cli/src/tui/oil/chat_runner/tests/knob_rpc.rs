@@ -124,7 +124,7 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 }
 
 #[test_case("model=gpt-4o", "switch_model" ; "model")]
-#[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
+#[test_case("contextstrategy=summarize", "set_context_strategy" ; "context strategy")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {

@@ -112,8 +112,8 @@ fn set_contextstrategy_summarize_accepted() {
 fn set_contextstrategy_normalizes_value() {
     let mut app = app();
     assert!(matches!(
-        run_set(&mut app, "contextstrategy=sliding_window"),
-        Action::Send(ChatAppMsg::SetContextStrategy(s)) if s == "sliding_window"
+        run_set(&mut app, "contextstrategy=SUMMARIZE"),
+        Action::Send(ChatAppMsg::SetContextStrategy(s)) if s == "summarize"
     ));
 }
 

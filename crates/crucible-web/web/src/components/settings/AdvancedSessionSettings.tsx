@@ -34,7 +34,7 @@ const inputClass =
  * field, which is why the current value is always added to the list if it is not
  * already in it.
  */
-const CONTEXT_STRATEGIES = ['full', 'recent', 'truncate', 'summarize'];
+const CONTEXT_STRATEGIES = ['truncate', 'summarize'];
 
 export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
