@@ -7,10 +7,17 @@ status: draft
 
 # Mobile Shell
 
-This note drafts the small-screen form of the web UI. It answers the open
-question in `crates/crucible-web/web/PRODUCT.md`:
+This note drafts the small-screen form of the web UI. **It elaborates a
+decision already on record; it does not make one.** `docs/Meta/Product.md`
+carries **Mobile Shell** at `P2`, and `docs/Meta/Product Decision Log.md`
+records five choices dated 2026-08-13: a separate shell, one origin with no
+`/m`, an online-only first pass, hash deep links, and a pinned manifest `id`.
 
-> **Undecided:** the mobile layout, and whether the PWA path ships.
+`crates/crucible-web/web/PRODUCT.md` still reads "**Undecided:** the mobile
+layout". That line is stale against the decision log. An earlier revision of
+this note took it at face value and re-derived decisions the log had already
+made, with weaker evidence. Section 2a lists where this draft now departs from
+the record, so none of the departures is silent.
 
 Nothing here is built yet. Read it as a proposal. See [[Web User Stories]] for
 the story format that the work must add to, and [[State Stores]] for the store
@@ -50,10 +57,17 @@ shell must therefore keep the URL at `/`. Section 6 gives the rule.
 
 **Ship a second shell. Do not make the window manager responsive.**
 
+The decision log settled this on 2026-08-13, and its evidence is stronger than
+the argument below: **at 780 px the desktop centre column collapses to 29 px**
+and the terminal renders one column. It is also cheap, for a reason this note
+missed: `panel-registry` registers panels as bare components, `Pane` renders
+them through `<Dynamic>` with no pane or tab context, and only two files import
+`windowing/`. Every panel mounts in a second shell as it is.
+
 The two shells share the panel components, the contexts, the API client and
 the theme. They do not share layout.
 
-Reasons:
+Supporting reasons:
 
 1. The window manager's whole value is many surfaces at once. A phone shows
    one surface at a time. A responsive window manager keeps the cost and
@@ -63,6 +77,24 @@ Reasons:
 3. Product principle 4 says the web UI is a peer, not a lite view. A separate
    shell obeys that principle better than a squeezed one. It can carry full
    depth in a form that a thumb can reach.
+
+## 2a. Where this draft departs from the record
+
+The P2 entry and decision row 78 describe the first pass as: "editor as the main
+area, file tree and session as edge drawers with tabs but no tab MOVEMENT, a
+kiln/project picker in the left drawer, no terminal, no vim mode". This draft
+agrees on tabs without movement and on no terminal. It departs in four places.
+Each needs a decision; none should land by default.
+
+| The record | This draft | Why it differs |
+|---|---|---|
+| A kiln/project **picker** in the left drawer | One **tree** of every root, no picker (section 7) | The user asked for a tree view in this session. The two can coexist: a picker that expands one root, as the desktop `RootDropdown` does |
+| File tree and session as the **two** drawers | Left = navigation (sessions and roots); right = working context (section 4) | Keeps both navigation lists in one reach; costs the file tree its own drawer |
+| **No** vim mode | A `vimModeCompact` setting, **off** by default (section 8) | The user asked for a separate setting in this session. The default matches the record; the setting does not exist in it |
+| **Online only** | Sections 11 and 13 design offline | They are a design for the `P3` entries **Offline Kiln Cache** and **Offline Note Capture**, not part of the `P2` shell. Build the shell without them |
+
+The record counted "all 15 panels" as mountable. There are 18 now: `plugin-blocks`
+and `surfaces` arrived after it (section 10).
 
 ## 3. The switch
 
@@ -207,14 +239,24 @@ phone must not overwrite a desktop layout.
 would miss the allowlist, reach the network, and break the offline shell. A
 new path would also break `id: '/'` for an installed app.
 
+**Deep links ride the hash.** Decision row 81 fixed this before anything
+shipped, because published URLs are permanent: `/#note=…`, never `/note?…`. A
+path-based link works online and fails offline, which is exactly when a
+home-screen shortcut matters.
+
 So the shell calls:
 
 ```ts
-history.pushState({ depth }, '', location.pathname);
+history.pushState({ depth }, '');   // no URL argument: the URL stays as it is
 ```
 
-The state carries the depth. The path never moves. A `popstate` listener pops
-the stack.
+The state carries the depth. A `popstate` listener pops the stack.
+
+**An earlier revision passed `location.pathname` as the third argument. That
+strips the hash**, so the first tab a user opened would have erased the deep
+link that brought them in. Omitting the argument keeps the whole URL, hash
+included. At startup the shell reads the hash once to route a deep link, then
+leaves it alone.
 
 ## 7. The tree
 
@@ -414,7 +456,8 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 | skills | content surface | |
 | plugins | content surface | |
 | graph | content surface, read only | Pan and zoom work. Node drag does not. |
-| plugin-blocks | right drawer | Registered `right` (`register-panels.tsx:55`). A plugin block is working context. |
+| plugin-blocks | right drawer | Registered `right` (`register-panels.tsx:56`). A plugin block is working context. |
+| surfaces | left drawer | Registered `left` (`register-panels.tsx:60`). A surface is a list of rows with a closed set of marks; it reflows to any width without help (section 12). |
 | canvas | not offered | It needs drag and a large field. |
 | terminal | not offered | It needs a keyboard. |
 
@@ -424,6 +467,32 @@ silently.
 ## 11. An offline kiln, and the sync
 
 A phone loses the network. The shell must still open a kiln and edit a note.
+
+### The decision this section does not make
+
+The product record says Offline Kiln Cache is "**blocked on a decision, not on
+effort**": caching kiln content puts authenticated responses in a
+same-origin-writable store, which is the threat `pwa-scope.test.ts` pins. It
+asks three questions. This section answers none of them, and the build must not
+start until someone does:
+
+1. **What may be cached.** Every attached kiln? Only the working set below?
+   Anything from a project, whose files may be code rather than notes?
+2. **For how long.** A mirror with no expiry is a copy of the kiln on a device
+   that may be lost.
+3. **What happens on sign-out.** There is no sign-out today: `web/src/lib/api.ts`
+   has `login(key)` at `:230` and no logout. So the real question is what happens
+   when a token is **revoked** or rotated. Wiping the mirror is easy. Wiping the
+   **outbox** discards writing the user has not synced, and keeping it replays
+   those writes under whatever credential comes next. That tension is the core of
+   question 3, and it has no default answer.
+
+One risk belongs beside question 3. The outbox is durable and replays with the
+user's authority **after the page that queued a write is gone**. A script that
+reaches this origin once can queue writes that drain later. The same origin can
+already write directly, so this adds persistence rather than capability — but
+persistence is exactly what the service worker section of `pwa-options.ts`
+spends most of its length bounding.
 
 ### What blocks this today
 
@@ -685,6 +754,25 @@ later cannot tell whether the ticket already moved, was renamed, or was deleted.
 So: queue *note* writes, which section 13 makes anchored and checkable. Refuse
 commands, and grey the control with a reason.
 
+### Surfaces: the second plugin UI kind, and the easy one for a phone
+
+Master also carries **plugin surfaces** (`cru.surface`,
+`docs/Help/Extending/Scripted UI.md`). A block is embedded in a note; a surface
+is a panel the plugin declares, drawn full-screen by `:surfaces` in the TUI and
+by the **Surfaces** panel in the browser.
+
+A surface row carries `id`, `text`, an optional `detail`, and an optional `mark`
+from a closed set — `busy`, `blocked`, `ok`, `failed`. **The client picks the
+glyph.** That is the shape a phone wants most: a list reflows to any width, a
+screen reader reads rows as rows, and a mark the build does not know renders
+blank rather than as a fault. `set_rows` broadcasts `surface_changed` with the
+version and never the rows, so a phone on a slow link refetches only what it
+opens.
+
+Offline, a surface degrades the way a publication does: the last rows cache and
+redraw read-only. A surface has no write path of its own, so it needs nothing
+from section 11.
+
 ### One live finding, now confirmed from two directions
 
 Section 12's earlier CSP finding stands, and the plugin plan reached the same
@@ -781,9 +869,15 @@ list while it works reports that list; the UI draws it. It writes nothing to a
 kiln, it needs no query, and no operation in this section applies to it. On a
 phone it matters for a different reason: "what is the agent doing right now" is
 the primary glance, and an ordered task list is the best form that glance takes.
-Note that Crucible carries no such event today — the session event vocabulary
-has no plan or task variant, and neither does the web's event reducer. Treat it
-as a render surface to keep in mind, not a thing to design here.
+Crucible still carries no task or plan event — the session event vocabulary has
+no such variant, and neither does the web's event reducer. **Session STATUS,
+though, now has a render channel.** `EventName` gained daemon-wide
+`SessionCreated` and `SessionEnded` (`session:created`, `session:ended`), and
+`runtime/plugins/session-board/` publishes a surface of sessions with `busy`,
+`blocked`, `ok` and `failed` marks. On a phone that is most of the glance: which
+session is working and which is waiting on you. A task list would be the next
+level of detail, and it would arrive the same way — as rows a plugin publishes,
+not as a new panel.
 
 **A kiln-wide checkbox collation is a query.** "Show me every unchecked box in
 this kiln, grouped by note" is operation 1. It is Dataview-shaped: a view over
@@ -844,7 +938,7 @@ There is a general property store beside it, keyed
   `routes/kiln.rs:79`).
 - `GET /api/notes` maps through `note_to_metadata_json` and returns
   `{name, path, title, tags, updated_at}` (`helpers.rs:27`). **This is the
-  index route.** `listNotes` calls it (`web/src/lib/api.ts:1740`).
+  index route.** `listNotes` calls it (`web/src/lib/api.ts:1829`).
 
 Neither carries `properties`, and no type in the chain has a slot for it.
 `NoteListItem` is a five-tuple (`helpers.rs:22`); `NoteInfo` carries
@@ -1067,7 +1161,7 @@ string a UI has to parse.
 
 `FsMoveOutcome` is the shape the plugin work names, but note what it is: a
 TypeScript client interface, `{moved, rewritten_sources?, skipped?}`
-(`web/src/lib/api.ts:2070-2077`). There is no Rust type behind it, and it
+(`web/src/lib/api.ts:2159`). There is no Rust type behind it, and it
 enumerates no per-item failure. Copy the *spirit* — a structured outcome a UI
 can branch on — and design the Rust shape here. An anchored batch is the first operation that can answer the
 question properly, so it should set the pattern rather than inherit the gap.

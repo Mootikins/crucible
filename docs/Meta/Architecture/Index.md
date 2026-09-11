@@ -23,8 +23,9 @@ machine-written JSON registries and how state overlays config). For the older an
 [[Storage Schema]], [[Canvas]], [[Filesystem Containment]], [[Bash Permission Layers]],
 [[Workspace and Runtime Targets]].
 
-[[Mobile Shell]] is a DRAFT, not an as-built note. It proposes the small-screen
-web shell that `crates/crucible-web/web/PRODUCT.md` still lists as undecided. Its
-section 11 names a daemon change the offline path needs first: `PUT
-/api/kiln/file` overwrites blindly today and must be able to refuse a stale
-base. Its section 12 records the plugin-block decision that `spike/oil-document-blocks` made, and where a phone meets it.
+[[Mobile Shell]] is a DRAFT, not an as-built note. It elaborates the small-screen
+web shell that `docs/Meta/Product.md` records at `P2`, and says where it departs
+from the 2026-08-13 decision-log rows. Its section 11 names a daemon change the
+offline path needs first: `PUT /api/kiln/file` overwrites blindly today and must
+be able to refuse a stale base. Its section 12 records where a phone meets the
+plugin blocks and plugin surfaces now on master.
