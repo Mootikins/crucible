@@ -2,7 +2,7 @@
 title: Plugin Merge Plan
 description: The work that lands the plugin branch, corrects three defects in the landed code, and makes the documents describe the merged tree
 type: plan
-status: proposed
+status: complete
 updated: 2026-09-10
 tags:
   - meta
@@ -293,6 +293,38 @@ through a runtime root and miss the install path.
 Write the rule as a comment beside the route table at
 `crates/crucible-web/src/routes/plugin.rs:34`, where the engineer who would
 add a bundle route reads it.
+
+**Landed.** The comment names the decision, points at the evidence, states
+the trigger, and says why it is not an install refusal.
+
+## What happened when this ran
+
+Every step landed. Three things the plan did not predict:
+
+**The merge lost work the conflict never named.** `git checkout --theirs` on
+`daemon_plugins/mod.rs` took the whole file, not only the capability machinery
+the conflict was about, and `bind_fs_roots` went with it. `cru.fs.read` and
+`cru.fs.write` then raised on every path a plugin passed them. The workspace
+compiled and `just ci` passed, because the call had one caller and no test.
+The doc-citation gate caught it indirectly, by failing on a moved line number
+and sending a reader back into the file. A2's warning about the yield rule was
+right about `test_support.rs` and `api.ts`, and this file needed it too.
+
+**D1 was not five lines.** The walk change was. But `cru.kiln.neighbors` is a
+contract the graph plugin calls, so the hop count went into a second read
+beside it, and the plugin's whole test harness counted per-hop calls — the
+property that went away. Sixteen plugin tests moved; two changed meaning.
+
+**A function can exist and still be a type error.** `neighbors_with_hops`
+landed on the store-backed registration only. The STUB registration carries
+the declaration the Luau checker reads, so `every_shipped_plugin_typechecks`
+refused the graph plugin while 912 Rust tests and 16 plugin tests passed.
+
+One correction to the review that produced this plan: B3's second case — a
+status line opening the frontmatter block — was not a defect on the old code.
+The test written for it passed unfixed. Fixing the real defect moved the
+rewrite onto the block, and that made the case load-bearing, so it has a test
+now.
 
 ## Order
 

@@ -29,6 +29,25 @@ use tokio_stream::StreamExt;
 /// block can call itself `app`. `GET /api/plugins/events` **cannot** be gated
 /// this way at all: browsers open it with `EventSource`, which sets no
 /// headers. An identity for the push stream needs a different carrier.
+/// **No route here serves a plugin's own web assets, and adding one has a
+/// precondition.**
+///
+/// A plugin's JavaScript would run on the app origin, where `script-src
+/// 'self'` means what `web/src/pwa-options.ts` says it means, and where a
+/// block can already call any endpoint as `app`. The decision on record is a
+/// sandboxed iframe on an opaque origin with a `MessageChannel` bridge; the
+/// evidence, the measurements and the envelope are in
+/// `docs/Meta/Analysis/Plugin Web Delivery.md`.
+///
+/// The trigger is a third-party plugin that ships web assets. Build the
+/// bridge first, then the route.
+///
+/// This note sits here rather than as a refusal in the install path, and the
+/// reason is worth stating: a refusal keyed on a `web/` directory rejects a
+/// plugin that keeps unrelated sources under that name, and `cru.rtp` lets a
+/// plugin arrive through a runtime root without passing the install path at
+/// all. A gate that is wrong in both directions is worse than a line the
+/// person adding the route will read.
 pub fn plugin_routes() -> Router<AppState> {
     Router::new()
         .route("/api/plugins", get(list_plugins).post(install_plugin))
