@@ -78,23 +78,31 @@ Supporting reasons:
    shell obeys that principle better than a squeezed one. It can carry full
    depth in a form that a thumb can reach.
 
-## 2a. Where this draft departs from the record
+## 2a. How this draft meets the record
 
 The P2 entry and decision row 78 describe the first pass as: "editor as the main
 area, file tree and session as edge drawers with tabs but no tab MOVEMENT, a
-kiln/project picker in the left drawer, no terminal, no vim mode". This draft
-agrees on tabs without movement and on no terminal. It departs in four places.
-Each needs a decision; none should land by default.
+kiln/project picker in the left drawer, no terminal, no vim mode". An earlier
+revision departed from that in four places. Three are now resolved, on
+2026-09-11, and the fourth is scoped out.
 
-| The record | This draft | Why it differs |
+| The record | Resolved as | Where |
 |---|---|---|
-| A kiln/project **picker** in the left drawer | One **tree** of every root, no picker (section 7) | The user asked for a tree view in this session. The two can coexist: a picker that expands one root, as the desktop `RootDropdown` does |
-| File tree and session as the **two** drawers | Left = navigation (sessions and roots); right = working context (section 4) | Keeps both navigation lists in one reach; costs the file tree its own drawer |
-| **No** vim mode | A `vimModeCompact` setting, **off** by default (section 8) | The user asked for a separate setting in this session. The default matches the record; the setting does not exist in it |
-| **Online only** | Sections 11 and 13 design offline | They are a design for the `P3` entries **Offline Kiln Cache** and **Offline Note Capture**, not part of the `P2` shell. Build the shell without them |
+| File tree and session as the two drawers | **Adopted.** Sessions left, files right, each with tabs that never move | Sections 4, 7 |
+| A kiln/project picker | **Adopted,** in the files drawer, above the tree. The sessions drawer gains its own **project switcher**, so a user can leave the recency list | Section 7 |
+| No vim mode | **Changed:** vim is OFF by default on a phone, with its own setting. The decision log records the change | Section 8 |
+| Online only | **Kept.** Sections 11 and 13 design the `P3` entries Offline Kiln Cache and Offline Note Capture. Build the shell without them | Sections 11, 13 |
 
-The record counted "all 15 panels" as mountable. There are 18 now: `plugin-blocks`
-and `surfaces` arrived after it (section 10).
+**One detail the record leaves open, and this draft picks:** which side each
+drawer takes. The record puts the picker "in the left drawer" without naming the
+drawer. This draft follows the desktop rails — `sessions` registers `left`,
+`files` registers `right` — so the picker sits on the right. The desktop already
+offers **Swap Side Panels** for a user who wants the file tree under the other
+thumb; the compact shell should honour the same preference rather than invent a
+second one.
+
+The record counted "all 15 panels" as mountable. There are 18 now:
+`plugin-blocks` and `surfaces` arrived after it (section 10).
 
 ## 3. The switch
 
@@ -134,12 +142,17 @@ Three regions, and one content surface.
 └──────────────────────────────────┘
 ```
 
-- **The app bar** holds the drawer button on the left. This is the minimum
-  requirement. It holds the title in the middle. It holds an overflow menu and
-  the right-drawer button on the right.
-- **The left drawer** is navigation. Section 5 describes it.
-- **The right drawer** is working context: Activity, Backlinks, Changes and
-  Inbox. It opens from the right edge.
+- **The app bar** holds the sessions-drawer button on the left. This is the
+  minimum requirement. It holds the title in the middle. It holds an overflow
+  menu and the files-drawer button on the right.
+- **The left drawer is Sessions.** It switches projects and lists that
+  project's sessions. Section 7 describes it.
+- **The right drawer is Files.** It picks a root and shows its tree. Section 7
+  describes it.
+- **Each drawer carries tabs, and the tabs never move.** This is the record's
+  "edge drawers with tabs but no tab MOVEMENT". The sessions drawer holds
+  Sessions and Surfaces. The files drawer holds Files, Backlinks, Changes,
+  Activity and Plugin Blocks — the right-rail panels of the desktop.
 - **The content surface** shows exactly one registered panel.
 
 Both drawers are overlays. They do not push the content. Each drawer uses
@@ -258,39 +271,68 @@ link that brought them in. Omitting the argument keeps the whole URL, hash
 included. At startup the shell reads the hash once to route a deep link, then
 leaves it alone.
 
-## 7. The tree
+## 7. The two drawers
 
-The left drawer holds one scrollable tree. It has three sections.
+The record's split, adopted: sessions in one drawer, files in the other. They
+follow the desktop's rails, where `sessions` registers `left` and `files`
+registers `right` (`register-panels.tsx`).
+
+### The sessions drawer (left)
 
 ```
-▾ Sessions
-    ▾ crucible                     ⊕
-        ● Fix the link index
-        ○ Write the release notes
-    ▾ Archived  (4)
-▾ Projects
-    ▸ crucible
-    ▸ crucible › wt/mobile-ui
-▾ Kilns
-    ▸ crucible-docs
-    ▸ Home kiln
+┌ crucible ▾ ───────────────── ⊕ ┐   project switcher + New Session
+│ INBOX  (2)                      │   every project: waiting or busy, last 24 h
+│   ⏸ Review the link index   web │
+│   ● Fix the release notes       │
+│ CRUCIBLE                        │   the chosen project, most recent first
+│   ○ Draft the mobile shell      │
+│   ○ Port the kanban plugin      │
+│   ○ …                           │
+│ ▸ Archived  (4)                 │
+└─────────────────────────────────┘
 ```
 
-- **Sessions** reuses `SessionTree.tsx`. It keeps the project tier. Each
-  project row keeps its New Session action.
-- **Projects**, **Worktrees** and **Kilns** come from `buildRoster` in
-  `src/lib/tree-root.ts:116-120`. It returns THREE groups, and `RosterGroup.label`
-  is that exact union (`:22-26`). The sketch above collapses Worktrees under
-  Projects for space; the implementation must not. A worktree row reads
-  `mainrepo > rel/path`.
-- A file tap opens the editor on the content surface.
+**The project switcher is the header, and it is what lets a user leave the
+recency list.** A tap opens a bottom sheet with every project and worktree, plus
+**All projects**. The list below then shows that project's sessions, most recent
+first, with the rest reachable by scroll.
 
-The desktop panel picks ONE root through `RootDropdown`. The compact shell
-shows every root in one list instead. A phone has no room for a picker above a
-tree, and a drawer scroll is cheaper than a menu.
+- It reuses `ProjectContext`'s `projects`, `currentProject` and `selectProject`.
+  `selectProject` is browser-local — a signal and a remembered pin
+  (`contexts/ProjectContext.tsx:123`) — so the phone's choice changes no other
+  client and no daemon state.
+- **All projects** shows the grouped `SessionTree` the desktop draws, one project
+  tier per group. It is the fallback, not the default: on a phone, one project at
+  a time is the readable form.
+- **The Inbox ignores the switcher.** A session that waits on the user matters
+  whatever project is on screen, so the Inbox stays cross-project, as it is on
+  the desktop (`SessionsPanel.tsx`). Each Inbox row names its project.
+- **⊕ New Session aims at the chosen project.** It calls
+  `openDraftSession({ workspace })` with that project's path, so the draft opens
+  already pointed there. Under **All projects** it opens unaimed, and step 2 of
+  section 9 asks.
+- Worktrees list as their own rows, labelled `mainrepo > rel/path`, as
+  `buildRoster` names them. A session in a worktree belongs to the worktree.
 
-`treeRootStore` still applies. A session pin decides which root the tree
-expands first.
+### The files drawer (right)
+
+A root picker above a tree — the desktop `FilesPanel` shape, and the record's
+"kiln/project picker".
+
+- **The picker** is `RootDropdown` over `buildRoster`
+  (`src/lib/tree-root.ts:116`): three groups, **Projects**, **Worktrees** and
+  **Kilns**. `RosterGroup.label` is that exact union (`:23`), so no group may be
+  folded into another.
+- **The tree** is `FileTreeView` over the chosen root. It is the tree view this
+  draft set out to provide; the picker decides which root it shows.
+- **It follows the active session** unless the user pins a root, exactly as
+  `treeRootStore` does on the desktop. Open a session in `crucible-docs` and the
+  tree shows `crucible-docs`.
+- A file tap opens the editor on the content surface, then closes the drawer.
+
+An earlier revision put sessions, projects and kilns in one tree with no picker.
+That tree was long, and it ran against the record. The picker costs one tap and
+keeps each tree short.
 
 ### Density rules
 
@@ -310,7 +352,11 @@ expands first.
 
 ## 8. The editor
 
-### Vim mode is a separate setting
+### Vim mode is a separate setting, off by default on a phone
+
+**Decided 2026-09-11, and recorded in the decision log.** The P2 record said
+"no vim mode". It now says vim is off by default on the compact shell, with its
+own setting. A user who pairs a keyboard with a tablet can still turn it on.
 
 `AppSettings.editor.vimMode` defaults to `true`. That default is right for the
 desktop audience. It is wrong for a phone, because a phone has no `Escape` key
@@ -330,7 +376,12 @@ interface EditorSettings {
 
 Default `vimModeCompact: false`.
 
-Resolve the value at the call site. `FileViewerPanel.tsx` line 487 passes
+**Show both toggles in the Editor section of Settings**, labelled for the shell
+they govern — "Vim mode (desktop)" and "Vim mode (phone)". One unlabelled toggle
+would change whichever key the current shell reads, and a user on a phone would
+see a desktop-only switch that seems to do nothing.
+
+Resolve the value at the call site. `FileViewerPanel.tsx` line 488 passes
 `settings.editor.vimMode` to the editor. It must pass a resolver instead:
 
 ```ts
@@ -445,19 +496,19 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 | chat | content surface | The primary surface. |
 | chat-draft | full-height sheet | Section 9. |
 | file | content surface | Section 8. |
-| files | left drawer | Section 7. |
-| sessions | left drawer | Section 7. |
+| sessions | left drawer, Sessions tab | Section 7. |
+| files | right drawer, Files tab | Section 7. |
 | search | content surface | Results need width. |
 | inbox | content surface | |
-| activity | right drawer | |
-| backlinks | right drawer | |
-| changes | right drawer | |
+| activity | right drawer, a tab | A right-rail panel on the desktop. |
+| backlinks | right drawer, a tab | A right-rail panel on the desktop. |
+| changes | right drawer, a tab | A right-rail panel on the desktop. |
 | settings | full-height sheet | |
 | skills | content surface | |
 | plugins | content surface | |
 | graph | content surface, read only | Pan and zoom work. Node drag does not. |
-| plugin-blocks | right drawer | Registered `right` (`register-panels.tsx:56`). A plugin block is working context. |
-| surfaces | left drawer | Registered `left` (`register-panels.tsx:60`). A surface is a list of rows with a closed set of marks; it reflows to any width without help (section 12). |
+| plugin-blocks | right drawer, a tab | Registered `right` (`register-panels.tsx:56`). A plugin block is working context. |
+| surfaces | left drawer, Surfaces tab | Registered `left` (`register-panels.tsx:60`). A surface is a list of rows with a closed set of marks; it reflows to any width without help (section 12). |
 | canvas | not offered | It needs drag and a large field. |
 | terminal | not offered | It needs a keyboard. |
 
@@ -468,31 +519,69 @@ silently.
 
 A phone loses the network. The shell must still open a kiln and edit a note.
 
-### The decision this section does not make
+### The decision the record asked for, and what is now answered
 
 The product record says Offline Kiln Cache is "**blocked on a decision, not on
 effort**": caching kiln content puts authenticated responses in a
 same-origin-writable store, which is the threat `pwa-scope.test.ts` pins. It
-asks three questions. This section answers none of them, and the build must not
-start until someone does:
+asks three questions.
 
-1. **What may be cached.** Every attached kiln? Only the working set below?
-   Anything from a project, whose files may be code rather than notes?
-2. **For how long.** A mirror with no expiry is a copy of the kiln on a device
-   that may be lost.
-3. **What happens on sign-out.** There is no sign-out today: `web/src/lib/api.ts`
-   has `login(key)` at `:230` and no logout. So the real question is what happens
-   when a token is **revoked** or rotated. Wiping the mirror is easy. Wiping the
-   **outbox** discards writing the user has not synced, and keeping it replays
-   those writes under whatever credential comes next. That tension is the core of
-   question 3, and it has no default answer.
+**First, two words this section uses, in plain terms.** They are the two things
+a phone keeps, and they are not the same kind of thing:
 
-One risk belongs beside question 3. The outbox is durable and replays with the
+- **The mirror** is a copy of notes the phone downloaded. The daemon already has
+  the originals. Delete the mirror and nothing is lost: the phone downloads the
+  notes again.
+- **The outbox** is edits the user made on the phone while offline, which the
+  daemon has not received yet. They exist ONLY on the phone. Delete the outbox
+  and the user's writing is gone.
+
+A "wipe the cache on sign-out" rule treats both as cache. Only the mirror is.
+Every rule below keeps that difference.
+
+**1. What may be cached — answered.** The working set below: pinned notes, the
+last 20 opened, and anything with an outbox entry. The index of note names is
+cached for every kiln the user opens.
+
+**2. For how long — still open.** A mirror with no expiry is a copy of the kiln
+on a device that may be lost. Nothing here picks a limit.
+
+**3. What happens on sign-out — answered, 2026-09-11: there is no sign-out, and
+nothing is wiped automatically.**
+
+The facts that make this simple:
+
+- **The browser never holds the key.** It POSTs the key once, and the server
+  answers with an HttpOnly, `SameSite=Strict` cookie that carries a minted
+  session token, not the key (`crucible-web/src/routes/auth.rs:1-12`). The token
+  lasts 30 days (`SESSION_TTL`, `middleware/auth/session.rs:26`).
+- **The server can end a token** — `POST /api/auth/logout` exists — but the web
+  client never calls it, and the compact shell does not need to.
+- **Revocation already exists, at the key.** "A token … dies with the key it was
+  minted from." Rotating `api_key` ends every browser session at once.
+
+So the offline rules are:
+
+- **A 401 during the drain keeps the outbox.** The token expired, or the key
+  rotated. The shell shows the existing `AuthTokenPrompt`, the user enters the
+  key, and the drain resumes. Unsynced writing is never discarded because a
+  credential lapsed.
+- **Nothing deletes the mirror or the outbox on its own.** Only the user does,
+  from Settings, and the outbox's delete names how many unsynced edits it will
+  destroy.
+- **Rotating the key stops sync; it does not erase the phone's copy.** Notes
+  already in the mirror stay readable by whoever holds the device. No offline
+  cache can be erased remotely by revoking a credential, and the shell must not
+  imply otherwise. What remote revocation of a lost phone should mean is
+  **not yet decided** — open question 13.
+
+One risk belongs beside rule 3. The outbox is durable and replays with the
 user's authority **after the page that queued a write is gone**. A script that
 reaches this origin once can queue writes that drain later. The same origin can
 already write directly, so this adds persistence rather than capability — but
 persistence is exactly what the service worker section of `pwa-options.ts`
-spends most of its length bounding.
+spends most of its length bounding. Show the outbox's contents before a drain
+that follows a fresh login, so a user can see what is about to be sent.
 
 ### What blocks this today
 
@@ -1223,7 +1312,8 @@ src/stores/deviceStore.ts          the compact test and its subscription
 src/mobile/MobileShell.tsx         app bar, drawers, content surface
 src/mobile/Drawer.tsx              the gesture, the scrim, the focus trap
 src/mobile/NavStack.ts             the popstate bridge for the back button
-src/mobile/MobileTree.tsx          sessions + projects + kilns in one tree
+src/mobile/SessionsDrawer.tsx      project switcher, cross-project Inbox, sessions
+src/mobile/FilesDrawer.tsx         RootDropdown + FileTreeView; the right-rail tabs
 src/mobile/BottomSheet.tsx         the option pickers and the action menus
 src/mobile/NewSessionSheet.tsx     the three steps in section 9
 src/mobile/MobileEditorBar.tsx     Read/Write and the toolbar
@@ -1380,3 +1470,8 @@ means duplicating it, or extracting it first.
    desktop PWA gets the window manager, not the compact shell, because the
    breakpoint decides. Section 11's offline store would then apply to a shell
    this draft never designed for it.
+13. **A lost phone.** Rotating the key cuts the phone off from the daemon, but
+    the mirror stays readable on the device. Should a revoked phone erase its
+    mirror the next time it reaches the daemon? It cannot erase it before then.
+    The outbox must never be erased this way, because it may hold the only copy
+    of the user's writing.
