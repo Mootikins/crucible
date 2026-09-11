@@ -30,6 +30,18 @@ local function seed()
     })
 end
 
+--- Write a ticket's exact bytes. `ticket` always puts `title:` first, so a
+--- status line can never open the block through it, and a body can never hold
+--- a `status:` line of its own.
+local function raw_ticket(name: string, content: string)
+    local path = BOARD .. "/" .. name
+    local handle = assert(io.open(path, "w"))
+    handle:write(content)
+    handle:close()
+    SEEDED[path] = "staged"
+    seed()
+end
+
 local function ticket(name: string, status: string?, body: string?)
     local path = BOARD .. "/" .. name
     local handle = assert(io.open(path, "w"))
@@ -129,6 +141,41 @@ describe("kanban", function()
             -- One frontmatter block, not two.
             local _, blocks = content:gsub("\n%-%-%-", "")
             expect.equal(blocks, 1)
+        end)
+
+        it("rewrites the frontmatter status, not a status line in the body", function()
+            -- `parse` reads `status:` inside the frontmatter block only, so a
+            -- ticket with no status there is a legal ticket: it shows in the
+            -- default column. The move ran its `gsub` over the WHOLE document
+            -- and rewrote the first `status:` anywhere, which for this ticket
+            -- is a line inside a fenced code block a human wrote.
+            raw_ticket(
+                "doc.md",
+                "---\ntitle: doc\n---\n"
+                    .. "How to set it:\n\n```yaml\nstatus: todo\n```\n"
+            )
+            plugin.tools.kanban_move.fn({ file = "doc.md", to = "doing" })
+            local content = read("doc.md")
+            local head_end = (content:find("\n---", 4, true)) :: number
+            local block = content:sub(1, head_end)
+            local body = content:sub(head_end + 1)
+            expect.truthy((block:find("status: doing", 1, true)))
+            expect.truthy((body:find("status: todo", 1, true)))
+        end)
+
+        it("rewrites a status line that opens the frontmatter block", function()
+            -- The rewrite runs against the block, which starts AFTER the
+            -- opening fence, so a status line in the first position has no
+            -- leading newline for the main pattern to anchor on. `parse`
+            -- accepts that position, so the move must too, or it writes a
+            -- second `status:` key into the same block.
+            raw_ticket("first.md", "---\nstatus: todo\ntitle: first\n---\nBody.\n")
+            plugin.tools.kanban_move.fn({ file = "first.md", to = "done" })
+            local content = read("first.md")
+            expect.truthy((content:find("status: done", 1, true)))
+            expect.falsy((content:find("status: todo", 1, true)))
+            local _, keys = content:gsub("status:", "")
+            expect.equal(keys, 1)
         end)
 
         it("refuses a column it does not have", function()

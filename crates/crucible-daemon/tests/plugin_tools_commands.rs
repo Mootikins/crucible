@@ -16,9 +16,15 @@ use tempfile::TempDir;
 use tokio::sync::broadcast;
 
 /// Write a plugin declaring one tool and one command, both with real `fn`s.
+///
+/// The plugin is `megaphone` and its tool is `shout`. **Keep the two names
+/// different.** They both read `shout` until 2026-09-10, so
+/// `a_plugin_tool_runs_under_its_own_plugins_context` passed whether the
+/// dispatcher entered the plugin's context or the tool's, which is the one
+/// mistake that test exists to catch.
 fn write_fixture_plugin(root: &std::path::Path) -> std::path::PathBuf {
     let plugins_dir = root.join("plugins");
-    let plugin_dir = plugins_dir.join("shout");
+    let plugin_dir = plugins_dir.join("megaphone");
     std::fs::create_dir_all(&plugin_dir).expect("create plugin dir");
 
     std::fs::write(
@@ -38,7 +44,7 @@ function M.greet(args)
 end
 
 return {
-    name = "shout",
+    name = "megaphone",
     version = "0.1.0",
     description = "Test fixture plugin",
 
@@ -184,8 +190,8 @@ async fn a_plugin_tool_runs_under_its_own_plugins_context() {
 
     assert_eq!(
         seen.lock().expect("probe lock").as_deref(),
-        Some("shout"),
-        "the tool body must run under the plugin that declared it"
+        Some("megaphone"),
+        "the tool body must run under the PLUGIN that declared it, not under the tool"
     );
     assert!(
         crucible_lua::current_plugin_context(&lua).is_none(),
@@ -202,7 +208,7 @@ async fn plugin_declared_command_is_listed_and_invocable() {
     let commands = registry.commands_json();
     assert_eq!(commands.len(), 2, "expected two commands, got {commands:?}");
     assert_eq!(commands[0]["name"], "greet");
-    assert_eq!(commands[0]["plugin"], "shout");
+    assert_eq!(commands[0]["plugin"], "megaphone");
     assert_eq!(commands[0]["hint"], "[name]");
     assert_eq!(commands[0]["description"], "Greet someone");
 

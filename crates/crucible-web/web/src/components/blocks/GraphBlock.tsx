@@ -96,7 +96,15 @@ export const GraphBlock: Component<BlockProps> = (props) => {
     async (args): Promise<Neighborhood> => {
       const started = performance.now();
       try {
-        return (await runPluginCommand('graph_neighborhood', args)) as Neighborhood;
+        // Third argument: this block declares itself as the plugin it draws
+        // for, the same as `KanbanBlock`. Without it the call defaults to
+        // `APP_CALLER` and the block is indistinguishable from the app, so
+        // the route's per-plugin comparison never runs in production.
+        return (await runPluginCommand(
+          'graph_neighborhood',
+          args,
+          props.plugin,
+        )) as Neighborhood;
       } finally {
         setElapsed(performance.now() - started);
       }

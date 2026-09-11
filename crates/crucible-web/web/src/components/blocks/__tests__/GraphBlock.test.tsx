@@ -67,10 +67,11 @@ describe('GraphBlock', () => {
     ));
 
     await waitFor(() => expect(container.textContent).toContain('Oil.md'));
-    expect(mocks.runPluginCommand).toHaveBeenCalledWith('graph_neighborhood', {
-      path: 'Meta/Canvas.md',
-      depth: 2,
-    });
+    expect(mocks.runPluginCommand).toHaveBeenCalledWith(
+      'graph_neighborhood',
+      { path: 'Meta/Canvas.md', depth: 2 },
+      'graph',
+    );
     expect(container.textContent).toContain('1 hop (1)');
     expect(container.textContent).toContain('2 hops (2)');
   });
@@ -89,10 +90,11 @@ describe('GraphBlock', () => {
     fireEvent.input(getByTestId('graph-depth'), { target: { value: '3' } });
 
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenLastCalledWith('graph_neighborhood', {
-        path: 'Meta/Canvas.md',
-        depth: 3,
-      }),
+      expect(mocks.runPluginCommand).toHaveBeenLastCalledWith(
+        'graph_neighborhood',
+        { path: 'Meta/Canvas.md', depth: 3 },
+        'graph',
+      ),
     );
   });
 
@@ -117,10 +119,11 @@ describe('GraphBlock', () => {
     ));
 
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenCalledWith('graph_neighborhood', {
-        path: 'Meta/Canvas.md',
-        depth: 1,
-      }),
+      expect(mocks.runPluginCommand).toHaveBeenCalledWith(
+        'graph_neighborhood',
+        { path: 'Meta/Canvas.md', depth: 1 },
+        'graph',
+      ),
     );
     expect(container.textContent).toContain('Canvas.md');
   });
@@ -183,6 +186,26 @@ describe('GraphBlock', () => {
     ));
 
     await waitFor(() => expect(container.textContent).toContain('Cut short'));
+  });
+
+  // The block declares which plugin it draws for. Without the third argument
+  // `runPluginCommand` defaults to `APP_CALLER`, so the block reaches the
+  // route as the app and the per-plugin comparison never runs in production.
+  // The Rust tests would still pass, because they send the header by hand.
+  //
+  // Asserted, not proved: `props.plugin` comes from the fence's first line,
+  // so a note author chose it. See `routes/plugin_caller.rs`.
+  it('declares itself as the plugin it draws for', async () => {
+    const { container } = render(() => (
+      <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
+    ));
+
+    await waitFor(() => expect(mocks.runPluginCommand).toHaveBeenCalled());
+    // The third positional argument is the caller. Read it off the call
+    // rather than matching the whole call, so a change to the argument
+    // object does not silently take this assertion with it.
+    expect(mocks.runPluginCommand.mock.calls[0][2]).toBe('graph');
+    expect(container).toBeTruthy();
   });
 
   it('opens a neighbour at its absolute path', async () => {

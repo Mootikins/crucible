@@ -156,15 +156,30 @@ local function move(folder: string?, kiln: string?, file: string, to: string): b
     local content = read_file(path)
     if not content then return false end
 
-    local replaced, count = content:gsub("(\nstatus:%s*)[%w_-]+", "%1" .. to, 1)
-    if count == 0 then
-        -- No status line yet: add one inside the existing frontmatter rather
-        -- than creating a second block.
-        if content:sub(1, 4) == "---\n" then
-            replaced = content:gsub("^(---\n)", "%1status: " .. to .. "\n", 1)
-        else
-            replaced = "---\nstatus: " .. to .. "\n---\n" .. content
+    -- Rewrite inside the frontmatter block ONLY. `parse` reads `status:`
+    -- there and nowhere else, so a ticket with no status in its block is a
+    -- legal ticket that shows in the default column. A `gsub` over the whole
+    -- document rewrote the first `status:` ANYWHERE, which for such a ticket
+    -- is a line in prose or inside a fenced code block that a human wrote.
+    local replaced
+    local head_end = content:sub(1, 4) == "---\n" and content:find("\n---", 4, true) or nil
+    if head_end then
+        local block = content:sub(5, head_end)
+        local rewritten, count = block:gsub("(\nstatus:%s*)[%w_-]+", "%1" .. to, 1)
+        if count == 0 then
+            -- `parse` also accepts `^status:`, where the pattern above finds
+            -- no leading newline. `block` starts after the opening fence, so
+            -- the two readers agree only when this case is handled too.
+            rewritten, count = block:gsub("^(status:%s*)[%w_-]+", "%1" .. to, 1)
         end
+        if count == 0 then
+            -- No status key yet: add one inside the existing block rather
+            -- than creating a second block.
+            rewritten = "status: " .. to .. "\n" .. block
+        end
+        replaced = content:sub(1, 4) .. rewritten .. content:sub(head_end + 1)
+    else
+        replaced = "---\nstatus: " .. to .. "\n---\n" .. content
     end
     return write_file(path, replaced)
 end
