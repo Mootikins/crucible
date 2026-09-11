@@ -325,10 +325,10 @@ async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway()
     let model = chat_client
         .model_iden("gpt-4o-mini")
         .expect("model iden for gpt-4o-mini");
-    let mut handle =
-        GenaiAgentHandle::new(client, model, "system", defs).with_deferrable_tools(deferrable);
     // Tiny budget → the tool schemas exceed the 15% share.
-    handle.set_context_budget(Some(1_000)).await.unwrap();
+    let mut handle = GenaiAgentHandle::new(client, model, "system", defs)
+        .with_deferrable_tools(deferrable)
+        .with_context_settings(1_000, Default::default());
 
     let (names, deferred) = handle.visible_tool_names_for_test();
     assert_eq!(deferred, 12, "every gateway tool deferred");
@@ -508,7 +508,6 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     // read back. `generation_settings_reach_the_outgoing_chat_options` in
     // `provider::genai_handle` asserts them on `ChatOptions` — the object
     // that goes on the wire — which is the stronger claim anyway.
-    assert_eq!(handle.get_context_budget(), Some(64_000), "context_budget");
     assert_eq!(
         handle.get_context_strategy(),
         crucible_core::session::ContextStrategy::SlidingWindow,

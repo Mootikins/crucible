@@ -50,14 +50,6 @@ pub struct SessionUndoRequest {
     pub count: Option<usize>,
 }
 
-/// Request for `session.set_context_budget`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetContextBudgetRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context_budget: Option<usize>,
-}
-
 /// Request for `session.set_context_strategy`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetContextStrategyRequest {
@@ -474,31 +466,6 @@ impl DaemonClient {
         self.get_session_option("session.get_mode", session_id, "mode", |v| {
             v.as_str().map(|s| s.to_string())
         })
-        .await
-    }
-
-    pub async fn session_set_context_budget(
-        &self,
-        session_id: &str,
-        context_budget: Option<usize>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_context_budget",
-            SessionSetContextBudgetRequest {
-                session_id: session_id.to_string(),
-                context_budget,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_context_budget(&self, session_id: &str) -> Result<Option<usize>> {
-        self.get_session_option(
-            "session.get_context_budget",
-            session_id,
-            "context_budget",
-            |v| v.as_u64().map(|n| n as usize),
-        )
         .await
     }
 

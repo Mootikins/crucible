@@ -140,8 +140,6 @@ rpc_methods! {
     NotificationDismiss = "notification.dismiss",
     SessionInteractionRespond = "session.interaction_respond",
     SessionPendingInteractions = "session.pending_interactions",
-    SessionSetContextBudget = "session.set_context_budget",
-    SessionGetContextBudget = "session.get_context_budget",
     SessionSetContextStrategy = "session.set_context_strategy",
     SessionGetContextStrategy = "session.get_context_strategy",
     SessionSetPrecognition = "session.set_precognition",
@@ -344,13 +342,10 @@ impl RpcDispatcher {
 
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
-            RpcMethod::SessionSetContextBudget
-            | RpcMethod::SessionSetContextStrategy
-            | RpcMethod::SessionSetPrecognition => {
+            RpcMethod::SessionSetContextStrategy | RpcMethod::SessionSetPrecognition => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             RpcMethod::SessionGetMode
-            | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
             | RpcMethod::SessionGetPrecognition => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
@@ -1301,7 +1296,6 @@ impl RpcDispatcher {
     /// This avoids a dozen near-identical one-line forwarding methods.
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
-            "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
             "session.set_precognition" => handle_session_set_precognition,
         });
@@ -1314,7 +1308,6 @@ impl RpcDispatcher {
     async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_getter!(req, &self.ctx.agents, {
             "session.get_mode" => handle_session_get_mode,
-            "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
             "session.get_precognition" => handle_session_get_precognition,
         });
@@ -2910,7 +2903,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         assert!(METHODS.contains(&"ping"));
         assert!(METHODS.contains(&"daemon.capabilities"));
         assert!(METHODS.contains(&"session.subscribe"));
-        assert!(METHODS.contains(&"session.set_context_budget"));
+        assert!(METHODS.contains(&"session.set_context_strategy"));
         assert!(METHODS.contains(&"session.cache_stats"));
         assert!(METHODS.contains(&"subagent.collect"));
     }
@@ -3548,7 +3541,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let result = resp.result.unwrap();
         let methods = result["methods"].as_array().unwrap();
         assert!(methods.iter().any(|m| m == "ping"));
-        assert!(methods.iter().any(|m| m == "session.set_context_budget"));
+        assert!(methods.iter().any(|m| m == "session.set_context_strategy"));
     }
 
     #[tokio::test]

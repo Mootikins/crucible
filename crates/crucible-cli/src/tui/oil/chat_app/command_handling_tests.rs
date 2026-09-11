@@ -65,7 +65,7 @@ fn app() -> OilChatApp {
     OilChatApp::default()
 }
 
-/// Run a `:set` body (e.g. `"contextbudget=128000"`) through the real
+/// Run a `:set` body (e.g. `"contextstrategy=truncate"`) through the real
 /// command handler and return the resulting action.
 fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
     app.handle_set_command(&format!("set {body}"))
@@ -74,7 +74,6 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 // Every session-scoped key must emit a daemon-sync `Action::Send` so
 // multi-client state stays consistent (see AGENTS.md cross-layer checklist).
 #[test_case("model=gpt-4o" ; "model")]
-#[test_case("contextbudget=128000" ; "context budget")]
 #[test_case("contextstrategy=truncate" ; "context strategy")]
 #[test_case("outputvalidation=off" ; "output validation")]
 #[test_case("validationretries=2" ; "validation retries")]
@@ -131,7 +130,6 @@ fn set_then_query_round_trips() {
 }
 
 // Invalid values surface a warning and do NOT emit a daemon sync.
-#[test_case("contextbudget=abc" ; "non-numeric budget")]
 #[test_case("contextstrategy=nonsense" ; "unknown strategy")]
 fn set_invalid_value_warns_and_no_send(body: &str) {
     let mut app = app();
@@ -358,7 +356,7 @@ fn set_reset_returns_to_base() {
 #[test]
 fn set_query_unmodified_key_is_continue() {
     let mut app = app();
-    let action = app.handle_set_command("set contextbudget?");
+    let action = app.handle_set_command("set contextstrategy?");
     assert!(matches!(action, Action::Continue));
 }
 

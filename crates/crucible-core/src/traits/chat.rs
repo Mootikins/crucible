@@ -213,12 +213,6 @@ pub trait SessionKnobs: Send + Sync {
     /// place a test can prove that AGENTS.md rules reached the model.
     fn get_system_prompt(&self) -> Option<String>;
 
-    /// Set the context token budget. None = no limit.
-    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()>;
-
-    /// Get the current context token budget.
-    fn get_context_budget(&self) -> Option<usize>;
-
     /// Set the context truncation strategy.
     async fn set_context_strategy(
         &mut self,
@@ -264,17 +258,6 @@ macro_rules! impl_unsupported_session_knobs {
             }
             async fn fetch_available_modes(&mut self) -> Vec<String> {
                 Vec::new()
-            }
-            async fn set_context_budget(
-                &mut self,
-                _budget: Option<usize>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_context_budget".into(),
-                ))
-            }
-            fn get_context_budget(&self) -> Option<usize> {
-                None
             }
             async fn set_context_strategy(
                 &mut self,
@@ -502,14 +485,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         (**self).fetch_available_modes().await
-    }
-
-    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
-        (**self).set_context_budget(budget).await
-    }
-
-    fn get_context_budget(&self) -> Option<usize> {
-        (**self).get_context_budget()
     }
 
     async fn set_context_strategy(

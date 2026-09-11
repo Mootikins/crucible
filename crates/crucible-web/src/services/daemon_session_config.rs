@@ -25,35 +25,6 @@ use super::daemon::ReconnectingDaemon;
 impl ReconnectingDaemon {
     // ── Context ───────────────────────────────────────────────────────────
 
-    pub async fn session_set_context_budget(
-        &self,
-        session_id: &str,
-        context_budget: Option<usize>,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_context_budget", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_context_budget(&session_id, context_budget)
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn session_get_context_budget(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<Option<usize>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_context_budget", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_context_budget(&session_id).await })
-        })
-        .await
-    }
-
     // ── Execution ─────────────────────────────────────────────────────────
 
     // ── Prompt and enum-valued knobs ──────────────────────────────────────

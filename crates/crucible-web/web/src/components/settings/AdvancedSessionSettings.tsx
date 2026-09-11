@@ -1,7 +1,7 @@
 // src/components/settings/AdvancedSessionSettings.tsx
 //
 // The session config knobs the daemon advertises that do not belong in the
-// model panel: context budget and context strategy.
+// model panel: the context strategy.
 //
 // Its own file rather than a tenth section inside SettingsPanel.tsx, which was
 // already 961 lines — the same reason the Rust routes became
@@ -16,9 +16,7 @@ import { Component, createSignal, onMount } from 'solid-js';
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
-  getContextBudget,
   getContextStrategy,
-  setContextBudget,
   setContextStrategy,
 } from '@/lib/api';
 
@@ -38,18 +36,9 @@ const inputClass =
  */
 const CONTEXT_STRATEGIES = ['full', 'recent', 'truncate', 'summarize'];
 
-/** Empty input → `null`, meaning "restore the daemon's default". */
-function parseOptionalInt(raw: string): number | null | undefined {
-  const trimmed = raw.trim();
-  if (trimmed === '') return null;
-  const val = parseInt(trimmed, 10);
-  return Number.isNaN(val) ? undefined : val;
-}
-
 export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
 
-  const [contextBudget, setContextBudgetSig] = createSignal('');
   const [contextStrategy, setContextStrategySig] = createSignal('');
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -67,14 +56,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, strategy] =
-        await Promise.all([
-          getContextBudget(s.id),
-          getContextStrategy(s.id),
-        ]);
-      const text = (v: number | null) => (v === null ? '' : String(v));
-      setContextBudgetSig(text(budget));
-      setContextStrategySig(strategy ?? '');
+      setContextStrategySig((await getContextStrategy(s.id)) ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load advanced settings');
     } finally {
@@ -83,27 +65,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
   };
 
   onMount(loadSettings);
-
-  /** Commit an `Option<number>` knob on blur. An unparseable value is left alone. */
-  const commitOptionalInt =
-    (
-      setter: (raw: string) => void,
-      send: (sessionId: string, value: number | null) => Promise<void>,
-      what: string,
-    ) =>
-    async (e: Event) => {
-      const raw = (e.target as HTMLInputElement).value;
-      setter(raw);
-      const s = session.currentSession();
-      if (!s) return;
-      const val = parseOptionalInt(raw);
-      if (val === undefined) return;
-      try {
-        await send(s.id, val);
-      } catch (err) {
-        fail(what)(err);
-      }
-    };
 
   const options = (known: string[], current: string) =>
     current && !known.includes(current) ? [current, ...known] : known;
@@ -119,19 +80,6 @@ export const AdvancedSessionSettingsSection: Component = () => {
       hasSession={!!session.currentSession()}
       noSessionMessage="No active session — start a chat to configure advanced settings."
     >
-      <SettingRow label="Context Budget" description="Tokens of history per turn; empty = default">
-        <input
-          type="number"
-          min={0}
-          value={contextBudget()}
-          data-testid="context-budget-input"
-          onInput={(e) => setContextBudgetSig((e.target as HTMLInputElement).value)}
-          onBlur={commitOptionalInt(setContextBudgetSig, setContextBudget, 'context budget')}
-          class={`${inputClass} w-28 text-right`}
-          placeholder="Default"
-        />
-      </SettingRow>
-
       <SettingRow label="Context Strategy" description="How history is assembled">
         <select
           value={contextStrategy()}

@@ -87,18 +87,6 @@ async fn assert_get_returns(tail: &str, web_key: &str, expected: Value) {
 
 // ── Context ───────────────────────────────────────────────────────────────
 
-#[tokio::test]
-async fn context_budget_round_trips() {
-    assert_put_reaches_daemon(
-        "context-budget",
-        "session.set_context_budget",
-        "context_budget",
-        json!(8000),
-    )
-    .await;
-    assert_get_returns("context-budget", "context_budget", json!(111)).await;
-}
-
 // ── Execution ─────────────────────────────────────────────────────────────
 
 // ── Prompt and enum-valued knobs ──────────────────────────────────────────
@@ -116,43 +104,6 @@ async fn context_strategy_round_trips_its_string_spelling() {
 }
 
 // ── Nullable knobs ────────────────────────────────────────────────────────
-
-/// Clearing an optional knob must never reach the daemon as a *value*.
-///
-/// It arrives as an omitted field rather than an explicit `null`, because the
-/// daemon's own client request structs carry
-/// `#[serde(skip_serializing_if = "Option::is_none")]`. That is fine HERE, and
-/// the distinction the test originally asserted does not exist for these knobs:
-/// the server reads them with `optional_param!(req, …)`, which maps absent and
-/// `null` alike to `None`, and the setter always writes an `Option` — there is no
-/// "leave unchanged" branch for an omitted field to fall into.
-///
-/// What would be a real bug is the browser's `null` being coerced to a value
-/// (`0`, or the knob's default) somewhere between the web request struct and the
-/// wire. That is what this asserts.
-#[tokio::test]
-async fn clearing_an_optional_knob_never_sends_a_value() {
-    for (tail, rpc_method, wire_field) in [(
-        "context-budget",
-        "session.set_context_budget",
-        "context_budget",
-    )] {
-        let uri = format!("/api/session/s1/config/{tail}");
-        let (status, _, mock) = call("PUT", &uri, Some(json!({ wire_field: Value::Null }))).await;
-        assert_eq!(status, StatusCode::OK, "PUT {uri} with null should succeed");
-
-        let params = mock
-            .received_params(rpc_method)
-            .unwrap_or_else(|| panic!("PUT {uri} did not call {rpc_method}"));
-        match params.get(wire_field) {
-            None | Some(Value::Null) => {}
-            Some(other) => panic!(
-                "clearing {tail} sent {wire_field} = {other}; a cleared knob must \
-                 never reach the daemon as a value (params {params})"
-            ),
-        }
-    }
-}
 
 // ── mode, which is not a config/ knob ─────────────────────────────────────
 

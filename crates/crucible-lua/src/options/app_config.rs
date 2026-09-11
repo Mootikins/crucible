@@ -294,12 +294,21 @@ pub const APP_CONTROLS: &[AppControl] = &[
         5,
     ),
     AppControl::new(
+        "chat.context_budget",
+        Control::Range,
+        "Context budget",
+        "Token budget for the assembled context. Empty derives it from the \
+         model's own window.",
+        6,
+    )
+    .bounded(0.0, 2_000_000.0, 1024.0),
+    AppControl::new(
         "chat.precognition_results",
         Control::Range,
         "Precognition results",
         "How many notes the pre-turn kiln search injects. It runs on a \
          session's first message only.",
-        6,
+        7,
     )
     .bounded(0.0, 25.0, 1.0),
     AppControl::new(
@@ -308,7 +317,7 @@ pub const APP_CONTROLS: &[AppControl] = &[
         "Autocompact threshold",
         "Compact the transcript once it passes this fraction of the context \
          budget. 0 turns it off.",
-        7,
+        8,
     )
     .bounded(0.0, 1.0, 0.05),
     AppControl::new(
@@ -317,7 +326,7 @@ pub const APP_CONTROLS: &[AppControl] = &[
         "System prompt",
         "What a new session tells the model about itself. An agent card's own \
          prompt wins, and an on_session_start hook can extend this one.",
-        8,
+        9,
     ),
     // ---- cli ----
     AppControl::group(

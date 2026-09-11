@@ -383,7 +383,6 @@ fn captures(re: &str, hay: &str) -> BTreeSet<String> {
 /// Declared rather than derived: a knob's route is not always its name in
 /// kebab case, so a naive snake→kebab transform would need special-casing.
 const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
-    ("context_budget", "context-budget"),
     ("context_strategy", "context-strategy"),
     ("precognition", "precognition"),
     // Not a Crucible knob: the settings the external agent advertised for
@@ -495,12 +494,10 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
 /// `session.set_<suffix>` → the `:set` key that reaches it.
 ///
 /// Declared rather than derived, like `WEB_CONFIG_ROUTES`: the TUI spells most
-/// keys without underscores (`maxiterations`) and some with an alias for both
-/// (`contextbudget` / `context_budget`). No transform covers that, and a knob
-/// whose key is spelled differently in the two front ends is worth stating
-/// once here.
+/// keys without underscores, and some carry an alias for both spellings. No
+/// transform covers that, and a knob whose key differs between the two front
+/// ends is worth stating once here.
 const TUI_SET_KEYS: &[(&str, &str)] = &[
-    ("context_budget", "contextbudget"),
     ("context_strategy", "contextstrategy"),
     ("precognition", "precognition"),
 ];

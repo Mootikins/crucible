@@ -24,14 +24,12 @@ use axum::{routing::put, Router};
 use crate::services::daemon::AppState;
 
 pub(super) mod basic;
-pub(super) mod context;
 pub(super) mod prompt;
 
 #[cfg(test)]
 mod tests;
 
 pub(super) use basic::{get_precognition, list_agent_options, set_agent_option, set_precognition};
-pub(super) use context::{get_context_budget, set_context_budget};
 
 pub(super) use prompt::{get_context_strategy, set_context_strategy};
 
@@ -67,10 +65,6 @@ pub(super) fn config_routes() -> Router<AppState> {
         )
         // The nine knobs the daemon advertised that the web could not reach.
         // Gate A2e keeps the axis from drifting again; these close it.
-        .route(
-            "/api/session/{id}/config/context-budget",
-            put(set_context_budget).get(get_context_budget),
-        )
         .route(
             "/api/session/{id}/config/context-strategy",
             put(set_context_strategy).get(get_context_strategy),

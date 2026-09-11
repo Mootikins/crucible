@@ -370,7 +370,7 @@ async fn test_client_capabilities() {
     assert!(caps.methods.contains(&"ping".to_string()));
     assert!(caps
         .methods
-        .contains(&"session.set_context_budget".to_string()));
+        .contains(&"session.set_context_strategy".to_string()));
 }
 
 #[tokio::test]

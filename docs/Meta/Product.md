@@ -189,7 +189,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ### Context Window Management
 
-- [x] **Token Budget Tracking** `P0` — `context_budget` on `SessionAgent`, settable via RPC; `estimate_tokens` chars/4 heuristic · `crucible-daemon`, `crucible-core`
+- [x] **Token Budget Tracking** `P0` — every session derives a `context_budget`: an explicit `chat.context_budget`, else the window the provider reports for the model, else the shipped fallback. `estimate_tokens` chars/4 heuristic · `crucible-daemon`, `crucible-core`
   - **Gets you:** the budget you set is the budget the agent handle enforces on every request, and it sizes the tool-schema deferral decision. Still unset by default, so `usage.budget` and `usage.percent` read `0` until you set one.
   - **Proof:** `crates/crucible-daemon/src/agent_factory.rs`::session_generation_and_context_settings_reach_the_agent_handle (the hop that used to drop it); enforcement in `provider/genai_handle.rs` `mod tests` (`enforce_context_budget`). See **Context Strategies**.
 - [-] **Auto-Compaction** `P0` — compact the conversation when prompt usage crosses `context_budget * chat.autocompact_threshold` (config key, default 0.95); also reachable as `cru.context.compact` and `session.request_compaction` · `crucible-daemon`

@@ -597,37 +597,32 @@ impl AgentManager {
         Ok(success)
     }
 
-    pub async fn set_context_budget(
+    /// Record the context window the provider reported for this session's
+    /// model.
+    ///
+    /// Not an RPC and not a knob: the value is discovered, not chosen. It is
+    /// the middle tier of `configured::context_budget` — an explicit
+    /// `chat.context_budget` still outranks it, and the shipped fallback
+    /// stands when no provider answers.
+    ///
+    /// The discovery is async and lands after the session exists, so this
+    /// writes it back rather than the session being built with it.
+    pub(crate) async fn record_discovered_context_window(
         &self,
         session_id: &str,
-        budget: Option<usize>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        window: usize,
     ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ContextBudget,
-            event_tx,
-            "context_budget_changed",
-            serde_json::json!({ "context_budget": budget }),
-            "Failed to emit context_budget_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.context_budget = budget;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    context_budget = ?budget,
-                    "Context budget updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_context_budget(&self, session_id: &str) -> Result<Option<usize>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.context_budget)
+        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+        if agent_config.context_budget == Some(window) {
+            return Ok(());
+        }
+        agent_config.context_budget = Some(window);
+        session.agent = Some(agent_config);
+        self.invalidate_agent_cache(session_id);
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)
     }
 
     pub async fn set_context_strategy(

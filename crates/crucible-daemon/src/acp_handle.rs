@@ -516,14 +516,6 @@ impl SessionKnobs for AcpAgentHandle {
         Vec::new()
     }
 
-    async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_budget".into()))
-    }
-
-    fn get_context_budget(&self) -> Option<usize> {
-        None
-    }
-
     async fn set_context_strategy(
         &mut self,
         _strategy: crucible_core::session::ContextStrategy,

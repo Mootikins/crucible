@@ -96,7 +96,7 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
             }
             Err(SetError::UnknownKey(key)) => {
                 eprintln!(
-                    "error: unknown setting '{}'. Valid keys: model, contextbudget, maxiterations",
+                    "error: unknown setting '{}'. Valid keys: model, contextstrategy",
                     key
                 );
                 std::process::exit(1);
@@ -124,12 +124,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .session_switch_model(&session_id, model)
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to switch model: {}", e))?;
-            }
-            SetRpcAction::SetContextBudget(budget) => {
-                client
-                    .session_set_context_budget(&session_id, *budget)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set context budget: {}", e))?;
             }
             SetRpcAction::SetContextStrategy(strategy) => {
                 client
@@ -205,14 +199,6 @@ mod tests {
         assert!(matches!(
             effect,
             SetEffect::TuiLocal { key, value: CliValue::Toggle } if key == "thinking"
-        ));
-    }
-
-    #[test]
-    fn validate_daemon_rpc_key_contextbudget() {
-        assert!(matches!(
-            validate_set_for_cli("contextbudget=32000").unwrap(),
-            SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(Some(_)))
         ));
     }
 

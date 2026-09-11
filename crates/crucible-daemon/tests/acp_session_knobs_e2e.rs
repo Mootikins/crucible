@@ -239,20 +239,12 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
     let h = setup().await;
     let id = h.session_id.as_str();
 
-    let attempts = [
-        (
-            "context_strategy",
-            h.agent_manager
-                .set_context_strategy(id, crucible_core::session::ContextStrategy::Truncate, None)
-                .await,
-        ),
-        (
-            "context_budget",
-            h.agent_manager
-                .set_context_budget(id, Some(32_000), None)
-                .await,
-        ),
-    ];
+    let attempts = [(
+        "context_strategy",
+        h.agent_manager
+            .set_context_strategy(id, crucible_core::session::ContextStrategy::Truncate, None)
+            .await,
+    )];
 
     for (name, result) in attempts {
         let error = result
@@ -299,8 +291,8 @@ async fn a_session_reports_which_settings_it_supports() {
     };
 
     assert!(
-        !supported("context_budget"),
-        "the agent owns its history, so the daemon budgets nothing"
+        !supported("context_strategy"),
+        "the agent owns its history, so the daemon assembles nothing to trim"
     );
     assert!(supported("mode"), "session/set_mode carries the mode");
     assert!(

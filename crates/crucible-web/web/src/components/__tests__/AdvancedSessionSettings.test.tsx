@@ -11,12 +11,10 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 // consts — referencing a plain `const` from it throws "Cannot access before
 // initialization" at import time, not at assert time.
 const mockSetters = vi.hoisted(() => ({
-  setContextBudget: vi.fn(),
   setContextStrategy: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({
-  getContextBudget: vi.fn().mockResolvedValue(111),
   getContextStrategy: vi.fn().mockResolvedValue('recent'),
   ...mockSetters,
 }));
@@ -45,46 +43,6 @@ beforeEach(() => {
 });
 
 describe('AdvancedSessionSettings', () => {
-  it('loads every knob into its own control', async () => {
-    renderSection();
-
-    await waitFor(() =>
-      expect((screen.getByTestId('context-budget-input') as HTMLInputElement).value).toBe('111'),
-    );
-    expect((screen.getByTestId('context-strategy-select') as HTMLSelectElement).value).toBe(
-      'recent',
-    );
-  });
-
-  it('commits each numeric knob on blur, to its own setter', async () => {
-    renderSection();
-    await waitFor(() => screen.getByTestId('context-budget-input'));
-
-    const cases: [string, keyof typeof mockSetters, string, number][] = [
-      ['context-budget-input', 'setContextBudget', '8000', 8000],
-    ];
-
-    for (const [testId, setter, typed, expected] of cases) {
-      const input = screen.getByTestId(testId);
-      fireEvent.input(input, { target: { value: typed } });
-      fireEvent.blur(input);
-      await waitFor(() => expect(mockSetters[setter]).toHaveBeenCalledWith('s1', expected));
-    }
-  });
-
-  it('clearing an optional knob sends null, meaning restore the default', async () => {
-    renderSection();
-    await waitFor(() => screen.getByTestId('context-budget-input'));
-
-    const input = screen.getByTestId('context-budget-input');
-    fireEvent.input(input, { target: { value: '' } });
-    fireEvent.blur(input);
-
-    // `null`, not `0` and not "no call at all": absent and zero are different
-    // instructions to the daemon.
-    await waitFor(() => expect(mockSetters.setContextBudget).toHaveBeenCalledWith('s1', null));
-  });
-
   it('sends the enum knob by its string spelling', async () => {
     renderSection();
     await waitFor(() => screen.getByTestId('context-strategy-select'));

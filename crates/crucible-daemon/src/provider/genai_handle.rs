@@ -29,10 +29,6 @@ pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration
 /// dropped from the request and replaced by the discovery bridge.
 const TOOL_SCHEMA_BUDGET_SHARE: f64 = 0.15;
 
-/// Effective-budget fallback used when a session sets neither `context_budget`
-/// A conservative modern context size.
-const DEFAULT_ASSUMED_CONTEXT: usize = 128_000;
-
 /// Message pairs that `SlidingWindow` and `Summarize` keep.
 ///
 /// This was a session knob, `context_window`, with two readers and two units:
@@ -399,7 +395,7 @@ pub struct GenaiAgentHandle {
     modes: Option<crucible_lua::ModeRegistry>,
     mode_context_sent: bool,
     max_tool_depth: usize,
-    context_budget: Option<usize>,
+    context_budget: usize,
     context_strategy: ContextStrategy,
     /// Tool names eligible for progressive disclosure. The daemon's agent
     /// factory populates this with the gateway (user MCP) tool names; kiln
@@ -547,12 +543,12 @@ fn truncate_to_budget(messages: &mut Vec<ChatMessage>, budget: usize) {
 /// The last message (current user turn) is never removed.
 fn enforce_context_budget(
     messages: &mut Vec<ChatMessage>,
-    budget: Option<usize>,
+    budget: usize,
     strategy: &ContextStrategy,
 ) -> BudgetAction {
-    let Some(budget) = budget else {
+    if budget == 0 {
         return BudgetAction::NoChange;
-    };
+    }
 
     let current: usize = messages.iter().map(estimate_message_tokens).sum();
     if current <= budget {
@@ -775,7 +771,7 @@ impl GenaiAgentHandle {
             modes: None,
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
-            context_budget: None,
+            context_budget: crucible_core::config::components::chat::DEFAULT_CONTEXT_BUDGET,
             context_strategy: ContextStrategy::default(),
             deferrable_tool_names: std::collections::HashSet::new(),
             plugin_tool_names: std::collections::HashSet::new(),
@@ -795,11 +791,7 @@ impl GenaiAgentHandle {
     /// Context settings the session chose: the budget to keep under, and what
     /// to do when it is exceeded.
     #[must_use]
-    pub fn with_context_settings(
-        mut self,
-        budget: Option<usize>,
-        strategy: ContextStrategy,
-    ) -> Self {
+    pub fn with_context_settings(mut self, budget: usize, strategy: ContextStrategy) -> Self {
         self.context_budget = budget;
         self.context_strategy = strategy;
         self
@@ -962,7 +954,7 @@ impl GenaiAgentHandle {
             };
         }
 
-        let effective_budget = self.context_budget.unwrap_or(DEFAULT_ASSUMED_CONTEXT);
+        let effective_budget = self.context_budget;
         let threshold = (TOOL_SCHEMA_BUDGET_SHARE * effective_budget as f64) as usize;
         let over_budget = tool_schema_tokens(&write_filtered) > threshold;
 
@@ -1491,15 +1483,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
-        self.context_budget = budget;
-        Ok(())
-    }
-
-    fn get_context_budget(&self) -> Option<usize> {
-        self.context_budget
     }
 
     async fn set_context_strategy(&mut self, strategy: ContextStrategy) -> ChatResult<()> {
@@ -2397,21 +2380,21 @@ mod tests {
         let deferrable: std::collections::HashSet<String> =
             gateway.iter().map(|t| t.function.name.clone()).collect();
 
-        // No context_budget: the 128k assumption applies, and six small
-        // gateway schemas are far under 15% of it.
+        // The shipped fallback budget applies, and six small gateway schemas
+        // are far under 15% of it.
         let handle =
             test_handle_with_tools(gateway.clone()).with_deferrable_tools(deferrable.clone());
         let visible = handle.visible_tools();
         assert_eq!(
             visible.deferred_count, 0,
-            "with no token budget the assumption is {DEFAULT_ASSUMED_CONTEXT}, not a pair count"
+            "an unset budget falls back to DEFAULT_CONTEXT_BUDGET, not a pair count"
         );
 
         // A pair-sized number is only meaningful to the window, and the
         // window is a constant now. Setting the token budget that low is
         // still honoured, which is the point: this path takes tokens.
         let mut tight = test_handle_with_tools(gateway).with_deferrable_tools(deferrable);
-        tight.context_budget = Some(KEEP_MESSAGE_PAIRS);
+        tight.context_budget = KEEP_MESSAGE_PAIRS;
         assert!(
             tight.visible_tools().deferred_count > 0,
             "a 10-token budget defers; that is what a token budget means"
@@ -2446,7 +2429,7 @@ mod tests {
             gateway.iter().map(|t| t.function.name.clone()).collect();
         let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
         // Small budget → threshold ~150 tokens, which the tool schemas exceed.
-        handle.context_budget = Some(1_000);
+        handle.context_budget = 1_000;
 
         let visible = handle.visible_tools();
         assert_eq!(visible.deferred_count, 6, "all gateway tools deferred");
@@ -2466,7 +2449,7 @@ mod tests {
     fn visible_tools_never_defers_without_deferrable_set() {
         let tools: Vec<_> = (0..20).map(|i| tool_def(&format!("tool_{i}"))).collect();
         let mut handle = test_handle_with_tools(tools);
-        handle.context_budget = Some(1); // threshold 0 — would defer if anything were deferrable
+        handle.context_budget = 1; // threshold 0 — would defer if anything were deferrable
 
         let visible = handle.visible_tools();
         assert_eq!(visible.deferred_count, 0);
@@ -2483,7 +2466,7 @@ mod tests {
             gateway.iter().map(|t| t.function.name.clone()).collect();
         let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
         handle.current_mode_id = "plan".to_string();
-        handle.context_budget = Some(1_000);
+        handle.context_budget = 1_000;
 
         let visible = handle.visible_tools();
         let names = visible_names(&visible);
@@ -2618,7 +2601,7 @@ mod tests {
         let mut handle = test_handle_with_tools(tools)
             .with_deferrable_tools(deferrable)
             .with_active_tools("s1", sets.clone());
-        handle.context_budget = Some(1_000);
+        handle.context_budget = 1_000;
 
         // Without a set this is the deferring case, bridge and all.
         let before = handle.visible_tools();
@@ -2648,7 +2631,7 @@ mod tests {
         let mut handle = test_handle_with_tools(tools)
             .with_deferrable_tools(deferrable)
             .with_active_tools("s1", active_sets("s1", &["gh_tool_*"]));
-        handle.context_budget = Some(1_000);
+        handle.context_budget = 1_000;
 
         let visible = handle.visible_tools();
         assert_eq!(visible.deferred_count, 6);
@@ -2805,7 +2788,7 @@ mod tests {
             messages.push(asst(&long));
         }
         messages.push(user("current"));
-        let action = enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
+        let action = enforce_context_budget(&mut messages, 12, &ContextStrategy::Summarize);
         match action {
             BudgetAction::NeedsSummarize {
                 placeholder_idx,
@@ -2831,14 +2814,12 @@ mod tests {
     fn truncate_and_window_do_not_request_summarization() {
         let long = "x".repeat(40);
         let mut messages = vec![sys("system"), user(&long), asst(&long), user("current")];
-        let action =
-            enforce_context_budget(&mut messages.clone(), Some(12), &ContextStrategy::Truncate);
+        let action = enforce_context_budget(&mut messages.clone(), 12, &ContextStrategy::Truncate);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange
         ));
-        let action =
-            enforce_context_budget(&mut messages, Some(12), &ContextStrategy::SlidingWindow);
+        let action = enforce_context_budget(&mut messages, 12, &ContextStrategy::SlidingWindow);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange
@@ -2876,7 +2857,7 @@ mod tests {
         messages.push(user("current question"));
         // The total is far over budget, and there are more pairs than the
         // window keeps, so the drain runs.
-        enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
+        enforce_context_budget(&mut messages, 12, &ContextStrategy::Summarize);
 
         let placeholder_present = messages.iter().any(|m| {
             m.role == genai::chat::ChatRole::System
@@ -2897,7 +2878,7 @@ mod tests {
     fn summarize_noop_when_under_budget() {
         let mut messages = vec![sys("S"), user("hi"), asst("hello")];
         let before_len = messages.len();
-        enforce_context_budget(&mut messages, Some(10_000), &ContextStrategy::Summarize);
+        enforce_context_budget(&mut messages, 10_000, &ContextStrategy::Summarize);
         assert_eq!(messages.len(), before_len);
         assert!(!messages
             .iter()
@@ -2915,7 +2896,7 @@ mod tests {
         }
         messages.push(user("current"));
 
-        enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
+        enforce_context_budget(&mut messages, 12, &ContextStrategy::Summarize);
 
         let placeholder = messages
             .iter()

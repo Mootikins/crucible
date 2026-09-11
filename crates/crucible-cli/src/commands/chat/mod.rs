@@ -880,10 +880,6 @@ async fn apply_rpc_action(
                 .await
                 .map_err(|e| e.to_string())
         }
-        SetRpcAction::SetContextBudget(budget) => handle
-            .set_context_budget(budget)
-            .await
-            .map_err(|e| e.to_string()),
         SetRpcAction::SetContextStrategy(ref strategy_str) => {
             match strategy_str.parse::<crucible_core::session::ContextStrategy>() {
                 Ok(strategy) => handle

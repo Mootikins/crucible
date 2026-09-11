@@ -136,14 +136,6 @@ session_config_setter!(
 );
 
 // timeout_secs can be null to clear the timeout, so we use optional.
-session_config_setter!(
-    handle_session_set_context_budget,
-    req,
-    set_context_budget,
-    "context_budget",
-    optional_param!(req, "context_budget", as_u64).map(|v| v as usize)
-);
-
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
 session_config_getter!(
@@ -152,11 +144,6 @@ session_config_getter!(
     "precognition_enabled"
 );
 session_config_getter!(handle_session_get_mode, get_mode, "mode");
-session_config_getter!(
-    handle_session_get_context_budget,
-    get_context_budget,
-    "context_budget"
-);
 session_config_getter!(
     handle_session_get_context_strategy,
     get_context_strategy,

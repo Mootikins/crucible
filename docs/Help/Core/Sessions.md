@@ -261,7 +261,7 @@ cru session configure chat-20250102-1430-a1b2 -p openai -m gpt-4o
 Configure the agent backend for a session: provider, model, and endpoint. For runtime parameter tweaks (model, context budget), use `cru set` instead:
 
 ```bash
-cru set chat-20250102-1430-a1b2 contextbudget=128000
+cru set chat-20250102-1430-a1b2 contextstrategy=truncate
 ```
 
 #### Load a Session
@@ -419,7 +419,7 @@ Change mid-session via `:set` or `:model`:
 
 ```
 :set model claude-3-5-sonnet
-:set contextbudget 128000
+:set contextstrategy truncate
 :model gpt-4o                   # Opens model picker
 ```
 

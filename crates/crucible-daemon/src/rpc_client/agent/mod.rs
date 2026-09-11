@@ -42,7 +42,6 @@ pub struct DaemonAgentHandle {
     pub(super) raw_event_rx: Option<mpsc::UnboundedReceiver<SessionEvent>>,
     pub(super) mode_id: String,
     pub(super) cached_model: Option<String>,
-    pub(super) cached_context_budget: Option<usize>,
     pub(super) cached_context_strategy: Option<String>,
     pub(super) cached_precognition: Option<bool>,
     /// The kiln NAME a `/clear` re-create should attach. Names, not paths:
@@ -74,7 +73,6 @@ impl DaemonAgentHandle {
             raw_event_rx: None,
             mode_id: "ask".to_string(),
             cached_model: None,
-            cached_context_budget: None,
             cached_context_strategy: None,
             cached_precognition: None,
             kiln: None,
@@ -190,11 +188,6 @@ impl DaemonAgentHandle {
 
     /// Fetch initial cached values from daemon (best-effort, default to None on failure).
     async fn fetch_cached_values(&mut self, client: &Arc<DaemonClient>, session_id: &str) {
-        self.cached_context_budget = client
-            .session_get_context_budget(session_id)
-            .await
-            .ok()
-            .flatten();
         self.cached_context_strategy = client
             .session_get_context_strategy(session_id)
             .await
