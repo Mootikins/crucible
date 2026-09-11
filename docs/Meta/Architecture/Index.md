@@ -27,4 +27,4 @@ machine-written JSON registries and how state overlays config). For the older an
 web shell that `crates/crucible-web/web/PRODUCT.md` still lists as undecided. Its
 section 11 names a daemon change the offline path needs first: `PUT
 /api/kiln/file` overwrites blindly today and must be able to refuse a stale
-base. Its section 12 records what a phone costs an Oil-declared plugin view.
+base. Its section 12 records the plugin-block decision that `spike/oil-document-blocks` made, and where a phone meets it.
