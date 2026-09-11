@@ -19,9 +19,9 @@ pub(crate) struct AgentStreamConfig {
     // removing their copies here left them reaching nothing. Both are gone
     // entirely now — genai defaults them per model — and
     // `the_request_leaves_sampling_to_the_provider` pins that.
-    /// Snapshot of the session's `context_budget` for auto-compaction.
+    /// The session's resolved context budget, for auto-compaction.
     /// `None` disables auto-compaction (no budget to compare against).
-    pub(crate) context_budget: Option<usize>,
+    pub(crate) context_budget: usize,
     /// Fraction of `context_budget` that triggers auto-compaction.
     /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
     /// [`crate::agent_manager::autocompact`].
@@ -114,7 +114,7 @@ impl AgentStreamConfig {
         } = env;
         Self {
             model: session_agent.model.clone(),
-            context_budget: session_agent.context_budget,
+            context_budget: super::configured::context_budget(session_agent.context_budget),
             autocompact_threshold: super::configured::autocompact_threshold(),
             delegation_timeout_secs: session_agent
                 .delegation_config

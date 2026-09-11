@@ -46,10 +46,6 @@ pub enum SettingsPayload {
         #[serde(default)]
         enabled: bool,
     },
-    ContextBudgetChanged {
-        #[serde(default)]
-        context_budget: Option<usize>,
-    },
     ContextStrategyChanged {
         #[serde(default)]
         context_strategy: String,

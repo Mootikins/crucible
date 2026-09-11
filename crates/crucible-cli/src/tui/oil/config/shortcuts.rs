@@ -92,12 +92,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Auto-inject knowledge base context (auto-RAG)",
     },
     ConfigShortcut {
-        short: "contextbudget",
-        target: ShortcutTarget::Path("llm.context_budget"),
-        completions: CompletionSource::None,
-        description: "Context token budget (number or 'none')",
-    },
-    ConfigShortcut {
         short: "contextstrategy",
         target: ShortcutTarget::Path("llm.context_strategy"),
         completions: CompletionSource::Static(&["truncate", "sliding_window"]),
@@ -243,7 +237,6 @@ mod tests {
         assert!(shorts.contains(&"show_diffs"));
         assert!(shorts.contains(&"syntax_theme"));
         assert!(shorts.contains(&"precognition"));
-        assert!(shorts.contains(&"contextbudget"));
         assert!(shorts.contains(&"contextstrategy"));
         assert!(shorts.contains(&"perm.show_diff"));
         assert!(shorts.contains(&"perm.autoconfirm_session"));

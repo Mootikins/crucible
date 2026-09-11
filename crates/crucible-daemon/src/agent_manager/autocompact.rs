@@ -15,17 +15,10 @@ pub const DEFAULT_AUTOCOMPACT_THRESHOLD: f32 = 0.95;
 /// session's context budget and the configured `chat.autocompact_threshold`.
 ///
 /// Semantics:
-/// - `budget == None`: never trigger (no budget to compare against).
+/// - `budget == 0`: never trigger.
 /// - `threshold <= 0.0`: explicitly disabled.
 /// - `threshold >= 1.0`: only triggers if usage strictly exceeds budget.
-pub fn should_autocompact(
-    prompt_tokens: u32,
-    context_budget: Option<usize>,
-    threshold: f32,
-) -> bool {
-    let Some(budget) = context_budget else {
-        return false;
-    };
+pub fn should_autocompact(prompt_tokens: u32, budget: usize, threshold: f32) -> bool {
     if budget == 0 {
         return false;
     }
@@ -41,23 +34,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_budget_never_triggers() {
-        assert!(!should_autocompact(100_000, None, 0.5));
+    fn a_zero_budget_never_triggers() {
+        assert!(!should_autocompact(100_000, 0, 0.5));
         assert!(!should_autocompact(
             100_000,
-            None,
+            0,
             DEFAULT_AUTOCOMPACT_THRESHOLD
         ));
     }
 
     #[test]
     fn zero_threshold_disables() {
-        assert!(!should_autocompact(99_999, Some(100), 0.0));
+        assert!(!should_autocompact(99_999, 100, 0.0));
     }
 
     #[test]
     fn negative_threshold_disables() {
-        assert!(!should_autocompact(99_999, Some(100), -1.0));
+        assert!(!should_autocompact(99_999, 100, -1.0));
     }
 
     #[test]
@@ -65,26 +58,22 @@ mod tests {
         // 950 / 1000 = 0.95 — at the boundary, must NOT trigger
         assert!(!should_autocompact(
             950,
-            Some(1000),
+            1000,
             DEFAULT_AUTOCOMPACT_THRESHOLD
         ));
         // 951 / 1000 — strictly over, triggers
-        assert!(should_autocompact(
-            951,
-            Some(1000),
-            DEFAULT_AUTOCOMPACT_THRESHOLD
-        ));
+        assert!(should_autocompact(951, 1000, DEFAULT_AUTOCOMPACT_THRESHOLD));
     }
 
     #[test]
     fn explicit_threshold_overrides_default() {
-        assert!(!should_autocompact(499, Some(1000), 0.5));
-        assert!(should_autocompact(501, Some(1000), 0.5));
+        assert!(!should_autocompact(499, 1000, 0.5));
+        assert!(should_autocompact(501, 1000, 0.5));
     }
 
     #[test]
     fn threshold_above_one_only_triggers_strictly_over_budget() {
-        assert!(!should_autocompact(1000, Some(1000), 1.0));
-        assert!(should_autocompact(1001, Some(1000), 1.0));
+        assert!(!should_autocompact(1000, 1000, 1.0));
+        assert!(should_autocompact(1001, 1000, 1.0));
     }
 }

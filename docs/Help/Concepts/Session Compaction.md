@@ -28,13 +28,12 @@ itself does not.
 > `{"compaction_requested": true}` reply from `session.compact` is misleading —
 > the request changes the state string and nothing else.
 >
-> Because the trigger is automatic, setting a `context_budget` and chatting past
+> Because the trigger is automatic, chatting past
 > the threshold sticks the session in `compacting` with no further user action.
-> Until compaction is implemented: if you set a `context_budget`, also set
-> `chat.autocompact_threshold` to `0` — `:set context_strategy` truncation
-> still enforces the budget without the trigger. Leaving
-> `context_budget` unset avoids the trigger too, but strategy-based budget
-> enforcement is keyed to the same budget, so it disables that as well.
+> Until compaction is implemented, set `chat.autocompact_threshold` to `0` —
+> `:set context_strategy` truncation still enforces the budget without the
+> trigger. Every session now has a budget, so there is no longer an "unset
+> budget" that avoids the trigger by accident.
 
 ## The threshold
 
@@ -44,8 +43,9 @@ one value per install rather than per session.
 - unset — uses the default, **0.95**
 - `<= 0.0` — explicitly disabled
 - `>= 1.0` — fires only when usage strictly exceeds the full budget
-- no `context_budget` set — never fires. `context_budget` is unset by default,
-  so auto-compaction is opt-in.
+- `context_budget` of 0 — never fires. Every session derives a budget, so
+  auto-compaction is on by default; it was opt-in until 2026-09-10, when
+  `context_budget` defaulted to unset and the trigger could not fire at all.
 
 The check runs after each completed turn, when the provider reports token
 usage: if `prompt_tokens` strictly exceeds `context_budget * threshold`, the

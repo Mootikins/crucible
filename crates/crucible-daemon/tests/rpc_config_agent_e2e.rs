@@ -333,12 +333,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
     }
 
     round_trip!(
-        "context_budget",
-        client.session_set_context_budget(&sid, Some(32000)),
-        client.session_get_context_budget(&sid),
-        Some(32000)
-    );
-    round_trip!(
         "context_strategy",
         client.session_set_context_strategy(&sid, "sliding_window"),
         client.session_get_context_strategy(&sid),
@@ -379,11 +373,11 @@ async fn test_config_get_on_nonexistent_session_fails() {
         .expect("Failed to connect");
 
     let result = client
-        .session_get_context_budget("nonexistent-session-id")
+        .session_get_context_strategy("nonexistent-session-id")
         .await;
     assert!(
         result.is_err(),
-        "get_context_budget should fail for nonexistent session"
+        "get_context_strategy should fail for nonexistent session"
     );
 
     server.shutdown().await;

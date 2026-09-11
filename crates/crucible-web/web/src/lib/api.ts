@@ -1363,26 +1363,6 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
 // one of these to match its route would 200 and drop the value.
 // -----------------------------------------------------------------------------
 
-/** Get the context budget (tokens of history a turn may carry). */
-export async function getContextBudget(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ context_budget: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/context-budget`,
-      { errorMessage: 'Failed to get context budget' },
-    )
-  ).context_budget;
-}
-
-/** Set the context budget. `null` restores the daemon's default. */
-export async function setContextBudget(sessionId: string, budget: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/context-budget`, {
-    errorMessage: 'Failed to set context budget',
-    parseAs: 'none',
-    ...jsonRequest({ context_budget: budget }),
-  });
-}
-
 /** Get the context-assembly strategy, by its string spelling. */
 export async function getContextStrategy(sessionId: string): Promise<string | null> {
   return (

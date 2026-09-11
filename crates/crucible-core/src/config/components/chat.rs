@@ -40,6 +40,13 @@ list of options.
 Be concise. Match the depth of the question \u{2014} a short question gets a short
 answer, and code or structure only when it earns its place.";
 
+/// The context budget used when nothing else supplies one.
+///
+/// A conservative modern window. Before this was a fallback, `context_budget`
+/// defaulted to `None`, and both auto-compaction and budget enforcement early
+/// -returned on `None` — so neither ran on a default session.
+pub const DEFAULT_CONTEXT_BUDGET: usize = 128_000;
+
 /// Matches `crucible_daemon::agent_manager::autocompact::DEFAULT_AUTOCOMPACT_THRESHOLD`,
 /// which is the constant the trigger used before this became a config key.
 fn default_autocompact_threshold() -> f32 {
@@ -78,6 +85,13 @@ pub struct ChatConfig {
     /// Useful for trimming visual noise in long sessions.
     #[serde(default = "default_true")]
     pub show_diffs: bool,
+    /// Token budget for the assembled context.
+    ///
+    /// `None` derives it: the daemon asks the provider for the model's real
+    /// window at session start, and falls back to [`DEFAULT_CONTEXT_BUDGET`].
+    /// Set it to pin a budget smaller than the window.
+    #[serde(default)]
+    pub context_budget: Option<usize>,
     /// How many notes a Precognition search injects.
     ///
     /// Read once per session, on the first user message: `should_run_precognition`
@@ -107,6 +121,7 @@ impl Default for ChatConfig {
             endpoint: None,
             show_thinking: false,
             show_diffs: true,
+            context_budget: None,
             precognition_results: default_precognition_results(),
             autocompact_threshold: default_autocompact_threshold(),
             system_prompt: default_system_prompt(),

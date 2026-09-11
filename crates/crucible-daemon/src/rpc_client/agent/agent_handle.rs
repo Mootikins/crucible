@@ -208,20 +208,6 @@ impl SessionKnobs for DaemonAgentHandle {
         }
     }
 
-    async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, context_budget = ?budget, "Setting context_budget via daemon");
-        self.client
-            .session_set_context_budget(&self.session_id, budget)
-            .await
-            .chat_comm()?;
-        self.cached_context_budget = budget;
-        Ok(())
-    }
-
-    fn get_context_budget(&self) -> Option<usize> {
-        self.cached_context_budget
-    }
-
     async fn set_context_strategy(
         &mut self,
         strategy: crucible_core::session::ContextStrategy,

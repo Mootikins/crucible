@@ -60,7 +60,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   do not: a hook sets those per session, because a global model would silently
   replace the one the caller named on the command line.
 
+### Fixed
+
+- **Auto-compaction and budget truncation now run.** Neither did. Both
+  `should_autocompact` and `enforce_context_budget` return early without a
+  `context_budget`, and `context_budget` defaulted to `None`, so on a default
+  session the transcript was never compacted and never trimmed. The daemon
+  already asked the provider for the model's real window at session start
+  (`fetch_model_context_length`) and spent the answer on a display event.
+
+  Every session now derives a budget: an explicit `chat.context_budget` wins,
+  then the window the provider reported for the model, then a shipped fallback
+  of 128k. `AgentManager::record_discovered_context_window` writes the
+  discovered value back to the session.
+
 ### Removed
+
+- **`context_budget` is no longer a session knob.** It is derived, not chosen,
+  so `session.{set,get}_context_budget`, `PUT`/`GET
+  /api/session/{id}/config/context-budget`, `:set contextbudget`, the
+  `context_budget_changed` event and the web control are gone. To pin a budget
+  below the model's window, set the config key `chat.context_budget`.
+
 
 - **`precognition_results` and `autocompact_threshold` are config keys, not
   session knobs.** They are tuning values with one right answer per install,

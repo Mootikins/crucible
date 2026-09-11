@@ -2,7 +2,7 @@
 //!
 //! `initial_sets` daemon-bound overrides used to be sent down the UI
 //! message channel, where only the reducer runs — the daemon RPC arm in
-//! `process_action` was never reached, so `--set context_budget=32000`
+//! `process_action` was never reached, so `--set context_strategy=truncate`
 //! (and every other daemon-scoped key) was silently inert, and
 //! `--set model=X` updated the status bar without switching the model.
 
@@ -21,14 +21,14 @@ use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 
 struct RpcCountingAgent {
-    context_budget_calls: AtomicUsize,
+    context_strategy_calls: AtomicUsize,
     switch_model_calls: AtomicUsize,
 }
 
 impl RpcCountingAgent {
     fn new() -> Self {
         Self {
-            context_budget_calls: AtomicUsize::new(0),
+            context_strategy_calls: AtomicUsize::new(0),
             switch_model_calls: AtomicUsize::new(0),
         }
     }
@@ -77,20 +77,12 @@ impl SessionKnobs for RpcCountingAgent {
         Vec::new()
     }
 
-    async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
-        self.context_budget_calls.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn get_context_budget(&self) -> Option<usize> {
-        None
-    }
-
     async fn set_context_strategy(
         &mut self,
         _strategy: crucible_core::session::ContextStrategy,
     ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_strategy".into()))
+        self.context_strategy_calls.fetch_add(1, Ordering::Relaxed);
+        Ok(())
     }
 
     fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
@@ -110,7 +102,7 @@ impl SessionKnobs for RpcCountingAgent {
 async fn startup_set_overrides_reach_the_daemon_rpc() {
     let mut runner =
         OilChatRunner::with_terminal(Terminal::with_size(80, 24)).with_initial_sets(vec![
-            SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(Some(32000))),
+            SetEffect::DaemonRpc(SetRpcAction::SetContextStrategy("truncate".into())),
             SetEffect::DaemonRpc(SetRpcAction::SwitchModel("gpt-4o".into())),
         ]);
 
@@ -132,9 +124,9 @@ async fn startup_set_overrides_reach_the_daemon_rpc() {
         .expect("apply_initial_sets should not fail");
 
     assert_eq!(
-        agent.context_budget_calls.load(Ordering::Relaxed),
+        agent.context_strategy_calls.load(Ordering::Relaxed),
         1,
-        "--set context_budget must invoke the daemon RPC, not just the reducer"
+        "--set context_strategy must invoke the daemon RPC, not just the reducer"
     );
     assert_eq!(
         agent.switch_model_calls.load(Ordering::Relaxed),

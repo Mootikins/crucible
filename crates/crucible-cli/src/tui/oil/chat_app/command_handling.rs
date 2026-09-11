@@ -97,8 +97,7 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set contextbudget=128000     — Context token budget (or 'none')\n\
-             :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
+            ":set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
              :set precognition             — Toggle auto-RAG\n\
              :set thinking           — Show thinking blocks\n\
              :set model=<name>       — Switch LLM model\n\
@@ -562,7 +561,7 @@ impl OilChatApp {
     fn apply_daemon_set_action(
         &mut self,
         key: &str,
-        value: &str,
+        _value: &str,
         action: SetRpcAction,
     ) -> Action<ChatAppMsg> {
         match &action {
@@ -575,11 +574,6 @@ impl OilChatApp {
                     &self.current_provider.clone(),
                 );
                 self.send_setting_ack("model", model);
-            }
-            SetRpcAction::SetContextBudget(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| n.to_string());
-                self.send_setting_ack("context_budget", &display);
             }
             SetRpcAction::SetContextStrategy(normalized) => {
                 self.runtime_config

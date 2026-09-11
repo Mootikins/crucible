@@ -585,8 +585,6 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // distinct from every other knob's, so a web response struct wired to
         // the wrong knob (or to the knob name where the wire name differs)
         // reads `null` instead of coincidentally matching.
-        "session.set_context_budget" => json!(null),
-        "session.get_context_budget" => json!({"context_budget": 111}),
         "session.set_autocompact_threshold" => json!(null),
         "session.get_autocompact_threshold" => json!({"autocompact_threshold": 0.75}),
         // `timeout_secs`, NOT `execution_timeout` — the asymmetry the web

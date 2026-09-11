@@ -788,7 +788,7 @@ pub async fn create_agent_from_session_config(
             // context strategy was dead and tool-schema deferral guessed at the
             // window.
             .with_context_settings(
-                agent_config.context_budget,
+                crate::agent_manager::configured::context_budget(agent_config.context_budget),
                 agent_config.context_strategy.clone(),
             );
     let handle = match modes.clone() {

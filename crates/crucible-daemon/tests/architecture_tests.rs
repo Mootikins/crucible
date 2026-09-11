@@ -233,11 +233,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "precognition_enabled",
     },
     ConfigMethod {
-        suffix: "context_budget",
-        request_field: "context_budget",
-        result_field: "context_budget",
-    },
-    ConfigMethod {
         suffix: "context_strategy",
         request_field: "context_strategy",
         result_field: "context_strategy",

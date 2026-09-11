@@ -397,23 +397,6 @@ impl OilChatRunner {
                     ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
                     }
-                    ChatAppMsg::SetContextBudget(budget) => {
-                        tracing::info!(context_budget = ?budget, "Setting context_budget");
-                        match params.agent.set_context_budget(*budget).await {
-                            Ok(()) => {
-                                tracing::info!(context_budget = ?budget, "Context budget set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(context_budget = ?budget, error = %e, "set_context_budget failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set context_budget failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetContextStrategy(strategy_str) => {
                         tracing::info!(context_strategy = %strategy_str, "Setting context_strategy");
                         match strategy_str.parse::<crucible_core::session::ContextStrategy>() {

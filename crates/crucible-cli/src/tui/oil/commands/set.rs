@@ -104,7 +104,6 @@ pub enum SetCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetRpcAction {
     SwitchModel(String),
-    SetContextBudget(Option<usize>),
     SetContextStrategy(String),
     SetPrecognition(bool),
 }
@@ -162,26 +161,6 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
 pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetError> {
     match key.as_str() {
         "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
-        "contextbudget" | "context_budget" => {
-            let budget = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
-            {
-                None
-            } else {
-                match value.parse::<usize>() {
-                    Ok(n) => Some(n),
-                    Err(_) => {
-                        return Err(SetError::InvalidValue {
-                            key,
-                            message: format!(
-                                "invalid context_budget value: {} (use a number or 'none')",
-                                value
-                            ),
-                        });
-                    }
-                }
-            };
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
-        }
         "contextstrategy" | "context_strategy" => {
             // Validate the strategy value
             match value.to_lowercase().as_str() {
@@ -290,7 +269,6 @@ impl SetRpcAction {
         use crate::tui::oil::chat_app::ChatAppMsg;
         match self {
             SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
-            SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
         }
@@ -377,10 +355,7 @@ fn is_tui_local_key(key: &str) -> bool {
 }
 
 fn is_daemon_rpc_key(key: &str) -> bool {
-    matches!(
-        key,
-        "model" | "contextbudget" | "context_budget" | "contextstrategy" | "context_strategy"
-    )
+    matches!(key, "model" | "contextstrategy" | "context_strategy")
 }
 
 /// Declared `:set` targets whose value is not a boolean and whose home is
@@ -765,10 +740,10 @@ mod tests {
             })
         );
         assert_eq!(
-            SetCommand::parse(":set contextbudget 32000"),
+            SetCommand::parse(":set contextstrategy truncate"),
             Ok(SetCommand::Set {
-                key: "contextbudget".into(),
-                value: "32000".into()
+                key: "contextstrategy".into(),
+                value: "truncate".into()
             })
         );
     }

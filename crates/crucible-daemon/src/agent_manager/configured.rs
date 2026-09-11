@@ -28,6 +28,25 @@ pub(crate) fn system_prompt() -> Option<String> {
     Some(configured.unwrap_or_else(|| ChatConfig::default().system_prompt))
 }
 
+/// The token budget for a session's assembled context.
+///
+/// Precedence: an explicit `chat.context_budget` wins, then the window the
+/// provider reported for this session's model, then the shipped fallback.
+///
+/// This never answers `None`. It used to: `context_budget` defaulted to
+/// `None`, and both `should_autocompact` and `enforce_context_budget` return
+/// early on `None`, so auto-compaction and truncation were dead on every
+/// default session. The daemon already discovered the real window at session
+/// start and spent it on a display event.
+pub(crate) fn context_budget(discovered: Option<usize>) -> usize {
+    leaf("chat.context_budget")
+        .as_ref()
+        .and_then(serde_json::Value::as_u64)
+        .map(|n| n as usize)
+        .or(discovered)
+        .unwrap_or(crucible_core::config::components::chat::DEFAULT_CONTEXT_BUDGET)
+}
+
 /// `chat.precognition_results` — how many notes the pre-turn search injects.
 pub(crate) fn precognition_results() -> usize {
     leaf("chat.precognition_results")
@@ -45,4 +64,39 @@ pub(crate) fn autocompact_threshold() -> f32 {
         .and_then(serde_json::Value::as_f64)
         .map(|f| f as f32)
         .unwrap_or_else(|| ChatConfig::default().autocompact_threshold)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Nothing configured and nothing discovered still yields a budget.
+    ///
+    /// This is the defect the derivation fixes. `context_budget` used to
+    /// default to `None`, and both `should_autocompact` and
+    /// `enforce_context_budget` return early without a budget — so on a
+    /// default session neither auto-compaction nor truncation ever ran.
+    #[test]
+    fn an_unconfigured_session_still_gets_a_budget() {
+        assert_eq!(
+            context_budget(None),
+            crucible_core::config::components::chat::DEFAULT_CONTEXT_BUDGET
+        );
+    }
+
+    /// The window the provider reported beats the shipped fallback.
+    #[test]
+    fn a_discovered_window_beats_the_fallback() {
+        assert_eq!(context_budget(Some(32_000)), 32_000);
+    }
+
+    /// An explicit key beats the discovered window: a user who pins a budget
+    /// smaller than the model's window means it.
+    #[test]
+    fn an_explicit_key_beats_the_discovered_window() {
+        crucible_lua::seed_app_config(serde_json::json!({
+            "chat": { "context_budget": 8_000 }
+        }));
+        assert_eq!(context_budget(Some(200_000)), 8_000);
+    }
 }

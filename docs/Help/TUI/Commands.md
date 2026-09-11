@@ -59,7 +59,7 @@ Crucible's `:set` command follows Vim conventions for runtime configuration.
 Examples:
 ```
 :set model=claude-3-5-sonnet
-:set contextbudget=128000
+:set contextstrategy=truncate
 ```
 
 ### Boolean Options
@@ -143,7 +143,6 @@ These sync to the daemon and are session-scoped:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `contextbudget` | number/`none` | Context token budget (alias: `context_budget`) |
 | `contextstrategy` | enum | `truncate`, `sliding_window`, or `summarize` |
 
 ### Precognition
@@ -289,9 +288,9 @@ Runtime changes do **not** persist to config files. They last for the current se
 Use `:set option??` to see where a value came from:
 
 ```
-:set contextbudget??
+:set contextstrategy??
 # Output:
-# contextbudget = 128000
+# contextstrategy = truncate
 #   [Command] 128000 (2025-01-20 14:30:00)
 #   [File] 64000 (base config)
 ```
@@ -321,12 +320,12 @@ Some options have short aliases:
 ### Check Current Config
 ```
 :set model?
-:set contextbudget?
+:set contextstrategy?
 ```
 
 ### Reset to Defaults
 ```
-:set contextbudget&
+:set contextstrategy&
 ```
 
 ### Debug Configuration

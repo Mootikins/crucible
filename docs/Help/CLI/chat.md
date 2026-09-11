@@ -122,7 +122,7 @@ cru chat --plan
 Session configuration overrides using the same syntax as the TUI `:set` command. Can be repeated.
 
 ```bash
-cru chat --set model=llama3 --set contextbudget=128000
+cru chat --set model=llama3 --set contextstrategy=truncate
 cru chat --set perm.autoconfirm_session
 ```
 
@@ -264,7 +264,7 @@ cru chat --plan "What patterns do my testing notes share?"
 ### Custom Provider with Overrides
 
 ```bash
-cru chat --provider ollama --set model=llama3.2 --set contextbudget=128000
+cru chat --provider ollama --set model=llama3.2 --set contextstrategy=truncate
 ```
 
 ### Record and Replay

@@ -48,9 +48,8 @@ pub(crate) use notifications::{
     handle_session_list_notifications,
 };
 pub(crate) use params::{
-    handle_session_cache_stats, handle_session_can_undo, handle_session_get_context_budget,
-    handle_session_get_context_strategy, handle_session_get_mode, handle_session_get_precognition,
-    handle_session_set_context_budget, handle_session_set_context_strategy,
+    handle_session_cache_stats, handle_session_can_undo, handle_session_get_context_strategy,
+    handle_session_get_mode, handle_session_get_precognition, handle_session_set_context_strategy,
     handle_session_set_mode, handle_session_set_precognition, handle_session_undo,
     handle_session_undo_depth,
 };
@@ -267,6 +266,18 @@ fn spawn_setup_task(
                         )
                         .await
                     {
+                        // Record it, do not merely announce it. The answer used
+                        // to reach this event and stop, while `context_budget`
+                        // stayed `None` — and both `should_autocompact` and
+                        // `enforce_context_budget` return early on no budget, so
+                        // the daemon knew the window and compacted nothing.
+                        if let Err(e) = am.record_discovered_context_window(&sid, limit).await {
+                            warn!(
+                                session_id = %sid,
+                                error = %e,
+                                "Could not record the discovered context window"
+                            );
+                        }
                         emit_setup_event(
                             &event_tx,
                             &sid,

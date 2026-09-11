@@ -39,8 +39,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum SessionKnob {
-    /// Token budget for assembled context.
-    ContextBudget,
     /// How context is assembled when it does not fit.
     ContextStrategy,
     /// Whether the kiln is searched before the first message.
@@ -162,7 +160,6 @@ impl SessionKnob {
     pub const ALL: &'static [SessionKnob] = &[
         Self::Model,
         Self::Mode,
-        Self::ContextBudget,
         Self::ContextStrategy,
         Self::Precognition,
     ];
@@ -170,7 +167,6 @@ impl SessionKnob {
     /// The wire id, which is also the `session.set_*` suffix.
     pub fn id(self) -> &'static str {
         match self {
-            Self::ContextBudget => "context_budget",
             Self::ContextStrategy => "context_strategy",
             Self::Precognition => "precognition",
             Self::Model => "model",
@@ -188,7 +184,7 @@ impl SessionKnob {
         match self {
             // The agent owns its history, so the daemon assembles no context
             // to budget, trim or compact.
-            Self::ContextBudget | Self::ContextStrategy => AcpKnob::Absent,
+            Self::ContextStrategy => AcpKnob::Absent,
 
             // Retrieval is the daemon's, and it reaches an external agent as
             // injected prompt text. An ACP session uses it exactly as an
