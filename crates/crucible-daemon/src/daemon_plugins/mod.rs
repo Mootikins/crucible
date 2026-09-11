@@ -32,11 +32,11 @@ use crucible_lua::{
     register_isolation_module, register_oq_module, register_paths_module, register_publish_module,
     register_schedule_module, register_sessions_module, register_shell_module,
     register_status_module, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_ui_module,
-    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
-    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
-    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
-    PublicationRegistry, StatusRegistry,
+    register_surface_module, register_tools_module, register_tools_module_with_api,
+    register_ui_module, register_ui_module_with_api, register_vault_module, register_ws_module,
+    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
+    LuaScriptHandlerRegistry, OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy,
+    PluginSource, PluginSpec, PublicationRegistry, StatusRegistry, SurfaceRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -168,6 +168,12 @@ pub struct DaemonPluginLoader {
     isolation: IsolationRegistry,
     /// Per-session status slots published by plugins, read by TUI and web.
     status: StatusRegistry,
+    /// Panels plugins declared, read by TUI and web.
+    ///
+    /// Deliberately not released by `make_plugin_inert`: a reload re-declares
+    /// the same `(plugin, name)` keys, and dropping them first would orphan
+    /// every window a client had open on one.
+    surfaces: SurfaceRegistry,
     /// Data plugins published about themselves, read by TUI and web.
     ///
     /// The generic contribution channel. Without it a client wanting to know
@@ -336,6 +342,12 @@ impl DaemonPluginLoader {
         let status = StatusRegistry::new();
         reg("status", register_status_module(lua, status.clone()))?;
 
+        // `cru.surface.declare` — a panel every client draws in its own idiom.
+        // Data, never a node tree: the browser cannot afford a cell grid, and a
+        // grid cannot express the DOM. See `crucible-lua/src/surfaces.rs`.
+        let surfaces = SurfaceRegistry::new();
+        reg("surfaces", register_surface_module(lua, surfaces.clone()))?;
+
         // `cru.plugin.publish` — what a plugin states about itself, for
         // clients to render. Rebound per plugin at execute time so the
         // publishing plugin is recorded by the loader rather than claimed by
@@ -371,6 +383,7 @@ impl DaemonPluginLoader {
             plugin_registry: Arc::new(PluginRegistry::new()),
             isolation,
             status,
+            surfaces,
             publications,
             options,
             supersession_notices: std::sync::Mutex::new(Vec::new()),
@@ -554,6 +567,11 @@ impl DaemonPluginLoader {
     /// Per-session status slots published by plugins, for the RPC layer.
     pub fn status(&self) -> StatusRegistry {
         self.status.clone()
+    }
+
+    /// Panels plugins declared, for the RPC layer.
+    pub fn surfaces(&self) -> SurfaceRegistry {
+        self.surfaces.clone()
     }
 
     /// What plugins published about themselves, for the RPC layer.

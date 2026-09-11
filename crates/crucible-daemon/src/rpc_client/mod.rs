@@ -36,7 +36,7 @@ pub use client::{
     SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
     SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionSwitchModelRequest,
     SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
-    VectorHit, VersionCheck,
+    SurfaceRequest, VectorHit, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 // `DaemonClient::fts_search` returns this type, so callers of the client

@@ -62,6 +62,15 @@ pub enum EventName {
     NoteRenamed,
     /// A signed webhook delivery arrived at `POST /api/webhook/{name}`.
     WebhookReceived,
+    /// A session was created. Daemon-wide, not scoped to the new session.
+    ///
+    /// Distinct from the per-session `ended` turn event a client attached to
+    /// one session reads. A plugin that watches every session — a session list
+    /// surface, for example — needs the daemon-wide pair, because it is not
+    /// attached to the session that started or stopped.
+    SessionCreated,
+    /// A session ended. Daemon-wide; see [`Self::SessionCreated`].
+    SessionEnded,
 }
 
 impl EventName {
@@ -75,6 +84,8 @@ impl EventName {
         Self::NoteDeleted,
         Self::NoteRenamed,
         Self::WebhookReceived,
+        Self::SessionCreated,
+        Self::SessionEnded,
     ];
 
     /// The name a plugin registers, and the `type` field the handler reads.
@@ -97,6 +108,8 @@ impl EventName {
             Self::NoteDeleted => "note:deleted",
             Self::NoteRenamed => "note:renamed",
             Self::WebhookReceived => "webhook:received",
+            Self::SessionCreated => "session:created",
+            Self::SessionEnded => "session:ended",
         }
     }
 
@@ -114,7 +127,9 @@ impl EventName {
             | Self::NoteModified
             | Self::NoteDeleted
             | Self::NoteRenamed
-            | Self::WebhookReceived => TURN_STAGE_BUDGET,
+            | Self::WebhookReceived
+            | Self::SessionCreated
+            | Self::SessionEnded => TURN_STAGE_BUDGET,
         }
     }
 

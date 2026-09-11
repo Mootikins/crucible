@@ -75,7 +75,7 @@ because a selection is a decision, not a patch.
 
 The complete set, and it is closed: `cru.on` raises on a name that is not
 here. Two Rust enums hold it — `StageId` for the thirteen turn-loop stages,
-`EventName` for the eight daemon events
+`EventName` for the ten daemon events
 (`crucible-lua/src/handlers/hook_name.rs`) — and
 `the_documented_table_lists_every_hook` fails if this table and those enums
 disagree.
@@ -103,8 +103,10 @@ disagree.
 | `note:deleted` | a note left the index |
 | `note:renamed` | a note moved, with its inbound links repointed |
 | `webhook:received` | a signed delivery arrived at `POST /api/webhook/{name}` |
+| `session:created` | a session was created, daemon-wide |
+| `session:ended` | a session ended, daemon-wide |
 
-The eight events below the line come off the daemon rather than an agent turn,
+The ten events below the line come off the daemon rather than an agent turn,
 so they fire whether or not a session is mid-conversation — that is the point of
 them. One table names them all
 (`crucible-daemon/src/event_map.rs`), and both the client-facing broadcast and

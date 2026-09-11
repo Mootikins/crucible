@@ -173,7 +173,7 @@ pub use agent::{
 pub use notifications::{NotificationDismissRequest, NotificationListRequest};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
-    PluginRemoveRequest, PluginRunCommandRequest,
+    PluginRemoveRequest, PluginRunCommandRequest, SurfaceRequest,
 };
 pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest};
 pub use session::{

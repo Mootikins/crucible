@@ -369,4 +369,44 @@ pub enum SystemPayload {
         #[serde(default)]
         total_events: usize,
     },
+    /// A session was created, reported daemon-wide.
+    ///
+    /// Addressed to the system session, not to the new one, because the
+    /// audience is a client or plugin watching *every* session — a session
+    /// list, for instance — which is by definition not attached to the session
+    /// that just started.
+    ///
+    /// Not to be confused with [`TurnPayload::Ended`](super::TurnPayload) and
+    /// its `ended` wire name, which one attached client reads about its own
+    /// session. Both exist on purpose; they have different audiences.
+    #[serde(rename = "session:created")]
+    SessionCreated {
+        #[serde(default)]
+        session_id: String,
+    },
+    /// A plugin's surface changed, so every client refetches it.
+    ///
+    /// Carries the identity and the new version, never the rows. A surface is
+    /// unbounded where an event is not, and two clients want it at different
+    /// times, so the event says *what* moved and the client asks for the
+    /// content. This is what makes the version on the surface worth having.
+    #[serde(rename = "surface_changed")]
+    SurfaceChanged {
+        #[serde(default)]
+        plugin: String,
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        version: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<String>,
+    },
+    /// A session ended, reported daemon-wide. See [`Self::SessionCreated`].
+    #[serde(rename = "session:ended")]
+    SessionEnded {
+        #[serde(default)]
+        session_id: String,
+        #[serde(default)]
+        reason: String,
+    },
 }

@@ -159,6 +159,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`session:created` and `session:ended` hooks** — two daemon-wide events a Lua
+  plugin can subscribe to with `cru.on`. Addressed to the system session rather
+  than the session they report, because the audience watches *every* session and
+  is by definition not attached to the one that started. Emitted by
+  `session.create`, `session.end` and `session.fork`; a fork reports its own id,
+  not the parent's. Distinct from the per-session `ended` turn event an attached
+  client already reads.
+
+- **`cru.surface.*` — a panel a plugin declares and every client draws.**
+  `cru.surface.declare` names a surface and `cru.surface.set_rows` fills it with
+  typed rows (a stable `id`, `text`, optional `detail`, and a `mark` from the
+  stated set `busy`/`blocked`/`ok`/`failed`). The plugin states what is true and
+  each client picks its own glyph, so a plugin never ships a character or a
+  layout. Read over `surface.list` and `surface.get`; a change broadcasts
+  `surface_changed`, which carries the identity and version and never the rows.
+  Titles and rows are sanitised and capped at the registry boundary, because a
+  row reaches a terminal that parses ANSI out of plain strings. A reload
+  re-declares the same `(plugin, name)` key and keeps its rows, so a client's
+  open panel survives.
+
+- **`:surfaces` in the TUI** — opens a declared surface full-screen, with
+  `j`/`k` and `g`/`G` to move and `esc` to close. A `surface_changed` refreshes
+  an open panel in place and keeps the cursor on the same row id; it will never
+  open a closed one, because a plugin pushes rows at a moment the user did not
+  choose. The web spelling is not built yet.
+
 - **`config.unset`** — a new RPC verb that removes a key and everything under
   it from the layers `config.reset` drops. It edits no file. The verb a flat
   write cannot spell: `config.set` adds a provider and changes it, but cannot

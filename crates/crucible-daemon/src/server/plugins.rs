@@ -153,6 +153,98 @@ pub(crate) async fn handle_session_status(
 /// which isolation profiles a box offered by matching on the shape of raw
 /// `[plugins.*]` TOML, which put one plugin's config schema in the rendering
 /// layer and made a second plugin answering the same question invisible.
+/// Project one surface as JSON for a client.
+///
+/// The shape and the mark are their declared strings, never a glyph: each client
+/// picks its own, which is the whole reason `Mark` is a stated vocabulary rather
+/// than a character the plugin chose.
+fn surface_json(surface: &crucible_lua::Surface) -> serde_json::Value {
+    serde_json::json!({
+        "plugin": surface.plugin,
+        "name": surface.name,
+        "title": surface.title,
+        "shape": surface.shape.as_str(),
+        "session": surface.session,
+        "version": surface.version,
+        "rows": surface
+            .rows
+            .iter()
+            .map(|row| serde_json::json!({
+                "id": row.id,
+                "text": row.text,
+                "detail": row.detail,
+                "mark": row.mark.map(crucible_lua::Mark::as_str),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// `surface.list` — every declared surface, rows included.
+///
+/// Rows come with the list because a surface is a panel, not a feed, and a
+/// client that has to fetch each one separately shows an empty sidebar first.
+/// The row cap in the registry is what keeps this bounded.
+pub(crate) async fn handle_surface_list(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let params = match typed_params::<crate::rpc_client::SurfaceRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let loader_guard = plugin_loader.lock().await;
+    let Some(loader) = loader_guard.as_ref() else {
+        return Response::success(req.id, serde_json::json!({ "surfaces": [] }));
+    };
+    let surfaces: Vec<serde_json::Value> = loader
+        .surfaces()
+        .list()
+        .iter()
+        .filter(|s| params.plugin.as_ref().is_none_or(|p| *p == s.plugin))
+        .map(surface_json)
+        .collect();
+    Response::success(req.id, serde_json::json!({ "surfaces": surfaces }))
+}
+
+/// `surface.get` — one surface by name.
+///
+/// `name` is required. A missing surface answers `null` rather than an error: a
+/// client holding a window on a surface whose plugin was removed is asking a
+/// reasonable question, and an error would make that a failure to render rather
+/// than an empty panel.
+pub(crate) async fn handle_surface_get(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let params = match typed_params::<crate::rpc_client::SurfaceRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let Some(name) = params.name else {
+        return Response::error(
+            req.id,
+            crate::protocol::INVALID_PARAMS,
+            "surface.get: `name` is required".to_string(),
+        );
+    };
+    let loader_guard = plugin_loader.lock().await;
+    let Some(loader) = loader_guard.as_ref() else {
+        return Response::success(req.id, serde_json::json!({ "surface": null }));
+    };
+    let registry = loader.surfaces();
+    let found = match params.plugin {
+        Some(plugin) => registry.get(&plugin, &name),
+        // No plugin named: the first by the registry's stable order, so two
+        // plugins declaring one name give a deterministic answer rather than a
+        // different one per call.
+        None => registry.list().into_iter().find(|s| s.name == name),
+    };
+    Response::success(
+        req.id,
+        serde_json::json!({ "surface": found.as_ref().map(surface_json) }),
+    )
+}
+
 pub(crate) async fn handle_plugin_publications(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,

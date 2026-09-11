@@ -169,6 +169,8 @@ rpc_methods! {
     PluginList = "plugin.list",
     PluginCommands = "plugin.commands",
     PluginPublications = "plugin.publications",
+    SurfaceList = "surface.list",
+    SurfaceGet = "surface.get",
     PluginOptions = "plugin.options",
     PluginOptionGet = "plugin.option_get",
     PluginOptionSet = "plugin.option_set",
@@ -967,6 +969,14 @@ impl RpcDispatcher {
                     &self.ctx.plugin_loader
                 )
             ),
+            RpcMethod::SurfaceList => forward!(
+                id,
+                crate::server::plugins::handle_surface_list(req.clone(), &self.ctx.plugin_loader)
+            ),
+            RpcMethod::SurfaceGet => forward!(
+                id,
+                crate::server::plugins::handle_surface_get(req.clone(), &self.ctx.plugin_loader)
+            ),
             RpcMethod::PluginOptions => forward!(
                 id,
                 crate::server::plugins::handle_plugin_options(req.clone(), &self.ctx.plugin_loader)
@@ -1340,7 +1350,26 @@ impl RpcDispatcher {
         // start/end hooks hold the plugin loader mutex across their Lua call,
         // and a plugin that creates a session from inside `on_session_end`
         // (reflection does) would deadlock on a create path that fired them.
-        self.enforce_plugin_session_start(mapped, req).await
+        let started = self.enforce_plugin_session_start(mapped, req).await;
+
+        // Daemon-wide report, addressed to the system session rather than the
+        // new one: the audience is a client or plugin watching *every* session,
+        // which is by definition not attached to this one. Named by
+        // `event_map`, never spelled here — see the webhook ingress for what a
+        // locally minted name costs.
+        if let Some(sid) = started
+            .as_ref()
+            .ok()
+            .and_then(|v| v.get("session_id"))
+            .and_then(|v| v.as_str())
+        {
+            crate::event_emitter::emit_event(
+                &self.ctx.event_tx,
+                crate::event_map::session_created(sid),
+            );
+        }
+
+        started
     }
 
     /// Replace `workspace` with what the requested `workspace_target` resolves
@@ -1530,7 +1559,17 @@ impl RpcDispatcher {
             &self.ctx.agents,
         )
         .await;
-        map_server_resp(resp)
+        let mapped = map_server_resp(resp);
+
+        // Only on success, and only daemon-wide — see `handle_session_create`.
+        if mapped.is_ok() && !session_id.is_empty() {
+            crate::event_emitter::emit_event(
+                &self.ctx.event_tx,
+                crate::event_map::session_ended(session_id, "explicit"),
+            );
+        }
+
+        mapped
     }
 
     /// A fork is a live session on the parent's workspace with the parent's
@@ -1562,7 +1601,17 @@ impl RpcDispatcher {
             .enforce_session_start(&fork_id)
             .await
         {
-            Ok(()) => Ok(mapped),
+            Ok(()) => {
+                // A fork is a session, so the daemon-wide report owes it the
+                // same event a create emits. Without this a session list shows
+                // every session except the forked ones. The id comes from `id`,
+                // not `session_id` — for a fork the latter is the parent's.
+                crate::event_emitter::emit_event(
+                    &self.ctx.event_tx,
+                    crate::event_map::session_created(&fork_id),
+                );
+                Ok(mapped)
+            }
             Err(e) => Err(RpcError {
                 code: INTERNAL_ERROR,
                 message: format!("session refused: {e}"),

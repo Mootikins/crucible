@@ -86,6 +86,23 @@ impl Server {
             // loop, and must not queue behind another session's start.
             self.agent_manager.set_publications(loader.publications());
 
+            // A surface change reaches clients through the daemon's own
+            // emitter, so sequence stamping stays in one place — an unstamped
+            // event breaks a client's gap detection. The registry therefore
+            // never touches the bus itself; see `crucible_lua::SurfaceEmitter`.
+            let surface_tx = self.rpc_context.event_tx.clone();
+            if !loader
+                .surfaces()
+                .set_emitter(std::sync::Arc::new(move |change| {
+                    crate::event_emitter::emit_event(
+                        &surface_tx,
+                        crate::event_map::surface_changed(&change),
+                    );
+                }))
+            {
+                tracing::warn!("surface change emitter was already installed");
+            }
+
             // Bound to the same isolation registry the tool dispatcher reads.
             // Without it `cru.tools.call` runs workspace tools with no agent
             // and no session, so a sandboxed session's plugins could reach the

@@ -81,6 +81,8 @@ pub enum CruNamespace {
     Shell,
     Statusline,
     Storage,
+    /// Panels a plugin declares for every client to draw: `cru.surface.*`.
+    Surface,
     Syntax,
     TblDeepExtend,
     TblGet,
@@ -145,6 +147,7 @@ impl CruNamespace {
             | Self::Shell
             | Self::Statusline
             | Self::Storage
+            | Self::Surface
             | Self::Syntax
             | Self::TblDeepExtend
             | Self::TblGet

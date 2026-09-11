@@ -90,6 +90,7 @@ pub mod signature;
 pub mod source_files;
 mod storage_api;
 pub mod stubs;
+pub mod surfaces;
 mod timer;
 mod tools_api;
 mod types;
@@ -239,3 +240,7 @@ pub use isolation::{
 pub use options::{register_options_module, OptionsRegistry};
 pub use plugin_status::{register_status_module, Progress, StatusEntry, StatusRegistry};
 pub use publications::{register_publish_module, PublicationChangeHook, PublicationRegistry};
+pub use surfaces::{
+    register_surface_module, Mark, Shape, Surface, SurfaceChange, SurfaceEmitter, SurfaceRegistry,
+    SurfaceRow,
+};

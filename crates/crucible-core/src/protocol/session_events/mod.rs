@@ -186,7 +186,7 @@ impl Group {
             | "workflow.assessed"
             | "workflow.failed"
             | "workflow.cancelled" => Self::Workflow,
-            // System (13)
+            // System (16)
             "file_changed"
             | "file_deleted"
             | "file_moved"
@@ -199,7 +199,10 @@ impl Group {
             | "ui_style_changed"
             | "stream_gap"
             | "webhook:received"
-            | "replay_complete" => Self::System,
+            | "replay_complete"
+            | "session:created"
+            | "session:ended"
+            | "surface_changed" => Self::System,
             _ => return None,
         })
     }

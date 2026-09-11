@@ -12,6 +12,19 @@ pub struct PluginPublicationsRequest {
     pub key: Option<String>,
 }
 
+/// Request for `surface.list` and `surface.get`.
+///
+/// Both take the same shape. `list` ignores `name`; `get` requires it. A `plugin`
+/// narrows either, because two plugins may declare a surface of the same name
+/// and a client asking for one should not be handed the other.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SurfaceRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
 /// Request for `plugin.options`.
 ///
 /// `ui` is the frontend asking ("tui" or "web"); it drives the per-frontend

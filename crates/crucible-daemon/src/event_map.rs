@@ -90,6 +90,10 @@ pub const NOTE_DELETED_EVENT: &str = EventName::NoteDeleted.as_str();
 pub const NOTE_RENAMED_EVENT: &str = EventName::NoteRenamed.as_str();
 /// A signed webhook delivery arrived at `POST /api/webhook/{name}`.
 pub const WEBHOOK_RECEIVED_EVENT: &str = EventName::WebhookReceived.as_str();
+/// A session was created, reported daemon-wide.
+pub const SESSION_CREATED_EVENT: &str = EventName::SessionCreated.as_str();
+/// A session ended, reported daemon-wide.
+pub const SESSION_ENDED_EVENT: &str = EventName::SessionEnded.as_str();
 
 /// One daemon event a Lua handler can see.
 pub struct EventRow {
@@ -150,6 +154,18 @@ pub const ROWS: &[EventRow] = &[
         wire: WEBHOOK_RECEIVED_EVENT,
         hook: EventName::WebhookReceived,
         identifier: Some("name"),
+    },
+    // The session id is the identifier, so a handler may glob one session or a
+    // prefix. A plugin watching every session leaves `pattern` unset.
+    EventRow {
+        wire: SESSION_CREATED_EVENT,
+        hook: EventName::SessionCreated,
+        identifier: Some("session_id"),
+    },
+    EventRow {
+        wire: SESSION_ENDED_EVENT,
+        hook: EventName::SessionEnded,
+        identifier: Some("session_id"),
     },
 ];
 
@@ -230,6 +246,53 @@ pub fn webhook_received(
             name,
             headers,
             body,
+        },
+    )
+}
+
+/// Build the `session:created` message.
+///
+/// Its own constructor for the same reason as the two above: a session is
+/// created by an RPC, so there is no [`InternalSessionEvent`] behind it.
+/// Addressed to [`SYSTEM_SESSION`], never to the new session — see
+/// [`SystemPayload::SessionCreated`].
+pub fn session_created(session_id: &str) -> SessionEventMessage {
+    SessionEventMessage::typed(
+        SYSTEM_SESSION,
+        SystemPayload::SessionCreated {
+            session_id: session_id.to_string(),
+        },
+    )
+}
+
+/// Build the `session:ended` message. See [`session_created`].
+pub fn session_ended(session_id: &str, reason: &str) -> SessionEventMessage {
+    SessionEventMessage::typed(
+        SYSTEM_SESSION,
+        SystemPayload::SessionEnded {
+            session_id: session_id.to_string(),
+            reason: reason.to_string(),
+        },
+    )
+}
+
+/// Build the `surface_changed` message.
+///
+/// Carries the identity and the version, never the rows: a surface is unbounded
+/// where an event is not, and two clients want it at different moments. The
+/// client refetches through `surface.get`.
+///
+/// Addressed to [`SYSTEM_SESSION`] even when the surface is about one session,
+/// because the audience is every attached client. The session it concerns is in
+/// the payload.
+pub fn surface_changed(change: &crucible_lua::SurfaceChange) -> SessionEventMessage {
+    SessionEventMessage::typed(
+        SYSTEM_SESSION,
+        SystemPayload::SurfaceChanged {
+            plugin: change.plugin.clone(),
+            name: change.name.clone(),
+            version: change.version,
+            session: change.session.clone(),
         },
     )
 }
@@ -380,6 +443,8 @@ mod tests {
             .expect("note:deleted has a wire form"),
             note_renamed("Daily/a.md", "Daily/b.md"),
             webhook_received("ci".into(), Default::default(), "{}".into()),
+            session_created("sess-1"),
+            session_ended("sess-1", "complete"),
         ]
     }
 
