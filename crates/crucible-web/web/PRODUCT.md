@@ -96,8 +96,12 @@ breaks the product:
 - **Review** — the agent's file edits. **Proposal** — a suggested note. They are
   never interchangeable.
 
-**Undecided:** the mobile layout, and whether the PWA path ships.
-`vite-plugin-pwa` is installed, but no small-screen form is settled.
+**Mobile — decided.** A second shell draws the phone form. It uses the same
+origin, the same manifest and the same service worker, with edge drawers and no
+window manager. The PWA already installs. The first pass is online only; offline
+reading and offline capture are separate `P3` entries. See **Mobile Shell** in
+`docs/Meta/Product.md`, the decision-log rows of 2026-08-13 and 2026-09-11, and
+the design draft `docs/Meta/Architecture/Mobile Shell.md`.
 
 ## Brand Commitments
 

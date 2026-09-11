@@ -13,10 +13,10 @@ carries **Mobile Shell** at `P2`, and `docs/Meta/Product Decision Log.md`
 records five choices dated 2026-08-13: a separate shell, one origin with no
 `/m`, an online-only first pass, hash deep links, and a pinned manifest `id`.
 
-`crates/crucible-web/web/PRODUCT.md` still reads "**Undecided:** the mobile
-layout". That line is stale against the decision log. An earlier revision of
-this note took it at face value and re-derived decisions the log had already
-made, with weaker evidence. Section 2a lists where this draft now departs from
+`crates/crucible-web/web/PRODUCT.md` read "**Undecided:** the mobile layout"
+until 2026-09-11, a month after the decision log settled it. An earlier revision
+of this note took that line at face value and re-derived decisions the log had
+already made, with weaker evidence. The line now points at the record. Section 2a lists where this draft now departs from
 the record, so none of the departures is silent.
 
 Nothing here is built yet. Read it as a proposal. See [[Web User Stories]] for
