@@ -8,6 +8,7 @@
 //!   A2d — the CLI does not build its own knowledge-base context block.
 //!   A2e — every session config knob the daemon advertises has a web route.
 //!   A2f — nobody hand-rolls the "is this file markdown" predicate.
+//!   A2g — the hook counts AGENTS.md prints match `StageId`/`EventName`.
 //!
 //! A2* live here rather than in the daemon's companion file because they scan
 //! CLI and web source; the daemon's header lists A1/A3/A4/A5 for the same
@@ -870,5 +871,67 @@ fn the_frontend_has_exactly_one_markdown_predicate() {
          wikilink insert needs. Both mirror `KilnFileKind::of` in \
          crates/crucible-core/src/kiln.rs and must change with it:\n  - {}",
         offenders.join("\n  - ")
+    );
+}
+
+/// A2g — the hook counts `AGENTS.md` prints match the enums the code declares.
+///
+/// The document told every agent that `crucible.on` takes 11 stages and 8
+/// events. The code declared 13 and 10. Nothing compared the two, so the prose
+/// drifted for as long as nobody counted the variants by hand.
+///
+/// One half of this comparison comes from `StageId::ALL` and `EventName::ALL`,
+/// which `hook_name.rs` proves complete by walking `strum::EnumIter`. The
+/// compiler owns that half. The test parses the other half out of the document.
+///
+/// **The parse must find something before the test trusts it.** A gate that
+/// reads a number out of prose reports agreement when an author rewords the
+/// sentence and the regex stops matching. An empty match therefore fails here,
+/// and the message says the parse broke rather than naming a count.
+#[test]
+fn agents_md_prints_the_real_hook_counts() {
+    use crucible_lua::{EventName, StageId};
+
+    let root = workspace_root();
+    let doc = read(&root.join("AGENTS.md"));
+
+    let re = Regex::new(
+        r"\*\*`StageId`\*\* \((\d+) synchronous turn-loop stages\) or an \*\*`EventName`\*\* \((\d+) daemon broadcast events\)",
+    )
+    .unwrap();
+
+    // Refuse an empty match. This assertion keeps the gate honest.
+    let found = re.captures(&doc).unwrap_or_else(|| {
+        panic!(
+            "A2g: no sentence in AGENTS.md matched the hook-count pattern, so \
+             this scan broke rather than the counts agreeing. The sentence \
+             lives under `### Hooks and ACP` and reads \"takes a **`StageId`** \
+             (N synchronous turn-loop stages) or an **`EventName`** (M daemon \
+             broadcast events)\". Restore that wording, or change this regex \
+             together with it."
+        )
+    });
+
+    let stated_stages: usize = found[1].parse().expect("stage count is a number");
+    let stated_events: usize = found[2].parse().expect("event count is a number");
+
+    assert_eq!(
+        stated_stages,
+        StageId::ALL.len(),
+        "A2g: AGENTS.md says {stated_stages} turn-loop stages; `StageId::ALL` \
+         holds {}. Every agent reads that document first. Update the sentence \
+         under `### Hooks and ACP`, and the module doc of \
+         crates/crucible-lua/src/handlers/hook_name.rs, which repeats it.",
+        StageId::ALL.len()
+    );
+
+    assert_eq!(
+        stated_events,
+        EventName::ALL.len(),
+        "A2g: AGENTS.md says {stated_events} daemon broadcast events; \
+         `EventName::ALL` holds {}. Every agent reads that document first. \
+         Update the sentence under `### Hooks and ACP`, and the module doc of \
+         crates/crucible-lua/src/handlers/hook_name.rs, which repeats it.",
+        EventName::ALL.len()
     );
 }

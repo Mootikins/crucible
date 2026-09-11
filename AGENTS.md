@@ -11,7 +11,7 @@ daemon + RPC, Luau extensibility, TUI-first, plugin-driven).
 | Crate | Purpose |
 |-------|---------|
 | `crucible-core` | Domain types, traits, parser, config |
-| `crucible-cli` | TUI (`OilChatApp`), REPL, commands; `cru web` behind default-on `web` feature |
+| `crucible-cli` | TUI (`OilChatApp`) and its `:` command table, CLI commands; `cru web` behind default-on `web` feature |
 | `crucible-daemon` | RPC server, sessions, ACP host, embeddings, SQLite, skills, tools |
 | `crucible-web` | Axum server + SolidJS frontend (`web/`, embedded via rust-embed) |
 | `crucible-oil` | Terminal rendering primitives |
@@ -33,8 +33,8 @@ Crates are compilation units. These are the seams a change lands in — know whi
 | **Scope / containment** | Given a session: what may this turn read, write, search, load, execute | `agent_manager/scope.rs`, `tools/{containment,surface}.rs`, `execution_roots.rs` |
 | **Session / turn lifecycle** | Turn loop, tool admission, context assembly | `agent_manager/messaging/`; `Session` reaches ~127 production files |
 | **Knowledge** | Four subsystems, not one | see below |
-| **Events & requests** | Fan-out with no reply; correlated one-reply-with-timeout | `event_emitter.rs`, `protocol/session_events/`, pending-reply registries |
-| **Wire bindings** | Four, not one | daemon JSON-RPC; web HTTP/SSE/WS; ACP + MCP (both vendored) |
+| **Events & requests** | Fan-out with no reply; correlated one-reply-with-timeout | `crucible-daemon/src/event_emitter.rs`, `crucible-core/src/protocol/session_events/`, pending-reply registries |
+| **Wire bindings** | Four, not one | daemon JSON-RPC; web HTTP/SSE/WS; ACP + MCP (both from external crates) |
 | **Lua** | Projection *and* interception | `crucible-lua/`, `runtime/` |
 | **Render** | TUI and web presentation | `crucible-cli/src/tui/`, `crucible-oil/`, `crucible-web/web/` |
 
@@ -50,7 +50,7 @@ all: ACP's come from `agent_client_protocol`, MCP's from `rmcp`. (Neither is *ve
 `vendor/` holds one crate, `markdown-it`.)
 
 **Lua is not only a shim.** Projection modules (theme, statusline, geometry, oil, json, fs,
-notify, paths) are safe in isolation. Interception is not: `runtime/defaults/init.lua` is
+notify, paths) are safe in isolation. Interception is not: `runtime/defaults/init.luau` is
 compiled in as `BUILTIN_INIT_LUA` and is the *only* definition of the three permission modes,
 the plan-mode deny hook and the precognition formatter. The default system prompt is NOT
 there: it ships as `chat.system_prompt` from `ChatConfig::default()`, so it lands on the
@@ -86,7 +86,8 @@ deriving its expectation from the running system rather than from source text. P
 a hand-maintained list checked by a source-text grep — four such greps have now been replaced,
 each of which was satisfiable without adding the entry it was meant to require.
 
-The live tables: `BuiltinTool`/`ToolSurface` (`tools/surface.rs`) · `EventName` + `StageId`
+The live tables: `BuiltinTool` (`crucible-daemon/src/tools/surface.rs`) and `ToolSurface`
+(`crucible-core/src/traits/tools.rs`) · `EventName` + `StageId`
 (`crucible-lua/src/handlers/hook_name.rs`) · `RpcMethod` + `METHODS`, both generated from one
 `rpc_methods!` table (`rpc/dispatch.rs`) · `ScriptingEvent`
 (`crucible-core/src/events/session_event/`), the ten names the scripting and transport
@@ -120,9 +121,9 @@ knob writes `crucible_core::impl_unsupported_session_knobs!(Ty)`.)
 
 ### Hooks and ACP
 
-- `crucible.on(name, opts, handler)` takes a **`StageId`** (11 synchronous turn-loop stages) or an **`EventName`** (8 daemon broadcast events); the two are different contracts and now different types. At a stage the return value decides what happens next; at an event nothing downstream reads it, and only `cancel` (stop the remaining handlers) means anything.
-- `crucible.on("pre_tool_call", opts, handler)` → `{ cancel = true }` blocks, `{ handled = true, result = … }` replaces execution, `nil` observes. **`cancel` is safe; `handled` and transform are capability-grade** — `handled` returns *before* the permission gate. A plugin needs the `intercept_tools` capability in its manifest to use either; a plugin without it is refused and logged, and the call dispatches normally (`messaging/tool_call.rs`). Gate ordering in that file is the second line of defence, not the first. Its one legitimate use is `runtime/plugins/oci/`, where taking the call over *is* the sandbox. Preserve both the capability check and the ordering.
-- ACP delegation: `cru chat --acp claude`, `cru session create --acp claude`, or `delegate_session`. (`--agent` names an agent *card*, not an ACP profile.) Limits in `[acp.agents.*]`. Code: `acp/`, `agent_manager/`, `tools/mcp_server.rs`.
+- `crucible.on(name, opts, handler)` takes a **`StageId`** (13 synchronous turn-loop stages) or an **`EventName`** (10 daemon broadcast events); the two are different contracts and now different types. At a stage the return value decides what happens next; at an event nothing downstream reads it, and only `cancel` (stop the remaining handlers) means anything.
+- `crucible.on("pre_tool_call", opts, handler)` → `{ cancel = true }` blocks, `{ handled = true, result = … }` replaces execution, `nil` observes. **`cancel` is safe; `handled` and transform are capability-grade** — `handled` returns *before* the permission gate. To use either, a plugin sets `intercepts_tools = true` in its Lua spec table (`crucible-lua/src/lifecycle/spec.rs`); serde renames the field to `intercept_tools`. There is no manifest file and no capability enum: the host builds `PluginManifest` from the plugin directory. The host refuses a plugin without the declaration, logs the refusal, then dispatches the call normally (`messaging/tool_call.rs`). Gate ordering in that file is the second defence, not the first. Only `runtime/plugins/oci/` declares it, because taking the call over *is* the sandbox. Preserve both the declaration check and the ordering.
+- ACP delegation: `cru chat --acp claude`, `cru session create --acp claude`, or `delegate_session`. For `cru chat`, `--agent` is an alias of `--acp`. For `cru session create`, `--agent` names an agent *card*. Limits in `[acp.agents.*]`. Code: `acp/`, `agent_manager/`, `tools/mcp_server.rs`.
 
 ## Workflow
 
