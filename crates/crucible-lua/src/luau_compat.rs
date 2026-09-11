@@ -929,6 +929,19 @@ mod tests {
         assert!(native, "native code stays out of reach");
     }
 
+    /// A plugin runs a command and still cannot end the daemon.
+    ///
+    /// `os.exit` ends the process it runs in, and a plugin runs in the
+    /// daemon: every session, every socket and every write that has not
+    /// landed would go with it. A plugin that means to stop asks the host.
+    /// Luau omits `os.exit`, and the compat layer must not put it back.
+    #[test]
+    fn a_plugin_cannot_end_the_daemon() {
+        let lua = vm();
+        let absent: bool = lua.load("return os.exit == nil").eval().unwrap();
+        assert!(absent, "os.exit must stay out of a plugin's reach");
+    }
+
     /// `os.execute` answers as PUC Lua 5.4 does: the success flag, then the
     /// reason, then the number. A plugin branches on all three.
     #[test]
