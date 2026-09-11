@@ -152,7 +152,7 @@ mouse with one code path.
   horizontal axis to the drawer.
 - Animate `transform: translateX(...)`. Do not animate `width`. `EdgePanel.tsx`
   line 562 records the same reason for the desktop rails.
-- Honour `prefers-reduced-motion`. `EdgePanel.tsx` line 577 shows the check.
+- Honour `prefers-reduced-motion`. `EdgePanel.tsx` line 578 shows the check.
 - Trap focus inside an open drawer. Return focus to the button on close.
 - Close the drawer on `Escape`, on a scrim tap, **and on the hardware back
   button** — a phone has no `Escape`, which leaves Android users only the scrim.
@@ -178,15 +178,15 @@ surface.
   tab already seen in this traversal, stop consuming and let the browser go.
 - A tab with `isModified` shows a dot. Its close action asks first.
   `src/lib/tab-guards.ts` holds that RULE in `confirmTabClose` — but reuse the
-  rule, not the implementation: it calls `window.confirm` (`:7-10`), which a
+  rule, not the implementation: it calls `window.confirm` (`:9`), which a
   standalone PWA may suppress outright. The compact shell asks with its own
   sheet.
 
 Reuse the `Tab` TYPE, and expect no more than that from it. **The three openers
 are welded to `windowStore`, so each still needs an `isCompact()` branch**:
-`file-actions.ts:16` calls `openFileInGroup(editorGroupId(), …)`;
-`draft-session.ts:58-86` calls `findDraftTab()`, `openTabBesideEditor` and
-`windowActions.updateTab`; `session-actions.ts:76` likewise. Type reuse buys a
+`file-actions.ts:20` calls `openFileInGroup(editorGroupId(), …)`;
+`draft-session.ts:58` calls `findDraftTab()`, `openTabBesideEditor` and
+`windowActions.updateTab`; `session-actions.ts:58` likewise. Type reuse buys a
 shared shape and shared tab chrome. It does not save the branch.
 
 **One concrete bug this creates if unhandled.** `findDraftTab` scans only
@@ -310,7 +310,7 @@ laptop window and a phone-width window, and `localStorage` holds one value.
 
 **The split-key argument applies to more than vim mode, and the earlier draft
 only followed it once.** `localStorage` holds one settings object per browser
-profile (`web/src/lib/settings.ts:71-79`), so a laptop and a phone sharing a
+profile (`web/src/lib/settings.ts:80-88`), so a laptop and a phone sharing a
 profile share every value. That is the exact reason `vimModeCompact` exists, and
 `autosaveSeconds` has the same problem: 3 seconds is wrong on a desktop and 0 is
 data loss on a phone. Give it a key too.
@@ -328,18 +328,19 @@ Read renders `MarkdownPreview`. Write opens CodeMirror.
 The composer toolbar sits above the keyboard. It holds the wikilink insert,
 the heading level, the list toggle and the save action.
 
-**Two changes land under this from `spike/oil-document-blocks` (`ba5284546`).**
-Both surfaces share `renderFrontmatterCardHtml`, so Read mode inherits them
-free, and Write mode is where the second one applies:
+**Two changes are already on master.** Both surfaces share
+`renderFrontmatterCardHtml`, so Read mode inherits them free, and Write mode is
+where the second one applies:
 
-- A note may carry `properties: expanded` to open its own Properties card.
+- A note may carry `properties: expanded` to open its own Properties card
+  (`web/src/lib/frontmatter.ts:176`).
 - `editor.hideFrontmatterGap` hides the blank lines between frontmatter and the
-  first content in live preview. It is ON by default. The reading view never
+  first content in live preview. It is ON by default
+  (`web/src/lib/settings.ts:43,88`). The reading view never
   showed the gap, because markdown discards leading blank lines.
 
-Check the compact defaults table above against that setting when the branches
-meet. A phone has less room for a gap than a desktop, so the default is right
-here and needs no compact override.
+A phone has less room for a gap than a desktop, so the default is right here and
+needs no compact override.
 
 ## 9. The agent intro and the new-session flow
 
@@ -413,6 +414,7 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 | skills | content surface | |
 | plugins | content surface | |
 | graph | content surface, read only | Pan and zoom work. Node drag does not. |
+| plugin-blocks | right drawer | Registered `right` (`register-panels.tsx:55`). A plugin block is working context. |
 | canvas | not offered | It needs drag and a large field. |
 | terminal | not offered | It needs a keyboard. |
 
@@ -597,17 +599,22 @@ prevent.
 
 ## 12. Plugin blocks on a phone
 
-**This section changed after the decision it discussed was made.** An earlier
-draft argued Oil against a native component and left the choice open. The choice
-is now made, on `spike/oil-document-blocks`, and this draft records the outcome
-rather than re-arguing it. Read
+**This section changed twice: the decision was made, and then it shipped.** An
+earlier draft argued Oil against a native component and left the choice open.
+The choice is settled and **the work is on master** — `web/src/components/oil/`
+is gone and `web/src/components/blocks/` is in its place. Read
 `docs/Meta/Analysis/The Plugin Contract.md` for the design and
 `docs/Meta/Analysis/Plugin API Plan.md` for the sequence.
 
 The rule is one sentence: **a plugin owns data, and each frontend draws it
-natively.** The web's Oil renderer is deleted. A plugin publishes opaque JSON
-through `cru.plugin.publish`; the browser draws it with a TS component, and
-falls back to a plain table when the plugin ships none.
+natively.** A plugin publishes opaque JSON through `cru.plugin.publish`; the
+browser draws it with a TS component, and falls back to a plain table when the
+plugin ships none.
+
+On master today: `KanbanBlock`, `GraphBlock`, `GenericBlock`, `PluginBlock`,
+`PluginBlockPanel`, `PluginCommandDialog`, plus `registry.ts` and
+`usePublication.ts`. The command dialog means the typed-parameter step landed
+too, so a frontend can offer a primitive it has never seen.
 
 ### What that settles for this draft
 
@@ -700,7 +707,7 @@ this origin**, and every proposed control assumes an isolation that does not
 exist yet. `Plugin API Plan.md:124` leaves the fix undecided — "a sandboxed opaque origin
 with a `postMessage` bridge, versus something else". Only half of that exists here, and the two exemplars are not the same strength:
 
-- `routes/kiln.rs:210` returns `sandbox; frame-ancestors 'none'` — **no
+- `routes/kiln.rs:209` returns `sandbox; frame-ancestors 'none'` — **no
   `allow-*` token at all**, so the document gets a unique opaque origin and its
   script "cannot reach the API, the session cookie, or the app's DOM".
 - `canvas/CanvasNodeView.tsx:133` uses
@@ -708,8 +715,10 @@ with a `postMessage` bridge, versus something else". Only half of that exists he
   an opaque origin, because `allow-same-origin` is absent — but scripts DO run.
   This is the closer precedent for a plugin bridge, and the weaker one.
 
-**There is no `postMessage` anywhere in `crates/crucible-web/web/src`** (zero
-hits). Both exemplars are one-way renders. The earlier draft cited them as
+**`postMessage` appears exactly once in `crates/crucible-web/web/src`, and it is
+a comment saying the bridge does not exist**: `blocks/registry.ts:18` — "…
+postMessage bridge before it can be loaded. Until that exists, a plugin that …".
+Both exemplars above are one-way renders. The earlier draft cited them as
 precedent for a bridge; they are precedent for isolation, which is a different
 claim.
 
@@ -831,16 +840,16 @@ There is a general property store beside it, keyed
 **Two routes, and the draft named the wrong one for four revisions.**
 
 - `GET /api/kiln/notes` maps through `note_to_file_json` and returns
-  `{name, path, is_dir}` only (`routes/helpers.rs:38-49`, called at
+  `{name, path, is_dir}` only (`routes/helpers.rs:42`, called at
   `routes/kiln.rs:79`).
 - `GET /api/notes` maps through `note_to_metadata_json` and returns
-  `{name, path, title, tags, updated_at}` (`helpers.rs:26-36`). **This is the
-  index route.** `listNotes` calls it (`web/src/lib/api.ts:1820`).
+  `{name, path, title, tags, updated_at}` (`helpers.rs:27`). **This is the
+  index route.** `listNotes` calls it (`web/src/lib/api.ts:1740`).
 
 Neither carries `properties`, and no type in the chain has a slot for it.
 `NoteListItem` is a five-tuple (`helpers.rs:22`); `NoteInfo` carries
 name/path/title/tags/created_at/updated_at
-(`crucible-core/src/traits/knowledge.rs:68-75`).
+(`crucible-core/src/traits/knowledge.rs:68`).
 
 **So this is not one field.** It reaches `crucible-core`, the daemon RPC
 (`rpc_client/client/storage.rs:248`), the tuple, and the JSON. Size it as four
@@ -850,7 +859,7 @@ layers.
 
 `properties.scope` holds `{"kind":"workspace","path":"/abs/host/path"}`, and
 that field IS the same-workspace SQL visibility filter
-(`crucible-daemon/src/storage/sqlite/note_store.rs:165-186`).
+(`crucible-daemon/src/storage/sqlite/note_store.rs:176`).
 
 Returning the column verbatim would put an absolute host path on the wire and
 hand a client the key to the check that hides other workspaces' notes.
@@ -942,10 +951,11 @@ A frontmatter field set is then sugar. The daemon may still accept
 `set: { status: "doing" }` and compile it to an edit, including the
 create-the-key-inside-the-existing-block case that `move()` handles today.
 
-**Put containment in one place.** `move()` hand-validates its `file` argument
-against `/`, `\` and `..`, because a rendered tree carries params a note author
-can hand-write. Every plugin that writes lines repeats that check. One of them
-will get it wrong. A daemon operation checks it once.
+**Containment is already in one place — inherit it, do not rebuild it.**
+`move()` still hand-validates its `file` argument against `/`, `\` and `..`,
+because a rendered tree carries params a note author can hand-write. That check
+predates `scoped()`. An anchored edit routed through the same `scoped()` path
+gets the guarantee for free, and the hand-rolled check can go.
 
 **On block addressing.** `note_blocks` already stores
 `(note_path, span_start, span_end, kind, content_hash)`, and `BlockHash` is the
@@ -1009,27 +1019,39 @@ Those ask for the more general thing: a scoped read/write of any shape
 (`:225-226`). This design is one answer to both, and it is not yet written into
 either document. Do not read it as a settled cross-branch dependency.
 
-`kanban_move` rewrites one `status:` line with a `gsub` and then writes the
-whole file back through `io.open(path, "w")`
-(`runtime/plugins/kanban/init.luau:78,169`). That is last-write-wins on a
-whole-file rewrite, with no `If-Match` and no detection. A phone that moves a
-ticket while an agent rewords the body loses exactly the way section 11
-describes — and it loses through the plugin path, which no HTTP route guards.
+**Half of this gap closed on master, and the half that matters did not.**
 
-`cru.fs` today has `mkdir`, `exists`, `is_file`, `is_dir`, `list`, `copy` and
-`remove_all`. **It has no read and no write at all**, which is why plugins reach
-for raw `io.open`, unscoped.
+`cru.fs` now has scoped `read` and `write` (`crucible-lua/src/fs.rs:225,240`),
+each routed through `scoped(lua, &path, …)` so the call is confined to the
+kilns, the workspace and that plugin's own state directory.
+`docs/Help/Lua/Language Basics.md:66-68` states the reason: "`io.open` says
+nothing about who is calling or where they may reach."
 
-So the anchored batch is one primitive with two callers:
+So the containment argument this section used to make is **already answered** —
+containment IS in one place now, and it is `scoped()`. Do not re-argue it.
+
+What did NOT close is conflict detection. `cru.fs.write` takes a whole file, so
+a plugin still does read-modify-write with no base and no check. Kanban rewrites
+one `status:` line with a `gsub` and writes the whole file back
+(`runtime/plugins/kanban/init.luau:159`). That is last-write-wins. A phone that
+moves a ticket while an agent rewords the body loses exactly the way section 11
+describes.
+
+So the anchored batch is one primitive with two callers, and it now sits
+**beside** an existing scoped pair rather than filling an empty namespace:
 
 ```
-cru.fs.edit(path, edits)     -- the plugin's write, on the daemon
+cru.fs.read / cru.fs.write   -- on master, scoped, whole-file, no base
+cru.fs.edit(path, edits)     -- ADD: the plugin's checked write
 PATCH /api/kiln/file         -- the editor's write, and the outbox replay
 ```
 
 An HTTP-only version leaves the two halves of the app disagreeing about what a
 safe write is, and leaves the plugin half on the unsafe side. Build the core
 operation once and give it both callers.
+
+`cru.fs.edit` is a smaller ask than it was: the scoping, the path resolution and
+the declaration pattern all exist and it follows them.
 
 ### The refusal must be structural
 
@@ -1045,7 +1067,7 @@ string a UI has to parse.
 
 `FsMoveOutcome` is the shape the plugin work names, but note what it is: a
 TypeScript client interface, `{moved, rewritten_sources?, skipped?}`
-(`web/src/lib/api.ts:2150-2157`). There is no Rust type behind it, and it
+(`web/src/lib/api.ts:2070-2077`). There is no Rust type behind it, and it
 enumerates no per-item failure. Copy the *spirit* — a structured outcome a UI
 can branch on — and design the Rust shape here. An anchored batch is the first operation that can answer the
 question properly, so it should set the pattern rather than inherit the gap.
@@ -1147,11 +1169,12 @@ thin adapter over it.
 `cru.fs.edit` is not free on the Lua side either. `cru.fs` is declared in
 `crucible-lua/src/fs.rs` (`mkdir` at `:90`, `remove_all` at `:118`), and
 `crucible-lua/src/host_api.rs` holds `UNSIGNED` behind a ratchet test
-(`crucible-daemon/tests/plugin_stubs_contract.rs:445-455`): a VM function that
+(`crucible-daemon/tests/plugin_stubs_contract.rs`): a VM function that
 is neither declared nor listed **fails the build**.
 
-`docs/Help/Lua/Language Basics.md:88` is the doc that goes stale — it lists the
-`cru.fs` surface and ends "Read and write with `io`."
+`docs/Help/Lua/Language Basics.md:66-81` is the doc that goes stale — it now
+documents `cru.fs.read` and `cru.fs.write` as the canonical access, and an
+`edit` beside them belongs in the same passage.
 
 Nothing in `src/lib/offline/` is safe to write until all three blind-write
 routes can refuse a stale base.
