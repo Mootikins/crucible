@@ -3,10 +3,11 @@
 //! One list used to hold every name: `HOOK_NAMES`, a `&[&str]`. Two things were
 //! wrong with it.
 //!
-//! **It was a union of two contracts.** Eight of the names are *events* — the
+//! **It was a union of two contracts.** Ten of the names are *events* — the
 //! daemon broadcasts them, fan-out, nobody replies, the thing already happened.
-//! Eleven are *stages* — synchronous interception points on the turn loop, run
-//! in priority order, where a handler's return value changes what happens next.
+//! Thirteen are *stages* — synchronous interception points on the turn loop,
+//! run in priority order, where a handler's return value changes what happens
+//! next.
 //! [`ScriptHandlerResult`](crate::ScriptHandlerResult) carries the same four
 //! variants for both, so `Cancel` meant "stop the remaining handlers" on one
 //! side and "block the operation" on the other, decided only by which name the
