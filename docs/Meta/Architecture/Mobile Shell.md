@@ -1,6 +1,6 @@
 ---
 title: Mobile Shell
-description: A draft design for the small-screen web shell — edge drawers, a tab stack, one tree of kilns and projects, a plain editor, a stepped new-session flow, an offline kiln with a sync, and what Oil views cost on a phone.
+description: A draft design for the small-screen web shell — edge drawers, a tab stack, a sessions drawer with a project switcher, a files drawer with a root picker, a plain editor, a stepped new-session flow, an offline kiln with a sync, and what Oil views cost on a phone.
 tags: [meta, architecture, web, mobile, ux, draft]
 status: draft
 ---
@@ -61,8 +61,8 @@ The decision log settled this on 2026-08-13, and its evidence is stronger than
 the argument below: **at 780 px the desktop centre column collapses to 29 px**
 and the terminal renders one column. It is also cheap, for a reason this note
 missed: `panel-registry` registers panels as bare components, `Pane` renders
-them through `<Dynamic>` with no pane or tab context, and only two files import
-`windowing/`. Every panel mounts in a second shell as it is.
+them through `<Dynamic>` with no pane or tab context, and only `App.tsx` imports
+`windowing/` (the record counted two; the second is a comment in `CenterComposer.tsx`). Every panel mounts in a second shell as it is.
 
 The two shells share the panel components, the contexts, the API client and
 the theme. They do not share layout.
@@ -93,13 +93,16 @@ revision departed from that in four places. Three are now resolved, on
 | No vim mode | **Changed:** vim is OFF by default on a phone, with its own setting. The decision log records the change | Section 8 |
 | Online only | **Kept.** Sections 11 and 13 design the `P3` entries Offline Kiln Cache and Offline Note Capture. Build the shell without them | Sections 11, 13 |
 
-**One detail the record leaves open, and this draft picks:** which side each
-drawer takes. The record puts the picker "in the left drawer" without naming the
-drawer. This draft follows the desktop rails — `sessions` registers `left`,
-`files` registers `right` — so the picker sits on the right. The desktop already
-offers **Swap Side Panels** for a user who wants the file tree under the other
-thumb; the compact shell should honour the same preference rather than invent a
-second one.
+**One departure remains, and it is small: the side.** Row 78 puts the picker "in
+the left drawer". This draft puts the files drawer, and so the picker, on the
+RIGHT, because the desktop rails do: `sessions` registers `left` and `files`
+registers `right`. That contradicts the row, so it needs a yes or a swap before
+it ships. A swap costs one line in `MobileShell.tsx`.
+
+(An earlier revision said the compact shell should honour the desktop's **Swap
+Side Panels**. It cannot: that command mirrors the layout trees and stores
+nothing else, and the result lives only in `/api/layout`, which the compact
+shell never loads — see section 3.)
 
 The record counted "all 15 panels" as mountable. There are 18 now:
 `plugin-blocks` and `surfaces` arrived after it (section 10).
@@ -115,14 +118,25 @@ export const isCompact = () => /* matchMedia('(max-width: 767px)') */;
 
 Rules for the switch:
 
-- Read `matchMedia` once. Subscribe to the change event. `src/lib/theme.ts`
-  already shows this pattern.
+- **Decide once, at load, and never again in that page.** Do not subscribe to
+  the width. `App.tsx` loads the desktop layout once, at mount
+  (`App.tsx:248-249`), so a live swap to the desktop shell would mount
+  `WindowManager` with no layout at all. Rotating a tablet or resizing a window
+  across the breakpoint keeps the current shell; a reload re-decides.
 - Fall back to `false` where `matchMedia` is absent. Tests and embedded
   runtimes need this. `theme.ts` line 63 records the same need.
 - `App.tsx` renders `<MobileShell />` or `<WindowManager />`. It renders one,
   never both. The providers stay above the choice.
-- Do not run `loadLayoutOnStartup` or `setupLayoutAutoSave` in the compact
-  shell. A phone must not overwrite the desktop layout.
+- **The compact shell never loads or saves the desktop layout, and the reason is
+  bigger than one device.** The layout persists to the DAEMON —
+  `POST /api/layout` (`web/src/lib/api.ts:2062`) — not to a browser key. A phone
+  that ran `setupLayoutAutoSave` would overwrite the layout of every desktop on
+  that daemon. So `loadLayoutOnStartup` and `setupLayoutAutoSave` run only on
+  the desktop branch.
+- **Fix the viewport meta.** `index.html:5` lacks `viewport-fit=cover`, and
+  without it `env(safe-area-inset-*)` is 0 on iOS, so section 4's inset tokens
+  would do nothing. Add `interactive-widget=resizes-content` too, so the
+  composer stays above the Android keyboard.
 
 ## 4. The layout
 
@@ -155,6 +169,17 @@ Three regions, and one content surface.
   Activity and Plugin Blocks — the right-rail panels of the desktop.
 - **The content surface** shows exactly one registered panel.
 
+**Render it the way `Pane` does, not by spreading metadata.** Copy
+`windowing/Pane.tsx:113-130`: a memo keyed on the tab's id and content type, and
+props through `reactiveMetadataProps` (`lib/panel-props.ts`). A plain spread of
+`tab.metadata` remounts the editor on every `isModified` write, or loops —
+`panel-props.ts:21-28` records both failures.
+
+**The editor is the main area**, as the record says. On a cold start the surface
+shows the last active tab from the saved tab stack. With no saved stack it shows
+the editor's empty state: the recent notes from `/api/recents`, and a New
+Session button. A chat is a tab like any other, not the default.
+
 Both drawers are overlays. They do not push the content. Each drawer uses
 `min(85vw, 320px)`. A scrim covers the content behind an open drawer.
 
@@ -185,7 +210,7 @@ mobile work:
 
 The gesture is the preferred input. The button is the guaranteed input.
 
-The app bar always shows the drawer button on the left. A user with a stylus,
+The app bar always shows both drawer buttons. A user with a stylus,
 a mouse or a screen reader must never depend on a swipe.
 
 ### The implementation
@@ -244,8 +269,48 @@ retarget path in `openDraftSession` aims at the wrong tab.
 drop targets. The compact shell has none of them. It owns a small
 `tabStackStore` over the same `Tab` type.
 
-Persist the tab list under its own key. Never write the desktop layout key. A
-phone must not overwrite a desktop layout.
+### The tab host seam — the largest piece of Track A
+
+An earlier revision said three openers are welded to `windowStore`. A review
+against master found more than ten sites, and one of them guards unsaved work:
+
+| Site | What breaks on the compact shell without the seam |
+|---|---|
+| `FileViewerPanel.tsx:334-346` | writes `isModified` only into `windowStore`, so no dirty dot and **no close guard** — edits can be lost |
+| `tabActions.ts:17` (`syncActiveSession`) | the ONLY writer of `statusBarStore.activeSessionId`; `SessionContext.tsx:259-262` follows it, so a tab switch would not change `currentSession` |
+| `ChatContext.tsx:242-244` | the tab title never updates |
+| `SessionContext.tsx:394-396,418-420` | deleting or archiving a session leaves its tab open |
+| `draft-session.ts:37-43,90` | `findDraftTab` and `closeDraftTab` miss the compact draft; the draft stays open after send |
+| `file-actions.ts:20,52,113` | open, open-at-line and `closeTabsUnder` |
+| `session-actions.ts:58,76` | `openTabBesideEditor`, `openSessionInChat` |
+| `panel-actions.ts:76`, `shellStore.ts:60,75` | `openPanelTab`, and the shell's go-to actions |
+| `files/file-tree-a11y.ts:16` | `currentOpenFilePath`, the tree's highlight |
+
+**The fix is one seam, not ten branches.** Add `src/lib/tab-host.ts`:
+
+```ts
+interface TabHost {
+  find(pred: (t: Tab) => boolean): Tab | null;
+  open(tab: Tab): void;           // add, or focus if present
+  activate(id: string): void;
+  update(id: string, patch: Partial<Tab>): void;
+  remove(id: string): void;
+}
+```
+
+Two implementations: `windowTabHost` wraps `windowStore` and keeps the desktop's
+behaviour byte-for-byte; `stackTabHost` wraps `tabStackStore`. `tabHost()`
+returns the one the shell chose at load. Both `activate` paths call
+`statusBarActions.setActiveSessionId` and `syncShellSurface`, which is what
+keeps `currentSession` true. Every site in the table then calls `tabHost()`.
+
+This is runtime polymorphism with two real implementations, so an interface is
+right here. The migration touches desktop code; the existing desktop suite is its
+gate, and it must stay green with no test edited to fit.
+
+**Persist the tab stack in `localStorage`** (`crucible:compactTabs`), per
+browser. Never call `saveLayout` or `loadLayout` from the compact shell — see
+section 3.
 
 **The URL must not change.** The service worker answers navigations only for
 `/`. `pwa-options.ts` sets `navigateFallbackAllowlist: [/^\/$/]`. A new path
@@ -313,18 +378,30 @@ first, with the rest reachable by scroll.
   section 9 asks.
 - Worktrees list as their own rows, labelled `mainrepo > rel/path`, as
   `buildRoster` names them. A session in a worktree belongs to the worktree.
+- **`SessionRow` needs a compact variant.** Its height is fixed at 26 px and it
+  carries no project label (`SessionTree.tsx:16-26,51`). The drawer needs 44 px
+  rows, and each Inbox row must name its project.
 
 ### The files drawer (right)
 
 A root picker above a tree — the desktop `FilesPanel` shape, and the record's
 "kiln/project picker".
 
-- **The picker** is `RootDropdown` over `buildRoster`
-  (`src/lib/tree-root.ts:116`): three groups, **Projects**, **Worktrees** and
+**Mount `FilesPanel` as it is. Do not rebuild it from its parts.**
+`FileTreeView` is a controlled view that needs `collection`, `loadChildren`,
+`onLoadedTree` and `onContextAction` (`files/FileTreeView.tsx:32-66`), and
+`RootDropdown` needs the session's own roots (`files/RootDropdown.tsx:49-60`).
+The logic that feeds them — listing, fs events, reconcile, mutations, the
+`treeRootStore` pin — is the 737-line `FilesPanel.tsx`. Composing the parts again
+copies all of it. `FilesPanel` uses native HTML5 drag (`lib/file-dnd.ts:4-7`), so
+it runs without the window manager's drag provider.
+
+- **The picker** is `FilesPanel`'s `RootDropdown` over `buildRoster`
+  (`src/lib/tree-root.ts:56`): three groups, **Projects**, **Worktrees** and
   **Kilns**. `RosterGroup.label` is that exact union (`:23`), so no group may be
   folded into another.
-- **The tree** is `FileTreeView` over the chosen root. It is the tree view this
-  draft set out to provide; the picker decides which root it shows.
+- **The tree** is its `FileTreeView` over the chosen root. It is the tree view
+  this draft set out to provide; the picker decides which root it shows.
 - **It follows the active session** unless the user pins a root, exactly as
   `treeRootStore` does on the desktop. Open a session in `crucible-docs` and the
   tree shows `crucible-docs`.
@@ -344,8 +421,8 @@ keeps each tree short.
   criterion that does not exist.
 - **Hover-only actions are already handled — do not "fix" them.**
   `SessionTree.tsx:86` and `:467` carry `[@media(hover:none)]:opacity-100`, as
-  do `Message.tsx:158` and `AssistantTurn.tsx:271`, plus `index.css:1199` and
-  `:1289`. A coarse pointer already reveals them.
+  do `Message.tsx:158` and `AssistantTurn.tsx:271`, plus `index.css:1211` and
+  `:1301`. A coarse pointer already reveals them.
 - A long press opens a bottom sheet with the row's actions. `FileTreeContextMenu`
   supplies the action list.
 - Chevrons get their own 44 px hit area. A chevron tap expands. A row tap opens.
@@ -376,13 +453,16 @@ interface EditorSettings {
 
 Default `vimModeCompact: false`.
 
-**Show both toggles in the Editor section of Settings**, labelled for the shell
+**Show both toggles in `EditorSettingsSection`** (`SettingsPanel.tsx:351`, not
+`settings/sections.tsx`, which only lists the sections), labelled for the shell
 they govern — "Vim mode (desktop)" and "Vim mode (phone)". One unlabelled toggle
 would change whichever key the current shell reads, and a user on a phone would
 see a desktop-only switch that seems to do nothing.
 
-Resolve the value at the call site. `FileViewerPanel.tsx` line 488 passes
-`settings.editor.vimMode` to the editor. It must pass a resolver instead:
+Resolve the value where it is read. `FileViewerPanel.tsx` reads it in TWO places
+— `:260`, the dependency that reconfigures an open editor, and `:488`, the prop
+it passes down. Both must read the resolver, or a toggle changes the prop and
+never reconfigures the open editor:
 
 ```ts
 const effectiveVim = () =>
@@ -397,7 +477,7 @@ laptop window and a phone-width window, and `localStorage` holds one value.
 | Setting | Desktop | Compact | Reason | Needs a split key? |
 |---------|---------|---------|--------|--------------------|
 | `vimMode` | true | false | No `Escape`, no modifier row | **Yes** — `vimModeCompact` |
-| `autosaveSeconds` | 0 | 3 | A phone has no `Ctrl+S` | **Yes**, and the draft did not say so |
+| `autosaveSeconds` | 0 | 3 | A phone has no `Ctrl+S` | **Yes** — `autosaveSecondsCompact`, read at `FileViewerPanel.tsx:323` |
 | `maxLineWidth` | 768 | 0 | The viewport is already narrow | **No** — derive it, do not store it |
 | `showSaveButton` | true | true | unchanged | No |
 
@@ -411,10 +491,13 @@ data loss on a phone. Give it a key too.
 `maxLineWidth` does not need one. A narrow viewport already clamps the column,
 so the compact shell can ignore the setting rather than store a second value.
 `showSaveButton` changes nothing and is listed only so nobody adds a key for it.
+It also draws nothing on a phone today: only `windowing/CornerBar.tsx:36` reads it,
+and the compact shell has no corner bar. `MobileEditorBar` draws the dirty dot
+and the Save action itself.
 
 ### The read/write switch
 
-The desktop editor toggles live preview with `Mod-Shift-E`. The compact editor
+The desktop editor opens the reading view with `Mod-Shift-E`. The compact editor
 shows a two-item segmented control in the app bar: **Read** and **Write**.
 Read renders `MarkdownPreview`. Write opens CodeMirror.
 
@@ -456,14 +539,19 @@ chip has room for a name and nothing else.
 
 ### Step 2 — the context
 
-Four rows, each with its current value on the right:
+Five rows — `CenterComposer`'s five context chips — each with its current value
+on the right:
 
 ```
 Project     crucible          ›
+Workspace   the checkout      ›      where the files live (a worktree, a host)
 Kiln        crucible-docs     ›
 Model       default           ›
-Runtime     this machine      ›
+Runtime     this machine      ›      where the process runs
 ```
+
+An earlier revision listed four and dropped **Workspace**, the very axis the
+next paragraph says to keep apart from Runtime.
 
 Each row opens a bottom sheet with the options. Every row shows a resolved
 default, so a user may skip the whole step.
@@ -480,6 +568,17 @@ row.
 
 A full-height text area. The Send button sits in the bottom bar.
 
+### How it mounts, and what it must not copy
+
+- **The registry stays as it is**, so `chat-draft` still maps to
+  `CenterComposer` (`register-panels.tsx:40`). The compact shell's renderer
+  keeps a small override map — `chat-draft` → `NewSessionSheet`, `settings` → a
+  full-height sheet — and consults it before the registry.
+- **Extract the submit first.** The create-session call and the empty-value
+  contract live inside `CenterComposer.tsx:196-225`. Move them into a shared
+  function and let both surfaces call it. Two copies of "untouched is not the
+  same as `host`" is two chances to containerize a session that opted out.
+
 ### What stays the same
 
 Lazy creation stays. Nothing reaches the daemon until the first send.
@@ -493,7 +592,7 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 
 | Panel | Compact shell | Reason |
 |-------|---------------|--------|
-| chat | content surface | The primary surface. |
+| chat | content surface | A tab like any other. The editor is the main area (section 4). |
 | chat-draft | full-height sheet | Section 9. |
 | file | content surface | Section 8. |
 | sessions | left drawer, Sessions tab | Section 7. |
@@ -1308,12 +1407,13 @@ carries this.
 New files:
 
 ```
-src/stores/deviceStore.ts          the compact test and its subscription
+src/stores/deviceStore.ts          the compact test, decided once at load
+src/lib/tab-host.ts                the TabHost seam and its two hosts (section 6)
 src/mobile/MobileShell.tsx         app bar, drawers, content surface
 src/mobile/Drawer.tsx              the gesture, the scrim, the focus trap
 src/mobile/NavStack.ts             the popstate bridge for the back button
 src/mobile/SessionsDrawer.tsx      project switcher, cross-project Inbox, sessions
-src/mobile/FilesDrawer.tsx         RootDropdown + FileTreeView; the right-rail tabs
+src/mobile/FilesDrawer.tsx         mounts FilesPanel as is; the right-rail tabs
 src/mobile/BottomSheet.tsx         the option pickers and the action menus
 src/mobile/NewSessionSheet.tsx     the three steps in section 9
 src/mobile/MobileEditorBar.tsx     Read/Write and the toolbar
@@ -1334,8 +1434,15 @@ Changed files:
 src/App.tsx                        pick the shell
 src/lib/settings.ts                add vimModeCompact and the compact defaults
 src/components/FileViewerPanel.tsx read the resolver, not the raw setting
-src/components/settings/sections.tsx  a compact section
+src/components/SettingsPanel.tsx   both vim toggles in EditorSettingsSection
+src/components/SessionTree.tsx     a compact SessionRow: 44 px, a project label
+src/components/CenterComposer.tsx  the submit moves to a shared function
+index.html                         viewport-fit=cover, interactive-widget
 src/index.css                      the safe-area tokens
+src/lib/draft-session.ts, file-actions.ts, session-actions.ts,
+src/lib/panel-actions.ts, stores/shellStore.ts, stores/tabActions.ts,
+src/contexts/ChatContext.tsx, contexts/SessionContext.tsx,
+src/components/files/file-tree-a11y.ts   route through tabHost() (section 6)
 src/lib/api.ts                     carry content_hash and base_hash
 crates/crucible-core/src/…               NoteInfo gains an allowlisted properties map
 crates/crucible-daemon/src/…             the anchored-edit CORE operation
@@ -1429,8 +1536,8 @@ means duplicating it, or extracting it first.
 3. **The graph.** Is a read-only graph worth the bundle on a phone?
 4. **Settings storage.** `localStorage` holds one settings object per browser
    profile. A desktop and a phone that share a profile share every other
-   setting too. Only vim mode gets a split key in this draft. Fonts, autosave
-   and the terminal font do not.
+   setting too. Vim mode and autosave get split keys in this draft. Fonts and
+   the terminal font do not.
 5. **The mirror cap.** Section 11 mirrors the last 20 opened notes, which is
    `MAX_RECENTS` today. Twenty is a starting number, not a measured one.
 6. **Eviction, and the browser's own eviction.** IndexedDB has no fixed quota,
