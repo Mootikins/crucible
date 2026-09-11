@@ -530,7 +530,6 @@ export type ReviewOpts = {
     system_prompt: string,
     prompt: string,
     timeout: number,
-    max_iterations: number,
 }
 
 --- Run one review in a forked aux session. Answers with the reviewer's
@@ -551,8 +550,6 @@ function M.review(opts: ReviewOpts): (string?, string?)
     local agent_cfg = {
         model = opts.model,
         system_prompt = opts.system_prompt,
-        -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
-        max_iterations = opts.max_iterations,
         -- No external tool servers for an unattended reviewer.
         mcp_servers = {},
     }
@@ -711,7 +708,6 @@ function M.run(session: any): { string }
         system_prompt = M.SYSTEM_PROMPT,
         prompt = prompt,
         timeout = config.get("timeout", 120),
-        max_iterations = config.get("max_iterations", 12),
     })
     if output == nil then
         cru.log("warn", "reflection: " .. tostring(review_err))
@@ -763,10 +759,11 @@ cru.on_session_end(function(session)
 end)
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
     name = "reflection",
     version = "0.1.0",
     description = "Retrospective self-improvement: propose kiln notes after a session ends",
-    capabilities = { "kiln", "agent", "config", "filesystem" },
 
     -- Exposed for unit tests and manual invocation. The consolidation
     -- plugin calls `review` and `load_hunks`, so the two passes share one

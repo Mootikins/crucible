@@ -57,6 +57,11 @@ pub struct BackgroundJobManager {
     history: Arc<DashMap<String, std::collections::VecDeque<JobResult>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     max_history: usize,
+    /// Where a running job reports itself, so the daemon does not exit in the
+    /// middle of one. The server hands its own registry in
+    /// ([`Self::with_activity`]); a manager built without one counts into a
+    /// registry nothing reads, which is right for a test.
+    activity: Arc<crate::activity::DaemonActivity>,
 }
 
 impl BackgroundJobManager {
@@ -66,7 +71,15 @@ impl BackgroundJobManager {
             history: Arc::new(DashMap::new()),
             event_tx,
             max_history: MAX_HISTORY_PER_SESSION,
+            activity: crate::activity::DaemonActivity::new(),
         }
+    }
+
+    /// Report running jobs into the daemon's own activity registry rather
+    /// than this manager's private one. The server calls this at bind.
+    pub fn with_activity(mut self, activity: Arc<crate::activity::DaemonActivity>) -> Self {
+        self.activity = activity;
+        self
     }
 
     pub fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
@@ -87,6 +100,16 @@ impl BackgroundJobManager {
         jobs.sort_by_key(|j| std::cmp::Reverse(j.started_at));
 
         jobs
+    }
+
+    /// How many jobs are running right now, across every session.
+    ///
+    /// The idle timer does NOT read this — every running job holds a
+    /// [`crate::activity::WorkKind::BackgroundJob`] guard instead, so the
+    /// timer has one question to ask rather than a list of counters to
+    /// collect. This stays for the status surfaces that report job counts.
+    pub fn running_count(&self) -> usize {
+        self.running.len()
     }
 
     pub fn get_job_result(&self, job_id: &JobId) -> Option<JobResult> {

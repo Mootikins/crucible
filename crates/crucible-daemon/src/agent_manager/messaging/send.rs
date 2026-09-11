@@ -1,5 +1,4 @@
 use super::super::*;
-use super::DEFAULT_MAX_TOOL_DEPTH;
 use crucible_core::config::components::permissions::PermissionMode;
 
 /// Map the stream driver's outcome to the completion-channel status pair.
@@ -88,6 +87,10 @@ impl AgentManager {
                 e.insert(RequestState {
                     cancel_tx: Some(cancel_tx),
                     task_handle: None,
+                    // Held until the stream task releases the slot at the end
+                    // of the turn. This is what keeps the daemon from exiting
+                    // mid-turn once the client has detached.
+                    _work: Some(self.activity().start(crate::activity::WorkKind::Turn)),
                 });
             }
         }
@@ -355,21 +358,16 @@ impl AgentManager {
             session_id: session_id_owned.clone(),
             message_id: message_id.clone(),
             event_tx: event_tx_clone.clone(),
-            session_state: self.get_or_create_session_state(session_id),
+            slot: self.slot(session_id),
             workspace_path: tool_root.clone(),
             session_dir: session.storage_path(self.session_manager.sessions_root()),
             whitelists_dir: self.whitelists_dir(),
             agent_stream_config: {
-                let (lua_validators, plugin_lua) = match self.lua_validators() {
-                    Some((r, l)) => (Some(r), Some(l)),
-                    None => (None, None),
-                };
                 AgentStreamConfig::from_session_agent(
                     &agent_config,
                     TurnEnvironment {
-                        lua_validators,
-                        plugin_lua,
                         plugin_handlers: self.plugin_handlers(),
+                        daemon_permissions: self.daemon_permissions(),
                         isolation: self.isolation(),
                         plugin_tool_names,
                         modes: self.modes.clone(),
@@ -387,7 +385,6 @@ impl AgentManager {
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
             conversation_tree,
-            slot: self.slot(session_id),
             session_manager: self.session_manager.clone(),
             precognition_message,
             attachment_message,
@@ -409,11 +406,6 @@ impl AgentManager {
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
             let stream_config = stream_ctx.agent_stream_config.clone();
-            // Use session-configured max_iterations, falling back to the default
-            let max_tool_depth = stream_config
-                .max_iterations
-                .map(|n| n as usize)
-                .unwrap_or(DEFAULT_MAX_TOOL_DEPTH);
 
             let stream_future = Self::execute_agent_stream(
                 agent,
@@ -422,49 +414,7 @@ impl AgentManager {
                 stream_config,
                 &mut accumulated_response,
                 false,
-                0,
-                max_tool_depth,
-                0,
             );
-
-            // Wrap in execution timeout if configured
-            let timed_future = async {
-                if let Some(timeout_secs) = stream_ctx.agent_stream_config.execution_timeout_secs {
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(timeout_secs),
-                        stream_future,
-                    )
-                    .await
-                    {
-                        Ok(outcome) => outcome_to_status(outcome),
-                        Err(_) => {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                timeout_secs = timeout_secs,
-                                "Execution timeout reached"
-                            );
-                            if !emit_event(
-                                &stream_ctx.event_tx,
-                                SessionEventMessage::ended(
-                                    &stream_ctx.session_id,
-                                    "error: execution timeout reached",
-                                ),
-                            ) {
-                                warn!(
-                                    session_id = %stream_ctx.session_id,
-                                    "No subscribers for execution timeout ended event"
-                                );
-                            }
-                            (
-                                TurnStatus::TimedOut,
-                                Some("execution timeout reached".to_string()),
-                            )
-                        }
-                    }
-                } else {
-                    outcome_to_status(stream_future.await)
-                }
-            };
 
             let (status, error) = tokio::select! {
                 _ = cancel_rx => {
@@ -477,7 +427,7 @@ impl AgentManager {
                     }
                     (TurnStatus::Cancelled, None)
                 }
-                outcome = timed_future => outcome,
+                outcome = stream_future => outcome_to_status(outcome),
             };
 
             // Single convergence point for ALL exit paths — this send must

@@ -8,8 +8,8 @@ use super::*;
 use crate::storage::sqlite::{SqliteConfig, SqliteNoteStore, SqlitePool};
 use crucible_core::storage::PropertyStore;
 
-/// Write `init.lua` (and optionally `plugin.yaml`) for one plugin, and return
-/// the search path the loader discovers it under.
+/// Write the `init.lua` for one plugin under `tmp`, which is the search path
+/// the loader discovers it in.
 fn plugin_dir(tmp: &std::path::Path, name: &str, body: &str) {
     let dir = tmp.join(name);
     std::fs::create_dir_all(&dir).expect("plugin dir");

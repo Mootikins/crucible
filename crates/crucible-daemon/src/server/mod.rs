@@ -1,5 +1,6 @@
 //! Unix socket server for JSON-RPC
 
+use crate::activity::{DaemonActivity, WorkKind};
 use crate::agent_manager::{AgentError, AgentManager, AgentManagerParams, MODEL_CACHE_TTL};
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
@@ -51,6 +52,7 @@ mod external_announce;
 mod file_event_hooks;
 pub mod fs;
 pub mod grep;
+mod idle;
 pub mod kiln;
 mod plugin_boot;
 mod socket_lock;
@@ -58,6 +60,7 @@ mod socket_privacy;
 pub(crate) mod ui_broadcast;
 use accept::{accept_error_is_transient, ACCEPT_ERROR_BACKOFF};
 pub use bind::BindWithPluginConfigParams;
+use idle::{IdleSnapshot, IdleTimer};
 use socket_lock::acquire_socket_lock;
 use socket_privacy::{bind_private_listener, prepare_socket_dir};
 pub mod llm;
@@ -116,6 +119,9 @@ pub struct Server {
     runtimepath: Vec<std::path::PathBuf>,
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
+    /// How long the daemon may sit idle before it exits on its own; `None`
+    /// never exits. See `server::idle` for the policy and who arms it.
+    idle_shutdown: Option<Duration>,
     schedules: Vec<crucible_core::config::ScheduleEntry>,
     /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`);
     /// `run()`'s open-kilns/archive-sweep read this instead of `crucible_home()`.
@@ -131,6 +137,10 @@ pub struct Server {
     /// The same gateway the agent manager dispatches through. `run()` starts
     /// the reconnect loop on it when an upstream asks for `auto_reconnect`.
     mcp_gateway: Option<Arc<tokio::sync::RwLock<McpGatewayManager>>>,
+    /// The one answer to "is this daemon busy". Everything that starts work
+    /// — a connection, a turn, a background job, a maintenance pass — takes a
+    /// guard from here, and the idle timer reads nothing else.
+    activity: Arc<DaemonActivity>,
 }
 
 pub struct LuaSessionState {
@@ -299,6 +309,10 @@ impl Server {
             }
         }
 
+        // Created before anything that can start work, and handed to each of
+        // them. One registry per daemon; see `crate::activity`.
+        let activity = DaemonActivity::new();
+
         let kiln_manager = Arc::new(
             KilnManager::with_event_tx(
                 event_tx.clone(),
@@ -407,12 +421,22 @@ impl Server {
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
             crate::delegation::DelegationService::new(session_manager.clone(), event_tx.clone());
+        // The daemon VM ran every Lua file at boot and owns the resulting
+        // `cru.modes` registry. Take that handle rather than the empty one the
+        // constructor makes.
+        let modes = plugin_loader
+            .lock()
+            .await
+            .as_ref()
+            .map(|loader| loader.mode_registry());
         let agent_manager = Arc::new(
             AgentManager::new_with_delegation(
                 AgentManagerParams {
                     kiln_manager: kiln_manager.clone(),
                     session_manager: session_manager.clone(),
-                    background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+                    background_manager: Arc::new(
+                        BackgroundJobManager::new(event_tx.clone()).with_activity(activity.clone()),
+                    ),
                     mcp_gateway: mcp_gateway.clone(),
                     llm_config: llm_config.clone(),
                     acp_config: params.acp_config.clone(),
@@ -423,7 +447,11 @@ impl Server {
                 },
                 delegation_service.clone(),
             )
-            .with_runtimepath(params.runtimepath.clone()),
+            .with_runtimepath(params.runtimepath.clone())
+            .with_modes(modes)
+            // So an in-flight turn holds the daemon open even after the
+            // client that asked for it has gone.
+            .with_activity(activity.clone()),
         );
         delegation_service.bind_agent_manager(&agent_manager);
         let subscription_manager = Arc::new(SubscriptionManager::new());
@@ -498,7 +526,7 @@ impl Server {
             // What `config.effective` serves: the extracted config this
             // daemon was bound with, and the boot-input hash when it booted
             // through the one-VM evaluation.
-            effective_config: params.app_config.clone(),
+            bound_config: params.app_config.clone(),
             boot_hash: params.boot_hash.clone(),
             // `[projects.*]` from the config the daemon was handed. Normalized
             // here so the listing applies the one precedence rule rather than
@@ -571,10 +599,12 @@ impl Server {
             runtimepath: params.runtimepath,
             plugin_watch: params.plugin_watch,
             auto_archive_hours: params.auto_archive_hours,
+            idle_shutdown: params.idle_shutdown,
             schedules: params.schedules,
             data_home,
             socket_lock,
             authorized_uid: daemon_uid(),
+            activity,
         })
     }
 
@@ -586,8 +616,11 @@ impl Server {
         self.authorized_uid = uid;
     }
 
-    /// Get a shutdown sender for external shutdown triggers
-    #[allow(dead_code)] // used in integration tests for graceful shutdown
+    /// Get a shutdown sender for external shutdown triggers.
+    ///
+    /// `cru daemon serve` hands this to
+    /// [`crate::lifecycle::shutdown_on_signals`]; integration tests use it to
+    /// stop a server they own.
     pub fn shutdown_handle(&self) -> broadcast::Sender<()> {
         self.shutdown_tx.clone()
     }
@@ -603,6 +636,34 @@ impl Server {
     /// Run the server until shutdown
     pub async fn run(self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
+
+        // A daemon with declarative schedules is supposed to sit there with
+        // nobody attached — exiting would stop the schedules from firing — so
+        // it never arms the idle timer even when the config asks for one.
+        let idle_window = self.idle_shutdown.filter(|_| self.schedules.is_empty());
+        // The path this daemon actually bound, asked of the listener rather
+        // than remembered from the parameters — the two can differ, and the
+        // one that decides reachability is the kernel's.
+        let bound_socket = self
+            .listener
+            .local_addr()
+            .ok()
+            .and_then(|addr| addr.as_pathname().map(Path::to_path_buf));
+        let mut idle_timer = idle_window.map(|window| IdleTimer::new(window, Instant::now()));
+        let mut idle_probe = idle_window.map(|window| {
+            let mut probe = tokio::time::interval(IdleTimer::probe_period(window));
+            // The first tick of a tokio interval completes immediately, and a
+            // probe at t=0 would read an idle daemon one instant after it
+            // bound. Skip it.
+            probe.reset();
+            probe
+        });
+        if let Some(window) = idle_window {
+            info!(
+                idle_shutdown_secs = window.as_secs(),
+                "Daemon will exit after this long with no client and no running job"
+            );
+        }
 
         self.boot_plugins().await;
 
@@ -703,6 +764,10 @@ impl Server {
 
         // Spawn file reprocessing task: watches for file_changed events and re-runs pipeline
         let km_reprocess = self.kiln_manager.clone();
+        // The loop itself is not work — it parks on `recv` for the daemon's
+        // whole life, and a guard held here would make the daemon immortal.
+        // Each reprocess pass takes its own guard below.
+        let reprocess_activity = self.activity.clone();
         let mut reprocess_rx = self.rpc_context.event_tx.subscribe();
         let reprocess_cancel = CancellationToken::new();
         let reprocess_cancel_clone = reprocess_cancel.clone();
@@ -732,6 +797,7 @@ impl Server {
                                     continue;
                                 };
 
+                                let _working = reprocess_activity.start(WorkKind::Maintenance);
                                 match km_reprocess.process_file(&kiln_path, &file_path).await {
                                     Ok(true) => {
                                         info!(path = %path_str, "Reprocessed changed file");
@@ -766,6 +832,7 @@ impl Server {
                                     continue;
                                 };
 
+                                let _working = reprocess_activity.start(WorkKind::Maintenance);
                                 match km_reprocess
                                     .handle_file_deleted(&kiln_path, &file_path)
                                     .await
@@ -801,6 +868,7 @@ impl Server {
         let sweep_agent_manager = self.agent_manager.clone();
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
+        let sweep_activity = self.activity.clone();
         let auto_archive_hours = self.auto_archive_hours.unwrap_or(72);
 
         let archive_sweep_task = tokio::spawn(async move {
@@ -810,6 +878,9 @@ impl Server {
                     biased;
                     _ = sweep_cancel_clone.cancelled() => break,
                     _ = interval.tick() => {
+                        // The sweep archives sessions and releases git refs;
+                        // exiting halfway through leaves both half-done.
+                        let _sweeping = sweep_activity.start(WorkKind::Maintenance);
                         match sweep_and_archive_stale_sessions(
                             &sweep_session_manager,
                             &sweep_subscription_manager,
@@ -895,6 +966,7 @@ impl Server {
         let mut title_rx = self.rpc_context.event_tx.subscribe();
         let title_cancel = CancellationToken::new();
         let title_cancel_clone = title_cancel.clone();
+        let title_activity = self.activity.clone();
 
         let auto_title_task = tokio::spawn(async move {
             loop {
@@ -912,7 +984,12 @@ impl Server {
                                     let am = title_am.clone();
                                     let tx = title_event_tx.clone();
                                     let session_id = event.session_id.clone();
+                                    // An LLM call of its own; it must finish
+                                    // before the daemon may call itself idle.
+                                    let titling =
+                                        title_activity.start(WorkKind::Maintenance);
                                     tokio::spawn(async move {
+                                        let _titling = titling;
                                         if let Err(e) =
                                             am.generate_session_title(&session_id, &tx).await
                                         {
@@ -949,6 +1026,7 @@ impl Server {
             let km = self.kiln_manager.clone();
             let pm = self.project_manager.clone();
             let tx = self.rpc_context.event_tx.clone();
+            let starting = self.activity.start(WorkKind::Maintenance);
 
             // Kilns to OPEN: already-open kilns + registered project kiln roots.
             // Deliberately NOT ~/.crucible — opening the config dir as a kiln
@@ -977,6 +1055,10 @@ impl Server {
             }
 
             tokio::spawn(async move {
+                // Held for the whole catch-up: opening the kilns and titling
+                // the untitled sessions are both real work, and a daemon that
+                // exits during them starts the next one from nothing.
+                let _starting = starting;
                 // Open registered project kilns (idempotent) so note-open can
                 // resolve them; a failure to open one must not block the others
                 // or the title sweep.
@@ -1008,7 +1090,19 @@ impl Server {
                             let dispatcher = self.dispatcher.clone();
                             let authorized_uid = self.authorized_uid;
                             let event_rx = self.rpc_context.event_tx.subscribe();
+                            // Counted here rather than inside the task, so the
+                            // count is already up when the next probe reads it
+                            // — a task that has not been polled yet must not
+                            // look like no client at all.
+                            let counted = self.activity.start(WorkKind::Connection);
+                            if let Some(timer) = idle_timer.as_mut() {
+                                // A client that connects and leaves between two
+                                // probes is never seen by a snapshot; say so
+                                // directly.
+                                timer.note_activity();
+                            }
                             tokio::spawn(async move {
+                                let _counted = counted;
                                 if let Err(e) =
                                     handle_client(stream, dispatcher, authorized_uid, event_rx).await
                                 {
@@ -1042,6 +1136,45 @@ impl Server {
                 _ = shutdown_rx.recv() => {
                     info!("Shutdown signal received");
                     break;
+                }
+                // `pending()` when the timer is disarmed, which parks this
+                // branch for ever instead of spinning the select.
+                _ = async {
+                    match idle_probe.as_mut() {
+                        Some(probe) => { probe.tick().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    let snapshot = IdleSnapshot {
+                        // The registry is asked once and asked for everything.
+                        // Reaching for a second source here is the defect this
+                        // replaced: five kinds of work were never in the list.
+                        outstanding_work: self.activity.outstanding(),
+                        // An abstract socket has no path and cannot be
+                        // deleted, so treat "no path" as reachable.
+                        reachable: bound_socket.as_ref().is_none_or(|p| p.exists()),
+                    };
+                    let expired = idle_timer
+                        .as_mut()
+                        .is_some_and(|timer| timer.observe(Instant::now(), snapshot));
+                    if !snapshot.is_idle() {
+                        // Why the daemon is staying, at debug: the leak this
+                        // policy exists to stop looks exactly like a kind of
+                        // work that never releases its guard.
+                        debug!(
+                            outstanding_work = snapshot.outstanding_work,
+                            busy = ?self.activity.busy_kinds(),
+                            "Still working; the idle window is not running"
+                        );
+                    }
+                    if expired {
+                        info!(
+                            reachable = snapshot.reachable,
+                            "Nothing left to serve; exiting. Sessions are persisted and the \
+                             next command starts a fresh daemon."
+                        );
+                        break;
+                    }
                 }
             }
         }

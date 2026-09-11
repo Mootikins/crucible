@@ -9,8 +9,6 @@ import {
   executeCommand,
   listProviders,
   switchModel,
-  setThinkingBudget,
-  getThinkingBudget,
   saveNote,
   respondToInteraction,
   searchSessions,
@@ -32,14 +30,8 @@ import {
   cancelSession,
   setSessionTitle,
   getSessionHistory,
-  getTemperature,
-  setTemperature,
-  getMaxTokens,
-  setMaxTokens,
   getPrecognition,
   setPrecognition,
-  getPrecognitionResults,
-  setPrecognitionResults,
   exportSession,
   executeShell,
   getPlugins,
@@ -350,59 +342,6 @@ describe('switchModel', () => {
     const [, init] = mockFetch.mock.calls[0];
     expect(init!.method).toBe('POST');
     expect(JSON.parse(init!.body as string)).toEqual({ model_id: 'openai:gpt-4' });
-  });
-});
-
-// =============================================================================
-// setThinkingBudget / getThinkingBudget
-// =============================================================================
-
-describe('setThinkingBudget', () => {
-  it('sends PUT to config/thinking-budget with budget value', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/thinking-budget': { body: {} },
-    });
-    global.fetch = mockFetch;
-
-    await setThinkingBudget('ses-1', 4096);
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.method).toBe('PUT');
-    expect(JSON.parse(init!.body as string)).toEqual({ thinking_budget: 4096 });
-  });
-
-  it('sends null budget to disable thinking', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/thinking-budget': { body: {} },
-    });
-    global.fetch = mockFetch;
-
-    await setThinkingBudget('ses-1', null);
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(JSON.parse(init!.body as string)).toEqual({ thinking_budget: null });
-  });
-});
-
-describe('getThinkingBudget', () => {
-  it('fetches thinking budget and returns number', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/config/thinking-budget': { body: { thinking_budget: 2048 } },
-    });
-    global.fetch = mockFetch;
-
-    const result = await getThinkingBudget('ses-1');
-    expect(result).toBe(2048);
-  });
-
-  it('returns null when thinking is disabled', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/config/thinking-budget': { body: { thinking_budget: null } },
-    });
-    global.fetch = mockFetch;
-
-    const result = await getThinkingBudget('ses-1');
-    expect(result).toBeNull();
   });
 });
 
@@ -838,47 +777,10 @@ describe('getSessionHistory', () => {
 });
 
 // =============================================================================
-// Per-session config: temperature, max-tokens, precognition
+// Per-session config: precognition
 // =============================================================================
 
-describe('temperature / max-tokens / precognition endpoints', () => {
-  it('getTemperature returns the current value', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/temperature': { body: { temperature: 0.7 } },
-    });
-    expect(await getTemperature('ses-1')).toBe(0.7);
-  });
-
-  it('getTemperature returns null when unset', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/temperature': { body: { temperature: null } },
-    });
-    expect(await getTemperature('ses-1')).toBeNull();
-  });
-
-  it('setTemperature PUTs the value', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/temperature': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await setTemperature('ses-1', 0.3);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ temperature: 0.3 });
-  });
-
-  it('getMaxTokens / setMaxTokens roundtrip with null', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/max-tokens': { body: { max_tokens: null } },
-    });
-    expect(await getMaxTokens('ses-1')).toBeNull();
-
-    const setFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/max-tokens': { body: {} },
-    });
-    global.fetch = setFetch;
-    await setMaxTokens('ses-1', 4096);
-    expect(JSON.parse(setFetch.mock.calls[0][1]!.body as string)).toEqual({ max_tokens: 4096 });
-  });
-
+describe('precognition endpoints', () => {
   it('getPrecognition returns the flag', async () => {
     global.fetch = createMockFetch({
       'GET /api/session/ses-1/config/precognition': { body: { precognition_enabled: true } },
@@ -895,28 +797,6 @@ describe('temperature / max-tokens / precognition endpoints', () => {
     expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ enabled: false });
   });
 
-  it('getPrecognitionResults returns the count', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/precognition/results': { body: { precognition_results: 7 } },
-    });
-    expect(await getPrecognitionResults('ses-1')).toBe(7);
-  });
-
-  it('setPrecognitionResults PUTs { count }', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/precognition/results': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await setPrecognitionResults('ses-1', 10);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ count: 10 });
-  });
-
-  it('getMaxTokens throws on error', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/max-tokens': { status: 500 },
-    });
-    await expect(getMaxTokens('ses-1')).rejects.toThrow('Failed to get max tokens');
-  });
 });
 
 // =============================================================================

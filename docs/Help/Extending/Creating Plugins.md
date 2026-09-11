@@ -51,12 +51,20 @@ out. This is a stated constraint with a named precondition, not a deferral.
 
 ### Loading another tree deliberately
 
+A plugin's own directory is also a runtime root, so a plugin may ship its own
+`skills/`, `agents/` and `themes/` beside its manifest — they are found with no
+registration. Crucible's own `crucible-help` plugin ships the documentation
+this way. A plugin's contributions rank below every root you named yourself, so
+they never shadow your own.
+
 `runtimepath` is the opt-in. It is your own config naming the tree, so consent
 is explicit and needs no prompt in a headless daemon:
 
-```toml
-# ~/.config/crucible/config.toml
-runtimepath = ["~/kilns/work"]   # loads ~/kilns/work/plugins/
+```lua
+-- ~/.config/crucible/init.lua
+cru.config.set({
+    runtimepath = { "~/kilns/work" },  -- loads ~/kilns/work/plugins/
+})
 ```
 
 Entries **add to** the shipped runtime rather than replacing it, and they rank
@@ -68,8 +76,7 @@ unchanged, which is why this is a deliberate act and not a default.
 ~/.config/crucible/plugins/
 ├── tasks/               # Directory plugin
 │   ├── init.lua         # Main module
-│   ├── lua/parser.lua   # Helper modules
-│   └── plugin.yaml      # Manifest (optional)
+│   └── lua/parser.lua   # Helper modules
 └── quick-tag.lua        # Single-file plugin
 ```
 
@@ -94,8 +101,8 @@ extracted on first run. Every one of them loads **enabled by default**, except
 | `web-search` | Search over a provider chain |
 | `worktree` | Run a session against a git worktree |
 
-Turn one off with `[plugins.<name>] enabled = false` in `config.toml`. That is
-the only durable lever — editing the extracted `plugin.yaml` does not survive,
+Turn one off with `plugins.<name>.enabled = false` in your `init.lua`. That is
+the only durable lever — an edit inside the extracted plugin does not survive,
 because the runtime tree is re-stamped from the binary whenever the build
 changes.
 
@@ -117,13 +124,13 @@ require("reflection").setup({
 
 Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
 
-Configuration precedence, highest first — **Lua beats TOML**, the Neovim convention:
+Configuration precedence, highest first:
 
-1. `setup({...})` calls — last call wins per key. The daemon evaluates `~/.config/crucible/init.lua` *after* plugins load, so your calls land after the TOML seed.
-2. `[plugins.<name>]` in `config.toml` — the daemon passes this section to each plugin's `setup()` at load, so TOML is the base configuration.
+1. `setup({...})` calls — last call wins per key.
+2. `plugins.<name>` in the config store — the daemon passes that table to each plugin's `setup()`, so it is the base configuration.
 3. The plugin's own declared defaults.
 
-A broken init.lua is warned about and skipped (the daemon runs with TOML-only config); it never blocks startup.
+An `init.lua` that does not parse stops the daemon and names the line. One that parses and then raises is warned about, rolled back whole, and the daemon boots on the defaults.
 
 A plugin's `setup()` merges user config into its defaults:
 
@@ -210,44 +217,56 @@ plugins — the returned spec table is the contract.)
 
 ## Directory Plugin
 
-For complex plugins, use a directory with a manifest and entry point:
+For complex plugins, use a directory. The `init.lua` is what makes it one:
 
 ```
 plugins/tasks/
-├── plugin.yaml     # Plugin manifest (required)
-├── init.lua        # Entry point, exports public items
+├── init.lua        # Entry point; its spec table carries the metadata
 ├── parser.lua      # TASKS.md format parser
 ├── commands.lua    # Command handlers
 └── README.md       # Usage documentation
 ```
 
-### Plugin Manifest
+### Plugin metadata
 
-Every directory plugin needs a `plugin.yaml` (or `plugin.yml`, `manifest.yaml`, `manifest.yml`):
+A plugin is one directory with one entry file: `init.luau`, or `init.lua`. A
+directory holding both is refused rather than resolved.
 
-```yaml
-name: tasks
-version: 1.0.0
-main: init.lua
-description: Task management tools
-author: Your Name
+There is no manifest. Metadata lives in the spec table the entry file returns.
+Crucible reads that table when it loads the plugin, so a plugin that is
+discovered but not loaded reports no version:
 
-# Optional: declare dependencies. Matched by NAME only — a `version:`
-# constraint here is parsed but never checked, so don't write one.
-dependencies:
-  - name: core-utils
+```lua
+return {
+    name = "tasks",
+    version = "1.0.0",
+    description = "Task management tools",
+    author = "Your Name",
+    license = "MIT",
 
-# Declared capabilities — DECLARATIVE. They document what the plugin
-# touches; they do not restrict the `cru.*` API. Only `intercept_tools` is
-# enforced. Valid values: filesystem, network, shell, kiln, agent, ui,
-# config, system, websocket, intercept_tools. An invalid value fails
-# manifest parsing and the plugin never loads.
-capabilities:
-  - filesystem
-  - kiln
+    -- Optional. Matched by NAME only.
+    dependencies = { "core-utils" },
+
+    -- Optional: this plugin takes tool calls over. The one declaration the
+    -- host checks. A `pre_tool_call` handler returning `handled = true`
+    -- returns BEFORE the permission gate; without this the daemon ignores the
+    -- takeover, dispatches normally, and logs that it did.
+    intercepts_tools = false,
+
+    tools = { --[[ … ]] },
+    setup = function(cfg) end,
+}
 ```
 
-See [[Help/Extending/Plugin Manifest]] for the complete manifest specification.
+`name` is the plugin's identity, and the directory name is only the fallback
+when the spec does not state one — so a repo cloned under a different
+directory name keeps its `plugins.<name>` config. A name that is not a
+usable plugin name is refused and the directory name stands.
+
+`plugin.yaml` is gone. It carried `main:`, which could name a file that was not
+there and did; a ten-name `capabilities:` list of which nine were never
+consulted; and `exports:`, `config:` and `keywords:` blocks nothing ever
+parsed.
 
 ```lua
 -- init.lua - Main module: return the plugin spec table
@@ -365,15 +384,22 @@ that fails to execute returns an error and leaves the plugin fully inert —
 see [[#Lifecycle States]]. To reload automatically when plugin files change
 on disk, enable the watcher:
 
-```toml
-[plugins]
-watch = true
+```lua
+cru.config.set({
+    plugins = {
+        watch = true,
+    },
+})
 ```
 
 ## Plugin Lifecycle
 
-1. **Discovery**: Crucible scans plugin directories for manifests
-2. **Validation**: Manifests are validated (name, version, dependencies)
+1. **Discovery**: Crucible scans the plugin directories for entry files. It
+   runs no Lua here, so it knows only the directory name and the state. The
+   version comes from the spec table, so `cru plugin list`, the TUI `/plugins`
+   list and the web plugin panel show no version until the plugin loads.
+2. **Validation**: Crucible validates the name, and the version if the spec
+   table declares one
 3. **Dependency Resolution**: Load order determined by dependencies
 4. **Loading**: Each plugin is compiled/loaded by its runtime
 5. **Registration**: Tools, hooks, commands, and views are registered
@@ -544,21 +570,15 @@ raises rather than returning nil.
 
 ## Providing Commands
 
-Commands are the primitives a *person* invokes: slash-commands in the TUI, and
-`POST /api/plugins/command` in the web.
+Commands are slash-commands that users can invoke in the TUI:
 
 ```lua
 commands = {
     tasks = {
         desc = "Manage tasks",
         hint = "[add|list|done] <args>",
-        effect = "write",
-        params = {
-            { name = "action", type = "string", desc = "add, list or done" },
-            { name = "text", type = "string", desc = "Task text", optional = true },
-        },
         fn = function(args)
-            return "tasks: " .. (args and args.action or "list")
+            return "tasks: " .. (args and args.input or "list")
         end,
     },
 }
@@ -567,46 +587,6 @@ commands = {
 A command's `fn` receives the argument table and returns any
 JSON-representable value; the TUI shows it as a system message. Commands
 surface as `/name` with autocomplete (tagged `(plugin)`).
-
-### `hint` and `params` are both worth declaring
-
-They answer different questions and neither replaces the other.
-
-`hint` is one line of free text describing the argument line. It is for a
-person: no client parses it, and no client can — `"[add|list|done] <args>"`
-does not say that there are two arguments. (The TUI's slash autocomplete shows
-`desc`, not `hint`, so today the hint reaches the wire and no screen.)
-
-`params` is the same declaration a tool uses, with the same type vocabulary
-(see [[Help/Plugins/Lua Runtime API]] for the grammar). It becomes the JSON
-Schema an agent sees and the **argument dialog the web generates** — one
-control per parameter, drawn from the declared type, for a command the dialog
-code has never seen. A command with no `params` still runs; it just gets a
-dialog with no fields.
-
-A declared type the host cannot read refuses the load and names the command
-and the parameter, exactly as it does for a tool.
-
-### `effect` — read or write
-
-`effect = "read"` says the command changes nothing a user could lose. It may
-compute, it may cache, and it may publish derived state — `kanban`'s republish
-re-derives the board from the ticket files and is a read. It may not write a
-note, a file, or a setting.
-
-`effect = "write"` is everything else, and is what a command gets when it
-declares nothing: an undeclared command is unknown, and unknown costs a
-question rather than a file. Declare `read` when it is one, so a client can
-offer the command without a confirmation step.
-
-Two things to be honest about:
-
-- **Nothing verifies the claim.** The plugin declares it about itself. A client
-  must show it as a declaration, and a permission layer must treat it as a hint
-  about what to *ask*, never as permission to skip asking.
-- **A misspelt effect refuses the load.** `effect = "raed"` is an error naming
-  the command, not a silent fallback to `write` — the author who wrote it meant
-  `read`, and answering the opposite in silence is the worst of the options.
 
 ## Providing Views
 
@@ -724,7 +704,7 @@ before_each(function()
             },
         },
         fs = {
-            files = { ["config.toml"] = "key = 'value'" },
+            files = { ["fixture.toml"] = "key = 'value'" },
         },
     })
 end)
@@ -780,7 +760,7 @@ local function check()
         cru.health.ok("Kiln API available")
     else
         cru.health.error("Kiln API missing", {
-            "Ensure the plugin has 'kiln' in its capabilities",
+            "Check the plugin loaded: `cru doctor`",
         })
     end
 
@@ -843,11 +823,14 @@ Crucible clears the plugin's module cache, re-reads the source files, and re-reg
 
 ### Automatic File Watching
 
-Enable watch mode in `config.toml` to reload plugins whenever their files change on disk:
+Enable watch mode in `init.lua` to reload plugins whenever their files change on disk:
 
-```toml
-[plugins]
-watch = true
+```lua
+cru.config.set({
+    plugins = {
+        watch = true,
+    },
+})
 ```
 
 With this enabled, saving a `.lua` file inside any plugin directory triggers an automatic reload. Changes are debounced per-plugin, so rapid saves don't cause repeated reloads.
@@ -921,7 +904,7 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 
 ## See Also
 
-- [[Help/Extending/Plugin Manifest]] - Manifest format and programmatic API
+- the plugin spec table - Manifest format and programmatic API
 - [[Help/Lua/Language Basics]] - Lua syntax
 - [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/Extending/Event Hooks]] - Hook system

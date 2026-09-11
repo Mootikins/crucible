@@ -257,7 +257,7 @@ mod tests {
     fn register(lua: &Lua, owner: Option<&str>, header: &str) {
         match owner {
             Some(o) => {
-                crate::plugin_context::enter_plugin(lua, o, crate::manifest::CapabilitySet::none());
+                crate::plugin_context::enter_plugin(lua, o, false);
             }
             None => {
                 crate::plugin_context::set_plugin_context(lua, None);

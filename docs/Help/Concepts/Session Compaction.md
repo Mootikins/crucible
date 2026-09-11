@@ -1,6 +1,6 @@
 ---
 title: Session Compaction
-description: The compaction RPCs and autocompact threshold knob — and why triggering them currently wedges a session
+description: The compaction RPCs and autocompact threshold config key — and why triggering them currently wedges a session
 status: partial
 tags:
   - sessions
@@ -30,18 +30,19 @@ itself does not.
 >
 > Because the trigger is automatic, setting a `context_budget` and chatting past
 > the threshold sticks the session in `compacting` with no further user action.
-> Until compaction is implemented: if you set a `context_budget`, also `:set
-> autocompact_threshold=off` — `:set context_strategy` truncation still
-> enforces the budget without the trigger. Leaving
+> Until compaction is implemented: if you set a `context_budget`, also set
+> `chat.autocompact_threshold` to `0` — `:set context_strategy` truncation
+> still enforces the budget without the trigger. Leaving
 > `context_budget` unset avoids the trigger too, but strategy-based budget
 > enforcement is keyed to the same budget, so it disables that as well.
 
 ## The threshold
 
-`autocompact_threshold` is a per-session fraction of `context_budget`:
+`chat.autocompact_threshold` is a config key: a fraction of `context_budget`,
+one value per install rather than per session.
 
 - unset — uses the default, **0.95**
-- `<= 0.0` — explicitly disabled (`off`)
+- `<= 0.0` — explicitly disabled
 - `>= 1.0` — fires only when usage strictly exceeds the full budget
 - no `context_budget` set — never fires. `context_budget` is unset by default,
   so auto-compaction is opt-in.
@@ -54,29 +55,29 @@ state, later triggers fail their state guard silently (logged at debug level).
 
 ## Setting it
 
-In the TUI or via `cru set`:
+It is a config key, so it is written the way every other key is — from
+`~/.config/crucible/init.lua`, from the settings pane, or with `:set`:
+
+```lua
+cru.config.set { chat = { autocompact_threshold = 0.8 } }
+```
 
 ```
-:set autocompact_threshold=0.8
-:set autocompact_threshold=off       " also: 0, false
-:set autocompact_threshold=default   " also: none, null — back to 0.95
+:set chat.autocompact_threshold=0.8
+:set chat.autocompact_threshold=0     " disabled
 ```
 
-Numbers outside `0.0..=1.0` are rejected client-side, and the daemon
-independently rejects out-of-range values. The setting is session-scoped: it
-travels `AgentHandle::set_autocompact_threshold` → the
-`session.set_autocompact_threshold` RPC → the session's persisted agent config,
-and the daemon broadcasts an `autocompact_threshold_changed` event.
+The daemon reads the live store at each turn, so a change applies to the next
+turn without a restart. It was a session knob until 2026-09-10; it is a tuning
+constant with one right answer per install, not a per-session decision.
 
 ## RPC surface
 
 - `session.compact` `{session_id}` — sets state to `compacting`; replies
   `{session_id, state, compaction_requested: true}`. Fails with an
   invalid-state error unless the session is `active`.
-- `session.set_autocompact_threshold` `{session_id, autocompact_threshold}` —
-  `null` reverts to the default.
-- `session.get_autocompact_threshold` `{session_id}` — echoes the stored value
-  (`null` = default).
+- `config.set` `{chat: {autocompact_threshold: 0.8}}` — the ordinary config
+  write door; `config.unset` returns it to the shipped default.
 - Lua: `cru.context.compact(session_id)` wraps the same request as
   `session.compact`, with the same non-effect.
 - Recovery: `session.end`, or `session.resume_from_storage`

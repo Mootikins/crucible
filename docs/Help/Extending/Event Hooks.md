@@ -59,10 +59,8 @@ those is filtering on something that does not exist and never matches.
 
 ## Two Registries, One Order
 
-Handlers live in **two registries**: each session's VM (files evaluated per
-session — the built-in defaults, your `init.lua`, the workspace's
-`.crucible/lua/init.lua`) and the daemon's plugin VM (plugin `init.lua`s, plus
-your `init.lua` evaluated after plugins load). They cannot be merged — a Lua
+Handlers live in **one registry**, on the daemon VM: plugin `init.lua`s, the
+shipped defaults file, and `~/.config/crucible/init.lua`. They cannot be merged — a Lua
 function is only valid against the VM that created it — so dispatch runs them
 in a fixed order: **session-VM handlers first, then plugin-VM handlers**,
 each registry in ascending priority. Transforms chain across the boundary:
@@ -70,8 +68,8 @@ a plugin handler sees arguments a session handler already rewrote.
 
 The two precognition hooks, `search:rerank` and `index:blocks` are the
 exception to chaining:
-they take the **first usable Transform** and stop — session VM before plugin
-VM — because a selection is a decision, not a patch.
+they take the **first usable Transform** and stop, in registration order,
+because a selection is a decision, not a patch.
 
 ## Event Types
 
@@ -267,7 +265,7 @@ Event fields:
 - `event.char_budget` — total snippet characters the handler may allocate
 - `event.results` — array of `{ index, title, score, snippet, kiln }`
 
-`kiln` is the **name** of the `[kilns]` entry the note came from, never its
+`kiln` is the **name** of the `kilns` entry the note came from, never its
 directory — a plugin is told which corpus a note is in, not where it lives on
 disk. The key is **absent** when no entry claims the note's kiln, so
 `if note.kiln then` answers the question it looks like it is asking; it is
@@ -333,8 +331,7 @@ Fires on every semantic search — the `semantic_search` tool, precognition,
 `cru search` and `cru eval precognition` — after the hits from every kiln are
 merged and before the list is cut to the caller's limit. A handler can rescore
 the hits, reorder them, widen the span a hit names and cite further spans.
-Precognition fires it with the session VM first; the tool and the RPC have no
-session VM and reach plugin handlers only.
+Precognition, the tool and the RPC all reach the same handlers.
 
 ```lua
 cru.on("search:rerank", function(ctx, event)
@@ -396,7 +393,7 @@ handler that errors leaves the merged order in place.
 Fires once per note, after its blocks are embedded and before their rows are
 written. A handler may add synthetic rows, which the plain vector scan then
 sees like any other block, and may swap the vector of a parser row. The
-pipeline has no session VM, so only plugin handlers fire.
+pipeline reaches the same handlers as every other stage.
 
 ```lua
 cru.on("index:blocks", function(ctx, event)
@@ -477,10 +474,15 @@ it for the shape of a real handler at either stage.
 The plugin is a proof of concept, not a retrieval setting. It ships with
 `enabled = false`, and it stays off until you set the two knobs:
 
-```toml
-[plugins.retrieval-lab]
-enabled = true
-strategy = "arc_post"
+```lua
+cru.config.set({
+    plugins = {
+        ["retrieval-lab"] = {
+            enabled = true,
+            strategy = "arc_post",
+        },
+    },
+})
 ```
 
 Eight measurement runs found no strategy worth a default. At note level a
@@ -575,8 +577,8 @@ Two named hooks for session lifecycle. These are separate from `cru.on()`.
 Like `cru.on()` handlers, lifecycle hooks registered during a plugin's
 load (its `init.lua` or `setup()`) belong to that plugin: reloading the plugin
 clears its hooks before re-running it, so a reload never leaves a second copy
-firing. Hooks registered outside a plugin load — your own `init.lua`, or a
-session VM — are unowned and are never cleared by any plugin's reload.
+firing. Hooks registered outside a plugin load — your own `init.lua`, or the
+shipped defaults file — are unowned and are never cleared by any reload.
 
 ### `cru.on_session_start(fn, opts?)`
 
@@ -606,11 +608,9 @@ end, { required = true })
 
 **Where the hook runs decides what it may do.** On the plugin-VM path the
 hooks are fired asynchronously, so they may call async APIs
-(`cru.shell.exec`, `cru.http`, ...), and `required = true` is honoured. Hooks
-registered on the **session VM** (your `init.lua` or the workspace's
-`.crucible/lua/init.lua` deciding a session's opening configuration) run
-**synchronously** during session-VM construction: they cannot await async
-APIs, they fail open per hook, and `required` is not honoured there —
+(`cru.shell.exec`, `cru.http`, ...), and `required = true` is honoured. There
+is one fire site, at session create, so those properties hold for every
+`on_session_start` hook —
 session refusal stays with the plugin loader, where isolation claims live.
 
 
@@ -653,9 +653,10 @@ cru.permissions.on_request(function(request)
 end)
 ```
 
-> **Session-scoped Lua only.** This API exists on each session's VM — put the
-> callback in your workspace's `.crucible/lua/init.lua`. It is *not*
-> registered on the plugin runtime, so a plugin's `init.lua` cannot use it
+> **Where to put it.** `~/.config/crucible/init.lua` and the shipped defaults
+> file both run on the VM the gate dispatches, so put the callback in either.
+> A plugin's `init.lua` runs on the same VM but is refused, because a hook that
+> can deny a tool
 > yet; a plugin wanting to gate tools should use `pre_tool_call` with
 > `cancel` instead.
 

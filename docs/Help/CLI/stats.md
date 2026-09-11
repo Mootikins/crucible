@@ -92,11 +92,13 @@ Please configure kiln.path in your config file (see: cru config show)
 
 **Solution**: Configure your kiln path:
 
-```toml
-default_kiln = "main"
-
-[kilns]
-main = "/path/to/your/kiln"
+```lua
+cru.config.set({
+    default_kiln = "main",
+    kilns = {
+        main = "/path/to/your/kiln",
+    },
+})
 ```
 
 ### Permission Errors

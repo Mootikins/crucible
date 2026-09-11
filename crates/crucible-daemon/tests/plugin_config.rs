@@ -2,11 +2,12 @@
 //!
 //! Two mechanisms have to agree for plugin config to work:
 //!
-//! 1. `[plugins.<name>]` from config.toml reaches the plugin runtime as
-//!    `cru.plugin.config.get("<name>.<key>")`, and is handed to the plugin's
-//!    `setup()` function at load time.
-//! 2. The plugin's own config module resolves in a defined order (Lua beats
-//!    TOML): `setup()` → explicit TOML → declared defaults → caller fallback.
+//! 1. A `plugins.<name>` table in the effective config reaches the plugin
+//!    runtime as `cru.plugin.config.get("<name>.<key>")`, and is handed to
+//!    the plugin's `setup()` function at load time.
+//! 2. The plugin's own config module resolves in a defined order (the direct
+//!    call beats the store): `setup()` → the store's section → declared
+//!    defaults → caller fallback.
 //!
 //! These tests pin both, plus the module-cache isolation that keeps two
 //! plugins with a same-named local module (`config.lua`) from sharing one.
@@ -187,11 +188,6 @@ fn reflection_setup_lowers_min_turns() {
 fn write_plugin(root: &Path, name: &str, init_lua: &str) {
     let dir = root.join(name);
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
-    )
-    .unwrap();
     std::fs::write(dir.join("init.lua"), init_lua).unwrap();
 }
 
@@ -213,15 +209,18 @@ async fn load_from(
     loader
 }
 
-/// Run the one-VM boot against a fixture: `config.toml` and `init.lua` under
-/// `<tmp>/config/`, plugins under `root` — the plugin-path resolution is
-/// injected as a value, so nothing reaches outside the fixture. Returns the
-/// loader with `init.lua` already evaluated and plugins ACTIVATED against
-/// the extracted config (the deferred phase, as the daemon runs it).
+/// Run the one-VM boot against a fixture: `settings.json` and `init.lua`
+/// under `<tmp>/config/`, plugins under `root` — the plugin-path resolution
+/// is injected as a value, so nothing reaches outside the fixture. Returns
+/// the loader with `init.lua` already evaluated and plugins ACTIVATED
+/// against the extracted config (the deferred phase, as the daemon runs it).
+///
+/// `settings` is the layer BELOW `init.lua`, which is the position the
+/// `config.toml` seed used to hold. `serde_json::Value::Null` writes no file.
 async fn boot_and_activate(
     tmp: &Path,
     root: &Path,
-    config_toml: &str,
+    settings: serde_json::Value,
     init_lua: &str,
 ) -> (
     crucible_core::config::CliAppConfig,
@@ -231,7 +230,13 @@ async fn boot_and_activate(
 
     let config_dir = tmp.join("config");
     std::fs::create_dir_all(&config_dir).unwrap();
-    std::fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+    if !settings.is_null() {
+        std::fs::write(
+            config_dir.join("settings.json"),
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+    }
     std::fs::write(config_dir.join("init.lua"), init_lua).unwrap();
 
     let fixture_root = root.to_path_buf();
@@ -267,7 +272,7 @@ async fn boot_and_activate(
 /// `require("prefs").setup{...}` works through the live search space, the
 /// deferred activation reuses that same module instance (the file is never
 /// evaluated twice), and the user's call OWNS the setup — the default
-/// `setup(cfg)` with the TOML section is skipped, so setup runs exactly once
+/// `setup(cfg)` with the store section is skipped, so setup runs exactly once
 /// and the user's value stands.
 #[tokio::test]
 async fn user_init_lua_setup_owns_the_plugin_and_runs_once() {
@@ -291,7 +296,7 @@ return {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "[plugins.prefs]\ngreeting = \"from-toml\"\n",
+        serde_json::json!({ "plugins": { "prefs": { "greeting": "from-settings" } } }),
         r#"require("prefs").setup({ greeting = "from-lua" })"#,
     )
     .await;
@@ -306,7 +311,7 @@ return {
 }
 
 /// The store form: `cru.config.set{ plugins = { prefs = {...} } }` in
-/// init.lua merges over the TOML seed and feeds the activation phase's
+/// init.lua merges over the settings layer and feeds the activation phase's
 /// default `setup(cfg)` call for a plugin the user did not set up directly.
 #[tokio::test]
 async fn store_form_plugin_config_reaches_the_default_setup() {
@@ -330,7 +335,7 @@ return {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "",
+        serde_json::Value::Null,
         r#"cru.config.set({ plugins = { prefs = { greeting = "from-store" } } })"#,
     )
     .await;
@@ -367,7 +372,8 @@ return {
         r#"cru.config.set({{ runtimepath = {{ [[{}]] }} }})"#,
         rtp.display()
     );
-    let (config, loader) = boot_and_activate(tmp.path(), &empty_root, "", &init).await;
+    let (config, loader) =
+        boot_and_activate(tmp.path(), &empty_root, serde_json::Value::Null, &init).await;
 
     assert_eq!(config.runtimepath, vec![rtp.clone()]);
     let active = loader.eval("return _G.__fromrtp_active").await.unwrap();
@@ -389,11 +395,6 @@ async fn a_name_mismatched_plugin_executes_once_and_hooks_once() {
     let dir = root.join("plainmod");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: fancy-name\nversion: \"0.1.0\"\nmain: init.lua\n",
-    )
-    .unwrap();
-    std::fs::write(
         dir.join("init.lua"),
         r#"
 _G.__plainmod_execs = (_G.__plainmod_execs or 0) + 1
@@ -403,8 +404,13 @@ return { name = "fancy-name" }
     )
     .unwrap();
 
-    let (_config, loader) =
-        boot_and_activate(tmp.path(), &root, "", r#"require("plainmod")"#).await;
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        serde_json::Value::Null,
+        r#"require("plainmod")"#,
+    )
+    .await;
 
     let execs = loader.eval("return _G.__plainmod_execs").await.unwrap();
     assert_eq!(
@@ -441,8 +447,13 @@ return { name = "dotmod" }
 "#,
     );
 
-    let (_config, loader) =
-        boot_and_activate(tmp.path(), &root, "", r#"require("dotmod.init")"#).await;
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        serde_json::Value::Null,
+        r#"require("dotmod.init")"#,
+    )
+    .await;
 
     let execs = loader.eval("return _G.__dotmod_execs").await.unwrap();
     assert_eq!(
@@ -466,7 +477,7 @@ return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "[plugins.prefs]\nclip = 4\n",
+        serde_json::json!({ "plugins": { "prefs": { "clip": 4 } } }),
         r#"require("prefs").setup({ greeting = "from-lua" })"#,
     )
     .await;
@@ -501,7 +512,7 @@ return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "",
+        serde_json::Value::Null,
         r#"require("prefs").setup({ greeting = "from-lua" })"#,
     )
     .await;
@@ -520,8 +531,13 @@ return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
 return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
 "#,
     );
-    let (_config, loader) =
-        boot_and_activate(tmp2.path(), &root2, "[plugins.prefs]\nclip = 4\n", "").await;
+    let (_config, loader) = boot_and_activate(
+        tmp2.path(),
+        &root2,
+        serde_json::json!({ "plugins": { "prefs": { "clip": 4 } } }),
+        "",
+    )
+    .await;
     assert!(
         loader.supersession_notices().is_empty(),
         "a store-only plugin gets its default setup, nothing is ignored"
@@ -553,7 +569,7 @@ return {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "[plugins.prefs]\ngreeting = \"from-toml\"\n",
+        serde_json::json!({ "plugins": { "prefs": { "greeting": "from-settings" } } }),
         r#"local _ = require("prefs")"#,
     )
     .await;
@@ -564,7 +580,10 @@ return {
         "a require without a setup call must still get the default setup"
     );
     let greeting = loader.eval("return __prefs_config.greeting").await.unwrap();
-    assert_eq!(greeting, "from-toml", "the section must reach that call");
+    assert_eq!(
+        greeting, "from-settings",
+        "the section must reach that call"
+    );
 }
 
 /// The boot's setup recorder is a boot-phase device only: after boot, the
@@ -589,7 +608,7 @@ return { name = "prefs", setup = my_setup }
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "",
+        serde_json::Value::Null,
         // During the evaluation the recorder is in place, so identity does
         // not hold yet — the fixture records that too, as the contrast.
         r#"
@@ -641,7 +660,7 @@ return {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "[plugins.offplug]\nenabled = false\n",
+        serde_json::json!({ "plugins": { "offplug": { "enabled": false } } }),
         r#"require("offplug")"#,
     )
     .await;
@@ -672,11 +691,14 @@ return {
     );
 }
 
-/// A broken user init.lua is user configuration, not a gate: the boot warns,
-/// continues on the seed, and activation still hands the plugin its TOML
-/// section. The daemon never goes down for it.
+/// A user init.lua that PARSES and then raises is user configuration, not a
+/// gate: the boot warns, rolls back to the seed, and activation still hands
+/// the plugin its store section. The daemon never goes down for it.
+///
+/// A file that does not parse is the other half of the rule and is fatal —
+/// see `init_lua_failure_rule.rs`.
 #[tokio::test]
-async fn broken_user_init_lua_fails_open() {
+async fn a_raising_user_init_lua_fails_open() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     write_plugin(
@@ -693,8 +715,11 @@ return {
     let (config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "default_kiln = \"seeded\"\n\n[plugins.prefs]\ngreeting = \"from-toml\"\n",
-        "this is not lua (",
+        serde_json::json!({
+            "default_kiln": "seeded",
+            "plugins": { "prefs": { "greeting": "from-settings" } },
+        }),
+        "cru.config.set({ default_kiln = \"from-init\" })\nerror(\"boom\")\n",
     )
     .await;
 
@@ -704,11 +729,11 @@ return {
         "the extracted config must be the seed"
     );
     let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
-    assert_eq!(resolved, "from-toml");
+    assert_eq!(resolved, "from-settings");
 }
 
 #[tokio::test]
-async fn setup_receives_the_plugins_toml_section() {
+async fn setup_receives_the_plugins_store_section() {
     let tmp = tempfile::tempdir().unwrap();
     write_plugin(
         tmp.path(),
@@ -904,7 +929,7 @@ async fn user_init_lua_configures_the_shipped_auto_title_plugin() {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "",
+        serde_json::Value::Null,
         r#"require("auto-title").setup({ prompt = "Name it.", clip = 4 })"#,
     )
     .await;
@@ -929,7 +954,7 @@ async fn the_shipped_auto_title_defaults_stand_without_user_config() {
     std::fs::create_dir_all(&root).unwrap();
     copy_shipped_plugin(&root, "auto-title");
 
-    let (_config, loader) = boot_and_activate(tmp.path(), &root, "", "").await;
+    let (_config, loader) = boot_and_activate(tmp.path(), &root, serde_json::Value::Null, "").await;
 
     let (_, default_system, _) = generate_title(&loader, "help me fix the auth flow").await;
     assert!(
@@ -940,11 +965,11 @@ async fn the_shipped_auto_title_defaults_stand_without_user_config() {
 
 /// A plugin configured BOTH ways takes the direct call: the user's
 /// `require("auto-title").setup{...}` owns this plugin's setup, so the
-/// `[plugins.auto-title]` TOML section is NOT applied — the docs say pick
+/// `plugins.auto-title` store section is NOT applied — the docs say pick
 /// one form per plugin. (Before the boot inversion the two composed per
 /// key; the composition rule is now ownership, not layering.)
 #[tokio::test]
-async fn a_direct_setup_call_owns_the_plugin_over_the_toml_section() {
+async fn a_direct_setup_call_owns_the_plugin_over_the_store_section() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     std::fs::create_dir_all(&root).unwrap();
@@ -953,7 +978,7 @@ async fn a_direct_setup_call_owns_the_plugin_over_the_toml_section() {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "[plugins.auto-title]\nprompt = \"From TOML.\"\nclip = 4\n",
+        serde_json::json!({ "plugins": { "auto-title": { "prompt": "From settings.", "clip": 4 } } }),
         r#"require("auto-title").setup({ prompt = "From Lua." })"#,
     )
     .await;
@@ -962,7 +987,7 @@ async fn a_direct_setup_call_owns_the_plugin_over_the_toml_section() {
     assert_eq!(system, "From Lua.", "the direct call owns the setup");
     assert_eq!(
         prompt, "User: abcdefgh",
-        "the TOML clip is not applied — the direct call owns the whole setup"
+        "the store clip is not applied — the direct call owns the whole setup"
     );
 }
 
@@ -981,7 +1006,7 @@ async fn configuring_auto_title_does_not_republish_the_channel() {
     let (_config, loader) = boot_and_activate(
         tmp.path(),
         &root,
-        "",
+        serde_json::Value::Null,
         r#"require("auto-title").setup({ prompt = "Name it." })"#,
     )
     .await;
@@ -1064,7 +1089,13 @@ return { name = "layered", setup = function() _G.__layered = helper.value end }
         r#"return { value = "from the plugin's lua dir" }"#,
     );
 
-    let (_config, loader) = boot_and_activate(tmp.path(), &root, "", r#"require("layered")"#).await;
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        serde_json::Value::Null,
+        r#"require("layered")"#,
+    )
+    .await;
     assert_eq!(
         loader.eval("return __layered").await.unwrap(),
         "from the plugin's lua dir"

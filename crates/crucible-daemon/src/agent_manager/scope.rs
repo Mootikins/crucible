@@ -156,7 +156,8 @@ impl AgentManager {
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
         apply: impl FnOnce(&mut Session) -> Result<bool, AgentError>,
     ) -> Result<Session, AgentError> {
-        let _slot = RequestSlotGuard::acquire(self.request_state.clone(), session_id)?;
+        let _slot =
+            RequestSlotGuard::acquire(self.request_state.clone(), session_id, &self.activity)?;
         let mut session = self
             .session_manager
             .get_session(session_id)
@@ -642,11 +643,11 @@ mod tests {
             searched.iter().any(|(dir, _)| dir == &kiln.join("plugins")),
             "precondition: the daemon searches <runtimepath>/plugins: {searched:?}"
         );
-        // And executes `<runtimepath>/defaults/init.lua` on every session VM.
+        // And executes `<runtimepath>/defaults/init.lua` on the daemon VM.
         assert!(
             crate::runtime_defaults::defaults_candidates(std::slice::from_ref(&kiln), None)
                 .contains(&kiln.join("defaults").join("init.lua")),
-            "precondition: the session VM runs <runtimepath>/defaults/init.lua"
+            "precondition: the daemon VM runs <runtimepath>/defaults/init.lua"
         );
 
         let (session, registry) = session_over(&[&kiln]);

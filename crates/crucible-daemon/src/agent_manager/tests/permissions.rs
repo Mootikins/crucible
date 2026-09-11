@@ -113,17 +113,140 @@ mod pattern_matching_tests {
     use super::*;
     use test_case::test_case;
 
+    /// The "Allowlist" answer must outlive the run that took it.
+    ///
+    /// The daemon is the only writer of a grant: it stores the pattern the
+    /// modal suggested under the whitelists directory, and the next run
+    /// loads both stores from there and skips the prompt. So the suggestion
+    /// and the store have to speak one pattern language. A suggestion the
+    /// store cannot match reads to the user as a saved rule and grants
+    /// nothing, and no restart ever reveals it.
+    ///
+    /// This walks the whole chain the click walks, minus the socket: the
+    /// modal builds the response, the daemon stores it, and a store loaded
+    /// fresh from disk answers the same call.
+    // The daemon sends a shell call as `PermRequest::tool("bash", …)`, so
+    // that is the request the first two cases build.
+    #[test_case(
+        PermRequest::tool("bash", serde_json::json!({"command": "cargo build --release"})),
+        "bash",
+        serde_json::json!({"command": "cargo build --release"}),
+        crucible_core::interaction::PermissionScope::Project;
+        "a_bash_grant_for_this_project"
+    )]
+    #[test_case(
+        PermRequest::bash(["cargo", "build", "--release"]),
+        "bash",
+        serde_json::json!({"command": "cargo build --release"}),
+        crucible_core::interaction::PermissionScope::User;
+        "a_bash_grant_for_this_user"
+    )]
+    #[test_case(
+        PermRequest::write(["src", "main.rs"]),
+        "write_file",
+        serde_json::json!({"path": "src/main.rs"}),
+        crucible_core::interaction::PermissionScope::Project;
+        "a_file_grant_for_this_project"
+    )]
+    #[test_case(
+        PermRequest::tool("fs_read_file", serde_json::json!({})),
+        "fs_read_file",
+        serde_json::json!({}),
+        crucible_core::interaction::PermissionScope::User;
+        "a_tool_grant_for_this_user"
+    )]
+    fn an_allowlist_grant_still_skips_the_prompt_after_a_restart(
+        request: crucible_core::interaction::PermRequest,
+        tool_name: &str,
+        args: serde_json::Value,
+        scope: crucible_core::interaction::PermissionScope,
+    ) {
+        use crucible_core::interaction::PermResponse;
+
+        let tmp = TempDir::new().unwrap();
+        let whitelists_dir = tmp.path().join("whitelists.d");
+        let project_path = "/some/project";
+
+        // What the modal sends when the user picks "Allowlist".
+        let response = PermResponse::allow_pattern(request.suggested_pattern(), scope);
+        let pattern = response.pattern.clone().expect("the modal sends a pattern");
+
+        // What the daemon does with it, on the run that asked.
+        let file = PatternStore::store_file_in(&whitelists_dir, response.scope, project_path)
+            .expect("a persisted scope has a store file");
+        AgentManager::store_pattern_to(&file, tool_name, &args, &pattern)
+            .expect("the grant is stored");
+
+        // The next run: nothing in memory, both stores read from disk, the
+        // way `handle_permission_request` reads them.
+        let store = PatternStore::load_sync_in(&whitelists_dir, project_path)
+            .unwrap_or_default()
+            .merge(&PatternStore::load_user_sync_in(&whitelists_dir).unwrap_or_default());
+
+        assert!(
+            AgentManager::check_pattern_match(tool_name, &args, &store),
+            "the grant of {pattern:?} must still skip the prompt after a restart",
+        );
+    }
+
+    /// A grant reaches the command the user approved and no other.
+    ///
+    /// The same chain as the test above, asked the opposite question. One
+    /// "Allowlist" click on `rm build/tmp.o` used to store `rm *`, which
+    /// answered for every later `rm` on the machine — on every project, with
+    /// no second prompt and no way for the user to see it. The suggestion is
+    /// the command the modal displayed, so the stored grant covers that
+    /// command alone.
+    #[test_case("rm -rf /home/user/project"; "another_rm_with_another_target")]
+    #[test_case("rm -rf ~/work"; "another_rm_with_a_home_target")]
+    #[test_case("rm build/tmp.o /home/user/project"; "the_same_rm_with_an_extra_target")]
+    #[test_case("bash -c 'rm -rf /home/user/project'"; "the_same_rm_behind_a_shell")]
+    fn an_allowlist_grant_does_not_reach_a_wider_command(escalation: &str) {
+        use crucible_core::interaction::{PermResponse, PermissionScope};
+
+        let tmp = TempDir::new().unwrap();
+        let whitelists_dir = tmp.path().join("whitelists.d");
+        let project_path = "/some/project";
+        let approved = serde_json::json!({"command": "rm build/tmp.o"});
+
+        let request = PermRequest::tool("bash", approved.clone());
+        let response =
+            PermResponse::allow_pattern(request.suggested_pattern(), PermissionScope::User);
+        let pattern = response.pattern.clone().expect("the modal sends a pattern");
+        let file = PatternStore::store_file_in(&whitelists_dir, response.scope, project_path)
+            .expect("a persisted scope has a store file");
+        AgentManager::store_pattern_to(&file, "bash", &approved, &pattern)
+            .expect("the grant is stored");
+
+        let store = PatternStore::load_sync_in(&whitelists_dir, project_path)
+            .unwrap_or_default()
+            .merge(&PatternStore::load_user_sync_in(&whitelists_dir).unwrap_or_default());
+
+        assert!(
+            AgentManager::check_pattern_match("bash", &approved, &store),
+            "the grant of {pattern:?} must skip the prompt for the approved command",
+        );
+        assert!(
+            !AgentManager::check_pattern_match(
+                "bash",
+                &serde_json::json!({ "command": escalation }),
+                &store,
+            ),
+            "the grant of {pattern:?} must still prompt for {escalation:?}",
+        );
+    }
+
     #[test_case(
         "bash",
         serde_json::json!({"command": "npm install lodash"}),
-        Some(("bash", "npm install")),
+        Some(("bash", "npm install *")),
         true;
         "bash_command_matches_prefix"
     )]
     #[test_case(
         "bash",
         serde_json::json!({"command": "rm -rf /"}),
-        Some(("bash", "npm install")),
+        Some(("bash", "npm install *")),
         false;
         "bash_command_no_match"
     )]
@@ -244,10 +367,16 @@ mod pattern_matching_tests {
         .expect("User scope has a store file");
         assert_eq!(file, whitelists_dir.join("user.toml"));
 
-        AgentManager::store_pattern_to(&file, "bash", "cargo build").unwrap();
+        AgentManager::store_pattern_to(
+            &file,
+            "bash",
+            &serde_json::json!({"command": "cargo build"}),
+            "cargo build",
+        )
+        .unwrap();
 
         let user_store = PatternStore::load_file(&file).unwrap();
-        assert!(user_store.matches_bash("cargo build --release"));
+        assert!(user_store.matches_bash("cargo build"));
 
         let project_file = PatternStore::store_file_in(
             &whitelists_dir,
@@ -284,7 +413,15 @@ mod pattern_matching_tests {
                     let barrier = barrier.clone();
                     std::thread::spawn(move || {
                         barrier.wait();
-                        AgentManager::store_pattern_to(&file, "bash", &format!("tool{round}_{i} "))
+                        // `tool{n} *` is a command name plus a wildcard, which
+                        // the loader refuses. The grant under test is the
+                        // round trip, so the rule carries an argument.
+                        AgentManager::store_pattern_to(
+                            &file,
+                            "bash",
+                            &serde_json::json!({"command": "tool run now"}),
+                            &format!("tool{round}_{i} run *"),
+                        )
                     })
                 })
                 .collect();
@@ -296,21 +433,29 @@ mod pattern_matching_tests {
         let store = PatternStore::load_file(&file).unwrap();
         for round in 0..rounds {
             for i in 0..writers {
-                let sample = format!("tool{round}_{i} run");
+                let sample = format!("tool{round}_{i} run now");
                 assert!(store.matches_bash(&sample), "grant lost: {sample:?}");
             }
         }
     }
 
-    #[test_case("bash", "cargo build", "cargo build --release", true; "store_pattern_adds_bash_pattern")]
-    #[test_case("write_file", "src/", "src/main.rs", true; "store_pattern_adds_file_pattern")]
-    #[test_case("custom_tool", "custom_tool", "custom_tool", true; "store_pattern_adds_tool_pattern")]
-    #[test_case("bash", "*", "", false; "store_pattern_rejects_star_pattern")]
-    fn store_pattern_outcomes(kind: &str, pattern: &str, sample: &str, should_succeed: bool) {
+    // The arguments decide which table a grant lands in, so each case carries
+    // the call it was granted for, not only the tool name.
+    #[test_case("bash", serde_json::json!({"command": "cargo build --release"}), "cargo build *", "cargo build --release", true; "store_pattern_adds_bash_pattern")]
+    #[test_case("write_file", serde_json::json!({"path": "src/main.rs"}), "src/", "src/main.rs", true; "store_pattern_adds_file_pattern")]
+    #[test_case("custom_tool", serde_json::json!({}), "custom_tool", "custom_tool", true; "store_pattern_adds_tool_pattern")]
+    #[test_case("bash", serde_json::json!({"command": "ls"}), "*", "", false; "store_pattern_rejects_star_pattern")]
+    fn store_pattern_outcomes(
+        kind: &str,
+        args: serde_json::Value,
+        pattern: &str,
+        sample: &str,
+        should_succeed: bool,
+    ) {
         let tmp = TempDir::new().unwrap();
         let file = PatternStore::project_file_in(&tmp.path().join("whitelists.d"), "/project");
 
-        let result = AgentManager::store_pattern_to(&file, kind, pattern);
+        let result = AgentManager::store_pattern_to(&file, kind, &args, pattern);
 
         if should_succeed {
             result.unwrap();
@@ -1015,6 +1160,72 @@ mod plugin_permission_tests {
         match answer {
             InteractionResponse::Permission(p) => assert!(p.allowed),
             other => panic!("the plugin was told {other:?}, not its answer"),
+        }
+    }
+}
+
+/// "Always allow" must work for every tool the display layer calls a command,
+/// not only for the one named exactly `bash`.
+///
+/// The suggestion and the routing are two halves of one click. The suggestion
+/// asks [`ToolDisplay`], which calls `shell`, `Bash` and `myserver__bash`
+/// commands; the routing compared the name to the literal `"bash"`. So a
+/// click on any other command tool filed a shell command line as a tool-NAME
+/// rule, which `matches_tool` can never answer: the user was prompted again
+/// on the very next identical call, for ever.
+///
+/// The names come from the classifier itself, so a name added there is
+/// covered here without an edit.
+mod always_allow_covers_every_command_tool {
+    use super::*;
+    use crucible_core::types::{ToolDisplay, ToolDisplayKind};
+
+    /// Every spelling of `base` that `ToolDisplay` classifies as a command.
+    fn spellings(base: &str) -> Vec<String> {
+        vec![
+            base.to_string(),
+            base.to_ascii_uppercase(),
+            format!("myserver__{base}"),
+        ]
+    }
+
+    #[test]
+    fn a_grant_permits_the_same_call_again() {
+        let args = serde_json::json!({"command": "ls -la"});
+
+        for base in ToolDisplay::COMMAND_TOOL_NAMES {
+            for name in spellings(base) {
+                assert_eq!(
+                    ToolDisplay::of(&name, &args).kind,
+                    ToolDisplayKind::Command,
+                    "{name} must be a command for this test to mean anything",
+                );
+
+                // What the modal offers, and what the daemon does with it.
+                let pattern = PermRequest::tool(name.clone(), args.clone()).suggested_pattern();
+                let tmp = TempDir::new().unwrap();
+                let file = tmp.path().join("whitelists.d").join("user.toml");
+                AgentManager::store_pattern_to(&file, &name, &args, &pattern)
+                    .expect("the grant is stored");
+
+                // The next identical call, reading the store back from disk.
+                let store = PatternStore::load_file(&file).expect("the store reloads");
+                assert!(
+                    AgentManager::check_pattern_match(&name, &args, &store),
+                    "allowlisting {name} as {pattern:?} must permit the same call again",
+                );
+
+                // And the grant is the command, not the tool: a wider command
+                // through the same tool still prompts.
+                assert!(
+                    !AgentManager::check_pattern_match(
+                        &name,
+                        &serde_json::json!({"command": "rm -rf /home/user/project"}),
+                        &store,
+                    ),
+                    "allowlisting {name} as {pattern:?} must not permit another command",
+                );
+            }
         }
     }
 }

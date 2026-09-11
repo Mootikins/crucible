@@ -222,7 +222,7 @@ describe("consolidation", function()
     end)
 
     it("asks the reflection plugin for one review in the configured kiln", function()
-      plugin.setup({ timeout = 99, max_iterations = 7, provider = "anthropic" })
+      plugin.setup({ timeout = 99, provider = "anthropic" })
       plugin.run(nil)
 
       expect.equal(1, #review_calls)
@@ -232,7 +232,6 @@ describe("consolidation", function()
       expect.equal("anthropic", call.provider)
       expect.equal(plugin.system_prompt, call.system_prompt)
       expect.equal(99, call.timeout)
-      expect.equal(7, call.max_iterations)
     end)
 
     it("stores the newest started_at as the cursor after a pass", function()

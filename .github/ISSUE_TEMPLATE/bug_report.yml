@@ -46,7 +46,7 @@ body:
     id: repro
     attributes:
       label: Steps to reproduce
-      description: Exact commands. If config matters, include the relevant part of `~/.config/crucible/config.toml` (or the project's `crucible.toml`).
+      description: Exact commands. If config matters, include the relevant part of `~/.config/crucible/init.lua` (or the project's `.crucible/project.toml`).
     validations:
       required: true
 

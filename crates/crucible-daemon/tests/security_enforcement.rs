@@ -10,7 +10,7 @@
 
 use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::config::{BackendType, DelegationConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{StopReason, TurnEvent};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
@@ -35,8 +35,6 @@ fn local_ollama_config() -> crucible_core::config::LlmConfig {
                 provider_type: BackendType::Ollama,
                 endpoint: None,
                 default_model: None,
-                temperature: None,
-                max_tokens: None,
                 api_key: None,
                 available_models: None,
                 trust_level: Some(crucible_core::config::TrustLevel::Local),
@@ -55,10 +53,7 @@ fn internal_agent() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -66,15 +61,8 @@ fn internal_agent() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         mode: None,
         tool_policy: None,
     }

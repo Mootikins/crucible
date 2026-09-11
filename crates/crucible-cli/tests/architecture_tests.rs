@@ -352,8 +352,8 @@ fn the_cli_does_not_build_its_own_context_block() {
         offenders.is_empty(),
         "The CLI is formatting knowledge-base context into a prompt. Grounding \
          belongs to the daemon (agent_manager/precognition/); the CLI's job is \
-         to set `session.set_precognition` / `session.set_precognition_results` \
-         and render the `precognition_complete` event:\n  - {}",
+         to set `session.set_precognition` and render the \
+         `precognition_complete` event:\n  - {}",
         offenders.join("\n  - ")
     );
 }
@@ -380,24 +380,12 @@ fn captures(re: &str, hay: &str) -> BTreeSet<String> {
 
 /// `session.set_<suffix>` → the `/api/session/{}/config/<path>` tail.
 ///
-/// Declared rather than derived: `precognition_results` maps to
-/// `precognition/results`, not `precognition-results`, so a naive snake→kebab
-/// transform is wrong and would need special-casing anyway.
+/// Declared rather than derived: a knob's route is not always its name in
+/// kebab case, so a naive snake→kebab transform would need special-casing.
 const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
-    ("autocompact_threshold", "autocompact-threshold"),
     ("context_budget", "context-budget"),
     ("context_strategy", "context-strategy"),
-    ("context_window", "context-window"),
-    ("execution_timeout", "execution-timeout"),
-    ("max_iterations", "max-iterations"),
-    ("max_tokens", "max-tokens"),
-    ("output_validation", "output-validation"),
     ("precognition", "precognition"),
-    ("precognition_results", "precognition/results"),
-    ("system_prompt", "system-prompt"),
-    ("temperature", "temperature"),
-    ("thinking_budget", "thinking-budget"),
-    ("validation_retries", "validation-retries"),
     // Not a Crucible knob: the settings the external agent advertised for
     // itself. One route serves both directions — GET lists them, POST sets one
     // — because the value belongs to the agent and is read back from its list.
@@ -440,11 +428,14 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
     let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
     let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
 
+    // Sanity check on the scan, not on the knob count — the count is meant to
+    // shrink. `precognition` is Crucible's own retrieval knob and is not going
+    // anywhere, so its absence means the regex broke rather than that a knob
+    // was deleted.
     assert!(
-        advertised.len() >= 12,
-        "extraction sanity check: expected 12+ session.set_* knobs in METHODS, \
-         found {} — the scan regex probably broke, fix the test",
-        advertised.len()
+        advertised.contains("precognition"),
+        "the scan found no `session.set_precognition`, so the regex probably \
+         broke; it found: {advertised:?}"
     );
 
     let mapped: BTreeSet<String> = WEB_CONFIG_ROUTES
@@ -497,6 +488,122 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
     assert!(
         failures.is_empty(),
         "RPC↔web session-knob parity violations:\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
+/// `session.set_<suffix>` → the `:set` key that reaches it.
+///
+/// Declared rather than derived, like `WEB_CONFIG_ROUTES`: the TUI spells most
+/// keys without underscores (`maxiterations`) and some with an alias for both
+/// (`contextbudget` / `context_budget`). No transform covers that, and a knob
+/// whose key is spelled differently in the two front ends is worth stating
+/// once here.
+const TUI_SET_KEYS: &[(&str, &str)] = &[
+    ("context_budget", "contextbudget"),
+    ("context_strategy", "contextstrategy"),
+    ("precognition", "precognition"),
+];
+
+/// Knobs the TUI cannot set at all. REMOVE entries as keys land; never add.
+///
+/// `agent_option` is the live gap. `session.list_agent_options` and
+/// `session.set_agent_option` project the settings an external agent
+/// advertises for itself, and only the web reads them, so a TUI user talking
+/// to an ACP agent cannot see or change what that agent offers.
+const TUI_KEY_LEDGER: &[&str] = &["agent_option"];
+
+/// Exempt permanently, with a reason: `mode` has Shift-Tab and `:mode`, and
+/// switching it changes tool policy rather than a scalar setting.
+const TUI_KEY_EXEMPT: &[&str] = &["mode"];
+
+/// A knob the daemon advertises must be reachable from the TUI as well as the
+/// web.
+///
+/// AGENTS.md asks "Where does a user meet it? TUI *and* web", and the web half
+/// already has a gate above. Without this half a knob can ship to one renderer
+/// and pass review — which is what happened to `agent_option`.
+///
+/// Derived, not grepped: it calls the real `:set` classifier, so a row cannot
+/// be satisfied by a string appearing somewhere in the file. Any error but
+/// `UnknownKey` proves the key is wired; the sample value is deliberately not
+/// valid for every key, because validity is the classifier's business.
+#[test]
+fn every_rpc_session_knob_is_reachable_from_the_tui() {
+    use crucible_cli::tui::oil::commands::{classify_set_value, SetError};
+
+    let root = workspace_root();
+    let dispatch = read(&root.join("crates/crucible-daemon/src/rpc/dispatch.rs"));
+    let advertised = captures(r#""session\.set_([a-z0-9_]+)""#, &dispatch);
+    let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
+    let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
+
+    // See the web gate: a count assertion would fail every time a knob is
+    // deliberately removed. `precognition` staying is the real signal.
+    assert!(
+        advertised.contains("precognition"),
+        "the scan found no `session.set_precognition`, so the regex probably \
+         broke; it found: {advertised:?}"
+    );
+
+    let mapped: BTreeSet<String> = TUI_SET_KEYS.iter().map(|(k, _)| k.to_string()).collect();
+    let exempt: BTreeSet<String> = TUI_KEY_EXEMPT.iter().map(|s| s.to_string()).collect();
+    let ledger: BTreeSet<String> = TUI_KEY_LEDGER.iter().map(|s| s.to_string()).collect();
+    let mut failures = Vec::new();
+
+    // (1) Table completeness: every advertised knob is mapped, exempt or ledgered.
+    let covered: BTreeSet<String> = mapped
+        .union(&exempt)
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .union(&ledger)
+        .cloned()
+        .collect();
+    for knob in advertised.difference(&covered) {
+        failures.push(format!(
+            "session.set_{knob} has no TUI_SET_KEYS row — add the `:set` key, mark it \
+             TUI_KEY_EXEMPT with a reason, or (temporarily) add it to TUI_KEY_LEDGER"
+        ));
+    }
+    // (2) Table staleness: no row for a knob the daemon dropped.
+    for stale in mapped
+        .union(&ledger)
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .difference(&advertised)
+    {
+        failures.push(format!(
+            "TUI row `{stale}` is not in METHODS — remove the row or restore the knob"
+        ));
+    }
+    // (3) The keys are real: the running classifier knows each one.
+    for (knob, key) in TUI_SET_KEYS {
+        if matches!(
+            classify_set_value(key.to_string(), "1".to_string()),
+            Err(SetError::UnknownKey(_))
+        ) {
+            failures.push(format!(
+                "session.set_{knob}: `:set {key}=…` is an unknown key. Add an arm to \
+                 `classify_set_value` in tui/oil/commands/set.rs, or fix the row"
+            ));
+        }
+    }
+    // (4) A ledgered knob really is unreachable, so the ledger only shrinks.
+    for knob in &ledger {
+        if !matches!(
+            classify_set_value(knob.clone(), "1".to_string()),
+            Err(SetError::UnknownKey(_))
+        ) {
+            failures.push(format!(
+                "session.set_{knob}: `:set {knob}` now works — move it from \
+                 TUI_KEY_LEDGER into TUI_SET_KEYS"
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "RPC↔TUI session-knob parity violations:\n  - {}",
         failures.join("\n  - ")
     );
 }

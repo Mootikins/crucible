@@ -1,6 +1,6 @@
 //! Display, before-execute, and tool-result hook resolution for tool calls.
 //!
-//! Each resolver runs the session VM's handlers first (under the session
+//! Each resolver runs the handler VM's handlers (under the session
 //! state lock), then the plugin VM's with the lock released — plugin Lua may
 //! run for seconds and must not hold the session's whole state hostage.
 //! Display hints are first-non-empty-wins; env maps merge with session
@@ -18,7 +18,7 @@ use crucible_lua::{
 use std::ops::ControlFlow;
 use tracing::warn;
 
-use crate::agent_manager::vm_pass::fold_vms;
+use crate::agent_manager::vm_pass::run_handlers;
 
 use super::StreamContext;
 
@@ -75,17 +75,16 @@ impl DisplayStage for ToolDisplayCompleteEvent {
     }
 }
 
-/// Resolve the display hints for one stage: the session VM's handlers first,
+/// Resolve the display hints for one stage from the handler VM's handlers,
 /// then the plugin VM's. A hook error falls back to the default metadata.
 pub(super) async fn resolve_hints<E: DisplayStage>(
     stream_ctx: &StreamContext,
     event: &E,
 ) -> Option<E::Hints> {
-    fold_vms(
-        &stream_ctx.session_state,
+    run_handlers(
         stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
         None,
-        |vm, registry, lua, _| {
+        |registry, lua, _| {
             Box::pin(async move {
                 match event.run(&lua, &registry, &stream_ctx.session_id).await {
                     Ok(Some(hints)) => ControlFlow::Break(Some(hints)),
@@ -95,8 +94,7 @@ pub(super) async fn resolve_hints<E: DisplayStage>(
                             session_id = %stream_ctx.session_id,
                             tool = %event.tool_name(),
                             error = %error,
-                            "{} {} hook error, falling back to default metadata",
-                            vm,
+                            "{} hook error, falling back to default metadata",
                             E::STAGE
                         );
                         ControlFlow::Continue(None)
@@ -114,7 +112,7 @@ pub(super) async fn resolve_hints<E: DisplayStage>(
 /// Handlers get `{ tool, args, result, error }` and return a `Transform` of
 /// `{ result = <string> }` and/or `{ error = <string> }` — partial: an
 /// omitted key keeps the current value, and each handler sees the previous
-/// handlers' patches (session VM first, then plugin VM). Use cases:
+/// handlers' patches. Use cases:
 /// redacting secrets from bash output, summarising a large read. Execution
 /// already happened, so Cancel/Handled have nothing to act on and are
 /// ignored; handler errors fail open like every non-gate hook — a redactor
@@ -176,11 +174,10 @@ pub(super) async fn apply_tool_result_handlers(
         }
     }
 
-    fold_vms(
-        &stream_ctx.session_state,
+    run_handlers(
         stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
         (result, error),
-        |_, registry, lua, (mut result, mut error)| {
+        |registry, lua, (mut result, mut error)| {
             Box::pin(async move {
                 run_pass(
                     stream_ctx,
@@ -205,11 +202,10 @@ pub(super) async fn resolve_before_execute_env(
 ) -> std::collections::HashMap<String, String> {
     // Each VM's env is folded under the one before it, so a session value
     // wins over a plugin value for the same key.
-    fold_vms(
-        &stream_ctx.session_state,
+    run_handlers(
         stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
         std::collections::HashMap::new(),
-        |vm, registry, lua, acc| {
+        |registry, lua, acc| {
             Box::pin(async move {
                 let mut env = match execute_tool_before_execute_hooks(
                     &lua,
@@ -226,7 +222,7 @@ pub(super) async fn resolve_before_execute_env(
                             session_id = %stream_ctx.session_id,
                             tool = %event.name,
                             error = %error,
-                            "{vm} tool:before_execute hook error, proceeding without env vars"
+                            "tool:before_execute hook error, proceeding without env vars"
                         );
                         std::collections::HashMap::new()
                     }

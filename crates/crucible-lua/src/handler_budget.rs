@@ -84,7 +84,7 @@ struct Deadline {
 ///
 /// Idempotent, and cheap while no deadline is set: the hook reads one app-data
 /// slot and returns. Every VM that runs a handler needs it — the plugin VM and
-/// each session VM — because the deadline is a property of the VM the handler
+/// each VM — because the deadline is a property of the VM the handler
 /// runs in.
 ///
 /// Luau's interrupt callback reaches loops and function calls in every
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn the_error_names_the_plugin_whose_handler_overran() {
         let lua = vm();
-        crate::plugin_context::enter_plugin(&lua, "grabby", crate::manifest::CapabilitySet::none());
+        crate::plugin_context::enter_plugin(&lua, "grabby", false);
         let _guard = enter(&lua, Duration::from_millis(50), "the pre_tool_call handler");
 
         let error = lua

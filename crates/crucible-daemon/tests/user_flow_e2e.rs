@@ -10,7 +10,7 @@
 
 use anyhow::Result;
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::SessionAgent;
 use crucible_daemon::{DaemonClient, Server};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -105,10 +105,7 @@ fn mock_agent_config() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "test-model".to_string(),
         system_prompt: "You are a helpful test assistant.".to_string(),
-        temperature: Some(0.5),
-        max_tokens: Some(1024),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -116,15 +113,8 @@ fn mock_agent_config() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }

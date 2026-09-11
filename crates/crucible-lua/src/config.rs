@@ -144,6 +144,51 @@ pub fn get_app_config_provenance() -> Option<crucible_core::config::ProvenanceMa
     )
 }
 
+/// Where one app-config leaf came from, and whether `config.save` refuses it.
+///
+/// The store answers, not the caller: the pin record is the store's, and the
+/// origin and the refusal must be one projection. See
+/// [`crucible_core::config::ConfigStore::origin`].
+///
+/// With no store — a process that never booted config — every leaf defaults.
+pub fn app_config_origin(path: &str) -> crucible_core::config::LeafOrigin {
+    match get_config().read() {
+        Ok(state) => match state.app_config.as_ref() {
+            Some(store) => store.origin(path),
+            None => default_leaf_origin(),
+        },
+        Err(_) => default_leaf_origin(),
+    }
+}
+
+/// [`app_config_origin`] for every leaf the store recorded, in path order.
+///
+/// One lock for the whole listing: a per-key call would take the lock once
+/// per leaf, and a merge landing between two of those calls would answer half
+/// the list from one store and half from another.
+pub fn app_config_origins() -> Vec<(String, crucible_core::config::LeafOrigin)> {
+    match get_config().read() {
+        Ok(state) => match state.app_config.as_ref() {
+            Some(store) => store
+                .recorded_leaves()
+                .into_iter()
+                .map(|path| (path.to_string(), store.origin(path)))
+                .collect(),
+            None => Vec::new(),
+        },
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The row a leaf nothing wrote gets: the compiled-in default, pinned by
+/// nobody.
+fn default_leaf_origin() -> crucible_core::config::LeafOrigin {
+    crucible_core::config::LeafOrigin {
+        pinned: false,
+        origin: SourceTag::Default.origin(),
+    }
+}
+
 /// Seed app config from an already-loaded config value.
 ///
 /// Installs a RUNTIME store: the location-naming keys are withheld from the
@@ -160,9 +205,9 @@ pub fn seed_app_config(config: serde_json::Value) {
     }
 }
 
-/// Deep-merge values into the app config from Rust. Used by the daemon's
-/// `config.set` RPC so the TUI/CLI write into the SAME store `:lua` and
-/// plugins read.
+/// Merge values into the app config from Rust — one leaf per terminal value.
+/// Used by the daemon's `config.set` RPC so the TUI/CLI write into the SAME
+/// store `:lua` and plugins read.
 ///
 /// Returns the top-level location keys the store's policy withheld (empty
 /// during the boot phase). One door, one rule: the store decides, and every
@@ -179,6 +224,81 @@ pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: SourceTag) -> Ve
             .get_or_insert_with(ConfigStore::runtime)
             .merge(overlay, tag),
         Err(_) => Vec::new(),
+    }
+}
+
+/// Drop the runtime knob's hold on one leaf — the `config.reset` RPC, which
+/// the TUI spells `:set key&`.
+///
+/// The store decides which layers go, not this function: `config.set` writes
+/// through [`merge_app_config`], and `ConfigStore::reset` drops exactly the
+/// layers [`SourceTag::reset_drops`] names.
+///
+/// With no store — a process that never booted config — there is nothing to
+/// drop.
+pub fn reset_app_config(path: &str) -> crucible_core::config::LayerDrop {
+    drop_app_config_layers(path, ConfigStore::reset)
+}
+
+/// Drop the highest-ranked layer holding one leaf — the `config.pop` RPC,
+/// which the TUI spells `:set key^`.
+pub fn pop_app_config(path: &str) -> crucible_core::config::LayerDrop {
+    drop_app_config_layers(path, ConfigStore::pop)
+}
+
+/// Remove a key and everything under it — the `config.unset` RPC.
+///
+/// The verb a flat store needs and `config.set` cannot spell: a write names
+/// one leaf, so it can add a provider and change it but never say the provider
+/// is gone. Like [`reset_app_config`] it reaches only the layers a reset
+/// drops, so it edits no file.
+pub fn unset_app_config(prefix: &str) -> crucible_core::config::LayerDrop {
+    drop_app_config_layers(prefix, ConfigStore::unset)
+}
+
+/// The shared half of [`reset_app_config`] and [`pop_app_config`]: take the
+/// write lock once, and answer `Untouched` when no store was ever seeded.
+fn drop_app_config_layers(
+    path: &str,
+    drop: impl FnOnce(&mut ConfigStore, &str) -> crucible_core::config::LayerDrop,
+) -> crucible_core::config::LayerDrop {
+    match get_config().write() {
+        Ok(mut state) => match state.app_config.as_mut() {
+            Some(store) => drop(store, path),
+            None => crucible_core::config::LayerDrop::Untouched,
+        },
+        Err(_) => crucible_core::config::LayerDrop::Untouched,
+    }
+}
+
+/// Save an overlay as the user's durable preference — the whole of the
+/// `config.save` RPC, in one call under one lock.
+///
+/// One call, because the verb is one decision. The store refuses the pinned
+/// leaves, drops the runtime knob's hold on the rest, and merges them as
+/// [`SourceTag::Settings`]; a caller that split here and merged in a second
+/// call would hold the lock twice and could clear a leaf the merge then
+/// refused.
+///
+/// `also_pinned` carries the pins the store cannot see — the daemon's
+/// `llm.json` state overlay holds leaves no layer of this store carries.
+///
+/// With no store — a process that never booted config — one is created, the
+/// same way [`merge_app_config_tagged`] creates it.
+pub fn save_app_config(
+    overlay: serde_json::Value,
+    also_pinned: &dyn Fn(&str) -> Option<crucible_core::config::SourceOrigin>,
+) -> crucible_core::config::SavedSettings {
+    match get_config().write() {
+        Ok(mut state) => state
+            .app_config
+            .get_or_insert_with(ConfigStore::runtime)
+            .save(overlay, also_pinned),
+        Err(_) => crucible_core::config::SavedSettings {
+            accepted: overlay,
+            refused: Vec::new(),
+            withheld: Vec::new(),
+        },
     }
 }
 
@@ -308,44 +428,113 @@ fn store_runtimepath() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The Lua call site of the frame that invoked the current Rust callback,
-/// for `file:line` provenance.
-fn lua_call_site(lua: &Lua) -> (String, Option<u32>) {
-    lua.inspect_stack(1, |debug| {
-        let source = debug.source();
-        let file = source
-            .short_src
-            .map(|s| s.into_owned())
-            .unwrap_or_else(|| "?".to_string());
-        let line = debug.current_line().and_then(|l| u32::try_from(l).ok());
-        (file, line)
-    })
-    .unwrap_or_else(|| ("?".to_string(), None))
+/// The Lua call site of the frame that invoked the current Rust callback.
+///
+/// Two forms of the same site, and both are needed. `chunk` is the raw chunk
+/// name, which names the file: a path decision must read it. `display` is
+/// Luau's printable form, which truncates a long path to fit an error message
+/// — right for a human-facing warning, and useless for a prefix match.
+struct CallSite {
+    /// The chunk name, as the loader set it.
+    chunk: String,
+    /// The printable short form.
+    display: String,
+    /// The call-site line; `None` when the frame reports none.
+    line: Option<u32>,
 }
 
-/// One Lua write into the store: tag with the call site, warn per withheld
-/// key, and — during the boot phase — extend the live search space when the
-/// write touched `runtimepath`.
+impl CallSite {
+    /// The site as a human reads it: `file:line`, or the file alone.
+    fn printable(&self) -> String {
+        match self.line {
+            Some(line) => format!("{}:{line}", self.display),
+            None => self.display.clone(),
+        }
+    }
+}
+
+fn lua_call_site(lua: &Lua) -> CallSite {
+    lua.inspect_stack(1, |debug| {
+        let source = debug.source();
+        let chunk = source
+            .source
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|| "?".to_string());
+        let display = source
+            .short_src
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|| chunk.clone());
+        let line = debug.current_line().and_then(|l| u32::try_from(l).ok());
+        CallSite {
+            chunk,
+            display,
+            line,
+        }
+    })
+    .unwrap_or_else(|| CallSite {
+        chunk: "?".to_string(),
+        display: "?".to_string(),
+        line: None,
+    })
+}
+
+/// The roots that say which author a Lua write belongs to. Installed by the
+/// boot, which is the one place that knows both the config root and the
+/// plugin roots. Empty until then: every write counts as the human's, which
+/// is the visible failure rather than the silent one.
+fn author_roots_slot() -> &'static RwLock<crate::authorship::AuthorRoots> {
+    static SLOT: OnceLock<RwLock<crate::authorship::AuthorRoots>> = OnceLock::new();
+    SLOT.get_or_init(|| RwLock::new(crate::authorship::AuthorRoots::default()))
+}
+
+/// Install the roots that classify a Lua write.
+pub fn set_author_roots(roots: crate::authorship::AuthorRoots) {
+    if let Ok(mut slot) = author_roots_slot().write() {
+        *slot = roots;
+    }
+}
+
+/// Add one plugin root to the installed roots, keeping the rest.
+///
+/// The boot installs the whole list at once, because it resolves it at once.
+/// A plugin installed while the daemon runs arrives one directory at a time
+/// and must not discard what the boot found, so it adds rather than replaces.
+/// Answers whether the root was new.
+pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
+    match author_roots_slot().write() {
+        Ok(mut slot) => slot.add_plugin_root(root),
+        // A poisoned lock leaves the roots as they are. The write is then
+        // classified as the human's, which is the visible failure: the user
+        // is told the file and the line and can see that it is not theirs.
+        Err(_) => false,
+    }
+}
+
+/// The layer a write from this call site lands in.
+///
+/// A poisoned lock falls back to empty roots rather than to a hand-made tag,
+/// so the "no root matches" rule is written once and both paths obey it.
+fn classify_call_site(site: &CallSite) -> SourceTag {
+    match author_roots_slot().read() {
+        Ok(roots) => roots.classify(&site.chunk, site.line),
+        Err(_) => crate::authorship::AuthorRoots::default().classify(&site.chunk, site.line),
+    }
+}
+
+/// One Lua write into the store: tag with the call site's AUTHOR, warn per
+/// withheld key, and — during the boot phase — extend the live search space
+/// when the write touched `runtimepath`.
 fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
-    let (file, line) = lua_call_site(lua);
+    let site = lua_call_site(lua);
     let touched_runtimepath = overlay
         .as_object()
         .is_some_and(|map| map.contains_key("runtimepath"));
 
-    let withheld = merge_app_config_tagged(
-        overlay,
-        SourceTag::Lua {
-            file: file.clone(),
-            line,
-        },
-    );
+    let withheld = merge_app_config_tagged(overlay, classify_call_site(&site));
     for key in &withheld {
         warn!(
             key = %key,
-            call_site = %match line {
-                Some(line) => format!("{file}:{line}"),
-                None => file.clone(),
-            },
+            call_site = %site.printable(),
             "location keys freeze at daemon boot; restart the daemon to change this key"
         );
     }
@@ -364,12 +553,10 @@ fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
 /// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru
 /// namespace.
 ///
-/// - `set(table)`: DEEP-merges the table into the store — objects merge key
-///   by key, arrays and scalars replace, `__replace = true` inside a table
-///   replaces that table wholesale. The marker is the ONE replacement
-///   mechanism, spelled the same by hand here, in a TOML seed, and over the
-///   `config.set` RPC; a `cru.config.replace` sugar existed briefly and was
-///   removed as a second spelling of the same thing.
+/// - `set(table)`: writes ONE leaf per terminal value. The nested table is
+///   authoring sugar: `{ chat = { model = "x" } }` writes `chat.model`, and a
+///   dotted key writes the same path. A write therefore keeps every sibling it
+///   does not name, and it cannot remove a key — `config.unset` is that verb.
 /// - `get(key)`: returns a single top-level value.
 ///
 /// During the daemon's boot phase the store accepts location keys and a
@@ -380,17 +567,17 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
     let config_table = lua.create_table()?;
     let mut ns = crate::host_registry::Ns::over(lua, "cru.config", config_table.clone());
 
-    // cru.config.set(table) — deep-merge into the store.
+    // cru.config.set(table) — write one leaf per terminal value.
     //
     // Delegates rather than reimplementing the merge. It used to carry its own
     // copy of the same top-level-insert loop, which made it a second door into
     // one store — and after the location keys started being withheld, only one
     // of the two doors dropped them.
     //
-    // The table is not narrowed: it carries whatever keys a config has, plus
-    // the `__replace` marker at any depth, so naming fields here would reject
-    // correct config. It answers with NOTHING — a withheld location key is
-    // reported by a warning, not by a return value.
+    // The table is not narrowed: it carries whatever keys a config has, and a
+    // plugin owns free-form `plugins.<name>` keys, so naming fields here would
+    // reject correct config. It answers with NOTHING — a withheld location key
+    // is reported by a warning, not by a return value.
     ns.func(
         "set",
         "(config: { [string]: any }) -> ()",
@@ -403,9 +590,57 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
         },
     )?;
 
-    // cru.config.get(key) — read a single TOP-LEVEL value. The key is one
-    // name, not a dotted path, and an unset key reads `nil` rather than
-    // raising.
+    // cru.rtp.append / prepend — sugar over `cru.config.set{runtimepath=…}`.
+    //
+    // NOT a second door, and not because it routes through `merge_from_lua`:
+    // the authority lives in `ConfigStore`'s `LocationPolicy`, so EVERY write
+    // path is subject to it. Verified by breaking this — routing `append`
+    // through `merge_app_config_tagged` instead still leaves it refused after
+    // boot.
+    //
+    // Going through `merge_from_lua` anyway is what buys the other three
+    // things a direct store write would lose: the call-site provenance tag,
+    // the per-key warning naming `file:line`, and the extender that rebuilds
+    // the module search space inside the call.
+    //
+    // It exists because `set` alone cannot express "add one root". Arrays
+    // replace wholesale, and `runtimepath` is withheld from `cru.config.get`,
+    // so a plugin or config cannot read-then-append. Adding a root is the
+    // single most common thing anyone wants to do with a runtimepath, and
+    // making that one call is the point of the path being one list.
+    let rtp_table = lua.create_table()?;
+    let mut rtp = crate::host_registry::Ns::over(lua, "cru.rtp", rtp_table.clone());
+
+    rtp.func("append", "(path: string) -> ()", |lua, path: String| {
+        let mut entries = store_runtimepath();
+        if !entries.iter().any(|e| e == &path) {
+            entries.push(path);
+        }
+        merge_from_lua(lua, serde_json::json!({ "runtimepath": entries }));
+        Ok(())
+    })?;
+
+    rtp.func("prepend", "(path: string) -> ()", |lua, path: String| {
+        let mut entries = store_runtimepath();
+        entries.retain(|e| e != &path);
+        entries.insert(0, path);
+        merge_from_lua(lua, serde_json::json!({ "runtimepath": entries }));
+        Ok(())
+    })?;
+
+    // Reading the path back is safe where reading arbitrary location keys is
+    // not: the caller already knows what it appended, and a config that
+    // cannot see the list cannot append to it idempotently.
+    rtp.func("get", "() -> { string }", |lua, ()| {
+        lua.create_sequence_from(store_runtimepath())
+    })?;
+
+    cru_table.set("rtp", rtp_table)?;
+
+    // cru.config.get(key) — read one value at a dot-joined path. A key with
+    // no dot reads a top-level value; `myplugin.debug` reads where
+    // `cru.config.set { ["myplugin.debug"] = true }` wrote. An unset key
+    // reads `nil` rather than raising.
     ns.func("get", "(key: string) -> any", |lua, key: String| {
         let state = get_config()
             .read()
@@ -414,7 +649,7 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
         let val = state
             .app_config
             .as_ref()
-            .and_then(|store| store.value().get(&key))
+            .and_then(|store| crucible_core::config::leaf_at(store.value(), &key))
             .cloned();
 
         match val {
@@ -480,17 +715,53 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
     Ok(())
 }
 
-/// List available theme names from a config directory's `themes/` subdirectory.
+/// The `themes/` directories to search, highest priority first.
 ///
-/// Returns sorted theme names (without the extension) discovered in
-/// `config_dir/themes/`.
-pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
-    let themes_dir = config_dir.join("themes");
-    if !themes_dir.exists() {
-        return vec![];
-    }
+/// The config directory comes first, so a user's own theme wins. Every runtime
+/// root follows — `cru setup` copies the shipped tree into
+/// `~/.config/crucible/runtime`, which is a runtime root and is NOT the config
+/// directory. Reading only the config directory is why a shipped theme was
+/// never listed.
+///
+/// Impure by design: this is the seam that reads `current_exe()`. Tests call
+/// [`list_available_themes`] with directories of their own, exactly as
+/// `runtime_skill_paths` is split from `default_discovery_paths`.
+///
+/// It resolves through `search_paths` rather than joining `themes` itself, so
+/// `RuntimeAsset::Themes::reaches` stays in force: a workspace, kiln or
+/// harness root must never supply Lua the theme VM executes.
+pub fn theme_roots(config_dir: &Path) -> Vec<PathBuf> {
+    use crucible_core::runtime_path::{build_path, search_paths, PathInputs, RuntimeAsset};
+
+    let runtime = crucible_core::runtime_roots::for_current_exe();
+    let path = build_path(&PathInputs {
+        config_home: Some(config_dir),
+        runtime_roots: &runtime,
+        ..PathInputs::default()
+    });
+
+    search_paths(RuntimeAsset::Themes, &path)
+        .into_iter()
+        .map(|c| c.path)
+        .collect()
+}
+
+/// Theme names across every root's `themes/` subdirectory.
+///
+/// Sorted, de-duplicated, extension stripped. A name present in more than one
+/// root is listed once; `roots` order decides which file
+/// [`resolve_theme_file`] then loads.
+///
+/// Takes the root list rather than one directory. `runtime_roots.rs` was
+/// written because four subsystems open-coded their candidate lists and
+/// drifted; themes were the fifth and were never wired up, so `cru setup`
+/// wrote to a directory no reader looked in.
+pub fn list_available_themes(theme_dirs: &[PathBuf]) -> Vec<String> {
     let mut names = vec![];
-    if let Ok(entries) = std::fs::read_dir(&themes_dir) {
+    for themes_dir in theme_dirs {
+        let Ok(entries) = std::fs::read_dir(themes_dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if crate::source_files::is_lua_source(&path) {
@@ -501,7 +772,23 @@ pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
         }
     }
     names.sort();
+    names.dedup();
     names
+}
+
+/// The file a theme name resolves to, or `None` when no root supplies it.
+///
+/// Both extensions at every root, highest-priority root first. One function so
+/// the lister and the loader cannot disagree — `rpc/ui.rs` built its own path
+/// and reported "available: default, opencode" for themes it then failed to
+/// open.
+pub fn resolve_theme_file(theme_dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    theme_dirs.iter().find_map(|themes_dir| {
+        crate::source_files::SOURCE_EXTENSIONS
+            .iter()
+            .map(|ext| themes_dir.join(format!("{name}.{ext}")))
+            .find(|candidate| candidate.is_file())
+    })
 }
 
 /// The global config directory: where `init.lua` lives.
@@ -538,9 +825,19 @@ fn register_include(lua: &Lua, ns: &Table, config_dir: PathBuf) -> Result<(), Lu
         })?;
 
         debug!("Including config file: {}", full_path.display());
+        // The `@` prefix makes Luau render the chunk as a FILE, so its
+        // message reads `<path>:<line>: <reason>` rather than
+        // `[string "<path>"]:<line>:`. The failure rule reports that message
+        // verbatim, so the prefix is what names the line to the user.
+        //
+        // An included file is config, exactly as `init.lua` is. The mark
+        // carries "this file does not parse" out of this Rust callback,
+        // which Luau would otherwise report to `init.lua` as a runtime
+        // error — the same mistake, fatal one level up and silent here.
         lua.load(&source)
-            .set_name(full_path.to_string_lossy())
+            .set_name(format!("@{}", full_path.display()))
             .exec()
+            .map_err(crate::config_syntax::mark_config_syntax)
     })?;
 
     ns.set("include", include_fn)?;
@@ -722,6 +1019,72 @@ mod tests {
     // Serialize tests that touch the global CONFIG to avoid race conditions
     static CONFIG_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    /// `config.reset` undoes `config.set`, so it must drop exactly the layer
+    /// `config.set` writes — no more, and no less.
+    ///
+    /// The layer is read off the running store rather than named here: the
+    /// test writes through the real door and asks the provenance which tag
+    /// landed. The other half of the gate lives in `crucible-core`
+    /// (`a_reset_drops_exactly_one_layer_and_no_file_restores_it`), where
+    /// `EnumIter` proves that exactly one layer is droppable — so together
+    /// the two say "exactly this one, and nothing else".
+    #[test]
+    fn a_reset_drops_exactly_the_layer_a_config_set_writes() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+        begin_boot_store();
+        merge_app_config(serde_json::json!({ "probe": { "leaf": 1 } }));
+
+        let written = get_app_config_provenance()
+            .expect("the store is live")
+            .get("probe.leaf")
+            .cloned()
+            .expect("config.set recorded a leaf");
+
+        assert!(
+            written.reset_drops(),
+            "config.reset must drop the layer config.set writes, and {written:?} survives it"
+        );
+    }
+
+    /// The two verbs reach the live store, so `:set key&` and `:set key^`
+    /// change what the next `cru.config.get` reads.
+    #[test]
+    fn a_reset_and_a_pop_change_what_the_live_store_holds() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+        begin_boot_store();
+        merge_app_config_tagged(
+            serde_json::json!({ "chat": { "model": "saved" } }),
+            SourceTag::Settings,
+        );
+        merge_app_config(serde_json::json!({ "chat": { "model": "for-one-turn" } }));
+
+        let dropped = reset_app_config("chat.model");
+        assert!(
+            matches!(dropped, crucible_core::config::LayerDrop::Dropped(_)),
+            "{dropped:?}"
+        );
+        assert_eq!(
+            get_app_config().expect("the store is live")["chat"]["model"],
+            serde_json::json!("saved"),
+        );
+
+        let popped = pop_app_config("chat.model");
+        assert!(
+            matches!(popped, crucible_core::config::LayerDrop::Dropped(_)),
+            "{popped:?}"
+        );
+        assert_eq!(
+            get_app_config().expect("the store is live")["chat"]
+                .get("model")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            serde_json::Value::Null,
+            "the last layer holding the leaf is gone, so the store holds nothing for it"
+        );
+    }
+
     fn create_test_lua() -> Lua {
         let lua = Lua::new();
         // Set up a minimal cru table (normally done by executor)
@@ -809,6 +1172,34 @@ mod tests {
         assert!(included);
     }
 
+    /// A file `cru.include` loads is config, exactly as `init.lua` is, so a
+    /// syntax error in it must classify as one. `include` loads inside a Rust
+    /// callback and Luau reports a callback failure to its caller as a
+    /// RUNTIME error, so without the mark the identical mistake would refuse
+    /// the boot in `init.lua` and pass silently one level down.
+    #[test]
+    fn an_included_file_that_does_not_parse_is_a_config_syntax_error() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path().to_path_buf();
+        std::fs::write(config_dir.join("broken.lua"), "local x =\n").unwrap();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_include(&lua, &cru, config_dir).unwrap();
+
+        let error = lua
+            .load(r#"cru.include("broken.lua")"#)
+            .exec()
+            .expect_err("a file that does not parse must fail the include");
+
+        let syntax = crate::config_syntax::config_syntax_error(&error)
+            .expect("an included file that does not parse is a config syntax error");
+        assert!(
+            syntax.message.contains("broken.lua:2"),
+            "the message must name the included file and its line: {syntax}"
+        );
+    }
+
     #[test]
     fn test_include_missing_file() {
         let tmp = TempDir::new().unwrap();
@@ -820,6 +1211,92 @@ mod tests {
 
         let result = lua.load(r#"cru.include("nonexistent.lua")"#).exec();
         assert!(result.is_err());
+    }
+
+    /// The gate for the two-author split. A plugin's `setup()` write supplies
+    /// a default and must lose to the settings UI; the same write from the
+    /// user's own `init.lua` must beat it.
+    ///
+    /// The directories are deliberately long. Luau's printable chunk name
+    /// holds 256 bytes (`LUA_IDSIZE`) and drops the head of a longer path, so
+    /// a classifier that reads `short_src` matches neither root and files
+    /// every write under one layer.
+    #[test]
+    fn a_plugin_write_declares_a_default_and_a_write_from_init_lua_pins() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let tmp = TempDir::new().unwrap();
+        let long_name = "a_directory_named_long_enough_to_push_the_chunk_name_past_the_limit";
+        let deep = tmp
+            .path()
+            .join(long_name)
+            .join(long_name)
+            .join(long_name)
+            .join(long_name);
+        assert!(
+            deep.as_os_str().len() > 256,
+            "the printable chunk name must truncate, or this proves nothing"
+        );
+        let config_root = deep.join("config");
+        let plugins_root = deep.join("plugins");
+        let init_file = config_root.join("init.lua");
+        let plugin_file = plugins_root.join("alpha").join("init.lua");
+        std::fs::create_dir_all(&config_root).unwrap();
+        std::fs::create_dir_all(plugin_file.parent().unwrap()).unwrap();
+
+        set_author_roots(crate::authorship::AuthorRoots::new(
+            vec![config_root.clone()],
+            vec![plugins_root.clone()],
+        ));
+        begin_boot_store();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        let write = r#"cru.config.set({ chat = { model = "from-the-file" } })"#;
+        let source_of = |file: &Path| {
+            lua.load(write)
+                .set_name(format!("@{}", file.display()))
+                .exec()
+                .unwrap();
+            get_app_config_provenance()
+                .expect("the store is live")
+                .get("chat.model")
+                .cloned()
+                .expect("the write recorded a leaf")
+        };
+        let from_plugin = source_of(&plugin_file);
+        let from_init = source_of(&init_file);
+
+        // Restore before asserting: a failed assertion must not leave the
+        // roots installed for the next test.
+        set_author_roots(crate::authorship::AuthorRoots::default());
+
+        assert_eq!(
+            from_plugin,
+            SourceTag::PluginDefault {
+                plugin: "alpha".to_string(),
+                file: plugin_file.display().to_string(),
+                line: Some(1),
+            }
+        );
+        assert!(
+            from_plugin.rank() < SourceTag::Settings.rank(),
+            "a plugin default must not lock the key against settings.json"
+        );
+        assert_eq!(
+            from_init,
+            SourceTag::Lua {
+                file: init_file.display().to_string(),
+                line: Some(1),
+            }
+        );
+        assert!(
+            from_init.rank() > SourceTag::Settings.rank(),
+            "a line the user wrote must lock the key"
+        );
     }
 
     #[test]
@@ -913,6 +1390,101 @@ mod tests {
         );
     }
 
+    /// `cru.rtp.append` inherits `config.set`'s authority, it does not bypass
+    /// it.
+    ///
+    /// `runtimepath` is a location key: the store accepts one only during the
+    /// boot phase. If `rtp.append` wrote through a different door it would be
+    /// an unauthenticated write to a key that names where the daemon executes
+    /// code — the exact hazard `LOCATION_CONFIG_KEYS` exists to prevent.
+    #[test]
+    fn rtp_append_is_withheld_after_boot_like_any_location_key() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        // Set the path the only way it can be set: during boot.
+        begin_boot_store();
+        merge_app_config(serde_json::json!({ "runtimepath": ["/a"] }));
+        end_boot_phase();
+        assert!(!in_boot_phase());
+        let withheld = merge_app_config(serde_json::json!({ "runtimepath": ["/a", "/b"] }));
+        assert!(
+            withheld.contains(&"runtimepath".to_string()),
+            "a runtimepath write after boot must be withheld"
+        );
+    }
+
+    /// `cru.rtp.append` goes through the SAME door as `cru.config.set`.
+    ///
+    /// This is the gate that matters, and it exercises the Lua call rather
+    /// than the store beneath it. `runtimepath` names where the daemon
+    /// executes code, and the RPC socket has no authentication, so an append
+    /// that wrote past the location-key policy would be an unauthenticated
+    /// write to that. Red-proof: route `append` through
+    /// `merge_app_config_tagged` instead of `merge_from_lua` and this fails.
+    #[test]
+    fn rtp_append_from_lua_is_refused_after_boot() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        // Boot: the path is settable, and append extends it.
+        begin_boot_store();
+        lua.load(r#"cru.rtp.append("/a")"#).exec().unwrap();
+        assert_eq!(store_runtimepath(), vec!["/a".to_string()]);
+
+        // After boot: the same call is withheld, and the path does not move.
+        end_boot_phase();
+        let before = store_runtimepath();
+        lua.load(r#"cru.rtp.append("/evil")"#).exec().unwrap();
+        assert_eq!(
+            store_runtimepath(),
+            before,
+            "an append after boot must not reach the store"
+        );
+    }
+
+    /// Append is idempotent, so a config re-evaluated twice does not grow the
+    /// path.
+    #[test]
+    fn rtp_append_does_not_duplicate_an_entry() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        begin_boot_store();
+        lua.load(r#"cru.rtp.append("/a") cru.rtp.append("/a")"#)
+            .exec()
+            .unwrap();
+        assert_eq!(store_runtimepath(), vec!["/a".to_string()]);
+    }
+
+    /// During boot the same write lands, which is what makes append usable
+    /// from `init.lua`.
+    #[test]
+    fn rtp_append_lands_during_the_boot_phase() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+        begin_boot_store();
+        merge_app_config(serde_json::json!({ "runtimepath": ["/a"] }));
+
+        let mut entries = store_runtimepath();
+        entries.push("/b".to_string());
+        merge_app_config(serde_json::json!({ "runtimepath": entries }));
+
+        assert_eq!(
+            store_runtimepath(),
+            vec!["/a".to_string(), "/b".to_string()],
+            "append during boot must extend the path"
+        );
+    }
+
     #[test]
     fn test_list_available_themes() {
         let tmp = TempDir::new().unwrap();
@@ -922,8 +1494,71 @@ mod tests {
         std::fs::write(themes_dir.join("light.lua"), "return {}").unwrap();
         std::fs::write(themes_dir.join("not_a_theme.txt"), "").unwrap();
 
-        let themes = list_available_themes(tmp.path());
+        let themes = list_available_themes(std::slice::from_ref(&themes_dir));
         assert_eq!(themes, vec!["dark".to_string(), "light".to_string()]);
+    }
+
+    /// A theme `cru setup` copied is listed.
+    ///
+    /// `cru setup` writes the shipped tree to `~/.config/crucible/runtime`,
+    /// which is a runtime root and not the config directory. While this
+    /// function took one `config_dir`, no shipped theme was ever listed.
+    #[test]
+    fn themes_are_listed_from_every_root() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path().join("crucible");
+        let runtime_dir = config_dir.join("runtime");
+        std::fs::create_dir_all(config_dir.join("themes")).unwrap();
+        std::fs::create_dir_all(runtime_dir.join("themes")).unwrap();
+        std::fs::write(config_dir.join("themes").join("mine.luau"), "return {}").unwrap();
+        std::fs::write(runtime_dir.join("themes").join("shipped.luau"), "return {}").unwrap();
+
+        let themes =
+            list_available_themes(&[config_dir.join("themes"), runtime_dir.join("themes")]);
+        assert_eq!(
+            themes,
+            vec!["mine".to_string(), "shipped".to_string()],
+            "a theme under a runtime root must be listed beside the user's own"
+        );
+    }
+
+    /// The same name in two roots is listed once, and the first root wins.
+    #[test]
+    fn a_user_theme_shadows_a_shipped_one_of_the_same_name() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path().join("crucible");
+        let runtime_dir = config_dir.join("runtime");
+        std::fs::create_dir_all(config_dir.join("themes")).unwrap();
+        std::fs::create_dir_all(runtime_dir.join("themes")).unwrap();
+        std::fs::write(config_dir.join("themes").join("default.luau"), "-- mine").unwrap();
+        std::fs::write(
+            runtime_dir.join("themes").join("default.luau"),
+            "-- shipped",
+        )
+        .unwrap();
+
+        let roots = [config_dir.join("themes"), runtime_dir.join("themes")];
+        assert_eq!(list_available_themes(&roots), vec!["default".to_string()]);
+        assert_eq!(
+            resolve_theme_file(&roots, "default"),
+            Some(config_dir.join("themes").join("default.luau")),
+            "the config directory outranks a runtime root"
+        );
+    }
+
+    /// Both extensions resolve, and an absent name resolves to nothing.
+    #[test]
+    fn resolve_theme_file_takes_either_extension() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("themes")).unwrap();
+        std::fs::write(tmp.path().join("themes").join("old.lua"), "return {}").unwrap();
+
+        let roots = [tmp.path().join("themes")];
+        assert_eq!(
+            resolve_theme_file(&roots, "old"),
+            Some(tmp.path().join("themes").join("old.lua"))
+        );
+        assert_eq!(resolve_theme_file(&roots, "absent"), None);
     }
 
     #[test]

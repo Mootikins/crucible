@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use super::NewArgs;
 use crate::config::CliConfig;
 
-const TEMPLATE_PLUGIN_YAML: &str = include_str!("templates/plugin.yaml");
 const TEMPLATE_INIT_LUA: &str = include_str!("templates/init.luau");
 const TEMPLATE_HEALTH_LUA: &str = include_str!("templates/health.luau");
 const TEMPLATE_LUARC_JSON: &str = include_str!("templates/.luarc.json");
@@ -32,12 +31,15 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     fs::create_dir_all(&plugin_dir)?;
     fs::create_dir_all(plugin_dir.join("tests"))?;
 
-    let plugin_yaml = TEMPLATE_PLUGIN_YAML.replace("{{name}}", &args.name);
     let init_lua = TEMPLATE_INIT_LUA.replace("{{name}}", &args.name);
     let health_lua = TEMPLATE_HEALTH_LUA.replace("{{name}}", &args.name);
     let tests_init = TEMPLATE_TESTS_INIT.replace("{{name}}", &args.name);
 
-    fs::write(plugin_dir.join("plugin.yaml"), plugin_yaml)?;
+    // No manifest. A plugin is one directory with one entry file, and the
+    // spec table the entry file returns carries the metadata a `plugin.yaml`
+    // used to. Scaffolding one would teach every new plugin author a form
+    // that is on its way out.
+    //
     // `.luau`, the extension Luau's own editor tooling recognises. Both load;
     // this is the one place Crucible creates a file, so it is the one place
     // the preference can be acted on rather than merely documented.

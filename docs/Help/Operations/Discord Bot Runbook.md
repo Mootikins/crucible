@@ -22,13 +22,17 @@ each other.
 
 ### 1. Stop it answering (keeps the process, keeps the logs)
 
-Add one line to the `[plugins.discord]` section that already exists in
-`~/.config/crucible/config.toml` — do **not** add a second `[plugins.discord]` header, which is
-a duplicate-table TOML error that takes the whole config down and looks like a fix:
+Add one line to the `plugins.discord` table in `~/.config/crucible/init.lua`. A second
+`cru.config.set` call writes only the key it names, so the token and the allowlists stay:
 
-```toml
-[plugins.discord]
-enabled = false     # <- the only line you add
+```lua
+cru.config.set({
+    plugins = {
+        discord = {
+            enabled = false,  -- <- the only line you add
+        },
+    },
+})
 ```
 
 Then `cru daemon restart`.
@@ -58,13 +62,13 @@ afterwards either way.
 Two secrets reach the host, and both must be rotatable without a redeploy.
 
 **Bot token** — regenerate in the Discord developer portal, update
-`[plugins.discord] bot_token` (or the `DISCORD_BOT_TOKEN` environment variable, which takes
+`plugins.discord.bot_token` (or the `DISCORD_BOT_TOKEN` environment variable, which takes
 over when the config value is empty), `cru daemon restart`. The old token stops working the
 moment you regenerate, so the bot is offline between those steps. That is the intended order:
 revoke first, restore second.
 
 **Provider key** — update the provider credential the bot uses, then restart. If
-`[plugins.discord] provider_key` names a specific credential, that is the one to rotate; if it
+`plugins.discord.provider_key` names a specific credential, that is the one to rotate; if it
 is unset the bot uses the default provider credential, which is probably shared with your own
 sessions. **Prefer a dedicated key for the bot** so that rotating it after an incident does not
 also interrupt you.
@@ -74,7 +78,7 @@ also interrupt you.
 Know this before you need it, because "what did it have access to?" is the first question after
 any incident.
 
-- **Its kiln, and only its kiln.** `[plugins.discord] kiln` plus anything in `kilns`. Reads and
+- **Its kiln, and only its kiln.** `plugins.discord.kiln` plus anything in `kilns`. Reads and
   writes are bounded to those.
 - **Not the session directory.** Transcripts live in one flat root, `~/.crucible/sessions/`,
   which is a *denied* root for every session; only the session's own directory under it is
@@ -86,8 +90,8 @@ any incident.
   granted it explicitly through `tool_policy`.
 
 **Hard deployment invariant: the bot's daemon must host nothing else.** `ModeRegistry` is
-process-global and writable from any Lua in the process, and `session.set_mode` is an
-unauthenticated RPC — so anything that reaches that daemon's socket can relax the bot's stance,
+process-global and writable from the defaults file the runtimepath resolves, and
+`session.set_mode` is an unauthenticated RPC — so anything that reaches that daemon's socket can relax the bot's stance,
 or your own TUI's if they share a process. Give the bot its own `CRUCIBLE_SOCKET` and its own
 data root, and do not run `cru web` on the same host.
 

@@ -40,17 +40,22 @@ messages with an empty `content` and the bot silently answers nothing. Invite
 the bot to your server with the `bot` scope and the *Send Messages* and *Read
 Message History* permissions.
 
-**2. Configure Crucible.** In `~/.config/crucible/config.toml`:
+**2. Configure Crucible.** In `~/.config/crucible/init.lua`:
 
-```toml
-[plugins.discord]
-bot_token = "..."            # or leave unset and export DISCORD_BOT_TOKEN
-auto_connect = true
-kiln = "discord"             # required; a [kilns] entry NAME, not a path — see below
-provider = "anthropic"
-model = "claude-sonnet-4-5-20250929"
-allowed_users = ["123456789012345678"]    # your Discord user id
-allowed_guilds = ["987654321098765432"]   # servers the bot may answer in
+```lua
+cru.config.set({
+    plugins = {
+        discord = {
+            bot_token = "...",  -- or leave unset and export DISCORD_BOT_TOKEN
+            auto_connect = true,
+            kiln = "discord",  -- required; a [kilns] entry NAME, not a path — see below
+            provider = "anthropic",
+            model = "claude-sonnet-4-5-20250929",
+            allowed_users = { "123456789012345678" },  -- your Discord user id
+            allowed_guilds = { "987654321098765432" },  -- servers the bot may answer in
+        },
+    },
+})
 ```
 
 **3. Restart the daemon.**
@@ -89,8 +94,9 @@ unconditionally, above the `respond_to` check, so no configuration value could
 close it and anyone who could DM the bot could spend the operator's API key.
 Fail-closed is the only defensible default for a surface a stranger can reach.
 
-Ids arrive from the Gateway as strings but are routinely written unquoted in
-TOML, so both sides are compared as strings — `["123"]` and `[123]` both match.
+Ids arrive from the Gateway as strings, and a config easily writes them as
+numbers, so both sides are compared as strings — `{ "123" }` and `{ 123 }`
+both match.
 
 Once a guild is allowed, `respond_to` decides *which* messages within it.
 `respond_to` does not apply to DMs: a listed user's DM is always answered.
@@ -105,15 +111,20 @@ The allowlists decide **who gets an answer**. `access` decides **what that
 answer may do**, so one bot instance can read for a server and read *and* write
 for you.
 
-```toml
-[plugins.discord]
-approvers = ["123456789012345678"]    # who answers an `ask` prompt
-
-[plugins.discord.access]
-"user:123456789012345678" = "write"   # your own DMs
-"role:135792468013579246" = "ask"     # moderators may write, once approved
-"guild:987654321098765432" = "read"   # a server that may look, not touch
-default = "read"
+```lua
+cru.config.set({
+    plugins = {
+        discord = {
+            approvers = { "123456789012345678" },  -- who answers an `ask` prompt
+            access = {
+                ["user:123456789012345678"] = "write",  -- your own DMs
+                ["role:135792468013579246"] = "ask",  -- moderators may write, once approved
+                ["guild:987654321098765432"] = "read",  -- a server that may look, not touch
+                default = "read",
+            },
+        },
+    },
+})
 ```
 
 - **`read`** (the default, and what you get with no `access` block) — the agent
@@ -161,9 +172,14 @@ replaces the tier for every session.
 and **only their reply resolves it** — so the request itself may come from
 anywhere, because the room it came from never sees the prompt:
 
-```toml
-[plugins.discord]
-approvers = ["123456789012345678"]
+```lua
+cru.config.set({
+    plugins = {
+        discord = {
+            approvers = { "123456789012345678" },
+        },
+    },
+})
 ```
 
 The prompt names the requester and the room they asked from, because the
@@ -202,7 +218,7 @@ wherever you asked from.
 
 ## Every option
 
-All keys live under `[plugins.discord]`.
+All keys live under `plugins.discord`.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -218,8 +234,8 @@ All keys live under `[plugins.discord]`.
 | `respond_to` | `"mentions"` | Within an allowed guild: `mentions`, `prefix`, `both`, or `all`. |
 | `command_prefix` | `""` | Text prefix for `respond_to = "prefix"`/`"both"`, e.g. `"!"`. Empty disables prefix matching. |
 | `quota_turns_per_day` | `50` | Agent turns each user may spend per UTC day. |
-| `kiln` | — | **Required.** Name of the `[kilns]` entry every Discord session writes to — a name, not a path. |
-| `kilns` | `[]` | Names of additional `[kilns]` entries the session may *read*. See [Citations](#citations-and-the-precognition-prerequisite). |
+| `kiln` | — | **Required.** Name of the `kilns` entry every Discord session writes to — a name, not a path. |
+| `kilns` | `[]` | Names of additional `kilns` entries the session may *read*. See [Citations](#citations-and-the-precognition-prerequisite). |
 | `provider` | — | **Required.** LLM provider for Discord sessions. |
 | `model` | — | **Required.** Model id. |
 | `agent_type` | `"internal"` | Agent implementation: `internal` or `acp`. Leave it alone unless you have a reason. |
@@ -246,7 +262,7 @@ be set anyway.
 
 ### `kiln` is a name, and it is required
 
-`kiln` is the **key of a `[kilns]` entry**, not a directory. The plugin passes
+`kiln` is the **key of a `kilns` entry**, not a directory. The plugin passes
 it straight to `cru.session.create`, which takes names; a path is not a name,
 resolves to nothing, and produces a session with no kiln at all.
 
@@ -299,21 +315,25 @@ read back when the plugin loads, so a conversation in a DM continues across a
 written: they are gone in fifteen minutes anyway, and remembering them would
 mean a file write on every channel message.
 
-**The name must be a `[kilns]` entry.** `[plugins.discord] kiln` names a kiln;
+**The name must be a `kilns` entry.** `plugins.discord.kiln` names a kiln;
 it does not create one. A name no entry claims resolves to nothing, so the
 session reaches no kiln and the plugin's writes go nowhere useful:
 
-```toml
-# ~/.config/crucible/config.toml
-
-[kilns]
-discord = "/home/you/kiln"
-
-[plugins.discord]
-kiln = "discord"
+```lua
+-- ~/.config/crucible/init.lua
+cru.config.set({
+    kilns = {
+        discord = "/home/you/kiln",
+    },
+    plugins = {
+        discord = {
+            kiln = "discord",
+        },
+    },
+})
 ```
 
-Running `cru init` inside the kiln directory writes the `[kilns]` entry for you.
+Running `cru init` inside the kiln directory writes the `kilns` entry for you.
 
 Without it the id is remembered and the revival fails, which costs one message:
 a new session is created and the conversation starts fresh.
@@ -352,7 +372,7 @@ with the rest of the default; re-add it if you want citations.
 > there is no enrichment config**
 > (`crates/crucible-daemon/src/agent_manager/precognition/mod.rs`). So:
 >
-> 1. Configure `[enrichment.provider]` — see [[Help/Config/embedding]].
+> 1. Configure `enrichment.provider` — see [[Help/Config/embedding]].
 > 2. Index every kiln the session touches, both `kiln` and each entry in
 >    `kilns`, with that same model: `cru process <path>`.
 > 3. Ask a question whose answer is in an indexed note, as the **first**
@@ -414,17 +434,22 @@ If you are running the bot where other people can reach it, read
 ways to stop the bot and which one fits, how to rotate both of its secrets, and
 what it can actually reach.
 
-Add `enabled = false` **to the `[plugins.discord]` section you already have**
-in `~/.config/crucible/config.toml`, leaving the rest of it in place:
+Add `enabled = false` **to the `plugins.discord` section you already have**
+in `~/.config/crucible/init.lua`, leaving the rest of it in place:
 
-```toml
-[plugins.discord]
-enabled = false              # <- the only line you add
-bot_token = "..."
-auto_connect = true
-kiln = "/home/you/kiln"
-provider = "anthropic"
-model = "claude-sonnet-4-5-20250929"
+```lua
+cru.config.set({
+    plugins = {
+        discord = {
+            enabled = false,  -- <- the only line you add
+            bot_token = "...",
+            auto_connect = true,
+            kiln = "/home/you/kiln",
+            provider = "anthropic",
+            model = "claude-sonnet-4-5-20250929",
+        },
+    },
+})
 ```
 
 Then:
@@ -438,16 +463,14 @@ runs, no service spawns, and no socket opens. `plugin.reload` and the file
 watcher cannot bring it back — reload bails for a disabled plugin, and the
 bail also aborts any service task still running from before the disable.
 
-> [!danger] Add the key to the section you already have
-> Do **not** append a second `[plugins.discord]` header. A working install
-> already has one, and a duplicate TOML table is a parse error that takes the
-> *whole* config file down — the daemon then starts with no plugin config at
-> all, which looks like a successful kill switch and is not. If your config
-> genuinely has no `[plugins.discord]` section, the plugin was already inert.
+> [!tip] Add the key beside the settings you already have
+> A second `cru.config.set` call writes only the key it names, so the line
+> above leaves the token and the allowlists in place. A write never removes a
+> key; `config.unset` is the verb that does.
 
-Editing `enabled:` in the plugin's own `plugin.yaml` does **not** work durably:
-the bundled runtime tree is re-extracted whenever the binary's version or tree
-hash changes, reverting your edit. Config is the only durable lever.
+Editing the plugin inside the extracted runtime tree does **not** work durably:
+the tree is re-extracted whenever the binary's version or tree hash changes,
+reverting your edit. Config is the only durable lever.
 
 ## What is retained
 
@@ -482,10 +505,15 @@ the demonstration cannot be fitted to the outcome.
 bails without one, and its `min_turns` default of 3 will skip the short
 exchange Discord's own prompt asks for. Both are required:
 
-```toml
-[plugins.reflection]
-model = "claude-haiku-4-5-20251001"   # required — no default; without it reflection skips
-min_turns = 1                          # required — the default of 3 skips a Discord-length chat
+```lua
+cru.config.set({
+    plugins = {
+        reflection = {
+            model = "claude-haiku-4-5-20251001",  -- required — no default; without it reflection skips
+            min_turns = 1,  -- required — the default of 3 skips a Discord-length chat
+        },
+    },
+})
 ```
 
 `min_turns = 1` needs no recursion guard from you. The reflection subagent's

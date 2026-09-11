@@ -9,7 +9,7 @@
 
 use crucible_core::background::JobStatus;
 use crucible_core::config::{BackendType, DelegationConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::agent_manager::AgentFactoryOverride;
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
@@ -51,10 +51,7 @@ fn parent_agent(delegation: Option<DelegationConfig>) -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -62,15 +59,8 @@ fn parent_agent(delegation: Option<DelegationConfig>) -> SessionAgent {
         agent_description: None,
         delegation_config: delegation,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }
@@ -170,11 +160,6 @@ async fn load_test_plugin(temp: &Path, init: &str) -> DaemonPluginLoader {
     let root = temp.join("plugins");
     let dir = root.join("sandbox");
     std::fs::create_dir_all(&dir).expect("plugin dir");
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
-    )
-    .expect("plugin.yaml");
     std::fs::write(dir.join("init.lua"), init).expect("init.lua");
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
@@ -918,7 +903,7 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("researcher.md"),
-        "---\ndescription: Explores knowledge\nmodel: llama3.2-card\nmax_turns: 4\ntools:\n  bash: deny\n  semantic_search: true\n---\n\nYou are the researcher card prompt.\n",
+        "---\ndescription: Explores knowledge\nmodel: llama3.2-card\ntools:\n  bash: deny\n  semantic_search: true\n---\n\nYou are the researcher card prompt.\n",
     )
     .unwrap();
 
@@ -946,7 +931,6 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     assert_eq!(agent.agent_type, "internal");
     assert_eq!(agent.agent_card_name.as_deref(), Some("researcher"));
     assert_eq!(agent.model, "llama3.2-card");
-    assert_eq!(agent.max_iterations, Some(4));
     assert!(agent.system_prompt.contains("researcher card prompt"));
     let policy = agent.tool_policy.expect("card tool policy carried");
     assert_eq!(policy["bash"], crucible_core::agent::ToolPolicy::Deny);

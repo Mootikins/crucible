@@ -21,12 +21,17 @@ lifecycle hooks, with no container-specific Rust.
 
 ## Enabling it
 
-Isolation is off until an image is configured. Add a `[plugins.oci]` section to
-`config.toml`:
+Isolation is off until an image is configured. Add a `plugins.oci` section to
+`init.lua`:
 
-```toml
-[plugins.oci]
-image = "docker.io/library/alpine:latest"
+```lua
+cru.config.set({
+    plugins = {
+        oci = {
+            image = "docker.io/library/alpine:latest",
+        },
+    },
+})
 ```
 
 On session start the plugin creates a container named `crucible-<session id>`
@@ -69,10 +74,15 @@ the `glob` and `grep` search roots all read. Mounting at one path while working
 in another would put every relative tool call in an empty directory, so they
 cannot be set apart.
 
-```toml
-[plugins.oci]
-image = "docker.io/library/rust:1-bookworm"
-workspace_folder = "/workspaces/crucible"
+```lua
+cru.config.set({
+    plugins = {
+        oci = {
+            image = "docker.io/library/rust:1-bookworm",
+            workspace_folder = "/workspaces/crucible",
+        },
+    },
+})
 ```
 
 It exists because devcontainers name their own — `workspaceFolder`, typically
@@ -86,22 +96,29 @@ than joined: the mount cannot be moved without recreating the container.
 ## Profiles
 
 A bare `image` is the default profile. Named alternatives go under
-`[plugins.oci.profiles]` and take the same keys. `runtime`, `exempt`,
+`plugins.oci.profiles` and take the same keys. `runtime`, `exempt`,
 `workspace_folder` and the two timeouts fall back to the top-level values when a
 profile omits them, because they describe the box, the session's policy and the
 layout you work in rather than the image itself.
 
-```toml
-[plugins.oci]
-image = "docker.io/library/alpine:latest"
-runtime = "podman"
-
-[plugins.oci.profiles.rust]
-image = "docker.io/library/rust:1-bookworm"
-
-[plugins.oci.profiles.throwaway]
-image = "docker.io/library/debian:trixie"
-mounts = ["/var/cache/apt:/var/cache/apt:ro"]
+```lua
+cru.config.set({
+    plugins = {
+        oci = {
+            image = "docker.io/library/alpine:latest",
+            runtime = "podman",
+            profiles = {
+                rust = {
+                    image = "docker.io/library/rust:1-bookworm",
+                },
+                throwaway = {
+                    image = "docker.io/library/debian:trixie",
+                    mounts = { "/var/cache/apt:/var/cache/apt:ro" },
+                },
+            },
+        },
+    },
+})
 ```
 
 Existing configs keep working: with no `profiles` table the bare `image` is
@@ -112,15 +129,20 @@ outranks both.
 
 If the project has a `.devcontainer/devcontainer.json` (or a top-level
 `.devcontainer.json`), that file — not the profile — describes the environment.
-It is read **only once something has asked for isolation**: a `[plugins.oci]`
+It is read **only once something has asked for isolation**: a `plugins.oci`
 section with an `image` or `profiles`, `devcontainer = true`, or a session
 passing `isolation`. A repo that merely *contains* a devcontainer is not
 containerized by that fact alone, so checking one out does not change how your
 sessions run.
 
-```toml
-[plugins.oci]
-devcontainer = true    # the project's environment is its devcontainer, full stop
+```lua
+cru.config.set({
+    plugins = {
+        oci = {
+            devcontainer = true,  -- the project's environment is its devcontainer, full stop
+        },
+    },
+})
 ```
 
 Honoured natively: `image`, `build.dockerfile`, `build.context`, `build.args`,
@@ -199,9 +221,14 @@ build — which decides what the sandbox *contains*, but not whether it is one.
 Allow them with operator config, which lives outside the workspace where the
 agent cannot write it:
 
-```toml
-[plugins.oci]
-devcontainer_host_access = true
+```lua
+cru.config.set({
+    plugins = {
+        oci = {
+            devcontainer_host_access = true,
+        },
+    },
+})
 ```
 
 Note the limit: this is one flag for every project, not per project. Turning it
@@ -328,10 +355,15 @@ and a filesystem MCP server is host-touching in every way that matters.
 `exempt` is the escape hatch, and only for `Host` and `Unknown` — a `Daemon`
 tool never needs to appear there:
 
-```toml
-[plugins.oci]
-image = "docker.io/library/alpine:latest"
-exempt = ["grep"]   # runs on the host, outside the container
+```lua
+cru.config.set({
+    plugins = {
+        oci = {
+            image = "docker.io/library/alpine:latest",
+            exempt = { "grep" },  -- runs on the host, outside the container
+        },
+    },
+})
 ```
 
 ## One container per workspace
@@ -423,7 +455,7 @@ left to intercept. The prefix is argv, not a shell string, so the agent's own
 arguments are never re-split.
 
 The prefix comes in two halves because the agent's configured environment —
-`env_overrides` on the session plus `[acp.agents.*] env` — has to go *inside*
+`env_overrides` on the session plus `acp.agents.*.env` — has to go *inside*
 the container. Setting it on the process the daemon spawns would set it on
 podman, and the container boundary drops it there, so an agent configured with
 an API key would start without one. The daemon inserts `<exec_env_flag>

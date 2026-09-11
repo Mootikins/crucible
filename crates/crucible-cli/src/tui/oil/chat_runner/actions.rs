@@ -1,12 +1,137 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::commands::DropKind;
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use std::io;
 use tokio::sync::mpsc;
 
 use super::{DrainMessagesOutcome, OilChatRunner, ProcessActionParams};
+
+/// Write one app-config key through the daemon, and report what the store
+/// holds afterwards.
+///
+/// The read-back is the point. `config.set` can drop a key — the store
+/// withholds the keys that name where the daemon acts — so echoing the value
+/// that was sent would let the TUI claim a setting the daemon never took.
+/// The daemon's value is the only value, here and in the transcript.
+async fn write_app_config_key(
+    key: &str,
+    value: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = crucible_daemon::DaemonClient::connect()
+        .await
+        .map_err(|e| format!("daemon connect failed: {e}"))?;
+
+    let written = client
+        .call(
+            "config.set",
+            serde_json::json!({ "values": { key: value } }),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let refused = written
+        .get("rejected")
+        .and_then(|r| r.as_array())
+        .is_some_and(|keys| keys.iter().any(|k| k.as_str() == Some(key)));
+    if refused {
+        return Err(format!(
+            "'{key}' names where the daemon acts; change it in the config file"
+        ));
+    }
+
+    let read_back = client
+        .call("config.get", serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+    match read_back.get("value") {
+        Some(serde_json::Value::Null) | None => {
+            Err(format!("the daemon config store did not keep '{key}'"))
+        }
+        Some(value) => Ok(value.clone()),
+    }
+}
+
+/// Read one app-config key back out of the daemon store, with its provenance
+/// when the caller asked for the history spelling.
+///
+/// The daemon is the only reader here on purpose: `:set key?` used to answer
+/// from a TUI overlay that never held app config, so every key `init.lua`
+/// wrote read back as "not set".
+async fn read_app_config_key(
+    key: &str,
+    history: bool,
+) -> Result<(serde_json::Value, Option<serde_json::Value>), String> {
+    let client = crucible_daemon::DaemonClient::connect()
+        .await
+        .map_err(|e| format!("daemon connect failed: {e}"))?;
+
+    // Same lookup as the write's read-back, so `:set k=v` and `:set k?`
+    // cannot disagree about which key they named.
+    let read = client
+        .call("config.get", serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+    let value = read
+        .get("value")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    if !history {
+        return Ok((value, None));
+    }
+    let origin = client
+        .call("config.origin", serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((value, Some(origin)))
+}
+
+/// Drop config layers for one app-config key through the daemon, and report
+/// what the store then holds.
+///
+/// [`DropKind`] picks the verb: `config.reset` drops the ephemeral layer a
+/// `:set` writes, `config.pop` drops the highest layer holding the leaf, and
+/// `config.unset` removes the key. The daemon's row is the whole answer — the
+/// value, its origin, and the layers that went — because the TUI keeps no
+/// copy of app config to update.
+async fn drop_app_config_key(
+    key: &str,
+    kind: DropKind,
+) -> Result<(Vec<String>, serde_json::Value, serde_json::Value), String> {
+    let client = crucible_daemon::DaemonClient::connect()
+        .await
+        .map_err(|e| format!("daemon connect failed: {e}"))?;
+
+    let method = kind.method();
+    let row = client
+        .call(method, serde_json::json!({ "key": key }))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // The store withholds the keys that name where the daemon acts from every
+    // write door, and a drop is a write door. Reporting it as "nothing to
+    // drop" would read as a key with no layers rather than a key this socket
+    // may not touch.
+    if row.get("outcome").and_then(|o| o.as_str()) == Some("withheld") {
+        return Err(format!(
+            "'{key}' names where the daemon acts; change it in the config file"
+        ));
+    }
+    let dropped = row
+        .get("dropped")
+        .and_then(|d| d.as_array())
+        .map(|sources| {
+            sources
+                .iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let value = row.get("value").cloned().unwrap_or(serde_json::Value::Null);
+    Ok((dropped, value, row))
+}
 
 impl OilChatRunner {
     /// Spawn the daemon RPC behind `FetchModels` as a background task.
@@ -272,57 +397,6 @@ impl OilChatRunner {
                     ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
                     }
-                    ChatAppMsg::SetThinkingBudget(budget) => {
-                        tracing::info!(budget = budget, "Setting thinking budget");
-                        match params.agent.set_thinking_budget(*budget).await {
-                            Ok(()) => {
-                                tracing::info!(budget = budget, "Thinking budget set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(budget = budget, error = %e, "set_thinking_budget failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set thinking_budget failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetMaxIterations(max_iterations) => {
-                        tracing::info!(max_iterations = ?max_iterations, "Setting max_iterations");
-                        match params.agent.set_max_iterations(*max_iterations).await {
-                            Ok(()) => {
-                                tracing::info!(max_iterations = ?max_iterations, "Max iterations set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(max_iterations = ?max_iterations, error = %e, "set_max_iterations failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set max_iterations failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetExecutionTimeout(timeout_secs) => {
-                        tracing::info!(timeout_secs = ?timeout_secs, "Setting execution_timeout");
-                        match params.agent.set_execution_timeout(*timeout_secs).await {
-                            Ok(()) => {
-                                tracing::info!(timeout_secs = ?timeout_secs, "Execution timeout set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(timeout_secs = ?timeout_secs, error = %e, "set_execution_timeout failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set execution_timeout failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetContextBudget(budget) => {
                         tracing::info!(context_budget = ?budget, "Setting context_budget");
                         match params.agent.set_context_budget(*budget).await {
@@ -370,73 +444,6 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::SetContextWindow(window) => {
-                        tracing::info!(context_window = ?window, "Setting context_window");
-                        match params.agent.set_context_window(*window).await {
-                            Ok(()) => {
-                                tracing::info!(context_window = ?window, "Context window set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(context_window = ?window, error = %e, "set_context_window failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set context_window failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetOutputValidation(ref validation_str) => {
-                        tracing::info!(output_validation = %validation_str, "Setting output_validation");
-                        match validation_str.parse::<crucible_core::session::OutputValidation>() {
-                            Ok(validation) => {
-                                match params.agent.set_output_validation(validation).await {
-                                    Ok(()) => {
-                                        tracing::info!(output_validation = %validation_str, "Output validation set successfully");
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(error = %e, "set_output_validation failed");
-                                        params.app.add_notification(
-                                            crucible_core::types::Notification::warning(format!(
-                                                "Set output_validation failed: {}",
-                                                e
-                                            )),
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "Invalid output validation");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Invalid output_validation: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetValidationRetries(retries) => {
-                        tracing::info!(validation_retries = retries, "Setting validation_retries");
-                        match params.agent.set_validation_retries(*retries).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    validation_retries = retries,
-                                    "Validation retries set successfully"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(validation_retries = retries, error = %e, "set_validation_retries failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set validation_retries failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetPrecognition(enabled) => {
                         tracing::info!(precognition = enabled, "Setting precognition");
                         match params.agent.set_precognition(*enabled).await {
@@ -456,44 +463,6 @@ impl OilChatRunner {
                                 params.app.add_notification(
                                     crucible_core::types::Notification::warning(format!(
                                         "Set precognition failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetPrecognitionResults(count) => {
-                        tracing::info!(
-                            precognition_results = count,
-                            "Setting precognition_results"
-                        );
-                        match params.agent.set_precognition_results(*count).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    precognition_results = count,
-                                    "Precognition results count set successfully"
-                                );
-                                params.app.set_precognition_results(*count);
-                            }
-                            Err(e) => {
-                                tracing::warn!(precognition_results = count, error = %e, "Precognition results not supported by this agent");
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetAutocompactThreshold(threshold) => {
-                        tracing::info!(autocompact_threshold = ?threshold, "Setting autocompact_threshold");
-                        match params.agent.set_autocompact_threshold(*threshold).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    autocompact_threshold = ?threshold,
-                                    "Autocompact threshold set successfully"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(autocompact_threshold = ?threshold, error = %e, "set_autocompact_threshold failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set autocompact_threshold failed: {}",
                                         e
                                     )),
                                 );
@@ -564,32 +533,71 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    // Gated on `!self.is_replay`: best-effort mirror of an
-                    // unknown `:set` key into the daemon app-config store so
-                    // Lua/plugins observe it. Failure is non-fatal (the local
-                    // store already has the value) — surfaced via statusline.
+                    // Gated on `!self.is_replay`: an app-config `:set` is a
+                    // write to the daemon store, and the store's own answer
+                    // is what comes back. Nothing here is best-effort: a
+                    // failure produces an error and no value at all, because
+                    // the TUI holds no second copy to fall back on.
                     ChatAppMsg::ConfigSet { ref key, ref value } if !self.is_replay => {
                         let key = key.clone();
                         let value = value.clone();
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
-                            let result = match crucible_daemon::DaemonClient::connect().await {
-                                Ok(client) => client
-                                    .call(
-                                        "config.set",
-                                        serde_json::json!({ "values": { key.clone(): value } }),
-                                    )
-                                    .await
-                                    .map(|_| ()),
-                                Err(e) => Err(e),
+                            let msg = match write_app_config_key(&key, value).await {
+                                Ok(value) => ChatAppMsg::ConfigSetResolved { key, value },
+                                Err(e) => {
+                                    tracing::warn!(key = %key, error = %e, "config.set failed");
+                                    ChatAppMsg::Error(format!("set {}: {}", key, e))
+                                }
                             };
-                            if let Err(e) = result {
-                                tracing::warn!(key = %key, error = %e, "config.set mirror failed");
-                                let _ = tx.send(ChatAppMsg::Status(format!(
-                                    "config sync failed for '{}'",
-                                    key
-                                )));
-                            }
+                            let _ = tx.send(msg);
+                        }));
+                    }
+                    // Gated on `!self.is_replay`: a `:set key?` on an
+                    // app-config key is a daemon read, and the daemon's
+                    // answer is the only answer — the TUI holds no copy of
+                    // app config to fall back on.
+                    ChatAppMsg::ConfigQuery { ref key, history } if !self.is_replay => {
+                        let key = key.clone();
+                        let history = *history;
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match read_app_config_key(&key, history).await {
+                                Ok((value, origin)) => {
+                                    ChatAppMsg::ConfigQueryResolved { key, value, origin }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(key = %key, error = %e, "config.get failed");
+                                    ChatAppMsg::Error(format!("set {}?: {}", key, e))
+                                }
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
+                    // Gated on `!self.is_replay`: a `:set key&` or `:set
+                    // key^` on an app-config key CHANGES the daemon store, so
+                    // replaying a transcript must not re-drop the layers.
+                    ChatAppMsg::ConfigDrop { ref key, kind } if !self.is_replay => {
+                        let key = key.clone();
+                        let kind = *kind;
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match drop_app_config_key(&key, kind).await {
+                                Ok((dropped, value, origin)) => ChatAppMsg::ConfigDropResolved {
+                                    key,
+                                    dropped,
+                                    value,
+                                    origin,
+                                },
+                                Err(e) => {
+                                    tracing::warn!(key = %key, ?kind, error = %e, "a config drop failed");
+                                    ChatAppMsg::Error(format!(
+                                        "set {key}{}: {e}",
+                                        kind.spelling()
+                                    ))
+                                }
+                            };
+                            let _ = tx.send(msg);
                         }));
                     }
                     // Gated on `!self.is_replay`: opens a fresh
@@ -825,6 +833,8 @@ impl OilChatRunner {
                     ChatAppMsg::ReloadPlugin(_)
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
+                    | ChatAppMsg::ConfigQuery { .. }
+                    | ChatAppMsg::ConfigDrop { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::RunPluginCommand { .. }
                     | ChatAppMsg::ExportSession(_)

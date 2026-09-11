@@ -17,11 +17,6 @@ pub(super) struct MockDaemonApi {
     /// Whole params object from the most recent `create_session`, so tests can
     /// assert what the Lua binding put on the wire (aliases, implied flags).
     last_create_params: StdMutex<Option<serde_json::Value>>,
-    /// Captures the most recent `set_output_validation` spec so tests
-    /// can assert what string the Lua binding serialised. Wrapped in a
-    /// `StdMutex` because `DaemonSessionApi` takes `&self` and tests
-    /// inspect the field across the async call.
-    last_validation_spec: StdMutex<Option<(String, String)>>,
     /// Most recent `undo(session_id, count)` call.
     last_undo_call: StdMutex<Option<(String, usize)>>,
     /// Number of turns the next `undo` call should report. Defaults to
@@ -52,7 +47,6 @@ impl MockDaemonApi {
     pub(super) fn new() -> Self {
         Self {
             last_create_params: StdMutex::new(None),
-            last_validation_spec: StdMutex::new(None),
             last_undo_call: StdMutex::new(None),
             undo_turns_to_return: StdMutex::new(None),
             can_undo_value: StdMutex::new(true),
@@ -99,12 +93,6 @@ impl MockDaemonApi {
     /// Params object from the most recent `create_session`, or `None`.
     pub(super) fn last_create_params(&self) -> Option<serde_json::Value> {
         self.last_create_params.lock().unwrap().clone()
-    }
-
-    /// Snapshot of `(session_id, spec)` from the most recent
-    /// `set_output_validation` call, or `None` if not yet invoked.
-    pub(super) fn last_validation_spec(&self) -> Option<(String, String)> {
-        self.last_validation_spec.lock().unwrap().clone()
     }
 
     /// Snapshot of the most recent `undo` call, or `None` if not invoked.
@@ -452,15 +440,6 @@ impl DaemonSessionApi for MockDaemonApi {
                 "hit_rate": serde_json::Value::Null,
             }))
         })
-    }
-
-    fn set_output_validation(
-        &self,
-        session_id: String,
-        spec: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        *self.last_validation_spec.lock().unwrap() = Some((session_id, spec));
-        Box::pin(async { Ok(()) })
     }
 
     fn undo(

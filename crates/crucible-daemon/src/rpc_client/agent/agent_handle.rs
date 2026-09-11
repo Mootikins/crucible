@@ -112,18 +112,6 @@ impl AgentHandle for DaemonAgentHandle {
             if let Some(model) = &self.cached_model {
                 config.model = model.clone();
             }
-            if let Some(temp) = self.cached_temperature {
-                config.temperature = Some(temp);
-            }
-            if let Some(max) = self.cached_max_tokens {
-                config.max_tokens = Some(max);
-            }
-            config.thinking_budget = self.cached_thinking_budget;
-            config.max_iterations = self.cached_max_iterations;
-            config.execution_timeout_secs = self.cached_execution_timeout;
-            if let Some(count) = self.cached_precognition_results {
-                config.precognition_results = count;
-            }
             if let Some(enabled) = self.cached_precognition {
                 config.precognition_enabled = enabled;
             }
@@ -180,6 +168,12 @@ impl AgentHandle for DaemonAgentHandle {
 
 #[async_trait]
 impl SessionKnobs for DaemonAgentHandle {
+    /// A proxy handle was not built with a prompt; the daemon's own handle
+    /// holds it. There is no RPC to read it back, and nothing needs one.
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, model = %model_id, "Switching model via daemon");
         self.client
@@ -212,92 +206,6 @@ impl SessionKnobs for DaemonAgentHandle {
                 Vec::new()
             }
         }
-    }
-
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, budget = budget, "Setting thinking budget via daemon");
-        self.client
-            .session_set_thinking_budget(&self.session_id, Some(budget))
-            .await
-            .map_err(|e| {
-                ChatError::Communication(format!("Failed to set thinking budget: {}", e))
-            })?;
-        self.cached_thinking_budget = Some(budget);
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.cached_thinking_budget
-    }
-
-    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
-        tracing::debug!(session_id = %self.session_id, "Setting system prompt via daemon");
-        self.client
-            .session_set_system_prompt(&self.session_id, prompt)
-            .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set system prompt: {}", e)))?;
-        self.cached_system_prompt = Some(prompt.to_string());
-        Ok(())
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        self.cached_system_prompt.clone()
-    }
-
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, temperature = temperature, "Setting temperature via daemon");
-        self.client
-            .session_set_temperature(&self.session_id, temperature)
-            .await
-            .chat_comm()?;
-        self.cached_temperature = Some(temperature);
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.cached_temperature
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, max_tokens = ?max_tokens, "Setting max_tokens via daemon");
-        self.client
-            .session_set_max_tokens(&self.session_id, max_tokens)
-            .await
-            .chat_comm()?;
-        self.cached_max_tokens = max_tokens;
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.cached_max_tokens
-    }
-
-    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, max_iterations = ?max_iterations, "Setting max_iterations via daemon");
-        self.client
-            .session_set_max_iterations(&self.session_id, max_iterations)
-            .await
-            .chat_comm()?;
-        self.cached_max_iterations = max_iterations;
-        Ok(())
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        self.cached_max_iterations
-    }
-
-    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, timeout_secs = ?timeout_secs, "Setting execution_timeout via daemon");
-        self.client
-            .session_set_execution_timeout(&self.session_id, timeout_secs)
-            .await
-            .chat_comm()?;
-        self.cached_execution_timeout = timeout_secs;
-        Ok(())
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        self.cached_execution_timeout
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
@@ -335,82 +243,6 @@ impl SessionKnobs for DaemonAgentHandle {
             .unwrap_or_default()
     }
 
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, context_window = ?window, "Setting context_window via daemon");
-        self.client
-            .session_set_context_window(&self.session_id, window)
-            .await
-            .chat_comm()?;
-        self.cached_context_window = window;
-        Ok(())
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        self.cached_context_window
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        let validation_str = validation.to_string();
-        tracing::info!(session_id = %self.session_id, output_validation = %validation_str, "Setting output_validation via daemon");
-        self.client
-            .session_set_output_validation(&self.session_id, &validation_str)
-            .await
-            .chat_comm()?;
-        self.cached_output_validation = Some(validation_str);
-        Ok(())
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        // We can't return a reference to a parsed value from cached string,
-        // so use a static for the default and parse-match for known variants
-        static NONE: crucible_core::session::OutputValidation =
-            crucible_core::session::OutputValidation::None;
-        static JSON: crucible_core::session::OutputValidation =
-            crucible_core::session::OutputValidation::Json;
-        match self.cached_output_validation.as_deref() {
-            Some("json") => &JSON,
-            Some("none") | None => &NONE,
-            // For regex variants we can't return a reference to a local.
-            // Fall back to None; the daemon holds the authoritative value.
-            Some(_) => &NONE,
-        }
-    }
-
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, validation_retries = retries, "Setting validation_retries via daemon");
-        self.client
-            .session_set_validation_retries(&self.session_id, retries)
-            .await
-            .chat_comm()?;
-        self.cached_validation_retries = Some(retries);
-        Ok(())
-    }
-
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
-        tracing::info!(
-            session_id = %self.session_id,
-            autocompact_threshold = ?threshold,
-            "Setting autocompact_threshold via daemon"
-        );
-        self.client
-            .session_set_autocompact_threshold(&self.session_id, threshold)
-            .await
-            .chat_comm()?;
-        self.cached_autocompact_threshold = threshold;
-        Ok(())
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        self.cached_autocompact_threshold
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        self.cached_validation_retries.unwrap_or(3)
-    }
-
     async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, precognition = enabled, "Setting precognition via daemon");
         self.client
@@ -423,19 +255,5 @@ impl SessionKnobs for DaemonAgentHandle {
 
     fn get_precognition(&self) -> bool {
         self.cached_precognition.unwrap_or(true)
-    }
-
-    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, precognition_results = count, "Setting precognition_results via daemon");
-        self.client
-            .session_set_precognition_results(&self.session_id, count)
-            .await
-            .chat_comm()?;
-        self.cached_precognition_results = Some(count);
-        Ok(())
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        self.cached_precognition_results.unwrap_or(5)
     }
 }

@@ -7,7 +7,7 @@ use super::server::TestServer;
 
 #[tokio::test]
 async fn test_session_switch_model() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -42,10 +42,7 @@ async fn test_session_switch_model() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -53,15 +50,8 @@ async fn test_session_switch_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -92,7 +82,7 @@ async fn test_session_switch_model() {
 
 #[tokio::test]
 async fn test_daemon_agent_handle_switch_model() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
     use crucible_core::traits::chat::SessionKnobs;
     use crucible_daemon::DaemonAgentHandle;
 
@@ -130,10 +120,7 @@ async fn test_daemon_agent_handle_switch_model() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -141,15 +128,8 @@ async fn test_daemon_agent_handle_switch_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -192,7 +172,7 @@ async fn test_daemon_agent_handle_switch_model() {
 /// both ride this RPC.
 #[tokio::test]
 async fn test_session_set_mode_round_trip() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -223,10 +203,7 @@ async fn test_session_set_mode_round_trip() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -234,15 +211,8 @@ async fn test_session_set_mode_round_trip() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     };
     client
@@ -297,7 +267,7 @@ async fn test_session_set_mode_round_trip() {
 /// mode cosmetic for every daemon-backed session).
 #[tokio::test]
 async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
-    use crucible_core::session::{OutputValidation, SessionAgent};
+    use crucible_core::session::SessionAgent;
     use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::DaemonAgentHandle;
 
@@ -331,10 +301,7 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -342,15 +309,8 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     };
     client

@@ -12,26 +12,12 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 // initialization" at import time, not at assert time.
 const mockSetters = vi.hoisted(() => ({
   setContextBudget: vi.fn(),
-  setContextWindow: vi.fn(),
-  setAutocompactThreshold: vi.fn(),
-  setMaxIterations: vi.fn(),
-  setExecutionTimeout: vi.fn(),
-  setValidationRetries: vi.fn(),
   setContextStrategy: vi.fn(),
-  setOutputValidation: vi.fn(),
-  setSystemPrompt: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({
   getContextBudget: vi.fn().mockResolvedValue(111),
-  getContextWindow: vi.fn().mockResolvedValue(222),
-  getAutocompactThreshold: vi.fn().mockResolvedValue(0.75),
-  getMaxIterations: vi.fn().mockResolvedValue(33),
-  getExecutionTimeout: vi.fn().mockResolvedValue(44),
-  getValidationRetries: vi.fn().mockResolvedValue(5),
   getContextStrategy: vi.fn().mockResolvedValue('recent'),
-  getOutputValidation: vi.fn().mockResolvedValue('strict'),
-  getSystemPrompt: vi.fn().mockResolvedValue('be terse'),
   ...mockSetters,
 }));
 
@@ -65,21 +51,8 @@ describe('AdvancedSessionSettings', () => {
     await waitFor(() =>
       expect((screen.getByTestId('context-budget-input') as HTMLInputElement).value).toBe('111'),
     );
-    expect((screen.getByTestId('context-window-input') as HTMLInputElement).value).toBe('222');
-    expect((screen.getByTestId('autocompact-threshold-input') as HTMLInputElement).value).toBe(
-      '0.75',
-    );
-    expect((screen.getByTestId('max-iterations-input') as HTMLInputElement).value).toBe('33');
-    expect((screen.getByTestId('execution-timeout-input') as HTMLInputElement).value).toBe('44');
-    expect((screen.getByTestId('validation-retries-input') as HTMLInputElement).value).toBe('5');
     expect((screen.getByTestId('context-strategy-select') as HTMLSelectElement).value).toBe(
       'recent',
-    );
-    expect((screen.getByTestId('output-validation-select') as HTMLSelectElement).value).toBe(
-      'strict',
-    );
-    expect((screen.getByTestId('system-prompt-input') as HTMLTextAreaElement).value).toBe(
-      'be terse',
     );
   });
 
@@ -89,10 +62,6 @@ describe('AdvancedSessionSettings', () => {
 
     const cases: [string, keyof typeof mockSetters, string, number][] = [
       ['context-budget-input', 'setContextBudget', '8000', 8000],
-      ['context-window-input', 'setContextWindow', '32000', 32000],
-      ['max-iterations-input', 'setMaxIterations', '12', 12],
-      ['execution-timeout-input', 'setExecutionTimeout', '300', 300],
-      ['validation-retries-input', 'setValidationRetries', '3', 3],
     ];
 
     for (const [testId, setter, typed, expected] of cases) {
@@ -116,18 +85,7 @@ describe('AdvancedSessionSettings', () => {
     await waitFor(() => expect(mockSetters.setContextBudget).toHaveBeenCalledWith('s1', null));
   });
 
-  it('leaves an empty validation-retries alone, because the knob is not nullable', async () => {
-    renderSection();
-    await waitFor(() => screen.getByTestId('validation-retries-input'));
-
-    const input = screen.getByTestId('validation-retries-input');
-    fireEvent.input(input, { target: { value: '' } });
-    fireEvent.blur(input);
-
-    expect(mockSetters.setValidationRetries).not.toHaveBeenCalled();
-  });
-
-  it('sends the enum knobs by their string spelling', async () => {
+  it('sends the enum knob by its string spelling', async () => {
     renderSection();
     await waitFor(() => screen.getByTestId('context-strategy-select'));
 
@@ -136,13 +94,6 @@ describe('AdvancedSessionSettings', () => {
     });
     await waitFor(() =>
       expect(mockSetters.setContextStrategy).toHaveBeenCalledWith('s1', 'truncate'),
-    );
-
-    fireEvent.change(screen.getByTestId('output-validation-select'), {
-      target: { value: 'lenient' },
-    });
-    await waitFor(() =>
-      expect(mockSetters.setOutputValidation).toHaveBeenCalledWith('s1', 'lenient'),
     );
   });
 
@@ -160,25 +111,5 @@ describe('AdvancedSessionSettings', () => {
         'some-future-strategy',
       ),
     );
-  });
-
-  it('debounces the system prompt instead of firing a PUT per keystroke', async () => {
-    vi.useFakeTimers();
-    try {
-      renderSection();
-      await vi.waitFor(() => screen.getByTestId('system-prompt-input'));
-
-      const box = screen.getByTestId('system-prompt-input');
-      for (const text of ['a', 'ab', 'abc']) {
-        fireEvent.input(box, { target: { value: text } });
-      }
-      expect(mockSetters.setSystemPrompt).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(500);
-      expect(mockSetters.setSystemPrompt).toHaveBeenCalledTimes(1);
-      expect(mockSetters.setSystemPrompt).toHaveBeenCalledWith('s1', 'abc');
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

@@ -366,12 +366,11 @@ async fn test_client_capabilities() {
     assert!(caps.capabilities.sessions);
     assert!(caps.capabilities.agents);
     assert!(caps.capabilities.events);
-    assert!(caps.capabilities.thinking_budget);
     assert!(caps.capabilities.model_switching);
     assert!(caps.methods.contains(&"ping".to_string()));
     assert!(caps
         .methods
-        .contains(&"session.set_thinking_budget".to_string()));
+        .contains(&"session.set_context_budget".to_string()));
 }
 
 #[tokio::test]
@@ -530,77 +529,6 @@ async fn test_session_subscribe_unsubscribe() {
 
     let unsub_result = client.session_unsubscribe(&[session_id]).await;
     assert!(unsub_result.is_ok());
-
-    let _ = client.session_end(session_id).await;
-}
-
-/// The thinking budget is a property of a session's AGENT, so the session
-/// has to have one — creating agent-less and asking for the budget answers
-/// "No agent configured", which is what this test spent its life doing
-/// against whatever daemon happened to be running.
-#[tokio::test]
-async fn test_session_thinking_budget() {
-    let (_srv, sock, _handle) = setup_test_server().await;
-    let client = DaemonClient::connect_to(&sock).await.unwrap();
-    let _tmp = TempDir::new().unwrap();
-
-    let result = client
-        .session_create_with_agent(
-            SessionCreateParams {
-                session_type: "chat".to_string(),
-                kilns: vec![crate::test_support::kiln_name("kiln")],
-                workspace: None,
-                recording_mode: None,
-                recording_path: None,
-                agent_type: Some("internal".to_string()),
-                isolation: None,
-            },
-            crate::rpc_client::SessionAgentSpec {
-                provider: Some("ollama".to_string()),
-                model: Some("llama3.2".to_string()),
-                endpoint: Some("http://localhost:11434".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    let session_id = result["session_id"].as_str().unwrap();
-
-    let initial = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert!(initial.is_none(), "Initial budget should be None");
-
-    client
-        .session_set_thinking_budget(session_id, Some(10000))
-        .await
-        .unwrap();
-    let budget = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert_eq!(budget, Some(10000));
-
-    client
-        .session_set_thinking_budget(session_id, Some(-1))
-        .await
-        .unwrap();
-    let unlimited = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert_eq!(unlimited, Some(-1));
-
-    client
-        .session_set_thinking_budget(session_id, Some(0))
-        .await
-        .unwrap();
-    let cleared = client
-        .session_get_thinking_budget(session_id)
-        .await
-        .unwrap();
-    assert_eq!(cleared, Some(0), "Budget should be 0 (disabled)");
 
     let _ = client.session_end(session_id).await;
 }
@@ -818,4 +746,163 @@ mod simple_mode_correlation {
         assert_eq!(result, serde_json::json!("pong"));
         server.await.expect("server task");
     }
+}
+
+/// Ask the operating system whether `pid` still names a live process.
+///
+/// Signal 0 delivers nothing; it performs only the existence and permission
+/// checks. Reading the guard's own bookkeeping would prove nothing about the
+/// process it was supposed to reap.
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    // SAFETY: `kill` with signal 0 sends no signal. Its only effects are the
+    // return value and `errno`.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+/// A child that outlives any plausible test, so "still alive" means the guard
+/// let it live rather than that it had not finished yet.
+#[cfg(unix)]
+fn spawn_long_lived_child() -> std::process::Child {
+    std::process::Command::new("sleep")
+        .arg("300")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn a long-lived child")
+}
+
+/// The give-up path: the daemon never answered, the client is about to return
+/// an error, and nothing else in the system holds that process.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_never_answers_is_reaped_by_the_guard() {
+    let child = spawn_long_lived_child();
+    let pid = child.id();
+
+    drop(SpawnedDaemon(Some(child)));
+
+    assert!(
+        !process_is_alive(pid),
+        "pid {pid} survived the guard; a daemon that never answered is an orphan"
+    );
+}
+
+/// The success path: the daemon is serving, and outliving this client is the
+/// entire reason it was spawned detached.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_answers_is_left_running() {
+    let child = spawn_long_lived_child();
+    let pid = child.id();
+
+    SpawnedDaemon(Some(child)).detach();
+
+    assert!(
+        process_is_alive(pid),
+        "pid {pid} was killed; a daemon that answered must outlive its client"
+    );
+
+    // Detaching means nothing waits on it any more. Kill it here; the test
+    // process exits immediately afterwards (nextest runs one test per
+    // process), so init reaps what is left.
+    // SAFETY: `kill` on a pid this test spawned and still owns.
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+    }
+}
+
+/// Spawn `script` under `sh` and return once it says it is ready.
+///
+/// The readiness line is not decoration. A shell that has been spawned but has
+/// not yet parsed its `trap` still carries SIGTERM's default disposition, so a
+/// signal delivered in that window kills it outright and the test reads the
+/// answer it was written to catch.
+#[cfg(unix)]
+fn spawn_ready_child(script: &str) -> std::process::Child {
+    use std::io::{BufRead, BufReader};
+
+    let mut child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("{script}\necho ready\nwait_forever"))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn the child shell");
+
+    let stdout = child.stdout.take().expect("piped stdout");
+    let mut line = String::new();
+    BufReader::new(stdout)
+        .read_line(&mut line)
+        .expect("read the readiness line");
+    assert_eq!(line.trim(), "ready", "the child never became ready");
+
+    child
+}
+
+/// A child that catches SIGTERM and exits with a status of its own choosing.
+///
+/// It stands in for the daemon, whose shutdown path (cancel the tasks, join
+/// them, release the socket lock) runs only on SIGTERM. SIGKILL skips all of
+/// it, so the exit code below is the evidence that the request was made.
+#[cfg(unix)]
+fn spawn_child_that_handles_sigterm() -> std::process::Child {
+    spawn_ready_child("trap 'exit 42' TERM\nwait_forever() { while :; do sleep 0.05; done; }")
+}
+
+/// A child that refuses to stop. The reaper must not wait on it for ever.
+#[cfg(unix)]
+fn spawn_child_that_ignores_sigterm() -> std::process::Child {
+    spawn_ready_child("trap '' TERM\nwait_forever() { while :; do sleep 0.05; done; }")
+}
+
+/// A daemon that outlived its client's patience is ASKED to stop.
+///
+/// The client cannot tell "my child is slow" from "my child bound its socket a
+/// moment ago and is now serving somebody else". SIGKILL takes the second one
+/// down mid-write and bypasses the graceful path entirely; SIGTERM lets it run
+/// that path. The exit code proves which signal arrived.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_never_answers_is_asked_to_stop_before_it_is_killed() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let mut child = spawn_child_that_handles_sigterm();
+    let status = reap_spawned_daemon(&mut child).expect("reap the child");
+
+    assert_eq!(
+        status.code(),
+        Some(42),
+        "the daemon must run its own shutdown path; it exited by signal {:?}",
+        status.signal()
+    );
+}
+
+/// And the escalation still exists: a daemon that ignores the request is
+/// killed rather than waited on for ever.
+#[cfg(unix)]
+#[test]
+fn a_daemon_that_ignores_the_request_is_still_killed() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let mut child = spawn_child_that_ignores_sigterm();
+    let started = std::time::Instant::now();
+    let status = reap_spawned_daemon(&mut child).expect("reap the child");
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGKILL),
+        "a daemon that ignores SIGTERM must still be killed"
+    );
+    assert!(
+        elapsed >= REAP_GRACE,
+        "the kill must come after the grace period, not instead of it; took {elapsed:?}"
+    );
+    assert!(
+        elapsed < REAP_GRACE * 4,
+        "the reaper must not wait far beyond the grace period; took {elapsed:?}"
+    );
 }

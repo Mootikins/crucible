@@ -56,7 +56,7 @@ Options:
           Enable verbose logging (shortcut for --log-level=debug)
 
   -C, --config <CONFIG>
-          Config file path (defaults to ~/.config/crucible/config.toml)
+          Config file path; its directory holds init.lua (defaults to ~/.config/crucible)
 
       --embedding-url <EMBEDDING_URL>
           Embedding service URL (overrides config file)

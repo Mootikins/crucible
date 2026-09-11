@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- **The config store is flat: one write, one leaf.** `cru.config.set` and the
+  `config.set` RPC now record exactly one entry per terminal value, so
+  `{ chat = { model = "x" } }` writes the single key `chat.model`. A nested
+  table is authoring sugar and no call site changes; an array and a scalar are
+  single values; an empty table sets nothing; and a dotted key names the same
+  path, so `:set myplugin.debug=1` writes and reads where a config file does.
+
+- **`__replace = true` is removed.** It had no caller outside its own tests and
+  cost three defects, all from the store holding two definitions of a leaf. A
+  flat write keeps every sibling it does not name, which is what the marker was
+  reached for; removing a key is now `config.unset`.
+
+- **`config.save` refuses a leaf a CLI flag holds** instead of answering
+  `ok: true`, writing `settings.json` and letting the rank gate drop the value.
+
+- **`cru.defaults` is folded into the config store.** It was a second global
+  tier: one key, its own lock, no provenance — so `settings.json`, `:set`,
+  `config.origin` and the settings UI all passed it by. The one key it held is
+  now `chat.system_prompt`, and it behaves like every other config key.
+
+  | Was | Is |
+  |---|---|
+  | `cru.defaults.system_prompt = "…"` | `cru.config.set { chat = { system_prompt = "…" } }` |
+  | `cru.defaults.system_prompt .. "…"` | `cru.config.get("chat").system_prompt .. "…"` |
+
+  The shipped prompt moves out of `runtime/defaults/init.luau` and into
+  `ChatConfig::default()`, which puts it on the store's `Default` layer. Written
+  from Lua it carried the `Lua` layer, which outranks `settings.json`, so the
+  settings UI could not have changed it. `session.system_prompt` inside an
+  `on_session_start` hook is unchanged and still reads the inherited value
+  before it overrides.
+
+  `cru.defaults.mode` and `cru.defaults.model` never existed as keys and still
+  do not: a hook sets those per session, because a global model would silently
+  replace the one the caller named on the command line.
+
+### Removed
+
+- **`precognition_results` and `autocompact_threshold` are config keys, not
+  session knobs.** They are tuning values with one right answer per install,
+  not decisions a session makes for itself, so they move to
+  `chat.precognition_results` and `chat.autocompact_threshold` and gain
+  provenance, `settings.json`, `config.origin` and a control in the settings
+  pane.
+
+  | Was | Is |
+  |---|---|
+  | `:set precognition.results=3` | `:set chat.precognition_results=3` |
+  | `:set autocompact_threshold=0.8` | `:set chat.autocompact_threshold=0.8` |
+  | `session.{set,get}_precognition_results` | `config.set` / `config.get` |
+  | `session.{set,get}_autocompact_threshold` | `config.set` / `config.get` |
+
+  The HTTP routes `/config/precognition/results` and
+  `/config/autocompact-threshold`, the session events
+  `precognition_results_changed` and `autocompact_threshold_changed`, and the
+  two fields on the session agent record are gone with them.
+
+  `cru chat --context-size N` is removed. It set the per-session result count,
+  and there is no longer a per-session value to set; writing the config key
+  from a per-invocation flag would change the setting for every session, which
+  is not what the flag meant.
+
+  `:set precognition` stays a session knob — turning grounding off for one
+  session is a real per-session choice.
+
+
+- **Output validation is gone, with its retry loop and its Lua surface.** The
+  session knobs `output_validation` and `validation_retries`, the
+  `OutputValidation` enum, `validate_output`, the validate-retry branch in
+  `execute_agent_stream`, `cru.context.register_validator`,
+  `cru.session.set_output_validation`, the four `session.*` RPCs, the
+  `PUT`/`GET /api/session/{id}/config/{output-validation,validation-retries}`
+  routes, the web controls and the `:set outputvalidation` / `:set
+  validationretries` keys are all removed.
+
+  The default was `OutputValidation::None`, so on a normal session neither knob
+  governed anything, and `validation_retries` was a parameter of a setting
+  nobody turned on. The retry re-entry was never proven either: every test in
+  the repo set `validation_retries = 0`, so `ValidationOutcome::Retry` was
+  never constructed under test. Validation belongs to a request, not to a
+  session — a caller that wants JSON back asks for JSON on that call.
+
+
+- **The thinking budget is gone, not deprecated.** A cap on reasoning tokens
+  truncates a current model mid-thought, and the model's own default is what
+  we want, so the whole knob is deleted: the `llm.thinking_budget` config key,
+  the `session.set_thinking_budget` / `session.get_thinking_budget` RPCs, the
+  `thinking_budget` entry in `daemon.capabilities`, the
+  `thinking_budget_changed` session event, the `thinking_budget` field on the
+  session agent record, the `PUT`/`GET /api/session/{id}/config/thinking-budget`
+  routes and the web control, the `:set thinkingbudget` key with its six
+  presets, `cru set thinkingbudget=…`, and `cru.defaults.thinking_budget` /
+  `session.thinking_budget` in Lua. `Ctrl+T` and `:set thinking` still toggle
+  whether the TUI shows reasoning; only the cap is removed. ACP's own
+  `thought_level` is untouched — it belongs to the external agent and reaches
+  a client through `session.list_agent_options`.
+
+### Added
+
+- **`config.unset`** — a new RPC verb that removes a key and everything under
+  it from the layers `config.reset` drops. It edits no file. The verb a flat
+  write cannot spell: `config.set` adds a provider and changes it, but cannot
+  say the provider is gone. No TUI or web spelling yet; it is reachable over
+  the socket.
+
 ## [0.30.0] - 2026-09-05
 
 ### Breaking

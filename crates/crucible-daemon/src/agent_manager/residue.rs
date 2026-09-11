@@ -36,7 +36,6 @@ impl AgentManager {
             titles_in_flight: _, // InFlightGuard owns its lifetime (title.rs:13)
             model_cache: _,      // keyed by provider classification, not session
             runtimepath: _,      // daemon config
-            session_defaults: _, // global Lua defaults tier
             modes: _,            // global mode registry
             kiln_manager: _,     // shared service
             session_manager: _,  // shared service
@@ -49,10 +48,8 @@ impl AgentManager {
             permission_config: _, // daemon config
             card_roots: _,       // daemon config
             plugin_loader: _,    // shared service
-            session_api: _,      // startup-bound OnceLock; shared bridge, not per-session
-            notification_hub: _, // startup-bound OnceLock; shared hub, not per-session
-            lua_validators: _,   // startup-bound OnceLock
             plugin_handlers: _,  // startup-bound OnceLock
+            daemon_permissions: _, // startup-bound OnceLock; one registry for the process
             isolation: _,        // startup-bound OnceLock
             context_attach: _,   // process-wide buffer, drained per turn
             statusline_exprs: _, // process-wide expression values
@@ -60,6 +57,7 @@ impl AgentManager {
             plugin_tool_registry: _, // startup-bound OnceLock
             external_watch: _,   // startup-bound OnceLock; per-session watches are its own
             agent_factory_override: _, // test-support seam, set once
+            activity: _,         // daemon-wide work registry; a turn's guard lives in request_state
         } = self;
 
         let mut residue = Vec::new();

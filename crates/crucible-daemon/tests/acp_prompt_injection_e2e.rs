@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType, EmbeddingProviderConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
@@ -89,10 +89,7 @@ fn acp_agent(precognition_enabled: bool) -> SessionAgent {
         provider: BackendType::Custom,
         model: "mock-acp".to_string(),
         system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -100,15 +97,8 @@ fn acp_agent(precognition_enabled: bool) -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }
@@ -120,11 +110,6 @@ async fn load_plugin(root: &Path, init: &str) -> DaemonPluginLoader {
     let plugins = root.join("plugins");
     let dir = plugins.join("injector");
     std::fs::create_dir_all(&dir).expect("plugin dir");
-    std::fs::write(
-        dir.join("plugin.yaml"),
-        "name: injector\nversion: \"0.1.0\"\ndescription: context injector\n",
-    )
-    .expect("plugin.yaml");
     std::fs::write(dir.join("init.lua"), init).expect("init.lua");
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");

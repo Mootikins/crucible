@@ -210,7 +210,7 @@ mod tests {
         let previous = crate::plugin_context::enter_plugin(
             &lua,
             "kanban",
-            crate::manifest::CapabilitySet::none(),
+            false,
         );
         lua.load(r#"cru.timer.spawn(function() ran = _probe() end)"#)
             .exec_async()

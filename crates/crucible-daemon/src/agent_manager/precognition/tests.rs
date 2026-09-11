@@ -191,8 +191,6 @@ mod format_precognition_context_tests {
 mod precognition_format_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex as StdMutex};
 
     fn make_result(
         doc_id: &str,
@@ -210,31 +208,25 @@ mod precognition_format_hook_tests {
         }
     }
 
-    fn make_session_event_state() -> SessionEventState {
-        let lua = mlua::Lua::new();
-        let registry = crucible_lua::LuaScriptHandlerRegistry::new();
+    /// A handler VM, shaped like the daemon's — the only VM that holds them.
+    fn make_handler_vm() -> crate::agent_manager::PluginHandlers {
+        let lua = std::sync::Arc::new(mlua::Lua::new());
+        let registry = std::sync::Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
 
-        register_cru_on_api(
+        crucible_lua::register_cru_on_api(
             &lua,
             registry.runtime_handlers(),
             registry.handler_functions(),
         )
         .expect("register_cru_on_api should succeed");
 
-        SessionEventState {
-            lua,
-            registry,
-            permission_hooks: Arc::new(StdMutex::new(Vec::new())),
-            permission_functions: Arc::new(StdMutex::new(HashMap::new())),
-            spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }
+        (registry, lua)
     }
 
     #[tokio::test]
     async fn precognition_format_hook_customizes_output() {
-        let state = make_session_event_state();
-        state
-            .lua
+        let vm = make_handler_vm();
+        vm.1
             .load(
                 r###"
                 cru.on("precognition_format", function(ctx, event)
@@ -261,8 +253,7 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
-            None,
+            Some(&vm),
         )
         .await;
 
@@ -273,7 +264,7 @@ mod precognition_format_hook_tests {
 
     #[tokio::test]
     async fn precognition_format_no_handler_uses_default() {
-        let state = make_session_event_state();
+        let vm = make_handler_vm();
         let results = vec![make_result(
             "notes/Rust.md",
             0.85,
@@ -286,8 +277,7 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
-            None,
+            Some(&vm),
         )
         .await;
 
@@ -308,11 +298,9 @@ mod precognition_format_hook_tests {
     /// which would also pass if the handler never ran.
     #[tokio::test]
     async fn precognition_format_names_the_kiln_and_withholds_its_directory() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r###"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r###"
                 cru.on("precognition_format", function(ctx, event)
                     local note = event.results[1]
                     return string.format(
@@ -322,9 +310,9 @@ mod precognition_format_hook_tests {
                     )
                 end)
             "###,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
         let results = vec![make_result(
             "notes/Rust.md",
@@ -338,8 +326,7 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
-            None,
+            Some(&vm),
         )
         .await;
 
@@ -351,18 +338,16 @@ mod precognition_format_hook_tests {
     /// "yes" about a kiln nothing can name.
     #[tokio::test]
     async fn precognition_format_omits_the_kiln_when_no_entry_claims_it() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r###"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r###"
                 cru.on("precognition_format", function(ctx, event)
                     return "kiln=" .. tostring(event.results[1].kiln)
                 end)
             "###,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
         let results = vec![make_result("notes/Rust.md", 0.85, Some("body"), None)];
 
@@ -371,8 +356,7 @@ mod precognition_format_hook_tests {
             "What is Rust?",
             &results,
             false,
-            &state,
-            None,
+            Some(&vm),
         )
         .await;
 
@@ -444,8 +428,21 @@ mod precognition_format_hook_tests {
 mod precognition_select_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex as StdMutex};
+
+    /// A handler VM, shaped like the daemon's — the only VM that holds them.
+    fn make_handler_vm() -> crate::agent_manager::PluginHandlers {
+        let lua = std::sync::Arc::new(mlua::Lua::new());
+        let registry = std::sync::Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
+
+        crucible_lua::register_cru_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("register_cru_on_api should succeed");
+
+        (registry, lua)
+    }
 
     /// The registry name every fixture hit is attributed to. It is a NAME, not
     /// a directory: `SearchResult` cannot hold a directory any more, which is
@@ -472,34 +469,15 @@ mod precognition_select_hook_tests {
         ]
     }
 
-    fn make_session_event_state() -> SessionEventState {
-        let lua = mlua::Lua::new();
-        let registry = crucible_lua::LuaScriptHandlerRegistry::new();
-        register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register_cru_on_api should succeed");
-
-        SessionEventState {
-            lua,
-            registry,
-            permission_hooks: Arc::new(StdMutex::new(Vec::new())),
-            permission_functions: Arc::new(StdMutex::new(HashMap::new())),
-            spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }
-    }
-
     async fn run_select(
-        state: &SessionEventState,
+        vm: Option<&crate::agent_manager::PluginHandlers>,
         results: &[crucible_core::SearchResult],
     ) -> Option<Vec<crucible_core::SearchResult>> {
-        run_select_with_budget(state, results, 3000).await
+        run_select_with_budget(vm, results, 3000).await
     }
 
     async fn run_select_with_budget(
-        state: &SessionEventState,
+        vm: Option<&crate::agent_manager::PluginHandlers>,
         results: &[crucible_core::SearchResult],
         char_budget: usize,
     ) -> Option<Vec<crucible_core::SearchResult>> {
@@ -508,8 +486,7 @@ mod precognition_select_hook_tests {
             "what is alpha?",
             results,
             char_budget,
-            state,
-            None,
+            vm,
         )
         .await
     }
@@ -562,20 +539,18 @@ mod precognition_select_hook_tests {
 
     #[tokio::test]
     async fn select_hook_narrows_and_reorders() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     return { { index = 3 }, { index = 1 } }
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
-        let selected = run_select(&state, &three_results())
+        let selected = run_select(Some(&vm), &three_results())
             .await
             .expect("handler should take the decision");
 
@@ -584,20 +559,18 @@ mod precognition_select_hook_tests {
 
     #[tokio::test]
     async fn select_hook_overrides_snippet() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     return { { index = 1, snippet = "rewritten" } }
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
-        let selected = run_select(&state, &three_results())
+        let selected = run_select(Some(&vm), &three_results())
             .await
             .expect("selection");
 
@@ -607,11 +580,9 @@ mod precognition_select_hook_tests {
 
     #[tokio::test]
     async fn select_hook_receives_index_and_budget() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     -- Assert the payload contract from inside Lua: picking by
                     -- these fields is the whole point of the seam.
@@ -621,11 +592,11 @@ mod precognition_select_hook_tests {
                     return { { index = event.results[2].index } }
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
-        let selected = run_select(&state, &three_results())
+        let selected = run_select(Some(&vm), &three_results())
             .await
             .expect("selection");
 
@@ -634,20 +605,18 @@ mod precognition_select_hook_tests {
 
     #[tokio::test]
     async fn select_hook_empty_table_suppresses_precognition() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     return {}
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
-        let selected = run_select(&state, &three_results())
+        let selected = run_select(Some(&vm), &three_results())
             .await
             .expect("empty selection is a decision, not a fall-through");
 
@@ -656,48 +625,43 @@ mod precognition_select_hook_tests {
 
     #[tokio::test]
     async fn select_hook_error_falls_back_to_rust_default() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     error("boom")
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
         // Selection is not a gate, so it fails open — only pre_tool_call
         // fails closed.
-        assert!(run_select(&state, &three_results()).await.is_none());
+        assert!(run_select(None, &three_results()).await.is_none());
     }
 
     #[tokio::test]
     async fn select_hook_malformed_return_falls_back_rather_than_suppressing() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     return { oops = "not a selection" }
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
         // A table with entries but no numeric keys is a bug in the handler.
         // Falling back beats silently dropping the agent's grounding.
-        assert!(run_select(&state, &three_results()).await.is_none());
+        assert!(run_select(None, &three_results()).await.is_none());
     }
 
     #[tokio::test]
     async fn no_handler_leaves_the_rust_default_in_place() {
-        let state = make_session_event_state();
-        assert!(run_select(&state, &three_results()).await.is_none());
+        assert!(run_select(None, &three_results()).await.is_none());
     }
 
     /// A selecting plugin can tell one corpus from another by name, and is
@@ -708,11 +672,9 @@ mod precognition_select_hook_tests {
     /// returned snippet proves the handler both ran and saw the value.
     #[tokio::test]
     async fn precognition_select_names_the_kiln_and_withholds_its_directory() {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r###"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r###"
                 cru.on("precognition_select", function(ctx, event)
                     local note = event.results[1]
                     return { {
@@ -725,11 +687,11 @@ mod precognition_select_hook_tests {
                     } }
                 end)
             "###,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
-        let selected = run_select(&state, &three_results())
+        let selected = run_select(Some(&vm), &three_results())
             .await
             .expect("the handler selects one note");
 
@@ -784,20 +746,18 @@ mod precognition_select_hook_tests {
         // Distinct from the empty-table case: this handler *asked* for notes
         // and every entry was unusable, which is a typo, not a decision.
         // Suppressing here would silently strip the agent's grounding.
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(
-                r#"
+        let vm = make_handler_vm();
+        vm.1.load(
+            r#"
                 cru.on("precognition_select", function(ctx, event)
                     return { { index = 99 }, { index = 0 }, { nope = 1 } }
                 end)
             "#,
-            )
-            .exec()
-            .expect("Lua handler should load");
+        )
+        .exec()
+        .expect("Lua handler should load");
 
-        assert!(run_select(&state, &three_results()).await.is_none());
+        assert!(run_select(None, &three_results()).await.is_none());
     }
 
     #[test]
@@ -849,14 +809,12 @@ mod precognition_select_hook_tests {
         results: &[crucible_core::SearchResult],
         budget: usize,
     ) -> Vec<crucible_core::SearchResult> {
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(LUA_EQUAL_SPLIT_CAP)
+        let vm = make_handler_vm();
+        vm.1.load(LUA_EQUAL_SPLIT_CAP)
             .exec()
             .expect("reference handler should load");
 
-        let mut selected = run_select_with_budget(&state, results, budget)
+        let mut selected = run_select_with_budget(Some(&vm), results, budget)
             .await
             .expect("reference handler should take the decision");
         apply_precognition_char_cap(&mut selected, budget);
@@ -939,16 +897,14 @@ mod precognition_select_hook_tests {
 
         // Handler registered once, as in production — this measures per-turn
         // dispatch, not Lua compilation.
-        let state = make_session_event_state();
-        state
-            .lua
-            .load(LUA_EQUAL_SPLIT_CAP)
+        let vm = make_handler_vm();
+        vm.1.load(LUA_EQUAL_SPLIT_CAP)
             .exec()
             .expect("reference handler should load");
 
         let start = std::time::Instant::now();
         for _ in 0..ITERATIONS {
-            let mut selected = run_select_with_budget(&state, &results, budget)
+            let mut selected = run_select_with_budget(Some(&vm), &results, budget)
                 .await
                 .expect("handler should decide");
             apply_precognition_char_cap(&mut selected, budget);

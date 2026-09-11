@@ -15,11 +15,8 @@ mod cli_e2e_helpers;
 use cli_e2e_helpers::TestDaemon;
 use std::path::PathBuf;
 
-const MOCK_EMBEDDINGS: &str = concat!(
-    "\n[enrichment.provider]\n",
-    "type = \"mock\"\n",
-    "dimensions = 384\n",
-);
+const MOCK_EMBEDDINGS: &str =
+    "cru.config.set({ enrichment = { provider = { type = \"mock\", dimensions = 384 } } })\n";
 
 /// Seed the daemon's kiln with three distinguishable notes.
 fn seed_kiln(daemon: &TestDaemon) -> PathBuf {

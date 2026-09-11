@@ -21,12 +21,17 @@ A task management plugin for Crucible using the TASKS.md format.
 
 None — `todo-list` ships with Crucible and is enabled by default:
 
-```toml
-# ~/.config/crucible/config.toml
-[plugins.todo-list]
-enabled = false            # the kill switch
-default_file = "TASKS.md"  # relative to the KILN root; an absolute path is used as given
-show_completed = false
+```lua
+-- ~/.config/crucible/init.lua
+cru.config.set({
+    plugins = {
+        ["todo-list"] = {
+            enabled = false, -- the kill switch
+            default_file = "TASKS.md", -- relative to the KILN root; an absolute path is used as given
+            show_completed = false,
+        },
+    },
+})
 ```
 
 Config is the durable lever: editing the extracted `plugin.yaml` does not

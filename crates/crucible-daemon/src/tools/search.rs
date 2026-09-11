@@ -44,7 +44,7 @@ pub struct SearchTools {
     /// builder, one filter policy). Trust gating happens at attach time.
     search_sources: Vec<KilnSearchSource>,
     /// The `search:rerank` stage, over the plugin VM. A tool call has no
-    /// session VM of its own here; `None` for a server opened by path.
+    /// handler VM of its own here; `None` for a server opened by path.
     rerank: Option<RerankStage>,
 }
 

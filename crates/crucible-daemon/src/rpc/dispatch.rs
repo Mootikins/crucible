@@ -20,6 +20,7 @@ use crate::protocol::{
 use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
+use crucible_core::config::SourceTag;
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
 // keys the plugin-visible config store withholds cannot drift apart.
@@ -131,11 +132,7 @@ rpc_methods! {
     SessionListKnobs = "session.list_knobs",
     SessionListAgentOptions = "session.list_agent_options",
     SessionSetAgentOption = "session.set_agent_option",
-    SessionSetThinkingBudget = "session.set_thinking_budget",
-    SessionGetThinkingBudget = "session.get_thinking_budget",
     SessionCacheStats = "session.cache_stats",
-    SessionSetAutocompactThreshold = "session.set_autocompact_threshold",
-    SessionGetAutocompactThreshold = "session.get_autocompact_threshold",
     SessionAddNotification = "session.add_notification",
     SessionListNotifications = "session.list_notifications",
     SessionDismissNotification = "session.dismiss_notification",
@@ -143,30 +140,12 @@ rpc_methods! {
     NotificationDismiss = "notification.dismiss",
     SessionInteractionRespond = "session.interaction_respond",
     SessionPendingInteractions = "session.pending_interactions",
-    SessionSetTemperature = "session.set_temperature",
-    SessionGetTemperature = "session.get_temperature",
-    SessionSetMaxTokens = "session.set_max_tokens",
-    SessionGetMaxTokens = "session.get_max_tokens",
-    SessionSetMaxIterations = "session.set_max_iterations",
-    SessionGetMaxIterations = "session.get_max_iterations",
-    SessionSetExecutionTimeout = "session.set_execution_timeout",
-    SessionGetExecutionTimeout = "session.get_execution_timeout",
     SessionSetContextBudget = "session.set_context_budget",
     SessionGetContextBudget = "session.get_context_budget",
     SessionSetContextStrategy = "session.set_context_strategy",
     SessionGetContextStrategy = "session.get_context_strategy",
-    SessionSetContextWindow = "session.set_context_window",
-    SessionGetContextWindow = "session.get_context_window",
-    SessionSetOutputValidation = "session.set_output_validation",
-    SessionGetOutputValidation = "session.get_output_validation",
-    SessionSetValidationRetries = "session.set_validation_retries",
-    SessionGetValidationRetries = "session.get_validation_retries",
-    SessionSetSystemPrompt = "session.set_system_prompt",
-    SessionGetSystemPrompt = "session.get_system_prompt",
     SessionSetPrecognition = "session.set_precognition",
     SessionGetPrecognition = "session.get_precognition",
-    SessionSetPrecognitionResults = "session.set_precognition_results",
-    SessionGetPrecognitionResults = "session.get_precognition_results",
     SessionInjectContext = "session.inject_context",
     SessionTestInteraction = "session.test_interaction",
     SessionFork = "session.fork",
@@ -210,7 +189,13 @@ rpc_methods! {
     LuaEval = "lua.eval",
     ConfigGet = "config.get",
     ConfigSet = "config.set",
+    ConfigSave = "config.save",
+    ConfigReset = "config.reset",
+    ConfigPop = "config.pop",
+    ConfigUnset = "config.unset",
+    ConfigOrigin = "config.origin",
     ConfigEffective = "config.effective",
+    ConfigControls = "config.controls",
     UiConfig = "ui.config",
     UiSetTheme = "ui.set_theme",
     ProjectRegister = "project.register",
@@ -359,37 +344,15 @@ impl RpcDispatcher {
 
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
-            RpcMethod::SessionSetThinkingBudget
-            | RpcMethod::SessionSetTemperature
-            | RpcMethod::SessionSetMaxTokens
-            | RpcMethod::SessionSetMaxIterations
-            | RpcMethod::SessionSetExecutionTimeout
-            | RpcMethod::SessionSetContextBudget
+            RpcMethod::SessionSetContextBudget
             | RpcMethod::SessionSetContextStrategy
-            | RpcMethod::SessionSetContextWindow
-            | RpcMethod::SessionSetOutputValidation
-            | RpcMethod::SessionSetValidationRetries
-            | RpcMethod::SessionSetSystemPrompt
-            | RpcMethod::SessionSetPrecognition
-            | RpcMethod::SessionSetPrecognitionResults
-            | RpcMethod::SessionSetAutocompactThreshold => {
+            | RpcMethod::SessionSetPrecognition => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
-            RpcMethod::SessionGetThinkingBudget
-            | RpcMethod::SessionGetTemperature
-            | RpcMethod::SessionGetMode
-            | RpcMethod::SessionGetMaxTokens
-            | RpcMethod::SessionGetMaxIterations
-            | RpcMethod::SessionGetExecutionTimeout
+            RpcMethod::SessionGetMode
             | RpcMethod::SessionGetContextBudget
             | RpcMethod::SessionGetContextStrategy
-            | RpcMethod::SessionGetContextWindow
-            | RpcMethod::SessionGetOutputValidation
-            | RpcMethod::SessionGetValidationRetries
-            | RpcMethod::SessionGetSystemPrompt
-            | RpcMethod::SessionGetPrecognition
-            | RpcMethod::SessionGetPrecognitionResults
-            | RpcMethod::SessionGetAutocompactThreshold => {
+            | RpcMethod::SessionGetPrecognition => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
             RpcMethod::SessionCacheStats => forward!(
@@ -543,7 +506,7 @@ impl RpcDispatcher {
                 id,
                 crate::server::llm::handle_embedding_models(
                     req.clone(),
-                    self.ctx.effective_config.as_ref()
+                    self.ctx.effective_config().as_ref()
                 )
             ),
 
@@ -956,7 +919,22 @@ impl RpcDispatcher {
             // App-config store (the same store `cru.config.*` reads in Lua)
             RpcMethod::ConfigGet => to_response(id, self.handle_config_get(&req)),
             RpcMethod::ConfigSet => to_response(id, self.handle_config_set(&req)),
+            RpcMethod::ConfigSave => to_response(id, self.handle_config_save(&req)),
+            RpcMethod::ConfigReset => to_response(
+                id,
+                self.handle_config_drop(&req, crucible_lua::reset_app_config),
+            ),
+            RpcMethod::ConfigPop => to_response(
+                id,
+                self.handle_config_drop(&req, crucible_lua::pop_app_config),
+            ),
+            RpcMethod::ConfigUnset => to_response(
+                id,
+                self.handle_config_drop(&req, crucible_lua::unset_app_config),
+            ),
+            RpcMethod::ConfigOrigin => to_response(id, self.handle_config_origin(&req)),
             RpcMethod::ConfigEffective => to_response(id, self.handle_config_effective()),
+            RpcMethod::ConfigControls => to_response(id, Ok(handle_config_controls())),
 
             // Lua-defined UI config (theme now; surfaces and bars follow).
             // Snapshot half of the handshake — see `rpc::ui`.
@@ -1222,7 +1200,6 @@ impl RpcDispatcher {
                 "sessions": true,
                 "agents": true,
                 "events": true,
-                "thinking_budget": true,
                 "model_switching": true,
             },
             "methods": METHODS,
@@ -1321,23 +1298,12 @@ impl RpcDispatcher {
     /// Route a `session.set_*` method to the corresponding server handler.
     ///
     /// All session config setters share the signature `(Request, &AgentManager, &Sender) -> Response`.
-    /// This avoids 13 near-identical one-line forwarding methods.
+    /// This avoids a dozen near-identical one-line forwarding methods.
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
-            "session.set_thinking_budget" => handle_session_set_thinking_budget,
-            "session.set_temperature" => handle_session_set_temperature,
-            "session.set_max_tokens" => handle_session_set_max_tokens,
-            "session.set_max_iterations" => handle_session_set_max_iterations,
-            "session.set_execution_timeout" => handle_session_set_execution_timeout,
             "session.set_context_budget" => handle_session_set_context_budget,
             "session.set_context_strategy" => handle_session_set_context_strategy,
-            "session.set_context_window" => handle_session_set_context_window,
-            "session.set_output_validation" => handle_session_set_output_validation,
-            "session.set_validation_retries" => handle_session_set_validation_retries,
-            "session.set_system_prompt" => handle_session_set_system_prompt,
             "session.set_precognition" => handle_session_set_precognition,
-            "session.set_precognition_results" => handle_session_set_precognition_results,
-            "session.set_autocompact_threshold" => handle_session_set_autocompact_threshold,
         });
         map_server_resp(resp)
     }
@@ -1347,21 +1313,10 @@ impl RpcDispatcher {
     /// All session config getters share the signature `(Request, &AgentManager) -> Response`.
     async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = dispatch_session_getter!(req, &self.ctx.agents, {
-            "session.get_thinking_budget" => handle_session_get_thinking_budget,
-            "session.get_temperature" => handle_session_get_temperature,
             "session.get_mode" => handle_session_get_mode,
-            "session.get_max_tokens" => handle_session_get_max_tokens,
-            "session.get_max_iterations" => handle_session_get_max_iterations,
-            "session.get_execution_timeout" => handle_session_get_execution_timeout,
             "session.get_context_budget" => handle_session_get_context_budget,
             "session.get_context_strategy" => handle_session_get_context_strategy,
-            "session.get_context_window" => handle_session_get_context_window,
-            "session.get_output_validation" => handle_session_get_output_validation,
-            "session.get_validation_retries" => handle_session_get_validation_retries,
-            "session.get_system_prompt" => handle_session_get_system_prompt,
             "session.get_precognition" => handle_session_get_precognition,
-            "session.get_precognition_results" => handle_session_get_precognition_results,
-            "session.get_autocompact_threshold" => handle_session_get_autocompact_threshold,
         });
         map_server_resp(resp)
     }
@@ -1544,7 +1499,7 @@ impl RpcDispatcher {
             // resource in `on_session_start` needs the matching teardown.
             self.fire_plugin_session_end(session_id).await;
 
-            // Attachment state is not a plugin concern: session VMs can attach
+            // Attachment state is not a plugin concern: handlers can attach
             // with no plugin runtime bound at all, so releasing inside
             // `fire_plugin_session_end` leaked every session on a plugin-less
             // daemon. It also must NOT fire on pause — that would hand a
@@ -1703,8 +1658,8 @@ impl RpcDispatcher {
 
     /// Read from the app-config store — the same store `cru.config.get`
     /// exposes to Lua (seeded from TOML at daemon startup, merged by
-    /// `cru.config.set` / `config.set`). With `key`: one top-level value
-    /// (null if absent); without: the whole object.
+    /// `cru.config.set` / `config.set`). With `key`: the value at that
+    /// dot-joined path (null if absent); without: the whole object.
     fn handle_config_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
@@ -1721,7 +1676,7 @@ impl RpcDispatcher {
             Some(key) => {
                 let value = config
                     .as_ref()
-                    .and_then(|c| c.get(&key))
+                    .and_then(|c| crucible_core::config::leaf_at(c, &key))
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
                 serde_json::json!({ "value": value })
@@ -1730,68 +1685,76 @@ impl RpcDispatcher {
         })
     }
 
-    /// Merge top-level values into the app-config store (same semantics as
-    /// Lua's `cru.config.set`). Typed transport for `:set` forwarding — the
-    /// TUI must never build Lua source from user input.
+    /// Fold the LIVE provider table over `config`, and say which leaves the
+    /// daemon's state overlay contributed.
     ///
-    /// The location-naming keys are stripped rather than merged. The socket has
-    /// no authentication, and [`LOCATION_CONFIG_KEYS`] is the config's answer
-    /// to *where the daemon acts*: `kilns` and `kiln_path` are what the kiln
-    /// registry is built from, `projects` names workspace roots,
-    /// `session_kiln` names where a CLI session's knowledge scope points, and
-    /// `data_home`/`runtimepath`/`agent_directories` name the trees the daemon
-    /// reads its own state and code from. A caller that can write them
-    /// introduces or re-points an entry without ever handing a path to
-    /// `KilnRegistry::register_path` — which is to say, without the floor
-    /// seeing it. The way to add a kiln is `kiln.register` (`cru kiln
-    /// register`) or a config-file edit; both pass the floor, and this
-    /// method must not become a third way that does not.
+    /// A provider the live table holds that the config store never merged came
+    /// through `llm.json` — a registration, not authorship — so its leaves
+    /// carry [`SourceTag::Registered`]. The overlay never enters the store:
+    /// `LlmStateStore::overlay_onto` merges it UNDER the config at bind, and a
+    /// store merge would invert that rule.
+    ///
+    /// One derivation, because `config.effective`, `config.origin` and
+    /// `config.save` are three doors onto one answer. They used to derive it
+    /// separately, so `config.effective` called a `cru init` provider
+    /// `registered` while `config.origin` called the same leaf `default` and
+    /// `config.save` accepted a write that acts nowhere.
+    ///
+    /// [`SourceTag::Registered`]: crucible_core::config::SourceTag::Registered
+    fn fold_state_overlay(
+        &self,
+        mut config: serde_json::Value,
+    ) -> (serde_json::Value, crucible_core::config::ProvenanceMap) {
+        let mut registered = crucible_core::config::ProvenanceMap::new();
+        let (Some(object), Some(llm)) = (config.as_object_mut(), self.ctx.llm_config.get()) else {
+            return (config, registered);
+        };
+        let Ok(llm) = serde_json::to_value(llm.as_ref()) else {
+            return (config, registered);
+        };
+        let store_has = |name: &str| {
+            crucible_lua::get_app_config()
+                .and_then(|store| {
+                    store
+                        .get("llm")
+                        .and_then(|l| l.get("providers"))
+                        .and_then(|p| p.get(name))
+                        .map(|_| true)
+                })
+                .unwrap_or(false)
+        };
+        if let Some(providers) = llm.get("providers").and_then(|p| p.as_object()) {
+            for (name, entry) in providers {
+                if !store_has(name) {
+                    record_registered_leaves(
+                        &mut registered,
+                        &format!("llm.providers.{name}"),
+                        entry,
+                    );
+                }
+            }
+        }
+        object.insert("llm".to_string(), llm);
+        (config, registered)
+    }
+
     /// The daemon's effective config: what the boot evaluation extracted,
     /// with the LIVE provider table folded in at answer time (a provider
     /// added through `cru init` while the daemon runs must show). Daemon-
     /// backed commands fetch this instead of evaluating anything themselves —
     /// the daemon's copy IS the live truth, and evaluation is heavyweight.
     fn handle_config_effective(&self) -> RpcResult<serde_json::Value> {
-        let Some(config) = self.ctx.effective_config.clone() else {
+        let Some(config) = self.ctx.effective_config() else {
             return Err(RpcError {
                 code: INTERNAL_ERROR,
                 message: "this daemon was bound without an app config".to_string(),
                 data: None,
             });
         };
-        let mut config = config;
+        let (config, registered) = self.fold_state_overlay(config);
         let mut provenance = crucible_lua::get_app_config_provenance().unwrap_or_default();
-        if let Some(object) = config.as_object_mut() {
-            if let Some(llm) = self.ctx.llm_config.get() {
-                if let Ok(llm) = serde_json::to_value(llm.as_ref()) {
-                    // A provider the live table holds that the STORE never
-                    // merged came through the state overlay (`llm.json`) —
-                    // registered, and its leaves say so.
-                    let store_has = |name: &str| {
-                        crucible_lua::get_app_config()
-                            .and_then(|store| {
-                                store
-                                    .get("llm")
-                                    .and_then(|l| l.get("providers"))
-                                    .and_then(|p| p.get(name))
-                                    .map(|_| true)
-                            })
-                            .unwrap_or(false)
-                    };
-                    if let Some(providers) = llm.get("providers").and_then(|p| p.as_object()) {
-                        for (name, entry) in providers {
-                            if !store_has(name) {
-                                record_registered_leaves(
-                                    &mut provenance,
-                                    &format!("llm.providers.{name}"),
-                                    entry,
-                                );
-                            }
-                        }
-                    }
-                    object.insert("llm".to_string(), llm);
-                }
-            }
+        for (path, tag) in registered.iter() {
+            provenance.set(path, tag.clone());
         }
         let config_root = self
             .ctx
@@ -1830,16 +1793,30 @@ impl RpcDispatcher {
         }))
     }
 
+    /// Merge values into the app-config store IN MEMORY, for this run only
+    /// (same semantics as Lua's `cru.config.set`). Typed transport for `:set`
+    /// forwarding — the TUI must never build Lua source from user input.
+    ///
+    /// This is the ephemeral half of the two config verbs, and it never
+    /// refuses a pinned key. A user must be able to raise a budget the
+    /// config file pins, for one turn, without editing a file; the write
+    /// dies with the process, so it takes authorship away from nobody. The
+    /// durable half is [`Self::handle_config_save`].
+    ///
+    /// The location-naming keys are stripped rather than merged. The socket has
+    /// no authentication, and [`LOCATION_CONFIG_KEYS`] is the config's answer
+    /// to *where the daemon acts*: `kilns` and `kiln_path` are what the kiln
+    /// registry is built from, `projects` names workspace roots,
+    /// `session_kiln` names where a CLI session's knowledge scope points, and
+    /// `data_home`/`runtimepath`/`agent_directories` name the trees the daemon
+    /// reads its own state and code from. A caller that can write them
+    /// introduces or re-points an entry without ever handing a path to
+    /// `KilnRegistry::register_path` — which is to say, without the floor
+    /// seeing it. The way to add a kiln is `kiln.register` (`cru kiln
+    /// register`) or a config-file edit; both pass the floor, and this
+    /// method must not become a third way that does not.
     fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            values: serde_json::Map<String, serde_json::Value>,
-        }
-
-        let params: Params = parse_params(req)?;
+        let params: ConfigValuesParams = crate::rpc::params::parse_params(req)?;
         // One door-keeping implementation: the store's Withhold policy strips
         // the location keys and reports them; this handler only relays.
         let rejected = crucible_lua::merge_app_config(serde_json::Value::Object(params.values));
@@ -1850,6 +1827,228 @@ impl RpcDispatcher {
             );
         }
         Ok(serde_json::json!({ "ok": true, "rejected": rejected }))
+    }
+
+    /// Save values as the user's durable preference: the `settings.json`
+    /// layer, which a UI writes.
+    ///
+    /// The durable half of the two config verbs, and the one that refuses. A
+    /// leaf a higher, boot-restored layer holds is answered in `refused` with
+    /// the file and line that holds it, and is NOT merged: `settings.json`
+    /// loads below that layer, so a saved value there would be shadowed at
+    /// the next boot and the click would act nowhere. Refusal per leaf, not
+    /// per request — the siblings the user changed in the same click still
+    /// save.
+    ///
+    /// `ok` is false when anything was refused, so a caller that ignores the
+    /// detail still learns the save was not whole.
+    ///
+    /// The accepted leaves also lose their ephemeral layer, so the saved
+    /// value is the live value in this same process — see
+    /// [`ConfigStore::save`], which does the refusing and the dropping in one
+    /// walk.
+    ///
+    /// [`ConfigStore::save`]: crucible_core::config::ConfigStore::save
+    fn handle_config_save(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let params: ConfigValuesParams = crate::rpc::params::parse_params(req)?;
+        // The state overlay's pins, which the store cannot see: its leaves
+        // are not in the store, and a save let through would put a
+        // half-described provider in `settings.json` — where the next boot
+        // loads it as the config layer and it shadows the working entry
+        // `llm.json` holds.
+        let (_, registered) =
+            self.fold_state_overlay(serde_json::Value::Object(serde_json::Map::new()));
+        // The `Settings` tag and the `settings.json` write are one layer: the
+        // file is what the next boot loads back under that same tag.
+        let saved =
+            crucible_lua::save_app_config(serde_json::Value::Object(params.values), &|path| {
+                registered.get(path).and_then(SourceTag::pin)
+            });
+        if !saved.withheld.is_empty() {
+            tracing::warn!(
+                keys = ?saved.withheld,
+                "config.save refused keys that name where the daemon acts; edit the config file instead"
+            );
+        }
+        self.persist_saved_settings(saved.accepted, &saved.withheld)?;
+        Ok(serde_json::json!({
+            "ok": saved.refused.is_empty(),
+            "refused": saved.refused,
+            "rejected": saved.withheld,
+        }))
+    }
+
+    /// Write what the save accepted to `settings.json`, so it outlives the
+    /// process.
+    ///
+    /// **The accepted delta, never the store.** Writing the store back would
+    /// record every `init.lua` leaf as a `Settings` leaf, and at the next boot
+    /// those leaves would load as settings — above nothing and below the file
+    /// that really holds them. The refusal that protects a human's line would
+    /// then be bypassed permanently, and with no sign of it anywhere.
+    ///
+    /// `withheld` names the location keys the store kept out of the merge.
+    /// They are dropped here too: a key that did not reach the running store
+    /// must not reach the next boot's either, or the socket would become the
+    /// third door onto *where the daemon acts*.
+    fn persist_saved_settings(
+        &self,
+        mut accepted: serde_json::Value,
+        withheld: &[String],
+    ) -> RpcResult<()> {
+        let Some(map) = accepted.as_object_mut() else {
+            return Ok(());
+        };
+        for key in withheld {
+            map.shift_remove(key);
+        }
+        if map.is_empty() {
+            return Ok(());
+        }
+        // No config file means no config root, and a guessed one would be the
+        // real `~/.config/crucible` of whoever runs the daemon. A daemon
+        // handed its config directly (no boot) therefore saves in memory only,
+        // and says so.
+        let Some(root) = self
+            .ctx
+            .config_path
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .filter(|root| !root.as_os_str().is_empty())
+        else {
+            tracing::warn!(
+                "config.save has no config file to sit beside; the values apply to this run only"
+            );
+            return Ok(());
+        };
+        crucible_core::config::save_settings_delta(root, accepted).map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: format!("config.save could not write the settings file: {e:#}"),
+            data: None,
+        })
+    }
+
+    /// Where one config leaf came from, or where every recorded leaf came
+    /// from: `{key, value, source, file?, line?}`.
+    ///
+    /// The store has recorded this per leaf since it gained provenance; this
+    /// is the door onto it. A settings UI needs it to render a lock and to
+    /// offer a jump to the line that locks the key, and `config.effective`
+    /// cannot serve that — it answers with the whole map at once and does not
+    /// pair a value with its source.
+    fn handle_config_origin(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            #[serde(default)]
+            key: Option<String>,
+        }
+
+        let params: Params = crate::rpc::params::parse_params(req)?;
+        // The same view `config.effective` answers with. Reading the store
+        // alone reported a registered provider as `default` and as null, so
+        // the two doors disagreed about one leaf.
+        // An empty object, not `Null`, when no store was ever seeded: the fold
+        // writes into an object, and `Null` would drop the overlay silently.
+        let (config, registered) = self.fold_state_overlay(
+            crucible_lua::get_app_config()
+                .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())),
+        );
+
+        Ok(match params.key {
+            Some(key) => self.config_leaf_row(&key),
+            None => {
+                let mut rows: std::collections::BTreeMap<
+                    String,
+                    crucible_core::config::LeafOrigin,
+                > = crucible_lua::app_config_origins().into_iter().collect();
+                for (path, tag) in registered.iter() {
+                    rows.insert(path.clone(), overlay_leaf_origin(tag));
+                }
+                serde_json::json!({
+                    "origins": rows
+                        .iter()
+                        .map(|(key, origin)| config_origin_row(&config, key, origin))
+                        .collect::<Vec<_>>(),
+                })
+            }
+        })
+    }
+
+    /// The origin row for ONE leaf of the effective view: the key, the value
+    /// the store holds, the source that owns it, and whether `config.save`
+    /// refuses it.
+    ///
+    /// One derivation for three doors. `config.origin`, `config.reset` and
+    /// `config.pop` all owe the caller the same answer about one leaf, and a
+    /// second derivation would let a drop verb report a value `config.origin`
+    /// does not.
+    fn config_leaf_row(&self, key: &str) -> serde_json::Value {
+        let (config, registered) = self.fold_state_overlay(
+            crucible_lua::get_app_config()
+                .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())),
+        );
+        config_origin_row(&config, key, &leaf_origin(&registered, key))
+    }
+
+    /// Drop config layers for one leaf: `config.reset` (`:set key&`) drops
+    /// the ephemeral layer `config.set` writes, and `config.pop` (`:set
+    /// key^`) drops the highest-ranked layer holding the leaf so the next one
+    /// down shows.
+    ///
+    /// One handler, because the two verbs differ only in which layers the
+    /// store drops — and the store, not this handler, decides that. What they
+    /// owe the caller is identical: what the store holds for the leaf now,
+    /// where it comes from, and which layers went. Two handlers would be two
+    /// shapes for one answer.
+    ///
+    /// **Both are in-memory only, and neither edits a file.** The layers a
+    /// file restores come back at the next boot, which is the property that
+    /// makes these verbs safe to bind to a keystroke. A reset that deleted a
+    /// leaf from `settings.json` would let a one-key undo of a session tweak
+    /// destroy a preference the user saved through the settings UI;
+    /// `config.save` writes that layer and `config.save` unwrites it.
+    fn handle_config_drop(
+        &self,
+        req: &Request,
+        drop: fn(&str) -> crucible_core::config::LayerDrop,
+    ) -> RpcResult<serde_json::Value> {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            key: String,
+        }
+
+        let params: Params = crate::rpc::params::parse_params(req)?;
+        let outcome = drop(&params.key);
+        // The row is read AFTER the drop: the point of both verbs is the
+        // value that shows once the layer is gone.
+        let mut row = self.config_leaf_row(&params.key);
+        let (name, dropped): (&str, Vec<&str>) = match &outcome {
+            crucible_core::config::LayerDrop::Withheld => {
+                tracing::warn!(
+                    key = %params.key,
+                    "a config drop refused a key that names where the daemon acts; \
+                     edit the config file instead"
+                );
+                ("withheld", Vec::new())
+            }
+            crucible_core::config::LayerDrop::Untouched => ("untouched", Vec::new()),
+            crucible_core::config::LayerDrop::Dropped(sources) => (
+                "dropped",
+                sources
+                    .iter()
+                    .map(crucible_core::config::SourceTag::short)
+                    .collect(),
+            ),
+        };
+        if let Some(object) = row.as_object_mut() {
+            object.insert("outcome".to_string(), serde_json::json!(name));
+            object.insert("dropped".to_string(), serde_json::json!(dropped));
+        }
+        Ok(row)
     }
 
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
@@ -2008,6 +2207,87 @@ impl RpcDispatcher {
     }
 }
 
+/// The values a config write carries. `config.set` and `config.save` take the
+/// same request shape and differ only in what they do with it.
+#[derive(serde::Deserialize)]
+struct ConfigValuesParams {
+    values: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `config.controls` — the app config's declared control tree, and the leaves
+/// that take no control.
+///
+/// Static: the tree describes `CliAppConfig`, which is a Rust type, so the
+/// answer does not depend on this daemon's state. It is served over the RPC
+/// all the same, because that is the seam every frontend already speaks and a
+/// second copy of the vocabulary in the browser is exactly what
+/// `cru.plugin.options` exists to prevent.
+fn handle_config_controls() -> serde_json::Value {
+    serde_json::json!({
+        "options": crucible_lua::options::app_config::app_config_options(),
+        "read_only": crucible_lua::options::app_config::app_config_read_only(),
+    })
+}
+
+/// One `config.origin` row: the key, what the store holds for it, and where
+/// that came from.
+///
+/// The origin comes from `ConfigStore::origin`, which is the same projection
+/// a `config.save` refusal carries. The row therefore names the pin, not the
+/// last writer: `:set` writes the ephemeral layer and becomes the last writer
+/// on every routine adjustment, while the line in the user's file still
+/// re-applies at the next boot and still refuses the save.
+///
+/// `pinned` says whether `config.save` would refuse this leaf. The daemon
+/// answers it, rather than each frontend deriving it from the source name:
+/// which layers pin is the refusal rule itself, and a settings UI that
+/// decided it from a list of source words would be a second copy of that rule
+/// — one that a new layer would not update.
+fn config_origin_row(
+    config: &serde_json::Value,
+    key: &str,
+    origin: &crucible_core::config::LeafOrigin,
+) -> serde_json::Value {
+    let mut row = serde_json::json!({
+        "key": key,
+        "value": crucible_core::config::leaf_at(config, key).cloned().unwrap_or(serde_json::Value::Null),
+    });
+    if let (Some(object), Ok(serde_json::Value::Object(origin))) =
+        (row.as_object_mut(), serde_json::to_value(origin))
+    {
+        object.extend(origin);
+    }
+    row
+}
+
+/// One leaf's origin over the effective view: the state overlay's row when it
+/// holds the leaf, and the store's otherwise.
+///
+/// The overlay is consulted FIRST because the store does not hold its leaves
+/// at all, so the store would answer `default` for a provider the daemon was
+/// told about — the divergence `config.effective` did not share.
+fn leaf_origin(
+    registered: &crucible_core::config::ProvenanceMap,
+    key: &str,
+) -> crucible_core::config::LeafOrigin {
+    match registered.get(key) {
+        Some(tag) => overlay_leaf_origin(tag),
+        None => crucible_lua::app_config_origin(key),
+    }
+}
+
+/// The origin row for a leaf the state overlay contributed.
+///
+/// `pinned` comes from `SourceTag::pin`, the same rule `config.save` refuses
+/// by, so the lock a settings UI draws and the refusal it would get are one
+/// answer.
+fn overlay_leaf_origin(tag: &SourceTag) -> crucible_core::config::LeafOrigin {
+    crucible_core::config::LeafOrigin {
+        pinned: tag.pin().is_some(),
+        origin: tag.origin(),
+    }
+}
+
 /// Record `registered` provenance for every leaf under `path` of `value` —
 /// the state overlay's contribution to the effective config.
 fn record_registered_leaves(
@@ -2105,6 +2385,55 @@ mod tests {
             data_home.path().to_path_buf(),
         ));
         (ctx, data_home)
+    }
+
+    /// A context whose LIVE provider table holds `provider`, and which was
+    /// bound with an app config.
+    ///
+    /// Both are needed to reach the state overlay: `config.effective` refuses
+    /// without a bind snapshot, and the overlay leaves are exactly the
+    /// providers the live table holds that the config store does not.
+    fn test_context_with_live_provider(provider: &str) -> TestContext {
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
+        use crate::background_manager::BackgroundJobManager;
+        use crate::kiln_manager::KilnManager;
+        use crate::project_manager::ProjectManager;
+        use tokio::sync::broadcast;
+
+        let (event_tx, _) = broadcast::channel(16);
+        let kiln_manager = Arc::new(KilnManager::new());
+        let session_manager = crate::test_support::temp_session_manager();
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+        let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: kiln_manager.clone(),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: Some(crate::test_fixtures::build_llm_config(
+                provider,
+                crucible_core::config::BackendType::Ollama,
+            )),
+            acp_config: None,
+            context_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            card_roots: Default::default(),
+        }));
+
+        let data_home = tempfile::tempdir().expect("data home");
+        let mut ctx = RpcContext::for_test(
+            kiln_manager,
+            session_manager,
+            agent_manager,
+            Arc::new(ProjectManager::new(data_home.path().join("projects.json"))),
+            event_tx,
+            data_home.path().to_path_buf(),
+        );
+        // `config.effective` answers only for a daemon that was bound with an
+        // app config; the snapshot's content does not matter here, only that
+        // there is one.
+        ctx.bound_config = Some(serde_json::json!({}));
+        (Arc::new(ctx), data_home)
     }
 
     /// Context with a real plugin loader, so tests can plant isolation claims.
@@ -2482,11 +2811,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let root = dir.join("plugins");
         let plugin = root.join("sandbox");
         std::fs::create_dir_all(&plugin).expect("plugin dir");
-        std::fs::write(
-            plugin.join("plugin.yaml"),
-            "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
-        )
-        .expect("plugin.yaml");
         std::fs::write(plugin.join("init.lua"), CLAIMS_ISOLATION).expect("init.lua");
 
         let (ctx, data_home) = test_context();
@@ -2586,7 +2910,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         assert!(METHODS.contains(&"ping"));
         assert!(METHODS.contains(&"daemon.capabilities"));
         assert!(METHODS.contains(&"session.subscribe"));
-        assert!(METHODS.contains(&"session.set_thinking_budget"));
+        assert!(METHODS.contains(&"session.set_context_budget"));
         assert!(METHODS.contains(&"session.cache_stats"));
         assert!(METHODS.contains(&"subagent.collect"));
     }
@@ -2741,6 +3065,450 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let resp = dispatcher.dispatch(ClientId::new(), all_req).await;
         let config = resp.result.unwrap();
         assert_eq!(config["config"]["answer"], serde_json::json!(42));
+        // A dotted key is a PATH, so `:set myplugin.debug=1` writes where a
+        // config file writes. The store used to hold one top-level key whose
+        // name held a dot, which no config file and no nested read could
+        // reach.
+        assert_eq!(
+            config["config"]["myplugin"]["debug"],
+            serde_json::json!(true),
+            "a dotted key must land nested: {config}"
+        );
+        assert!(
+            config["config"].get("myplugin.debug").is_none(),
+            "and must leave no literal dotted key behind: {config}"
+        );
+    }
+
+    /// The two verbs, at the seam that splits them.
+    ///
+    /// `config.set` is the runtime knob `:set` drives. A key the human's own
+    /// `init.lua` holds must still take it — a user raises a pinned budget
+    /// for one turn without editing a file — and the write must stay in the
+    /// ephemeral layer, never the persisted one. `config.save` of the SAME
+    /// key is refused instead, and names the line to change.
+    #[tokio::test]
+    async fn a_pinned_key_takes_a_runtime_set_and_refuses_a_save() {
+        // The pin as the boot plants it: a `cru.config.set` from a file the
+        // config root owns.
+        crucible_lua::merge_app_config_tagged(
+            serde_json::json!({ "a1gate": { "budget": 4096 } }),
+            crucible_core::config::SourceTag::Lua {
+                file: "/config/init.lua".to_string(),
+                line: Some(7),
+            },
+        );
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+        let values = serde_json::json!({ "values": { "a1gate": { "budget": 8192 } } });
+
+        let set = dispatcher
+            .dispatch(ClientId::new(), make_request("config.set", values.clone()))
+            .await;
+        assert_eq!(
+            set.result.expect("config.set answers")["ok"],
+            serde_json::json!(true),
+            "a runtime set must never refuse a pinned key"
+        );
+
+        let origin = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.origin",
+                    serde_json::json!({ "key": "a1gate.budget" }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.origin answers");
+        assert_eq!(origin["value"], serde_json::json!(8192), "the set took");
+        assert_eq!(
+            origin["source"],
+            serde_json::json!("lua"),
+            "and it took no authorship: the human's line still holds the leaf"
+        );
+        assert_eq!(
+            origin["pinned"],
+            serde_json::json!(true),
+            "so the save that follows is still refused: {origin}"
+        );
+
+        let save = dispatcher
+            .dispatch(ClientId::new(), make_request("config.save", values))
+            .await
+            .result
+            .expect("config.save answers");
+        assert_eq!(save["ok"], serde_json::json!(false), "{save}");
+        assert_eq!(
+            save["refused"][0]["key"],
+            serde_json::json!("a1gate.budget")
+        );
+        assert_eq!(save["refused"][0]["source"], serde_json::json!("lua"));
+        assert_eq!(
+            save["refused"][0]["file"],
+            serde_json::json!("/config/init.lua"),
+            "a refusal names the file to edit instead"
+        );
+        assert_eq!(save["refused"][0]["line"], serde_json::json!(7));
+
+        let after = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.origin",
+                    serde_json::json!({ "key": "a1gate.budget" }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.origin answers");
+        assert_eq!(
+            after["source"],
+            serde_json::json!("lua"),
+            "a refused leaf must not reach the persisted layer: {after}"
+        );
+        assert_eq!(
+            after["value"],
+            serde_json::json!(8192),
+            "and a refusal drops nothing: the runtime knob the user raised still \
+             holds the leaf, so one refused save cannot undo a `:set`: {after}"
+        );
+    }
+
+    /// `config.effective` and `config.origin` are two doors onto one answer,
+    /// and a provider `cru init` recorded is the leaf that parted them.
+    ///
+    /// The state overlay (`llm.json`) never enters the config store, so
+    /// `config.origin` read the store and called the leaf `default` while
+    /// `config.effective` folded the live table in and called it `registered`.
+    /// A settings UI that asked either question got a different answer, and
+    /// the one that reported `default` invited a save the daemon must refuse:
+    /// `settings.json` would then declare a partial provider entry that
+    /// shadows the working one at the next boot.
+    #[tokio::test]
+    async fn the_two_config_doors_agree_about_a_registered_provider() {
+        let (ctx, _data_home) = test_context_with_live_provider("a1state");
+        let dispatcher = RpcDispatcher::new(ctx);
+        let key = "llm.providers.a1state.type";
+
+        let effective = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request("config.effective", serde_json::json!({})),
+            )
+            .await
+            .result
+            .expect("config.effective answers");
+        assert_eq!(
+            effective["provenance"][key],
+            serde_json::json!("registered"),
+            "the live table's own provider is the state overlay's: {effective}"
+        );
+
+        let origin = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request("config.origin", serde_json::json!({ "key": key })),
+            )
+            .await
+            .result
+            .expect("config.origin answers");
+        assert_eq!(
+            origin["source"],
+            serde_json::json!("registered"),
+            "the second door must name the same source: {origin}"
+        );
+        assert_eq!(
+            origin["value"], effective["config"]["llm"]["providers"]["a1state"]["type"],
+            "and hold the same value: {origin}"
+        );
+        assert_eq!(
+            origin["pinned"],
+            serde_json::json!(true),
+            "a registered leaf is not the user's to save: {origin}"
+        );
+
+        let save = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.save",
+                    serde_json::json!({ "values": { "llm": { "providers": { "a1state": { "type": "openai" } } } } }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.save answers");
+        assert_eq!(save["ok"], serde_json::json!(false), "{save}");
+        assert_eq!(save["refused"][0]["key"], serde_json::json!(key));
+        assert_eq!(
+            save["refused"][0]["source"],
+            serde_json::json!("registered"),
+            "the refusal names the same source the origin does: {save}"
+        );
+    }
+
+    /// A settings control renders its lock from the daemon's own answer.
+    ///
+    /// `pinned` is the refusal rule reported per leaf. A frontend that decided
+    /// it from the source WORD would hold a second copy of that rule, and a
+    /// layer added later would leave the copy wrong — a control offering a save
+    /// the daemon refuses, or refusing one it would take.
+    #[tokio::test]
+    async fn config_origin_says_which_leaves_a_save_would_refuse() {
+        crucible_lua::merge_app_config_tagged(
+            serde_json::json!({ "a1lock": { "held": "by a human" } }),
+            crucible_core::config::SourceTag::Lua {
+                file: "/config/init.lua".to_string(),
+                line: Some(3),
+            },
+        );
+        crucible_lua::merge_app_config_tagged(
+            serde_json::json!({ "a1lock": { "saved": "by the ui" } }),
+            crucible_core::config::SourceTag::Settings,
+        );
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let row = |key: &str| {
+            let key = key.to_string();
+            let dispatcher = &dispatcher;
+            async move {
+                dispatcher
+                    .dispatch(
+                        ClientId::new(),
+                        make_request("config.origin", serde_json::json!({ "key": key })),
+                    )
+                    .await
+                    .result
+                    .expect("config.origin answers")
+            }
+        };
+
+        let held = row("a1lock.held").await;
+        assert_eq!(held["pinned"], serde_json::json!(true), "{held}");
+        assert_eq!(held["file"], serde_json::json!("/config/init.lua"));
+        assert_eq!(held["line"], serde_json::json!(3));
+
+        let saved = row("a1lock.saved").await;
+        assert_eq!(
+            saved["pinned"],
+            serde_json::json!(false),
+            "the layer a save writes cannot pin against itself: {saved}"
+        );
+    }
+
+    /// The settings UI draws the app config from the daemon's declaration, so
+    /// the declaration has to travel — controls AND the leaves that take none.
+    #[tokio::test]
+    async fn config_controls_serves_the_declared_tree_with_its_read_only_reasons() {
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let answer = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request("config.controls", serde_json::json!({})),
+            )
+            .await
+            .result
+            .expect("config.controls answers");
+
+        let groups = answer["options"]["args"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the tree carries its groups: {answer}"));
+        assert!(
+            groups.iter().any(|group| group["path"] == "chat"),
+            "{answer}"
+        );
+
+        let read_only = answer["read_only"]
+            .as_array()
+            .unwrap_or_else(|| panic!("a row per leaf that takes no control: {answer}"));
+        for key in crucible_core::config::LOCATION_CONFIG_KEYS {
+            let row = read_only
+                .iter()
+                .find(|row| row["path"] == serde_json::json!(key))
+                .unwrap_or_else(|| panic!("{key} must render read-only: {answer}"));
+            assert!(
+                !row["reason"].as_str().unwrap_or_default().is_empty(),
+                "{key} renders read-only, so it must say why",
+            );
+        }
+    }
+
+    /// A save of a key a `:set` already holds must change the LIVE value, not
+    /// only the file.
+    ///
+    /// `Rpc` outranks `Settings`, so the saved leaf lost to the scratch write
+    /// that sat above it: the settings UI wrote the file, the value on screen
+    /// did not move, and the save appeared only after a restart. The save
+    /// therefore drops the ephemeral hold on the leaves it accepts.
+    ///
+    /// It drops it on THOSE leaves and no others. One user's save must not
+    /// undo another client's scratch knob on an unrelated key.
+    #[tokio::test]
+    async fn a_save_takes_the_leaf_back_from_the_runtime_knob() {
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let set = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.set",
+                    serde_json::json!({ "values": {
+                        "a1live": { "model": "scratch", "sibling": "untouched" }
+                    }}),
+                ),
+            )
+            .await
+            .result
+            .expect("config.set answers");
+        assert_eq!(set["ok"], serde_json::json!(true), "{set}");
+
+        let save = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.save",
+                    serde_json::json!({ "values": { "a1live": { "model": "saved" } } }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.save answers");
+        assert_eq!(save["ok"], serde_json::json!(true), "{save}");
+
+        let origin = |key: &str| {
+            let key = key.to_string();
+            let dispatcher = &dispatcher;
+            async move {
+                dispatcher
+                    .dispatch(
+                        ClientId::new(),
+                        make_request("config.origin", serde_json::json!({ "key": key })),
+                    )
+                    .await
+                    .result
+                    .expect("config.origin answers")
+            }
+        };
+
+        let saved = origin("a1live.model").await;
+        assert_eq!(
+            saved["value"],
+            serde_json::json!("saved"),
+            "the saved value is the live value, in this same process: {saved}"
+        );
+        assert_eq!(
+            saved["source"],
+            serde_json::json!("settings"),
+            "and the layer that holds it is the one the file restores: {saved}"
+        );
+
+        let sibling = origin("a1live.sibling").await;
+        assert_eq!(
+            sibling["value"],
+            serde_json::json!("untouched"),
+            "a scratch knob on another key survives someone else's save: {sibling}"
+        );
+        assert_eq!(sibling["source"], serde_json::json!("rpc"), "{sibling}");
+    }
+
+    /// An unpinned key saves, and lands in the layer `settings.json` holds.
+    ///
+    /// This context has no config file, so nothing is written here: the tag
+    /// is what the file records, and the write itself is proved across a
+    /// restart in `tests/config_settings_file_e2e.rs`.
+    #[tokio::test]
+    async fn config_save_records_the_persisted_layer() {
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let save = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.save",
+                    serde_json::json!({ "values": { "a1save": { "theme": "dark" } } }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.save answers");
+        assert_eq!(save["ok"], serde_json::json!(true), "{save}");
+        assert_eq!(save["refused"], serde_json::json!([]));
+
+        let origin = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.origin",
+                    serde_json::json!({ "key": "a1save.theme" }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.origin answers");
+        assert_eq!(origin["value"], serde_json::json!("dark"));
+        assert_eq!(origin["source"], serde_json::json!("settings"));
+    }
+
+    /// Without a key, `config.origin` answers with one row per recorded leaf.
+    #[tokio::test]
+    async fn config_origin_lists_every_recorded_leaf() {
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+        dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.set",
+                    serde_json::json!({ "values": { "a1list": { "retries": 2 } } }),
+                ),
+            )
+            .await;
+
+        let all = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request("config.origin", serde_json::json!({})),
+            )
+            .await
+            .result
+            .expect("config.origin answers");
+        let row = all["origins"]
+            .as_array()
+            .expect("origins array")
+            .iter()
+            .find(|row| row["key"] == serde_json::json!("a1list.retries"))
+            .unwrap_or_else(|| panic!("the leaf just written must be listed: {all}"));
+        assert_eq!(row["value"], serde_json::json!(2));
+        assert_eq!(row["source"], serde_json::json!("rpc"));
+    }
+
+    /// A key nothing ever wrote reports the compiled-in default, not an
+    /// error: the settings UI asks about every control it renders.
+    #[tokio::test]
+    async fn config_origin_of_an_unwritten_key_is_the_default() {
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
+        let origin = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.origin",
+                    serde_json::json!({ "key": "no.such.key.xyz" }),
+                ),
+            )
+            .await
+            .result
+            .expect("config.origin answers");
+        assert_eq!(origin["value"], serde_json::Value::Null);
+        assert_eq!(origin["source"], serde_json::json!("default"));
+        assert_eq!(origin.get("file"), None, "the default names no file");
     }
 
     #[tokio::test]
@@ -2780,7 +3548,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let result = resp.result.unwrap();
         let methods = result["methods"].as_array().unwrap();
         assert!(methods.iter().any(|m| m == "ping"));
-        assert!(methods.iter().any(|m| m == "session.set_thinking_budget"));
+        assert!(methods.iter().any(|m| m == "session.set_context_budget"));
     }
 
     #[tokio::test]
@@ -3030,7 +3798,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(data_home)),
             config_projects: Vec::new(),
             config_path: None,
-            effective_config: None,
+            bound_config: None,
             boot_hash: None,
             config_default_kiln: None,
             notifications,

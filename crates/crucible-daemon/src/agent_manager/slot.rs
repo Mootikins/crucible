@@ -32,16 +32,15 @@ pub(crate) struct SessionSlot {
     /// invalidated together and having them separate was a bug: see
     /// [`Self::install_agent`].
     build: Mutex<BuildCache>,
-    /// This session's Lua VM, built on first use.
+    /// Names this session's spill files. Monotonic across the session's
+    /// messages, so two large tool results never collide.
     ///
-    /// A `OnceLock` rather than a map entry because that is the honest type:
-    /// the old `DashMap` was check-then-insert, so two concurrent first uses
-    /// each built a VM and one was discarded — along with any handler
-    /// registered on it. `get_or_init` builds exactly once. The builder is
-    /// synchronous (it loads files and runs `on_session_start`), which is why
-    /// this is `std::sync::OnceLock` and the tree below is not.
-    pub(in crate::agent_manager) lua:
-        std::sync::OnceLock<Arc<tokio::sync::Mutex<super::SessionEventState>>>,
+    /// A bare atomic: there is nothing to build lazily any more. It used to
+    /// live inside a `OnceLock<Arc<Mutex<SessionEventState>>>` whose real job
+    /// was to build the session's Lua VM exactly once. Sessions have no VM,
+    /// and `on_session_start` fires from `SessionLifecycle`, so the lock, the
+    /// mutex and the struct were three layers over one counter.
+    pub(in crate::agent_manager) spill_counter: std::sync::atomic::AtomicU32,
     /// Scheduler-owned conversation tree, rebuilt from the session's JSONL on
     /// first use. `tokio::sync::OnceCell` because that rebuild is async.
     pub(in crate::agent_manager) tree:
@@ -50,7 +49,7 @@ pub(crate) struct SessionSlot {
     /// `on_session_start` hooks. `None` until the VM has run — a manager whose
     /// VM construction failed outright falls back to the raw globals, which is
     /// a different answer from "the VM ran and captured nothing".
-    overrides: Mutex<Option<crucible_lua::SessionDefaultValues>>,
+    overrides: Mutex<Option<crucible_lua::SessionStartValues>>,
     /// The live copy of the session's `session:set_variable` map. The VM
     /// builder seeds it from the persisted session before the start hooks
     /// run, so a hook that runs after a resume reads what it stored before.
@@ -261,8 +260,12 @@ impl SessionSlot {
         }
     }
 
-    /// Whether a handle is cached. `system_prompt` is locked once one is (it is
-    /// baked into the handle), and tests assert on eviction.
+    /// Whether a handle is cached.
+    ///
+    /// Test-only since `set_system_prompt` went away — that setter refused a
+    /// change once a handle existed, because the prompt is baked into it.
+    /// Eviction tests are the remaining reader.
+    #[cfg(test)]
     pub(crate) fn has_agent(&self) -> bool {
         self.lock_build().agent.is_some()
     }
@@ -277,7 +280,7 @@ impl SessionSlot {
     }
 
     /// This session's captured starting values, or `None` if its VM never ran.
-    pub(crate) fn overrides(&self) -> Option<crucible_lua::SessionDefaultValues> {
+    pub(crate) fn overrides(&self) -> Option<crucible_lua::SessionStartValues> {
         self.overrides
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -290,7 +293,7 @@ impl SessionSlot {
     }
 
     /// Record what `on_session_start` left in the session's scope.
-    pub(crate) fn set_overrides(&self, values: crucible_lua::SessionDefaultValues) {
+    pub(crate) fn set_overrides(&self, values: crucible_lua::SessionStartValues) {
         *self
             .overrides
             .lock()

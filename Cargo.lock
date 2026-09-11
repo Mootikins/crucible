@@ -1323,7 +1323,6 @@ dependencies = [
  "tokio-test",
  "tokio-util",
  "toml 1.1.3+spec-1.1.0",
- "toml_edit 0.22.27",
  "tracing",
  "tracing-subscriber",
  "unicode-width 0.2.0",
@@ -1468,6 +1467,7 @@ dependencies = [
  "oq",
  "proptest",
  "serde",
+ "serde_ignored",
  "serde_json",
  "serde_yaml",
  "strum 0.28.0",
@@ -1477,6 +1477,7 @@ dependencies = [
  "tokio-tungstenite 0.30.0",
  "toml 1.1.3+spec-1.1.0",
  "tracing",
+ "walkdir",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::types::acp::FileDiff;
+use crate::types::{ToolDisplay, ToolDisplayKind};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Permission Request/Response
@@ -146,16 +147,27 @@ impl PermRequest {
     }
 
     /// Suggested pattern for allowlisting this request.
-    /// For bash: first token + `*` (e.g., `cargo *`)
-    /// For file ops: directory prefix (e.g., `src/`)
-    /// For tools: tool name, or MCP prefix + `*` (e.g., `fs_*`)
+    ///
+    /// For bash: the command line itself (e.g., `cargo build --release`).
+    /// For file ops: directory prefix (e.g., `src/`).
+    /// For tools: tool name, or MCP prefix + `*` (e.g., `fs_*`).
+    ///
+    /// A suggestion is the *default* grant, so it may never be wider than the
+    /// action the modal displayed. The first token alone was wider: the user
+    /// read `rm build/tmp.o` and the offered grant was `rm *`, which covers
+    /// `rm -rf /home/user/project` on every project, for as long as the store
+    /// file lives. A shell tool call answers with its command for the same
+    /// reason — the tool name `bash` is a bash pattern, and as a prefix it
+    /// read `bash -c <anything>`. The user who wants a wider grant edits the
+    /// suggestion and types the `*`; see
+    /// [`crate::config::PatternStore::matches_bash`].
     pub fn suggested_pattern(&self) -> String {
         match &self.action {
             PermAction::Bash { tokens } => {
                 if tokens.is_empty() {
                     "*".to_string()
                 } else {
-                    format!("{} *", tokens[0])
+                    Self::bash_suggestion(&tokens.join(" "))
                 }
             }
             PermAction::Read { segments } | PermAction::Write { segments } => {
@@ -165,13 +177,39 @@ impl PermRequest {
                     format!("{}/", segments[0])
                 }
             }
-            PermAction::Tool { name, .. } => {
-                if let Some(prefix_end) = name.find('_') {
-                    format!("{}_*", &name[..prefix_end])
-                } else {
-                    name.clone()
+            PermAction::Tool { name, args } => {
+                let display = ToolDisplay::of(name, args);
+                match (display.kind, display.primary) {
+                    (ToolDisplayKind::Command, Some(command)) => Self::bash_suggestion(&command),
+                    _ => match name.find('_') {
+                        Some(prefix_end) => format!("{}_*", &name[..prefix_end]),
+                        None => name.clone(),
+                    },
                 }
             }
+        }
+    }
+
+    /// The bash rule to suggest for the command line `command`.
+    ///
+    /// The suggestion drops a trailing wildcard, because a trailing `*` is
+    /// what widens a stored rule and only the user may type it. The shell
+    /// expands `rm *` before `rm` runs, so the user reads a command that
+    /// acts on the files of one directory; the same text stored as a rule
+    /// reads `rm <anything>`, which the user never approved and which
+    /// [`crate::config::PatternStore::load_file`] refuses when it reads the
+    /// store back.
+    /// A suggestion that is narrower than the command costs one more prompt.
+    /// A suggestion that is wider costs the project.
+    fn bash_suggestion(command: &str) -> String {
+        let narrowed = command.trim_end_matches(|c: char| c == '*' || c.is_whitespace());
+        if narrowed.is_empty() {
+            // A command line of only globs has no rule that means it. Keep
+            // the pattern the store refuses, so the click reports the refusal
+            // instead of saving a grant the user cannot read.
+            "*".to_string()
+        } else {
+            narrowed.to_string()
         }
     }
 }
@@ -235,6 +273,50 @@ mod tests {
         let req = PermRequest::bash(["npm", "install", "lodash"]);
 
         assert_eq!(req.tokens(), &["npm", "install", "lodash"]);
+    }
+
+    /// A `*` is what widens a stored bash rule, so the suggestion never ends
+    /// with one - not even when the command the model ran ends with a glob.
+    /// The shell expands `rm *` before `rm` sees it, so the user reads a
+    /// command that acts on the files in one directory; the same text stored
+    /// as a rule reads `rm <anything>`, which is not what the user approved.
+    #[test]
+    fn a_bash_suggestion_never_ends_with_a_wildcard() {
+        use crate::config::PatternStore;
+
+        let requests = [
+            PermRequest::bash(["rm", "*"]),
+            PermRequest::bash(["git", "add", "*"]),
+            PermRequest::tool("bash", serde_json::json!({"command": "rm *"})),
+            PermRequest::tool("bash", serde_json::json!({"command": "git add *"})),
+        ];
+
+        for request in requests {
+            let suggestion = request.suggested_pattern();
+            assert!(
+                !suggestion.ends_with('*'),
+                "suggested {suggestion:?} for {request:?}"
+            );
+
+            // The prompt never suggests a rule the loader refuses, so the
+            // suggestion survives the write and the read.
+            let mut store = PatternStore::new();
+            store.add_bash_pattern(&suggestion).unwrap();
+            let dir = tempfile::TempDir::new().unwrap();
+            let file = PatternStore::user_file_in(&dir.path().join("whitelists.d"));
+            store.save_file(&file).unwrap();
+            assert_eq!(
+                PatternStore::load_file(&file).unwrap(),
+                store,
+                "the loader refused the suggestion {suggestion:?}"
+            );
+
+            // And it never reaches a command the user did not read.
+            assert!(
+                !store.matches_bash("rm -rf /home/u/proj"),
+                "the suggestion {suggestion:?} reaches an unapproved command"
+            );
+        }
     }
 
     #[test]

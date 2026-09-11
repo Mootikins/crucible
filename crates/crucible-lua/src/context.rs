@@ -26,9 +26,8 @@ use crate::error::LuaError;
 use crate::host_registry::Ns;
 use crate::lua_util::get_or_create_namespace;
 use crate::sessions::DaemonSessionApi;
-use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use mlua::{Lua, LuaSerdeExt, Table, Value};
+use std::sync::Arc;
 
 /// The declared type of each `cru.context` function.
 ///
@@ -201,122 +200,6 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
     Ok(())
 }
 
-/// Registry of Lua-defined output validators, keyed by name.
-///
-/// Storage is a `HashMap<String, RegistryKey>` behind a `Mutex` behind an
-/// `Arc`. `RegistryKey` is `Send + Sync` (it's just an integer handle into
-/// the Lua-owned registry), so the registry itself can be cheaply shared
-/// across the daemon stream loop and the plugin's Lua state.
-///
-/// Resolving a key back into an `mlua::Function` requires the same `Lua`
-/// the key was created in, which is why [`Self::run`] takes `&Lua` —
-/// enforcing co-location at the type level. The plugin loader holds both
-/// the `Lua` and an `Arc<LuaValidatorRegistry>`; the stream loop is given
-/// access via the same plugin loader.
-#[derive(Default)]
-pub struct LuaValidatorRegistry {
-    inner: Mutex<HashMap<String, RegistryKey>>,
-}
-
-impl LuaValidatorRegistry {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// True if a validator with this name has been registered.
-    pub fn has(&self, name: &str) -> bool {
-        self.inner.lock().unwrap().contains_key(name)
-    }
-
-    /// Run a registered validator against `text`.
-    ///
-    /// Outer `Result` carries `mlua::Error` for "couldn't even invoke"
-    /// (registry resolution failed, the Lua function panicked). Inner
-    /// `Result<(), String>` carries the validator's verdict — `Ok(())`
-    /// for pass, `Err(reason)` for failure. Unknown validator names
-    /// surface as inner `Err`, not outer error, because the daemon
-    /// stream loop wants to feed the reason back to the agent for retry
-    /// rather than crash.
-    pub fn run(&self, lua: &Lua, name: &str, text: &str) -> mlua::Result<Result<(), String>> {
-        let guard = self.inner.lock().unwrap();
-        let Some(key) = guard.get(name) else {
-            return Ok(Err(format!("lua validator '{name}' not registered")));
-        };
-        let f: Function = lua.registry_value(key)?;
-        // Lua validators may return `(bool)` or `(bool, string)`. Use
-        // `MultiValue` to accept either shape.
-        let result: mlua::MultiValue = f.call(text.to_string())?;
-        let mut iter = result.into_iter();
-        let ok = match iter.next() {
-            Some(Value::Boolean(b)) => b,
-            // Treat non-bool first return as failure with a descriptive
-            // reason rather than panicking — plugin authors get a useful
-            // message instead of an opaque type error.
-            Some(other) => {
-                return Ok(Err(format!(
-                    "lua validator '{name}' returned non-boolean first value: {}",
-                    other.type_name()
-                )));
-            }
-            None => {
-                return Ok(Err(format!("lua validator '{name}' returned no values")));
-            }
-        };
-        if ok {
-            return Ok(Ok(()));
-        }
-        let reason = match iter.next() {
-            Some(Value::String(s)) => s.to_str().map(|s| s.to_owned()).ok(),
-            _ => None,
-        };
-        Ok(Err(reason.unwrap_or_else(|| {
-            format!("lua validator '{name}' returned false")
-        })))
-    }
-
-    fn insert(&self, name: String, key: RegistryKey) {
-        self.inner.lock().unwrap().insert(name, key);
-    }
-}
-
-/// Register `cru.context.register_validator(name, fn)` against the given
-/// validator registry.
-///
-/// Idempotent w.r.t. `cru.context` — if `register_context_module` (or its
-/// stub) has already mounted the table, this attaches alongside the
-/// existing daemon-backed methods. Otherwise an empty `cru.context`
-/// table is created so plugins can call `register_validator` standalone.
-///
-/// The registry is shared via `Arc` so the daemon stream loop can hold a
-/// handle and dispatch by name without re-entering Lua's symbol table.
-pub fn register_context_validators(
-    lua: &Lua,
-    registry: Arc<LuaValidatorRegistry>,
-) -> Result<(), LuaError> {
-    // Over the table that is already mounted, not a fresh one: this may run
-    // after `register_context_module`, and a new table would drop the four
-    // daemon-backed functions.
-    let mut context = Ns::over(lua, "cru.context", ensure_cru_context_table(lua)?);
-
-    let reg = Arc::clone(&registry);
-    // Two accepted validator shapes, as one intersection — Luau's overload
-    // syntax. `LuaValidatorRegistry::run` reads the first return as the
-    // verdict and the second, when there is one, as the reason, so BOTH
-    // `-> boolean` and `-> (boolean, string?)` are correct code. Declaring
-    // only the two-value form would make a one-value validator a Luau error.
-    context.func(
-        "register_validator",
-        "(name: string, validator: ((text: string) -> boolean) \
-         & ((text: string) -> (boolean, string?))) -> ()",
-        move |lua, (name, func): (String, Function)| {
-            let key = lua.create_registry_value(func)?;
-            reg.insert(name, key);
-            Ok(())
-        },
-    )?;
-    Ok(())
-}
-
 /// Look up `cru.context`, creating the namespace + sub-table if absent.
 ///
 /// Mirrors the access pattern in `register_context_module` so calls in
@@ -341,38 +224,35 @@ mod tests {
     use std::future::Future;
     use std::pin::Pin;
 
-    /// The daemon registers validators when it builds the VM and mounts the
-    /// context API later (`daemon_plugins/mod.rs:244` then `:639`). Both must
-    /// survive, in either order.
+    /// Mounting the daemon API must not evict what is already on
+    /// `cru.context`.
     ///
-    /// They did not. `register_context_module` built a FRESH table and
-    /// mounted it over `cru.context`, so `cru.context.register_validator`
-    /// became nil the instant the daemon API arrived — taking with it every
-    /// validator a plugin had registered at init, which is the order the
-    /// loader deliberately uses.
+    /// It did. `register_context_module` built a FRESH table and mounted it
+    /// over `cru.context`, so anything registered earlier became nil the
+    /// instant the daemon API arrived. The loader deliberately mounts in that
+    /// order, so the eviction was the normal path, not an edge case.
+    ///
+    /// A plugin's own key stands in for what used to be
+    /// `cru.context.register_validator` here: the guarantee is about the
+    /// table, not about any one member of it.
     #[test]
-    fn the_daemon_api_does_not_evict_the_validator_surface() {
+    fn the_daemon_api_does_not_evict_what_is_already_mounted() {
         let lua = Lua::new();
-        let registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(&lua, Arc::clone(&registry)).expect("validators");
+        register_context_module_stub(&lua).expect("the stub mounts first");
 
-        lua.load(r#"cru.context.register_validator("probe", function(text) return true end)"#)
+        lua.load(r#"cru.context.mine = function() return 7 end"#)
             .exec()
-            .expect("a plugin registers a validator at init");
+            .expect("a plugin adds its own key at init");
 
         register_context_module(&lua, Arc::new(StubApi)).expect("the daemon API arrives");
 
         let still_there: bool = lua
-            .load("return type(cru.context.register_validator) == 'function'")
+            .load("return type(cru.context.mine) == 'function'")
             .eval()
             .expect("the surface answers");
         assert!(
             still_there,
-            "mounting the daemon API must not evict the validator surface"
-        );
-        assert!(
-            registry.has("probe"),
-            "a validator registered before the upgrade must survive it"
+            "mounting the daemon API must not evict an existing key"
         );
 
         let has_api: bool = lua
@@ -395,14 +275,6 @@ mod tests {
             _: String,
             _: serde_json::Value,
         ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
-            unimplemented!()
-        }
-
-        fn set_output_validation(
-            &self,
-            _: String,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             unimplemented!()
         }
 
@@ -770,117 +642,5 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(last_role, "tool_call");
-    }
-
-    #[test]
-    fn register_validator_stores_callback_and_runs() {
-        let lua = Lua::new();
-        let registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(&lua, Arc::clone(&registry)).unwrap();
-
-        lua.load(
-            r#"
-            cru.context.register_validator("ok", function(t)
-                if t == "ok" then return true end
-                return false, "expected 'ok' but got " .. t
-            end)
-            "#,
-        )
-        .exec()
-        .unwrap();
-
-        assert!(registry.has("ok"));
-
-        let result = registry.run(&lua, "ok", "ok").unwrap();
-        assert!(result.is_ok(), "expected validator to pass on 'ok' input");
-
-        let result = registry.run(&lua, "ok", "bad").unwrap();
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("expected 'ok'"),
-            "reason did not propagate: {err}"
-        );
-    }
-
-    #[test]
-    fn registry_run_unknown_name_returns_error() {
-        let lua = Lua::new();
-        let registry = LuaValidatorRegistry::new();
-        let result = registry.run(&lua, "nonexistent", "anything").unwrap();
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("not registered"),
-            "expected 'not registered' in: {err}"
-        );
-    }
-
-    #[test]
-    fn registry_run_validator_returning_only_true_passes() {
-        // Lua validators may return just `true` (no second value).
-        let lua = Lua::new();
-        let registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(&lua, Arc::clone(&registry)).unwrap();
-        lua.load(r#"cru.context.register_validator("yes", function(_) return true end)"#)
-            .exec()
-            .unwrap();
-        assert!(registry.run(&lua, "yes", "anything").unwrap().is_ok());
-    }
-
-    #[test]
-    fn register_validator_default_reason_when_only_false_returned() {
-        let lua = Lua::new();
-        let registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(&lua, Arc::clone(&registry)).unwrap();
-        lua.load(r#"cru.context.register_validator("no", function(_) return false end)"#)
-            .exec()
-            .unwrap();
-        let result = registry.run(&lua, "no", "x").unwrap();
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("returned false"),
-            "expected default reason, got: {err}"
-        );
-    }
-
-    #[test]
-    fn register_validator_attaches_to_existing_context_module() {
-        // Both ordering paths should mount on the same `cru.context` table.
-        let lua = Lua::new();
-        let api: Arc<dyn DaemonSessionApi> = Arc::new(StubApi);
-        register_context_module(&lua, api).unwrap();
-        let registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(&lua, Arc::clone(&registry)).unwrap();
-
-        let both_present: bool = lua
-            .load(
-                r#"
-                return type(cru.context.estimate_tokens) == "function"
-                   and type(cru.context.register_validator) == "function"
-                   and type(cru.context.register_validator) == "function"
-                "#,
-            )
-            .eval()
-            .unwrap();
-        assert!(both_present);
-    }
-
-    #[tokio::test]
-    async fn remove_returns_count() {
-        let lua = Lua::new();
-        let api: Arc<dyn DaemonSessionApi> = Arc::new(StubApi);
-        register_context_module(&lua, api).unwrap();
-
-        let n: i64 = lua
-            .load(
-                r#"
-                local n, err = cru.context.remove("test-session", { type = "last", n = 2 })
-                assert(err == nil, "unexpected error: " .. tostring(err))
-                return n
-                "#,
-            )
-            .eval_async()
-            .await
-            .unwrap();
-        assert_eq!(n, 2);
     }
 }

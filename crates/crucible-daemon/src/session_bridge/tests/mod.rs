@@ -12,7 +12,7 @@ mod review;
 mod session_json;
 
 use crucible_core::config::{BackendType, LlmConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -91,10 +91,7 @@ fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -102,15 +99,8 @@ fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     }
 }
@@ -283,9 +273,12 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
     let config_home = TempDir::new().unwrap();
     let whitelists_dir = config_home.path().join("crucible").join("whitelists.d");
     std::fs::create_dir_all(&whitelists_dir).unwrap();
+    // The rig's turn calls `rm -rf /`, so the grant names that command. A
+    // bare `rm` would not do: a saved pattern with no `*` is the whole
+    // statement, which is what stops one grant reaching every later `rm`.
     std::fs::write(
         whitelists_dir.join("user.toml"),
-        "[bash_commands]\nallowed_prefixes = [\"rm\"]\n",
+        "[bash_commands]\nallowed_prefixes = [\"rm -rf /\"]\n",
     )
     .unwrap();
     let card_roots = crate::agent_cards::CardRoots {

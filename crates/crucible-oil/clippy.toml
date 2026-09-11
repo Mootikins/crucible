@@ -1,0 +1,17 @@
+# The render primitives read no clock.
+#
+# A frame must be a pure function of the state it is given. When a renderer
+# reads the wall clock, the same state draws differently on a slow machine,
+# and a replay test asserts against the hardware it ran on. That is how
+# `replay_malformed_acp_recording_80x24` failed: `split_slow_tools` compared a
+# tool's start against a 500ms threshold at render time.
+#
+# This crate reads the clock zero times today. The deny keeps it that way.
+# Time enters a frame as a value the caller supplies — see
+# `OilChatApp::set_frame_time` and `ViewContext::frame_time` in crucible-cli.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "take the frame time as a parameter; see ViewContext::frame_time" },
+    { path = "std::time::Instant::elapsed", reason = "measure against the frame time: now.saturating_duration_since(start)" },
+    { path = "std::time::SystemTime::now", reason = "take the frame time as a parameter; see ViewContext::frame_time" },
+    { path = "std::thread::sleep", reason = "a renderer never waits; drive time from the caller" },
+]

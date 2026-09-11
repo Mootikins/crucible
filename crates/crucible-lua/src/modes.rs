@@ -26,8 +26,8 @@
 //!
 //! `permissions` is the mode's *default stance*. `cru.permissions.on_request`
 //! hooks still run and still win, because a stance can only be static and
-//! real policy often isn't. Same split as `cru.defaults` (a value) versus
-//! `cru.on_session_start` (a decision).
+//! real policy often isn't. Same split as `chat.system_prompt` (a value)
+//! versus `cru.on_session_start` (a decision).
 
 use mlua::{Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value};
 use std::sync::{Arc, RwLock};

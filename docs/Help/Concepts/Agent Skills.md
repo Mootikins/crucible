@@ -102,21 +102,70 @@ This is the core design principle. Skills avoid dumping everything into the agen
 
 ## Discovery
 
-Crucible discovers skills from three scopes, in priority order:
+Crucible resolves skills over **one ordered root list** — the runtimepath —
+and takes the first match. Every asset kind (skills, agent cards, plugins,
+themes) uses the same list, so adding a directory once makes all of them
+visible.
 
-| Scope | Path | Priority |
-|-------|------|----------|
-| Personal | `~/.config/crucible/skills/` | Lowest |
-| Workspace | `<project>/.<agent>/skills/` | Medium |
-| Kiln | `<kiln>/.crucible/skills/` | Highest |
+| Root | Reported scope |
+|------|----------------|
+| `<workspace>/.crucible/`, `.agents/`, `.claude/`, `.codex/`, `.opencode/` | Workspace |
+| `<kiln>/.crucible/` | Kiln |
+| each `runtimepath` entry, in the order you wrote it | Personal |
+| each `[harnesses]` row you enabled | Personal |
+| `~/.config/crucible/` | Personal |
+| `~/.config/crucible/runtime/` (what `cru setup` writes) | Builtin |
+| a loaded plugin's own directory | Builtin |
+| the tree shipped inside the binary | Builtin |
 
-Within each scope, Crucible globs for `*/SKILL.md` patterns. For workspace scope, it checks directories for known agents: `.claude/skills/`, `.codex/skills/`, `.opencode/skills/`, `.crucible/skills/`.
+Each root's `skills/` subdirectory is searched for `*/SKILL.md`.
 
-Every auto-detected directory is a dot-directory — the same rule plugins and
-agent cards follow. A kiln's visible top level belongs to your notes, and a
-kiln you cloned or synced must not be able to put text into an agent's system
-prompt just by containing a `skills/` folder. A kiln that genuinely is a skill
-library brings itself in at load rather than being scanned.
+A kiln outranks a workspace **for skills** — a kiln is where knowledge lives,
+so its skills are the most specific. Agent cards run the other way. That
+difference is deliberate and recorded in `RuntimeAsset::kiln_outranks_workspace`.
+
+Every auto-detected directory is a dot-directory. A kiln you cloned or synced
+must not be able to put text into an agent's system prompt just by containing
+a `skills/` folder.
+
+### Adding a directory
+
+One line in `~/.config/crucible/init.lua`:
+
+```lua
+cru.config.set({
+    runtimepath = { "~/team-kit" },
+})
+```
+
+`~/team-kit/skills/`, `~/team-kit/agents/`, `~/team-kit/plugins/` and
+`~/team-kit/themes/` are all found. From `init.lua`, `cru.rtp.append("...")`
+does the same thing at boot.
+
+### Reading another agent tool's skills
+
+`.agents/skills` is the cross-vendor convention that seventeen agent products
+read. Crucible reads it too, from a workspace by default and from your home
+directory when you opt in.
+
+Home-directory harness roots are **opt-in per row**, because a skill becomes
+LLM instructions: any installer that legitimately writes to `~/.claude/skills`
+would otherwise be writing into Crucible's system prompt. Enable them by
+setting `CRUCIBLE_CROSS_HARNESS_SKILLS=1`, which turns on `agents`, `claude`,
+`codex`, `opencode` and `pi` — each at its own shape, including `pi`'s deeper
+`~/.pi/agent/skills`.
+
+Only skills and agent cards are read from a harness root. Plugins, themes and
+defaults never are: Claude Code keeps a `~/.claude/plugins`, and asking
+Crucible to read another tool's skills must not make it execute that tool's
+code.
+
+### Plugins can ship skills
+
+A plugin's own directory is a runtime root, so `myplugin/skills/` is found
+without any registration. That is how Crucible's own `crucible-help` ships the
+documentation you are reading. A plugin's skills rank below every root you
+named yourself, so they never shadow your own.
 
 ### Priority and Shadowing
 

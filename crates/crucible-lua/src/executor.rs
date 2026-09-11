@@ -643,7 +643,7 @@ mod tests {
         let previous = crate::plugin_context::enter_plugin(
             executor.lua(),
             "reflection",
-            crate::manifest::CapabilitySet::none(),
+            false,
         );
         executor
             .lua()
@@ -703,7 +703,7 @@ mod tests {
         let previous = crate::plugin_context::enter_plugin(
             executor.lua(),
             "reflection",
-            crate::manifest::CapabilitySet::none(),
+            false,
         );
         executor
             .lua()

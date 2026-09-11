@@ -82,7 +82,8 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// Config file path (defaults to ~/.config/crucible/config.toml)
+    /// Config file path; its directory holds init.lua
+    /// (defaults to ~/.config/crucible)
     #[arg(short = 'C', long, global = true)]
     pub config: Option<PathBuf>,
 
@@ -134,7 +135,7 @@ pub enum Commands {
         env: Vec<String>,
 
         /// Session configuration overrides in vim-style format (can be repeated)
-        /// Same syntax as TUI :set — examples: --set model=llama3 --set thinkingbudget=high
+        /// Same syntax as TUI :set — examples: --set model=llama3 --set contextbudget=128000
         /// Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
         #[arg(long = "set", value_name = "KEY[=VALUE]")]
         set_overrides: Vec<String>,
@@ -151,11 +152,6 @@ pub enum Commands {
         /// Session state, so it persists across resume — same as `:set noprecognition`
         #[arg(long)]
         no_context: bool,
-
-        /// Number of knowledge-base notes to ground with (daemon default: 5).
-        /// Session state, so it persists across resume
-        #[arg(long)]
-        context_size: Option<usize>,
 
         /// Start in plan mode (read-only) instead of normal mode (full access)
         /// Can be toggled during session with /plan and /normal commands
@@ -317,7 +313,7 @@ pub enum Commands {
     /// Manage Crucible configuration (initialize, view, export)
     #[command(
         subcommand,
-        long_about = "Manage Crucible configuration - initialize, view, and export settings.\n\nExamples:\n  # Initialize config\n  cru config init\n\n  # Show current config\n  cru config show\n\n  # Show config as JSON\n  cru config show -f json\n\n  # Dump default config\n  cru config dump > default-config.toml",
+        long_about = "Manage Crucible configuration - initialize, view, and export settings.\n\nExamples:\n  # Initialize config\n  cru config init\n\n  # Show current config\n  cru config show\n\n  # Show config as JSON\n  cru config show -f json\n\n  # Dump the default config for reference\n  cru config dump",
         visible_alias = "cfg"
     )]
     Config(ConfigCommands),
@@ -500,10 +496,10 @@ Examples:
     /// Requires session targeting via --session or CRU_SESSION env var.
     /// Examples:
     ///   cru set model=llama3 --session chat-20260217-1030
-    ///   CRU_SESSION=chat-20260217-1030 cru set thinkingbudget=high
+    ///   CRU_SESSION=chat-20260217-1030 cru set contextbudget=128000
     #[command(
         name = "set",
-        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires session targeting via positional SESSION_ID or CRU_SESSION env var.\nOnly daemon-synced settings (model, thinkingbudget, maxiterations) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set chat-20260217-1030 model=llama3\n\n  # Set thinking budget using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set thinkingbudget=high\n\n  # Set multiple settings at once\n  cru set chat-20260217-1030 model=llama3 thinkingbudget=high"
+        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires session targeting via positional SESSION_ID or CRU_SESSION env var.\nOnly daemon-synced settings (model, contextbudget, maxiterations) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set chat-20260217-1030 model=llama3\n\n  # Set the context budget using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set contextbudget=128000\n\n  # Set multiple settings at once\n  cru set chat-20260217-1030 model=llama3 contextbudget=128000"
     )]
     Set {
         /// Session ID and/or settings (positional args, or use CRU_SESSION env var)

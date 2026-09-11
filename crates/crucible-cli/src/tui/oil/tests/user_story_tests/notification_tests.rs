@@ -7,7 +7,6 @@
 //! dismissal. Wall-clock toast expiry is exercised by an `#[ignore]`d
 //! slow test (the 3s timeout is not injectable headlessly).
 
-use std::thread::sleep;
 use std::time::Duration;
 
 use crossterm::event::KeyCode;
@@ -77,13 +76,14 @@ fn keypress_dismisses_open_drawer() {
 }
 
 #[test]
-#[ignore = "requires: wall clock — the 3s toast expiry"]
 fn toast_auto_dismisses_after_timeout() {
     let mut story = StoryRuntime::new(80, 24);
     add(&mut story, Notification::toast("ephemeral toast"));
     assert!(story.screen().contains("ephemeral toast"));
 
-    sleep(Duration::from_millis(3_100));
+    // The frame clock, not a sleep. The toast expires at exactly 3s on every
+    // machine, so this asserts the timeout rather than the hardware.
+    story.advance(Duration::from_secs(3));
 
     // expire_toasts runs inside render_frame (via screen()).
     let after = story.screen();
@@ -91,4 +91,28 @@ fn toast_auto_dismisses_after_timeout() {
         !after.contains("ephemeral toast"),
         "toast should auto-dismiss after its 3s timeout:\n{after}"
     );
+    // Two separate gates hide a toast: `active_toast` stops drawing it, and
+    // `expire_toasts` drops it from the store. Assert both, or a break in one
+    // passes on the other.
+    assert!(
+        !story.app().has_notifications(),
+        "an expired toast must also leave the store"
+    );
+}
+
+/// A toast one millisecond short of the timeout still draws. Without this the
+/// test above passes against a panel that hides every toast at once.
+#[test]
+fn a_toast_stays_until_its_timeout() {
+    let mut story = StoryRuntime::new(80, 24);
+    add(&mut story, Notification::toast("ephemeral toast"));
+
+    story.advance(Duration::from_millis(2_999));
+
+    let after = story.screen();
+    assert!(
+        after.contains("ephemeral toast"),
+        "the toast must stay for its full 3s:\n{after}"
+    );
+    assert!(story.app().has_notifications(), "and stay in the store");
 }

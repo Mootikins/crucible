@@ -5,8 +5,8 @@
 //! selector, and whatever else the agent advertises in `configOptions`. There
 //! is no temperature and no token cap anywhere in the protocol.
 //!
-//! Applied anyway, three of the knobs became lies. `AcpAgentHandle` cached
-//! temperature, thinking budget and max tokens in fields nothing read, so
+//! Applied anyway, some of the knobs became lies. `AcpAgentHandle` cached
+//! temperature and max tokens in fields nothing read, so
 //! `set_temperature(0.2)` was accepted, `get_temperature()` answered `0.2`,
 //! and the agent process never heard about it. Nine sibling knobs on the same
 //! handle already answered `NotSupported`, so this was an inconsistency inside
@@ -39,34 +39,12 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum SessionKnob {
-    /// Sampling temperature.
-    Temperature,
-    /// Cap on the tokens one reply may use.
-    MaxTokens,
-    /// Reasoning-token budget.
-    ThinkingBudget,
-    /// The instruction block that opens the conversation.
-    SystemPrompt,
-    /// Cap on tool-call rounds in one turn.
-    MaxIterations,
-    /// Wall-clock cap on one turn.
-    ExecutionTimeout,
     /// Token budget for assembled context.
     ContextBudget,
     /// How context is assembled when it does not fit.
     ContextStrategy,
-    /// The model's context window, when it must be stated rather than known.
-    ContextWindow,
-    /// What the turn's output is checked against.
-    OutputValidation,
-    /// How many times a failed validation is retried.
-    ValidationRetries,
-    /// The fraction of the window that triggers a compaction.
-    AutocompactThreshold,
     /// Whether the kiln is searched before the first message.
     Precognition,
-    /// How many notes that search injects.
-    PrecognitionResults,
     /// Which model answers.
     Model,
     /// Which permission mode the session runs in.
@@ -184,39 +162,17 @@ impl SessionKnob {
     pub const ALL: &'static [SessionKnob] = &[
         Self::Model,
         Self::Mode,
-        Self::Temperature,
-        Self::MaxTokens,
-        Self::ThinkingBudget,
-        Self::SystemPrompt,
-        Self::MaxIterations,
-        Self::ExecutionTimeout,
         Self::ContextBudget,
         Self::ContextStrategy,
-        Self::ContextWindow,
-        Self::OutputValidation,
-        Self::ValidationRetries,
-        Self::AutocompactThreshold,
         Self::Precognition,
-        Self::PrecognitionResults,
     ];
 
     /// The wire id, which is also the `session.set_*` suffix.
     pub fn id(self) -> &'static str {
         match self {
-            Self::Temperature => "temperature",
-            Self::MaxTokens => "max_tokens",
-            Self::ThinkingBudget => "thinking_budget",
-            Self::SystemPrompt => "system_prompt",
-            Self::MaxIterations => "max_iterations",
-            Self::ExecutionTimeout => "execution_timeout",
             Self::ContextBudget => "context_budget",
             Self::ContextStrategy => "context_strategy",
-            Self::ContextWindow => "context_window",
-            Self::OutputValidation => "output_validation",
-            Self::ValidationRetries => "validation_retries",
-            Self::AutocompactThreshold => "autocompact_threshold",
             Self::Precognition => "precognition",
-            Self::PrecognitionResults => "precognition_results",
             Self::Model => "model",
             Self::Mode => "mode",
         }
@@ -225,40 +181,19 @@ impl SessionKnob {
     /// What an ACP session can do with this knob.
     ///
     /// Exhaustive by construction. The reasoning behind the `Absent` arms is
-    /// one of two facts about ACP: the protocol has no field for the value
-    /// (temperature, token caps, the system prompt), or the external agent
-    /// runs its own turn loop and owns its own history, which makes a
-    /// daemon-side cap or context policy describe work the daemon does not do.
+    /// one fact about ACP: the external agent runs its own turn loop and owns
+    /// its own history, which makes a daemon-side context policy describe work
+    /// the daemon does not do.
     pub fn on_acp(self) -> AcpKnob {
         match self {
-            // No field anywhere in the protocol.
-            Self::Temperature | Self::MaxTokens | Self::SystemPrompt => AcpKnob::Absent,
-
-            // The agent runs its own turn loop, so a daemon-side cap on
-            // rounds or wall-clock governs nothing it does.
-            Self::MaxIterations | Self::ExecutionTimeout => AcpKnob::Absent,
-
             // The agent owns its history, so the daemon assembles no context
             // to budget, trim or compact.
-            Self::ContextBudget
-            | Self::ContextStrategy
-            | Self::ContextWindow
-            | Self::AutocompactThreshold => AcpKnob::Absent,
-
-            // Validation runs over a turn the daemon drives.
-            Self::OutputValidation | Self::ValidationRetries => AcpKnob::Absent,
+            Self::ContextBudget | Self::ContextStrategy => AcpKnob::Absent,
 
             // Retrieval is the daemon's, and it reaches an external agent as
             // injected prompt text. An ACP session uses it exactly as an
             // internal one does.
-            Self::Precognition | Self::PrecognitionResults => AcpKnob::Daemon,
-
-            // ACP has a `thought_level` config option, but it is a select of
-            // names and this knob is a token count. Mapping one onto the other
-            // means inventing which count a level stands for, so the agent's
-            // selector is offered as itself — an agent config option a client
-            // renders — rather than projected onto a number it does not mean.
-            Self::ThinkingBudget => AcpKnob::Absent,
+            Self::Precognition => AcpKnob::Daemon,
 
             // `session/set_config_option`, when the agent lists a selector.
             Self::Model => AcpKnob::AdvertisedModel,
@@ -385,25 +320,12 @@ mod tests {
         assert!(ids.iter().all(|id| !id.is_empty()));
     }
 
-    /// The three knobs this table exists for.
-    ///
-    /// An `AcpAgentHandle` cached these and reported them back, so a user set
-    /// a temperature the agent never heard. Naming them here means a later
-    /// edit that quietly reclassifies one has to say so.
-    #[test]
-    fn the_knobs_acp_cannot_carry_are_absent() {
-        assert_eq!(SessionKnob::Temperature.on_acp(), AcpKnob::Absent);
-        assert_eq!(SessionKnob::MaxTokens.on_acp(), AcpKnob::Absent);
-        assert_eq!(SessionKnob::SystemPrompt.on_acp(), AcpKnob::Absent);
-    }
-
     /// Retrieval is the daemon's work, not the agent's, and reaches an
     /// external agent as injected prompt text. Classifying it `Absent` would
     /// hide a setting that demonstrably works.
     #[test]
     fn precognition_stays_available_to_an_acp_session() {
         assert_eq!(SessionKnob::Precognition.on_acp(), AcpKnob::Daemon);
-        assert_eq!(SessionKnob::PrecognitionResults.on_acp(), AcpKnob::Daemon);
     }
 
     /// The model is the one knob whose support depends on what the agent
@@ -412,14 +334,5 @@ mod tests {
     #[test]
     fn the_agent_decides_whether_the_model_can_change() {
         assert_eq!(SessionKnob::Model.on_acp(), AcpKnob::AdvertisedModel);
-    }
-
-    /// A token count and a named reasoning level are different things, and
-    /// the number that would connect them does not exist. The agent's
-    /// `thought_level` selector reaches a client as an agent config option
-    /// instead.
-    #[test]
-    fn the_thinking_budget_is_not_projected_onto_a_thought_level() {
-        assert_eq!(SessionKnob::ThinkingBudget.on_acp(), AcpKnob::Absent);
     }
 }

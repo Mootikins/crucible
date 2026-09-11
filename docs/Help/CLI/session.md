@@ -36,7 +36,7 @@ Creates a new daemon session.
 |--------|---------|-------------|
 | `-t, --session-type <type>` | `chat` | `chat`, `agent`, `workflow`, or `plugin` (`mcp` is deprecated and maps to `chat` with a warning) |
 | `-a, --agent <card>` | — | Agent card to configure: the prompt, model, and tool policy of an internal agent (`cru agents list`) |
-| `--acp <profile>` | — | ACP profile instead: an external agent subprocess (`claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or `[acp.agents.*]`) |
+| `--acp <profile>` | — | ACP profile instead: an external agent subprocess (`claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or `acp.agents.*`) |
 | `--recording-mode <mode>` | — | `granular` or `coarse` |
 | `-q, --quiet` | off | Print only the session ID |
 | `-f, --format <format>` | `text` | `text` or `json` |
@@ -57,7 +57,7 @@ default. On a terminal, text output includes `export CRU_SESSION=...` lines to c
 Sets the session's agent backend: `-p/--provider` (e.g. `ollama`, `openai`,
 `anthropic`), `-m/--model`, optional `-e/--endpoint <url>`, `-f text|json`. This
 replaces the whole agent config with an internal agent using those values. For runtime
-parameter tweaks on a live session (model, thinking budget), use `cru set` instead.
+parameter tweaks on a live session (model, context budget), use `cru set` instead.
 
 ### `cru session send [<id>] <message>`
 

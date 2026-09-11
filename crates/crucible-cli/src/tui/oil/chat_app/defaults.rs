@@ -12,6 +12,8 @@ use super::{
 
 impl Default for OilChatApp {
     fn default() -> Self {
+        // The only wall-clock read outside the runner: it seeds the frame clock.
+        let epoch = std::time::Instant::now();
         Self {
             // Viewport Projection
             container_list: ContainerList::new(),
@@ -35,7 +37,8 @@ impl Default for OilChatApp {
             notification_area: NotificationArea::new(),
             interaction_modal: None,
             shell_modal: None,
-            spinner_epoch: std::time::Instant::now(),
+            spinner_epoch: epoch,
+            frame_time: epoch,
             needs_full_redraw: false,
             show_thinking: true,
             show_diffs: true,

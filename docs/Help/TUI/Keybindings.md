@@ -60,13 +60,13 @@ See [[Help/TUI/Modes]] for details on what each mode does.
 
 ## Thinking Display
 
-When using models that support extended thinking (Claude with thinking
-budget, Qwen3-thinking, DeepSeek-R1, etc.), press `Ctrl+T` to show or hide
+When using models that reason (Claude with extended thinking,
+Qwen3-thinking, DeepSeek-R1, etc.), press `Ctrl+T` to show or hide
 thinking blocks. This works during streaming too, and applies retroactively
 to visible blocks. A toast confirms the new state.
 
-**Thinking Budget:** Configure via `:set thinkingbudget=<preset>` using
-presets like `high`, `medium`, `low`. See [[Help/TUI/Commands]] for details.
+Crucible sets no cap on how much a model reasons. `Ctrl+T` controls the
+display only. See [[Help/TUI/Commands]] for details.
 
 ## Popup Navigation
 
@@ -92,7 +92,7 @@ Shown when the agent needs approval for a tool call (see the footer hints):
 |-----|--------|
 | `y` | Allow this call |
 | `n` | Deny this call |
-| `a` | Allowlist: save the suggested pattern project-scoped and allow |
+| `a` | Allowlist: save the suggested pattern project-scoped and allow. For a shell call the suggestion is the command shown, which grants that command alone; add a trailing `*` with `Tab` to grant a wider prefix. A prefix keeps at least one argument — `cargo build *` is saved, `cargo *` is refused |
 | `Up/Down` / `k`/`j` | Move between Yes / No / Allowlist |
 | `Enter` | Confirm the highlighted option |
 | `Shift+Enter` | On Allowlist: save the rule user-scoped (global) instead |

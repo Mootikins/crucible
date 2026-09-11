@@ -1,5 +1,5 @@
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager};
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
@@ -41,10 +41,7 @@ fn make_session_agent(
         provider,
         model: "test-model".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -52,15 +49,8 @@ fn make_session_agent(
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     }
 }

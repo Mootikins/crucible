@@ -2,10 +2,10 @@
 --- retrieval-lab configuration
 ---
 --- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention — the daemon seeds setup() with the TOML section at load, and
---- a user's later `setup{}` call overrides it):
+--- convention — the daemon seeds setup() with the plugin's config section at
+--- load, and a user's later `setup{}` call overrides it):
 ---   1. values passed to `setup({...})` — last call wins per key.
----   2. `[plugins.retrieval-lab]` in config.toml, read through
+---   2. the `plugins.retrieval-lab` config key, read through
 ---      `cru.plugin.config.get("retrieval-lab.<key>")`.
 ---   3. the `defaults` table below.
 ---   4. the caller's `fallback` argument.

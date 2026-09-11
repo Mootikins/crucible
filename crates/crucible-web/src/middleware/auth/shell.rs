@@ -54,12 +54,12 @@ pub async fn websocket_origin_guard(
                 authority = ?request_authority(&request),
                 host_verified = request.extensions().get::<HostVerified>().is_some(),
                 "Rejecting WebSocket upgrade: Origin is not an authority this server answers to. \
-                 If this is a name you reach the server by, add it to `[web] allowed_hosts` \
-                 in config.toml and restart"
+                 If this is a name you reach the server by, add it to `web.allowed_hosts` \
+                 in your init.lua and restart"
             );
             return (
                 StatusCode::FORBIDDEN,
-                "Origin not allowed — add this host to `[web] allowed_hosts` in config.toml",
+                "Origin not allowed — add this host to `web.allowed_hosts` in your init.lua",
             )
                 .into_response();
         }

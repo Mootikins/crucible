@@ -687,12 +687,23 @@ fn kiln_notes_indexed_shape() {
 #[test]
 fn plugins_discovered_shape() {
     let p = PluginsDiscoveredPayload {
-        plugins: vec![PluginStatusEntry {
-            name: "kiln-expert".into(),
-            version: "0.1.0".into(),
-            state: "loaded".into(),
-            error: None,
-        }],
+        plugins: vec![
+            PluginStatusEntry {
+                name: "kiln-expert".into(),
+                version: Some("0.1.0".into()),
+                state: "loaded".into(),
+                error: None,
+            },
+            // Discovered, not loaded: nothing has read its spec table, so the
+            // host knows no version. The wire says so with `null` — a front
+            // end can render "unknown", which it cannot do for "0.0.0".
+            PluginStatusEntry {
+                name: "not-loaded-yet".into(),
+                version: None,
+                state: "discovered".into(),
+                error: None,
+            },
+        ],
     };
     let v = serde_json::to_value(&p).unwrap();
     assert!(v["plugins"].is_array());
@@ -700,6 +711,20 @@ fn plugins_discovered_shape() {
     assert_eq!(v["plugins"][0]["version"], "0.1.0");
     assert_eq!(v["plugins"][0]["state"], "loaded");
     assert!(v["plugins"][0]["error"].is_null());
+    assert_eq!(v["plugins"][1]["name"], "not-loaded-yet");
+    // The key has to be PRESENT and null. `v["..."]["version"]` reads a
+    // missing key as null too, so a `skip_serializing_if` that dropped the
+    // field would satisfy a null check alone while a front end saw
+    // `undefined` and drew whatever that renders as.
+    let unloaded = v["plugins"][1].as_object().expect("an entry object");
+    assert!(
+        unloaded.contains_key("version"),
+        "the unloaded entry must carry the version key: {v}"
+    );
+    assert!(
+        unloaded["version"].is_null(),
+        "an unloaded plugin must report no version: {v}"
+    );
 }
 
 #[test]

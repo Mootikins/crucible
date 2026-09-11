@@ -1,4 +1,5 @@
-use super::render::{render_node, text_node};
+use super::render::{render_node, render_source_lines, text_node};
+use super::table::open_table_start;
 use super::Margins;
 use crucible_oil::ansi::wrap_styled_text;
 use crucible_oil::node::*;
@@ -136,12 +137,16 @@ pub(super) fn create_parser() -> MarkdownIt {
     md
 }
 
+/// `hold_open_table` marks the content as still streaming: a trailing table
+/// that can still grow renders as its own source lines instead of a laid-out
+/// table. See [`open_table_start`].
 pub(super) fn parse_and_render_internal(
     markdown: &str,
     text_width: usize,
     table_width: usize,
     blockquote_width: usize,
     margins: Margins,
+    hold_open_table: bool,
 ) -> Node {
     use std::cell::RefCell;
     use std::collections::hash_map::DefaultHasher;
@@ -163,6 +168,7 @@ pub(super) fn parse_and_render_internal(
     margins.left.hash(&mut hasher);
     margins.right.hash(&mut hasher);
     margins.show_bullet.hash(&mut hasher);
+    hold_open_table.hash(&mut hasher);
     let key = hasher.finish();
 
     if let Some(cached) = CACHE.with(|c| {
@@ -180,11 +186,18 @@ pub(super) fn parse_and_render_internal(
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
+        let split = hold_open_table
+            .then(|| open_table_start(markdown))
+            .flatten()
+            .unwrap_or(markdown.len());
+        let (body, open_table) = markdown.split_at(split);
+
         let md = create_parser();
-        let ast = md.parse(markdown);
+        let ast = md.parse(body);
 
         let mut ctx = RenderContext::new(text_width, table_width, blockquote_width, margins);
         render_node(&ast, &mut ctx);
+        render_source_lines(open_table, &mut ctx);
         ctx.into_node()
     }));
 

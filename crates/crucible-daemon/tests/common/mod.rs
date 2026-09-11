@@ -152,6 +152,34 @@ pub struct TestDaemon {
     temp_dir: tempfile::TempDir,
 }
 
+/// How long a fixture gives its daemon to accept a connection.
+const READY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The daemon never accepted a connection inside the readiness window.
+///
+/// It carries the pid the fixture spawned. A test that proves the fixture
+/// reaped its child has to ask the operating system about that exact process,
+/// and a string error cannot answer that.
+#[derive(Debug)]
+pub struct DaemonNotReady {
+    /// The process the fixture spawned.
+    pub pid: u32,
+    /// How long the fixture waited before it gave up.
+    pub waited: Duration,
+}
+
+impl std::fmt::Display for DaemonNotReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "daemon pid {} did not start accepting connections within {:?}",
+            self.pid, self.waited
+        )
+    }
+}
+
+impl std::error::Error for DaemonNotReady {}
+
 /// Block until the daemon at `socket_path` actually accepts a connection.
 ///
 /// Waiting for the socket *file* to appear and then sleeping a fixed 50ms is
@@ -161,14 +189,14 @@ pub struct TestDaemon {
 /// the work. `rpc_session_e2e.rs` already replaced its own copy of that pattern
 /// after the same intermittent failures — this is the remaining one, shared by
 /// 17 tests across four files.
-async fn wait_until_accepting(socket_path: &Path) -> Result<()> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+async fn wait_until_accepting(socket_path: &Path, ready: Duration, pid: u32) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + ready;
     loop {
         if socket_path.exists() && UnixStream::connect(socket_path).await.is_ok() {
             return Ok(());
         }
         if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!("Daemon did not start accepting connections within 10 seconds");
+            return Err(DaemonNotReady { pid, waited: ready }.into());
         }
         sleep(Duration::from_millis(20)).await;
     }
@@ -180,7 +208,7 @@ async fn wait_until_accepting(socket_path: &Path) -> Result<()> {
 /// config the client hands the daemon at spawn — so a fixture with no config
 /// gets a daemon that knows no kilns, and every scoped request it makes is
 /// refused for reasons unrelated to the test. `cru daemon serve` reads
-/// `$XDG_CONFIG_HOME/crucible/config.toml`, which the hermetic environment
+/// `$XDG_CONFIG_HOME/crucible/init.lua`, which the hermetic environment
 /// points inside the temp dir.
 fn write_daemon_config(home: &Path) -> Result<()> {
     let kiln = home.join(TestDaemon::KILN);
@@ -188,10 +216,65 @@ fn write_daemon_config(home: &Path) -> Result<()> {
     let config_dir = home.join(".config").join("crucible");
     std::fs::create_dir_all(&config_dir)?;
     std::fs::write(
-        config_dir.join("config.toml"),
-        format!("[kilns]\n{} = \"{}\"\n", TestDaemon::KILN, kiln.display()),
+        config_dir.join("init.lua"),
+        format!(
+            "cru.config.set({{ kilns = {{ [{:?}] = {:?} }} }})\n",
+            TestDaemon::KILN,
+            kiln.display().to_string()
+        ),
     )?;
     Ok(())
+}
+
+/// Spawn `cru daemon serve` against `home`, and answer with the child.
+///
+/// One implementation, because four call sites (three constructors and the
+/// restart) have to agree on the hermetic environment down to the last
+/// variable. A second copy that forgot `XDG_DATA_HOME` would put the runtime
+/// tree in the developer's real `~/.local/share`, and the test that did it
+/// would still pass.
+fn spawn_daemon(home: &Path, socket_path: &Path, extra_env: &[(&str, &str)]) -> Result<Child> {
+    // Single binary: daemon runs via `cru daemon serve`.
+    // Cannot use env!("CARGO_BIN_EXE_cru") — crucible-daemon cannot depend on
+    // crucible-cli (circular: crucible-cli -> crucible-daemon). Locate `cru` at
+    // runtime instead.
+    let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
+        let test_exe = std::env::current_exe().expect("current_exe");
+        let target_dir = test_exe
+            .parent() // deps/
+            .and_then(|p| p.parent()) // debug/ or release/
+            .expect("target dir");
+        target_dir.join("cru").to_string_lossy().to_string()
+    });
+
+    // Spawn the daemon with a HERMETIC environment: env_clear + allowlist so
+    // the developer's real provider credentials (which could drive real API
+    // calls) and real ~/.crucible state never reach the child.
+    let mut cmd = Command::new(&cru_exe);
+    cmd.env_clear();
+    for (k, v) in crucible_core::test_support::hermetic_env_pairs(home) {
+        cmd.env(k, v);
+    }
+    cmd.args(["daemon", "serve"])
+        .env("CRUCIBLE_SOCKET", socket_path)
+        // Scope the config home to this test's TempDir (child-process env, no
+        // global mutation) so the spawned daemon never reads the developer's
+        // real ~/.crucible registry.
+        .env("CRUCIBLE_HOME", home)
+        // And the DATA home. The daemon extracts the compiled-in runtime tree
+        // and help corpus to `<data_dir>/crucible/...` at startup; without this
+        // every daemon-spawning test writes them into the developer's real
+        // ~/.local/share, and a parallel run has many processes writing one
+        // path at once.
+        .env("XDG_DATA_HOME", home.join("data"))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    // Caller-supplied variables are applied last, so they win.
+    for (key, value) in extra_env {
+        cmd.env(key, value);
+    }
+    Ok(cmd.spawn()?)
 }
 
 impl TestDaemon {
@@ -199,58 +282,22 @@ impl TestDaemon {
     /// spelling a request has to use to attach it.
     pub const KILN: &'static str = "kiln";
 
+    /// The hermetic HOME the daemon runs under: the config lives at
+    /// `.config/crucible` inside it. A test that asserts about the files the
+    /// daemon writes needs the path the fixture chose.
+    #[allow(dead_code)]
+    pub fn home(&self) -> &Path {
+        self.temp_dir.path()
+    }
+
     /// Start a test daemon with isolated socket path
     ///
     /// This spawns a real daemon process in a temporary directory,
     /// ensuring test isolation.
     pub async fn start() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
         write_daemon_config(temp_dir.path())?;
-
-        // Single binary: daemon runs via `cru daemon serve`.
-        // Cannot use env!("CARGO_BIN_EXE_cru") — crucible-daemon cannot depend on crucible-cli
-        // (circular: crucible-cli -> crucible-daemon). Locate `cru` at runtime instead.
-        let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
-            let test_exe = std::env::current_exe().expect("current_exe");
-            let target_dir = test_exe
-                .parent() // deps/
-                .and_then(|p| p.parent()) // debug/ or release/
-                .expect("target dir");
-            target_dir.join("cru").to_string_lossy().to_string()
-        });
-        // Spawn daemon with a HERMETIC environment: env_clear + allowlist so
-        // the developer's real provider credentials (which could drive real
-        // API calls) and real ~/.crucible state never reach the child.
-        let mut cmd = Command::new(&cru_exe);
-        cmd.env_clear();
-        for (k, v) in crucible_core::test_support::hermetic_env_pairs(temp_dir.path()) {
-            cmd.env(k, v);
-        }
-        let process = cmd
-            .args(["daemon", "serve"])
-            .env("CRUCIBLE_SOCKET", &socket_path)
-            // Scope the config home to this test's TempDir (child-process env, no
-            // global mutation) so the spawned daemon never reads the developer's
-            // real ~/.crucible registry.
-            .env("CRUCIBLE_HOME", temp_dir.path())
-            // And the DATA home. The daemon extracts the compiled-in runtime
-            // tree and help corpus to `<data_dir>/crucible/...` at startup;
-            // without this every daemon-spawning test writes them into the
-            // developer's real ~/.local/share, and a parallel run has many
-            // processes writing one path at once.
-            .env("XDG_DATA_HOME", temp_dir.path().join("data"))
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()?;
-
-        wait_until_accepting(&socket_path).await?;
-        Ok(Self {
-            socket_path,
-            process: Some(process),
-            temp_dir,
-        })
+        Self::spawn_and_await_readiness(temp_dir, &[], READY_TIMEOUT).await
     }
 
     /// Start a test daemon after `setup` has arranged extra fixture files
@@ -259,89 +306,56 @@ impl TestDaemon {
     #[allow(dead_code)]
     pub async fn start_with_home_setup(setup: impl FnOnce(&Path) -> Result<()>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
         write_daemon_config(temp_dir.path())?;
         setup(temp_dir.path())?;
-
-        let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
-            let test_exe = std::env::current_exe().expect("current_exe");
-            let target_dir = test_exe
-                .parent()
-                .and_then(|p| p.parent())
-                .expect("target dir");
-            target_dir.join("cru").to_string_lossy().to_string()
-        });
-
-        let mut cmd = Command::new(&cru_exe);
-        cmd.env_clear();
-        for (k, v) in crucible_core::test_support::hermetic_env_pairs(temp_dir.path()) {
-            cmd.env(k, v);
-        }
-        let process = cmd
-            .args(["daemon", "serve"])
-            .env("CRUCIBLE_SOCKET", &socket_path)
-            .env("CRUCIBLE_HOME", temp_dir.path())
-            .env("XDG_DATA_HOME", temp_dir.path().join("data"))
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()?;
-
-        wait_until_accepting(&socket_path).await?;
-        Ok(Self {
-            socket_path,
-            process: Some(process),
-            temp_dir,
-        })
+        Self::spawn_and_await_readiness(temp_dir, &[], READY_TIMEOUT).await
     }
 
     /// Start a test daemon with additional environment variables.
     #[allow(dead_code)]
     pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
         write_daemon_config(temp_dir.path())?;
+        Self::spawn_and_await_readiness(temp_dir, &env_vars, READY_TIMEOUT).await
+    }
 
-        let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
-            let test_exe = std::env::current_exe().expect("current_exe");
-            let target_dir = test_exe
-                .parent()
-                .and_then(|p| p.parent())
-                .expect("target dir");
-            target_dir.join("cru").to_string_lossy().to_string()
-        });
+    /// Start a test daemon with an explicit readiness window.
+    ///
+    /// A window no daemon can meet is the only deterministic way to reach the
+    /// failure path, which is what the orphan gate needs.
+    #[allow(dead_code)]
+    pub async fn start_with_ready_timeout(ready: Duration) -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        write_daemon_config(temp_dir.path())?;
+        Self::spawn_and_await_readiness(temp_dir, &[], ready).await
+    }
 
-        let mut cmd = Command::new(&cru_exe);
-        // Hermetic base (cleared + allowlist) — see start(); caller-supplied
-        // vars are applied on top and win.
-        cmd.env_clear();
-        for (k, v) in crucible_core::test_support::hermetic_env_pairs(temp_dir.path()) {
-            cmd.env(k, v);
-        }
-        cmd.args(["daemon", "serve"])
-            .env("CRUCIBLE_SOCKET", &socket_path)
-            // Default the config home to this test's TempDir; a caller-supplied
-            // CRUCIBLE_HOME in env_vars still overrides via the loop below.
-            .env("CRUCIBLE_HOME", temp_dir.path())
-            // Same for the data home, which is where the compiled-in runtime
-            // tree and help corpus extract to. See `start()`.
-            .env("XDG_DATA_HOME", temp_dir.path().join("data"))
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
+    /// Spawn the daemon, then wait for it to accept a connection.
+    ///
+    /// One implementation, because the readiness wait can FAIL and the child
+    /// has to die when it does. `Child` has no killing `Drop` of its own, so
+    /// only [`TestDaemon`]'s does that.
+    async fn spawn_and_await_readiness(
+        temp_dir: tempfile::TempDir,
+        extra_env: &[(&str, &str)],
+        ready: Duration,
+    ) -> Result<Self> {
+        let socket_path = temp_dir.path().join("daemon.sock");
+        let process = spawn_daemon(temp_dir.path(), &socket_path, extra_env)?;
+        let pid = process.id();
 
-        for (key, value) in &env_vars {
-            cmd.env(key, value);
-        }
-
-        let process = cmd.spawn()?;
-
-        wait_until_accepting(&socket_path).await?;
-        Ok(Self {
+        // Construct FIRST, wait SECOND. Every `?` past this line drops
+        // `daemon`, and that `Drop` kills and reaps the child. Waiting before
+        // the struct existed handed a timeout's `?` a bare `Child`, whose
+        // `Drop` does nothing at all — see the module docs of
+        // `tests/daemon_orphan_gate.rs`.
+        let daemon = Self {
             socket_path,
             process: Some(process),
             temp_dir,
-        })
+        };
+        wait_until_accepting(&daemon.socket_path, ready, pid).await?;
+        Ok(daemon)
     }
 
     /// The `CRUCIBLE_HOME` this daemon was given.
@@ -357,6 +371,64 @@ impl TestDaemon {
     #[allow(dead_code)]
     pub fn sessions_root(&self) -> PathBuf {
         self.temp_dir.path().join("sessions")
+    }
+
+    /// Stop the daemon and start a new one over the SAME home and socket.
+    ///
+    /// The only way to prove a value was persisted rather than remembered: a
+    /// fresh process reads the files and nothing else. The home is the
+    /// TempDir this fixture already owns, so the restarted daemon is as
+    /// hermetic as the first one.
+    #[allow(dead_code)]
+    pub async fn restart(&mut self) -> Result<()> {
+        if let Some(mut process) = self.process.take() {
+            process.kill()?;
+            process.wait()?;
+        }
+        // The old process owns the socket path until it exits; remove it so
+        // `wait_until_accepting` cannot answer with the dead daemon's file.
+        let _ = std::fs::remove_file(&self.socket_path);
+
+        // Assign BEFORE the wait: `self`'s `Drop` then owns the new child, so
+        // a readiness failure below cannot leave it running.
+        let process = spawn_daemon(self.temp_dir.path(), &self.socket_path, &[])?;
+        let pid = process.id();
+        self.process = Some(process);
+        wait_until_accepting(&self.socket_path, READY_TIMEOUT, pid).await?;
+        Ok(())
+    }
+
+    /// Send `signal` to the daemon and wait up to `timeout` for it to exit.
+    ///
+    /// Answers `None` when the daemon is still running at the deadline, so a
+    /// test can say "it ignored the signal" rather than hang.
+    ///
+    /// The exit STATUS is the point: a process that handles SIGTERM exits with
+    /// a code, while one that lets the default disposition run is terminated
+    /// BY the signal and has no code at all. That is the only observable
+    /// difference between a clean shutdown and no handler.
+    #[allow(dead_code)]
+    pub fn signal_and_wait(
+        &mut self,
+        signal: i32,
+        timeout: Duration,
+    ) -> Option<std::process::ExitStatus> {
+        let process = self.process.as_mut()?;
+        // SAFETY: `kill` on a pid this fixture spawned and still owns.
+        unsafe {
+            libc::kill(process.id() as libc::pid_t, signal);
+        }
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match process.try_wait() {
+                Ok(Some(status)) => return Some(status),
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(None) => return None,
+                Err(_) => return None,
+            }
+        }
     }
 
     /// Manually stop the daemon process

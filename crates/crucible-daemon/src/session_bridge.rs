@@ -832,18 +832,6 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    fn set_output_validation(&self, session_id: String, spec: String) -> BoxFut<()> {
-        let agent_manager = Arc::clone(&self.agent_manager);
-        let event_tx = self.event_tx.clone();
-        Box::pin(async move {
-            let parsed: crucible_core::session::OutputValidation = spec.parse()?;
-            agent_manager
-                .set_output_validation(&session_id, parsed, Some(&event_tx))
-                .await
-                .map_err(|e| e.to_string())
-        })
-    }
-
     fn undo(&self, session_id: String, count: usize) -> BoxFut<usize> {
         let agent_manager = Arc::clone(&self.agent_manager);
         let event_tx = self.event_tx.clone();

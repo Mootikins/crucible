@@ -4,9 +4,7 @@
 //!
 //! ```lua
 //! local s = cru.get_session()
-//! s.temperature = 0.7
-//! s.max_tokens = 4096
-//! s.thinking_budget = 1024
+//! s.system_prompt = "Answer in one sentence."
 //! s.model = "claude-sonnet-4"  -- in an on_session_start hook
 //! ```
 //!
@@ -32,8 +30,8 @@ use crate::sessions::register::{
     cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
     fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
     review_comment_op, review_list_hunks_op, review_resolve_comment_op, review_set_state_op,
-    send_and_collect_op, send_message_op, set_output_validation_op, subscribe_op, undo_depth_op,
-    undo_history_op, undo_op, unsubscribe_op,
+    send_and_collect_op, send_message_op, subscribe_op, undo_depth_op, undo_history_op, undo_op,
+    unsubscribe_op,
 };
 use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
@@ -53,7 +51,7 @@ fn unsupported(field: &str) -> String {
 /// backing that forgot one still compiled, and a Lua knob could be half
 /// wired: `NoopSessionRpc` was `impl SessionConfigRpc for NoopSessionRpc {}`
 /// and was bound at every daemon site, so a plugin that wrote
-/// `session.thinking_budget = 4096` was told it worked and nothing
+/// `session.system_prompt = "..."` was told it worked and nothing
 /// happened. A backing that supports nothing now says so by name:
 /// [`UnsupportedSessionRpc`]. A backing that supports some knobs delegates
 /// the rest to it, so the compiler lists each knob it does not answer.
@@ -62,27 +60,14 @@ fn unsupported(field: &str) -> String {
 /// Getters return `None`, because an absent value is honestly `nil` in Lua,
 /// and an error on a read would break `session.x or fallback`.
 pub trait SessionConfigRpc: Send + Sync {
-    fn get_temperature(&self) -> Option<f64>;
-    fn set_temperature(&self, temp: f64) -> Result<(), String>;
-    fn get_max_tokens(&self) -> Option<u32>;
-    fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String>;
-    fn get_thinking_budget(&self) -> Option<i64>;
-    fn set_thinking_budget(&self, budget: i64) -> Result<(), String>;
     fn get_model(&self) -> Option<String>;
     fn switch_model(&self, model: &str) -> Result<(), String>;
-    fn list_models(&self) -> Vec<String>;
     fn get_mode(&self) -> String;
     fn set_mode(&self, mode: &str) -> Result<(), String>;
     fn get_system_prompt(&self) -> Option<String>;
     fn set_system_prompt(&self, prompt: &str) -> Result<(), String>;
-    fn mark_first_message_sent(&self);
     fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String>;
     fn get_variable(&self, key: &str) -> Option<serde_json::Value>;
-    fn notify(&self, notification: crucible_core::types::Notification);
-    fn toggle_messages(&self);
-    fn show_messages(&self);
-    fn hide_messages(&self);
-    fn clear_messages(&self);
 }
 
 /// A [`SessionConfigRpc`] that supports no knob.
@@ -94,32 +79,11 @@ pub trait SessionConfigRpc: Send + Sync {
 pub struct UnsupportedSessionRpc;
 
 impl SessionConfigRpc for UnsupportedSessionRpc {
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-    fn set_temperature(&self, _temp: f64) -> Result<(), String> {
-        Err(unsupported("temperature"))
-    }
-    fn get_max_tokens(&self) -> Option<u32> {
-        None
-    }
-    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> {
-        Err(unsupported("max_tokens"))
-    }
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> {
-        Err(unsupported("thinking_budget"))
-    }
     fn get_model(&self) -> Option<String> {
         None
     }
     fn switch_model(&self, _model: &str) -> Result<(), String> {
         Err(unsupported("model"))
-    }
-    fn list_models(&self) -> Vec<String> {
-        Vec::new()
     }
     fn get_mode(&self) -> String {
         "chat".to_string()
@@ -133,18 +97,12 @@ impl SessionConfigRpc for UnsupportedSessionRpc {
     fn set_system_prompt(&self, _prompt: &str) -> Result<(), String> {
         Err(unsupported("system_prompt"))
     }
-    fn mark_first_message_sent(&self) {}
     fn set_variable(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
         Err(unsupported("variables"))
     }
     fn get_variable(&self, _key: &str) -> Option<serde_json::Value> {
         None
     }
-    fn notify(&self, _notification: crucible_core::types::Notification) {}
-    fn toggle_messages(&self) {}
-    fn show_messages(&self) {}
-    fn hide_messages(&self) {}
-    fn clear_messages(&self) {}
 }
 
 /// The per-session key/value map behind `session:set_variable` and
@@ -389,15 +347,6 @@ impl UserData for Session {
                     Some(v) => lua.to_value(v),
                     None => Ok(Value::Nil),
                 },
-                "temperature" => this
-                    .with_rpc(|r| Ok(r.get_temperature()))
-                    .map(|v| v.map(Value::Number).unwrap_or(Value::Nil)),
-                "max_tokens" => this
-                    .with_rpc(|r| Ok(r.get_max_tokens()))
-                    .map(|v| v.map(|n| Value::Integer(n as i64)).unwrap_or(Value::Nil)),
-                "thinking_budget" => this
-                    .with_rpc(|r| Ok(r.get_thinking_budget()))
-                    .map(|v| v.map(Value::Integer).unwrap_or(Value::Nil)),
                 // A handle from `get`/`list` binds no RPC, so the daemon's
                 // record is the only place the model can come from. A bound
                 // handle still answers with the live value.
@@ -446,28 +395,6 @@ impl UserData for Session {
                     let model: String = lua.unpack(val)?;
                     this.with_rpc(|r| r.switch_model(&model))
                 }
-                "temperature" => {
-                    let temp: f64 = lua.unpack(val)?;
-                    if !(0.0..=2.0).contains(&temp) {
-                        return Err(mlua::Error::runtime("temperature must be 0.0-2.0"));
-                    }
-                    this.with_rpc(|r| r.set_temperature(temp))
-                }
-                "max_tokens" => {
-                    let tokens = match val {
-                        Value::Nil => None,
-                        Value::Integer(n) if n > 0 => Some(n as u32),
-                        Value::Number(n) if n > 0.0 => Some(n as u32),
-                        _ => {
-                            return Err(mlua::Error::runtime("max_tokens must be positive or nil"))
-                        }
-                    };
-                    this.with_rpc(|r| r.set_max_tokens(tokens))
-                }
-                "thinking_budget" => {
-                    let budget: i64 = lua.unpack(val)?;
-                    this.with_rpc(|r| r.set_thinking_budget(budget))
-                }
                 "mode" => {
                     let mode: String = lua.unpack(val)?;
                     this.with_rpc(|r| r.set_mode(&mode))
@@ -498,13 +425,6 @@ impl UserData for Session {
             }
         });
 
-        methods.add_method("mark_first_message_sent", |_lua, this, ()| {
-            this.with_rpc(|r| {
-                r.mark_first_message_sent();
-                Ok(())
-            })
-        });
-
         // ── Lifecycle verbs ─────────────────────────────────────────────
         session_method!(methods, "configure_agent", configure_agent_op, config: Value);
         session_method!(methods, "send_message", send_message_op, content: String);
@@ -533,12 +453,6 @@ impl UserData for Session {
         session_method!(methods, "fork", fork_op, opts: Value);
         session_method!(methods, "cache_stats", cache_stats_op);
         session_method!(methods, "complete", complete_op, opts: Value);
-        session_method!(
-            methods,
-            "set_output_validation",
-            set_output_validation_op,
-            spec: Value
-        );
         session_method!(methods, "undo", undo_op, opts: Value);
         session_method!(methods, "can_undo", can_undo_op);
         session_method!(methods, "undo_depth", undo_depth_op);
@@ -652,10 +566,8 @@ pub mod tests {
 
     #[derive(Clone)]
     pub struct MockRpc {
-        temperature: Arc<std::sync::RwLock<Option<f64>>>,
         model: Arc<std::sync::RwLock<Option<String>>>,
         system_prompt: Arc<std::sync::RwLock<String>>,
-        first_message_sent: Arc<std::sync::RwLock<bool>>,
         variables: Arc<std::sync::RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     }
 
@@ -668,34 +580,22 @@ pub mod tests {
     impl MockRpc {
         pub fn new() -> Self {
             Self {
-                temperature: Arc::new(std::sync::RwLock::new(Some(0.7))),
                 model: Arc::new(std::sync::RwLock::new(Some("test-model".to_string()))),
                 system_prompt: Arc::new(std::sync::RwLock::new(
                     crucible_core::prompts::DEFAULT_SYSTEM_PROMPT.to_string(),
                 )),
-                first_message_sent: Arc::new(std::sync::RwLock::new(false)),
                 variables: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             }
         }
     }
 
     impl SessionConfigRpc for MockRpc {
-        fn get_temperature(&self) -> Option<f64> {
-            *self.temperature.read().unwrap()
-        }
-        fn set_temperature(&self, temp: f64) -> Result<(), String> {
-            *self.temperature.write().unwrap() = Some(temp);
-            Ok(())
-        }
         fn get_model(&self) -> Option<String> {
             self.model.read().unwrap().clone()
         }
         fn switch_model(&self, model: &str) -> Result<(), String> {
             *self.model.write().unwrap() = Some(model.to_string());
             Ok(())
-        }
-        fn list_models(&self) -> Vec<String> {
-            vec!["model-a".to_string(), "model-b".to_string()]
         }
         fn get_mode(&self) -> String {
             "act".to_string()
@@ -704,14 +604,8 @@ pub mod tests {
             Some(self.system_prompt.read().unwrap().clone())
         }
         fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
-            if *self.first_message_sent.read().unwrap() {
-                return Err("system_prompt is locked after first message".to_string());
-            }
             *self.system_prompt.write().unwrap() = prompt.to_string();
             Ok(())
-        }
-        fn mark_first_message_sent(&self) {
-            *self.first_message_sent.write().unwrap() = true;
         }
         fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
             self.variables
@@ -723,26 +617,9 @@ pub mod tests {
         fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
             self.variables.read().unwrap().get(key).cloned()
         }
-        fn get_max_tokens(&self) -> Option<u32> {
-            UnsupportedSessionRpc.get_max_tokens()
-        }
-        fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String> {
-            UnsupportedSessionRpc.set_max_tokens(tokens)
-        }
-        fn get_thinking_budget(&self) -> Option<i64> {
-            UnsupportedSessionRpc.get_thinking_budget()
-        }
-        fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
-            UnsupportedSessionRpc.set_thinking_budget(budget)
-        }
         fn set_mode(&self, mode: &str) -> Result<(), String> {
             UnsupportedSessionRpc.set_mode(mode)
         }
-        fn notify(&self, _notification: crucible_core::types::Notification) {}
-        fn toggle_messages(&self) {}
-        fn show_messages(&self) {}
-        fn hide_messages(&self) {}
-        fn clear_messages(&self) {}
     }
 
     #[test]
@@ -768,18 +645,18 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let (current_id, deprecated_id, temp): (String, String, f64) = lua
+        let (current_id, deprecated_id, model): (String, String, String) = lua
             .load(
                 r#"
                 local cur = cru.session.current()
-                return cur.id, cru.get_session().id, cur.temperature
+                return cur.id, cru.get_session().id, cur.model
                 "#,
             )
             .eval()
             .unwrap();
         assert_eq!(current_id, "s-current");
         assert_eq!(deprecated_id, "s-current");
-        assert!((temp - 0.7).abs() < 0.001);
+        assert_eq!(model, "test-model");
     }
 
     #[test]
@@ -790,11 +667,8 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let temp: f64 = lua
-            .load("return cru.get_session().temperature")
-            .eval()
-            .unwrap();
-        assert!((temp - 0.7).abs() < 0.001);
+        let model: String = lua.load("return cru.get_session().model").eval().unwrap();
+        assert_eq!(model, "test-model");
     }
 
     #[test]
@@ -805,15 +679,15 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("local s = cru.get_session(); s.temperature = 0.3")
+        lua.load(r#"local s = cru.get_session(); s.system_prompt = "rewritten""#)
             .exec()
             .unwrap();
 
-        let temp: f64 = lua
-            .load("return cru.get_session().temperature")
+        let prompt: String = lua
+            .load("return cru.get_session().system_prompt")
             .eval()
             .unwrap();
-        assert!((temp - 0.3).abs() < 0.001);
+        assert_eq!(prompt, "rewritten");
     }
 
     /// `session.model = "x"` is how a hook picks the model; it lands in
@@ -847,19 +721,6 @@ pub mod tests {
             .unwrap_err()
             .to_string()
             .contains("No active session"));
-    }
-
-    #[test]
-    fn test_temperature_validation() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
-
-        let session = Session::new("s1".to_string());
-        session.bind(Box::new(MockRpc::new()));
-        mgr.set_current(session);
-
-        let result: mlua::Result<()> = lua.load("cru.get_session().temperature = 3.0").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("0.0-2.0"));
     }
 
     #[test]
@@ -967,26 +828,6 @@ pub mod tests {
             .unwrap();
         assert_eq!(prompt, "custom prompt");
     }
-
-    #[test]
-    fn test_session_system_prompt_locked_after_send() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
-
-        let session = Session::new("s1".to_string());
-        session.bind(Box::new(MockRpc::new()));
-        mgr.set_current(session);
-
-        lua.load("cru.get_session():mark_first_message_sent()")
-            .exec()
-            .unwrap();
-
-        let result: mlua::Result<()> = lua
-            .load("cru.get_session().system_prompt = 'new prompt'")
-            .exec();
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("locked"));
-    }
 }
 
 #[cfg(test)]
@@ -997,7 +838,7 @@ mod unsupported_rpc_tests {
     ///
     /// The trait once defaulted every setter to `Ok(())`, and the daemon
     /// bound that empty impl at every site, so a plugin that wrote
-    /// `session.thinking_budget = 4096` was told it worked and nothing
+    /// `session.system_prompt = "..."` was told it worked and nothing
     /// happened. The methods are required now; the one backing that
     /// supports nothing must still say so.
     #[test]
@@ -1005,9 +846,6 @@ mod unsupported_rpc_tests {
         let rpc = UnsupportedSessionRpc;
 
         for (name, result) in [
-            ("temperature", rpc.set_temperature(0.5)),
-            ("max_tokens", rpc.set_max_tokens(Some(128))),
-            ("thinking_budget", rpc.set_thinking_budget(4096)),
             ("model", rpc.switch_model("gpt-4o")),
             ("mode", rpc.set_mode("plan")),
             ("system_prompt", rpc.set_system_prompt("hi")),
@@ -1026,9 +864,7 @@ mod unsupported_rpc_tests {
     #[test]
     fn unsupported_getters_stay_silent() {
         let rpc = UnsupportedSessionRpc;
-        assert_eq!(rpc.get_temperature(), None);
-        assert_eq!(rpc.get_max_tokens(), None);
         assert_eq!(rpc.get_model(), None);
-        assert_eq!(rpc.get_thinking_budget(), None);
+        assert_eq!(rpc.get_system_prompt(), None);
     }
 }

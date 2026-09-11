@@ -35,33 +35,11 @@ pub struct SessionSetModeRequest {
     pub mode_id: String,
 }
 
-/// Request for `session.set_thinking_budget`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetThinkingBudgetRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking_budget: Option<i64>,
-}
-
-/// Request for `session.set_system_prompt`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetSystemPromptRequest {
-    pub session_id: String,
-    pub system_prompt: String,
-}
-
 /// Request for `session.set_precognition`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetPrecognitionRequest {
     pub session_id: String,
     pub precognition_enabled: bool,
-}
-
-/// Request for `session.set_precognition_results`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetPrecognitionResultsRequest {
-    pub session_id: String,
-    pub precognition_results: usize,
 }
 
 /// Request for `session.undo`.
@@ -70,37 +48,6 @@ pub struct SessionUndoRequest {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<usize>,
-}
-
-/// Request for `session.set_temperature`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetTemperatureRequest {
-    pub session_id: String,
-    pub temperature: f64,
-}
-
-/// Request for `session.set_max_tokens`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetMaxTokensRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
-}
-
-/// Request for `session.set_max_iterations`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetMaxIterationsRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_iterations: Option<u32>,
-}
-
-/// Request for `session.set_execution_timeout`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetExecutionTimeoutRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_secs: Option<u64>,
 }
 
 /// Request for `session.set_context_budget`.
@@ -116,36 +63,6 @@ pub struct SessionSetContextBudgetRequest {
 pub struct SessionSetContextStrategyRequest {
     pub session_id: String,
     pub context_strategy: String,
-}
-
-/// Request for `session.set_context_window`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetContextWindowRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context_window: Option<usize>,
-}
-
-/// Request for `session.set_output_validation`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetOutputValidationRequest {
-    pub session_id: String,
-    pub output_validation: String,
-}
-
-/// Request for `session.set_validation_retries`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetValidationRetriesRequest {
-    pub session_id: String,
-    pub validation_retries: u32,
-}
-
-/// Request for `session.set_autocompact_threshold`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSetAutocompactThresholdRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub autocompact_threshold: Option<f32>,
 }
 
 /// Request for `models.list` (no active session required).
@@ -522,65 +439,6 @@ impl DaemonClient {
         Ok(providers)
     }
 
-    /// Set the thinking budget for a session's agent.
-    ///
-    /// The thinking budget controls reasoning token allocation for thinking models
-    /// (e.g., Qwen, DeepSeek R1):
-    /// - `None` - Use model's default behavior
-    /// - `Some(-1)` - Unlimited thinking tokens
-    /// - `Some(0)` - Disable thinking/reasoning
-    /// - `Some(n)` where n > 0 - Maximum thinking tokens
-    ///
-    /// Changes take effect on the next message. Invalidates cached agent handles.
-    pub async fn session_set_thinking_budget(
-        &self,
-        session_id: &str,
-        budget: Option<i64>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_thinking_budget",
-            SessionSetThinkingBudgetRequest {
-                session_id: session_id.to_string(),
-                thinking_budget: budget,
-            },
-        )
-        .await
-    }
-
-    /// Get the current thinking budget for a session's agent.
-    ///
-    /// Returns the configured thinking budget, or `None` if not set (using defaults).
-    pub async fn session_get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>> {
-        self.get_session_option(
-            "session.get_thinking_budget",
-            session_id,
-            "thinking_budget",
-            |v| v.as_i64(),
-        )
-        .await
-    }
-
-    pub async fn session_set_system_prompt(&self, session_id: &str, prompt: &str) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_system_prompt",
-            SessionSetSystemPromptRequest {
-                session_id: session_id.to_string(),
-                system_prompt: prompt.to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_system_prompt(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option(
-            "session.get_system_prompt",
-            session_id,
-            "system_prompt",
-            |v| v.as_str().map(|s| s.to_string()),
-        )
-        .await
-    }
-
     /// Set whether Precognition (auto-RAG) is enabled for a session.
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
         self.typed_unit_call_with_retry(
@@ -612,130 +470,10 @@ impl DaemonClient {
         Ok(enabled)
     }
 
-    /// Set the maximum number of Precognition search results for a session.
-    pub async fn session_set_precognition_results(
-        &self,
-        session_id: &str,
-        count: usize,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_precognition_results",
-            SessionSetPrecognitionResultsRequest {
-                session_id: session_id.to_string(),
-                precognition_results: count,
-            },
-        )
-        .await
-    }
-
-    /// Get the maximum number of Precognition search results for a session.
-    pub async fn session_get_precognition_results(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<usize>> {
-        self.get_session_option(
-            "session.get_precognition_results",
-            session_id,
-            "precognition_results",
-            |v| v.as_u64().map(|n| n as usize),
-        )
-        .await
-    }
-
-    pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_temperature",
-            SessionSetTemperatureRequest {
-                session_id: session_id.to_string(),
-                temperature,
-            },
-        )
-        .await
-    }
-
     pub async fn session_get_mode(&self, session_id: &str) -> Result<Option<String>> {
         self.get_session_option("session.get_mode", session_id, "mode", |v| {
             v.as_str().map(|s| s.to_string())
         })
-        .await
-    }
-
-    pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
-        self.get_session_option("session.get_temperature", session_id, "temperature", |v| {
-            v.as_f64()
-        })
-        .await
-    }
-
-    pub async fn session_set_max_tokens(
-        &self,
-        session_id: &str,
-        max_tokens: Option<u32>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_max_tokens",
-            SessionSetMaxTokensRequest {
-                session_id: session_id.to_string(),
-                max_tokens,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_max_tokens(&self, session_id: &str) -> Result<Option<u32>> {
-        self.get_session_option("session.get_max_tokens", session_id, "max_tokens", |v| {
-            v.as_u64().map(|n| n as u32)
-        })
-        .await
-    }
-
-    pub async fn session_set_max_iterations(
-        &self,
-        session_id: &str,
-        max_iterations: Option<u32>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_max_iterations",
-            SessionSetMaxIterationsRequest {
-                session_id: session_id.to_string(),
-                max_iterations,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_max_iterations(&self, session_id: &str) -> Result<Option<u32>> {
-        self.get_session_option(
-            "session.get_max_iterations",
-            session_id,
-            "max_iterations",
-            |v| v.as_u64().map(|n| n as u32),
-        )
-        .await
-    }
-
-    pub async fn session_set_execution_timeout(
-        &self,
-        session_id: &str,
-        timeout_secs: Option<u64>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_execution_timeout",
-            SessionSetExecutionTimeoutRequest {
-                session_id: session_id.to_string(),
-                timeout_secs,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_execution_timeout(&self, session_id: &str) -> Result<Option<u64>> {
-        self.get_session_option(
-            "session.get_execution_timeout",
-            session_id,
-            "timeout_secs",
-            |v| v.as_u64(),
-        )
         .await
     }
 
@@ -764,31 +502,6 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_set_autocompact_threshold(
-        &self,
-        session_id: &str,
-        threshold: Option<f32>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_autocompact_threshold",
-            SessionSetAutocompactThresholdRequest {
-                session_id: session_id.to_string(),
-                autocompact_threshold: threshold,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_autocompact_threshold(&self, session_id: &str) -> Result<Option<f32>> {
-        self.get_session_option(
-            "session.get_autocompact_threshold",
-            session_id,
-            "autocompact_threshold",
-            |v| v.as_f64().map(|n| n as f32),
-        )
-        .await
-    }
-
     pub async fn session_set_context_strategy(
         &self,
         session_id: &str,
@@ -810,81 +523,6 @@ impl DaemonClient {
             session_id,
             "context_strategy",
             |v| v.as_str().map(String::from),
-        )
-        .await
-    }
-
-    pub async fn session_set_context_window(
-        &self,
-        session_id: &str,
-        context_window: Option<usize>,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_context_window",
-            SessionSetContextWindowRequest {
-                session_id: session_id.to_string(),
-                context_window,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_context_window(&self, session_id: &str) -> Result<Option<usize>> {
-        self.get_session_option(
-            "session.get_context_window",
-            session_id,
-            "context_window",
-            |v| v.as_u64().map(|n| n as usize),
-        )
-        .await
-    }
-
-    pub async fn session_set_output_validation(
-        &self,
-        session_id: &str,
-        validation: &str,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_output_validation",
-            SessionSetOutputValidationRequest {
-                session_id: session_id.to_string(),
-                output_validation: validation.to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_output_validation(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option(
-            "session.get_output_validation",
-            session_id,
-            "output_validation",
-            |v| v.as_str().map(String::from),
-        )
-        .await
-    }
-
-    pub async fn session_set_validation_retries(
-        &self,
-        session_id: &str,
-        retries: u32,
-    ) -> Result<()> {
-        self.typed_unit_call_with_retry(
-            "session.set_validation_retries",
-            SessionSetValidationRetriesRequest {
-                session_id: session_id.to_string(),
-                validation_retries: retries,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_validation_retries(&self, session_id: &str) -> Result<Option<u32>> {
-        self.get_session_option(
-            "session.get_validation_retries",
-            session_id,
-            "validation_retries",
-            |v| v.as_u64().map(|n| n as u32),
         )
         .await
     }

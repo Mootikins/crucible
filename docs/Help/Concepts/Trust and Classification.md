@@ -65,20 +65,27 @@ A `local` provider can access everything. A `cloud` provider can access `public`
 
 ### Setting Trust on Providers
 
-Add `trust_level` to any provider in your `config.toml`:
+Add `trust_level` to any provider in your `init.lua`:
 
-```toml
-[llm.providers.local-llama]
-type = "ollama"
-endpoint = "http://localhost:11434"
-default_model = "llama3.2"
-trust_level = "local"
-
-[llm.providers.openai]
-type = "openai"
-default_model = "gpt-4o"
-api_key = "{env:OPENAI_API_KEY}"
-# trust_level defaults to "cloud" for OpenAI
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            ["local-llama"] = {
+                type = "ollama",
+                endpoint = "http://localhost:11434",
+                default_model = "llama3.2",
+                trust_level = "local",
+            },
+            openai = {
+                type = "openai",
+                default_model = "gpt-4o",
+                api_key = os.getenv("OPENAI_API_KEY"),
+                -- trust_level defaults to "cloud" for OpenAI
+            },
+        },
+    },
+})
 ```
 
 If you omit `trust_level`, Crucible uses the provider type's default. Most cloud APIs default to `cloud`. Local-only backends (like local embedding models) default to `local`.
@@ -87,7 +94,7 @@ If you omit `trust_level`, Crucible uses the provider type's default. Most cloud
 
 Classification lives on a **kiln attachment** in the project's own
 `.crucible/project.toml`, not in the global config — the `[[kilns]]` array there is a
-different shape from the `[kilns]` name-to-path map in `config.toml`.
+different shape from the `kilns` name-to-path map in `init.lua`.
 
 ```toml title=".crucible/project.toml"
 # .crucible/project.toml
@@ -108,15 +115,22 @@ data_classification = "confidential"
 
 Say you have three kilns and two providers. The providers go in the global config:
 
-```toml
-[llm.providers.ollama]
-type = "ollama"
-trust_level = "local"
-
-[llm.providers.openai]
-type = "openai"
-api_key = "{env:OPENAI_API_KEY}"
-# defaults to cloud trust
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            ollama = {
+                type = "ollama",
+                trust_level = "local",
+            },
+            openai = {
+                type = "openai",
+                api_key = os.getenv("OPENAI_API_KEY"),
+                -- defaults to cloud trust
+            },
+        },
+    },
+})
 ```
 
 The classifications go in the project's `.crucible/project.toml`:

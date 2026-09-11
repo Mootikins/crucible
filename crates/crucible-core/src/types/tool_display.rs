@@ -24,20 +24,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Tool names whose payload is a shell command line.
-///
-/// Matched exactly, or as the tail of an MCP-prefixed name (`server__bash`),
-/// so an ordinary tool that merely takes a `command` argument is unaffected.
-const SHELL_TOOLS: &[&str] = &[
-    "bash",
-    "shell",
-    "sh",
-    "zsh",
-    "exec",
-    "run_command",
-    "terminal",
-];
-
 /// Argument keys that name a filesystem target, in priority order.
 /// `filePath` is here because agents are inconsistent about casing and the
 /// TUI's previous heuristic accepted it; dropping it would silently blank the
@@ -71,6 +57,26 @@ pub struct ToolDisplay {
 }
 
 impl ToolDisplay {
+    /// Tool names whose payload is a shell command line.
+    ///
+    /// Matched exactly, or as the tail of an MCP-prefixed name
+    /// (`server__bash`), so an ordinary tool that merely takes a `command`
+    /// argument is unaffected.
+    ///
+    /// Public because this is the *only* list of command tools: a caller that
+    /// must enumerate them — a permission gate, or a test that proves one —
+    /// reads it here instead of writing a second list beside it. A second list
+    /// drifted once already; see `PermRequest::suggested_pattern`.
+    pub const COMMAND_TOOL_NAMES: &'static [&'static str] = &[
+        "bash",
+        "shell",
+        "sh",
+        "zsh",
+        "exec",
+        "run_command",
+        "terminal",
+    ];
+
     /// Project a tool call.
     ///
     /// `args` is the raw argument object. A non-object (a bare string, or
@@ -131,7 +137,7 @@ impl ToolDisplay {
 
 fn is_shell_tool(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
-    SHELL_TOOLS
+    ToolDisplay::COMMAND_TOOL_NAMES
         .iter()
         .any(|t| lower == *t || lower.ends_with(&format!("__{t}")))
 }

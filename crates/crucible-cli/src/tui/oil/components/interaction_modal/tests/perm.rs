@@ -101,7 +101,9 @@ fn test_perm_modal_allowlist_shortcut() {
         InteractionModalOutput::PermissionResponse { response, .. } => {
             assert!(response.allowed);
             assert!(response.pattern.is_some());
-            assert_eq!(response.pattern.unwrap(), "cargo *");
+            // The suggestion is the command the modal displayed. A wider
+            // grant is the user's own edit, never the default.
+            assert_eq!(response.pattern.unwrap(), "cargo build");
         }
         _ => panic!("Expected PermissionResponse with pattern"),
     }
@@ -136,7 +138,7 @@ fn test_perm_modal_tab_on_allowlist_prefills_pattern() {
 
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
     assert_eq!(modal.mode, InteractionMode::TextInput);
-    assert_eq!(modal.other_text, "cargo *");
+    assert_eq!(modal.other_text, "cargo test");
 }
 
 #[test]

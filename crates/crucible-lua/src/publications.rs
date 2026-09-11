@@ -202,7 +202,7 @@ mod tests {
         let restore = crate::plugin_context::enter_plugin(
             &lua,
             "kanban",
-            crate::manifest::CapabilitySet::none(),
+            false,
         );
         lua.load(r#"cru.plugin.publish("kanban:board", { tickets = {} })"#)
             .exec()

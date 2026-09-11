@@ -114,7 +114,7 @@ Handlers live in plugins, and register with `cru.on` at load:
 
 ```
 ~/.config/crucible/plugins/      # your plugins
-<runtimepath entry>/plugins/     # trees you opt into in config.toml
+<runtimepath entry>/plugins/     # trees you opt into in init.lua
 ```
 
 Registration is daemon-wide — a handler fires for every session, and filters on

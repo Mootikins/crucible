@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::{optional_param, require_param};
 
-use crucible_core::session::{ContextStrategy, OutputValidation};
+use crucible_core::session::ContextStrategy;
 
 // The session config-knob handlers are token-identical except for the knob's
 // wire field name, the `AgentManager` method, and how the value is extracted.
@@ -128,14 +128,6 @@ pub(crate) async fn handle_session_set_mode(
 }
 
 session_config_setter!(
-    handle_session_set_system_prompt,
-    req,
-    set_system_prompt,
-    "system_prompt",
-    require_param!(req, "system_prompt", as_str)
-);
-
-session_config_setter!(
     handle_session_set_precognition,
     req,
     set_precognition,
@@ -143,49 +135,7 @@ session_config_setter!(
     optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true)
 );
 
-session_config_setter!(
-    handle_session_set_precognition_results,
-    req,
-    set_precognition_results,
-    "precognition_results",
-    optional_param!(req, "precognition_results", as_u64).unwrap_or(5) as usize
-);
-
-session_config_setter!(
-    handle_session_set_temperature,
-    req,
-    set_temperature,
-    "temperature",
-    require_param!(req, "temperature", as_f64)
-);
-
-// max_tokens can be null to clear the limit, so we use optional.
-session_config_setter!(
-    handle_session_set_max_tokens,
-    req,
-    set_max_tokens,
-    "max_tokens",
-    optional_param!(req, "max_tokens", as_u64).map(|v| v as u32)
-);
-
-// max_iterations can be null to clear the limit (unlimited), so we use optional.
-session_config_setter!(
-    handle_session_set_max_iterations,
-    req,
-    set_max_iterations,
-    "max_iterations",
-    optional_param!(req, "max_iterations", as_u64).map(|v| v as u32)
-);
-
 // timeout_secs can be null to clear the timeout, so we use optional.
-session_config_setter!(
-    handle_session_set_execution_timeout,
-    req,
-    set_execution_timeout,
-    "timeout_secs",
-    optional_param!(req, "timeout_secs", as_u64)
-);
-
 session_config_setter!(
     handle_session_set_context_budget,
     req,
@@ -194,89 +144,18 @@ session_config_setter!(
     optional_param!(req, "context_budget", as_u64).map(|v| v as usize)
 );
 
-session_config_setter!(
-    handle_session_set_context_window,
-    req,
-    set_context_window,
-    "context_window",
-    optional_param!(req, "context_window", as_u64).map(|v| v as usize)
-);
-
-session_config_setter!(
-    handle_session_set_validation_retries,
-    req,
-    set_validation_retries,
-    "validation_retries",
-    require_param!(req, "validation_retries", as_u64) as u32
-);
-
-session_config_setter!(
-    handle_session_set_autocompact_threshold,
-    req,
-    set_autocompact_threshold,
-    "autocompact_threshold",
-    optional_param!(req, "autocompact_threshold", as_f64).map(|v| v as f32)
-);
-
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
-session_config_getter!(
-    handle_session_get_thinking_budget,
-    get_thinking_budget,
-    "thinking_budget"
-);
-session_config_getter!(
-    handle_session_get_system_prompt,
-    get_system_prompt,
-    "system_prompt"
-);
 session_config_getter!(
     handle_session_get_precognition,
     get_precognition,
     "precognition_enabled"
 );
-session_config_getter!(
-    handle_session_get_precognition_results,
-    get_precognition_results,
-    "precognition_results"
-);
-session_config_getter!(
-    handle_session_get_temperature,
-    get_temperature,
-    "temperature"
-);
-
 session_config_getter!(handle_session_get_mode, get_mode, "mode");
-session_config_getter!(handle_session_get_max_tokens, get_max_tokens, "max_tokens");
-session_config_getter!(
-    handle_session_get_max_iterations,
-    get_max_iterations,
-    "max_iterations"
-);
-session_config_getter!(
-    handle_session_get_execution_timeout,
-    get_execution_timeout,
-    "timeout_secs"
-);
 session_config_getter!(
     handle_session_get_context_budget,
     get_context_budget,
     "context_budget"
-);
-session_config_getter!(
-    handle_session_get_context_window,
-    get_context_window,
-    "context_window"
-);
-session_config_getter!(
-    handle_session_get_validation_retries,
-    get_validation_retries,
-    "validation_retries"
-);
-session_config_getter!(
-    handle_session_get_autocompact_threshold,
-    get_autocompact_threshold,
-    "autocompact_threshold"
 );
 session_config_getter!(
     handle_session_get_context_strategy,
@@ -284,49 +163,16 @@ session_config_getter!(
     "context_strategy",
     display
 );
-session_config_getter!(
-    handle_session_get_output_validation,
-    get_output_validation,
-    "output_validation",
-    display
-);
 
 // ── Hand-written handlers (deviate from the uniform macro shape) ────────────
 //
-// These knobs can't be macro-generated: `set_thinking_budget` echoes back a
-// different value than it stores (the raw Option, not the clamped effective
-// budget); `set_context_strategy` / `set_output_validation` parse-and-validate
-// the incoming string and short-circuit with INVALID_PARAMS on a bad value.
+// This knob can't be macro-generated: `set_context_strategy`
+// parses-and-validates the incoming string and short-circuits with
+// INVALID_PARAMS on a bad value.
 //
 // The A1 field-name parity gate in `tests/architecture_tests.rs` covers these
 // alongside the macro-generated knobs — it reads each handler's wire field
 // names from whichever form (fn body or macro invocation) the knob uses.
-
-pub(crate) async fn handle_session_set_thinking_budget(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let budget = optional_param!(req, "thinking_budget", as_i64);
-
-    // When budget is None, clear the thinking budget override
-    let effective_budget = budget.unwrap_or(0);
-
-    match am
-        .set_thinking_budget(session_id, effective_budget, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "thinking_budget": budget,
-            }),
-        ),
-        Err(e) => agent_error_to_response(req.id, e),
-    }
-}
 
 pub(crate) async fn handle_session_set_context_strategy(
     req: Request,
@@ -350,34 +196,6 @@ pub(crate) async fn handle_session_set_context_strategy(
             serde_json::json!({
                 "session_id": session_id,
                 "context_strategy": strategy_str,
-            }),
-        ),
-        Err(e) => agent_error_to_response(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_set_output_validation(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let validation_str = require_param!(req, "output_validation", as_str);
-
-    let validation = match validation_str.parse::<OutputValidation>() {
-        Ok(v) => v,
-        Err(e) => return Response::error(req.id, INVALID_PARAMS, e),
-    };
-
-    match am
-        .set_output_validation(session_id, validation, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "output_validation": validation_str,
             }),
         ),
         Err(e) => agent_error_to_response(req.id, e),

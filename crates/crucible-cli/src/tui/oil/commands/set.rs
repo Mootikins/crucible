@@ -1,6 +1,14 @@
 //! SetCommand parser for vim-style `:set` commands.
+//!
+//! [`SetCommand`] and [`SetEffect`] are closed sets that decide which store a
+//! `:set` reaches. The two denies below turn a wildcard arm — the arm that
+//! sends a new spelling or a new effect somewhere nobody chose — into a
+//! compile error.
 
-use crate::tui::oil::config::{ConfigValue, ThinkingPreset};
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
+
+use crate::tui::oil::config::ConfigValue;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParseError {
@@ -10,37 +18,95 @@ pub enum ParseError {
     InvalidSyntax(String),
 }
 
+/// The `:set` spellings. A closed set: the dispatch in `command_handling.rs`
+/// matches every variant, and the tests walk them through `EnumIter` so a new
+/// spelling cannot reach a store the other spellings do not.
+/// Which layers a `:set` drop takes away.
+///
+/// Three spellings, three answers, so a boolean cannot carry it: `&` resets,
+/// `^` pops one layer, `=` with nothing after it removes the key. An
+/// enumerated table rather than two bools, so a fourth spelling cannot be
+/// added without every match seeing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum DropKind {
+    /// `:set key&` — drop the ephemeral layer a `:set` writes.
+    Reset,
+    /// `:set key^` — drop the highest-ranked layer holding the leaf.
+    Pop,
+    /// `:set key=` — remove the key and everything under it.
+    Unset,
+}
+
+impl DropKind {
+    /// The RPC verb that performs this drop.
+    pub fn method(self) -> &'static str {
+        match self {
+            DropKind::Reset => "config.reset",
+            DropKind::Pop => "config.pop",
+            DropKind::Unset => "config.unset",
+        }
+    }
+
+    /// The spelling that asked for it, for an error message.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            DropKind::Reset => "&",
+            DropKind::Pop => "^",
+            DropKind::Unset => "=",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 pub enum SetCommand {
     ShowModified,
     ShowAll,
-    Query { key: String },
-    QueryHistory { key: String },
-    Enable { key: String },
-    Disable { key: String },
-    Toggle { key: String },
-    Reset { key: String },
-    Pop { key: String },
-    Set { key: String, value: String },
+    Query {
+        key: String,
+    },
+    QueryHistory {
+        key: String,
+    },
+    Enable {
+        key: String,
+    },
+    Disable {
+        key: String,
+    },
+    Toggle {
+        key: String,
+    },
+    Reset {
+        key: String,
+    },
+    Pop {
+        key: String,
+    },
+    /// `:set key=` — an assignment with nothing after the `=`.
+    ///
+    /// Vim spells "give me back the default" `&`, and has no spelling for
+    /// "remove this key" because its options are a fixed set that cannot be
+    /// removed. Crucible's are not: `llm.providers.<name>` is user-named, and
+    /// a stale one has to be removable. An empty assignment is the natural
+    /// spelling — the user says the value is nothing, and nothing is not the
+    /// empty string.
+    Unset {
+        key: String,
+    },
+    Set {
+        key: String,
+        value: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetRpcAction {
     SwitchModel(String),
-    SetThinkingBudget(Option<i64>),
-    SetMaxIterations(Option<u32>),
-    SetExecutionTimeout(Option<u64>),
     SetContextBudget(Option<usize>),
     SetContextStrategy(String),
-    SetContextWindow(Option<usize>),
-    SetOutputValidation(String),
-    SetValidationRetries(u32),
     SetPrecognition(bool),
-    SetPrecognitionResults(usize),
-    /// Auto-compaction threshold as a fraction of `context_budget`.
-    /// `None` clears the override (daemon falls back to its default).
-    /// `Some(0.0)` is "explicitly disabled" — emitted by `:set autocompact_threshold=off`.
-    SetAutocompactThreshold(Option<f32>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,7 +144,8 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
         | SetCommand::Query { .. }
         | SetCommand::QueryHistory { .. }
         | SetCommand::Reset { .. }
-        | SetCommand::Pop { .. } => Err(SetError::NotSupportedAsCli),
+        | SetCommand::Pop { .. }
+        | SetCommand::Unset { .. } => Err(SetError::NotSupportedAsCli),
         SetCommand::Enable { key } => classify_key_without_value(key, CliValue::Enable),
         SetCommand::Disable { key } => classify_key_without_value(key, CliValue::Disable),
         SetCommand::Toggle { key } => classify_key_without_value(key, CliValue::Toggle),
@@ -95,65 +162,6 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
 pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetError> {
     match key.as_str() {
         "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
-        "thinkingbudget" => {
-            if let Some(preset) = ThinkingPreset::by_name(&value) {
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(
-                    preset.to_budget(),
-                ))))
-            } else {
-                let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
-                Err(SetError::InvalidValue {
-                    key,
-                    message: format!("unknown preset '{}'. Valid: {}", value, valid),
-                })
-            }
-        }
-        "maxiterations" => {
-            let max_iterations =
-                if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                    None
-                } else {
-                    match value.parse::<u32>() {
-                        Ok(n) => Some(n),
-                        Err(_) => {
-                            return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "invalid maxiterations value: {} (use a number or 'none')",
-                                    value
-                                ),
-                            });
-                        }
-                    }
-                };
-
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxIterations(
-                max_iterations,
-            )))
-        }
-        "executiontimeout" => {
-            let timeout_secs =
-                if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                    None
-                } else {
-                    match value.parse::<u64>() {
-                        Ok(n) => Some(n),
-                        Err(_) => {
-                            return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "invalid executiontimeout value: {} (use seconds or 'none')",
-                                    value
-                                ),
-                            });
-                        }
-                    }
-                };
-
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetExecutionTimeout(
-                timeout_secs,
-            )))
-        }
         "contextbudget" | "context_budget" => {
             let budget = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
             {
@@ -173,44 +181,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 }
             };
             Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
-        }
-        "autocompactthreshold" | "autocompact_threshold" => {
-            let v = if value.eq_ignore_ascii_case("off")
-                || value == "0"
-                || value.eq_ignore_ascii_case("false")
-            {
-                Some(0.0_f32)
-            } else if value.eq_ignore_ascii_case("none")
-                || value.eq_ignore_ascii_case("null")
-                || value.eq_ignore_ascii_case("default")
-            {
-                None
-            } else {
-                match value.parse::<f32>() {
-                    Ok(t) if (0.0..=1.0).contains(&t) => Some(t),
-                    Ok(_) => {
-                        return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "autocompact_threshold {} out of range; expected 0.0..=1.0, 'off', or 'default'",
-                                    value
-                                ),
-                            });
-                    }
-                    Err(_) => {
-                        return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "invalid autocompact_threshold {}; expected a number in 0.0..=1.0, 'off', or 'default'",
-                                    value
-                                ),
-                            });
-                    }
-                }
-            };
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetAutocompactThreshold(
-                v,
-            )))
         }
         "contextstrategy" | "context_strategy" => {
             // Validate the strategy value
@@ -234,50 +204,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 }),
             }
         }
-        "contextwindow" | "context_window" => {
-            let window = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
-            {
-                None
-            } else {
-                match value.parse::<usize>() {
-                    Ok(n) => Some(n),
-                    Err(_) => {
-                        return Err(SetError::InvalidValue {
-                            key,
-                            message: format!(
-                                "invalid context_window value: {} (use a number or 'none')",
-                                value
-                            ),
-                        });
-                    }
-                }
-            };
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(window)))
-        }
-        "outputvalidation" | "output_validation" => {
-            // Validate the value parses correctly
-            value
-                .parse::<crucible_core::session::OutputValidation>()
-                .map_err(|message| SetError::InvalidValue {
-                    key: key.clone(),
-                    message,
-                })?;
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetOutputValidation(
-                value,
-            )))
-        }
-        "validationretries" | "validation_retries" => {
-            let retries = value.parse::<u32>().map_err(|_| SetError::InvalidValue {
-                key: key.clone(),
-                message: format!(
-                    "invalid validation_retries value: {} (use a non-negative integer)",
-                    value
-                ),
-            })?;
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetValidationRetries(
-                retries,
-            )))
-        }
         "perm.show_diff" | "perm.autoconfirm_session" | "perm.full_commands" => {
             parse_bool(&value).map_err(|message| SetError::InvalidValue {
                 key: key.clone(),
@@ -288,15 +214,24 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 value: CliValue::Set(value),
             })
         }
-        // `thinking` stays TUI-local on purpose: it hides or shows reasoning
-        // blocks in this client's transcript and changes nothing about the
-        // turn. `precognition` looked like its neighbour and was not — it
-        // decides whether the daemon injects kiln context, so a TUI-local
-        // toggle only ever changed the `:set` readout.
-        "thinking" => Ok(SetEffect::TuiLocal {
-            key,
-            value: CliValue::Set(value),
-        }),
+        // `thinking` and `show_diffs` stay TUI-local on purpose: they hide or
+        // show reasoning blocks and diff bodies in this client's transcript
+        // and change nothing about the turn. `precognition` looked like their
+        // neighbour and was not — it decides whether the daemon injects kiln
+        // context, so a TUI-local toggle only ever changed the `:set` readout.
+        //
+        // `show_diffs` reached this classifier as an unknown key until 2026-09,
+        // which mirrored a display key into the daemon app-config store.
+        "thinking" | "show_diffs" => {
+            parse_bool(&value).map_err(|message| SetError::InvalidValue {
+                key: key.clone(),
+                message,
+            })?;
+            Ok(SetEffect::TuiLocal {
+                key,
+                value: CliValue::Set(value),
+            })
+        }
         "precognition" => {
             let enabled = parse_bool(&value).map_err(|message| SetError::InvalidValue {
                 key: key.clone(),
@@ -343,21 +278,6 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 ),
             }),
         },
-        "precognition.results" => {
-            let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
-                key: key.clone(),
-                message: "precognition.results must be 1-20".to_string(),
-            })?;
-            if !(1..=20).contains(&parsed) {
-                return Err(SetError::InvalidValue {
-                    key,
-                    message: "precognition.results must be 1-20".to_string(),
-                });
-            }
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognitionResults(
-                parsed,
-            )))
-        }
         _ => Err(SetError::UnknownKey(key)),
     }
 }
@@ -365,31 +285,56 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
 impl SetRpcAction {
     /// Map to the TUI message that performs the daemon sync.
     ///
-    /// `None` for actions with no message equivalent (clearing the thinking
-    /// budget is a CLI-only no-op).
+    /// `None` for actions with no message equivalent.
     pub fn into_chat_msg(self) -> Option<crate::tui::oil::chat_app::ChatAppMsg> {
         use crate::tui::oil::chat_app::ChatAppMsg;
         match self {
             SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
-            SetRpcAction::SetThinkingBudget(Some(b)) => Some(ChatAppMsg::SetThinkingBudget(b)),
-            SetRpcAction::SetThinkingBudget(None) => None,
-            SetRpcAction::SetMaxIterations(n) => Some(ChatAppMsg::SetMaxIterations(n)),
-            SetRpcAction::SetExecutionTimeout(n) => Some(ChatAppMsg::SetExecutionTimeout(n)),
             SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
-            SetRpcAction::SetContextWindow(n) => Some(ChatAppMsg::SetContextWindow(n)),
-            SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
-            SetRpcAction::SetValidationRetries(n) => Some(ChatAppMsg::SetValidationRetries(n)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
-            SetRpcAction::SetPrecognitionResults(n) => Some(ChatAppMsg::SetPrecognitionResults(n)),
-            SetRpcAction::SetAutocompactThreshold(t) => {
-                Some(ChatAppMsg::SetAutocompactThreshold(t))
-            }
         }
     }
 }
 
-fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect, SetError> {
+/// Which store answers for one `:set` key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyHome {
+    /// This client's own overlay: display state, and the session knobs the
+    /// TUI mirrors so a redraw needs no round trip.
+    Client,
+    /// The daemon app-config store, which owns every key no rule declares.
+    Daemon,
+}
+
+/// Where the key of a value-less `:set` spelling lives.
+///
+/// `key?`, `key??`, `key&` and `key^` carry nothing to classify, so they ask
+/// here instead of assuming the local overlay. Answering that question twice
+/// is the defect this replaces: `:set foo=9` reached the daemon while
+/// `:set foo?` read an overlay that never held `foo` and printed "not set".
+///
+/// The answer comes from [`classify_key_without_value`] rather than from a
+/// second list of key names, so one rule names the client's keys.
+pub fn key_home(key: &str) -> KeyHome {
+    // `CliValue::Toggle` only decides WHICH error a declared key returns. The
+    // question here is whether any rule names the key at all.
+    match classify_key_without_value(key.to_string(), CliValue::Toggle) {
+        // Nothing declares it, so the daemon app-config store owns it.
+        Err(SetError::UnknownKey(_)) => KeyHome::Daemon,
+        Ok(SetEffect::TuiLocal { .. } | SetEffect::DaemonRpc(_))
+        | Err(SetError::InvalidValue { .. } | SetError::NotSupportedAsCli | SetError::Parse(_)) => {
+            KeyHome::Client
+        }
+    }
+}
+
+/// Classify a value-less `:set key` / `:set nokey` / `:set key!`.
+///
+/// The same door as [`classify_set_value`], for the same reason: the TUI used
+/// to answer these three spellings from its own store, so a key could be
+/// `true` in the TUI and absent from the daemon at the same time.
+pub fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect, SetError> {
     if is_tui_local_key(&key) {
         Ok(SetEffect::TuiLocal { key, value: effect })
     } else if key == "precognition" {
@@ -406,7 +351,7 @@ fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect
                 message: "toggling needs the current value; use precognition=on|off".to_string(),
             }),
         }
-    } else if is_daemon_rpc_key(&key) {
+    } else if is_daemon_rpc_key(&key) || needs_an_explicit_value(&key) {
         Err(SetError::InvalidValue {
             key,
             message: "this key requires an explicit value".to_string(),
@@ -416,10 +361,14 @@ fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect
     }
 }
 
+/// The keys this client owns outright: boolean display state that no other
+/// client and no plugin reads. A value-less `:set` spelling writes these
+/// locally; every other key belongs to the daemon.
 fn is_tui_local_key(key: &str) -> bool {
     matches!(
         key,
         "thinking"
+            | "show_diffs"
             | "precognition"
             | "perm.show_diff"
             | "perm.autoconfirm_session"
@@ -430,19 +379,17 @@ fn is_tui_local_key(key: &str) -> bool {
 fn is_daemon_rpc_key(key: &str) -> bool {
     matches!(
         key,
-        "model"
-            | "thinkingbudget"
-            | "maxiterations"
-            | "executiontimeout"
-            | "contextbudget"
-            | "context_budget"
-            | "contextstrategy"
-            | "context_strategy"
-            | "contextwindow"
-            | "context_window"
-            | "autocompactthreshold"
-            | "autocompact_threshold"
-            | "precognition.results"
+        "model" | "contextbudget" | "context_budget" | "contextstrategy" | "context_strategy"
+    )
+}
+
+/// Declared `:set` targets whose value is not a boolean and whose home is
+/// this client. `:set syntax_theme` cannot mean "true", so the value-less
+/// spellings ask for a value rather than writing one.
+fn needs_an_explicit_value(key: &str) -> bool {
+    matches!(
+        key,
+        "syntax_theme" | "syntaxtheme" | "completionstyle" | "completion_style"
     )
 }
 
@@ -544,6 +491,11 @@ impl SetCommand {
             if key.is_empty() {
                 return Err(ParseError::InvalidSyntax("missing option name".into()));
             }
+            if value.is_empty() {
+                return Ok(SetCommand::Unset {
+                    key: key.to_string(),
+                });
+            }
             return Ok(SetCommand::Set {
                 key: key.to_string(),
                 value: value.to_string(),
@@ -593,6 +545,52 @@ fn split_on_value_colon(input: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::config::SHORTCUTS;
+
+    /// Every declared `:set` target is classified. A target the classifier
+    /// does not know falls through to the app-config store, which mirrors a
+    /// TUI display key into the daemon and gives one key two homes.
+    ///
+    /// The expectation walks the shortcut table itself rather than a second
+    /// list, so a new shortcut cannot pass by being absent from both.
+    #[test]
+    fn every_declared_set_target_is_classified() {
+        for shortcut in SHORTCUTS {
+            let classified = classify_set_value(shortcut.short.to_string(), "true".to_string());
+            assert!(
+                !matches!(classified, Err(SetError::UnknownKey(_))),
+                "`:set {}` reaches the daemon app-config store because nothing classifies it",
+                shortcut.short
+            );
+            // The value-less spellings ask `key_home`, not the classifier.
+            // The two must name the same store, or a target is written in
+            // one place and read from the other.
+            assert_eq!(
+                key_home(shortcut.short),
+                KeyHome::Client,
+                "`:set {}?` and `:set {}=v` disagree about which store owns the key",
+                shortcut.short,
+                shortcut.short
+            );
+        }
+    }
+
+    /// `show_diffs` decides whether THIS transcript renders diff bodies. It
+    /// is display state, so it stays in the TUI.
+    #[test]
+    fn show_diffs_stays_in_the_tui() {
+        assert_eq!(
+            classify_set_value("show_diffs".to_string(), "false".to_string()),
+            Ok(SetEffect::TuiLocal {
+                key: "show_diffs".to_string(),
+                value: CliValue::Set("false".to_string()),
+            })
+        );
+        assert!(matches!(
+            classify_set_value("show_diffs".to_string(), "maybe".to_string()),
+            Err(SetError::InvalidValue { .. })
+        ));
+    }
 
     #[test]
     fn parse_bool_accepts_the_config_value_tokens() {
@@ -767,10 +765,10 @@ mod tests {
             })
         );
         assert_eq!(
-            SetCommand::parse(":set thinkingbudget high"),
+            SetCommand::parse(":set contextbudget 32000"),
             Ok(SetCommand::Set {
-                key: "thinkingbudget".into(),
-                value: "high".into()
+                key: "contextbudget".into(),
+                value: "32000".into()
             })
         );
     }

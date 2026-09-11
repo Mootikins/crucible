@@ -11,65 +11,74 @@ tags:
 
 Crucible runs AI agents through two complementary systems:
 
-1. **Chat agents** (`[chat]`) — Crucible's own REPL agent backed by one of the configured LLM providers.
-2. **ACP agents** (`[acp]`) — external agents (Claude Code, OpenCode, Gemini, etc.) hosted via the [[Help/Concepts/Agent Client Protocol|Agent Client Protocol]].
+1. **Chat agents** (`chat`) — Crucible's own REPL agent backed by one of the configured LLM providers.
+2. **ACP agents** (`acp`) — external agents (Claude Code, OpenCode, Gemini, etc.) hosted via the [[Help/Concepts/Agent Client Protocol|Agent Client Protocol]].
 
 LLM provider credentials and endpoints live in [[Help/Config/llm|[llm]]]; this page covers the two agent-selection sections.
 
 ## Configuration Location
 
-Agent settings live in `~/.config/crucible/config.toml`, or in whatever file you point
+Agent settings live in `~/.config/crucible/init.lua`, or in whatever file you point
 `-C` / `$CRUCIBLE_CONFIG` at. A kiln's `.crucible/` directory holds `kiln.toml`, which
-carries only the kiln's display name — `[chat]` and `[acp]` are not read from there.
+carries only the kiln's display name — `chat` and `acp` are not read from there.
 
-## `[chat]` — Chat Defaults
+## `chat` — Chat Defaults
 
 Applied when you run `cru chat` without `--acp` or `--provider`.
 
-```toml
-[chat]
-# Override the default model (otherwise inherited from the default provider)
-model = "llama3.2"
+```lua
+cru.config.set({
+    chat = {
+        -- Override the default model (otherwise inherited from the default provider)
+        model = "llama3.2",
 
-# Prefer external ACP agents or Crucible's built-in agent
-# Values: "acp" or "crucible" (default)
-agent_preference = "crucible"
+        -- Prefer external ACP agents or Crucible's built-in agent
+        -- Values: "acp" or "crucible" (default)
+        agent_preference = "crucible",
 
-# Override provider endpoint for Ollama/compatible
-# endpoint = "http://localhost:11434"
+        -- Override provider endpoint for Ollama/compatible
+        -- endpoint = "http://localhost:11434"
 
-# Generation controls (optional)
-# temperature = 0.7
-# max_tokens = 4096
+        -- Generation controls (optional)
 
-# Stream thinking/reasoning tokens below the spinner
-show_thinking = false
+        -- Stream thinking/reasoning tokens below the spinner
+        show_thinking = false,
+    },
+})
 ```
 
-The actual **provider** default lives under `[llm]`:
+The actual **provider** default lives under `llm`:
 
-```toml
-[llm]
-default = "ollama"          # key from [llm.providers.*]
-
-[llm.providers.ollama]
-type = "ollama"
-default_model = "llama3.2"
+```lua
+cru.config.set({
+    llm = {
+        default = "ollama",  -- key from [llm.providers.*]
+        providers = {
+            ollama = {
+                type = "ollama",
+                default_model = "llama3.2",
+            },
+        },
+    },
+})
 ```
 
 See [[Help/Config/llm|[llm]]] for the full provider reference.
 
-## `[acp]` — ACP Agent Defaults
+## `acp` — ACP Agent Defaults
 
 Applied when you run `cru chat --acp <name>` or bring up the agent picker.
 
-```toml
-[acp]
-# Default ACP agent to use when --acp is omitted (optional)
-default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor", "hermes"
+```lua
+cru.config.set({
+    acp = {
+        -- Default ACP agent to use when --acp is omitted (optional)
+        default_agent = "opencode",  -- or "claude", "gemini", "codex", "cursor", "hermes"
 
-# Streaming response timeout in minutes
-streaming_timeout_minutes = 15
+        -- Streaming response timeout in minutes
+        streaming_timeout_minutes = 15,
+    },
+})
 ```
 
 The removed fields `lazy_agent_selection`, `enable_discovery`,
@@ -78,23 +87,30 @@ error; the values are ignored. See [[Help/Config/acp]].
 
 ### Custom ACP Agent Profiles
 
-Extend a built-in agent profile with additional environment or arguments under `[acp.agents.<name>]`:
+Extend a built-in agent profile with additional environment or arguments under `acp.agents.<name>`:
 
-```toml
-[acp.agents.my-claude]
-extends = "claude"
-env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            ["my-claude"] = {
+                extends = "claude",
+                env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+            },
+        },
+    },
+})
 ```
 
 The extended name is then selectable via `cru chat --acp my-claude`.
 
-See [[Help/Config/acp]] for every field on `[acp]` and `[acp.agents.<name>]`, including
+See [[Help/Config/acp]] for every field on `acp` and `acp.agents.<name>`, including
 delegation and per-agent permissions.
 
 ## See Also
 
 - [[Help/CLI/chat]] — `cru chat` reference
-- [[Help/Config/acp]] — full `[acp]` field reference
+- [[Help/Config/acp]] — full `acp` field reference
 - [[Help/Config/llm]] — LLM provider configuration
 - [[Help/Extending/Agent Cards]] — authoring agent cards
 - [[Help/Concepts/Agent Client Protocol]] — ACP architecture

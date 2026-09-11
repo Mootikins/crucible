@@ -239,7 +239,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 &boot.config,
                 plugin_sections.clone(),
                 plugin_watch,
-                boot.config_source.clone(),
+                boot.config_file(),
             )
             .with_boot_hash(boot.boot_hash.clone())
             .with_loader(boot.loader),
@@ -408,7 +408,6 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             provider,
             max_context,
             no_context,
-            context_size,
             plan,
             set_overrides,
             record,
@@ -428,7 +427,6 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 agent_name: acp,
                 read_only: plan,
                 no_context,
-                context_size,
                 provider_key: provider,
                 max_context_tokens: max_context,
                 env_overrides: env,
@@ -498,9 +496,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             Some(ModelsCommands::Embeddings {
                 format,
                 command: Some(EmbeddingsCommands::Use { name }),
-            }) => {
-                commands::models::embeddings::select(&name, cli_config_path.clone(), format).await?
-            }
+            }) => commands::models::embeddings::select(&name, format).await?,
         },
 
         Some(Commands::Config(cmd)) => {

@@ -1,7 +1,7 @@
 use super::{create_spec_plugin, create_test_plugin};
 use crate::command_effect::CommandEffect;
 use crate::lifecycle::{load_plugin_spec_from_source, LifecycleError, PluginManager};
-use crate::manifest::{Capability, PluginState};
+use crate::manifest::PluginState;
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -350,19 +350,92 @@ return {
 }
 
 #[test]
-fn test_capabilities_from_spec() {
+fn a_spec_can_declare_that_it_intercepts_tools() {
     let source = r#"
 return {
     name = "cap-test",
     version = "1.0.0",
-    capabilities = { "kiln", "ui", "config" },
+    intercepts_tools = true,
 }
 "#;
     let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
         .unwrap()
         .unwrap();
 
-    assert_eq!(spec.capabilities, vec!["kiln", "ui", "config"]);
+    assert!(spec.intercepts_tools);
+}
+
+/// A plugin keeps its declared name in a differently-named directory.
+///
+/// `plugin_name_for_dir` documents the hazard: a repo cloned as
+/// `crucible-discord` whose plugin declares `name = "discord"`. Identity is
+/// the declared name, so `[plugins.discord]` still reaches its `setup`.
+/// Moving a directory must not change what a plugin IS.
+#[test]
+fn a_declared_name_is_recorded_for_config_lookup() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("crucible-discord");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.luau"),
+        "return { name = 'discord', version = '1.0.0' }\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("crucible-discord").unwrap();
+
+    // Identity stays the directory name — the only name the runtimepath knows
+    // without running Lua. The declared name is recorded so `[plugins.discord]`
+    // still reaches this plugin's `setup`.
+    let plugin = manager
+        .get("crucible-discord")
+        .expect("identity is the directory name");
+    assert_eq!(
+        plugin.manifest.declared_name.as_deref(),
+        Some("discord"),
+        "the declared name must be recorded for config lookup"
+    );
+}
+
+/// A spec name that is not a usable plugin name is refused, not adopted.
+///
+/// Deleting the YAML reader deleted the only `validate()` call site. The Lua
+/// spec is now the only place a name comes from, so it takes the same checks
+/// the manifest used to: a name with a path separator would otherwise reach
+/// `[plugins.<name>]` lookups and the module search path.
+#[test]
+fn a_spec_name_that_is_not_a_valid_plugin_name_is_refused() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("wellformed");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.luau"),
+        "return { name = '../escape', version = '1.0.0' }\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("wellformed").unwrap();
+
+    assert!(
+        manager.get("../escape").is_none(),
+        "a name with a path separator must not become a plugin identity"
+    );
+    assert_eq!(
+        manager.get("wellformed").map(|p| p.manifest.name.clone()),
+        Some("wellformed".to_string()),
+        "identity is always the directory name"
+    );
+    assert_eq!(
+        manager
+            .get("wellformed")
+            .and_then(|p| p.manifest.declared_name.clone()),
+        None,
+        "an unusable declared name is refused, not recorded for config lookup"
+    );
 }
 
 #[test]
@@ -405,7 +478,7 @@ fn test_spec_plugin_full_lifecycle() {
     let plugin = manager.get("spec-test").unwrap();
     assert_eq!(plugin.state, PluginState::Active);
     assert_eq!(plugin.manifest.name, "spec-test");
-    assert_eq!(plugin.version(), "1.0.0");
+    assert_eq!(plugin.version(), Some("1.0.0"));
 
     assert_eq!(manager.tools().len(), 1);
     assert_eq!(manager.tools()[0].name, "search");
@@ -438,14 +511,14 @@ fn test_spec_plugin_without_manifest() {
     assert_eq!(plugin.state, PluginState::Active);
     // Name/version updated from spec
     assert_eq!(plugin.manifest.name, "no-manifest");
-    assert_eq!(plugin.version(), "1.0.0");
+    assert_eq!(plugin.version(), Some("1.0.0"));
 
     assert_eq!(manager.tools().len(), 1);
     assert_eq!(manager.commands().len(), 1);
 }
 
 #[test]
-fn test_spec_capabilities_merged_into_manifest() {
+fn a_spec_intercept_declaration_reaches_the_manifest() {
     let temp = TempDir::new().unwrap();
     create_spec_plugin(temp.path(), "cap-merge");
 
@@ -454,7 +527,7 @@ fn test_spec_capabilities_merged_into_manifest() {
     manager.load("cap-merge").unwrap();
 
     let plugin = manager.get("cap-merge").unwrap();
-    assert!(plugin.manifest.has_capability(Capability::Kiln));
+    assert!(plugin.manifest.intercepts_tools);
 }
 
 #[test]

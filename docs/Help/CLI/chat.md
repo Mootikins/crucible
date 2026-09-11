@@ -44,7 +44,7 @@ cru chat --acp gemini
 cru chat --acp codex
 ```
 
-Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or any custom profile defined in `config.toml`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
+Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or any custom profile defined in `init.lua`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
 
 `cru chat` does not take an agent card. It resolves its agent client-side,
 while cards are resolved by the daemon at session create — use
@@ -52,7 +52,7 @@ while cards are resolved by the daemon at session create — use
 
 #### `--provider <PROVIDER>`
 
-LLM provider from your `[llm.providers]` config section.
+LLM provider from your `llm.providers` config section.
 
 ```bash
 cru chat --provider openai
@@ -107,10 +107,6 @@ cru chat --no-context "What's 2+2?"
 
 Maximum context window tokens (default: 16384).
 
-#### `--context-size <N>`
-
-Number of context results to include (default: 5).
-
 ### Mode & Configuration
 
 #### `--plan`
@@ -126,7 +122,7 @@ cru chat --plan
 Session configuration overrides using the same syntax as the TUI `:set` command. Can be repeated.
 
 ```bash
-cru chat --set model=llama3 --set thinkingbudget=high
+cru chat --set model=llama3 --set contextbudget=128000
 cru chat --set perm.autoconfirm_session
 ```
 
@@ -195,7 +191,6 @@ is forwarded to the agent as ordinary chat text.
 | `:model` | Open model picker popup |
 | `:model <name>` | Switch to specific model |
 | `:set option=value` | Set runtime config option |
-| `:set thinkingbudget=high` | Enable extended thinking |
 | `:quit` / `:q` | Exit chat |
 
 See [[Help/TUI/Commands]] for complete REPL command reference.
@@ -269,7 +264,7 @@ cru chat --plan "What patterns do my testing notes share?"
 ### Custom Provider with Overrides
 
 ```bash
-cru chat --provider ollama --set model=llama3.2 --set thinkingbudget=high
+cru chat --provider ollama --set model=llama3.2 --set contextbudget=128000
 ```
 
 ### Record and Replay
@@ -296,18 +291,16 @@ Model changes persist for the session and sync to the daemon.
 
 ## Extended Thinking
 
-For models that support reasoning tokens (Claude with thinking budget, DeepSeek-R1, etc.):
+For models that reason (Claude with extended thinking, DeepSeek-R1, etc.),
+Crucible sets no cap: the model reasons as much as it decides to. The `:set`
+keys below control only whether the TUI shows the reasoning:
 
 ```
-:set thinkingbudget=high    # Enable extended thinking (8192 tokens)
-:set thinkingbudget=off     # Disable thinking
 :set thinking               # Show thinking in UI
 :set nothinking             # Hide thinking display
 ```
 
 Toggle thinking display with `Ctrl+T`.
-
-**Presets:** `off`, `minimal` (512), `low` (1024), `medium` (4096), `high` (8192), `max` (unlimited)
 
 ## Session Resume
 

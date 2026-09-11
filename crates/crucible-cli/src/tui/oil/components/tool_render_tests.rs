@@ -406,7 +406,7 @@ fn render_complete_hides_diff_body_when_show_diffs_off() {
         "CHANGED_LINE\n".to_string(),
     )];
 
-    let on = tool.render_compact_with(0, 100, true);
+    let on = tool.render_compact_with(tool.started_at, 0, 100, true);
     let on_plain = render_to_plain_text(&on, 100);
     assert!(
         on_plain.contains("CHANGED_LINE"),
@@ -414,7 +414,7 @@ fn render_complete_hides_diff_body_when_show_diffs_off() {
         on_plain
     );
 
-    let off = tool.render_compact_with(0, 100, false);
+    let off = tool.render_compact_with(tool.started_at, 0, 100, false);
     let off_plain = render_to_plain_text(&off, 100);
     assert!(
         off_plain.contains("Edit"),

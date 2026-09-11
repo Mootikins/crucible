@@ -6,19 +6,16 @@
 //! ## Submodules
 //!
 //! - [`overlay`]: Runtime configuration overlay with audit stack
-//! - [`presets`]: Thinking budget presets for LLM reasoning control
 //! - [`shortcuts`]: Option name shortcuts mapping to config paths
 //! - [`stack`]: Audit stack for config modifications
 //! - [`value`]: Dynamic configuration value types
 
 mod overlay;
-pub mod presets;
 pub mod shortcuts;
 pub mod stack;
 mod value;
 
 pub use overlay::{RuntimeConfig, SetError};
-pub use presets::{ThinkingPreset, THINKING_PRESETS};
 pub use shortcuts::{
     CompletionSource, ConfigShortcut, ShortcutRegistry, ShortcutTarget, SHORTCUTS,
 };

@@ -2,9 +2,9 @@
 //!
 //! The `:set` dispatch matrix (chat_app/command_handling.rs) stops at
 //! `Action::Send(msg)`, and the startup-override regression test
-//! (initial_sets.rs) covers only thinking_budget + model. Nothing verified
+//! (initial_sets.rs) covers only context_budget + model. Nothing verified
 //! that each knob message's arm in `process_action` invokes the *matching*
-//! `AgentHandle` RPC — the "budget vs thinking_budget" miswiring class from
+//! `AgentHandle` RPC — the "budget vs context_budget" miswiring class from
 //! the AGENTS.md cross-layer checklist. This matrix drives every
 //! daemon-scoped knob end-to-end: real keystrokes (`:set …` + Enter) through
 //! `OilChatApp::update`, then the resulting action through the real
@@ -55,20 +55,12 @@ impl AgentHandle for KnobRecordingAgent {
 /// answer, written out so the compiler sees the choice.
 #[async_trait::async_trait]
 impl SessionKnobs for KnobRecordingAgent {
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
         self.calls.push("switch_model");
-        Ok(())
-    }
-    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-        self.calls.push("set_thinking_budget");
-        Ok(())
-    }
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        self.calls.push("set_max_iterations");
-        Ok(())
-    }
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        self.calls.push("set_execution_timeout");
         Ok(())
     }
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
@@ -82,34 +74,10 @@ impl SessionKnobs for KnobRecordingAgent {
         self.calls.push("set_context_strategy");
         Ok(())
     }
-    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
-        self.calls.push("set_context_window");
-        Ok(())
-    }
-    async fn set_output_validation(
-        &mut self,
-        _validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        self.calls.push("set_output_validation");
-        Ok(())
-    }
-    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
-        self.calls.push("set_validation_retries");
-        Ok(())
-    }
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         self.calls.push("set_precognition");
         Ok(())
     }
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        self.calls.push("set_precognition_results");
-        Ok(())
-    }
-    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
-        self.calls.push("set_autocompact_threshold");
-        Ok(())
-    }
-
     fn current_model(&self) -> Option<&str> {
         None
     }
@@ -122,42 +90,6 @@ impl SessionKnobs for KnobRecordingAgent {
         Vec::new()
     }
 
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_temperature".into()))
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-
-    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_tokens".into()))
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        None
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
-    }
-
     fn get_context_budget(&self) -> Option<usize> {
         None
     }
@@ -166,28 +98,8 @@ impl SessionKnobs for KnobRecordingAgent {
         crucible_core::session::ContextStrategy::default()
     }
 
-    fn get_context_window(&self) -> Option<usize> {
-        None
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &crucible_core::session::OutputValidation::None
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        3
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        None
-    }
-
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 
@@ -220,17 +132,9 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 }
 
 #[test_case("model=gpt-4o", "switch_model" ; "model")]
-#[test_case("thinkingbudget=high", "set_thinking_budget" ; "thinking budget")]
-#[test_case("maxiterations=5", "set_max_iterations" ; "max iterations")]
-#[test_case("executiontimeout=30", "set_execution_timeout" ; "execution timeout")]
 #[test_case("contextbudget=128000", "set_context_budget" ; "context budget")]
 #[test_case("contextstrategy=sliding_window", "set_context_strategy" ; "context strategy")]
-#[test_case("contextwindow=20", "set_context_window" ; "context window")]
-#[test_case("outputvalidation=json", "set_output_validation" ; "output validation")]
-#[test_case("validationretries=2", "set_validation_retries" ; "validation retries")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
-#[test_case("precognition.results=8", "set_precognition_results" ; "precognition results")]
-#[test_case("autocompact_threshold=0.8", "set_autocompact_threshold" ; "autocompact threshold")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
     let mut app = OilChatApp::default();
@@ -349,6 +253,10 @@ impl AgentHandle for ModeListingAgent {
 /// Only the mode list is live; every knob is the empty answer.
 #[async_trait::async_trait]
 impl SessionKnobs for ModeListingAgent {
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         *self.fetches.lock().unwrap() += 1;
         self.modes.clone()
@@ -364,54 +272,6 @@ impl SessionKnobs for ModeListingAgent {
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_thinking_budget".into()))
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        None
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_temperature".into()))
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        None
-    }
-
-    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_tokens".into()))
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
     }
 
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
@@ -433,55 +293,12 @@ impl SessionKnobs for ModeListingAgent {
         crucible_core::session::ContextStrategy::default()
     }
 
-    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_window".into()))
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        None
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        _validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_output_validation".into()))
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &crucible_core::session::OutputValidation::None
-    }
-
-    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_validation_retries".into()))
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        3
-    }
-
-    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        None
-    }
-
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition".into()))
     }
 
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition_results".into()))
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 

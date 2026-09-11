@@ -6,7 +6,6 @@ mod matcher;
 mod normalize;
 mod parse;
 mod types;
-mod write;
 
 #[cfg(test)]
 mod tests;
@@ -19,8 +18,4 @@ pub use normalize::{
     CommandLineSplit, ResolvedStatement, UnmodellableConstruct,
 };
 pub use parse::parse_rule;
-pub use types::{
-    ParsedRule, PermissionConfig, PermissionDecision, PermissionMode, PermissionScope,
-    TransientScope,
-};
-pub use write::write_permission_rule;
+pub use types::{ParsedRule, PermissionConfig, PermissionDecision, PermissionMode};

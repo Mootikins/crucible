@@ -248,7 +248,6 @@ function M.run(kiln: string?): { string }
         system_prompt = M.SYSTEM_PROMPT,
         prompt = prompt,
         timeout = config.get("timeout", 240),
-        max_iterations = config.get("max_iterations", 12),
     })
     if output == nil then
         cru.log("warn", "consolidation: " .. tostring(review_err))
@@ -298,10 +297,11 @@ cru.schedule({ every = config.get("interval", 21600) }, function()
 end)
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
     name = "consolidation",
     version = "0.1.0",
     description = "Periodic pass over recent sessions that proposes pattern notes",
-    capabilities = { "kiln", "agent", "config", "filesystem" },
 
     -- Exposed for unit tests and manual invocation.
     run = M.run,

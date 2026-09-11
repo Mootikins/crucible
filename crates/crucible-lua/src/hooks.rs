@@ -12,9 +12,9 @@
 //! the daemon plugin loader around each plugin's execution) so that
 //! [`clear_plugin_hooks`] can remove exactly one plugin's hooks on its reload,
 //! leaving unowned registrations — the user's `init.lua` — untouched.
-//! Per-session VMs (`agent_manager/session_vm.rs`) never set a plugin context,
+//! A VM that never sets a plugin context leaves the hook unowned,
 //! so all their hooks are unowned by construction; `clear_plugin_hooks` is
-//! never called against a session VM and no change is needed there.
+//! never called there and no change is needed.
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
 
@@ -22,7 +22,7 @@ use mlua::{Function, Lua, Result as LuaResult, Table};
 /// nothing else.
 ///
 /// One argument, from the two fire sites — `LuaExecutor::call_lifecycle_hook`
-/// (`func.call_async::<()>(session.clone())`) and the per-session VM's
+/// (`func.call_async::<()>(session.clone())`) and the synchronous
 /// `fire_session_start_hooks` (`func.call::<()>(lua_session.clone())`). A
 /// two-parameter handler type would reject every correct hook a plugin has.
 ///
@@ -42,7 +42,6 @@ const SESSION_HOOK: &str = "(session: any) -> ...any";
 ///
 /// ```lua
 /// cru.on_session_start(function(session)
-///     session.temperature = 0.5
 /// end)
 /// ```
 pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
@@ -139,7 +138,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 }
 
 /// The plugin currently being loaded, or `false` when none is (user init.lua,
-/// session VMs). `false` rather than nil because the owner slots live in Lua
+/// unowned hooks). `false` rather than nil because the owner slots live in Lua
 /// array tables, and a nil mid-sequence truncates `raw_len`.
 ///
 /// The name comes from the VM's plugin context — Rust-side app data — so a
@@ -441,11 +440,11 @@ mod tests {
     fn clearing_a_plugins_hooks_removes_only_that_plugins_and_keeps_flags_aligned() {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
-        crate::plugin_context::enter_plugin(&lua, "alpha", crate::manifest::CapabilitySet::none());
+        crate::plugin_context::enter_plugin(&lua, "alpha", false);
         lua.load(r#"cru.on_session_start(function(s) end, { required = true })"#)
             .exec()
             .unwrap();
-        crate::plugin_context::enter_plugin(&lua, "beta", crate::manifest::CapabilitySet::none());
+        crate::plugin_context::enter_plugin(&lua, "beta", false);
         lua.load(
             r#"
             cru.on_session_start(function(s) end)

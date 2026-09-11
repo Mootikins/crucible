@@ -19,3 +19,5 @@ pub(super) fn parse(args: &[&str]) -> Commands {
         .command
         .unwrap_or_else(|| panic!("expected a command from {args:?}"))
 }
+
+mod served_prose;

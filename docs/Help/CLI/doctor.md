@@ -30,7 +30,7 @@ The `doctor` command runs targeted health checks against your Crucible installat
 | Kiln accessibility | Kiln path exists, is a directory, and is writable | `cru init` |
 | Embedding backend | FastEmbed compiled in, or Ollama reachable | Enable the `fastembed` feature or configure Ollama |
 | Plugins | The daemon answers `plugin.list` | Warning only; skipped entirely if the daemon is down |
-| Kiln references | Every kiln named by a `[projects.*]` entry exists in `[kilns]` | Add the kiln to `[kilns]` or drop the reference |
+| Kiln references | Every kiln named by a `projects.*` entry exists in `kilns` | Add the kiln to `kilns` or drop the reference |
 | Config validation | The loaded config passed structural validation | See the Config check above |
 
 Not every check emits a line on every run: the plugin check is skipped when the daemon is
@@ -61,7 +61,7 @@ Typical healthy output:
 Crucible Doctor - Installation Health Check
 ───────────────────────────────────────────
 ✓ Daemon running
-✓ Config found at /home/you/.config/crucible/config.toml
+✓ Config found at /home/you/.config/crucible/init.lua
 ✓ All 1 provider(s) reachable
 ✓ Kiln accessible at /home/you/notes
 ✓ Embeddings available (fastembed)

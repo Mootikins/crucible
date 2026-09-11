@@ -1,5 +1,5 @@
 use super::registration::RegisteredItem;
-use super::spec::{load_plugin_spec, parse_capability, PluginSpec};
+use super::spec::{load_plugin_spec, PluginSpec};
 use super::{LifecycleError, LifecycleResult, PluginManager};
 use crate::error::format_lua_error;
 use crate::manifest::{LoadedPlugin, PluginManifest, PluginSource};
@@ -85,76 +85,52 @@ impl PluginManager {
                 let path = entry.path();
 
                 if path.is_dir() {
-                    // Try manifest first, then fall back to manifest-less discovery
+                    // A plugin is a directory with an entry file.
+                    //
+                    // There is no manifest branch any more: `plugin.yaml` is
+                    // gone, and the metadata it carried comes from the spec
+                    // table the entry file returns. What used to be the
+                    // manifest-less fallback is now the only path.
+                    //
+                    // A directory holding BOTH entry-file spellings is
+                    // recorded as a discovery error, not dropped. Turning the
+                    // collision into "not a plugin" made a directory that used
+                    // to load simply vanish with nothing in the log — the user
+                    // renames a file, leaves the old one behind, and their
+                    // plugin is gone with no way to find out why.
                     let source = self.source_for_dir(&path);
-                    match PluginManifest::discover(&path) {
-                        Ok(Some(manifest)) => {
+                    let entry = match crate::source_files::init_file(&path) {
+                        Ok(found) => found,
+                        Err(ambiguous) => {
+                            self.record_discovery_error(&path, ambiguous);
+                            continue;
+                        }
+                    };
+                    if entry.is_none() {
+                        debug!("No init.luau or init.lua in: {}", path.display());
+                        continue;
+                    }
+                    match PluginManifest::from_directory_defaults(&path) {
+                        Ok(manifest) => {
                             let name = manifest.name.clone();
                             if self.refuse_reserved_name(&name, &path) {
                                 continue;
                             }
                             if self.plugins.contains_key(&name) {
                                 debug!(
-                                    "Plugin already discovered: {} (shadowed by higher-priority)",
-                                    name
+                                    "Plugin already discovered: {name} (shadowed by higher-priority)"
                                 );
                                 continue;
                             }
                             info!(
-                                "Discovered plugin: {} v{} [{}]",
-                                name, manifest.version, source
+                                "Discovered plugin: {} [{}] (from {})",
+                                name,
+                                source,
+                                path.display()
                             );
                             let plugin = LoadedPlugin::with_source(manifest, path, source);
                             self.plugins.insert(name.clone(), plugin);
                             discovered.push(name);
-                        }
-                        Ok(None) => {
-                            // No manifest — an `init.luau` or `init.lua` makes
-                            // this a plugin anyway.
-                            //
-                            // A directory holding BOTH is recorded as a
-                            // discovery error, not dropped. `.ok().flatten()`
-                            // turned the collision into "not a plugin", so a
-                            // directory that used to load simply vanished with
-                            // nothing in the log — the user renames a file,
-                            // leaves the old one behind, and their plugin is
-                            // gone with no way to find out why.
-                            let entry = match crate::source_files::init_file(&path) {
-                                Ok(found) => found,
-                                Err(ambiguous) => {
-                                    self.record_discovery_error(&path, ambiguous);
-                                    continue;
-                                }
-                            };
-                            if entry.is_some() {
-                                match PluginManifest::from_directory_defaults(&path) {
-                                    Ok(manifest) => {
-                                        let name = manifest.name.clone();
-                                        if self.refuse_reserved_name(&name, &path) {
-                                            continue;
-                                        }
-                                        if self.plugins.contains_key(&name) {
-                                            debug!("Plugin already discovered: {} (shadowed by higher-priority)", name);
-                                            continue;
-                                        }
-                                        info!(
-                                            "Discovered manifest-less plugin: {} [{}] (from {})",
-                                            name,
-                                            source,
-                                            path.display()
-                                        );
-                                        let plugin =
-                                            LoadedPlugin::with_source(manifest, path, source);
-                                        self.plugins.insert(name.clone(), plugin);
-                                        discovered.push(name);
-                                    }
-                                    Err(e) => {
-                                        self.record_discovery_error(&path, e);
-                                    }
-                                }
-                            } else {
-                                debug!("No manifest or init.lua in: {}", path.display());
-                            }
                         }
                         Err(e) => {
                             self.record_discovery_error(&path, e);
@@ -177,12 +153,11 @@ impl PluginManager {
                             continue;
                         }
 
-                        // Validate as plugin name
-                        match PluginManifest::from_yaml(&format!(
-                            "name: \"{}\"\nversion: \"0.0.0\"\nmain: \"{}\"\n",
-                            stem,
-                            path.file_name().unwrap().to_string_lossy()
-                        )) {
+                        // A single-file plugin's manifest is synthesized, not
+                        // parsed: it used to be built by formatting YAML and
+                        // reading it straight back, which validated nothing the
+                        // name check above had not already done.
+                        match PluginManifest::from_directory_defaults(&path) {
                             Ok(manifest) => {
                                 let name = manifest.name.clone();
                                 // Use the search_path as the plugin dir for single-file plugins
@@ -238,15 +213,60 @@ impl PluginManager {
 
                     // Update manifest metadata from spec if available
                     if let Some(plugin) = self.plugins.get_mut(name) {
+                        // The spec's `name` is the plugin's identity when it
+                        // states one; the directory name is only the fallback.
+                        // A repo cloned as `crucible-discord` whose plugin
+                        // declares `name = "discord"` must still receive its
+                        // `[plugins.discord]` config — moving a directory
+                        // cannot change what a plugin IS.
+                        //
+                        // This used to be guarded on `version == "0.0.0"`,
+                        // so the spec's NAME was taken only when the VERSION
+                        // happened to be the placeholder.
+                        // The spec's `name` does NOT become the plugin's
+                        // identity. Identity is the directory name, because
+                        // that is the only name the runtimepath knows without
+                        // executing Lua — the same reason `enabled` and
+                        // `dependencies` are not plugin-declared either.
+                        //
+                        // It is recorded as `declared_name` so config lookup
+                        // can honour it: a repo cloned as `crucible-discord`
+                        // whose plugin declares `name = "discord"` still
+                        // receives its `[plugins.discord]` section.
                         if let Some(ref spec_name) = spec.name {
-                            // Only override if manifest came from directory defaults
-                            if plugin.manifest.version == "0.0.0" {
-                                plugin.manifest.name = spec_name.clone();
+                            // Validated with the SAME check the YAML reader
+                            // applied. Deleting `from_yaml` deleted the only
+                            // `validate()` call site, so without this a
+                            // declared name with a path separator would reach
+                            // `[plugins.<name>]` lookup unchecked.
+                            let mut candidate = plugin.manifest.clone();
+                            candidate.name = spec_name.clone();
+                            match candidate.validate() {
+                                Ok(()) => plugin.manifest.declared_name = Some(spec_name.clone()),
+                                Err(e) => warn!(
+                                    "plugin at {} declares an unusable name {spec_name:?}: {e}; \
+                                     config will be looked up under the directory name",
+                                    plugin.dir.display()
+                                ),
                             }
                         }
+                        // The spec is the only source of a version, so it
+                        // fills one in exactly when none is known. It used to
+                        // be guarded on a `synthesized` flag that stood in for
+                        // "the version is still the placeholder" — the
+                        // placeholder is gone, and `None` says it directly.
                         if let Some(ref spec_version) = spec.version {
-                            if plugin.manifest.version == "0.0.0" {
-                                plugin.manifest.version = spec_version.clone();
+                            if plugin.manifest.version.is_none() {
+                                let mut candidate = plugin.manifest.clone();
+                                candidate.version = Some(spec_version.clone());
+                                match candidate.validate() {
+                                    Ok(()) => plugin.manifest.version = Some(spec_version.clone()),
+                                    Err(e) => warn!(
+                                        "plugin {} declares an unusable version \
+                                         {spec_version:?}: {e}",
+                                        plugin.manifest.name
+                                    ),
+                                }
                             }
                         }
                         if let Some(ref spec_desc) = spec.description {
@@ -254,21 +274,22 @@ impl PluginManager {
                                 plugin.manifest.description = spec_desc.clone();
                             }
                         }
-                        // Merge capabilities from spec. An unrecognised name is
-                        // a typo in the plugin, not a no-op — say so rather
-                        // than dropping it the way the manifest path used to.
-                        for cap_str in &spec.capabilities {
-                            match parse_capability(cap_str) {
-                                Some(cap) => {
-                                    if !plugin.manifest.capabilities.contains(&cap) {
-                                        plugin.manifest.capabilities.push(cap);
-                                    }
-                                }
-                                None => warn!(
-                                    "Plugin {} declares unknown capability '{}' in its spec table; ignoring",
-                                    name, cap_str
-                                ),
+                        if let Some(ref author) = spec.author {
+                            if plugin.manifest.author.is_empty() {
+                                plugin.manifest.author = author.clone();
                             }
+                        }
+                        if let Some(ref license) = spec.license {
+                            if plugin.manifest.license.is_none() {
+                                plugin.manifest.license = Some(license.clone());
+                            }
+                        }
+                        // The one declaration the host checks. A plugin
+                        // may state it in either place; both are the plugin
+                        // author's word either way, and the check exists to
+                        // catch an accidental takeover, not a hostile one.
+                        if spec.intercepts_tools {
+                            plugin.manifest.intercepts_tools = true;
                         }
                     }
 
@@ -297,7 +318,7 @@ impl PluginManager {
     }
 
     pub(super) fn load_plugin_runtime_state(&mut self, name: &str) -> LifecycleResult<()> {
-        let (main_path, plugin_dir, grants) = {
+        let (main_path, plugin_dir, may_intercept) = {
             let plugin = self
                 .plugins
                 .get(name)
@@ -305,21 +326,21 @@ impl PluginManager {
             (
                 plugin.main_path(),
                 plugin.dir.clone(),
-                plugin.manifest.grants(),
+                plugin.manifest.intercepts_tools,
             )
         };
 
         // The private root pops when this guard drops, at the end of the load.
         let _module_scope = self.enter_plugin_modules(&plugin_dir)?;
 
-        // Name and grants ride ONE context, in Rust-side app data. As Lua
-        // globals they were forgeable: a plugin assigned itself another
-        // plugin's storage namespace, or the interception right, in one line.
+        // Both markers ride ONE context, in Rust-side app data. As Lua globals
+        // they were forgeable: a plugin assigned itself another plugin's
+        // storage namespace, or the interception right, in one line.
         //
         // Stamped at LOAD, read at registration: whether a handler may take a
         // tool call over is a property of the plugin the operator installed,
         // not of the call it later intercepts.
-        let previous = crate::plugin_context::enter_plugin(&self.lua, name, grants);
+        let previous = crate::plugin_context::enter_plugin(&self.lua, name, may_intercept);
 
         let load_result = (|| -> LifecycleResult<()> {
             let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;

@@ -7,8 +7,8 @@
 //! - [`crate::daemon_plugins::daemon_plugin_paths`] reads `$CRUCIBLE_PLUGIN_PATH`,
 //!   the user's `plugins/`, `<runtimepath>/plugins` and `$CRUCIBLE_RUNTIME/plugins`
 //! - [`crate::runtime_defaults::defaults_candidates`] executes
-//!   `<entry>/defaults/init.lua` in every session VM
-//! - `$CRUCIBLE_CONFIG_DIR/config.toml` carries `runtimepath`, `[acp.agents.*]`
+//!   `<entry>/defaults/init.lua` on the daemon VM
+//! - `$CRUCIBLE_CONFIG_DIR/init.lua` carries `runtimepath`, the ACP agents
 //!   command paths, `[permissions]` and `[security.shell]` — writing it is
 //!   arbitrary execution on the next start
 //! - [`crate::tools::protected::daemon_roots`], the write-denied set, was built
@@ -25,12 +25,23 @@
 //! be loaded without being protected, because naming it for the loader is what
 //! protects it.**
 //!
-//! [`baseline`] covers the trees that are knowable before any loader runs — the
-//! env vars, the exe-relative layout, the config directory, and the trees
-//! `config.toml`'s own `runtimepath` names — so a session built early in
-//! startup is not protected by less than a session built late. Recording is
+//! [`baseline`] covers the trees that are knowable with no file evaluated — the
+//! env vars, the exe-relative layout, the config directory, and the trees a
+//! hand-written `settings.json` `runtimepath` names — so a session built early
+//! in startup is not protected by less than a session built late. Recording is
 //! what keeps the set honest; the baseline is what keeps it from depending on
 //! WHEN it is asked.
+//!
+//! One spelling is knowable to neither: the `runtimepath` a user writes in
+//! `init.lua`, which is the documented one (`docs/Help/Extending/Creating
+//! Plugins.md`). `runtimepath` is a `LOCATION_CONFIG_KEYS` key, so the runtime
+//! store withholds it and `config.save` strips it — no UI and no RPC can put
+//! it anywhere, which leaves the user's own `init.lua` and a hand edit of
+//! `settings.json`. Reading the Lua line needs a Luau VM, and [`baseline`]
+//! answers before there is one. So the boot evaluates the file and hands the
+//! extracted list to [`record_runtimepath`] (`daemon_plugins::boot`). That
+//! call completes before the daemon binds its socket, so there is no session
+//! that can see the protected set without those trees in it.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -65,11 +76,14 @@ pub(crate) fn record(trees: impl IntoIterator<Item = PathBuf>) {
 /// The trees the daemon loads or executes from before any resolver has run.
 ///
 /// The env-var layer `runtime_roots::for_current_exe()` deliberately omits, plus
-/// the config directory — `config.toml` names the runtimepath, the ACP agent
+/// the config directory — `init.lua` names the runtimepath, the ACP agent
 /// commands and the shell policy, so a write there is execution too, and
-/// `$CRUCIBLE_CONFIG_DIR` moves it — plus the trees that same file's
-/// `runtimepath` names, which used to be covered only once a loader had
+/// `$CRUCIBLE_CONFIG_DIR` moves it — plus the trees a `runtimepath` in
+/// `settings.json` names, which used to be covered only once a loader had
 /// recorded them.
+///
+/// The `runtimepath` in `init.lua` is NOT here, and cannot be: it takes a VM
+/// to read. [`record_runtimepath`] carries that half, from the boot.
 pub(crate) fn baseline() -> Vec<PathBuf> {
     let mut trees = crucible_core::runtime_roots::for_current_exe();
 
@@ -91,50 +105,82 @@ pub(crate) fn baseline() -> Vec<PathBuf> {
     trees
 }
 
-/// The executed subdirectories of every `runtimepath` entry `config.toml`
-/// names.
+/// The executed subdirectories of every `runtimepath` entry a hand-written
+/// `settings.json` names.
 ///
-/// This is the ordering dependency removed. Both loaders record their
+/// This is half the ordering dependency removed. Both loaders record their
 /// runtimepath answers, but a session whose containment is built *before* they
 /// run — and plugin bootstrap is not the first thing a daemon does — saw a
 /// protected set that named the runtimepath nowhere. The tree is a session
 /// scope root in the documented case (`docs/Help/Extending/Creating
-/// Plugins.md`: `runtimepath = ["~/kilns/work"]`), so "unprotected" there means
+/// Plugins.md`: `runtimepath = {"~/kilns/work"}`), so "unprotected" there means
 /// "writable by the agent", and `<kiln>/plugins/evil/init.lua` runs with host
 /// privileges on the next start.
 ///
 /// The file is parsed here rather than taken as a loaded `CliAppConfig`
 /// argument precisely because [`baseline`] must answer before anything has
-/// loaded one. One key out of a raw TOML table is the smallest thing that does
-/// it; an absent or malformed file yields nothing, which is what the daemon's
-/// own loader falls back to as well.
+/// loaded one. One key out of a raw JSON object is the smallest thing that
+/// does it; an absent or malformed file yields nothing, which is what the
+/// daemon's own loader falls back to as well.
+///
+/// `settings.json` and not `config.toml`: the boot stopped reading TOML, so a
+/// `runtimepath` there names trees nothing loads from, and protecting them
+/// would take a user's own directory read-only for no reason. `settings.json`
+/// is read in the boot phase, where the store still accepts location keys, so
+/// a `runtimepath` a user hand-edits into it does reach the loaders. What
+/// `config.save` writes never does: the store withholds `runtimepath` under
+/// `LocationPolicy::Withhold`. The other half — `init.lua` — reaches the
+/// protected set through [`record_runtimepath`].
 fn runtimepath_execution_trees(config_file: &Path) -> Vec<PathBuf> {
-    let Ok(contents) = std::fs::read_to_string(config_file) else {
+    let config_root = config_file.parent().unwrap_or(Path::new("."));
+    let settings = crucible_core::config::settings_path(config_root);
+    let Ok(contents) = std::fs::read_to_string(settings) else {
         return Vec::new();
     };
-    let Ok(table) = contents.parse::<toml::Table>() else {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
         return Vec::new();
     };
-    let Some(entries) = table.get("runtimepath").and_then(toml::Value::as_array) else {
+    let Some(entries) = value.get("runtimepath").and_then(|v| v.as_array()) else {
         return Vec::new();
     };
+    executed_subdirectories(entries.iter().filter_map(|v| v.as_str()).map(PathBuf::from))
+}
+
+/// Record the trees a resolved `runtimepath` puts executable code in.
+///
+/// The boot calls this with the config it extracted, which is the only answer
+/// that has seen `init.lua`. It is not a loader, so recording here is not the
+/// module's usual "the resolver records its own result" — the config IS the
+/// resolver for this key, and the loaders that later expand it record their
+/// own answers as well. Two records of one tree cost one entry ([`record`] is
+/// idempotent) and buy the ordering guarantee: the boot completes before the
+/// socket binds, so a session cannot be built while this is unrecorded.
+pub(crate) fn record_runtimepath(entries: &[PathBuf]) {
+    record(executed_subdirectories(entries.iter().cloned()));
+}
+
+/// The two subdirectories a `runtimepath` entry contributes, tildes expanded.
+///
+/// The subdirectories, never the entry itself: a KILN on the runtimepath is
+/// the documented case, and protecting the whole tree would make the user's
+/// own notes read-only to buy nothing. These two are what the loaders search —
+/// `daemon_plugin_paths` takes `<entry>/plugins`, `defaults_candidates` takes
+/// `<entry>/defaults/init.lua`. `defaults/` is taken whole because what runs
+/// out of it is Lua, and Lua that runs reads its siblings.
+///
+/// Existence is not consulted, unlike `daemon_plugin_paths`, which only adds a
+/// `plugins/` it can see: the directory an agent creates is by definition the
+/// one that did not exist (rule 2 in [`crate::tools::protected`]).
+///
+/// A `~` survives the config extraction — `runtime_path::daemon_path` expands
+/// it at resolution time — so both callers need the expansion here. An
+/// unexpanded `~/kilns/work/plugins` matches no path a write is judged
+/// against, so it protects nothing.
+fn executed_subdirectories(entries: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     entries
-        .iter()
-        .filter_map(toml::Value::as_str)
+        .into_iter()
         .flat_map(|entry| {
-            let entry = crate::kiln_manager::expand_tilde_path(Path::new(entry));
-            // The subdirectories, never the entry itself: a KILN on the
-            // runtimepath is the documented case, and protecting the whole tree
-            // would make the user's own notes read-only to buy nothing. These
-            // two are what the loaders search — `daemon_plugin_paths` takes
-            // `<entry>/plugins`, `defaults_candidates` takes
-            // `<entry>/defaults/init.lua`. `defaults/` is taken whole because
-            // what runs out of it is Lua, and Lua that runs reads its siblings.
-            //
-            // Existence is not consulted, unlike `daemon_plugin_paths`, which
-            // only adds a `plugins/` it can see: the directory an agent creates
-            // is by definition the one that did not exist (rule 2 in
-            // [`crate::tools::protected`]).
+            let entry = crate::kiln_manager::expand_tilde_path(&entry);
             [entry.join("plugins"), entry.join("defaults")]
         })
         .collect()
@@ -213,24 +259,33 @@ mod tests {
         }
     }
 
-    /// The ordering dependency, removed.
+    /// The ordering dependency, removed for the spelling a file read answers.
     ///
-    /// A tree named ONLY by `config.toml`'s `runtimepath` is protected with no
+    /// A tree named ONLY by `settings.json`'s `runtimepath` is protected with no
     /// loader having run — which is the state a session built early in startup
     /// sees, and the state in which `<kiln>/plugins/evil/init.lua` used to be
     /// writable.
+    ///
+    /// A HAND EDIT is what puts the key there, and the fixture writes what a
+    /// hand does. `config.save` cannot produce this file: the store withholds
+    /// `runtimepath` from every merge after the boot phase. The boot reads
+    /// `settings.json` while the store still accepts location keys, so the
+    /// hand-edited entry does reach the loaders — the read under test is not a
+    /// gate on an input nothing produces. The documented spelling lives in
+    /// `init.lua` and is held by
+    /// [`a_runtimepath_declared_in_init_lua_is_protected`].
     ///
     /// `CRUCIBLE_CONFIG_DIR` is set rather than worked around: it is the
     /// variable [`crucible_core::config::CliAppConfig::default_config_path`]
     /// reads, and "the baseline resolves the config file the daemon would
     /// actually load" is exactly the behavior under test.
     #[test]
-    fn a_config_declared_runtimepath_is_protected_before_any_loader_runs() {
+    fn a_hand_edited_settings_runtimepath_is_protected_before_any_loader_runs() {
         let tmp = tempfile::TempDir::new().unwrap();
         let kiln = tmp.path().join("kilns").join("work");
         std::fs::write(
-            tmp.path().join("config.toml"),
-            format!("runtimepath = [{:?}]\n", kiln.to_string_lossy()),
+            tmp.path().join("settings.json"),
+            serde_json::json!({ "runtimepath": [kiln.to_string_lossy()] }).to_string(),
         )
         .unwrap();
         let _guard = crucible_core::test_support::EnvVarGuard::set(
@@ -257,8 +312,74 @@ mod tests {
         );
     }
 
-    /// A `runtimepath` entry is spelled the way a user spells it in TOML, which
-    /// is with a `~`. An unexpanded `~/kilns/work/plugins` matches no path a
+    /// The spelling a real user has: `runtimepath` in `init.lua`.
+    ///
+    /// `runtimepath` is a `LOCATION_CONFIG_KEYS` key. The runtime store
+    /// withholds it and `config.save` strips it, so no supported write puts
+    /// it in `settings.json`; the documented line is
+    /// `cru.config.set{ runtimepath = { "~/kilns/work" } }`
+    /// (`docs/Help/Extending/Creating Plugins.md`). Reading that line needs a
+    /// VM, so [`baseline`] cannot answer it — the boot records the config it
+    /// extracted, and the boot finishes before the daemon binds its socket.
+    ///
+    /// The test drives the production boot rather than calling [`record`],
+    /// because "the boot records it" is the property; a test that recorded
+    /// the trees itself would pass with the boot's call deleted.
+    #[tokio::test]
+    async fn a_runtimepath_declared_in_init_lua_is_protected() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_dir = tmp.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let kiln = tmp.path().join("kilns").join("work");
+        std::fs::write(
+            config_dir.join("init.lua"),
+            format!(
+                "cru.config.set({{ runtimepath = {{ {:?} }} }})\n",
+                kiln.display().to_string()
+            ),
+        )
+        .unwrap();
+
+        // The plugin search is injected as an empty answer, so no loader here
+        // reaches a real plugin directory and no loader can be what recorded
+        // the trees under test.
+        let paths: crate::daemon_plugins::PluginPathsFn =
+            std::sync::Arc::new(|_rtp: &[PathBuf]| Vec::new());
+        let boot = crate::daemon_plugins::evaluate_boot_config_with_paths(
+            Some(config_dir.join("config.toml")),
+            None,
+            None,
+            paths,
+        )
+        .await
+        .expect("the fixture config boots");
+        assert_eq!(
+            boot.config.runtimepath,
+            vec![kiln.clone()],
+            "precondition: the boot read the user's line"
+        );
+
+        let protected = crate::tools::protected::daemon_roots();
+        for executed in [kiln.join("plugins"), kiln.join("defaults")] {
+            assert!(
+                !executed.exists(),
+                "precondition: the directory an agent would plant does not exist"
+            );
+            assert!(
+                protected.contains(&executed),
+                "{} is Lua the daemon executes off the configured runtimepath: {protected:?}",
+                executed.display()
+            );
+        }
+        assert!(
+            !protected.contains(&kiln),
+            "and the entry ITSELF stays writable — a kiln on the runtimepath is \
+             the documented case, and its notes are not plugins: {protected:?}"
+        );
+    }
+
+    /// A `runtimepath` entry is spelled the way a user spells it, which is
+    /// with a `~`. An unexpanded `~/kilns/work/plugins` matches no path a
     /// write is ever judged against, so it protects nothing.
     #[test]
     fn a_tilde_in_the_configured_runtimepath_is_expanded() {
@@ -266,10 +387,13 @@ mod tests {
             return;
         };
         let tmp = tempfile::TempDir::new().unwrap();
-        let config_file = tmp.path().join("config.toml");
-        std::fs::write(&config_file, "runtimepath = [\"~/kilns/work\"]\n").unwrap();
+        std::fs::write(
+            tmp.path().join("settings.json"),
+            r#"{ "runtimepath": ["~/kilns/work"] }"#,
+        )
+        .unwrap();
 
-        let trees = runtimepath_execution_trees(&config_file);
+        let trees = runtimepath_execution_trees(&tmp.path().join("config.toml"));
 
         assert!(
             trees.contains(&home.join("kilns/work/plugins")),
@@ -286,16 +410,16 @@ mod tests {
     /// LESS protection than it would otherwise have.
     #[test]
     fn an_absent_or_malformed_config_yields_no_runtimepath_trees() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        assert!(runtimepath_execution_trees(&tmp.path().join("nothing.toml")).is_empty());
+        let absent = tempfile::TempDir::new().unwrap();
+        assert!(runtimepath_execution_trees(&absent.path().join("config.toml")).is_empty());
 
-        let broken = tmp.path().join("broken.toml");
-        std::fs::write(&broken, "runtimepath = [unclosed\n").unwrap();
-        assert!(runtimepath_execution_trees(&broken).is_empty());
+        let broken = tempfile::TempDir::new().unwrap();
+        std::fs::write(broken.path().join("settings.json"), "{ \"runtimepath\": [").unwrap();
+        assert!(runtimepath_execution_trees(&broken.path().join("config.toml")).is_empty());
 
-        let no_key = tmp.path().join("plain.toml");
-        std::fs::write(&no_key, "[chat]\nmodel = \"x\"\n").unwrap();
-        assert!(runtimepath_execution_trees(&no_key).is_empty());
+        let no_key = tempfile::TempDir::new().unwrap();
+        std::fs::write(no_key.path().join("settings.json"), r#"{ "chat": {} }"#).unwrap();
+        assert!(runtimepath_execution_trees(&no_key.path().join("config.toml")).is_empty());
     }
 
     /// The env-var layer `runtime_roots::for_current_exe()` omits by design.
@@ -304,10 +428,10 @@ mod tests {
     fn the_baseline_names_the_config_directory() {
         let baseline = baseline();
         let config = crucible_core::config::CliAppConfig::default_config_path();
-        let dir = config.parent().expect("config.toml has a directory");
+        let dir = config.parent().expect("the config path has a directory");
         assert!(
             baseline.contains(&dir.to_path_buf()),
-            "config.toml carries runtimepath, ACP command paths and the shell \
+            "init.lua carries runtimepath, ACP command paths and the shell \
              policy — writing it is execution on the next start: {baseline:?}"
         );
     }
@@ -358,7 +482,7 @@ mod tests {
         for candidate in &defaults {
             assert!(
                 !candidate.starts_with(&kiln),
-                "the session VM would execute {} out of an unnominated kiln",
+                "the daemon VM would execute {} out of an unnominated kiln",
                 candidate.display()
             );
         }

@@ -199,25 +199,21 @@ fn test_config_show_with_file_config() {
     // Create a config file
     fs::write(
         &config_path,
-        r#"
-kiln_path = "/file/kiln"
-
-[llm]
-default = "anthropic"
-
-[llm.providers.anthropic]
-type = "anthropic"
-default_model = "file-model"
-endpoint = "https://api.anthropic.com"
-
-[acp]
-default_agent = "claude-3-opus"
-session_timeout_minutes = 45
-
-[chat]
-model = "claude-3-sonnet"
-temperature = 0.8
-streaming = false
+        r#"cru.config.set({
+  kiln_path = "/file/kiln",
+  llm = {
+    default = "anthropic",
+    providers = {
+      anthropic = {
+        type = "anthropic",
+        default_model = "file-model",
+        endpoint = "https://api.anthropic.com",
+      },
+    },
+  },
+  acp = { default_agent = "claude-3-opus", session_timeout_minutes = 45 },
+  chat = { model = "claude-3-sonnet", streaming = false },
+})
 "#,
     )
     .unwrap();
@@ -225,13 +221,13 @@ streaming = false
     // Set the config file path via environment
     let config_dir = temp.path().join("config");
     fs::create_dir_all(&config_dir).unwrap();
-    let default_config_path = config_dir.join("crucible").join("config.toml");
+    let default_config_path = config_dir.join("crucible").join("init.lua");
     fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
     fs::copy(&config_path, &default_config_path).unwrap();
     let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
     let mut cmd = cru_with_isolated_socket(temp.path());
-    // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory containing config.toml
+    // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory holding init.lua
     cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
         .arg("config")
         .arg("show");
@@ -250,13 +246,13 @@ streaming = false
 #[serial]
 fn config_show_honours_the_config_path_flag() {
     let temp = TempDir::new().unwrap();
-    let config_path = temp.path().join("flagged.toml");
+    let config_path = temp.path().join("init.lua");
     let kiln_path = temp.path().join("flagged-kiln");
 
     fs::write(
         &config_path,
         format!(
-            "kiln_path = {:?}\n\n[chat]\nmodel = \"flagged-model\"\n",
+            "cru.config.set({{ kiln_path = {:?}, chat = {{ model = \"flagged-model\" }} }})\n",
             kiln_path.to_str().unwrap()
         ),
     )
@@ -305,20 +301,18 @@ fn test_config_show_trace_with_config_file() {
     let temp = TempDir::new().unwrap();
     let config_dir = temp.path().join("config");
     fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join("config.toml");
+    let config_path = config_dir.join("init.lua");
 
     // Create a config file with some values
     fs::write(
         &config_path,
-        r#"
-kiln_path = "/test/kiln"
-
-[llm]
-default = "ollama"
-
-[llm.providers.ollama]
-type = "ollama"
-default_model = "nomic-embed-text"
+        r#"cru.config.set({
+  kiln_path = "/test/kiln",
+  llm = {
+    default = "ollama",
+    providers = { ollama = { type = "ollama", default_model = "nomic-embed-text" } },
+  },
+})
 "#,
     )
     .unwrap();
@@ -329,11 +323,11 @@ default_model = "nomic-embed-text"
         .arg("show")
         .arg("--trace");
 
-    // Values from the TOML seed show "from: toml (...)";
+    // Values the user's `init.lua` set show "from: lua (<file>:<line>)";
     // values not in the file show "from: default"
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("# from: toml"))
+        .stdout(predicate::str::contains("# from: lua"))
         .stdout(predicate::str::contains("# from: default"))
         .stdout(predicate::str::contains("kiln_path"));
 }
@@ -414,15 +408,15 @@ fn test_config_dump_json_format() {
 
 #[test]
 #[serial]
-fn test_config_show_with_invalid_config_file() {
+fn config_show_fails_when_init_lua_does_not_parse() {
     let temp = TempDir::new().unwrap();
     let config_dir = temp.path().join("config");
     fs::create_dir_all(&config_dir).unwrap();
-    let config_path = config_dir.join("crucible").join("config.toml");
+    let config_path = config_dir.join("crucible").join("init.lua");
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    // Write invalid TOML
-    fs::write(&config_path, "this is not valid toml [[[").unwrap();
+    // A file that does not parse states no intent, so the boot refuses.
+    fs::write(&config_path, "this is not lua (((").unwrap();
 
     let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
@@ -432,12 +426,11 @@ fn test_config_show_with_invalid_config_file() {
         .arg("config")
         .arg("show");
 
-    // Should fail when config is invalid
-    // Note: Earlier behavior might have been fallback, but explicit failure is safer
-    // so user knows their config is broken.
+    // Explicit failure, naming the file: a fallback would leave the user
+    // reading defaults while believing they were reading their own config.
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Failed to parse config file"));
+        .stderr(predicate::str::contains("init.lua"));
 }
 
 #[test]

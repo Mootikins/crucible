@@ -8,12 +8,18 @@ use crate::tui::oil::utils::truncate_first_line;
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
 use crucible_oil::node::{row, styled, Node, BRAILLE_SPINNER_FRAMES};
 use crucible_oil::style::Style;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::tool_render::format_elapsed;
 
 /// Render a subagent with status indicator and prompt preview.
-pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize, width: usize) -> Node {
+/// `now` is the frame clock; a running agent shows its elapsed time from it.
+pub fn render_subagent(
+    subagent: &CachedSubagent,
+    spinner_frame: usize,
+    now: Instant,
+    width: usize,
+) -> Node {
     let t = theme::active();
     let (icon, icon_style) = match subagent.status {
         SubagentStatus::Running => {
@@ -44,7 +50,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize, width: u
 
     let status_text = match subagent.status {
         SubagentStatus::Running => {
-            let elapsed = subagent.elapsed();
+            let elapsed = subagent.elapsed_at(now);
             format_elapsed_display(elapsed)
         }
         SubagentStatus::Completed => subagent
@@ -103,9 +109,10 @@ mod tests {
 
     #[test]
     fn render_subagent_running() {
-        let mut subagent = CachedSubagent::new("sub-1", "Analyze the code", "subagent");
+        let mut subagent =
+            CachedSubagent::new("sub-1", "Analyze the code", "subagent", Instant::now());
         subagent.status = SubagentStatus::Running;
-        let node = render_subagent(&subagent, 0, 80);
+        let node = render_subagent(&subagent, 0, Instant::now(), 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("subagent"));
         assert!(plain.contains("Analyze the code"));
@@ -113,10 +120,11 @@ mod tests {
 
     #[test]
     fn render_subagent_completed() {
-        let mut subagent = CachedSubagent::new("sub-1", "Analyze the code", "subagent");
+        let mut subagent =
+            CachedSubagent::new("sub-1", "Analyze the code", "subagent", Instant::now());
         subagent.status = SubagentStatus::Completed;
         subagent.summary = Some(Arc::from("Analysis complete"));
-        let node = render_subagent(&subagent, 0, 80);
+        let node = render_subagent(&subagent, 0, Instant::now(), 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"));
         assert!(plain.contains("Analysis complete"));
@@ -124,10 +132,11 @@ mod tests {
 
     #[test]
     fn render_subagent_failed() {
-        let mut subagent = CachedSubagent::new("sub-1", "Analyze the code", "subagent");
+        let mut subagent =
+            CachedSubagent::new("sub-1", "Analyze the code", "subagent", Instant::now());
         subagent.status = SubagentStatus::Failed;
         subagent.error = Some(Arc::from("Connection timeout"));
-        let node = render_subagent(&subagent, 0, 80);
+        let node = render_subagent(&subagent, 0, Instant::now(), 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✗"));
         assert!(plain.contains("Connection timeout"));
@@ -136,8 +145,8 @@ mod tests {
     #[test]
     fn render_subagent_truncates_long_prompt() {
         let long_prompt = "a".repeat(100);
-        let subagent = CachedSubagent::new("sub-1", &long_prompt, "subagent");
-        let node = render_subagent(&subagent, 0, 80);
+        let subagent = CachedSubagent::new("sub-1", &long_prompt, "subagent", Instant::now());
+        let node = render_subagent(&subagent, 0, Instant::now(), 80);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("…"));
     }

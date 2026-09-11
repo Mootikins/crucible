@@ -54,8 +54,6 @@ fn test_default_config_has_sensible_values() {
 
     // Chat config should have defaults
     assert_eq!(config.chat.chat_model(), "llama3.2");
-    assert_eq!(config.chat.temperature(), 0.7);
-    assert_eq!(config.chat.max_tokens(), 2048);
 }
 
 #[test]
@@ -63,13 +61,9 @@ fn test_custom_chat_config_values() {
     let mut config = create_agent_factory_test_config();
     config.chat.model = Some("custom-model".to_string());
     config.chat.endpoint = Some("http://custom:8080".to_string());
-    config.chat.temperature = Some(0.9);
-    config.chat.max_tokens = Some(4096);
 
     assert_eq!(config.chat.chat_model(), "custom-model");
     assert_eq!(config.chat.endpoint.as_deref(), Some("http://custom:8080"));
-    assert_eq!(config.chat.temperature(), 0.9);
-    assert_eq!(config.chat.max_tokens(), 4096);
 }
 
 // ============================================================================
@@ -85,8 +79,6 @@ fn test_llm_config_with_single_ollama_provider() {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -116,8 +108,6 @@ fn test_llm_config_with_multiple_providers() {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
-            temperature: None,
-            max_tokens: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -131,8 +121,6 @@ fn test_llm_config_with_multiple_providers() {
             provider_type: BackendType::OpenAI,
             endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
-            temperature: Some(0.5),
-            max_tokens: Some(8192),
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
@@ -175,8 +163,6 @@ fn test_llm_config_invalid_default_provider() {
             provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: None,
-            temperature: None,
-            max_tokens: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -201,8 +187,6 @@ fn test_provider_type_ollama_defaults() {
         provider_type: BackendType::Ollama,
         endpoint: None,
         default_model: None,
-        temperature: None,
-        max_tokens: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -211,8 +195,6 @@ fn test_provider_type_ollama_defaults() {
 
     assert_eq!(provider.endpoint(), "http://localhost:11434");
     assert_eq!(provider.model(), "llama3.2");
-    assert_eq!(provider.temperature(), 0.7);
-    assert_eq!(provider.max_tokens(), 4096);
 }
 
 #[test]
@@ -221,8 +203,6 @@ fn test_provider_type_openai_defaults() {
         provider_type: BackendType::OpenAI,
         endpoint: None,
         default_model: None,
-        temperature: None,
-        max_tokens: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -231,8 +211,6 @@ fn test_provider_type_openai_defaults() {
 
     assert_eq!(provider.endpoint(), "https://api.openai.com/v1");
     assert_eq!(provider.model(), "gpt-4o");
-    assert_eq!(provider.temperature(), 0.7);
-    assert_eq!(provider.max_tokens(), 4096);
 }
 
 #[test]
@@ -241,8 +219,6 @@ fn test_provider_type_anthropic_defaults() {
         provider_type: BackendType::Anthropic,
         endpoint: None,
         default_model: None,
-        temperature: None,
-        max_tokens: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -251,8 +227,6 @@ fn test_provider_type_anthropic_defaults() {
 
     assert_eq!(provider.endpoint(), "https://api.anthropic.com/v1");
     assert_eq!(provider.model(), "claude-sonnet-5");
-    assert_eq!(provider.temperature(), 0.7);
-    assert_eq!(provider.max_tokens(), 4096);
 }
 
 #[test]
@@ -261,8 +235,6 @@ fn test_provider_custom_overrides() {
         provider_type: BackendType::Ollama,
         endpoint: Some("http://192.168.1.100:11434".to_string()),
         default_model: Some("llama3.1:70b".to_string()),
-        temperature: Some(0.9),
-        max_tokens: Some(8192),
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -271,8 +243,6 @@ fn test_provider_custom_overrides() {
 
     assert_eq!(provider.endpoint(), "http://192.168.1.100:11434");
     assert_eq!(provider.model(), "llama3.1:70b");
-    assert_eq!(provider.temperature(), 0.9);
-    assert_eq!(provider.max_tokens(), 8192);
 }
 
 // ============================================================================
@@ -310,8 +280,6 @@ fn test_model_name_from_named_provider() {
             provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: Some("custom-provider-model".to_string()),
-            temperature: None,
-            max_tokens: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -371,40 +339,6 @@ fn test_llm_provider_type_variants() {
     assert_ne!(ollama, anthropic);
 }
 
-#[test]
-fn test_config_temperature_boundary_values() {
-    let mut config = create_agent_factory_test_config();
-
-    // Min temperature (0.0)
-    config.chat.temperature = Some(0.0);
-    assert_eq!(config.chat.temperature(), 0.0);
-
-    // Max reasonable temperature (2.0)
-    config.chat.temperature = Some(2.0);
-    assert_eq!(config.chat.temperature(), 2.0);
-
-    // Default temperature
-    config.chat.temperature = None;
-    assert_eq!(config.chat.temperature(), 0.7);
-}
-
-#[test]
-fn test_config_max_tokens_boundary_values() {
-    let mut config = create_agent_factory_test_config();
-
-    // Small value
-    config.chat.max_tokens = Some(1);
-    assert_eq!(config.chat.max_tokens(), 1);
-
-    // Large value (128K tokens - Claude 3 territory)
-    config.chat.max_tokens = Some(128_000);
-    assert_eq!(config.chat.max_tokens(), 128_000);
-
-    // Default
-    config.chat.max_tokens = None;
-    assert_eq!(config.chat.max_tokens(), 2048);
-}
-
 // ============================================================================
 // API Key Configuration Tests
 // ============================================================================
@@ -416,8 +350,6 @@ fn test_provider_api_key_direct_value() {
         provider_type: BackendType::OpenAI,
         endpoint: None,
         default_model: None,
-        temperature: None,
-        max_tokens: None,
         api_key: Some("sk-test-key-12345".to_string()),
         available_models: None,
         trust_level: None,
@@ -433,8 +365,6 @@ fn test_provider_no_api_key_configured() {
         provider_type: BackendType::Ollama,
         endpoint: None,
         default_model: None,
-        temperature: None,
-        max_tokens: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -458,8 +388,6 @@ fn test_realistic_ollama_config() {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2:latest".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -485,8 +413,6 @@ fn test_realistic_openai_config() {
             provider_type: BackendType::OpenAI,
             endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
-            temperature: Some(0.5),
-            max_tokens: Some(8192),
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
@@ -501,8 +427,6 @@ fn test_realistic_openai_config() {
     assert_eq!(provider.provider_type, BackendType::OpenAI);
     assert_eq!(provider.endpoint(), "https://api.openai.com/v1");
     assert_eq!(provider.model(), "gpt-4o");
-    assert_eq!(provider.temperature(), 0.5);
-    assert_eq!(provider.max_tokens(), 8192);
 }
 
 #[test]
@@ -516,8 +440,6 @@ fn test_realistic_multi_provider_config() {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -532,8 +454,6 @@ fn test_realistic_multi_provider_config() {
             provider_type: BackendType::OpenAI,
             endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
-            temperature: Some(0.5),
-            max_tokens: Some(8192),
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
@@ -548,8 +468,6 @@ fn test_realistic_multi_provider_config() {
             provider_type: BackendType::Anthropic,
             endpoint: None,
             default_model: Some("claude-3-5-sonnet-20241022".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
             api_key: Some("ANTHROPIC_API_KEY".to_string()),
             available_models: None,
             trust_level: None,

@@ -2,11 +2,11 @@
 --- reflection configuration
 ---
 --- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention — the daemon seeds setup() with the TOML section at load, and
---- a user's later `setup{}` call, e.g. from ~/.config/crucible/init.lua
---- which runs after plugins load, overrides it):
+--- convention — the daemon seeds setup() with the plugin's config section at
+--- load, and a user's later `setup{}` call, e.g. from
+--- ~/.config/crucible/init.lua which runs after plugins load, overrides it):
 ---   1. values passed to `setup({...})` — last call wins per key.
----   2. `[plugins.reflection]` in config.toml, read through
+---   2. the `plugins.reflection` config key, read through
 ---      `cru.plugin.config.get("reflection.<key>")` — covers keys read before
 ---      any setup() call lands. Note this is NOT `cru.config[...]` —
 ---      `cru.config` is the *app* config store and holds only `get`/`set`
@@ -29,7 +29,6 @@ local defaults = {
     min_turns = 3,
     max_proposals = 5,
     timeout = 120,
-    max_iterations = 12,
     rejection_memory = 20,
     tool_result_chars = 2000,
     transcript_chars = 60000,

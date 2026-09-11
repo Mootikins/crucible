@@ -75,8 +75,8 @@ pub fn cru() -> HermeticCru {
     HermeticCru { cmd, _home: home }
 }
 
-/// Escape a path for embedding in TOML string values (Windows backslash handling).
-pub fn toml_escape(path: &Path) -> String {
+/// Escape a path for embedding in a Lua string literal (Windows backslashes).
+pub fn path_literal(path: &Path) -> String {
     path.display().to_string().replace('\\', "\\\\")
 }
 
@@ -117,17 +117,21 @@ pub fn extract_session_id(stdout: &[u8]) -> String {
         .expect("expected a session id in `session create` output")
 }
 
-/// Write a minimal config.toml with correct `kiln_path` format.
-/// Returns the config file path.
-pub fn write_config(dir: &Path, extra_toml: &str) -> PathBuf {
+/// Write a minimal `init.lua` with a correct `kiln_path`, plus whatever Lua
+/// the caller appends. Returns the config file path.
+///
+/// `init.lua` and not `config.toml`: the daemon stopped reading TOML, so a
+/// fixture written that way configures nothing and every value in it is a
+/// silent default.
+pub fn write_config(dir: &Path, extra_lua: &str) -> PathBuf {
     let kiln_path = dir.join("kiln");
     fs::create_dir_all(&kiln_path).expect("create kiln dir");
 
-    let config_path = dir.join("config.toml");
+    let config_path = dir.join("init.lua");
     let config = format!(
-        "kiln_path = \"{}\"\n\n[llm]\ndefault = \"ollama\"\n\n[llm.providers.ollama]\ntype = \"ollama\"\ndefault_model = \"llama3.2\"\n{}",
-        toml_escape(&kiln_path),
-        extra_toml,
+        "cru.config.set({{\n  kiln_path = \"{}\",\n  llm = {{ default = \"ollama\", providers = {{ ollama = {{ type = \"ollama\", default_model = \"llama3.2\" }} }} }},\n}})\n{}",
+        path_literal(&kiln_path),
+        extra_lua,
     );
     fs::write(&config_path, config).expect("write config");
     config_path
@@ -150,11 +154,11 @@ impl TestDaemon {
         Self::start_with_extra_config("")
     }
 
-    /// Start an isolated daemon with extra TOML appended to the config.
-    pub fn start_with_extra_config(extra_toml: &str) -> Self {
+    /// Start an isolated daemon with extra Lua appended to the config.
+    pub fn start_with_extra_config(extra_lua: &str) -> Self {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let socket_path = temp_dir.path().join("daemon.sock");
-        let config_path = write_config(temp_dir.path(), extra_toml);
+        let config_path = write_config(temp_dir.path(), extra_lua);
 
         // Single binary: daemon runs via `cru daemon serve`
         let cru_exe = env!("CARGO_BIN_EXE_cru");

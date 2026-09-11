@@ -33,14 +33,15 @@ fn cru_in(dir: &Path) -> Command {
     cmd
 }
 
-/// Write a minimal config.toml for tests.
+/// Write a minimal `init.lua` for tests — the one config file the daemon
+/// reads.
 fn write_config(dir: &Path) -> std::path::PathBuf {
     let kiln_path = dir.join("kiln");
     fs::create_dir_all(&kiln_path).expect("create kiln dir");
 
-    let config_path = dir.join("config.toml");
+    let config_path = dir.join("init.lua");
     let config = format!(
-        "kiln_path = \"{}\"\n\n[llm]\ndefault = \"local\"\n\n[llm.providers.local]\ntype = \"ollama\"\ndefault_model = \"llama3.2\"\n",
+        "cru.config.set({{\n  kiln_path = \"{}\",\n  llm = {{ default = \"local\", providers = {{ [\"local\"] = {{ type = \"ollama\", default_model = \"llama3.2\" }} }} }},\n}})\n",
         kiln_path.display().to_string().replace('\\', "\\\\"),
     );
     fs::write(&config_path, config).expect("write config");

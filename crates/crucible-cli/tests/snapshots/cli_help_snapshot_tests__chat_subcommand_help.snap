@@ -1,6 +1,5 @@
 ---
 source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
-assertion_line: 118
 expression: help
 ---
 Interactive AI chat with session persistence and tool access.
@@ -40,7 +39,7 @@ Options:
           Environment variables to pass to the ACP agent (can be repeated) Format: KEY=VALUE Example: --env ANTHROPIC_BASE_URL=http://localhost:4000
 
       --set <KEY[=VALUE]>
-          Session configuration overrides in vim-style format (can be repeated) Same syntax as TUI :set — examples: --set model=llama3 --set thinkingbudget=high Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
+          Session configuration overrides in vim-style format (can be repeated) Same syntax as TUI :set — examples: --set model=llama3 --set contextbudget=128000 Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
 
       --provider <PROVIDER>
           LLM provider to use (from config [llm.providers])
@@ -52,9 +51,6 @@ Options:
 
       --no-context
           Turn off knowledge-base grounding for this session (Precognition). Session state, so it persists across resume — same as `:set noprecognition`
-
-      --context-size <CONTEXT_SIZE>
-          Number of knowledge-base notes to ground with (daemon default: 5). Session state, so it persists across resume
 
       --plan
           Start in plan mode (read-only) instead of normal mode (full access) Can be toggled during session with /plan and /normal commands

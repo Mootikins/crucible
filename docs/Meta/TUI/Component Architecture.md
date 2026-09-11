@@ -187,7 +187,6 @@ pub enum ChatAppMsg {
     ToolCallStart { id, name },
     ToolCallComplete { id, result },
     SetModel(String),
-    SetThinkingBudget(Option<u32>),
     ToggleThinking,
     // ...
 }

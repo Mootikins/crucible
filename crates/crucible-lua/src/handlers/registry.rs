@@ -59,16 +59,16 @@ pub struct RuntimeHandler {
     /// without it, every reload appends another copy of every handler and the
     /// stale ones keep firing against dead state.
     pub plugin: Option<String>,
-    /// What the registering plugin's installation granted, or `None` for a
-    /// handler registered outside every plugin load — a user's own
-    /// `init.lua`, which carries the operator's authority.
+    /// Whether the registering plugin's installation lets it intercept, or
+    /// `None` for a handler registered outside every plugin load — a user's
+    /// own `init.lua`, which carries the operator's authority.
     ///
-    /// Decided at registration from the plugin's manifest, not at the call
+    /// Decided at registration from what the plugin declared, not at the call
     /// site: authorization is a property of the plugin the operator installed.
     /// The dispatcher re-enters exactly this, so a handler firing three turns
     /// later still runs as its own plugin — which is what `cru.storage` keys
-    /// on and what `intercept_tools` is read from.
-    pub grants: Option<crate::manifest::CapabilitySet>,
+    /// on and what `intercepts_tools` is read from.
+    pub may_intercept_grant: Option<bool>,
     /// What the registration asked for with `{ timeout_ms = … }`, in
     /// milliseconds. `None` takes the budget of the name it registered for.
     pub timeout_ms: Option<u64>,
@@ -80,13 +80,11 @@ impl RuntimeHandler {
     ///
     /// A handler without it may observe and may `cancel`; its `handled` and
     /// transform results are refused, because `handled` returns before the
-    /// permission gate. A handler with no grants recorded was registered
-    /// outside a plugin load and is trusted, having the same authority as the
+    /// permission gate. A handler with nothing recorded was registered outside
+    /// a plugin load and is trusted, having the same authority as the
     /// configuration that registered it.
     pub fn may_intercept(&self) -> bool {
-        self.grants
-            .as_ref()
-            .is_none_or(|grants| grants.holds(crate::manifest::Capability::InterceptTools))
+        self.may_intercept_grant.unwrap_or(true)
     }
 }
 
@@ -246,7 +244,7 @@ impl LuaScriptHandlerRegistry {
                         .as_ref()
                         .map(|plugin| crate::plugin_context::PluginContext {
                             name: plugin.clone(),
-                            grants: h.grants.clone().unwrap_or_default(),
+                            may_intercept: h.may_intercept(),
                         }),
                     h.event_type.clone(),
                     h.timeout_ms,

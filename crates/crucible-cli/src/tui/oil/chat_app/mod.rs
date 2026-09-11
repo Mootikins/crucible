@@ -92,6 +92,8 @@ pub struct OilChatApp {
     shell_modal: Option<ShellModal>,
     /// Spinner animation start time (frame derived from elapsed time, not ticks)
     spinner_epoch: std::time::Instant,
+    /// The frame clock. See [`OilChatApp::set_frame_time`].
+    frame_time: std::time::Instant,
     /// Force a full terminal redraw on next tick
     needs_full_redraw: bool,
     /// Whether to render LLM thinking/reasoning blocks
@@ -153,6 +155,7 @@ impl OilChatApp {
         }
 
         let ctx = &ViewContext {
+            frame_time: self.frame_time,
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,
@@ -353,10 +356,30 @@ impl OilChatApp {
         self.show_diffs
     }
 
-    /// Spinner frame derived from wall clock (100ms per frame).
+    /// Spinner frame derived from the frame clock (100ms per frame).
     /// Independent of tick events — animates even during rapid streaming.
     pub fn spinner_frame(&self) -> usize {
-        (self.spinner_epoch.elapsed().as_millis() / 100) as usize
+        let since_epoch = self
+            .frame_time
+            .saturating_duration_since(self.spinner_epoch);
+        (since_epoch.as_millis() / 100) as usize
+    }
+
+    /// Set the frame clock.
+    ///
+    /// The runner reads the wall clock once per loop iteration and stores it
+    /// here. Everything that measures time — the spinner, a running tool's
+    /// elapsed text, the slow-tool split — reads this value, never
+    /// `Instant::now()`. So the frame is a function of the app state alone: a
+    /// replay that never calls this renders the same on any machine, however
+    /// slow, and a test can move time forward by an exact amount.
+    pub fn set_frame_time(&mut self, now: std::time::Instant) {
+        self.frame_time = now;
+    }
+
+    /// The frame clock. Messages stamp new tools and agents with it.
+    pub(crate) fn frame_time(&self) -> std::time::Instant {
+        self.frame_time
     }
 
     // ─── View Helpers (chrome composition) ─────────────────────────────
@@ -399,7 +422,7 @@ impl OilChatApp {
             .streaming(self.container_list.is_streaming())
             .background_tasks(self.container_list.background_task_count())
             .status(&self.status);
-        if let Some((text, kind)) = self.notification_area.active_toast() {
+        if let Some((text, kind)) = self.notification_area.active_toast(self.frame_time) {
             status = status.toast(text, kind);
         }
         let counts = self.notification_area.warning_counts();
@@ -591,7 +614,7 @@ impl OilChatApp {
     /// Expires stale toasts and ticks shell modal.
     pub fn expire_toasts(&mut self) {
         self.tick_shell_modal();
-        self.notification_area.expire_toasts();
+        self.notification_area.expire_toasts(self.frame_time);
         if self.notification_area.is_empty() {
             self.notification_area.hide();
         }
@@ -599,10 +622,6 @@ impl OilChatApp {
 
     pub(crate) fn set_precognition(&mut self, val: bool) {
         self.precognition.precognition = val;
-    }
-
-    pub(crate) fn set_precognition_results(&mut self, count: usize) {
-        self.precognition.precognition_results = count;
     }
 
     #[cfg(test)]
@@ -616,7 +635,7 @@ impl OilChatApp {
     }
 
     pub(crate) fn add_notification(&mut self, notification: crucible_core::types::Notification) {
-        self.notification_area.add(notification);
+        self.notification_area.add(notification, self.frame_time);
     }
 
     /// Open the notification panel, so a story can assert on its content.
@@ -631,7 +650,7 @@ impl OilChatApp {
     /// the common case keeps a single node.
     pub(crate) fn split_slow_tools(&mut self) -> bool {
         self.container_list
-            .split_slow_tools(BACKGROUND_TOOL_SPLIT_THRESHOLD)
+            .split_slow_tools(self.frame_time, BACKGROUND_TOOL_SPLIT_THRESHOLD)
     }
 
     fn push_shell_history(&mut self, cmd: String) {

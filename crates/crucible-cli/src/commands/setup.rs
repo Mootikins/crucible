@@ -61,13 +61,31 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
     if crucible_core::runtime_roots::user_runtime().as_deref() == Some(target.as_path()) {
         println!("\nSetup complete. Crucible reads this directory automatically.");
     } else {
-        println!("\nSetup complete. Point Crucible at it — shell profile:");
-        println!("  export CRUCIBLE_RUNTIME=\"{}\"", target.display());
-        println!("\nor ~/.config/crucible/config.toml:");
-        println!("  runtimepath = [\"{}\"]", target.display());
+        println!("{}", custom_runtime_dir_instructions(&target));
     }
 
     Ok(())
+}
+
+/// What to tell a user who chose a runtime directory Crucible does not read
+/// on its own.
+///
+/// Its own function so a test can hold the two routes that exist. The third
+/// route this used to name — a `runtimepath` line in `config.toml` — is not
+/// one: no reader loads that file, so the instruction configured nothing.
+///
+/// The Lua comes from the same emitter `cru config migrate` uses, so the
+/// printed block escapes a path exactly as the boot evaluation reads it.
+fn custom_runtime_dir_instructions(target: &Path) -> String {
+    let lua = crucible_core::config::emit_lua_config(&serde_json::json!({
+        "runtimepath": [target.display().to_string()],
+    }));
+    format!(
+        "\nSetup complete. Point Crucible at it — shell profile:\n  \
+         export CRUCIBLE_RUNTIME=\"{}\"\n\n\
+         or in ~/.config/crucible/init.lua:\n{lua}",
+        target.display()
+    )
 }
 
 /// Fill `target` with a runtime tree, from `source` if there is one.
@@ -84,9 +102,11 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
 /// the version you ran setup on, and every default added afterwards ships to
 /// nobody who ran this command.
 ///
-/// The override point for defaults is `~/.config/crucible/init.lua`, which
-/// already runs after them and wins per assignment — Vim's `after/` in
-/// everything but name, and it exists precisely so nobody forks a runtime file.
+/// The override point for defaults is `~/.config/crucible/init.lua`. It writes
+/// the same config store and `cru.modes` registry, and the daemon re-applies
+/// what it set over every session's freshly-loaded defaults — Vim's `after/`
+/// in everything but name, and it exists precisely so nobody forks a runtime
+/// file.
 const NOT_COPIED: &[&str] = &["defaults"];
 
 fn populate_runtime(source: Option<&Path>, target: &Path) -> Result<()> {
@@ -193,37 +213,46 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --       sl.any(sl.notification, sl.context) },
 --   },
 -- })
-
--- Session defaults: the values a NEW session starts from.
--- (`cru.defaults.x` is Neovim's `vim.o`; `session.x` is `vim.bo`.)
--- cru.defaults.temperature = 0.7
--- cru.defaults.system_prompt = cru.defaults.system_prompt
---   .. "\n\nAnswer in British English."
-
--- Per session, for anything conditional
--- cru.on_session_start(function(session)
---   if session.workspace:match("/work/") then
---     session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
---   end
--- end)
-
--- Modes. `tools` gates visibility; `permissions` gates what may be done with
--- a visible tool, in the same `tool:pattern` grammar as [permissions].
--- cru.modes.review = {
---   tools = { "read_*", "*_search", "bash" },
---   permissions = { default = "deny", allow = { "bash:rg *", "bash:grep *" } },
--- }
-
--- Permission hooks, for anything conditional. Yours run BEFORE the shipped
--- ones, so this wins over the built-ins.
--- cru.permissions.on_request(function(request)
---   return { deny = true }
--- end, { pattern = "bash" })
 "#;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The follow-up instruction must name a file something reads.
+    ///
+    /// It used to name `config.toml`, whose reader is gone: a user who
+    /// followed the printed line wrote a `runtimepath` nothing loaded, and
+    /// `cru setup` reported success either way. Both surviving routes —
+    /// the env var and `init.lua` — are asserted, so dropping one is a
+    /// failure rather than a silent narrowing.
+    #[test]
+    fn the_custom_runtime_dir_instructions_name_only_files_that_are_read() {
+        let text = custom_runtime_dir_instructions(Path::new("/opt/planted"));
+
+        assert!(
+            text.contains("CRUCIBLE_RUNTIME=\"/opt/planted\""),
+            "the env-var route must survive: {text}"
+        );
+        assert!(
+            text.contains("init.lua"),
+            "the config route must name the file the boot evaluates: {text}"
+        );
+        assert!(
+            !text.contains("config.toml"),
+            "no reader loads that file, so the instruction configures nothing: {text}"
+        );
+
+        // The printed Lua is checked by running it, not by matching its
+        // text: the gate is that a user who pastes the block gets the
+        // runtimepath it promises.
+        let start = text
+            .find("cru.config.set")
+            .expect("the config route must print a `cru.config.set` call");
+        let config = crucible_lua::evaluate_config_source(&text[start..])
+            .expect("the printed block must evaluate");
+        assert_eq!(config.runtimepath, vec![PathBuf::from("/opt/planted")]);
+    }
 
     /// `cru setup` must never take its own destination as its source.
     ///
@@ -283,9 +312,10 @@ mod tests {
         assert!(target
             .join("plugins")
             .join("reflection")
-            .join("plugin.yaml")
+            .join("init.luau")
             .is_file());
         assert!(target
+            .join("plugins")
             .join("crucible-help")
             .join("skills")
             .join("crucible-help")
@@ -305,10 +335,7 @@ mod tests {
         let target = tmp.path().join("runtime");
         populate_runtime(None, &target).unwrap();
 
-        let plugin = target
-            .join("plugins")
-            .join("reflection")
-            .join("plugin.yaml");
+        let plugin = target.join("plugins").join("reflection").join("init.luau");
         std::fs::write(&plugin, "# edited").unwrap();
 
         populate_runtime(None, &target).unwrap();

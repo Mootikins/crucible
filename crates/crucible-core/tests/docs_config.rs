@@ -25,6 +25,11 @@
 //! against [`ProjectConfig`], everything else against `CliAppConfig`. See
 //! [`ConfigKind`].
 //!
+//! The user-facing docs now teach Lua, so every remaining block under those
+//! roots is a `project.toml` or a `kiln.toml`. The Lua examples that replaced
+//! them have their own gate — `crucible-lua/tests/docs_lua_config.rs` — and
+//! this one keeps the TOML files that are staying honest.
+//!
 //! # Why whole-config, not fragment parsing
 //!
 //! A doc snippet is almost always partial — a bare `[acp.agents.my-claude]`
@@ -51,7 +56,7 @@
 
 mod common;
 
-use common::docs_kiln::{docs_root, markdown_files, workspace_root};
+use common::docs_kiln::{markdown_files, workspace_root};
 
 /// Directories under the docs kiln whose TOML must load. `docs/Meta/**` is
 /// design and planning material, not instructions to a user, so it is out of
@@ -69,7 +74,12 @@ const NOT_CONFIG_MARKER: &str = "crucible:not-config";
 /// being a perfectly valid project config.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum ConfigKind {
-    /// The global `config.toml`, loaded by [`CliAppConfig::load`].
+    /// A whole-app config block, loaded by [`CliAppConfig::load`].
+    ///
+    /// No document teaches one any more — app config is Lua. The kind stays
+    /// because the loader's rejections are what this file's own unit tests
+    /// exercise, and because a `toml` fence that is not labelled as a
+    /// project config must still be answered for.
     Cli,
     /// A project's `.crucible/project.toml`.
     Project,
@@ -261,38 +271,6 @@ fn docs_toml_blocks_load_as_config() {
     }
 
     println!("All {checked} TOML blocks in {DOC_ROOTS:?} load as config");
-}
-
-/// `docs/Config.toml` is the annotated reference config the docs point readers
-/// at (`docs/Help/Configuration.md` cites it as the home of `[workspace]`,
-/// `[server]`, `[[schedules]]`, `[plugins.*]` and `runtimepath`). It is a whole
-/// file rather than a fenced block, so the sweep above never sees it — and it
-/// is the single largest piece of config prose in the repo.
-#[test]
-#[ignore = "requires: dev kiln — loads the reference config through the config loader"]
-fn the_reference_config_loads() {
-    use crucible_core::config::CliAppConfig;
-
-    let reference = docs_root().join("Config.toml");
-    let body = std::fs::read_to_string(&reference).expect("read docs/Config.toml");
-
-    let dir = tempfile::tempdir().expect("tempdir");
-    let config_path = dir.path().join("config.toml");
-    std::fs::write(&config_path, &body).expect("write scratch config");
-
-    if let Err(e) = CliAppConfig::load(Some(config_path), None, None) {
-        panic!("docs/Config.toml is rejected by CliAppConfig::load: {e}");
-    }
-
-    match ignored_keys::<CliAppConfig>(&body) {
-        Ok(keys) if keys.is_empty() => {}
-        Ok(keys) => panic!(
-            "docs/Config.toml documents {} key(s) no config type claims:\n{}",
-            keys.len(),
-            keys.join("\n")
-        ),
-        Err(e) => panic!("docs/Config.toml could not be deserialized: {e}"),
-    }
 }
 
 // ============================================================================

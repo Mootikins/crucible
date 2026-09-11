@@ -44,6 +44,7 @@
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
 pub mod auth_plugin;
+pub mod authorship;
 pub mod check;
 pub mod command_effect;
 mod context;
@@ -82,7 +83,7 @@ mod ratelimit;
 pub mod schedule;
 pub mod schema;
 pub mod session_api;
-mod session_defaults;
+mod session_start_scope;
 mod sessions;
 mod shell;
 pub mod signature;
@@ -101,6 +102,7 @@ mod ws;
 pub(crate) mod test_support;
 
 pub mod config;
+pub mod config_syntax;
 pub mod hl;
 pub mod hl_lua;
 pub mod statusline_exprs;
@@ -112,18 +114,19 @@ pub mod theme_wire;
 pub mod ui_geometry;
 
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
+pub use authorship::AuthorRoots;
 pub use command_effect::CommandEffect;
 pub use config::{
-    begin_boot_store, end_boot_phase, evaluate_config_source, get_app_config,
-    get_app_config_provenance, get_layout, get_theme_config, get_ui_geometry, in_boot_phase,
-    install_state, install_store, list_available_themes, merge_app_config, merge_app_config_tagged,
-    seed_app_config, set_runtimepath_extender, snapshot_state, snapshot_store, ConfigLoader,
-    ConfigState,
+    add_plugin_author_root, app_config_origin, app_config_origins, begin_boot_store,
+    end_boot_phase, evaluate_config_source, get_app_config, get_app_config_provenance, get_layout,
+    get_theme_config, get_ui_geometry, in_boot_phase, install_state, install_store,
+    list_available_themes, merge_app_config, merge_app_config_tagged, pop_app_config,
+    reset_app_config, resolve_theme_file, save_app_config, seed_app_config, set_author_roots,
+    set_runtimepath_extender, snapshot_state, snapshot_store, theme_roots, unset_app_config,
+    ConfigLoader, ConfigState,
 };
-pub use context::{
-    register_context_module, register_context_module_stub, register_context_validators,
-    LuaValidatorRegistry,
-};
+pub use config_syntax::{config_syntax_error, mark_config_syntax, ConfigSyntaxError};
+pub use context::{register_context_module, register_context_module_stub};
 pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };
@@ -154,7 +157,8 @@ pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
     current_may_intercept, current_plugin_context, current_plugin_name, enter_plugin,
-    enter_recorded_plugin, enter_recorded_plugin_without, grants_for, record_plugin_grants,
+    enter_recorded_plugin, enter_recorded_plugin_without_intercept, intercept_for,
+    record_plugin_intercept,
     set_plugin_context, PluginContext,
 };
 pub use prelude::{register_prelude, register_test_harness};
@@ -209,8 +213,7 @@ pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};
 pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
 pub use luau_compat::register_stdlib_compat;
 pub use manifest::{
-    Capability, LoadedPlugin, ManifestError, ManifestResult, PluginDependency, PluginManifest,
-    PluginSource, PluginState,
+    LoadedPlugin, ManifestError, ManifestResult, PluginManifest, PluginSource, PluginState,
 };
 pub use mcp::register_mcp_module_stub;
 pub use modes::{
@@ -222,9 +225,7 @@ pub use session_api::{
     register_session_module, CurrentSession, Session, SessionConfigRpc, SessionVariables,
     UnsupportedSessionRpc,
 };
-pub use session_defaults::{
-    register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,
-};
+pub use session_start_scope::{SessionStartScope, SessionStartScopeRpc, SessionStartValues};
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api,
     register_sessions_module_with_api_and_current, DaemonSessionApi, ResponsePart,

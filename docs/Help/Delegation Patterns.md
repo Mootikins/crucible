@@ -26,7 +26,7 @@ The primitives you'll use:
   stamped from the session your Lua runs for (never settable from data), the
   parent's own `delegation_config` gates it (`enabled`, `allowed_targets`),
   and the result is a job record — `{ delegation_id, child_session_id,
-  status }` — that `collect_subagents` polls. Reachable from a session VM's
+  status }` — that `collect_subagents` polls. Reachable from a hook's
   own Lua and from `lua.init_session`; the shared plugin VM has no current
   session, so `delegate = true` there is refused with that reason.
 - `cru.session.configure_agent(id, { agent_name = "..." })` — pick

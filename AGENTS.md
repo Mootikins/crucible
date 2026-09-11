@@ -52,7 +52,9 @@ all: ACP's come from `agent_client_protocol`, MCP's from `rmcp`. (Neither is *ve
 **Lua is not only a shim.** Projection modules (theme, statusline, geometry, oil, json, fs,
 notify, paths) are safe in isolation. Interception is not: `runtime/defaults/init.lua` is
 compiled in as `BUILTIN_INIT_LUA` and is the *only* definition of the three permission modes,
-the plan-mode deny hook, the default system prompt and the precognition formatter.
+the plan-mode deny hook and the precognition formatter. The default system prompt is NOT
+there: it ships as `chat.system_prompt` from `ChatConfig::default()`, so it lands on the
+config store's `Default` layer and `settings.json` can outrank it.
 `ModeRegistry` has no Rust default and no fallback.
 
 **The runtime is Luau, and `require` is the host's.** Luau ships no
@@ -102,7 +104,7 @@ between crates** — one canonical location, then re-export. Result aliases foll
 
 ### Session-scoped vs TUI-local
 
-Multi-client state (model, thinking budget, temperature) lives in the daemon's `SessionAgent`
+Multi-client state (model, context budget, mode) lives in the daemon's `SessionAgent`
 and syncs via RPC; pure display state (theme, show_thinking) stays in `OilChatApp`.
 Session-scoped needs the full chain: `AgentHandle` → `DaemonAgentHandle` → `ChatAppMsg` →
 `chat_runner` handler → TUI command. TUI-only breaks multi-client, and mismatched JSON field
@@ -114,7 +116,7 @@ knob writes `crucible_core::impl_unsupported_session_knobs!(Ty)`.)
 ### Hooks and ACP
 
 - `crucible.on(name, opts, handler)` takes a **`StageId`** (11 synchronous turn-loop stages) or an **`EventName`** (8 daemon broadcast events); the two are different contracts and now different types. At a stage the return value decides what happens next; at an event nothing downstream reads it, and only `cancel` (stop the remaining handlers) means anything.
-- `crucible.on("pre_tool_call", opts, handler)` → `{ cancel = true }` blocks, `{ handled = true, result = … }` replaces execution, `nil` observes. **`cancel` is safe; `handled` and transform are capability-grade** — `handled` returns *before* the permission gate, and only gate ordering in `messaging/tool_call.rs` prevents escalation. Its one legitimate use is `runtime/plugins/oci/`, where taking the call over *is* the sandbox. Preserve that ordering.
+- `crucible.on("pre_tool_call", opts, handler)` → `{ cancel = true }` blocks, `{ handled = true, result = … }` replaces execution, `nil` observes. **`cancel` is safe; `handled` and transform are capability-grade** — `handled` returns *before* the permission gate. A plugin needs the `intercept_tools` capability in its manifest to use either; a plugin without it is refused and logged, and the call dispatches normally (`messaging/tool_call.rs`). Gate ordering in that file is the second line of defence, not the first. Its one legitimate use is `runtime/plugins/oci/`, where taking the call over *is* the sandbox. Preserve both the capability check and the ordering.
 - ACP delegation: `cru chat --acp claude`, `cru session create --acp claude`, or `delegate_session`. (`--agent` names an agent *card*, not an ACP profile.) Limits in `[acp.agents.*]`. Code: `acp/`, `agent_manager/`, `tools/mcp_server.rs`.
 
 ## Workflow

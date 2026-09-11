@@ -128,6 +128,8 @@ local function create_worktree(repo, branch, exists)
 end
 
 return {
+    author = "Crucible Team",
+    license = "MIT",
   name = "worktree",
   version = "0.1.0",
   description = "Run a session against a git worktree — the workspace axis",

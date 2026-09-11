@@ -23,14 +23,12 @@ use crucible_core::config::{
 };
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
-use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
+use crucible_core::session::{ContextStrategy, SessionAgent};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::types::{AcpKnob, SessionKnob};
 use crucible_lua::{
-    execute_permission_hooks, register_cru_on_api, register_permission_hook_api,
-    LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHook, PermissionHookResult,
-    PermissionRequest,
+    execute_permission_hooks, LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest,
 };
 use dashmap::DashMap;
 use mlua::Lua;
@@ -130,6 +128,17 @@ pub enum AgentError {
 struct RequestState {
     cancel_tx: Option<oneshot::Sender<()>>,
     task_handle: Option<JoinHandle<()>>,
+    /// Holds the daemon open for as long as this claim exists.
+    ///
+    /// The slot is the one thing every turn takes and every turn releases, so
+    /// it is where the turn reports itself to [`crate::activity`]. A turn
+    /// outlives the client that asked for it — the TUI closes and the daemon
+    /// deliberately survives — so without this the idle timer saw zero
+    /// connections and broke the accept loop mid-turn.
+    ///
+    /// `None` only where no registry was handed in: a test that inserts a
+    /// marker state by hand.
+    _work: Option<crate::activity::WorkGuard>,
 }
 
 /// Terminal status of a `send_message` turn.
@@ -185,6 +194,7 @@ impl RequestSlotGuard {
     fn acquire(
         request_state: Arc<DashMap<String, RequestState>>,
         session_id: &str,
+        activity: &Arc<crate::activity::DaemonActivity>,
     ) -> Result<Self, AgentError> {
         use dashmap::mapref::entry::Entry;
         match request_state.entry(session_id.to_string()) {
@@ -195,6 +205,7 @@ impl RequestSlotGuard {
                 e.insert(RequestState {
                     cancel_tx: None,
                     task_handle: None,
+                    _work: Some(activity.start(crate::activity::WorkKind::Turn)),
                 });
             }
         }
@@ -231,18 +242,6 @@ pub type AgentFactoryOverride = Box<
         > + Send
         + Sync,
 >;
-
-use mlua::RegistryKey;
-use std::sync::Mutex as StdMutex;
-
-pub(crate) struct SessionEventState {
-    lua: Lua,
-    registry: LuaScriptHandlerRegistry,
-    permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
-    permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
-    /// Counter for spill file naming, persists across messages in a session
-    pub(crate) spill_counter: std::sync::atomic::AtomicU32,
-}
 
 fn emit_precognition_event(
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -289,7 +288,6 @@ struct StreamContext {
     session_id: String,
     message_id: String,
     event_tx: broadcast::Sender<SessionEventMessage>,
-    session_state: Arc<Mutex<SessionEventState>>,
     workspace_path: PathBuf,
     session_dir: PathBuf,
     /// The `whitelists.d` directory the permission gate reads saved grants
@@ -368,14 +366,8 @@ pub struct AgentManager {
     /// through to `CRUCIBLE_RUNTIME`, then exe-relative, then the compiled-in
     /// copy. See [`crate::runtime_defaults`].
     runtimepath: Vec<PathBuf>,
-    /// Global session defaults set from Lua (`cru.defaults.x = …`) — the
-    /// values a NEW session starts from, applied in `configure_agent` to any
-    /// field the agent card left unset. The per-session override is
-    /// `session.x`; see `crucible_lua::session_defaults` for why this tier is
-    /// not called `cru.o`.
-    session_defaults: crucible_lua::SessionDefaults,
     /// Modes declared from Lua (`cru.modes.<name> = {…}`). Empty until a
-    /// session VM has run its files; every read falls back to
+    /// daemon VM has run its files; every read falls back to
     /// `default_internal_modes()` in that case, so a daemon whose Lua failed
     /// to load still has working modes rather than none.
     modes: crucible_lua::ModeRegistry,
@@ -387,16 +379,6 @@ pub struct AgentManager {
     /// The service holds a `Weak` back-reference (bound at startup), so this
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
-    /// The daemon session API session VMs register `cru.session` against.
-    /// Bound once at boot (`Server` owns both halves by then); `None` in
-    /// tests and any boot that never wired it, where session VMs simply do
-    /// not get the module — the pre-existing behaviour, not a half-registered
-    /// one.
-    session_api: std::sync::OnceLock<Arc<dyn crucible_lua::DaemonSessionApi>>,
-    /// Where a session VM's `cru.log.notify` goes. Bound once at boot beside
-    /// `session_api`; `None` in tests and boots that never wired it, where
-    /// the VM queues the call instead.
-    notification_hub: std::sync::OnceLock<Arc<crate::notifications::NotificationHub>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     card_roots: crate::agent_cards::CardRoots,
     llm_config: crate::llm_state::LiveLlmConfig,
@@ -406,17 +388,14 @@ pub struct AgentManager {
     context_config: Option<crucible_core::config::ContextConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
-    /// Lua validator registry + plugin `Lua` handle. Populated once at
-    /// daemon startup via [`AgentManager::set_lua_validators`] after the
-    /// plugin loader has finished initializing. `OnceLock` keeps the
-    /// hot validation path lock-free; tests and isolated managers leave
-    /// it empty and `OutputValidation::Lua` surfaces as a validation
-    /// failure with a clear reason instead of panicking.
-    lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
     /// Plugin `cru.on` handler registry + the plugin `Lua` handle.
-    /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
-    /// isolated managers, where plugin hooks simply don't fire.
+    /// Bound once at daemon startup, after the plugin loader has finished
+    /// initializing. Empty in tests and isolated managers, where plugin hooks
+    /// simply don't fire.
     plugin_handlers: std::sync::OnceLock<PluginHandlers>,
+    /// `cru.permissions.on_request` hooks from the daemon VM — the only VM
+    /// that runs Lua files, so the only place they can be registered.
+    daemon_permissions: std::sync::OnceLock<DaemonPermissions>,
     /// Plugin isolation claims, bound at daemon startup alongside the handlers.
     isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
 
@@ -424,7 +403,7 @@ pub struct AgentManager {
     /// loop.
     ///
     /// Created eagerly rather than bound later: it is a per-session buffer with
-    /// no dependency on the plugin system, and late binding meant a session VM
+    /// no dependency on the plugin system, and late binding meant a VM
     /// built before the bind silently got a nil `cru.context.attach` — for that
     /// session, permanently, because VMs are cached.
     context_attach: std::sync::Arc<crucible_lua::ContextAttachRegistry>,
@@ -482,6 +461,11 @@ pub struct AgentManager {
     /// Test-support: when set, agent handles are built through this instead
     /// of the real factory. See [`AgentFactoryOverride`].
     agent_factory_override: std::sync::OnceLock<Arc<AgentFactoryOverride>>,
+    /// Where an in-flight turn reports itself, so the daemon does not exit in
+    /// the middle of one. The server hands its own registry in
+    /// ([`Self::with_activity`]); a manager built without one counts into a
+    /// registry nothing reads, which is right for a test.
+    activity: Arc<crate::activity::DaemonActivity>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -522,15 +506,12 @@ impl AgentManager {
             request_state: Arc::new(DashMap::new()),
             slots: Arc::new(DashMap::new()),
             runtimepath: Vec::new(),
-            session_defaults: crucible_lua::SessionDefaults::new(),
             modes: crucible_lua::ModeRegistry::new(),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
             session_manager: params.session_manager,
             background_manager: params.background_manager,
             delegation_service,
-            session_api: std::sync::OnceLock::new(),
-            notification_hub: std::sync::OnceLock::new(),
             mcp_gateway: params.mcp_gateway,
             llm_config: crate::llm_state::LiveLlmConfig::new(params.llm_config),
             acp_config: params.acp_config,
@@ -538,8 +519,8 @@ impl AgentManager {
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
             card_roots: params.card_roots,
-            lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
+            daemon_permissions: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
             context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
             statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
@@ -551,7 +532,21 @@ impl AgentManager {
             review: Arc::new(crate::review::ReviewLedgers::default()),
             external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
+            activity: crate::activity::DaemonActivity::new(),
         }
+    }
+
+    /// Report turns into the daemon's own activity registry rather than this
+    /// manager's private one. The server calls this at bind; nothing else
+    /// should.
+    pub fn with_activity(mut self, activity: Arc<crate::activity::DaemonActivity>) -> Self {
+        self.activity = activity;
+        self
+    }
+
+    /// The registry this manager reports turns into.
+    pub(crate) fn activity(&self) -> &Arc<crate::activity::DaemonActivity> {
+        &self.activity
     }
 
     /// The agent-card roots this daemon was bound with.
@@ -579,24 +574,6 @@ impl AgentManager {
         self.agent_factory_override.get().cloned()
     }
 
-    /// Bind the plugin loader's validator registry + `Lua` handle.
-    ///
-    /// Called once during daemon startup after the plugin loader has
-    /// initialized. Subsequent calls are silently ignored (`OnceLock`
-    /// semantics) so reload paths can re-call without panicking; the
-    /// registry itself is shared by `Arc` and stays live across reloads.
-    pub fn set_lua_validators(&self, registry: Arc<LuaValidatorRegistry>, lua: Arc<Lua>) {
-        let _ = self.lua_validators.set((registry, lua));
-    }
-
-    /// Snapshot of `(registry, lua)` for the agent stream loop. `None`
-    /// when no plugin loader has bound validators (test contexts).
-    pub(crate) fn lua_validators(&self) -> Option<(Arc<LuaValidatorRegistry>, Arc<Lua>)> {
-        self.lua_validators
-            .get()
-            .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
-    }
-
     /// Bind the plugin loader's `cru.on` registry + `Lua` handle, so
     /// hooks registered by plugins reach the stream loop. Without this,
     /// plugins can register handlers that never fire. Idempotent.
@@ -606,6 +583,15 @@ impl AgentManager {
 
     /// Snapshot of the plugin hook registry for the stream loop. `None` when
     /// no plugin loader has bound one.
+    /// Bind the daemon VM's permission hooks. Idempotent, like the others.
+    pub fn set_daemon_permissions(&self, registry: DaemonPermissions) {
+        let _ = self.daemon_permissions.set(registry);
+    }
+
+    pub(crate) fn daemon_permissions(&self) -> Option<DaemonPermissions> {
+        self.daemon_permissions.get().cloned()
+    }
+
     pub(crate) fn plugin_handlers(&self) -> Option<PluginHandlers> {
         self.plugin_handlers
             .get()
@@ -642,16 +628,10 @@ impl AgentManager {
     }
 
     /// Statusline expression values. Created eagerly for the same reason as
-    /// `context_attach`: session VMs are lazy and cached, so a registry bound
+    /// `context_attach`: a registry bound
     /// later leaves earlier VMs holding a nil function forever.
     pub fn statusline_exprs(&self) -> std::sync::Arc<crucible_lua::StatuslineExprRegistry> {
         self.statusline_exprs.clone()
-    }
-
-    /// The global session defaults store (`cru.defaults`).
-    #[cfg(test)]
-    pub(crate) fn session_defaults(&self) -> &crucible_lua::SessionDefaults {
-        &self.session_defaults
     }
 
     /// The operator's daemon-global `[permissions]` rules.
@@ -869,13 +849,21 @@ impl AgentManager {
         }
     }
 
-    /// Set the config `runtimepath` used to resolve `runtime/defaults/init.lua`.
+    /// Adopt the mode registry the plugin loader's VM writes.
     ///
-    /// A setter rather than a `AgentManagerParams` field: every test
-    /// constructing a manager wants the fall-through behaviour (empty →
-    /// exe-relative → built-in), and only the daemon has a configured path to
-    /// pass. Call before the first session VM is created; later calls do not
-    /// re-run defaults for VMs that already exist.
+    /// Both VMs run the same two files, so both must write the same registry
+    /// or the daemon VM's copy would be a second, invisible tier.
+    ///
+    /// `None` is the loader-less case (most tests): keep the registry this
+    /// manager made for itself.
+    #[must_use]
+    pub fn with_modes(mut self, modes: Option<crucible_lua::ModeRegistry>) -> Self {
+        if let Some(modes) = modes {
+            self.modes = modes;
+        }
+        self
+    }
+
     #[must_use]
     pub fn with_runtimepath(mut self, runtimepath: Vec<PathBuf>) -> Self {
         self.runtimepath = runtimepath;
@@ -893,7 +881,6 @@ impl AgentManager {
     ) -> crucible_core::types::acp::schema::SessionModeState {
         use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
         use crucible_core::types::mode::default_internal_modes;
-        let _vm = self.get_or_create_session_state(session_id);
         // The SESSION's mode, not registration order. `current_mode_id` was
         // previously `declared.first()`, which nothing noticed because both
         // callers read only `available_modes` — but the moment this struct
@@ -1356,26 +1343,6 @@ impl AgentManager {
         &self.delegation_service
     }
 
-    /// Bind the daemon session API session VMs register `cru.session`
-    /// against. Idempotent; first binder wins.
-    pub fn set_session_api(&self, api: Arc<dyn crucible_lua::DaemonSessionApi>) {
-        let _ = self.session_api.set(api);
-    }
-
-    fn session_api(&self) -> Option<&Arc<dyn crucible_lua::DaemonSessionApi>> {
-        self.session_api.get()
-    }
-
-    /// Bind the notification hub session VMs send `cru.log.notify` to.
-    /// Idempotent; first binder wins.
-    pub fn set_notification_hub(&self, hub: Arc<crate::notifications::NotificationHub>) {
-        let _ = self.notification_hub.set(hub);
-    }
-
-    pub fn notification_hub(&self) -> Option<&Arc<crate::notifications::NotificationHub>> {
-        self.notification_hub.get()
-    }
-
     /// The provider table as it stands.
     ///
     /// An `Arc` clone, not a borrow: the table can gain a provider while the
@@ -1588,6 +1555,7 @@ pub(crate) mod attachments;
 pub mod autocompact;
 pub mod cache_stats;
 pub(crate) mod completion;
+pub(crate) mod configured;
 pub mod context_length;
 mod interaction;
 mod iter;
@@ -1600,14 +1568,15 @@ pub(crate) mod precognition_gate;
 pub mod providers;
 mod residue;
 pub(crate) mod scope;
+pub(crate) mod session_config;
 mod session_permissions;
-pub(crate) mod session_vm;
 mod slot;
 pub(crate) mod stream_config;
 pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 pub(crate) mod vm_pass;
+pub use vm_pass::DaemonPermissions;
 pub(crate) use vm_pass::PluginHandlers;
 
 #[cfg(test)]

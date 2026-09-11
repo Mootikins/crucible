@@ -37,8 +37,6 @@ pub enum CompletionSource {
     Models,
     /// Use available themes.
     Themes,
-    /// Use `THINKING_PRESETS.names()`.
-    ThinkingPresets,
     /// Fixed list of values.
     Static(&'static [&'static str]),
     /// No completions (bool toggle, free-form input).
@@ -80,12 +78,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Show diff bodies for Edit/Write tool calls",
     },
     ConfigShortcut {
-        short: "thinkingbudget",
-        target: ShortcutTarget::Path("llm.thinking_budget"),
-        completions: CompletionSource::ThinkingPresets,
-        description: "Thinking token budget preset",
-    },
-    ConfigShortcut {
         // `theme` alone was ambiguous once the UI gained a colorscheme and a
         // surface geometry; this key has only ever meant code highlighting.
         short: "syntax_theme",
@@ -100,24 +92,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Auto-inject knowledge base context (auto-RAG)",
     },
     ConfigShortcut {
-        short: "precognition.results",
-        target: ShortcutTarget::Virtual,
-        completions: CompletionSource::None,
-        description: "Number of context results to inject (1-20)",
-    },
-    ConfigShortcut {
-        short: "maxiterations",
-        target: ShortcutTarget::Path("llm.max_iterations"),
-        completions: CompletionSource::None,
-        description: "Max agent iterations per turn (number or 'none')",
-    },
-    ConfigShortcut {
-        short: "executiontimeout",
-        target: ShortcutTarget::Path("llm.execution_timeout"),
-        completions: CompletionSource::None,
-        description: "Tool execution timeout in seconds (or 'none')",
-    },
-    ConfigShortcut {
         short: "contextbudget",
         target: ShortcutTarget::Path("llm.context_budget"),
         completions: CompletionSource::None,
@@ -128,24 +102,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         target: ShortcutTarget::Path("llm.context_strategy"),
         completions: CompletionSource::Static(&["truncate", "sliding_window"]),
         description: "Context overflow strategy",
-    },
-    ConfigShortcut {
-        short: "contextwindow",
-        target: ShortcutTarget::Path("llm.context_window"),
-        completions: CompletionSource::None,
-        description: "Sliding window size in messages (or 'none')",
-    },
-    ConfigShortcut {
-        short: "outputvalidation",
-        target: ShortcutTarget::Path("llm.output_validation"),
-        completions: CompletionSource::None,
-        description: "Output validation mode (none, json, regex:<pat>)",
-    },
-    ConfigShortcut {
-        short: "validationretries",
-        target: ShortcutTarget::Path("llm.validation_retries"),
-        completions: CompletionSource::None,
-        description: "Retries when output validation fails",
     },
     // Permission settings (session-scoped, TUI-only)
     ConfigShortcut {
@@ -262,10 +218,6 @@ mod tests {
             registry.reverse_lookup("cli.highlighting.theme"),
             Some("syntax_theme")
         );
-        assert_eq!(
-            registry.reverse_lookup("llm.thinking_budget"),
-            Some("thinkingbudget")
-        );
 
         // Non-existent path returns None
         assert_eq!(registry.reverse_lookup("nonexistent.path"), None);
@@ -280,26 +232,19 @@ mod tests {
 
         let all: Vec<_> = registry.all().collect();
 
-        // Should have all defined shortcuts
+        // `all()` must yield every declared shortcut. A second assertion on a
+        // literal count would only need editing whenever the table changes.
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 17);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
         assert!(shorts.contains(&"model"));
         assert!(shorts.contains(&"thinking"));
         assert!(shorts.contains(&"show_diffs"));
-        assert!(shorts.contains(&"thinkingbudget"));
         assert!(shorts.contains(&"syntax_theme"));
         assert!(shorts.contains(&"precognition"));
-        assert!(shorts.contains(&"precognition.results"));
-        assert!(shorts.contains(&"maxiterations"));
-        assert!(shorts.contains(&"executiontimeout"));
         assert!(shorts.contains(&"contextbudget"));
         assert!(shorts.contains(&"contextstrategy"));
-        assert!(shorts.contains(&"contextwindow"));
-        assert!(shorts.contains(&"outputvalidation"));
-        assert!(shorts.contains(&"validationretries"));
         assert!(shorts.contains(&"perm.show_diff"));
         assert!(shorts.contains(&"perm.autoconfirm_session"));
         assert!(shorts.contains(&"perm.full_commands"));
@@ -325,10 +270,6 @@ mod tests {
         assert_eq!(
             registry.completions_for("syntax_theme"),
             CompletionSource::Themes
-        );
-        assert_eq!(
-            registry.completions_for("thinkingbudget"),
-            CompletionSource::ThinkingPresets
         );
         assert_eq!(registry.completions_for("thinking"), CompletionSource::None);
         // Non-existent defaults to None

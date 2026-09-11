@@ -57,8 +57,12 @@ impl NotificationArea {
     }
 
     /// Add a notification to the store.
-    pub fn add(&mut self, notification: Notification) {
-        self.notifications.push((notification, Instant::now()));
+    ///
+    /// `now` is the frame clock, never `Instant::now()`. A toast then expires
+    /// on the same clock the frame is drawn against, so a replay renders the
+    /// same toast on every machine. See `OilChatApp::set_frame_time`.
+    pub fn add(&mut self, notification: Notification, now: Instant) {
+        self.notifications.push((notification, now));
     }
 
     /// Dismiss a notification by ID.
@@ -79,10 +83,10 @@ impl NotificationArea {
     /// Remove expired toast notifications.
     ///
     /// Returns the number of notifications removed.
-    pub fn expire_toasts(&mut self) -> usize {
+    pub fn expire_toasts(&mut self, now: Instant) -> usize {
         let initial_len = self.notifications.len();
         self.notifications.retain(|(n, added_at)| match n.kind {
-            NotificationKind::Toast => added_at.elapsed() < TOAST_TIMEOUT,
+            NotificationKind::Toast => now.saturating_duration_since(*added_at) < TOAST_TIMEOUT,
             NotificationKind::Progress { .. } | NotificationKind::Warning => true,
         });
         initial_len - self.notifications.len()
@@ -108,9 +112,9 @@ impl NotificationArea {
     ///
     /// All notification types fade from the toast after the timeout.
     /// Warnings remain in the store for count badges but stop showing as toast text.
-    pub fn active_toast(&self) -> Option<(&str, NotificationToastKind)> {
+    pub fn active_toast(&self, now: Instant) -> Option<(&str, NotificationToastKind)> {
         let (n, instant) = self.notifications.last()?;
-        if instant.elapsed() >= TOAST_TIMEOUT {
+        if now.saturating_duration_since(*instant) >= TOAST_TIMEOUT {
             return None;
         }
         let kind = match &n.kind {
@@ -163,7 +167,7 @@ mod tests {
         let notif = sample_toast();
         let id = notif.id.clone();
 
-        area.add(notif);
+        area.add(notif, Instant::now());
         assert_eq!(area.len(), 1);
 
         assert!(area.dismiss(&id));
@@ -188,8 +192,8 @@ mod tests {
     #[test]
     fn clear_removes_all() {
         let mut area = NotificationArea::new();
-        area.add(sample_toast());
-        area.add(sample_warning());
+        area.add(sample_toast(), Instant::now());
+        area.add(sample_warning(), Instant::now());
         assert_eq!(area.len(), 2);
 
         area.clear();
@@ -201,23 +205,23 @@ mod tests {
         let mut area = NotificationArea::new();
         assert_eq!(area.unread_count(), 0);
 
-        area.add(sample_toast());
-        area.add(sample_warning());
+        area.add(sample_toast(), Instant::now());
+        area.add(sample_warning(), Instant::now());
         assert_eq!(area.unread_count(), 2);
     }
 
     #[test]
     fn active_toast_returns_most_recent() {
         let mut area = NotificationArea::new();
-        assert!(area.active_toast().is_none());
+        assert!(area.active_toast(Instant::now()).is_none());
 
-        area.add(sample_toast());
-        let (msg, kind) = area.active_toast().unwrap();
+        area.add(sample_toast(), Instant::now());
+        let (msg, kind) = area.active_toast(Instant::now()).unwrap();
         assert_eq!(msg, "Session saved");
         assert_eq!(kind, NotificationToastKind::Info);
 
-        area.add(sample_warning());
-        let (msg, kind) = area.active_toast().unwrap();
+        area.add(sample_warning(), Instant::now());
+        let (msg, kind) = area.active_toast(Instant::now()).unwrap();
         assert_eq!(msg, "Context at 85%");
         assert_eq!(kind, NotificationToastKind::Warning);
     }
@@ -225,8 +229,8 @@ mod tests {
     #[test]
     fn active_toast_maps_progress_to_info() {
         let mut area = NotificationArea::new();
-        area.add(sample_progress());
-        let (_, kind) = area.active_toast().unwrap();
+        area.add(sample_progress(), Instant::now());
+        let (_, kind) = area.active_toast(Instant::now()).unwrap();
         assert_eq!(kind, NotificationToastKind::Info);
     }
 
@@ -235,11 +239,11 @@ mod tests {
         let mut area = NotificationArea::new();
         assert!(area.warning_counts().is_empty());
 
-        area.add(sample_toast());
+        area.add(sample_toast(), Instant::now());
         assert!(area.warning_counts().is_empty());
 
-        area.add(sample_warning());
-        area.add(sample_warning());
+        area.add(sample_warning(), Instant::now());
+        area.add(sample_warning(), Instant::now());
         let counts = area.warning_counts();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], (NotificationToastKind::Warning, 2));
@@ -248,9 +252,9 @@ mod tests {
     #[test]
     fn history_returns_all_notifications() {
         let mut area = NotificationArea::new();
-        area.add(sample_toast());
-        area.add(sample_progress());
-        area.add(sample_warning());
+        area.add(sample_toast(), Instant::now());
+        area.add(sample_progress(), Instant::now());
+        area.add(sample_warning(), Instant::now());
         assert_eq!(area.history().len(), 3);
     }
 }

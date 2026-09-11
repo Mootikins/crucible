@@ -22,6 +22,8 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:set option??` | Show modification history |
 | `:set option!` | Toggle boolean option |
 | `:set option&` | Reset to default |
+| `:set option^` | Drop the top layer and reveal the one beneath |
+| `:set option=` | Remove the key — an assignment with nothing after it |
 | `:set` | Show modified options |
 | `:set all` | Show all options |
 | `:model` | Open model picker |
@@ -57,12 +59,13 @@ Crucible's `:set` command follows Vim conventions for runtime configuration.
 Examples:
 ```
 :set model=claude-3-5-sonnet
-:set thinkingbudget=high
+:set contextbudget=128000
 ```
 
 ### Boolean Options
 
 ```
+:set option=            # REMOVE the key (nothing after the `=`)
 :set option             # Enable boolean option
 :set nooption           # Disable boolean option (prefix with 'no')
 :set option!            # Toggle option
@@ -88,9 +91,15 @@ Examples:
 ### Resetting Values
 
 ```
-:set option&            # Reset to default value
-:set option^            # Pop one modification (undo last change)
+:set option&            # Reset: drop the layer `:set` writes
+:set option^            # Pop: drop the highest layer, and show the one under it
 ```
+
+For a TUI-local option these walk this client's own stack of modifications.
+For an app-config key they call the daemon, which owns the layers — see
+[App-Config Keys](#app-config-keys) for the layer order and what each verb
+drops. Neither verb edits a file: every layer returns at the next daemon
+start.
 
 ## Available Options
 
@@ -105,26 +114,14 @@ Examples:
 | Option | Type | Description |
 |--------|------|-------------|
 | `thinking` | bool | Show thinking/reasoning tokens in this client (TUI-local) |
-| `thinkingbudget` | preset | Token budget for extended thinking (presets only) |
 
-**Thinking Budget Presets:**
-
-| Preset | Tokens | Description |
-|--------|--------|-------------|
-| `off` | 0 | Disable extended thinking |
-| `minimal` | 512 | Brief reasoning |
-| `low` | 1024 | Light reasoning |
-| `medium` | 4096 | Moderate reasoning |
-| `high` | 8192 | Thorough reasoning |
-| `max` | unlimited | Maximum reasoning |
-
-`thinkingbudget` accepts presets only — a raw token count like
-`:set thinkingbudget=8000` is rejected with the list of valid presets.
+Crucible sets no cap on how much a model reasons: the model decides, and the
+provider default applies. `thinking` controls the display only.
 
 Examples:
 ```
-:set thinkingbudget=high        # Use preset
-:set thinkingbudget=off         # Disable thinking
+:set thinking                   # Show reasoning blocks
+:set nothinking                 # Hide them
 ```
 
 ### Display
@@ -141,10 +138,6 @@ These sync to the daemon and are session-scoped:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `maxiterations` | number/`none` | Cap on agent loop iterations per turn |
-| `executiontimeout` | seconds/`none` | Tool execution timeout |
-| `outputvalidation` | string | Output validation mode |
-| `validationretries` | number | Retries when output validation fails |
 
 ### Context Management
 
@@ -152,15 +145,12 @@ These sync to the daemon and are session-scoped:
 |--------|------|-------------|
 | `contextbudget` | number/`none` | Context token budget (alias: `context_budget`) |
 | `contextstrategy` | enum | `truncate`, `sliding_window`, or `summarize` |
-| `contextwindow` | number/`none` | Sliding window size in message pairs |
-| `autocompact_threshold` | 0.0–1.0/`off`/`default` | Auto-compaction trigger as a fraction of the context budget |
 
 ### Precognition
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `precognition` | bool | Toggle precognition (auto-RAG context injection, daemon-side) |
-| `precognition.results` | number | Number of precognition results to inject (1–20, default: 5) |
 
 ### Permissions
 
@@ -170,11 +160,53 @@ These sync to the daemon and are session-scoped:
 | `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
 | `perm.full_commands` | bool | Show the full command/args (wrapped) in permission prompts; off = compact one-line view. Default: on |
 
-### Unknown Keys
+### App-Config Keys
 
-A key the classifier doesn't recognize is not an error: it is stored locally
-(so `:set key?` round-trips) **and** mirrored into the daemon's app-config
-store, so `:lua cru.config.get(key)` and plugins see the same typed value.
+A key the classifier doesn't recognize is not an error: it is app config, and
+the daemon store owns it. `:set` writes it there, then reads the store back
+and shows you that answer, so `:lua cru.config.get(key)` and plugins see
+exactly what `:set key?` shows.
+
+Every spelling goes to the same store:
+
+| Spelling | Verb | What it does |
+|----------|------|--------------|
+| `:set key?` | `config.get` | Show the value the daemon holds |
+| `:set key??` | `config.get` + `config.origin` | Show the value with the source that owns it, and its file and line |
+| `:set key=value` | `config.set` | Write the value for this run, then show what the store kept |
+| `:set key&` | `config.reset` | Drop the layer `:set` writes, so the key returns to what the defaults and the config files give |
+| `:set key^` | `config.pop` | Drop the highest layer holding the key, and show the layer under it |
+
+A dotted key is a path, not a name with a dot in it: `:set myplugin.debug=1`
+writes where `cru.config.set { myplugin = { debug = true } }` writes, and
+`:set myplugin.debug?` reads it back. A write names one key and leaves every
+sibling alone; it can never remove a key. The verb that removes one,
+`config.unset`, has no `:set` spelling yet — call it over the RPC.
+
+The TUI keeps no copy of its own. If the daemon refuses the write — the seven
+keys that name where the daemon acts are refused at runtime — you get a
+warning that names the key, and no value is recorded. `&` and `^` are refused
+for the same keys, and for the same reason: both change what the store holds.
+
+The config store keeps the layers it merged, lowest first:
+
+```
+default < plugin < settings < toml < lua < registered < cli < rpc
+```
+
+`&` and `^` drop layers from that stack and merge again, so what they show is
+what the merge rule gives — never a second answer beside it. `&` drops the
+`rpc` layer, which is what `:set key=value` writes: the key returns to the
+value the next boot would give it. `^` drops one layer per press, so a key
+written in both `settings.json` and `init.lua` answers with the `init.lua`
+value, and after one `^` with the `settings.json` value.
+
+Both verbs work in memory only, and neither edits a file. Every layer returns
+at the next daemon start. To change a durable preference, edit `init.lua`, or
+save it through the web settings page, which writes `settings.json`. That save
+also drops the `rpc` layer for the key it saves, so a `:set` you made earlier
+does not hide the value you just saved. A key your `init.lua` holds is refused
+instead, and your `:set` value stands.
 
 ## The `:model` Command
 
@@ -241,7 +273,10 @@ The `:set` command modifies a **runtime overlay** on top of your base configurat
 │  Environment variables      │
 ├─────────────────────────────┤
 │  ~/.config/crucible/        │
-│  config.toml (user)         │
+│  init.lua (you)             │
+├─────────────────────────────┤
+│  ~/.config/crucible/        │
+│  settings.json (the UI)     │
 ├─────────────────────────────┤
 │  Built-in defaults          │ ← Lowest priority
 └─────────────────────────────┘
@@ -254,11 +289,11 @@ Runtime changes do **not** persist to config files. They last for the current se
 Use `:set option??` to see where a value came from:
 
 ```
-:set thinkingbudget??
+:set contextbudget??
 # Output:
-# thinkingbudget = high
-#   [Command] high (2025-01-20 14:30:00)
-#   [File] medium (base config)
+# contextbudget = 128000
+#   [Command] 128000 (2025-01-20 14:30:00)
+#   [File] 64000 (base config)
 ```
 
 ## Option Shortcuts
@@ -269,7 +304,6 @@ Some options have short aliases:
 |----------|-----------|
 | `model` | (dynamic — resolved per provider) |
 | `thinking` | (virtual, TUI-only) |
-| `thinkingbudget` | `llm.thinking_budget` |
 | `syntax_theme` | `cli.highlighting.theme` |
 
 ## Examples
@@ -279,21 +313,20 @@ Some options have short aliases:
 :model gpt-4o
 ```
 
-### Enable Extended Thinking
+### Show Extended Thinking
 ```
 :set thinking
-:set thinkingbudget=high
 ```
 
 ### Check Current Config
 ```
 :set model?
-:set thinkingbudget?
+:set contextbudget?
 ```
 
 ### Reset to Defaults
 ```
-:set thinkingbudget&
+:set contextbudget&
 ```
 
 ### Debug Configuration

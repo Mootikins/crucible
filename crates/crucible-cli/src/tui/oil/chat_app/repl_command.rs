@@ -126,7 +126,7 @@ impl ReplCommand {
             Self::Clear => "Clear conversation history",
             Self::Undo => "Undo the last N agent turns (default 1)",
             Self::Model => "Switch model (or list available)",
-            Self::Set => "View/modify runtime options (e.g. :set thinkingbudget=high)",
+            Self::Set => "View/modify runtime options (e.g. :set contextbudget=128000)",
             Self::Export => "Export session to markdown",
             Self::Messages => "Toggle notification drawer",
             Self::Palette => "Open command palette (F1)",

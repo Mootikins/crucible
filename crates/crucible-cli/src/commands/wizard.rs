@@ -14,13 +14,15 @@ use colored::Colorize;
 use crucible_core::config::credentials::SecretsFile;
 use crucible_core::config::BackendType;
 
-/// Returns `true` when NEITHER config file exists: no `config.toml` at the
-/// given path and no `init.lua` beside it. Either one means the user has a
-/// config and the wizard stays out of the way.
+/// Returns `true` when no config file exists beside `config_path`: no
+/// `init.lua` and no `init.luau`. Either name means the user has a config and
+/// the wizard stays out of the way.
+///
+/// `config_path` names the config ROOT, through the file that used to sit in
+/// it. A `config.toml` there is deliberately NOT a config: no reader loads it
+/// any more, so treating it as one suppressed the wizard for every upgrading
+/// user while configuring nothing.
 pub fn is_first_run(config_path: &Path) -> bool {
-    if config_path.exists() {
-        return false;
-    }
     // Either name counts as "already configured". Looking for `init.lua` alone
     // ran the first-run wizard again for anyone whose config is `init.luau`,
     // and the wizard would then write a second config beside the first.
@@ -199,12 +201,22 @@ mod tests {
         assert!(is_first_run(&config_path));
     }
 
+    /// A leftover `config.toml` is NOT a config: nothing reads it.
+    ///
+    /// This is the upgrade path. A user of v0.30.0 has that file, and
+    /// treating it as "already configured" suppressed the wizard while
+    /// configuring nothing — the user then starts on the defaults and meets
+    /// "No LLM providers are configured", with the only explanation in a
+    /// daemon log a background daemon never shows.
     #[test]
-    fn not_first_run_when_config_toml_exists() {
+    fn a_leftover_config_toml_does_not_suppress_the_wizard() {
         let tmp = tempfile::TempDir::new().unwrap();
         let config_path = tmp.path().join("config.toml");
         std::fs::write(&config_path, "kiln_path = \"/tmp\"").unwrap();
-        assert!(!is_first_run(&config_path));
+        assert!(
+            is_first_run(&config_path),
+            "an unread file must not stand in for a config"
+        );
     }
 
     /// An `init.lua` IS a config: the wizard must not fire over one, or a

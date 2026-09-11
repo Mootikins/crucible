@@ -633,12 +633,11 @@ async fn setup_precog_session_with_handler(
         .await
         .unwrap();
 
-    // Register the test's Lua transform_context handler.
-    let state = agent_manager.get_or_create_session_state(&session_id);
-    {
-        let s = state.lock().await;
-        s.lua.load(lua_handler).exec().unwrap();
-    }
+    // Register the test's Lua transform_context handler on the handler VM.
+    let vm = handler_vm();
+    vm.lua.load(lua_handler).exec().unwrap();
+    let (registry, lua) = vm.handlers();
+    agent_manager.set_plugin_handlers(registry, lua);
 
     let received_messages = Arc::new(StdMutex::new(None));
     agent_manager.install_agent_for_test(

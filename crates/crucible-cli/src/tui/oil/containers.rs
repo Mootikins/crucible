@@ -8,13 +8,15 @@
 
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::{Gap, Style};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::components::thinking_component::ThinkingComponent;
 use crate::tui::oil::components::{render_shell_execution, render_subagent};
-use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
+use crate::tui::oil::markdown::{
+    markdown_to_node_streaming, markdown_to_node_styled, Margins, RenderStyle,
+};
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::utils::wrap_words;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
@@ -22,13 +24,6 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /// A chat node — the graduation unit and rendering primitive.
-/// Which half of a split tool a `BackgroundTool` node records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackgroundPhase {
-    Started,
-    Finished,
-}
-
 #[derive(Debug, Clone)]
 pub enum ChatNode {
     UserMessage {
@@ -42,17 +37,16 @@ pub enum ChatNode {
     ToolGroup {
         tools: Vec<CachedToolCall>,
     },
-    /// One phase of a tool that outran the split threshold.
+    /// The end of a tool that outran the split threshold.
     ///
-    /// A slow tool is removed from its group and recorded as two immutable
-    /// nodes, `Started` and later `Finished`. Its live state lives off the
-    /// transcript in `ContainerList::background`, so no transcript node
-    /// mutates once it is written. That matters because a node can scroll out
-    /// of the repaintable window at any time, and a mutable node that scrolls
-    /// away freezes mid-update.
-    BackgroundTool {
+    /// The start is the frozen card in the tool's own group, where the call
+    /// was made. This node is appended when the call finishes, so the
+    /// transcript reads in the order the events happened and no earlier node
+    /// moves. `ran_for` is fixed here; a clock read at render time would make
+    /// the row change on every frame.
+    BackgroundToolFinished {
         tool: CachedToolCall,
-        phase: BackgroundPhase,
+        ran_for: Duration,
     },
     SubagentTask {
         agent: CachedSubagent,
@@ -71,9 +65,11 @@ impl ChatNode {
             Self::UserMessage { .. }
             | Self::SystemMessage { .. }
             | Self::ShellExecution { .. }
-            | Self::BackgroundTool { .. } => true,
+            | Self::BackgroundToolFinished { .. } => true,
             Self::AssistantResponse { complete, .. } => *complete,
-            Self::ToolGroup { tools } => tools.iter().all(|t| t.complete),
+            // A backgrounded card is frozen, so it counts as settled even
+            // though the call still runs.
+            Self::ToolGroup { tools } => tools.iter().all(|t| t.complete || t.backgrounded),
             Self::SubagentTask { agent } => agent.is_terminal(),
         }
     }
@@ -97,50 +93,47 @@ impl ChatNode {
                 );
                 Self::render_assistant_response(text, thinking, is_continuation, *complete, ctx)
             }
-            Self::ToolGroup { tools } => {
-                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width(), ctx.show_diffs)
+            Self::ToolGroup { tools } => Self::render_tool_group(
+                tools,
+                ctx.frame_time,
+                ctx.spinner_frame,
+                ctx.width(),
+                ctx.show_diffs,
+            ),
+            Self::SubagentTask { agent } => {
+                render_subagent(agent, ctx.spinner_frame, ctx.frame_time, ctx.width())
             }
-            Self::SubagentTask { agent } => render_subagent(agent, ctx.spinner_frame, ctx.width()),
             Self::ShellExecution { shell } => render_shell_execution(shell),
-            Self::BackgroundTool { tool, phase } => Self::render_background_tool(tool, *phase, ctx),
+            Self::BackgroundToolFinished { tool, ran_for } => {
+                Self::render_background_finished(tool, *ran_for, ctx)
+            }
             Self::SystemMessage { text } => Self::render_system_message(text),
         }
     }
 
-    /// One phase of a split tool.
+    /// The end of a split tool.
     ///
-    /// Neither phase animates. A spinner here would be frozen the moment the
-    /// node scrolled out of the repaintable window, which is the whole reason
-    /// a slow tool leaves the group.
-    fn render_background_tool(
+    /// It does not animate and it holds no clock read. `ran_for` was fixed
+    /// when the node was written, so the row is the same on every frame and
+    /// it survives a scroll out of the repaintable window.
+    fn render_background_finished(
         tool: &CachedToolCall,
-        phase: BackgroundPhase,
+        ran_for: Duration,
         ctx: &ViewContext<'_>,
     ) -> Node {
         let theme = ctx.theme;
         let dim = Style::new().fg(theme.resolve_color(theme.colors.text_dim));
         let muted = Style::new().fg(theme.resolve_color(theme.colors.text_muted));
-
-        match phase {
-            BackgroundPhase::Started => row([
-                styled(" \u{25B8} ", dim),
-                styled(tool.name.to_string(), dim),
-                styled(" started in the background", muted),
-            ]),
-            BackgroundPhase::Finished => {
-                let elapsed = tool.started_at.elapsed();
-                let summary = if let Some(error) = tool.error.as_ref() {
-                    format!(" failed after {:.1}s: {error}", elapsed.as_secs_f32())
-                } else {
-                    format!(" finished after {:.1}s", elapsed.as_secs_f32())
-                };
-                row([
-                    styled(" \u{25AA} ", dim),
-                    styled(tool.name.to_string(), dim),
-                    styled(summary, muted),
-                ])
-            }
-        }
+        let summary = if let Some(error) = tool.error.as_ref() {
+            format!(" failed after {:.1}s: {error}", ran_for.as_secs_f32())
+        } else {
+            format!(" finished after {:.1}s", ran_for.as_secs_f32())
+        };
+        row([
+            styled(" \u{25AA} ", dim),
+            styled(tool.name.to_string(), dim),
+            styled(summary, muted),
+        ])
     }
 
     /// User message with colored top/bottom bars.
@@ -216,10 +209,16 @@ impl ChatNode {
             }
         }
 
-        // Then markdown content
+        // Then markdown content. While the message streams, a trailing table
+        // stays as source lines: laying it out again on every delta reshapes
+        // rows that may already sit above the repaintable window.
         if !content.is_empty() {
             let style = RenderStyle::natural_with_margins(ctx.width(), margins);
-            let md_node = markdown_to_node_styled(content, style);
+            let md_node = if is_complete {
+                markdown_to_node_styled(content, style)
+            } else {
+                markdown_to_node_streaming(content, style)
+            };
             items.push(md_node);
         }
 
@@ -233,13 +232,14 @@ impl ChatNode {
     /// Tool group: renders each tool via the existing tool renderer.
     fn render_tool_group(
         tools: &[CachedToolCall],
+        now: Instant,
         spinner_frame: usize,
         width: usize,
         show_diffs: bool,
     ) -> Node {
         let items: Vec<Node> = tools
             .iter()
-            .map(|tool| tool.render_compact_with(spinner_frame, width, show_diffs))
+            .map(|tool| tool.render_compact_with(now, spinner_frame, width, show_diffs))
             .filter(|n| !matches!(n, Node::Empty))
             .collect();
 
@@ -380,43 +380,43 @@ impl ContainerList {
         }
     }
 
-    /// Move any tool that has run past `threshold` out of the transcript.
+    /// Freeze any tool that has run past `threshold`, in the place it was
+    /// called.
     ///
-    /// The transcript keeps two immutable nodes for a slow tool instead of one
-    /// node that mutates for as long as the tool runs. A fast tool is never
-    /// split, so the common case stays a single node.
+    /// The card stops there: no spinner, no elapsed time, no streamed output.
+    /// The live copy moves off the transcript into `self.background`, and the
+    /// finish node is appended when the call ends. So a slow tool costs two
+    /// immutable rows and no node above the tail ever moves.
     ///
-    /// Returns whether anything moved, so the caller can request a frame.
-    pub fn split_slow_tools(&mut self, threshold: Duration) -> bool {
-        let mut started: Vec<CachedToolCall> = Vec::new();
+    /// The freeze is the one change in place, and it happens `threshold`
+    /// after the call, while the card still sits near the tail where the
+    /// renderer can address it. Nothing else rewrites a written row. That is
+    /// what the terminal requires: a row that scrolls above the screen
+    /// belongs to the terminal, and a later repaint cannot reach it.
+    ///
+    /// `now` is the frame clock. A replay that never advances it never
+    /// freezes, so a slow test machine renders the same transcript as a fast
+    /// one.
+    ///
+    /// Returns whether anything froze, so the caller can request a frame.
+    pub fn split_slow_tools(&mut self, now: Instant, threshold: Duration) -> bool {
+        let mut froze = false;
         for node in self.nodes.iter_mut() {
             let ChatNode::ToolGroup { tools } = node else {
                 continue;
             };
-            let mut index = 0;
-            while index < tools.len() {
-                let slow = !tools[index].complete && tools[index].started_at.elapsed() >= threshold;
-                if slow {
-                    started.push(tools.remove(index));
-                } else {
-                    index += 1;
+            for tool in tools.iter_mut() {
+                let slow =
+                    !tool.complete && !tool.backgrounded && tool.elapsed_at(now) >= threshold;
+                if !slow {
+                    continue;
                 }
+                tool.backgrounded = true;
+                self.background.push(tool.clone());
+                froze = true;
             }
         }
-        if started.is_empty() {
-            return false;
-        }
-        // An emptied group would render as a blank band.
-        self.nodes
-            .retain(|node| !matches!(node, ChatNode::ToolGroup { tools } if tools.is_empty()));
-        for tool in started {
-            self.nodes.push(ChatNode::BackgroundTool {
-                tool: tool.clone(),
-                phase: BackgroundPhase::Started,
-            });
-            self.background.push(tool);
-        }
-        true
+        froze
     }
 
     /// Apply an update to a split tool, if this call belongs to one.
@@ -450,8 +450,15 @@ impl ContainerList {
 
     /// Write the finish node for a split tool and drop its live copy.
     ///
+    /// `now` is the frame clock; the finish node records the run time from it.
+    ///
     /// Returns whether this call belonged to a split tool.
-    pub fn finish_background_tool(&mut self, name: &str, call_id: Option<&str>) -> bool {
+    pub fn finish_background_tool(
+        &mut self,
+        name: &str,
+        call_id: Option<&str>,
+        now: Instant,
+    ) -> bool {
         let position = match call_id {
             Some(cid) => self
                 .background
@@ -467,10 +474,9 @@ impl ContainerList {
         };
         let mut tool = self.background.remove(position);
         tool.complete = true;
-        self.nodes.push(ChatNode::BackgroundTool {
-            tool,
-            phase: BackgroundPhase::Finished,
-        });
+        let ran_for = tool.elapsed_at(now);
+        self.nodes
+            .push(ChatNode::BackgroundToolFinished { tool, ran_for });
         true
     }
 
@@ -492,13 +498,18 @@ impl ContainerList {
         for node in self.nodes.iter_mut().rev() {
             if let ChatNode::ToolGroup { tools } = node {
                 // Match by call_id first, then by name
+                // A frozen card never changes again. Its live copy is in
+                // `self.background`, which `update_background_tool` reaches.
                 let found = if let Some(cid) = call_id {
                     tools
                         .iter_mut()
                         .rev()
-                        .find(|t| t.call_id.as_deref() == Some(cid))
+                        .find(|t| !t.backgrounded && t.call_id.as_deref() == Some(cid))
                 } else {
-                    tools.iter_mut().rev().find(|t| t.name.as_ref() == name)
+                    tools
+                        .iter_mut()
+                        .rev()
+                        .find(|t| !t.backgrounded && t.name.as_ref() == name)
                 };
                 if let Some(tool) = found {
                     f(tool);
@@ -522,7 +533,7 @@ impl ContainerList {
                 if let Some(tool) = tools
                     .iter_mut()
                     .rev()
-                    .find(|t| t.call_id.as_deref() == Some(call_id))
+                    .find(|t| !t.backgrounded && t.call_id.as_deref() == Some(call_id))
                 {
                     f(tool);
                     return;
@@ -611,6 +622,55 @@ mod tests {
             .map(|n| render_node(n, show_thinking))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn render_lines(list: &ContainerList) -> Vec<String> {
+        render_list(list, false)
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// A streaming table must not reshape the rows above it. The terminal owns
+    /// every transcript row that scrolled off the screen, so the transcript
+    /// only appends there. A table lays out from the widest cell in the whole
+    /// table, so each new row can rewrite every row before it.
+    #[test]
+    fn a_streaming_table_appends_lines_and_lays_out_when_complete() {
+        let deltas = [
+            "Here are the commands.\n\n",
+            "| Command | What it does |\n",
+            "|---|---|\n",
+            "| `cru chat` | Start a chat |\n",
+            "| `cru session list` | List every session in this project |\n",
+        ];
+
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        list.start_assistant_response();
+
+        let mut previous: Vec<String> = Vec::new();
+        for delta in deltas {
+            list.append_text(delta);
+            let lines = render_lines(&list);
+            assert!(
+                lines.starts_with(previous.as_slice()),
+                "a delta rewrote earlier lines\nbefore: {previous:#?}\nafter: {lines:#?}"
+            );
+            previous = lines;
+        }
+
+        assert!(
+            !previous.iter().any(|l| l.contains('┌')),
+            "the streaming table must stay as source lines: {previous:#?}"
+        );
+
+        list.complete_response();
+        let complete = render_lines(&list);
+        assert!(
+            complete.iter().any(|l| l.contains('┌')),
+            "the finished table must be laid out: {complete:#?}"
+        );
     }
 
     // ─── Live thinking rendering ───────────────────────────────────────
@@ -806,28 +866,72 @@ mod tests {
         list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
         list.update_tool("read_file", None, |t| t.mark_complete());
 
-        assert!(!list.split_slow_tools(Duration::from_millis(500)));
+        assert!(!list.split_slow_tools(Instant::now(), Duration::from_millis(500)));
         assert_eq!(list.len(), 1, "the tool stays one grouped node");
         assert_eq!(list.background_task_count(), 0);
     }
 
     #[test]
-    fn a_slow_tool_leaves_the_group_as_a_started_node() {
+    fn a_slow_tool_freezes_where_it_was_called() {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
 
         // Zero threshold: the tool is already past it.
-        assert!(list.split_slow_tools(Duration::ZERO));
-        assert_eq!(list.len(), 1, "the emptied group must not linger");
-        assert!(matches!(
-            list.nodes()[0],
-            ChatNode::BackgroundTool {
-                phase: BackgroundPhase::Started,
-                ..
-            }
-        ));
+        assert!(list.split_slow_tools(Instant::now(), Duration::ZERO));
+        assert_eq!(list.len(), 1, "the card stays in its own group");
+        let ChatNode::ToolGroup { tools } = &list.nodes()[0] else {
+            panic!("the tool must stay in its group: {:?}", list.nodes()[0]);
+        };
+        assert_eq!(tools.len(), 1, "the group keeps its card");
+        assert!(tools[0].backgrounded, "the card is frozen");
         assert_eq!(list.background_task_count(), 1);
+    }
+
+    /// The bug this replaced: the freeze used to remove the card from its
+    /// group, so every line below it moved up. A row that already scrolled
+    /// above the screen belongs to the terminal and no repaint can reach it,
+    /// so the repaint wrote the wrong text over the seam.
+    ///
+    /// The assertion is on the rendered lines, not on the node list. Line
+    /// positions are what the renderer diffs, and a node list can keep its
+    /// length while its rows move.
+    #[test]
+    fn a_freeze_moves_no_rendered_line() {
+        let mut list = ContainerList::new();
+        list.add_user_message("run it".into());
+        list.mark_turn_active();
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        list.start_assistant_response();
+        list.append_text("the answer");
+
+        let before: Vec<String> = render_list(&list, false)
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert!(list.split_slow_tools(Instant::now(), Duration::ZERO));
+        let after: Vec<String> = render_list(&list, false)
+            .lines()
+            .map(str::to_owned)
+            .collect();
+
+        assert_eq!(
+            before.len(),
+            after.len(),
+            "the freeze must not change the line count.\nbefore:\n{before:#?}\nafter:\n{after:#?}"
+        );
+        let answer_before = before.iter().position(|l| l.contains("the answer"));
+        let answer_after = after.iter().position(|l| l.contains("the answer"));
+        assert_eq!(
+            answer_before, answer_after,
+            "the answer must stay on its own line.\nbefore:\n{before:#?}\nafter:\n{after:#?}"
+        );
+        assert!(
+            after
+                .iter()
+                .any(|l| l.contains("started in the background")),
+            "the frozen card must say so: {after:#?}"
+        );
     }
 
     #[test]
@@ -835,16 +939,13 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.split_slow_tools(Duration::ZERO);
+        list.split_slow_tools(Instant::now(), Duration::ZERO);
 
-        assert!(list.finish_background_tool("bash", None));
-        assert_eq!(list.len(), 2, "start and finish are separate nodes");
+        assert!(list.finish_background_tool("bash", None, Instant::now()));
+        assert_eq!(list.len(), 2, "the finish node is appended below the card");
         assert!(matches!(
             list.nodes()[1],
-            ChatNode::BackgroundTool {
-                phase: BackgroundPhase::Finished,
-                ..
-            }
+            ChatNode::BackgroundToolFinished { .. }
         ));
         assert_eq!(
             list.background_task_count(),
@@ -858,18 +959,28 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.split_slow_tools(Duration::ZERO);
+        list.split_slow_tools(Instant::now(), Duration::ZERO);
 
-        // Output arriving after the split must not reach a transcript node.
+        // Output arriving after the freeze must not reach the frozen card.
         assert!(list.update_background_tool("bash", None, |t| t.append_output("line\n")));
         assert_eq!(list.len(), 1, "no node was added by output alone");
-        assert!(matches!(
-            list.nodes()[0],
-            ChatNode::BackgroundTool {
-                phase: BackgroundPhase::Started,
-                ..
-            }
-        ));
+        let ChatNode::ToolGroup { tools } = &list.nodes()[0] else {
+            panic!("the card must stay in its group");
+        };
+        assert!(
+            tools[0].output_tail.is_empty(),
+            "the frozen card must take no output"
+        );
+
+        // The normal update path must also miss it.
+        list.update_tool("bash", None, |t| t.append_output("other\n"));
+        let ChatNode::ToolGroup { tools } = &list.nodes()[0] else {
+            unreachable!()
+        };
+        assert!(
+            tools[0].output_tail.is_empty(),
+            "update_tool must skip a frozen card"
+        );
     }
 
     #[test]
@@ -879,8 +990,8 @@ mod tests {
         let mut list = ContainerList::new();
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.split_slow_tools(Duration::ZERO);
-        list.finish_background_tool("bash", None);
+        list.split_slow_tools(Instant::now(), Duration::ZERO);
+        list.finish_background_tool("bash", None, Instant::now());
 
         for node in list.nodes() {
             assert!(node.is_complete(), "background nodes must be immutable");

@@ -30,6 +30,7 @@
 pub mod acp;
 pub mod acp_handle;
 pub mod acp_launch;
+pub mod activity;
 pub mod agent_cards;
 pub mod agent_factory;
 pub mod agent_manager;
@@ -73,6 +74,7 @@ pub mod rpc_client;
 pub mod rpc_helpers;
 pub(crate) mod rules_files;
 pub mod runtime_defaults;
+pub mod runtime_path;
 pub mod scm;
 pub mod server;
 pub mod session_bridge;
@@ -111,7 +113,7 @@ pub use daemon_plugins::{
 pub use delegation::{DelegationRequest, DelegationService, DelegationSpawned, DelegationSpawner};
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
-pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
+pub use lifecycle::{remove_socket, socket_path, ShutdownSignals};
 pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
 pub use observe::{events, id, indexer, markdown, session};

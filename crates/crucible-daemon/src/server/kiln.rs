@@ -509,7 +509,7 @@ pub(crate) async fn handle_search_vectors(
         kiln_name: km.kiln_name_for(&kiln_path),
         kiln_path,
     };
-    // No session VM behind an RPC: `search:rerank` reaches plugin handlers.
+    // `search:rerank` reaches the handler VM's registry.
     let rerank = {
         let guard = plugin_loader.lock().await;
         guard.as_ref().map(|loader| {

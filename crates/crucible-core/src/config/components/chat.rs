@@ -17,6 +17,43 @@ pub enum AgentPreference {
     Crucible,
 }
 
+/// The system prompt a session starts with when nothing else sets one.
+///
+/// This lives here, rather than in `runtime/defaults/init.luau`, because a
+/// shipped value is [`SourceTag::Default`] — the lowest layer. Written from
+/// Lua it would have outranked `settings.json`, so the settings UI could not
+/// have changed it.
+///
+/// [`SourceTag::Default`]: crate::config::SourceTag::Default
+pub const DEFAULT_SYSTEM_PROMPT: &str = "\
+You are Crucible, a knowledge-grounded agent working alongside the user.
+
+Ground your answers in the notes and context you are given. When context
+is missing, say so and offer to look \u{2014} never invent a note, a path, or a
+quotation. Reference notes by title, and link them with [[wikilinks]] when
+you write to the kiln.
+
+Use your tools rather than guessing: read a file before describing it, and
+verify a change before reporting it done. Prefer one decisive action over a
+list of options.
+
+Be concise. Match the depth of the question \u{2014} a short question gets a short
+answer, and code or structure only when it earns its place.";
+
+/// Matches `crucible_daemon::agent_manager::autocompact::DEFAULT_AUTOCOMPACT_THRESHOLD`,
+/// which is the constant the trigger used before this became a config key.
+fn default_autocompact_threshold() -> f32 {
+    0.95
+}
+
+fn default_precognition_results() -> usize {
+    5
+}
+
+fn default_system_prompt() -> String {
+    DEFAULT_SYSTEM_PROMPT.to_string()
+}
+
 /// Simple chat configuration - only essential user settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
@@ -27,10 +64,6 @@ pub struct ChatConfig {
     pub agent_preference: AgentPreference,
     /// LLM endpoint URL (for Ollama/compatible providers)
     pub endpoint: Option<String>,
-    /// Temperature for generation (0.0-2.0)
-    pub temperature: Option<f32>,
-    /// Maximum tokens to generate
-    pub max_tokens: Option<u32>,
     /// Show thinking/reasoning tokens from models that support it
     ///
     /// When enabled, thinking tokens are streamed in a quote block below the
@@ -45,6 +78,25 @@ pub struct ChatConfig {
     /// Useful for trimming visual noise in long sessions.
     #[serde(default = "default_true")]
     pub show_diffs: bool,
+    /// How many notes a Precognition search injects.
+    ///
+    /// Read once per session, on the first user message: `should_run_precognition`
+    /// gates the search to that turn.
+    #[serde(default = "default_precognition_results")]
+    pub precognition_results: usize,
+    /// The fraction of `context_budget` that triggers an auto-compaction.
+    ///
+    /// `0.0` disables it. A tuning constant, not a per-session decision, which
+    /// is why it is here and not a session knob.
+    #[serde(default = "default_autocompact_threshold")]
+    pub autocompact_threshold: f32,
+    /// The system prompt a new session starts from.
+    ///
+    /// An agent card's own prompt wins; this fills a card that names none.
+    /// A start hook reads it through `session.system_prompt` and may extend
+    /// it, which is the per-session tier.
+    #[serde(default = "default_system_prompt")]
+    pub system_prompt: String,
 }
 
 impl Default for ChatConfig {
@@ -53,10 +105,11 @@ impl Default for ChatConfig {
             model: None,
             agent_preference: AgentPreference::default(),
             endpoint: None,
-            temperature: None,
-            max_tokens: None,
             show_thinking: false,
             show_diffs: true,
+            precognition_results: default_precognition_results(),
+            autocompact_threshold: default_autocompact_threshold(),
+            system_prompt: default_system_prompt(),
         }
     }
 }
@@ -67,18 +120,6 @@ impl ChatConfig {
         self.model
             .clone()
             .unwrap_or_else(|| super::defaults::DEFAULT_CHAT_MODEL.to_string())
-    }
-
-    /// Get the temperature, using default if not specified
-    pub fn temperature(&self) -> f32 {
-        self.temperature
-            .unwrap_or(super::defaults::DEFAULT_TEMPERATURE)
-    }
-
-    /// Get max tokens, using default if not specified
-    pub fn max_tokens(&self) -> u32 {
-        self.max_tokens
-            .unwrap_or(super::defaults::DEFAULT_CHAT_MAX_TOKENS)
     }
 }
 

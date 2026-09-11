@@ -293,7 +293,7 @@ fn cru_kiln_path_resolves_a_registered_name_through_the_registry() {
 /// `cru.shell.exec(command: string, ...)` writes the call and expects it to
 /// exist. This test's first form asked whether the rendered text contained
 /// `"{leaf}: ("`, which for `cru.on` is `on: (` — a needle that matches
-/// `option: (` and `set_output_validation: (`. It passed while `cru.on` was
+/// `option: (` and `session: (`. It passed while `cru.on` was
 /// absent from the file entirely.
 #[tokio::test]
 async fn every_declared_signature_exists_on_the_vm() {
@@ -404,7 +404,7 @@ async fn the_luau_declarations_cover_the_vm_namespaces() {
 /// Every PROFILE, not just the daemon one.
 ///
 /// This built `DaemonPluginLoader` alone, so a function registered only on the
-/// session VM — `cru.permissions.on_request` and its neighbours — could go
+/// daemon VM — `cru.permissions.on_request` and its neighbours — could go
 /// undeclared with nothing to say so, and `cru-session.d.luau` would render it
 /// `(...any) -> any` while the header still counted it as unsigned. That is
 /// the same false green the profiles were built to end, one VM short of the
@@ -425,8 +425,6 @@ async fn every_function_is_signed_or_listed() {
     for profile in VmProfile::all() {
         let lua = match profile {
             VmProfile::Daemon => loader.executor().lua().clone(),
-            VmProfile::Session => crucible_daemon::vm_profiles::session_vm().expect("session vm"),
-            VmProfile::Config => crucible_daemon::vm_profiles::config_vm().expect("config vm"),
             VmProfile::Statusline => {
                 crucible_daemon::vm_profiles::statusline_vm().expect("statusline vm")
             }

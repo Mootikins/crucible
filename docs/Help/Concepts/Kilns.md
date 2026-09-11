@@ -30,10 +30,15 @@ of documented truth, read with the same tools as anything else.
 
 Point it somewhere else, or replace it, by naming it yourself:
 
-```toml
-[kilns.crucible-docs]
-path = "~/src/crucible/docs"
-lazy = true
+```lua
+cru.config.set({
+    kilns = {
+        ["crucible-docs"] = {
+            path = "~/src/crucible/docs",
+            lazy = true,
+        },
+    },
+})
 ```
 
 `Meta/` — the roadmap, decision log and planning notes — is deliberately not
@@ -45,7 +50,7 @@ this" should not be retrieving a roadmap that competes with the answer.
 A kiln is simply a folder containing:
 
 - **Markdown files** (.md) - Your notes, ideas, documents
-- **Config.toml** (optional) - Configuration for this kiln
+- **`.crucible/kiln.toml`** (optional) - the kiln's display name
 - **Any folder structure** - Organize however you like
 
 That's it. No special database, no proprietary format, no lock-in.

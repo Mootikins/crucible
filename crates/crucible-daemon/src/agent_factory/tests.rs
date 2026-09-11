@@ -44,10 +44,7 @@ fn test_agent_config() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -55,15 +52,8 @@ fn test_agent_config() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: Default::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     }
 }
@@ -335,8 +325,8 @@ async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway()
     let model = chat_client
         .model_iden("gpt-4o-mini")
         .expect("model iden for gpt-4o-mini");
-    let mut handle = GenaiAgentHandle::new(client, model, "system", defs, None)
-        .with_deferrable_tools(deferrable);
+    let mut handle =
+        GenaiAgentHandle::new(client, model, "system", defs).with_deferrable_tools(deferrable);
     // Tiny budget → the tool schemas exceed the 15% share.
     handle.set_context_budget(Some(1_000)).await.unwrap();
 
@@ -469,7 +459,7 @@ async fn rules_file_contents_reach_the_system_prompt() {
 /// the handle that talks to the model.
 ///
 /// Asserted on the factory rather than on the setters, because the setters
-/// were never the broken part: `session.set_temperature`, `cru.defaults`,
+/// were never the broken part: `session.set_temperature`, a start hook,
 /// `[llm] temperature` and an agent card's `temperature:` all write to
 /// `SessionAgent` correctly, and every one of those writes invalidates the
 /// agent cache so the handle is rebuilt *here*. This is the single hop
@@ -479,14 +469,11 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     let ws = tempfile::tempdir().unwrap();
 
     let config = SessionAgent {
-        temperature: Some(0.2),
-        max_tokens: Some(512),
         context_budget: Some(64_000),
         // Deliberately not `Truncate`: that is the default, so a handle
         // built with a default strategy would satisfy the assertion
         // without ever having read the session's choice.
         context_strategy: crucible_core::session::ContextStrategy::SlidingWindow,
-        context_window: Some(128_000),
         ..test_agent_config()
     };
 
@@ -517,15 +504,16 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     .await
     .expect("agent creation should succeed");
 
-    assert_eq!(handle.get_temperature(), Some(0.2), "temperature");
-    assert_eq!(handle.get_max_tokens(), Some(512), "max_tokens");
+    // `temperature` and `max_tokens` are config-only now, with no getter to
+    // read back. `generation_settings_reach_the_outgoing_chat_options` in
+    // `provider::genai_handle` asserts them on `ChatOptions` — the object
+    // that goes on the wire — which is the stronger claim anyway.
     assert_eq!(handle.get_context_budget(), Some(64_000), "context_budget");
     assert_eq!(
         handle.get_context_strategy(),
         crucible_core::session::ContextStrategy::SlidingWindow,
         "context_strategy"
     );
-    assert_eq!(handle.get_context_window(), Some(128_000), "context_window");
 }
 
 #[tokio::test]

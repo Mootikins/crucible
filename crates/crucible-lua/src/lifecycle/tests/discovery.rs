@@ -30,7 +30,17 @@ fn test_discover_directory_without_manifest() {
     assert!(discovered.contains(&"my-plugin".to_string()));
 
     let plugin = manager.get("my-plugin").unwrap();
-    assert_eq!(plugin.version(), "0.0.0");
+    // Discovery reads the directory; it never runs the plugin's Lua. The
+    // version lives in the spec table, so at this point NO version is known.
+    // The manifest used to hold a "0.0.0" placeholder here, which the RPC
+    // and the web UI then showed as if a release had said so.
+    assert_eq!(plugin.version(), None);
+    let wire = serde_json::to_value(&plugin.manifest).unwrap();
+    assert_eq!(
+        wire["version"],
+        serde_json::Value::Null,
+        "a discovered-but-unloaded plugin must report no version: {wire}"
+    );
 }
 
 #[test]
@@ -50,28 +60,30 @@ fn test_discover_manifestless_with_spec_override() {
     manager.load("my-plugin").unwrap();
 
     let plugin = manager.get("my-plugin").unwrap();
-    // Name updated from spec (since version was 0.0.0 = directory defaults)
-    assert_eq!(plugin.manifest.name, "custom-name");
-    assert_eq!(plugin.version(), "1.2.0");
+    // Identity stays the directory name; the declared one is recorded for
+    // `[plugins.<name>]` lookup. Version does come from the spec — it names
+    // nothing the host has to resolve before running Lua.
+    assert_eq!(plugin.manifest.name, "my-plugin");
+    assert_eq!(
+        plugin.manifest.declared_name.as_deref(),
+        Some("custom-name")
+    );
+    assert_eq!(plugin.version(), Some("1.2.0"));
 }
 
+/// The spec table supplies a plugin's version and description.
+///
+/// There is no manifest to take precedence over it any more. This replaces
+/// `test_manifest_takes_precedence_over_lua_table`, whose premise was that a
+/// `plugin.yaml` could out-declare the Lua — a file that no longer exists.
 #[test]
-fn test_manifest_takes_precedence_over_lua_table() {
+fn the_spec_table_supplies_the_plugins_identity() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = temp.path().join("my-plugin");
     std::fs::create_dir_all(&plugin_dir).unwrap();
-
-    // Manifest with explicit version
-    std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        "name: my-plugin\nversion: \"2.0.0\"\nmain: init.lua\n",
-    )
-    .unwrap();
-
-    // Lua spec with different version
     std::fs::write(
         plugin_dir.join("init.lua"),
-        r#"return { name = "other-name", version = "9.9.9" }"#,
+        r#"return { name = "my-plugin", version = "2.0.0" }"#,
     )
     .unwrap();
 
@@ -80,9 +92,8 @@ fn test_manifest_takes_precedence_over_lua_table() {
     manager.load("my-plugin").unwrap();
 
     let plugin = manager.get("my-plugin").unwrap();
-    // Manifest values should win (version != "0.0.0", so spec doesn't override)
     assert_eq!(plugin.manifest.name, "my-plugin");
-    assert_eq!(plugin.version(), "2.0.0");
+    assert_eq!(plugin.version(), Some("2.0.0"));
 }
 
 /// Pure-Lua vendoring is THE supported dependency mechanism: native rocks
@@ -162,5 +173,43 @@ fn a_plugin_named_declare_is_a_named_discovery_error_not_a_plugin() {
                 .contains(crucible_core::config::PLUGINS_DECLARE_KEY),
         "the error names the reserved name and why: {}",
         errors[0].error
+    );
+}
+
+/// The file name Crucible removed. It appears here, and in no other fixture
+/// in the tree, because this test is the one place whose subject is the
+/// removal itself.
+const REMOVED_MANIFEST_FILE: &str = "plugin.yaml";
+
+/// A directory that holds only the removed manifest file is not a plugin.
+///
+/// `test_empty_directory_not_discovered` does not cover this: an empty
+/// directory fails every possible rule, so it stays green under a
+/// reintroduced manifest branch. Fixtures across two crates kept writing a
+/// manifest beside their entry file for months after the loader stopped
+/// reading one, and no test could fail, so the dead format went on teaching
+/// itself. This states the rule the loader actually applies — the entry file
+/// alone identifies a plugin.
+#[test]
+fn a_directory_holding_only_the_removed_manifest_is_not_a_plugin() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("manifest-only");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(
+        plugin_dir.join(REMOVED_MANIFEST_FILE),
+        "name: manifest-only\nversion: \"1.0.0\"\nmain: init.lua\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert!(
+        discovered.is_empty(),
+        "a manifest identifies no plugin, but discovery returned {discovered:?}"
+    );
+    assert!(
+        manager.get("manifest-only").is_none(),
+        "a manifest-only directory reached the plugin table"
     );
 }

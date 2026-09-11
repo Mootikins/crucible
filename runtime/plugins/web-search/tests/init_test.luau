@@ -71,13 +71,6 @@ describe("web-search plugin", function()
             expect.truthy(params.provider.optional)
         end)
 
-        it("declares the network capability it uses", function()
-            local caps = {}
-            for _, c in ipairs(plugin.capabilities) do
-                caps[c] = true
-            end
-            expect.truthy(caps.network)
-        end)
     end)
 
     describe("arguments", function()

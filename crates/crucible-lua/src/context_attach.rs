@@ -173,7 +173,7 @@ pub fn register_context_attach(
     registry: Arc<ContextAttachRegistry>,
 ) -> Result<(), LuaError> {
     let globals = lua.globals();
-    // The per-session VM is a bare `Lua::new()` with no `cru` table, while the
+    // A bare `Lua::new()` has no `cru` table, while the
     // plugin VM has a fully populated one. Create only what's missing so this
     // registers identically on both — a handler shouldn't care which VM it
     // happens to be running in.

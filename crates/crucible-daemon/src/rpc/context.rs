@@ -115,10 +115,14 @@ pub struct RpcContext {
     /// client knew it. A refusal that names the config layer names this file,
     /// so the user knows which one to edit.
     pub config_path: Option<std::path::PathBuf>,
-    /// The extracted app config the daemon was bound with, as JSON — what
-    /// `config.effective` serves (with the LIVE provider table folded in at
-    /// answer time).
-    pub effective_config: Option<serde_json::Value>,
+    /// The extracted app config the daemon was BOUND with, as JSON.
+    ///
+    /// Not what a handler wants: it is frozen at bind, so a `config.set`
+    /// never reached it and the setting changed nothing at all — not after a
+    /// restart, but immediately. Call [`RpcContext::effective_config`], which
+    /// reads the live store. This field survives only to supply the location
+    /// keys, which the store drops when the boot phase ends.
+    pub bound_config: Option<serde_json::Value>,
     /// The boot-input hash (`daemon_plugins::boot_input_hash`) recorded at
     /// boot; `None` for a daemon handed a config value directly.
     pub boot_hash: Option<String>,
@@ -160,12 +164,42 @@ pub struct RpcContextParams {
     pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     pub kiln_state: Arc<crate::kiln_state::KilnStateStore>,
     pub config_path: Option<std::path::PathBuf>,
-    pub effective_config: Option<serde_json::Value>,
+    pub bound_config: Option<serde_json::Value>,
     pub boot_hash: Option<String>,
     pub config_default_kiln: Option<String>,
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
     pub config_projects: Vec<crate::project_manager::ProjectLayerEntry>,
     pub notifications: Arc<crate::notifications::NotificationHub>,
+}
+
+/// [`RpcContext::effective_config`]'s pure half: the live store value, with
+/// the bind snapshot's location keys folded back in.
+///
+/// Split out because the impure half reads a process global, and a resolver
+/// that reads a global cannot be tested for the case that matters — a store
+/// that has moved on since bind.
+///
+/// `live` alone is wrong (it has no locations after `end_boot_phase`), and
+/// `bound` alone is the bug (it is frozen at bind).
+fn fold_locations(
+    live: Option<serde_json::Value>,
+    bound: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    // No bind snapshot means the daemon was bound without an app config.
+    // `config.effective` says so rather than inventing one from the store,
+    // which is what it did before this function existed.
+    let bound_value = bound?;
+    let (Some(bound_map), Some(serde_json::Value::Object(mut merged))) =
+        (bound_value.as_object(), live)
+    else {
+        return Some(bound_value.clone());
+    };
+    for key in crucible_core::config::LOCATION_CONFIG_KEYS {
+        if let Some(value) = bound_map.get(key) {
+            merged.insert(key.to_string(), value.clone());
+        }
+    }
+    Some(serde_json::Value::Object(merged))
 }
 
 impl RpcContext {
@@ -187,7 +221,7 @@ impl RpcContext {
             kiln_registry,
             kiln_state,
             config_path,
-            effective_config,
+            bound_config,
             boot_hash,
             config_default_kiln,
             llm_state,
@@ -218,7 +252,7 @@ impl RpcContext {
             kiln_registry,
             kiln_state,
             config_path,
-            effective_config,
+            bound_config,
             boot_hash,
             config_default_kiln,
             llm_state,
@@ -226,6 +260,23 @@ impl RpcContext {
             session_lifecycle,
             notifications,
         }
+    }
+
+    /// The daemon's effective config: the LIVE config store, with the
+    /// location keys the daemon was bound with folded back in.
+    ///
+    /// Two halves, because the two change on different clocks. Everything a
+    /// user can set at runtime comes from the store, so a `config.set` is
+    /// visible to the next reader in the same process. The seven
+    /// `LOCATION_CONFIG_KEYS` come from the bind snapshot: they name where
+    /// the daemon executes code, `ConfigStore::end_boot_phase` drops them
+    /// from the plugin-visible value on purpose, and they cannot change
+    /// without a restart anyway.
+    ///
+    /// Reading `bound_config` directly is the bug this replaces — the field
+    /// is bound once, so every handler served a value frozen at boot.
+    pub fn effective_config(&self) -> Option<serde_json::Value> {
+        fold_locations(crucible_lua::get_app_config(), self.bound_config.as_ref())
     }
 
     /// A context for handler unit tests, built from the managers the test
@@ -298,7 +349,7 @@ impl RpcContext {
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(&data_home)),
             config_projects: Vec::new(),
             config_path: None,
-            effective_config: None,
+            bound_config: None,
             boot_hash: None,
             config_default_kiln: None,
             data_home,
@@ -312,5 +363,95 @@ impl RpcContext {
             kiln_registry: registry,
             notifications,
         })
+    }
+}
+
+#[cfg(test)]
+mod effective_config_tests {
+    use super::fold_locations;
+    use serde_json::json;
+
+    /// A value the store gained after bind reaches the reader.
+    ///
+    /// This is the whole point. `config.set` merges into the store and
+    /// nothing else; serving the bind snapshot made every such write a no-op
+    /// in the same process, not only across a restart.
+    #[test]
+    fn a_later_store_write_reaches_the_reader() {
+        let bound = json!({ "chat": { "context_budget": 1024 } });
+        let live = json!({ "chat": { "context_budget": 4096 } });
+
+        let effective = fold_locations(Some(live), Some(&bound)).expect("a bound config");
+
+        assert_eq!(
+            effective.pointer("/chat/context_budget"),
+            Some(&json!(4096)),
+            "the store is the live truth; the bind snapshot is not"
+        );
+    }
+
+    /// Location keys come from the bind snapshot, because the store drops
+    /// them when the boot phase ends.
+    #[test]
+    fn location_keys_survive_from_the_bind_snapshot() {
+        let bound = json!({ "kiln_path": "/k", "data_home": "/d", "chat": { "x": 1 } });
+        let live = json!({ "chat": { "x": 2 } });
+
+        let effective = fold_locations(Some(live), Some(&bound)).expect("a bound config");
+
+        assert_eq!(effective.get("kiln_path"), Some(&json!("/k")));
+        assert_eq!(effective.get("data_home"), Some(&json!("/d")));
+        assert_eq!(effective.pointer("/chat/x"), Some(&json!(2)));
+    }
+
+    /// Every location key is folded, not the two a test happened to name.
+    ///
+    /// Derived from the constant rather than a literal list, so a new
+    /// location key cannot be forgotten here.
+    #[test]
+    fn every_location_key_is_folded() {
+        let bound = serde_json::Value::Object(
+            crucible_core::config::LOCATION_CONFIG_KEYS
+                .iter()
+                .map(|k| ((*k).to_string(), json!(format!("bound-{k}"))))
+                .collect(),
+        );
+        let live = json!({});
+
+        let effective = fold_locations(Some(live), Some(&bound)).expect("a bound config");
+
+        for key in crucible_core::config::LOCATION_CONFIG_KEYS {
+            assert_eq!(
+                effective.get(key),
+                Some(&json!(format!("bound-{key}"))),
+                "{key} must come from the bind snapshot"
+            );
+        }
+    }
+
+    /// A store that never dropped a location key does not shadow the
+    /// snapshot's. The daemon reads locations to decide where it executes
+    /// code, so the boot-time answer is the only safe one.
+    #[test]
+    fn a_live_location_key_never_wins() {
+        let bound = json!({ "kiln_path": "/bound" });
+        let live = json!({ "kiln_path": "/live" });
+
+        let effective = fold_locations(Some(live), Some(&bound)).expect("a bound config");
+
+        assert_eq!(effective.get("kiln_path"), Some(&json!("/bound")));
+    }
+
+    /// No bind snapshot stays "this daemon was bound without an app config".
+    #[test]
+    fn no_bound_config_stays_absent() {
+        assert!(fold_locations(Some(json!({ "chat": {} })), None).is_none());
+    }
+
+    /// No store yet serves the snapshot unchanged.
+    #[test]
+    fn no_live_store_serves_the_snapshot() {
+        let bound = json!({ "chat": { "context_budget": 1024 } });
+        assert_eq!(fold_locations(None, Some(&bound)), Some(bound));
     }
 }

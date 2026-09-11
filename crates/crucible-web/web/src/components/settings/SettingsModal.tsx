@@ -155,7 +155,18 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                   <table class="w-full">
                     <tbody>
                       <Show when={active()} keyed>
-                        {(section) => <Dynamic component={section.render} />}
+                        {(section) => (
+                          <Dynamic
+                            component={section.render}
+                            // Every section is offered both. Most ignore them:
+                            // the plugin list reloads the trees after an
+                            // install, and the app-config pane dismisses the
+                            // dialog when it opens a pinned line in the editor
+                            // behind it.
+                            onChanged={reload}
+                            onClose={props.onClose}
+                          />
+                        )}
                       </Show>
                     </tbody>
                   </table>

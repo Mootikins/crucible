@@ -57,6 +57,24 @@ describe('PluginPanel', () => {
     expect(screen.getByText(/3T 1C 2H 0S/)).toBeInTheDocument();
   });
 
+  it('renders a plugin with no version without printing a null', async () => {
+    // A plugin the daemon discovered but has not loaded has no version yet:
+    // the version lives in the plugin's spec table, which only a load reads.
+    // The daemon sends null. `v${null}` renders "vnull", which is worse than
+    // the "0.0.0" placeholder it replaced, so the row names the state.
+    getPluginsMock.mockResolvedValue([{ ...RICH_ROW, name: 'unloaded-plugin', version: null }]);
+    render(() => <PluginPanel />);
+    await waitFor(() =>
+      expect(screen.getByTestId('plugin-row-unloaded-plugin')).toBeInTheDocument(),
+    );
+
+    const row = screen.getByTestId('plugin-row-unloaded-plugin');
+    expect(row.textContent).not.toMatch(/null|undefined|None|0\.0\.0/);
+    expect(screen.getByTestId('plugin-version-unloaded-plugin')).toHaveTextContent(
+      'version unknown',
+    );
+  });
+
   it('shows last_error for a broken plugin, and no error row for a healthy one', async () => {
     getPluginsMock.mockResolvedValue([
       RICH_ROW,

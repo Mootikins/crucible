@@ -187,7 +187,6 @@ type RenderedStubs = (
 ///
 /// Public so a gate can compare the host's declared signatures against what
 /// is really registered, by PATH. A substring check cannot do that job: the
-/// needle `on: (` matches `option: (` and `set_output_validation: (`, so a
 /// declaration for a function nobody registered passes unnoticed.
 pub fn function_paths(lua: &Lua) -> Result<Vec<String>, LuaError> {
     Ok(render_stubs(lua)?.2)

@@ -184,41 +184,8 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.set_mode", json!({"mode_id": "ask"}), not_found()),
         ("session.get_mode", json!({}), not_found()),
         (
-            "session.set_thinking_budget",
-            json!({"thinking_budget": 100}),
-            not_found(),
-        ),
-        ("session.get_thinking_budget", json!({}), not_found()),
-        (
-            "session.set_temperature",
-            json!({"temperature": 0.5}),
-            not_found(),
-        ),
-        ("session.get_temperature", json!({}), not_found()),
-        (
-            "session.set_max_tokens",
-            json!({"max_tokens": 10}),
-            not_found(),
-        ),
-        ("session.get_max_tokens", json!({}), not_found()),
-        (
-            "session.set_max_iterations",
-            json!({"max_iterations": 3}),
-            not_found(),
-        ),
-        (
-            "session.set_execution_timeout",
-            json!({"execution_timeout": 3}),
-            not_found(),
-        ),
-        (
             "session.set_context_budget",
             json!({"context_budget": 3}),
-            not_found(),
-        ),
-        (
-            "session.set_context_window",
-            json!({"context_window": 3}),
             not_found(),
         ),
         (
@@ -228,39 +195,11 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ),
         ("session.get_context_strategy", json!({}), not_found()),
         (
-            "session.set_output_validation",
-            json!({"output_validation": "off"}),
-            not_found(),
-        ),
-        ("session.get_output_validation", json!({}), not_found()),
-        (
-            "session.set_validation_retries",
-            json!({"validation_retries": 3}),
-            not_found(),
-        ),
-        (
-            "session.set_system_prompt",
-            json!({"system_prompt": "x"}),
-            not_found(),
-        ),
-        ("session.get_system_prompt", json!({}), not_found()),
-        (
             "session.set_precognition",
             json!({"precognition": true}),
             not_found(),
         ),
         ("session.get_precognition", json!({}), not_found()),
-        (
-            "session.set_precognition_results",
-            json!({"precognition_results": 3}),
-            not_found(),
-        ),
-        (
-            "session.set_autocompact_threshold",
-            json!({"autocompact_threshold": 0.5}),
-            not_found(),
-        ),
-        ("session.get_autocompact_threshold", json!({}), not_found()),
         // ── 2. refuses, naming the OPERATION and never the session ──────────
         // The session-manager state machine answers before anything reports a
         // missing session, so a client cannot tell "no such session" from

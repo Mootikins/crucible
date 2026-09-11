@@ -59,7 +59,7 @@ pub type ToolPolicyMap = HashMap<String, ToolPolicy>;
 /// - Identity (name, version, description)
 /// - Discovery (tags, specialty)
 /// - System prompt (markdown body)
-/// - Model selection (provider/model) and generation knobs
+/// - Model selection (provider/model)
 /// - Tool policy and MCP server references
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCard {
@@ -97,18 +97,6 @@ pub struct AgentCard {
     /// Model override. `None` inherits the spawning context's model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-
-    /// Sampling temperature override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f32>,
-
-    /// Max output tokens override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
-
-    /// Max tool-loop turns (maps to the session's `max_iterations`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_turns: Option<u32>,
 
     /// Initial mode ("auto"/"plan").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -185,18 +173,6 @@ pub struct AgentCardFrontmatter {
     /// Optional: model override
     #[serde(default)]
     pub model: Option<String>,
-
-    /// Optional: sampling temperature
-    #[serde(default)]
-    pub temperature: Option<f32>,
-
-    /// Optional: max output tokens
-    #[serde(default)]
-    pub max_tokens: Option<u32>,
-
-    /// Optional: max tool-loop turns
-    #[serde(default)]
-    pub max_turns: Option<u32>,
 
     /// Optional: initial mode ("auto"/"plan")
     #[serde(default)]

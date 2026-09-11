@@ -12,6 +12,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { btnPrimary } from '@/lib/button-style';
+import { pluginVersionLabel } from '@/lib/plugin-version';
 
 /**
  * Quick client-side check on URLs the user types into the install modal.
@@ -220,7 +221,12 @@ export const PluginPanel: Component = () => {
                     <span class="flex-1 text-sm font-mono text-shell-ink truncate">
                       {plugin.name}
                     </span>
-                    <span class="text-xs text-muted-dark">v{plugin.version}</span>
+                    <span
+                      class="text-xs text-muted-dark"
+                      data-testid={`plugin-version-${plugin.name}`}
+                    >
+                      {pluginVersionLabel(plugin.version)}
+                    </span>
                     <button
                       type="button"
                       class="text-xs px-2 py-0.5 bg-control hover:bg-hover-wash rounded border border-hairline text-shell-ink disabled:opacity-50 disabled:cursor-not-allowed"

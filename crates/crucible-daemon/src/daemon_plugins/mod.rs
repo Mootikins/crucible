@@ -18,25 +18,25 @@ pub use boot::{
     PluginPathsFn,
 };
 pub use bootstrap::{
-    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
-    union_plugin_entries, BootstrapOutcome,
+    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, daemon_plugin_paths_from,
+    default_daemon_plugin_paths, union_plugin_entries, BootstrapOutcome,
 };
 #[cfg(test)]
-pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url, runtime_plugin_paths};
+pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url};
 
 use crate::plugin_tools::PluginRegistry;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_attach, register_context_module, register_context_validators,
-    register_cru_on_api, register_isolation_module, register_oq_module, register_paths_module,
-    register_publish_module, register_schedule_module, register_sessions_module,
-    register_shell_module, register_status_module, register_storage_module,
-    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_ui_module, register_ui_module_with_api, register_vault_module, register_ws_module,
-    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
-    LuaScriptHandlerRegistry, LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager,
-    PluginShellPolicy, PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
+    register_context_attach, register_context_module, register_cru_on_api,
+    register_isolation_module, register_oq_module, register_paths_module, register_publish_module,
+    register_schedule_module, register_sessions_module, register_shell_module,
+    register_status_module, register_storage_module, register_storage_module_with_store,
+    register_tools_module, register_tools_module_with_api, register_ui_module,
+    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
+    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
+    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
+    PublicationRegistry, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -133,21 +133,29 @@ pub struct DaemonPluginLoader {
     /// Live service tasks by owning plugin, recorded by the spawn site so
     /// reload/disable/remove can abort them ([`Self::abort_services`]).
     service_tasks: HashMap<String, Vec<tokio::task::JoinHandle<()>>>,
+    /// The session-default store the user's `init.lua` writes.
+    ///
+    /// Shared with `AgentManager`, which registers the same handle into every
+    /// session reads, so one write at boot reaches every session.
+    /// The mode registry, shared the same way and for the same reason.
+    modes: crucible_lua::ModeRegistry,
+    /// `cru.permissions.on_request` hooks and their bodies. The tool gate
+    /// runs them against this VM's `Lua`.
+    permission_hooks: Arc<std::sync::Mutex<Vec<crucible_lua::PermissionHook>>>,
+    permission_functions: Arc<std::sync::Mutex<HashMap<String, mlua::RegistryKey>>>,
     /// Shared registry of Lua-defined output validators.
     ///
     /// Plugins call `cru.context.register_validator(name, fn)` which inserts
     /// a `RegistryKey` into this map; the agent stream loop dispatches
-    /// validations by name without re-entering Lua's globals table.
-    validator_registry: Arc<LuaValidatorRegistry>,
     /// Handlers registered by plugins via `cru.on(event, opts, fn)`.
     ///
-    /// Paired with [`Self::plugin_lua`] the same way `validator_registry` is:
+    /// Paired with [`Self::plugin_lua`]:
     /// the handler bodies are `RegistryKey`s into *this* loader's Lua state,
     /// so dispatching them requires both halves. Plugin hooks live here rather
     /// than in the per-session registry because plugins are loaded once, at
     /// daemon start, into a VM no session owns.
     handler_registry: Arc<LuaScriptHandlerRegistry>,
-    /// `[plugins.*]` sections from config.toml, keyed by plugin name.
+    /// The `plugins.*` config subtrees, keyed by plugin name.
     ///
     /// Also exposed to Lua as `cru.plugin.config.get("<plugin>.<key>")`; kept
     /// here so each plugin's section can be handed to its `setup()` at load.
@@ -251,8 +259,7 @@ impl DaemonPluginLoader {
         )?;
 
         // `cru.statusline`, `cru.colorscheme`, `cru.hl`, `cru.geometry` and
-        // `cru.syntax` — NOT `cru.modes` or `cru.defaults`, which only the
-        // session VM registers (`agent_manager/session_vm.rs`).
+        // `cru.syntax`.
         //
         // The daemon evaluates the user's
         // `init.lua` on THIS VM (`daemon_plugins::boot`, step 3), so these
@@ -275,16 +282,39 @@ impl DaemonPluginLoader {
             crucible_lua::config::register_ui_namespaces(lua),
         )?;
 
-        let plugin_manager = PluginManager::new();
+        // `cru.modes`. The store is the SAME handle the sessions read, so a
+        // mode declared in the user's `~/.config/crucible/init.lua` reaches
+        // every session with no copy step. `AgentManager` adopts it at bind
+        // time.
+        //
+        // A workspace cannot reach this: no workspace file runs on any VM.
+        // This file and the runtimepath's defaults file are the only writers.
+        let modes = crucible_lua::ModeRegistry::new();
+        reg("modes", crucible_lua::register_modes(lua, modes.clone()))?;
 
-        // Validator registry is created up front so plugins can register
-        // validators during init — even before `upgrade_with_sessions`
-        // wires the daemon-backed `cru.context.*` methods. The same Arc
-        // is shared with `AgentManager` so the stream loop can dispatch
-        // by name without re-entering Lua's symbol table.
-        let validator_registry = Arc::new(LuaValidatorRegistry::new());
-        register_context_validators(lua, Arc::clone(&validator_registry))
-            .map_err(|e| anyhow::anyhow!("context validators: {e}"))?;
+        // `cru.permissions`. This VM runs every Lua file, so this is the only
+        // registration; the tool gate dispatches these hooks.
+        let permission_hooks = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let permission_functions = Arc::new(std::sync::Mutex::new(HashMap::new()));
+        reg(
+            "permissions",
+            crucible_lua::register_permission_hook_api(
+                lua,
+                permission_hooks.clone(),
+                permission_functions.clone(),
+            ),
+        )?;
+
+        // `cru.context` must exist from init, not only after
+        // `upgrade_with_sessions` mounts the daemon-backed methods. The stub
+        // carries the pure half (`estimate_tokens`) and answers "no daemon
+        // connected" for the rest, and `register_context_module` mounts OVER
+        // this table rather than replacing it. Without this the namespace is
+        // absent on a loader that never upgrades, which
+        // `the_plugin_vm_exposes_exactly_the_declared_namespaces` catches.
+        reg("context", crucible_lua::register_context_module_stub(lua))?;
+
+        let plugin_manager = PluginManager::new();
 
         // `cru.on` must exist on *this* VM. Registering it only on the
         // per-session and `lua.init_session` runtimes left it nil for plugins,
@@ -333,7 +363,9 @@ impl DaemonPluginLoader {
             session_api: std::sync::Mutex::new(None),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
-            validator_registry,
+            modes,
+            permission_hooks,
+            permission_functions,
             handler_registry,
             plugin_config,
             plugin_registry: Arc::new(PluginRegistry::new()),
@@ -391,46 +423,11 @@ impl DaemonPluginLoader {
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> anyhow::Result<Self> {
-        // The same registry answers the two questions a plugin's file access
-        // asks: "where is kiln X" and "which directories may I read and write
-        // at all". Binding them together is what keeps the second from
-        // drifting behind the first.
-        self.bind_fs_roots(Arc::clone(&registry));
         let resolver: crucible_lua::KilnPathResolver =
             Arc::new(move |name: &str| registered_kiln_path(&registry, name).map(|(_, path)| path));
         crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
             .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)
-    }
-
-    /// Bind where a plugin's `cru.fs.read` and `cru.fs.write` may reach.
-    ///
-    /// Three kinds of root, and each is a place the plugin was already meant
-    /// to work in: every registered kiln (its notes are the data plugins
-    /// exist to handle), the daemon's plugin-state directory (a plugin's own
-    /// files), and the process working directory (the invocation's workspace,
-    /// which is what `cru.paths.workspace()` answers with when one is set).
-    ///
-    /// It does NOT confine `mkdir`, `list`, `copy` or `remove_all`, which
-    /// predate it and are used against paths outside all three — `worktree`
-    /// checks a destination it is about to create. Narrowing those is a
-    /// separate decision with a migration behind it; the two NEW functions
-    /// start scoped, which is the direction to move the rest in.
-    fn bind_fs_roots(&self, registry: Arc<crate::kiln_registry::KilnRegistry>) {
-        let state_root = crucible_core::config::crucible_home().join("plugin-state");
-        let resolver: crucible_lua::FsRootsResolver = Arc::new(move |plugin: &str| {
-            let mut roots: Vec<PathBuf> = registry
-                .entries()
-                .iter()
-                .map(|kiln| kiln.path().to_path_buf())
-                .collect();
-            roots.push(state_root.join(plugin));
-            if let Ok(cwd) = std::env::current_dir() {
-                roots.push(cwd);
-            }
-            roots
-        });
-        crucible_lua::register_fs_roots_resolver(self.executor.lua(), resolver);
     }
 
     /// Wire the named kiln reads — `cru.kiln.blocks`, `note`, `notes`,
@@ -535,7 +532,7 @@ impl DaemonPluginLoader {
     ///
     /// The registry is owned by `AgentManager`, not by this loader: it is a
     /// per-session buffer with no plugin dependency, and having the loader own
-    /// it meant session VMs raced plugin boot for a working binding.
+    /// it meant a session raced plugin boot for a working binding.
     pub fn register_context_attach(
         &self,
         registry: Arc<ContextAttachRegistry>,
@@ -615,13 +612,21 @@ impl DaemonPluginLoader {
         Arc::clone(&self.plugin_registry)
     }
 
-    /// Shared registry of Lua-defined output validators.
+    /// The mode store this VM writes.
     ///
-    /// Hand this `Arc` to `AgentManager::set_lua_validators` together with
-    /// [`Self::plugin_lua`] so the agent stream loop can resolve
-    /// `OutputValidation::Lua { name }` against plugin-registered functions.
-    pub fn validator_registry(&self) -> Arc<LuaValidatorRegistry> {
-        Arc::clone(&self.validator_registry)
+    /// `AgentManager` adopts the handle, so a mode declared in the user's
+    /// `init.lua` is read by every session built afterwards.
+    pub fn mode_registry(&self) -> crucible_lua::ModeRegistry {
+        self.modes.clone()
+    }
+
+    /// The permission hooks registered on this VM, for the tool gate.
+    pub fn permission_registry(&self) -> crate::agent_manager::DaemonPermissions {
+        (
+            self.permission_hooks.clone(),
+            self.permission_functions.clone(),
+            self.plugin_lua(),
+        )
     }
 
     /// Clone of the plugin runtime's `Lua` handle.
@@ -637,9 +642,9 @@ impl DaemonPluginLoader {
     /// Register plugin config as `cru.plugin.config` in the Lua runtime.
     ///
     /// Provides `cru.plugin.config.get("plugin_name.key")` for dotted-key
-    /// lookup from `[plugins.*]` sections in config.toml. Deliberately NOT
+    /// lookup into the `plugins.*` config subtrees. Deliberately NOT
     /// `cru.config`: that name is the app-config store (`get`/`set`), and a
-    /// plugin's own TOML section is a different thing — the plugin seam owns
+    /// plugin's own section is a different thing — the plugin seam owns
     /// plugin-scoped state.
     fn register_plugin_config(
         lua: &mlua::Lua,
@@ -857,10 +862,11 @@ impl DaemonPluginLoader {
         info!("Discovered {} daemon plugin(s)", discovered.len());
 
         // The kill switch, applied between discovery and load. A bundled
-        // plugin's `plugin.yaml` ships inside the binary and is re-stamped
-        // whenever `version + blake3(runtime tree)` changes, so editing
-        // `enabled:` there does not survive an upgrade — `[plugins.<name>]
-        // enabled = false` in config.toml is the only durable lever.
+        // plugin is re-stamped inside the binary whenever
+        // `version + blake3(runtime tree)` changes, so an edit in the
+        // extracted tree does not survive an upgrade —
+        // `plugins.<name>.enabled = false` in `init.lua` is the only durable
+        // lever.
         // `disable` unloads first, and `unload` returns early for anything not
         // Active, so running it before `load_all` is just a state flip.
         for name in &discovered {
@@ -1259,7 +1265,7 @@ impl DaemonPluginLoader {
         // operator installed. This VM used to stamp neither — daemon-side
         // `cru.storage` errored, and the interception gate read a Lua global
         // with `.unwrap_or(true)`, so it failed OPEN for every plugin here.
-        let previous = crucible_lua::enter_plugin(lua, name, self.plugin_grants(name));
+        let previous = crucible_lua::enter_plugin(lua, name, self.plugin_may_intercept(name));
 
         // Execute init.lua with eval_async — captures return value AND enables
         // async Lua. Results are captured, not `?`-ed: the context restore
@@ -1338,18 +1344,16 @@ impl DaemonPluginLoader {
         }
     }
 
-    /// What this plugin's installation declared, from the manifest the
-    /// operator installed.
+    /// Whether this plugin's installation granted it the right to take a tool
+    /// call over (`intercept_tools` in its manifest).
     ///
-    /// An unknown plugin gets NOTHING. The one grant read as authority is
-    /// `intercept_tools`, which fabricates a result the model reads as the
-    /// tool's own and returns BEFORE the permission gate — so an unanswerable
-    /// question answers "no".
-    fn plugin_grants(&self, name: &str) -> crucible_lua::manifest::CapabilitySet {
+    /// An unknown plugin gets `false`. Interception fabricates a result the
+    /// model reads as the tool's own, and it returns BEFORE the permission
+    /// gate, so an unanswerable question must answer "no".
+    fn plugin_may_intercept(&self, name: &str) -> bool {
         self.plugin_manager
             .get(name)
-            .map(|plugin| plugin.manifest.grants())
-            .unwrap_or_default()
+            .is_some_and(|plugin| plugin.manifest.intercepts_tools)
     }
 
     /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.
@@ -1361,9 +1365,21 @@ impl DaemonPluginLoader {
             return Ok(());
         };
 
+        // The directory name first, then the name the plugin declares.
+        //
+        // Identity is the directory — the only name knowable without running
+        // Lua. But a repo cloned as `crucible-discord` whose plugin declares
+        // `name = "discord"` must still receive `[plugins.discord]`: the user
+        // wrote that section against the plugin, not against wherever their
+        // clone happens to sit.
+        let declared = self
+            .plugin_manager
+            .get(name)
+            .and_then(|p| p.manifest.declared_name.clone());
         let cfg = self
             .plugin_config
             .get(name)
+            .or_else(|| declared.as_deref().and_then(|d| self.plugin_config.get(d)))
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
         let cfg = self
@@ -1466,10 +1482,11 @@ impl DaemonPluginLoader {
     /// Manager key (manifest `name`) for the plugin discovered at `dir`.
     ///
     /// plugins.toml declarations and clone directories go by the URL's last
-    /// segment; the plugin manager goes by `plugin.yaml`'s `name`. For a repo
-    /// `crucible-discord` whose manifest says `name: discord` the two differ,
-    /// and resolving by URL name silently misses the running plugin — the
-    /// directory is the one identity both sides share.
+    /// segment; the plugin manager goes by the name the spec table declares.
+    /// For a repo `crucible-discord` whose entry file returns
+    /// `name = "discord"` the two differ, and resolving by URL name silently
+    /// misses the running plugin — the directory is the one identity both
+    /// sides share.
     pub fn plugin_name_for_dir(&self, dir: &std::path::Path) -> Option<String> {
         self.plugin_manager
             .list()

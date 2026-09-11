@@ -1,7 +1,5 @@
 use super::super::agent::SessionAgent;
-use super::super::config::{
-    default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
-};
+use super::super::config::ContextStrategy;
 use super::super::enums::{SessionState, SessionType};
 use super::super::session::Session;
 use super::super::summary::SessionSummary;
@@ -290,10 +288,7 @@ fn test_session_with_agent() {
         provider: BackendType::OpenAI,
         model: "gpt-4o".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -301,15 +296,8 @@ fn test_session_with_agent() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -353,10 +341,7 @@ fn test_session_summary_includes_agent_model() {
         provider: BackendType::Anthropic,
         model: "claude-3-5-sonnet".to_string(),
         system_prompt: "".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -364,15 +349,8 @@ fn test_session_summary_includes_agent_model() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };

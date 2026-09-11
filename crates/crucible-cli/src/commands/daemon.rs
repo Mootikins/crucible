@@ -79,6 +79,13 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         // Run server directly in this process
         info!("Starting daemon in foreground");
 
+        // FIRST, before anything binds a socket. This process exists to be the
+        // daemon, so it may end itself on a signal; the standalone daemon in
+        // `main.rs` shares a process with the TUI and must not. Installing the
+        // handlers here rather than after the bind closes the window in which
+        // the daemon is already reachable but a `kill` still kills it outright.
+        let signals = crucible_daemon::ShutdownSignals::install()?;
+
         // Before anything reads the runtimepath. An installed `cru` has no
         // runtime tree next to it — no packaging route puts one there — so
         // plugins, themes and the bundled help skills would all resolve to
@@ -110,10 +117,10 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             }
         });
 
-        // The one-VM config boot: seed defaults + config.toml, create THE
-        // plugin VM, evaluate init.lua in it once (fail open), extract the
-        // effective config. The loader rides into the bind so the same VM
-        // runs the deferred plugin activation.
+        // The one-VM config boot: seed the defaults and `settings.json`,
+        // create THE plugin VM, evaluate init.lua in it once (fail open),
+        // extract the effective config. The loader rides into the bind so the
+        // same VM runs the deferred plugin activation.
         let boot =
             crucible_daemon::daemon_plugins::evaluate_boot_config(config_path.clone(), None, None)
                 .await?;
@@ -125,12 +132,19 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
                 &boot.config,
                 plugin_sections.clone(),
                 plugin_watch,
-                boot.config_source.clone(),
+                boot.config_file(),
             )
             .with_boot_hash(boot.boot_hash.clone())
-            .with_loader(boot.loader),
+            .with_loader(boot.loader)
+            // Also only here, and for the same reason: an in-process daemon
+            // dies with its host, and ending itself would take the host down
+            // with it. See `crucible_daemon::server::idle` for the policy.
+            .with_idle_shutdown(boot.config.server.idle_shutdown_minutes),
         )
         .await?;
+
+        // There is a server to stop now, so deliver what the handlers caught.
+        signals.forward_to(server.shutdown_handle());
 
         println!("Daemon listening on {:?}", sock);
         server.run().await?;

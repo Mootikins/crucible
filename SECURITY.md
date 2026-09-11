@@ -71,8 +71,8 @@ other software, and the boundary matters when deciding whether a finding is a bu
 - Untrusted *content* achieving execution: a markdown note, a wikilink target, an ACP
   message, or an LLM tool-call argument that escapes parsing into code execution or a
   path traversal outside the kiln.
-- Trust or delegation-depth limits configured under `[acp]` in
-  `~/.config/crucible/config.toml` failing to hold.
+- Trust or delegation-depth limits configured under `acp` in
+  `~/.config/crucible/init.lua` failing to hold.
 
 **Out of scope.** These are the documented design, not defects:
 

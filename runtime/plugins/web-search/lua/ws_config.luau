@@ -2,13 +2,13 @@
 --- web-search configuration.
 ---
 --- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention the daemon already implements — it seeds setup() with the TOML
---- section at load, and a later `require("web-search").setup{}` from the user's
+--- convention the daemon already implements — it seeds setup() with the
+--- plugin's config section at load, and a later `require("web-search").setup{}` from the user's
 --- init.lua lands afterwards and wins):
 ---
 ---   0. `$CRUCIBLE_WEB_SEARCH_<KEY>` — declared secrets only.
 ---   1. values passed to `setup({...})` — last call wins per key.
----   2. `[plugins.web-search]` in config.toml, via
+---   2. the `plugins.web-search` config key, via
 ---      `cru.plugin.config.get("web-search.<key>")`.
 ---   3. the `defaults` table below.
 ---   4. the caller's `fallback` argument, for keys this module does not declare.
@@ -22,10 +22,11 @@
 --- var name deliberately matches the service convention so one rule covers
 --- both surfaces.
 ---
---- Secrets are read from the environment **before** setup() and TOML, which
+--- Secrets are read from the environment **before** setup() and the config,
+--- which
 --- inverts the order used for everything else. That is the point: it is what
 --- lets a user keep a key out of a config file that gets committed, and a key
---- written into config.toml anyway still works as the lower-priority fallback.
+--- written into the config anyway still works as the lower-priority fallback.
 
 local PLUGIN = "web-search"
 local ENV_PREFIX = "CRUCIBLE_WEB_SEARCH_"

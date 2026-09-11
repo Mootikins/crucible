@@ -60,14 +60,21 @@ alike, because both serve the same plugin registry.
 
 Expose tools via Model Context Protocol:
 
-```toml
-[[mcp.servers]]
-name = "my-tools"
-prefix = "my_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "my-mcp-server"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "my-tools",
+                prefix = "my_",
+                transport = {
+                    type = "stdio",
+                    command = "my-mcp-server",
+                },
+            },
+        },
+    },
+})
 ```
 
 ## Tool Definition

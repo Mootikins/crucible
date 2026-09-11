@@ -451,24 +451,6 @@ describe("reflection", function()
       expect.is_nil(sent[1][2]:find("do not propose", 1, true))
     end)
 
-    it("configures the reviewer with the declared max_iterations", function()
-      plugin.run({ id = "chat-1" })
-
-      -- The mock records the config table `M.run` hands to the daemon. The
-      -- assertion reads the declared key, so a read of a stale name fails.
-      local configured = test_mocks.get_calls("session", "configure_agent")
-      expect.equal(1, #configured)
-      expect.equal(12, configured[1][2].max_iterations)
-    end)
-
-    it("hands a raised max_iterations to the reviewer", function()
-      plugin.setup({ max_iterations = 20 })
-      plugin.run({ id = "chat-1" })
-
-      local configured = test_mocks.get_calls("session", "configure_agent")
-      expect.equal(20, configured[1][2].max_iterations)
-    end)
-
     it("attaches the kiln to the reviewer's session", function()
       plugin.run({ id = "chat-1" })
 
@@ -635,7 +617,7 @@ describe("reflection", function()
     local function opts(): any
       return {
         kiln = "notes", model = "test-model", system_prompt = "be brief",
-        prompt = "review this", timeout = 5, max_iterations = 3,
+        prompt = "review this", timeout = 5,
       }
     end
 
@@ -666,7 +648,6 @@ describe("reflection", function()
       expect.equal("notes", created[1][1].kilns[1])
       local configured = test_mocks.get_calls("session", "configure_agent")
       expect.equal("be brief", configured[1][2].system_prompt)
-      expect.equal(3, configured[1][2].max_iterations)
       local sent = test_mocks.get_calls("session", "send_and_collect")
       expect.equal("review this", sent[1][2])
       expect.equal(5, sent[1][3].timeout)
@@ -755,24 +736,15 @@ describe("reflection", function()
       config.reset()
     end)
 
-    it("declares max_iterations with a default of 12", function()
-      expect.equal(12, config.get("max_iterations"))
-    end)
-
     it("declares the two transcript caps", function()
       expect.equal(2000, config.get("tool_result_chars"))
       expect.equal(60000, config.get("transcript_chars"))
     end)
 
-    it("lets setup() raise max_iterations", function()
-      config.init({ max_iterations = 20 })
-      expect.equal(20, config.get("max_iterations"))
-    end)
-
     it("returns to the default after reset()", function()
-      config.init({ max_iterations = 20 })
+      config.init({ timeout = 99 })
       config.reset()
-      expect.equal(12, config.get("max_iterations"))
+      expect.equal(120, config.get("timeout"))
     end)
   end)
 

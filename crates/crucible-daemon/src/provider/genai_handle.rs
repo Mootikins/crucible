@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use crucible_core::session::{ContextStrategy, OutputValidation};
+use crucible_core::session::ContextStrategy;
 use crucible_core::traits::chat::{
     AgentHandle, ChatError, ChatResult, ChatToolCall, ChatToolResult, SessionKnobs,
 };
@@ -11,8 +11,8 @@ use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use genai::chat::{
-    CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart,
-    ReasoningEffort, Tool, ToolCall, ToolResponse,
+    CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart, Tool,
+    ToolCall, ToolResponse,
 };
 use genai::ModelIden;
 
@@ -30,8 +30,18 @@ pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration
 const TOOL_SCHEMA_BUDGET_SHARE: f64 = 0.15;
 
 /// Effective-budget fallback used when a session sets neither `context_budget`
-/// nor `context_window`. A conservative modern context size.
+/// A conservative modern context size.
 const DEFAULT_ASSUMED_CONTEXT: usize = 128_000;
+
+/// Message pairs that `SlidingWindow` and `Summarize` keep.
+///
+/// This was a session knob, `context_window`, with two readers and two units:
+/// message pairs here, tokens in `visible_tools`. No value was right for both.
+/// `visible_tools` now reads `context_budget`, which is honestly a token
+/// count, and the pair count is the constant it already was — the knob only
+/// took effect when `context_budget` was also set, and nothing documented
+/// that combination.
+const KEEP_MESSAGE_PAIRS: usize = 10;
 
 /// Apply Anthropic prompt caching to a message list.
 ///
@@ -389,19 +399,8 @@ pub struct GenaiAgentHandle {
     modes: Option<crucible_lua::ModeRegistry>,
     mode_context_sent: bool,
     max_tool_depth: usize,
-    thinking_budget: Option<i64>,
-    /// Sampling temperature for every request this handle issues. `None`
-    /// leaves it to the provider's own default rather than picking one here —
-    /// providers disagree on what neutral means.
-    temperature: Option<f64>,
-    /// Cap on generated tokens per response. `None` leaves it to the provider.
-    max_tokens: Option<u32>,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
-    context_window: Option<usize>,
-    output_validation: OutputValidation,
-    validation_retries: u32,
-    autocompact_threshold: Option<f32>,
     /// Tool names eligible for progressive disclosure. The daemon's agent
     /// factory populates this with the gateway (user MCP) tool names; kiln
     /// and workspace tools are never deferrable. Empty means the handle
@@ -550,7 +549,6 @@ fn enforce_context_budget(
     messages: &mut Vec<ChatMessage>,
     budget: Option<usize>,
     strategy: &ContextStrategy,
-    window: Option<usize>,
 ) -> BudgetAction {
     let Some(budget) = budget else {
         return BudgetAction::NoChange;
@@ -567,8 +565,7 @@ fn enforce_context_budget(
             BudgetAction::Mutated
         }
         ContextStrategy::SlidingWindow => {
-            let keep = window.unwrap_or(10);
-            let keep_count = keep * 2; // user + assistant pairs
+            let keep_count = KEEP_MESSAGE_PAIRS * 2; // user + assistant pairs
             let system_count = messages
                 .iter()
                 .take_while(|m| m.role == genai::chat::ChatRole::System)
@@ -585,8 +582,7 @@ fn enforce_context_budget(
             // can replace the placeholder with an LLM summary. Ignoring
             // the returned `NeedsSummarize` is safe — the placeholder
             // is itself a usable (if static) elision marker.
-            let keep = window.unwrap_or(10);
-            let keep_count = keep * 2;
+            let keep_count = KEEP_MESSAGE_PAIRS * 2;
             let system_count = messages
                 .iter()
                 .take_while(|m| m.role == genai::chat::ChatRole::System)
@@ -764,7 +760,6 @@ impl GenaiAgentHandle {
         model: ModelIden,
         system_prompt: &str,
         tools: Vec<LlmToolDefinition>,
-        thinking_budget: Option<i64>,
     ) -> Self {
         let mode_state = default_internal_modes();
         let current_mode_id = mode_state.current_mode_id.0.to_string();
@@ -780,15 +775,8 @@ impl GenaiAgentHandle {
             modes: None,
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
-            thinking_budget,
-            temperature: None,
-            max_tokens: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
-            autocompact_threshold: None,
             deferrable_tool_names: std::collections::HashSet::new(),
             plugin_tool_names: std::collections::HashSet::new(),
             active_tools: None,
@@ -804,32 +792,16 @@ impl GenaiAgentHandle {
         self
     }
 
-    /// Sampling settings the session chose. `None` for either leaves that one
-    /// to the provider's default.
-    #[must_use]
-    pub fn with_generation_settings(
-        mut self,
-        temperature: Option<f64>,
-        max_tokens: Option<u32>,
-    ) -> Self {
-        self.temperature = temperature;
-        self.max_tokens = max_tokens;
-        self
-    }
-
-    /// Context-window settings the session chose: the budget to keep under,
-    /// what to do when it is exceeded, and the model's window when the
-    /// provider does not report one.
+    /// Context settings the session chose: the budget to keep under, and what
+    /// to do when it is exceeded.
     #[must_use]
     pub fn with_context_settings(
         mut self,
         budget: Option<usize>,
         strategy: ContextStrategy,
-        window: Option<usize>,
     ) -> Self {
         self.context_budget = budget;
         self.context_strategy = strategy;
-        self.context_window = window;
         self
     }
 
@@ -839,22 +811,16 @@ impl GenaiAgentHandle {
     /// Each `Option` is applied only when set, so an unset value means "the
     /// provider decides" rather than a value chosen here.
     fn build_chat_options(&self) -> ChatOptions {
-        let mut options = ChatOptions::default()
+        let options = ChatOptions::default()
             .with_capture_tool_calls(true)
             .with_capture_content(true)
             .with_capture_usage(true)
             .with_capture_reasoning_content(true);
-        if let Some(budget) = self.thinking_budget {
-            options = options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32,
-            ));
-        }
-        if let Some(temperature) = self.temperature {
-            options = options.with_temperature(temperature);
-        }
-        if let Some(max_tokens) = self.max_tokens {
-            options = options.with_max_tokens(max_tokens);
-        }
+        // No temperature, no max_tokens and no reasoning budget. All three
+        // are per-model inference settings, so genai picks the right default
+        // for the model actually being called — Crucible's own 4096 cap
+        // truncated every Anthropic reply that genai would have allowed
+        // 64000, and a reasoning cap cut the model off mid-thought.
         options
     }
 
@@ -996,10 +962,7 @@ impl GenaiAgentHandle {
             };
         }
 
-        let effective_budget = self
-            .context_budget
-            .or(self.context_window)
-            .unwrap_or(DEFAULT_ASSUMED_CONTEXT);
+        let effective_budget = self.context_budget.unwrap_or(DEFAULT_ASSUMED_CONTEXT);
         let threshold = (TOOL_SCHEMA_BUDGET_SHARE * effective_budget as f64) as usize;
         let over_budget = tool_schema_tokens(&write_filtered) > threshold;
 
@@ -1102,7 +1065,6 @@ impl GenaiAgentHandle {
         let max_tool_depth = self.max_tool_depth;
         let context_budget = self.context_budget;
         let context_strategy = self.context_strategy.clone();
-        let context_window = self.context_window;
 
         let stream = Box::pin(async_stream::stream! {
             // Budget enforcement happens here (inside async) so the
@@ -1112,7 +1074,6 @@ impl GenaiAgentHandle {
                 &mut messages,
                 context_budget,
                 &context_strategy,
-                context_window,
             );
             if let BudgetAction::NeedsSummarize { placeholder_idx, drained } = action {
                 match summarize_via_backend(&client, &model_name, &drained).await {
@@ -1244,11 +1205,6 @@ impl GenaiAgentHandle {
         &'a mut self,
         ctx: crucible_core::turn::TurnContext,
     ) -> futures::stream::BoxStream<'a, TurnEvent> {
-        /// Depth-cap prompt sent back to the agent when `max_iterations`
-        /// is reached. Kept in sync with
-        /// `agent_manager::messaging::TOOL_DEPTH_LIMIT_FINAL_PROMPT`.
-        const DEPTH_CAP_PROMPT: &str = "You have reached the tool call limit. Please provide your final answer based on the information gathered so far.";
-
         let mut messages = self.context_messages_to_chat(&ctx.messages);
         let mut inbound = ctx.inbound;
 
@@ -1399,15 +1355,6 @@ impl GenaiAgentHandle {
                             // tool results we are still waiting on.
                             attached.push(content);
                         }
-                        TurnEvent::DepthCapHit { .. } => {
-                            drop(chat_stream);
-                            for attachment in attached.drain(..) {
-                                messages.push(ChatMessage::system(&attachment));
-                            }
-                            messages.push(ChatMessage::user(DEPTH_CAP_PROMPT));
-                            chat_stream = self.stream_chat_from_messages(messages.clone());
-                            continue 'turn;
-                        }
                         _ => {}
                     }
                 }
@@ -1514,13 +1461,21 @@ impl AgentHandle for GenaiAgentHandle {
 
 /// The knobs the genai handle does not hold return the empty answer.
 ///
-/// `max_iterations`, `execution_timeout` and `precognition` belong to the
-/// session's `AgentConfig`, not to the handle: the daemon turn loop in
-/// `agent_manager/messaging/send.rs` reads them from the config before it
-/// calls the handle. A value stored here would never reach that loop, so
-/// the handle refuses the setter. `DaemonAgentHandle` answers them by RPC.
+/// `precognition` belongs to the session's `AgentConfig`, not to the handle:
+/// the daemon turn loop in `agent_manager/messaging/send.rs` reads it from the
+/// config before it calls the handle. A value stored here would never reach
+/// that loop, so the handle refuses the setter. `DaemonAgentHandle` answers it
+/// by RPC.
 #[async_trait]
 impl SessionKnobs for GenaiAgentHandle {
+    fn get_system_prompt(&self) -> Option<String> {
+        Some(if self.session_context.is_empty() {
+            self.system_prompt.clone()
+        } else {
+            format!("{}\n\n{}", self.system_prompt, self.session_context)
+        })
+    }
+
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         self.model = self.model.from_name(model_id.to_string());
         Ok(())
@@ -1536,50 +1491,6 @@ impl SessionKnobs for GenaiAgentHandle {
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
         Vec::new()
-    }
-
-    /// `build_chat_options` reads this field on every request, so the
-    /// knob answers from the same field.
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        self.thinking_budget = Some(budget);
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.thinking_budget
-    }
-
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    /// The prompt this handle will actually send, after the factory's
-    /// enrichment (workspace header, rules files, skills catalog) — not the
-    /// agent card's `system_prompt` the session config stores.
-    fn get_system_prompt(&self) -> Option<String> {
-        Some(if self.session_context.is_empty() {
-            self.system_prompt.clone()
-        } else {
-            format!("{}\n\n{}", self.system_prompt, self.session_context)
-        })
-    }
-
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        self.temperature = Some(temperature);
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.temperature
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        self.max_tokens = max_tokens;
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.max_tokens
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
@@ -1600,75 +1511,12 @@ impl SessionKnobs for GenaiAgentHandle {
         self.context_strategy.clone()
     }
 
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
-        self.context_window = window;
-        Ok(())
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        self.context_window
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        self.output_validation = validation;
-        Ok(())
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &self.output_validation
-    }
-
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
-        self.validation_retries = retries;
-        Ok(())
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        self.validation_retries
-    }
-
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
-        self.autocompact_threshold = threshold;
-        Ok(())
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        self.autocompact_threshold
-    }
-
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
-    }
-
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition".into()))
     }
 
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition_results".into()))
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 
@@ -2287,82 +2135,23 @@ mod tests {
         }]
     }
 
-    /// The session reads the budget back through `SessionKnobs`, so the
-    /// knob answers from the field the turn reads.
-    #[tokio::test]
-    async fn thinking_budget_knob_answers_from_the_field() {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("gpt-4o-mini")
-            .build();
-        let chat_client = ChatClient::new(&config);
-        let client = chat_client.inner().clone();
-        let model = chat_client
-            .model_iden("gpt-4o-mini")
-            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
-
-        let mut handle = GenaiAgentHandle::new(client, model, "system", Vec::new(), Some(1024));
-        assert_eq!(SessionKnobs::get_thinking_budget(&handle), Some(1024));
-
-        SessionKnobs::set_thinking_budget(&mut handle, 2048)
-            .await
-            .expect("the genai handle holds the budget");
-        assert_eq!(handle.thinking_budget, Some(2048));
-        assert_eq!(SessionKnobs::get_thinking_budget(&handle), Some(2048));
-    }
-
-    #[test]
-    fn test_thinking_budget_stored_and_clamped() {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("gpt-4o-mini")
-            .build();
-        let chat_client = ChatClient::new(&config);
-        let client = chat_client.inner().clone();
-        let model = chat_client
-            .model_iden("gpt-4o-mini")
-            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
-
-        let negative_budget_handle = GenaiAgentHandle::new(
-            client.clone(),
-            model.clone(),
-            "system",
-            Vec::new(),
-            Some(-5),
-        );
-        assert_eq!(negative_budget_handle.thinking_budget, Some(-5));
-
-        let max_budget_handle =
-            GenaiAgentHandle::new(client, model, "system", Vec::new(), Some(i64::MAX));
-        assert_eq!(max_budget_handle.thinking_budget, Some(i64::MAX));
-
-        let clamped_negative = (-5_i64).clamp(0, u32::MAX as i64) as u32;
-        let clamped_overflow = i64::MAX.clamp(0, u32::MAX as i64) as u32;
-
-        assert_eq!(clamped_negative, 0);
-        assert_eq!(clamped_overflow, u32::MAX);
-    }
-
-    /// The settings must reach the outgoing request, not merely the handle.
+    /// The request carries no temperature, no token cap and no reasoning
+    /// budget.
     ///
-    /// A getter returning what a setter stored proves nothing here: that is
-    /// exactly what `SessionAgent.temperature` did for months while no request
-    /// ever carried it. `ChatOptions` is what genai puts on the wire.
+    /// All three were removed: they are per-model inference settings, so genai
+    /// picks the right default for the model actually being called. Crucible's
+    /// own 4096 cap truncated every Anthropic reply that genai would have
+    /// allowed 64000, and a reasoning cap cut the model off mid-thought.
+    /// `ChatOptions` is what genai puts on the wire, so this asserts there
+    /// rather than on a field.
     #[test]
-    fn generation_settings_reach_the_outgoing_chat_options() {
-        let mut handle = test_handle_with_tools(Vec::new());
-
-        let untouched = handle.build_chat_options();
-        assert_eq!(
-            (untouched.temperature, untouched.max_tokens),
-            (None, None),
-            "unset means the provider's default, not a value chosen here"
-        );
-
-        handle.temperature = Some(0.15);
-        handle.max_tokens = Some(1_024);
-
+    fn the_request_leaves_sampling_to_the_provider() {
+        let handle = test_handle_with_tools(Vec::new());
         let options = handle.build_chat_options();
-        assert_eq!(options.temperature, Some(0.15));
-        assert_eq!(options.max_tokens, Some(1_024));
+
+        assert_eq!(options.temperature, None);
+        assert_eq!(options.max_tokens, None);
+        assert!(options.reasoning_effort.is_none());
         // The capture flags the stream loop depends on must survive.
         assert_eq!(options.capture_tool_calls, Some(true));
         assert_eq!(options.capture_usage, Some(true));
@@ -2379,7 +2168,7 @@ mod tests {
         let model = chat_client
             .model_iden("gpt-4o-mini")
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
-        GenaiAgentHandle::new(client, model, "system", tools, None)
+        GenaiAgentHandle::new(client, model, "system", tools)
     }
 
     /// Regression: a handle must accept a mode the Lua registry declares.
@@ -2454,7 +2243,7 @@ mod tests {
     ///
     /// The fail-closed branch for a vanished mode was first keyed on
     /// "a registry is attached", but one always is on the daemon path. Before a
-    /// session VM has run the Lua defaults — or if that file fails to parse, or
+    /// daemon VM has run the Lua defaults — or if that file fails to parse, or
     /// a runtimepath entry shadows it — the registry is attached and empty, and
     /// every agent silently lost `read_file`, `grep` and `bash`.
     #[tokio::test]
@@ -2587,6 +2376,45 @@ mod tests {
         assert!(
             back_names.iter().any(|n| n == "my_plugin_tool"),
             "leaving plan restores plugin tools — they are attached, only filtered"
+        );
+    }
+
+    /// Tool deferral must read a token count, and only a token count.
+    ///
+    /// `context_window` used to feed this through `context_budget.or(..)`,
+    /// but its other reader treated it as message pairs. A user following
+    /// the documented usage — `:set contextwindow=10`, ten pairs — got
+    /// `threshold = 0.15 * 10 = 1` token here, so every deferrable tool
+    /// vanished from every request while the sliding window they asked for
+    /// never ran (its reader returns early with no `context_budget`).
+    ///
+    /// The knob is gone. This pins the two facts that replaced it: with no
+    /// `context_budget` the threshold is the 128k assumption, and a
+    /// pair-sized number can no longer reach this path at all.
+    #[test]
+    fn tool_deferral_reads_only_a_token_budget() {
+        let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+
+        // No context_budget: the 128k assumption applies, and six small
+        // gateway schemas are far under 15% of it.
+        let handle =
+            test_handle_with_tools(gateway.clone()).with_deferrable_tools(deferrable.clone());
+        let visible = handle.visible_tools();
+        assert_eq!(
+            visible.deferred_count, 0,
+            "with no token budget the assumption is {DEFAULT_ASSUMED_CONTEXT}, not a pair count"
+        );
+
+        // A pair-sized number is only meaningful to the window, and the
+        // window is a constant now. Setting the token budget that low is
+        // still honoured, which is the point: this path takes tokens.
+        let mut tight = test_handle_with_tools(gateway).with_deferrable_tools(deferrable);
+        tight.context_budget = Some(KEEP_MESSAGE_PAIRS);
+        assert!(
+            tight.visible_tools().deferred_count > 0,
+            "a 10-token budget defers; that is what a token budget means"
         );
     }
 
@@ -2970,20 +2798,14 @@ mod tests {
     #[test]
     fn summarize_returns_needs_summarize_action() {
         let long = "x".repeat(40);
-        let mut messages = vec![
-            sys("system"),
-            user(&long),
-            asst(&long),
-            user(&long),
-            asst(&long),
-            user("current"),
-        ];
-        let action = enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::Summarize,
-            Some(1),
-        );
+        // More pairs than the window keeps, so there is something to drain.
+        let mut messages = vec![sys("system")];
+        for _ in 0..KEEP_MESSAGE_PAIRS + 2 {
+            messages.push(user(&long));
+            messages.push(asst(&long));
+        }
+        messages.push(user("current"));
+        let action = enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
         match action {
             BudgetAction::NeedsSummarize {
                 placeholder_idx,
@@ -3009,22 +2831,14 @@ mod tests {
     fn truncate_and_window_do_not_request_summarization() {
         let long = "x".repeat(40);
         let mut messages = vec![sys("system"), user(&long), asst(&long), user("current")];
-        let action = enforce_context_budget(
-            &mut messages.clone(),
-            Some(12),
-            &ContextStrategy::Truncate,
-            None,
-        );
+        let action =
+            enforce_context_budget(&mut messages.clone(), Some(12), &ContextStrategy::Truncate);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange
         ));
-        let action = enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::SlidingWindow,
-            Some(1),
-        );
+        let action =
+            enforce_context_budget(&mut messages, Some(12), &ContextStrategy::SlidingWindow);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange
@@ -3054,24 +2868,15 @@ mod tests {
         // Use long messages so token estimates exceed the small budget;
         // estimate_message_tokens uses chars/4.
         let long = "x".repeat(40); // 10 tokens
-        let mut messages = vec![
-            sys("system"),
-            user(&long),
-            asst(&long),
-            user(&long),
-            asst(&long),
-            user(&long),
-            asst(&long),
-            user("current question"),
-        ];
-        // Budget=12 means the 80-token total triggers drainage; window=1
-        // keeps the last 2 messages.
-        enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::Summarize,
-            Some(1),
-        );
+        let mut messages = vec![sys("system")];
+        for _ in 0..KEEP_MESSAGE_PAIRS + 2 {
+            messages.push(user(&long));
+            messages.push(asst(&long));
+        }
+        messages.push(user("current question"));
+        // The total is far over budget, and there are more pairs than the
+        // window keeps, so the drain runs.
+        enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
 
         let placeholder_present = messages.iter().any(|m| {
             m.role == genai::chat::ChatRole::System
@@ -3092,12 +2897,7 @@ mod tests {
     fn summarize_noop_when_under_budget() {
         let mut messages = vec![sys("S"), user("hi"), asst("hello")];
         let before_len = messages.len();
-        enforce_context_budget(
-            &mut messages,
-            Some(10_000),
-            &ContextStrategy::Summarize,
-            None,
-        );
+        enforce_context_budget(&mut messages, Some(10_000), &ContextStrategy::Summarize);
         assert_eq!(messages.len(), before_len);
         assert!(!messages
             .iter()
@@ -3109,19 +2909,13 @@ mod tests {
     fn summarize_placeholder_reports_dropped_count() {
         let long = "x".repeat(40);
         let mut messages = vec![sys("S")];
-        // 8 long turns past the system prompt; window=1 keeps the last 2.
-        for _ in 0..4 {
+        for _ in 0..KEEP_MESSAGE_PAIRS + 4 {
             messages.push(user(&long));
             messages.push(asst(&long));
         }
         messages.push(user("current"));
 
-        enforce_context_budget(
-            &mut messages,
-            Some(12),
-            &ContextStrategy::Summarize,
-            Some(1),
-        );
+        enforce_context_budget(&mut messages, Some(12), &ContextStrategy::Summarize);
 
         let placeholder = messages
             .iter()

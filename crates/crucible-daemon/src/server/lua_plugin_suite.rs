@@ -265,7 +265,56 @@ mod shipped_plugin_tests {
     /// plugin may sit in `runtime/plugins/` untested, but only by saying so
     /// here, with a reason. Silence is what let `web-search` (148 assertions)
     /// and `worktree` (42) go unrun by any in-process gate for months.
-    const NO_LUA_SUITE: &[(&str, &str)] = &[];
+    /// Every shipped plugin's entry file is the file that is really there.
+    ///
+    /// The gate B3 needed and did not have. `crucible-help` declared
+    /// `main: init.lua` beside an `init.luau` and silently did not load,
+    /// because the sweep that renamed the other eleven walked
+    /// `runtime/plugins/` and it sat outside. The field is gone now, so this
+    /// asserts the property the field used to be able to violate: the
+    /// resolver finds exactly one entry file per plugin.
+    ///
+    /// It derives its list from the directory rather than a maintained one,
+    /// which is the difference between this and the sweep that missed.
+    #[test]
+    fn every_shipped_plugin_resolves_exactly_one_entry_file() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../runtime/plugins")
+            .canonicalize()
+            .expect("the shipped plugin tree");
+
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&root).expect("read runtime/plugins") {
+            let dir = entry.expect("dir entry").path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let found = crucible_lua::source_files::init_file(&dir);
+            match found {
+                Ok(Some(path)) => assert!(
+                    path.is_file(),
+                    "{} resolved to a file that is not there: {}",
+                    dir.display(),
+                    path.display()
+                ),
+                Ok(None) => panic!("{} ships no init.luau or init.lua", dir.display()),
+                Err(ambiguous) => {
+                    panic!("{} ships both entry spellings: {ambiguous}", dir.display())
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked >= 12, "expected the shipped plugins, saw {checked}");
+    }
+
+    const NO_LUA_SUITE: &[(&str, &str)] = &[(
+        "crucible-help",
+        "It registers the shipped documentation as skill context and declares \
+         no tools, commands or handlers, so there is no behaviour a Lua suite \
+         could assert. The skills it ships are covered by \
+         `skills_extracted_from_the_binary_are_discovered`, and its own \
+         loading by `every_shipped_plugin_executes`.",
+    )];
 
     fn run_plugin_tests(plugin_dir: &str) -> serde_json::Value {
         let req = Request {
@@ -516,7 +565,7 @@ mod shipped_plugin_tests {
     /// and the unmapped-file assertion is what keeps it complete.
     ///
     /// The profile matters as much as the coverage. `runtime/defaults/init.lua`
-    /// runs on the SESSION VM and a theme on a BARE VM with no `cru` at all;
+    /// runs on the DAEMON VM and a theme on a BARE VM with no `cru` at all;
     /// checked against the daemon definitions they report type errors for
     /// working API,
     /// which is exactly the false failure that made a wider gate look
@@ -533,8 +582,8 @@ mod shipped_plugin_tests {
         // Ordered longest-prefix-first is unnecessary: no prefix here contains
         // another.
         const PROFILES: &[(&str, VmProfile)] = &[
-            // The shipped defaults and a workspace `init.lua`: session VM.
-            ("runtime/defaults/", VmProfile::Session),
+            // The shipped defaults file: it runs on the daemon VM.
+            ("runtime/defaults/", VmProfile::Daemon),
             // A statusline layout evaluates on a VM with `cru.statusline` and
             // NOTHING else; a theme evaluates on a bare VM with no `cru` at
             // all. Both were mapped to the config profile, which is strictly
@@ -543,8 +592,18 @@ mod shipped_plugin_tests {
             // raised "attempt to index nil with 'hl'" at load.
             ("runtime/statusline/", VmProfile::Statusline),
             ("runtime/themes/", VmProfile::Theme),
+            // The reference config and its example fragments. A user copies
+            // these into `init.lua`, which the daemon VM evaluates, so they
+            // are checked against the same definitions that file gets.
+            ("docs/init.lua", VmProfile::Daemon),
+            ("docs/examples/config/", VmProfile::Daemon),
+            // The demo configs the recording recipes pass to `--config`. A
+            // config root's `init.lua` runs on the daemon VM, the same as the
+            // reference config above.
+            ("assets/demo-config/", VmProfile::Daemon),
+            ("assets/demo-acp-config/", VmProfile::Daemon),
             // Ordinary plugins, and the scaffold for writing one.
-            ("runtime/crucible-help/", VmProfile::Daemon),
+            ("runtime/plugins/crucible-help/", VmProfile::Daemon),
             ("examples/plugins/", VmProfile::Daemon),
             (
                 "crates/crucible-cli/src/commands/plugin/templates/",

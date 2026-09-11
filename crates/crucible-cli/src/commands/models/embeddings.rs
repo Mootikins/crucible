@@ -10,15 +10,21 @@
 //! valid, and the two would drift apart — the first copy already refused
 //! `BGESmallENV15`, which the catalog accepts.
 //!
-//! The write is deliberate and narrow. `use` touches `[enrichment.provider]`
-//! in the user's own config file and nothing else, and it says what it
-//! replaced, because a stored vector carries the model that made it: the old
-//! vectors do not become the new model's vectors, so a reprocess must follow.
+//! The write is deliberate and narrow. `use` saves `enrichment.provider` and
+//! nothing else, and it says what it replaced, because a stored vector carries
+//! the model that made it: the old vectors do not become the new model's
+//! vectors, so a reprocess must follow.
+//!
+//! **The write goes through the daemon**, as `config.save`, which merges the
+//! two keys into the running store and persists them in `settings.json`. It
+//! used to edit `config.toml` directly. Nothing reads that file, so the model
+//! never changed and the next `cru process` re-embedded with the old one —
+//! while the command printed the path it had just written and reported
+//! success.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
 use crucible_daemon::rpc_client::{EmbeddingCatalog, EmbeddingModelRow};
-use std::path::{Path, PathBuf};
 
 use crate::common::daemon_client;
 use crate::formatting::OutputFormat;
@@ -84,16 +90,19 @@ pub async fn download(name: &str, format: Option<OutputFormat>) -> Result<()> {
     Ok(())
 }
 
-/// `cru models embeddings use <name>` — name the model in the config file.
+/// `cru models embeddings use <name>` — save the model as a durable preference.
 ///
 /// The daemon resolves the name before the write, so a typo never lands in the
-/// user's file and an alias lands as the canonical name. The write touches two
-/// keys and keeps every other line.
-pub async fn select(
-    name: &str,
-    config_path: Option<PathBuf>,
-    format: Option<OutputFormat>,
-) -> Result<()> {
+/// store and an alias lands as the canonical name. The write is a
+/// `config.save`: the daemon merges the two keys into the live store and
+/// writes them to `settings.json`, so the selection outlives the process and
+/// applies to whoever reads the config next.
+///
+/// A leaf a human pinned in `init.lua` is REFUSED, with the file and line.
+/// That refusal is the point of the verb: a save the boot would shadow acts
+/// nowhere, and the command that silently lost it was the previous bug in
+/// this function wearing a different hat.
+pub async fn select(name: &str, format: Option<OutputFormat>) -> Result<()> {
     let catalog = fetch(Some(name), false).await?;
     let name = catalog
         .resolved
@@ -102,23 +111,43 @@ pub async fn select(
     let row = catalog.models.iter().find(|model| model.name == name);
 
     // The old value is the one that was in force, which is not always the one
-    // the file held: an absent key still selects a model.
+    // a file held: an absent key still selects a model.
     let effective = catalog.configured.clone();
-    let path = config_path.unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
-    let replaced = write_model(&path, &name)?;
-    let previous = match (replaced.model, effective.as_deref()) {
-        (Some(from_file), _) => from_file,
-        (None, Some(default)) => format!("{default} (the default)"),
-        (None, None) => "(none)".to_string(),
+    let client = daemon_client().await?;
+    let stale = stale_provider_keys(&client).await;
+    let saved = client
+        .call(
+            "config.save",
+            serde_json::json!({ "values": fastembed_provider_delta(&name) }),
+        )
+        .await
+        .context("Failed to save the embedding model through the daemon")?;
+
+    // A refusal is per leaf and carries the pin. Reporting success over it
+    // would leave the user with the old model and a message saying otherwise.
+    if let Some(refused) = saved["refused"].as_array().filter(|rows| !rows.is_empty()) {
+        anyhow::bail!(
+            "The embedding model is set in your config file, which outranks a saved \
+             preference. Edit it there instead: {}",
+            refused
+                .iter()
+                .map(describe_pin)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    let previous = match effective.as_deref() {
+        Some(model) if model == name => format!("{model} (unchanged)"),
+        Some(model) => model.to_string(),
+        None => "(none)".to_string(),
     };
-    let stale = replaced.stale_keys;
     let needs_reprocess = effective.as_deref() != Some(name.as_str());
 
     if format == Some(OutputFormat::Json) {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "config_file": path.display().to_string(),
                 "model": name,
                 "previous": previous,
                 "stale_keys": stale,
@@ -130,18 +159,13 @@ pub async fn select(
     }
 
     println!(
-        "{} {}",
-        "Config file:".bold(),
-        path.display().to_string().cyan()
-    );
-    println!(
         "  Embedding model: {} -> {}",
         previous.yellow(),
         name.green()
     );
     if !stale.is_empty() {
         output::warning(&format!(
-            "The old provider was not fastembed. These keys are still in the file and nothing \
+            "The old provider was not fastembed. These keys are still in the config and nothing \
              reads them now: {}.",
             stale.join(", ")
         ));
@@ -151,9 +175,10 @@ pub async fn select(
             "The stored vectors come from the old model. Semantic search stays wrong until \
              you rebuild them.",
         );
-        // The running daemon holds the config it was bound with. It reads no
-        // file again, so a reprocess before the restart re-embeds every note
-        // with the *old* model and reports success.
+        // The saved value reaches the store at once, but the running pipeline
+        // holds the embedder it was built with, so a reprocess before the
+        // restart re-embeds every note with the *old* model and reports
+        // success.
         println!("  {}", "Run: cru daemon restart".dimmed());
         println!("  {}", "Then: cru process --force".dimmed());
     }
@@ -164,6 +189,63 @@ pub async fn select(
         );
     }
     Ok(())
+}
+
+/// The two keys `use` saves, as one `config.save` overlay.
+///
+/// `type` travels with `model` because `EmbeddingProviderConfig` is a tagged
+/// union: a `model` saved under a `type = "openai"` block would name an
+/// OpenAI model, not a local one.
+fn fastembed_provider_delta(model: &str) -> serde_json::Value {
+    serde_json::json!({
+        "enrichment": {
+            "provider": { "type": "fastembed", "model": model }
+        }
+    })
+}
+
+/// One refused leaf, as the sentence a user can act on.
+fn describe_pin(row: &serde_json::Value) -> String {
+    let key = row["key"].as_str().unwrap_or("the key");
+    match (row["file"].as_str(), row["line"].as_u64()) {
+        (Some(file), Some(line)) => format!("{key} at {file}:{line}"),
+        (Some(file), None) => format!("{key} in {file}"),
+        _ => key.to_string(),
+    }
+}
+
+/// The keys the CURRENT provider block holds that fastembed does not read.
+///
+/// They stay in the config. Deleting them would throw away an API key the
+/// user may want back, and `EmbeddingProviderConfig` ignores them without a
+/// word, so the command is the only thing that can say so. Read from the
+/// daemon's effective config rather than from one file, because the block can
+/// be assembled from more than one layer.
+///
+/// An unreachable or unparseable answer yields no keys: the warning is a
+/// courtesy, and failing the selection over it would be worse than omitting
+/// it.
+async fn stale_provider_keys(client: &crucible_daemon::rpc_client::DaemonClient) -> Vec<String> {
+    let Ok(response) = client.call("config.effective", serde_json::json!({})).await else {
+        return Vec::new();
+    };
+    let Some(provider) = response.pointer("/config/enrichment/provider") else {
+        return Vec::new();
+    };
+    let kind = provider["type"].as_str().unwrap_or("fastembed");
+    if kind.eq_ignore_ascii_case("fastembed") {
+        return Vec::new();
+    }
+    provider
+        .as_object()
+        .map(|table| {
+            table
+                .keys()
+                .filter(|key| *key != "type" && *key != "model")
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Ask the daemon for the catalog, optionally resolving or downloading a model.
@@ -180,91 +262,6 @@ async fn fetch(model: Option<&str>, download: bool) -> Result<EmbeddingCatalog> 
         );
     }
     Ok(catalog)
-}
-
-/// What the config file held before `use` wrote over it.
-#[derive(Debug)]
-struct Replaced {
-    /// The model the file named, when it named one.
-    model: Option<String>,
-
-    /// The keys the old provider block held that fastembed does not read.
-    ///
-    /// They stay in the file. Deleting them would throw away an API key the
-    /// user may want back, and `EmbeddingProviderConfig` ignores them without
-    /// a word, so the command says which ones are now dead.
-    stale_keys: Vec<String>,
-}
-
-/// Write `[enrichment.provider]` into the config file. Returns what it replaced.
-///
-/// `toml_edit` keeps every other line of the file — comments included —
-/// because the file is the user's, and a rewrite that reformatted it would be
-/// a second, unasked-for change.
-fn write_model(path: &Path, model: &str) -> Result<Replaced> {
-    // A read that fails for any reason other than "no such file" must stop
-    // the command. Treating an unreadable file as an empty one would replace
-    // the whole config with the two keys below — a config holding one
-    // non-UTF-8 byte is enough to trigger it.
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e).with_context(|| format!("Failed to read {}", path.display())),
-    };
-    let mut document = text
-        .parse::<toml_edit::DocumentMut>()
-        .with_context(|| format!("Failed to parse {}", path.display()))?;
-
-    let not_a_table = || {
-        anyhow::anyhow!(
-            "{} writes `enrichment` or `enrichment.provider` as an inline table or a value, \
-             which this command cannot edit. Edit the file by hand.",
-            path.display()
-        )
-    };
-    let enrichment = document
-        .entry("enrichment")
-        .or_insert(toml_edit::table())
-        .as_table_mut()
-        .ok_or_else(not_a_table)?;
-    // Implicit, so a file that gains only `[enrichment.provider]` does not
-    // also gain an empty `[enrichment]` header above it. toml_edit still
-    // writes the header once the table holds a value of its own.
-    enrichment.set_implicit(true);
-    let provider = enrichment
-        .entry("provider")
-        .or_insert(toml_edit::table())
-        .as_table_mut()
-        .ok_or_else(not_a_table)?;
-
-    let string = |key: &str| {
-        provider
-            .get(key)
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-    };
-    let previous = string("model");
-    let stale_keys = match string("type") {
-        Some(kind) if !kind.eq_ignore_ascii_case("fastembed") => provider
-            .iter()
-            .map(|(key, _)| key.to_string())
-            .filter(|key| key != "type" && key != "model")
-            .collect(),
-        _ => Vec::new(),
-    };
-    provider.insert("type", toml_edit::value("fastembed"));
-    provider.insert("model", toml_edit::value(model));
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create {}", parent.display()))?;
-    }
-    std::fs::write(path, document.to_string())
-        .with_context(|| format!("Failed to write {}", path.display()))?;
-    Ok(Replaced {
-        model: previous,
-        stale_keys,
-    })
 }
 
 /// The catalog as one table.
@@ -332,118 +329,66 @@ fn human_bytes(bytes: u64) -> String {
         format!("{mb:.0} MB")
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::config::{CliAppConfig, EmbeddingProviderConfig};
 
-    /// `use` writes both keys, keeps the rest of the file, and reports the old
-    /// model. The path is a `TempDir`, so the developer's own config never
-    /// takes part.
-    #[test]
-    fn use_writes_the_provider_keys_and_reports_the_old_model() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let path = dir.path().join("config.toml");
-        std::fs::write(
-            &path,
-            "# keep me\n[enrichment.provider]\ntype = \"fastembed\"\nmodel = \"bge-small-en-v1.5\"\n\n[chat]\nmodel = \"llama3\"\n",
-        )
-        .expect("seed config");
-
-        let replaced = write_model(&path, "arctic-embed-m").expect("write");
-        assert_eq!(replaced.model.as_deref(), Some("bge-small-en-v1.5"));
-        assert!(replaced.stale_keys.is_empty());
-
-        let written = std::fs::read_to_string(&path).expect("read back");
-        assert!(written.contains("model = \"arctic-embed-m\""), "{written}");
-        assert!(written.contains("type = \"fastembed\""), "{written}");
-        assert!(written.contains("# keep me"), "{written}");
-        assert!(written.contains("[chat]"), "{written}");
-        assert!(written.contains("llama3"), "{written}");
-    }
-
-    /// A config file that does not exist yet is created, and there is no old
-    /// model to report.
-    #[test]
-    fn use_creates_a_missing_config_file() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let path = dir.path().join("nested").join("config.toml");
-
-        let replaced = write_model(&path, "bge-base-en-v1.5").expect("write");
-        assert_eq!(replaced.model, None);
-        let written = std::fs::read_to_string(&path).expect("read back");
-        assert!(
-            written.contains("model = \"bge-base-en-v1.5\""),
-            "{written}"
-        );
-    }
-
-    /// A config file this command cannot read is not an empty config file.
+    /// The saved overlay must name leaves the config type really has.
     ///
-    /// The read fails on the non-UTF-8 byte. Treating that as "the file holds
-    /// nothing" would write two keys over the user's whole config, so the
-    /// command must stop and leave every byte where it was.
+    /// The expectation comes from the running types, not from a copy of the
+    /// key names here: the overlay is deserialized as a `CliAppConfig`, and
+    /// its provider as the tagged union the daemon stores. A renamed path or
+    /// a wrong tag stops parsing instead of saving a leaf nothing reads —
+    /// which is exactly what the `config.toml` write did.
     #[test]
-    fn use_refuses_a_config_file_it_cannot_read() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let path = dir.path().join("config.toml");
-        let seeded = b"# caf\xe9\n[chat]\nmodel = \"llama3\"\n";
-        std::fs::write(&path, seeded).expect("seed config");
+    fn the_saved_overlay_deserializes_as_a_fastembed_provider() {
+        let delta = fastembed_provider_delta("arctic-embed-m");
 
-        let error = write_model(&path, "arctic-embed-m").expect_err("an unreadable file stops it");
+        let config: CliAppConfig =
+            serde_json::from_value(delta.clone()).expect("the overlay must be app config");
+        let provider = config
+            .enrichment
+            .expect("the overlay must reach `enrichment`")
+            .provider;
         assert!(
-            error.to_string().contains("Failed to read"),
-            "the refusal must say the read failed, but it said: {error}"
+            matches!(&provider, EmbeddingProviderConfig::FastEmbed(cfg) if cfg.model == "arctic-embed-m"),
+            "the overlay must select fastembed and the named model: {provider:?}"
         );
+    }
+
+    /// The overlay carries the two keys and no third one.
+    ///
+    /// `config.save` writes what it is given, whole. A `cache_dir` or a
+    /// `batch_size` filled in from a default here would freeze that default
+    /// into the user's `settings.json` and outrank a plugin that sets it.
+    #[test]
+    fn the_saved_overlay_carries_only_the_two_keys() {
+        let delta = fastembed_provider_delta("bge-small-en-v1.5");
+        let provider = delta
+            .pointer("/enrichment/provider")
+            .and_then(serde_json::Value::as_object)
+            .expect("the overlay names enrichment.provider");
+
+        let mut keys: Vec<&str> = provider.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["model", "type"]);
+        assert_eq!(delta.as_object().map(serde_json::Map::len), Some(1));
+    }
+
+    /// A refusal must name the file and line that holds the key, because that
+    /// is the only place the user can change it.
+    #[test]
+    fn a_refused_leaf_is_described_with_its_file_and_line() {
+        let row = serde_json::json!({
+            "key": "enrichment.provider.model",
+            "source": "lua",
+            "file": "/home/u/.config/crucible/init.lua",
+            "line": 12,
+        });
         assert_eq!(
-            std::fs::read(&path).expect("read back"),
-            seeded,
-            "the command rewrote a file it could not read"
-        );
-    }
-
-    /// Switching away from a remote provider names the keys it left behind.
-    ///
-    /// The keys stay: one of them is an API key the user may want back. But
-    /// nothing reads them under `type = "fastembed"`, and the config loader
-    /// ignores them without a word, so the command is the only thing that can
-    /// say so.
-    #[test]
-    fn use_reports_the_keys_the_old_provider_left_behind() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let path = dir.path().join("config.toml");
-        std::fs::write(
-            &path,
-            "[enrichment.provider]\ntype = \"openai\"\napi_key = \"sk-secret\"\nbase_url = \"https://example.invalid\"\nmodel = \"text-embedding-3-small\"\n",
-        )
-        .expect("seed config");
-
-        let replaced = write_model(&path, "arctic-embed-m").expect("write");
-        assert_eq!(replaced.model.as_deref(), Some("text-embedding-3-small"));
-        assert_eq!(replaced.stale_keys, vec!["api_key", "base_url"]);
-
-        let written = std::fs::read_to_string(&path).expect("read back");
-        assert!(
-            written.contains("sk-secret"),
-            "the command deleted a key it only had to name: {written}"
-        );
-    }
-
-    /// An inline `provider` table is refused, and the refusal says so.
-    ///
-    /// `toml_edit` gives no table to edit, and the previous sentence told the
-    /// user the file held something that was "not a table" when it held one.
-    #[test]
-    fn use_refuses_an_inline_provider_table_and_says_why() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, "[enrichment]\nprovider = { type = \"openai\" }\n")
-            .expect("seed config");
-
-        let error = write_model(&path, "arctic-embed-m").expect_err("an inline table stops it");
-        assert!(
-            error.to_string().contains("inline table"),
-            "the refusal must name the shape it cannot edit, but it said: {error}"
+            describe_pin(&row),
+            "enrichment.provider.model at /home/u/.config/crucible/init.lua:12"
         );
     }
 }

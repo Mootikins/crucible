@@ -20,9 +20,9 @@ Crucible uses a cross-platform configuration system that works consistently acro
 
 The primary configuration file location follows platform conventions:
 
-- **Linux**: `~/.config/crucible/config.toml` (XDG Base Directory)
-- **macOS**: `~/Library/Application Support/crucible/config.toml`
-- **Windows**: `%APPDATA%\crucible\config.toml` (e.g., `C:\Users\YourName\AppData\Roaming\crucible\config.toml`)
+- **Linux**: `~/.config/crucible/init.lua` (XDG Base Directory)
+- **macOS**: `~/Library/Application Support/crucible/init.lua`
+- **Windows**: `%APPDATA%\crucible\init.lua` (e.g., `C:\Users\YourName\AppData\Roaming\crucible\init.lua`)
 
 > **Note:** On Windows, Crucible uses `%APPDATA%` (Roaming AppData) which is the standard Windows location for user configuration files that should roam with the user profile.
 
@@ -63,10 +63,10 @@ notes = 'C:\Users\YourName\Documents\my-kiln'
 type = "fastembed"
 model = "BAAI/bge-small-en-v1.5"
 batch_size = 16
-"@ | Out-File -FilePath "$env:APPDATA\crucible\config.toml" -Encoding utf8
+"@ | Out-File -FilePath "$env:APPDATA\crucible\init.lua" -Encoding utf8
 ```
 
-Or manually create the file at: `C:\Users\YourName\AppData\Roaming\crucible\config.toml`
+Or manually create the file at: `C:\Users\YourName\AppData\Roaming\crucible\init.lua`
 
 ### Environment Variables
 
@@ -176,7 +176,7 @@ If ONNX Runtime issues persist, use alternative embedding providers:
 - **llama.cpp**: GGUF models, excellent Windows support
 - **OpenAI/Anthropic**: Cloud-based APIs
 
-All providers work on Windows and can be configured in `config.toml`.
+All providers work on Windows and can be configured in `init.lua`.
 
 ## Common Issues
 

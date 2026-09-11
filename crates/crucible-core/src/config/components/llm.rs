@@ -17,12 +17,6 @@ pub struct LlmProviderConfig {
     /// Default model for this provider
     pub default_model: Option<String>,
 
-    /// Temperature for generation (0.0-2.0)
-    pub temperature: Option<f32>,
-
-    /// Maximum tokens to generate
-    pub max_tokens: Option<u32>,
-
     /// API key for this provider (use `{env:VAR}` syntax for env vars)
     pub api_key: Option<String>,
 
@@ -60,18 +54,6 @@ impl LlmProviderConfig {
         })
     }
 
-    /// Get temperature (default 0.7)
-    pub fn temperature(&self) -> f32 {
-        self.temperature
-            .unwrap_or(super::defaults::DEFAULT_TEMPERATURE)
-    }
-
-    /// Get max tokens (default 4096)
-    pub fn max_tokens(&self) -> u32 {
-        self.max_tokens
-            .unwrap_or(super::defaults::DEFAULT_PROVIDER_MAX_TOKENS)
-    }
-
     /// Get the API key (already resolved if `{env:VAR}` was used)
     pub fn api_key(&self) -> Option<String> {
         self.api_key.clone()
@@ -103,8 +85,6 @@ pub struct LlmProviderConfigBuilder {
     provider_type: BackendType,
     endpoint: Option<String>,
     default_model: Option<String>,
-    temperature: Option<f32>,
-    max_tokens: Option<u32>,
     api_key: Option<String>,
     available_models: Option<Vec<String>>,
     trust_level: Option<super::trust::TrustLevel>,
@@ -118,8 +98,6 @@ impl LlmProviderConfigBuilder {
             provider_type,
             endpoint: None,
             default_model: None,
-            temperature: None,
-            max_tokens: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -136,18 +114,6 @@ impl LlmProviderConfigBuilder {
     /// Set the default model
     pub fn model(mut self, model: impl Into<String>) -> Self {
         self.default_model = Some(model.into());
-        self
-    }
-
-    /// Set the temperature
-    pub fn temperature(mut self, temp: f32) -> Self {
-        self.temperature = Some(temp);
-        self
-    }
-
-    /// Set max tokens
-    pub fn max_tokens(mut self, tokens: u32) -> Self {
-        self.max_tokens = Some(tokens);
         self
     }
 
@@ -200,8 +166,6 @@ impl LlmProviderConfigBuilder {
             provider_type: self.provider_type,
             endpoint: self.endpoint,
             default_model: self.default_model,
-            temperature: self.temperature,
-            max_tokens: self.max_tokens,
             api_key: self.api_key,
             available_models: self.available_models,
             trust_level: self.trust_level,
@@ -288,8 +252,6 @@ mod tests {
 
         assert_eq!(ollama.endpoint(), "http://localhost:11434");
         assert_eq!(ollama.model(), "llama3.2");
-        assert_eq!(ollama.temperature(), 0.7);
-        assert_eq!(ollama.max_tokens(), 4096);
 
         let openai = LlmProviderConfig::builder(BackendType::OpenAI).build();
 
@@ -335,14 +297,10 @@ mod tests {
         let config = LlmProviderConfig::builder(BackendType::Ollama)
             .endpoint("http://192.168.1.100:11434")
             .model("llama3.1:70b")
-            .temperature(0.9)
-            .max_tokens(8192)
             .build();
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
         assert_eq!(config.model(), "llama3.1:70b");
-        assert_eq!(config.temperature(), 0.9);
-        assert_eq!(config.max_tokens(), 8192);
     }
 
     #[test]

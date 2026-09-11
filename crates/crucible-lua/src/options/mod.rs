@@ -43,6 +43,7 @@
 //!   inheritance for a node that means it.
 
 pub mod admit;
+pub mod app_config;
 pub mod control;
 pub mod validate;
 

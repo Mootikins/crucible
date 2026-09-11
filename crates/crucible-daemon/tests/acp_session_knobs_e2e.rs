@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::{AgentManager, AgentManagerParams, BackgroundJobManager, KilnManager};
@@ -83,10 +83,7 @@ fn acp_agent() -> SessionAgent {
         provider: BackendType::Custom,
         model: "mock-acp".to_string(),
         system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -94,15 +91,8 @@ fn acp_agent() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }
@@ -214,10 +204,6 @@ async fn no_knob_restarts_the_agent_process() {
         .set_precognition(id, true, None)
         .await
         .expect("precognition");
-    h.agent_manager
-        .set_precognition_results(id, 3, None)
-        .await
-        .expect("precognition results");
 
     run_a_turn(&h).await;
 
@@ -244,10 +230,10 @@ fn the_mock_agent_binary_is_available() {
 /// A setting ACP cannot carry is refused rather than stored.
 ///
 /// These setters never ask the handle: they write the session's config and
-/// stop. So an accepted `set_temperature` was a value the agent process would
-/// never see, reported back to the caller as though it had taken effect. The
-/// error names the setting, because "not supported" alone leaves a user
-/// guessing which control just failed.
+/// stop. So an accepted `set_context_budget` was a value the agent process
+/// would never see, reported back to the caller as though it had taken
+/// effect. The error names the setting, because "not supported" alone leaves
+/// a user guessing which control just failed.
 #[tokio::test]
 async fn a_setting_the_protocol_has_no_field_for_is_refused() {
     let h = setup().await;
@@ -255,21 +241,15 @@ async fn a_setting_the_protocol_has_no_field_for_is_refused() {
 
     let attempts = [
         (
-            "temperature",
-            h.agent_manager.set_temperature(id, 0.2, None).await,
-        ),
-        (
-            "max_tokens",
-            h.agent_manager.set_max_tokens(id, Some(2048), None).await,
-        ),
-        (
-            "thinking_budget",
-            h.agent_manager.set_thinking_budget(id, 4096, None).await,
-        ),
-        (
-            "system_prompt",
+            "context_strategy",
             h.agent_manager
-                .set_system_prompt(id, "be brief", None)
+                .set_context_strategy(id, crucible_core::session::ContextStrategy::Truncate, None)
+                .await,
+        ),
+        (
+            "context_budget",
+            h.agent_manager
+                .set_context_budget(id, Some(32_000), None)
                 .await,
         ),
     ];
@@ -297,10 +277,6 @@ async fn a_setting_the_daemon_implements_is_still_accepted() {
         .set_precognition(id, true, None)
         .await
         .expect("precognition is the daemon's own work");
-    h.agent_manager
-        .set_precognition_results(id, 7, None)
-        .await
-        .expect("and so is how many notes it injects");
 }
 
 /// A client asks the session which settings it has, and gets an answer that
@@ -322,11 +298,9 @@ async fn a_session_reports_which_settings_it_supports() {
             .unwrap_or_else(|| panic!("`{id}` is missing from the answer"))
     };
 
-    assert!(!supported("temperature"), "ACP has no temperature");
-    assert!(!supported("max_tokens"), "ACP has no token cap");
     assert!(
-        !supported("system_prompt"),
-        "ACP has no system prompt field"
+        !supported("context_budget"),
+        "the agent owns its history, so the daemon budgets nothing"
     );
     assert!(supported("mode"), "session/set_mode carries the mode");
     assert!(

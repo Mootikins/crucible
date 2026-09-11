@@ -179,7 +179,7 @@ pub fn register_cru_on_api(
             // holds what its installation declared: `intercept_tools` used to
             // be read from a Lua global with `.unwrap_or(true)`, so it failed
             // OPEN for every daemon-loaded plugin and was forgeable besides.
-            grants: context.map(|c| c.grants),
+            may_intercept_grant: context.map(|c| c.may_intercept),
             timeout_ms,
         });
         func_guard.insert(name.clone(), key);

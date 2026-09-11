@@ -127,7 +127,7 @@ read the same in the same list. The modeline applies the same rule to the id
 and upper-cases the result, so `acceptEdits` shows as ` ACCEPT EDITS `; that
 is the modeline's styling, not a second name.
 
-Rules use the same engine as the global `[permissions]` config, so
+Rules use the same engine as the global `permissions` config, so
 `bash:rg *` inherits its handling of chained commands — permitting `rg` does
 not thereby permit `rg foo && rm -rf /`, `rg foo; rm -rf /`, or the same line
 with `&`, `|`, `||` or a newline in place of the `&&`. A construct the splitter
@@ -147,10 +147,8 @@ a different program; a rule that names `rm` never covers `find . -delete`.
 not stop a determined caller. [[Help/Concepts/Permission Precedence]] states the
 guarantee and its limits in full.
 
-Declare a mode in `~/.config/crucible/init.lua` for every session, or in
-`<workspace>/.crucible/lua/init.lua` for one project. That path is the
-session's **workspace** — the directory work happens in — not its kiln; see
-`crates/crucible-daemon/src/agent_manager/session_vm.rs`. Setting
+Declare a mode in `~/.config/crucible/init.lua`. The daemon runs the shipped
+defaults file first and your file second, so your declaration wins and
 `cru.modes.plan = nil` removes a built-in.
 
 For decisions that depend on the arguments rather than the tool, use a
@@ -159,7 +157,7 @@ permission hook instead — see [[Help/Concepts/Permission Precedence]].
 ## Modes in an ACP Session
 
 A session that runs an external agent — `cru chat --acp claude`, or any
-`[acp.agents.*]` profile — shows **that agent's** modes, not the ones you
+`acp.agents.*` profile — shows **that agent's** modes, not the ones you
 declared in Lua. The agent owns them: claude-agent-acp offers five
 (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), codex-acp
 offers its own three, and an agent rejects a mode it never declared.

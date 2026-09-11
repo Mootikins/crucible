@@ -135,6 +135,12 @@ test = false
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# The orphan gate asks the OS whether a pid is still alive (`kill(pid, 0)`).
+# Proving a process is gone is the whole point of that test, so it cannot use
+# the fixture's own bookkeeping.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
 [package.metadata.cargo-machete]
 # ort is never imported directly but pins the ONNX Runtime version/features
 # (download-binaries, copy-dylibs) that fastembed needs at link time.

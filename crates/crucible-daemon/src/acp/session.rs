@@ -132,9 +132,10 @@ pub struct AcpSession {
     ///
     /// `model` is extracted above because Crucible has a typed model
     /// selector to project it onto. The rest are kept as the agent sent
-    /// them: `thought_level` is the one Crucible has a knob for, and
-    /// `Other(_)` is whatever this particular agent invented. A client
-    /// renders them; the daemon does not interpret them.
+    /// them: `thought_level` is the agent's own reasoning control, which
+    /// Crucible does not mirror, and `Other(_)` is whatever this particular
+    /// agent invented. A client renders them; the daemon does not interpret
+    /// them.
     config_options: Vec<SessionConfigOption>,
     /// How the connect flow obtained this session.
     resume: ResumeDisposition,

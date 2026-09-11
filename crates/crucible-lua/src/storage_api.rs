@@ -276,7 +276,7 @@ mod store_tests {
             &lua,
             Some(crate::plugin_context::PluginContext {
                 name: "test-plugin".to_string(),
-                grants: crate::manifest::CapabilitySet::none(),
+                may_intercept: false,
             }),
         );
         lua
@@ -415,7 +415,7 @@ mod store_tests {
             &lua,
             Some(crate::plugin_context::PluginContext {
                 name: "alpha".to_string(),
-                grants: crate::manifest::CapabilitySet::none(),
+                may_intercept: false,
             }),
         );
 

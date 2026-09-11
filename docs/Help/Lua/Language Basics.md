@@ -81,9 +81,9 @@ f:close()
 
 > [!warning] One known divergence: `config`
 > `cru.config.get(key)` reads a single **top-level** app-config value (the
-> merged `config.toml` + `cru.config.set()` state, no dotted paths), while
+> the merged `cru.config.set()` state, no dotted paths), while
 > `cru.plugin.config.get("plugin.key")` — registered on the daemon's plugin VM —
-> does dotted-key descent into `[plugins.*]` config. Same name, different
+> does dotted-key descent into `plugins.*` config. Same name, different
 > semantics; pick by what you're reading, not by namespace habit.
 
 ### Core Modules

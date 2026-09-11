@@ -46,6 +46,8 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
 
 impl OilChatRunner {
     pub(super) fn render_app_frame(&mut self, app: &mut OilChatApp) -> Result<()> {
+        // The one place the TUI reads the wall clock for a frame.
+        app.set_frame_time(std::time::Instant::now());
         if app.has_shell_modal() {
             // Shell modal uses fullscreen rendering (Terminal-specific)
             if app.take_needs_full_redraw() {

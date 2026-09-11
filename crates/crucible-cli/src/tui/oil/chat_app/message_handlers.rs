@@ -2,7 +2,6 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall, ToolSourceDisplay};
@@ -72,7 +71,7 @@ impl OilChatApp {
                     output_path: None,
                     output_total_bytes: 0,
                     error: None,
-                    started_at: Instant::now(),
+                    started_at: self.frame_time(),
                     complete: false,
                     superseded: false,
                     description: description.map(|d| Arc::from(d.as_str())),
@@ -80,6 +79,7 @@ impl OilChatApp {
                     lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
                     diffs,
                     auto_approved,
+                    backgrounded: false,
                 };
                 self.container_list.add_tool_call(tool);
             }
@@ -108,10 +108,11 @@ impl OilChatApp {
             }
             ChatAppMsg::ToolResultComplete { name, call_id } => {
                 // Finishing a split tool writes its second immutable node.
-                if !self
-                    .container_list
-                    .finish_background_tool(&name, call_id.as_deref())
-                {
+                if !self.container_list.finish_background_tool(
+                    &name,
+                    call_id.as_deref(),
+                    self.frame_time(),
+                ) {
                     self.container_list
                         .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
                 }
@@ -127,8 +128,11 @@ impl OilChatApp {
                         t.set_error(error.clone())
                     })
                 {
-                    self.container_list
-                        .finish_background_tool(&name, call_id.as_deref());
+                    self.container_list.finish_background_tool(
+                        &name,
+                        call_id.as_deref(),
+                        self.frame_time(),
+                    );
                 } else {
                     self.container_list
                         .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
@@ -199,17 +203,9 @@ impl OilChatApp {
                 self.plugin_status = entries;
             }
             // Command-only: side effects handled by chat_runner::process_action
-            ChatAppMsg::SetThinkingBudget(_)
-            | ChatAppMsg::SetMaxIterations(_)
-            | ChatAppMsg::SetExecutionTimeout(_)
-            | ChatAppMsg::SetContextBudget(_)
+            ChatAppMsg::SetContextBudget(_)
             | ChatAppMsg::SetContextStrategy(_)
-            | ChatAppMsg::SetContextWindow(_)
-            | ChatAppMsg::SetOutputValidation(_)
-            | ChatAppMsg::SetValidationRetries(_)
-            | ChatAppMsg::SetPrecognition(_)
-            | ChatAppMsg::SetPrecognitionResults(_)
-            | ChatAppMsg::SetAutocompactThreshold(_) => {}
+            | ChatAppMsg::SetPrecognition(_) => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
             }
@@ -221,7 +217,7 @@ impl OilChatApp {
     pub(super) fn handle_delegation_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::SubagentSpawned { id, prompt } => {
-                let agent = CachedSubagent::new(id, prompt, "subagent");
+                let agent = CachedSubagent::new(id, prompt, "subagent", self.frame_time());
                 self.container_list.add_agent_task(agent);
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
@@ -241,7 +237,7 @@ impl OilChatApp {
                 if self.pending_delegate_supersessions.contains(&id) {
                     self.pending_delegate_supersessions.remove(&id);
                 }
-                let mut agent = CachedSubagent::new(&id, prompt, "delegation");
+                let mut agent = CachedSubagent::new(&id, prompt, "delegation", self.frame_time());
                 agent.target_agent = target_agent;
                 self.container_list.add_agent_task(agent);
             }
@@ -274,11 +270,10 @@ impl OilChatApp {
             }
             ChatAppMsg::LuaEvaled { output, is_error } => {
                 if is_error {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::warning(format!(
-                            "lua: {}",
-                            output
-                        )));
+                    self.add_notification(crucible_core::types::Notification::warning(format!(
+                        "lua: {}",
+                        output
+                    )));
                 } else {
                     self.add_system_message(output);
                 }
@@ -400,10 +395,38 @@ impl OilChatApp {
                 self.set_status("Ready");
             }
 
+            // The daemon's answer for an app-config `:set`. The value is the
+            // store's, not the one the user typed: a refused or normalized
+            // write must not read back as what was asked for.
+            ChatAppMsg::ConfigSetResolved { key, value } => {
+                self.apply_resolved_app_config(&key, value);
+            }
+
+            // The daemon's answer for `:set key?` / `:set key??`. It is
+            // printed and not recorded: a read must not create the second
+            // copy the write path stopped making.
+            ChatAppMsg::ConfigQueryResolved { key, value, origin } => {
+                self.show_app_config_answer(&key, value, origin);
+            }
+
+            // The daemon's answer for `:set key&` / `:set key^`. Printed and
+            // not recorded, for the same reason a read is: the layers the
+            // store dropped are the store's, and this client holds no copy.
+            ChatAppMsg::ConfigDropResolved {
+                key,
+                dropped,
+                value,
+                origin,
+            } => {
+                self.show_app_config_drop(&key, &dropped, value, &origin);
+            }
+
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::ReloadPlugin(_)
             | ChatAppMsg::EvalLua(_)
             | ChatAppMsg::ConfigSet { .. }
+            | ChatAppMsg::ConfigQuery { .. }
+            | ChatAppMsg::ConfigDrop { .. }
             | ChatAppMsg::ExecuteSlashCommand(_)
             | ChatAppMsg::ExportSession(_)
             | ChatAppMsg::Undo(_) => {}

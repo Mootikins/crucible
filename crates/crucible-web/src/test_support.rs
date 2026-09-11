@@ -332,6 +332,26 @@ fn review_comment_fixture(id: &str, body: &str) -> Value {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// The kiln the mock daemon's effective config names — a different directory
+/// from any web-side copy, so a route test can tell which one it read.
+pub const MOCK_DAEMON_KILN_PATH: &str = "/daemon/kiln";
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The file the mock daemon's pinned leaf comes from. A refusal must carry it
+/// to the browser, or a user cannot open the line that holds the key.
+pub const MOCK_PIN_FILE: &str = "/daemon/config/init.lua";
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The top-level key the mock daemon treats as pinned — see the `config.save`
+/// arm of [`mock_rpc_response`].
+pub const MOCK_PINNED_KEY: &str = "mock_pinned";
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The reason the mock daemon gives for its one read-only leaf. A read-only
+/// key must reach the browser WITH its reason, or the control is a dead end.
+pub const MOCK_LOCATION_REASON: &str = "A location key names WHERE the daemon acts.";
+
+#[cfg(any(test, feature = "test-utils"))]
 /// Generate mock RPC responses based on method name.
 pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
     match method {
@@ -556,12 +576,6 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "workspace": workspace,
             })
         }
-        "session.set_thinking_budget" => json!(null),
-        "session.get_thinking_budget" => json!({"thinking_budget": 1024}),
-        "session.set_temperature" => json!(null),
-        "session.get_temperature" => json!({"temperature": 0.7}),
-        "session.set_max_tokens" => json!(null),
-        "session.get_max_tokens" => json!({"max_tokens": 4096}),
         "session.set_precognition" => json!(null),
         "session.get_precognition" => json!({"precognition_enabled": true}),
         "session.set_precognition_results" => json!(null),
@@ -573,24 +587,16 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // reads `null` instead of coincidentally matching.
         "session.set_context_budget" => json!(null),
         "session.get_context_budget" => json!({"context_budget": 111}),
-        "session.set_context_window" => json!(null),
-        "session.get_context_window" => json!({"context_window": 222}),
         "session.set_autocompact_threshold" => json!(null),
         "session.get_autocompact_threshold" => json!({"autocompact_threshold": 0.75}),
-        "session.set_max_iterations" => json!(null),
-        "session.get_max_iterations" => json!({"max_iterations": 33}),
-        "session.set_execution_timeout" => json!(null),
         // `timeout_secs`, NOT `execution_timeout` — the asymmetry the web
         // request/response structs have to honour.
-        "session.get_execution_timeout" => json!({"timeout_secs": 44}),
         "session.set_validation_retries" => json!(null),
         "session.get_validation_retries" => json!({"validation_retries": 5}),
         "session.set_context_strategy" => json!(null),
         "session.get_context_strategy" => json!({"context_strategy": "recent"}),
         "session.set_output_validation" => json!(null),
         "session.get_output_validation" => json!({"output_validation": "strict"}),
-        "session.set_system_prompt" => json!(null),
-        "session.get_system_prompt" => json!({"system_prompt": "be terse"}),
         "session.get_mode" => json!({"mode": "plan"}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
@@ -619,6 +625,84 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                     "args": [],
                     "env": {},
                 })
+            }
+        }
+        // The three app-config methods `/api/config` forwards to. The
+        // effective config carries one leaf a human's `init.lua` holds, and
+        // `config.origin` reports that same leaf, so a route test can see a
+        // value and its provenance travel together.
+        "config.effective" => json!({
+            "config": {
+                "kiln_path": MOCK_DAEMON_KILN_PATH,
+                "chat": { "model": "daemon-model" },
+            },
+            "config_root": "/daemon/config",
+            "boot_hash": "mock-boot-hash",
+            "kiln_path_is_default": false,
+            "provenance": { "chat.model": { "lua": { "file": MOCK_PIN_FILE, "line": 12 } } },
+        }),
+        // A stand-in tree, not the daemon's real one: this crate does not
+        // link the Lua VM that owns it, and the route only forwards. The
+        // group name is a sentinel, so the route test sees the daemon's answer
+        // travel rather than a shape this file and the route agreed on.
+        "config.controls" => json!({
+            "options": {
+                "type": "group",
+                "name": "Crucible",
+                "args": [{
+                    "key": "chat",
+                    "path": "chat",
+                    "type": "group",
+                    "name": "Chat",
+                    "order": 10,
+                    "args": [{
+                        "key": "model",
+                        "path": "chat.model",
+                        "type": "input",
+                        "name": "Model",
+                        "desc": "Default model for a new session.",
+                        "order": 1,
+                        "default": "",
+                        "writable": true,
+                    }],
+                }],
+            },
+            "read_only": [{ "path": "data_home", "reason": MOCK_LOCATION_REASON }],
+        }),
+        "config.origin" => json!({
+            "origins": [
+                {
+                    "key": "chat.model",
+                    "value": "daemon-model",
+                    "source": "lua",
+                    "file": MOCK_PIN_FILE,
+                    "line": 12,
+                }
+            ],
+        }),
+        // Which leaves a save may write is the daemon's rule, not this mock's.
+        // A top-level [`MOCK_PINNED_KEY`] is the sentinel for "a human's line
+        // holds this", so a route test sees a refusal envelope without a
+        // second implementation of the layering rule living here.
+        "config.save" => {
+            let pinned = msg
+                .get("params")
+                .and_then(|p| p.get("values"))
+                .and_then(|values| values.get(MOCK_PINNED_KEY))
+                .is_some();
+            if pinned {
+                json!({
+                    "ok": false,
+                    "rejected": [],
+                    "refused": [{
+                        "key": format!("{MOCK_PINNED_KEY}.leaf"),
+                        "source": "lua",
+                        "file": MOCK_PIN_FILE,
+                        "line": 12,
+                    }],
+                })
+            } else {
+                json!({ "ok": true, "refused": [], "rejected": [] })
             }
         }
         // Echoes the `key` it was asked for, so a contract test can prove the

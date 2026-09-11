@@ -45,34 +45,44 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across
 
 ### Step 3: Configure the Provider
 
-Add to your `~/.config/crucible/config.toml`.
+Add to your `~/.config/crucible/init.lua`.
 
 **Native ZAI (recommended):**
 
-```toml
-[llm]
-default = "zai-coding"
-
-[llm.providers.zai-coding]
-type = "zai"
-endpoint = "https://api.z.ai/api/coding/paas/v4"
-api_key = "{env:GLM_AUTH_TOKEN}"
-default_model = "GLM-4.7"
-temperature = 0.7
-max_tokens = 4096
+```lua
+cru.config.set({
+    llm = {
+        default = "zai-coding",
+        providers = {
+            ["zai-coding"] = {
+                type = "zai",
+                endpoint = "https://api.z.ai/api/coding/paas/v4",
+                api_key = os.getenv("GLM_AUTH_TOKEN"),
+                default_model = "GLM-4.7",
+            },
+        },
+    },
+})
 ```
 
 **Anthropic proxy (alternative):**
 
-```toml
-[llm.providers.zai-anthropic]
-type = "anthropic"
-endpoint = "https://api.z.ai/api/anthropic"
-api_key = "{env:GLM_AUTH_TOKEN}"
-default_model = "claude-sonnet-4-20250514"
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            ["zai-anthropic"] = {
+                type = "anthropic",
+                endpoint = "https://api.z.ai/api/anthropic",
+                api_key = os.getenv("GLM_AUTH_TOKEN"),
+                default_model = "claude-sonnet-4-20250514",
+            },
+        },
+    },
+})
 ```
 
-The `{env:GLM_AUTH_TOKEN}` syntax reads the key from your environment variable at runtime, keeping secrets out of config files.
+`os.getenv("GLM_AUTH_TOKEN")` reads the key from your environment at boot, which keeps the secret out of the config file.
 
 ## Important: Model Names
 

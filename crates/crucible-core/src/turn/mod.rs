@@ -8,8 +8,7 @@
 //! Tool-loop control is event-driven: the agent emits `ToolCall`, the
 //! runtime replies with a `ToolResult` on an inbound channel. The
 //! runtime uses the same inbound channel to inject handler output
-//! (`HandlerInjection`) and to signal depth-cap exhaustion
-//! (`DepthCapHit`). There is one channel topology, not three.
+//! (`HandlerInjection`). There is one channel topology, not two.
 //!
 //! Conversation state lives in [`tree::ConversationTree`]: scheduler-
 //! owned, append-only, fanout/collect preserved as first-class ops so
@@ -29,7 +28,7 @@ use crate::traits::context_ops::ContextMessage;
 use crate::traits::llm::TokenUsage;
 
 /// Event flowing from an `Agent` to the runtime, or (for a subset of
-/// variants — `ToolResult`, `HandlerInjection`, `DepthCapHit`) from the
+/// variants — `ToolResult`, `HandlerInjection`) from the
 /// runtime back to the agent on the inbound channel.
 ///
 /// Terminal variants: `Done`, `Error`.
@@ -129,10 +128,6 @@ pub enum TurnEvent {
     /// the only way to diverge from it.
     ContextAttach { content: String },
 
-    /// Inbound only. Maximum tool-call depth was reached; the agent
-    /// should produce a final response without further tool calls.
-    DepthCapHit { max_depth: usize },
-
     /// Token usage. Typically one event per turn, near `Done`.
     Usage(TokenUsage),
 
@@ -162,8 +157,6 @@ pub enum TurnEvent {
 pub enum StopReason {
     /// Model finished naturally.
     EndTurn,
-    /// Runtime forced a final response after `max_tool_depth` was reached.
-    MaxToolDepth,
     /// Cancelled by user / caller.
     Cancelled,
     /// Turn produced nothing the user can see: no text, no thinking, no tool
@@ -288,8 +281,8 @@ pub struct TurnContext {
     /// Includes the user's new message at the end when applicable.
     /// Empty for legacy callers that rely on agent-side state.
     pub messages: Vec<ContextMessage>,
-    /// Inbound event channel. Runtime sends `ToolResult`,
-    /// `HandlerInjection`, `DepthCapHit`. May be `None` for
+    /// Inbound event channel. Runtime sends `ToolResult` and
+    /// `HandlerInjection`. May be `None` for
     /// fire-and-forget turns that need no continuation.
     pub inbound: Option<mpsc::Receiver<TurnEvent>>,
     /// Whether this turn is a continuation (reactor handler injection

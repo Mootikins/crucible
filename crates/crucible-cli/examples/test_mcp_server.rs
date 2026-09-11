@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
         .serve(TokioChildProcess::new(Command::new(&cru_path).configure(
             |cmd| {
                 cmd.arg("mcp");
-                // Server will use default config at ~/.config/crucible/config.toml
+                // Server will use the default config root, ~/.config/crucible
                 // Note: stderr is piped by TokioChildProcess, don't override
             },
         ))?)

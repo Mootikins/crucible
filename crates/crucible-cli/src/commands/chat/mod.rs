@@ -29,7 +29,6 @@ pub struct ChatParams {
     /// only happened to hold while the mode set was fixed.
     pub read_only: bool,
     pub no_context: bool,
-    pub context_size: Option<usize>,
     pub provider_key: Option<String>,
     pub max_context_tokens: usize,
     pub env_overrides: Vec<String>,
@@ -47,7 +46,6 @@ impl ChatParams {
             read_only: false,
             no_context: false,
             // No override: the daemon's session default stands.
-            context_size: None,
             provider_key: None,
             max_context_tokens: 16384,
             env_overrides: vec![],
@@ -298,19 +296,13 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
 ///
 /// `--no-context` also suppresses `--context-size`: there is no result count
 /// to set on a searcher that will not run.
-fn precognition_flag_actions(
-    no_context: bool,
-    context_size: Option<usize>,
-) -> Vec<crate::tui::oil::commands::SetRpcAction> {
+fn precognition_flag_actions(no_context: bool) -> Vec<crate::tui::oil::commands::SetRpcAction> {
     use crate::tui::oil::commands::SetRpcAction;
 
     if no_context {
         vec![SetRpcAction::SetPrecognition(false)]
     } else {
-        context_size
-            .map(SetRpcAction::SetPrecognitionResults)
-            .into_iter()
-            .collect()
+        Vec::new()
     }
 }
 
@@ -324,7 +316,6 @@ fn precognition_flag_actions(
 fn build_initial_sets(
     set_overrides: &[String],
     no_context: bool,
-    context_size: Option<usize>,
 ) -> Result<Vec<crate::tui::oil::commands::SetEffect>, String> {
     use crate::tui::oil::commands::{validate_set_for_cli, SetEffect};
 
@@ -336,7 +327,7 @@ fn build_initial_sets(
         }
     }
     sets.extend(
-        precognition_flag_actions(no_context, context_size)
+        precognition_flag_actions(no_context)
             .into_iter()
             .map(SetEffect::DaemonRpc),
     );
@@ -448,7 +439,6 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         agent_name,
         read_only,
         no_context,
-        context_size,
         provider_key,
         // `--max-context` never reached the daemon; the flag stays until a
         // session knob carries it.
@@ -471,7 +461,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
     // `initial_sets` → `process_action` path, which applies them after the
     // session exists — including a session reattached by `--resume`, matching
     // `cru chat -q --resume`.
-    let parsed_set_overrides = match build_initial_sets(&set_overrides, no_context, context_size) {
+    let parsed_set_overrides = match build_initial_sets(&set_overrides, no_context) {
         Ok(sets) => sets,
         Err(message) => {
             output::error(&message);
@@ -735,7 +725,6 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
         agent_name,
         read_only,
         no_context,
-        context_size,
         provider_key,
         max_context_tokens: _,
         env_overrides,
@@ -790,13 +779,13 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
             .map_err(|e| anyhow::anyhow!("failed to apply --plan: {e}"))?;
     }
 
-    // `--no-context` / `--context-size` are session state, not a local
-    // transform: the daemon owns Precognition, and it is already enabled by
+    // `--no-context` is session state, not a local transform: the daemon owns
+    // Precognition, and it is already enabled by
     // `SessionAgent::internal_from_config`. Setting it here is what makes
     // `cru chat -q` and the TUI ground identically — and why the prompt below
     // is the user's text verbatim. Enriching it client-side made the daemon's
     // own search run against the CLI's context block instead of the question.
-    for action in precognition_flag_actions(no_context, context_size) {
+    for action in precognition_flag_actions(no_context) {
         if let Err(e) = apply_rpc_action(&mut handle, action).await {
             anyhow::bail!("failed to apply knowledge-base context flags: {e}");
         }
@@ -891,19 +880,6 @@ async fn apply_rpc_action(
                 .await
                 .map_err(|e| e.to_string())
         }
-        SetRpcAction::SetThinkingBudget(Some(budget)) => handle
-            .set_thinking_budget(budget)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetThinkingBudget(None) => Ok(()),
-        SetRpcAction::SetMaxIterations(max) => handle
-            .set_max_iterations(max)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetExecutionTimeout(timeout) => handle
-            .set_execution_timeout(timeout)
-            .await
-            .map_err(|e| e.to_string()),
         SetRpcAction::SetContextBudget(budget) => handle
             .set_context_budget(budget)
             .await
@@ -917,33 +893,8 @@ async fn apply_rpc_action(
                 Err(e) => Err(e),
             }
         }
-        SetRpcAction::SetContextWindow(window) => handle
-            .set_context_window(window)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetOutputValidation(ref validation_str) => {
-            match validation_str.parse::<crucible_core::session::OutputValidation>() {
-                Ok(validation) => handle
-                    .set_output_validation(validation)
-                    .await
-                    .map_err(|e| e.to_string()),
-                Err(e) => Err(e),
-            }
-        }
-        SetRpcAction::SetValidationRetries(retries) => handle
-            .set_validation_retries(retries)
-            .await
-            .map_err(|e| e.to_string()),
         SetRpcAction::SetPrecognition(enabled) => handle
             .set_precognition(enabled)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetPrecognitionResults(count) => handle
-            .set_precognition_results(count)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetAutocompactThreshold(threshold) => handle
-            .set_autocompact_threshold(threshold)
             .await
             .map_err(|e| e.to_string()),
     }

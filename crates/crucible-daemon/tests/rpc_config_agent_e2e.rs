@@ -1,11 +1,11 @@
 //! Integration tests for config + agent + model RPC methods.
 //!
-//! Tests set/get round-trips for thinking_budget, temperature, max_tokens,
-//! precognition, and session.configure_agent / session.list_models.
+//! Tests set/get round-trips for precognition, and
+//! session.configure_agent / session.list_models.
 
 use anyhow::Result;
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;
 use std::path::PathBuf;
@@ -112,10 +112,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "Test assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -123,15 +120,8 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -145,128 +135,6 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
     std::mem::forget(kiln_dir);
 
     (session_id, client)
-}
-
-// =============================================================================
-// 1. Thinking budget round-trip
-// =============================================================================
-
-#[tokio::test]
-async fn test_thinking_budget_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Set thinking budget to 1024
-    client
-        .session_set_thinking_budget(&session_id, Some(1024))
-        .await
-        .expect("set_thinking_budget failed");
-
-    let budget = client
-        .session_get_thinking_budget(&session_id)
-        .await
-        .expect("get_thinking_budget failed");
-
-    assert_eq!(
-        budget,
-        Some(1024),
-        "Thinking budget should round-trip to 1024"
-    );
-
-    // Update to unlimited (-1)
-    client
-        .session_set_thinking_budget(&session_id, Some(-1))
-        .await
-        .expect("set_thinking_budget -1 failed");
-
-    let budget = client
-        .session_get_thinking_budget(&session_id)
-        .await
-        .expect("get_thinking_budget failed");
-
-    assert_eq!(
-        budget,
-        Some(-1),
-        "Thinking budget should round-trip to -1 (unlimited)"
-    );
-
-    server.shutdown().await;
-}
-
-// =============================================================================
-// 2. Temperature round-trip
-// =============================================================================
-
-#[tokio::test]
-async fn test_temperature_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Set temperature to 0.3
-    client
-        .session_set_temperature(&session_id, 0.3)
-        .await
-        .expect("set_temperature failed");
-
-    let temp = client
-        .session_get_temperature(&session_id)
-        .await
-        .expect("get_temperature failed");
-
-    assert_eq!(temp, Some(0.3), "Temperature should round-trip to 0.3");
-
-    // Set temperature to 1.5
-    client
-        .session_set_temperature(&session_id, 1.5)
-        .await
-        .expect("set_temperature failed");
-
-    let temp = client
-        .session_get_temperature(&session_id)
-        .await
-        .expect("get_temperature failed");
-
-    assert_eq!(temp, Some(1.5), "Temperature should round-trip to 1.5");
-
-    server.shutdown().await;
-}
-
-// =============================================================================
-// 3. Max tokens round-trip
-// =============================================================================
-
-#[tokio::test]
-async fn test_max_tokens_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Set max_tokens to 8192
-    client
-        .session_set_max_tokens(&session_id, Some(8192))
-        .await
-        .expect("set_max_tokens failed");
-
-    let tokens = client
-        .session_get_max_tokens(&session_id)
-        .await
-        .expect("get_max_tokens failed");
-
-    assert_eq!(tokens, Some(8192), "Max tokens should round-trip to 8192");
-
-    // Clear max_tokens (set to None)
-    client
-        .session_set_max_tokens(&session_id, None)
-        .await
-        .expect("set_max_tokens None failed");
-
-    let tokens = client
-        .session_get_max_tokens(&session_id)
-        .await
-        .expect("get_max_tokens failed");
-
-    assert_eq!(tokens, None, "Max tokens should be None after clearing");
-
-    server.shutdown().await;
 }
 
 // =============================================================================
@@ -345,10 +213,7 @@ async fn test_configure_agent_sets_agent() {
         provider: BackendType::OpenAI,
         model: "gpt-4o".to_string(),
         system_prompt: "Test configure.".to_string(),
-        temperature: Some(0.5),
-        max_tokens: Some(2048),
         max_context_tokens: None,
-        thinking_budget: Some(512),
         endpoint: None,
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
@@ -356,15 +221,8 @@ async fn test_configure_agent_sets_agent() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     };
 
@@ -414,77 +272,6 @@ async fn test_list_models_returns_list() {
     assert!(
         models.is_empty() || !models.is_empty(),
         "list_models should return a valid list"
-    );
-
-    server.shutdown().await;
-}
-
-// =============================================================================
-// 7. Thinking budget default value
-// =============================================================================
-
-#[tokio::test]
-async fn test_thinking_budget_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Agent was configured with thinking_budget: None — get should return None
-    let budget = client
-        .session_get_thinking_budget(&session_id)
-        .await
-        .expect("get_thinking_budget failed");
-
-    assert_eq!(
-        budget, None,
-        "Thinking budget should be None when agent configured without one"
-    );
-
-    server.shutdown().await;
-}
-
-// =============================================================================
-// 8. Temperature default value
-// =============================================================================
-
-#[tokio::test]
-async fn test_temperature_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Agent was configured with temperature: Some(0.7) — get should return 0.7
-    let temp = client
-        .session_get_temperature(&session_id)
-        .await
-        .expect("get_temperature failed");
-
-    assert_eq!(
-        temp,
-        Some(0.7),
-        "Temperature should be 0.7 from the initial agent configuration"
-    );
-
-    server.shutdown().await;
-}
-
-// =============================================================================
-// 9. Max tokens default value (bonus)
-// =============================================================================
-
-#[tokio::test]
-async fn test_max_tokens_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let (session_id, client) = setup_session_with_agent(&server).await;
-
-    // Agent was configured with max_tokens: Some(4096) — get should return 4096
-    let tokens = client
-        .session_get_max_tokens(&session_id)
-        .await
-        .expect("get_max_tokens failed");
-
-    assert_eq!(
-        tokens,
-        Some(4096),
-        "Max tokens should be 4096 from the initial agent configuration"
     );
 
     server.shutdown().await;
@@ -546,48 +333,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
     }
 
     round_trip!(
-        "thinking_budget",
-        client.session_set_thinking_budget(&sid, Some(1024)),
-        client.session_get_thinking_budget(&sid),
-        Some(1024)
-    );
-    round_trip!(
-        "system_prompt",
-        client.session_set_system_prompt(&sid, "Round-trip prompt."),
-        client.session_get_system_prompt(&sid),
-        Some("Round-trip prompt.".to_string())
-    );
-    round_trip!(
-        "precognition_results",
-        client.session_set_precognition_results(&sid, 9),
-        client.session_get_precognition_results(&sid),
-        Some(9)
-    );
-    round_trip!(
-        "temperature",
-        client.session_set_temperature(&sid, 0.3),
-        client.session_get_temperature(&sid),
-        Some(0.3)
-    );
-    round_trip!(
-        "max_tokens",
-        client.session_set_max_tokens(&sid, Some(8192)),
-        client.session_get_max_tokens(&sid),
-        Some(8192)
-    );
-    round_trip!(
-        "max_iterations",
-        client.session_set_max_iterations(&sid, Some(7)),
-        client.session_get_max_iterations(&sid),
-        Some(7)
-    );
-    round_trip!(
-        "execution_timeout",
-        client.session_set_execution_timeout(&sid, Some(120)),
-        client.session_get_execution_timeout(&sid),
-        Some(120)
-    );
-    round_trip!(
         "context_budget",
         client.session_set_context_budget(&sid, Some(32000)),
         client.session_get_context_budget(&sid),
@@ -598,30 +343,6 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         client.session_set_context_strategy(&sid, "sliding_window"),
         client.session_get_context_strategy(&sid),
         Some("sliding_window".to_string())
-    );
-    round_trip!(
-        "context_window",
-        client.session_set_context_window(&sid, Some(20)),
-        client.session_get_context_window(&sid),
-        Some(20)
-    );
-    round_trip!(
-        "output_validation",
-        client.session_set_output_validation(&sid, "json"),
-        client.session_get_output_validation(&sid),
-        Some("json".to_string())
-    );
-    round_trip!(
-        "validation_retries",
-        client.session_set_validation_retries(&sid, 5),
-        client.session_get_validation_retries(&sid),
-        Some(5)
-    );
-    round_trip!(
-        "autocompact_threshold",
-        client.session_set_autocompact_threshold(&sid, Some(0.75)),
-        client.session_get_autocompact_threshold(&sid),
-        Some(0.75)
     );
 
     // precognition's getter returns bool (not Option) — check it directly.
@@ -658,19 +379,11 @@ async fn test_config_get_on_nonexistent_session_fails() {
         .expect("Failed to connect");
 
     let result = client
-        .session_get_thinking_budget("nonexistent-session-id")
+        .session_get_context_budget("nonexistent-session-id")
         .await;
     assert!(
         result.is_err(),
-        "get_thinking_budget should fail for nonexistent session"
-    );
-
-    let result = client
-        .session_get_temperature("nonexistent-session-id")
-        .await;
-    assert!(
-        result.is_err(),
-        "get_temperature should fail for nonexistent session"
+        "get_context_budget should fail for nonexistent session"
     );
 
     server.shutdown().await;

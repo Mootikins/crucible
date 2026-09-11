@@ -154,8 +154,8 @@ fn a_config_layer_refusal_names_the_config_file() {
 
     // A config that declares `notes`, so the config layer owns the name.
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "\n[kilns]\nnotes = \"{}\"\n",
-        cli_e2e_helpers::toml_escape(&declared)
+        "cru.config.set({{ kilns = {{ notes = \"{}\" }} }})\n",
+        cli_e2e_helpers::path_literal(&declared)
     ));
 
     let output = daemon

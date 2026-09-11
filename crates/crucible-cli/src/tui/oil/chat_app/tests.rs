@@ -205,12 +205,51 @@ fn plugins_discovered_raises_notification_for_failed_plugin() {
 
     app.on_message(ChatAppMsg::PluginsDiscovered(vec![PluginStatusEntry {
         name: "broken".into(),
-        version: "0.1.0".into(),
+        version: Some("0.1.0".into()),
         state: "failed".into(),
         error: Some("bad Lua".into()),
     }]));
 
     assert!(app.has_notifications());
+}
+
+/// `/plugins` lists a plugin the daemon has discovered but not loaded.
+///
+/// Such a plugin has NO version: the version lives in the spec table, which
+/// only a load reads. The daemon reports `null`, and the list must show the
+/// name and the state without a Rust debug value ("None") and without the
+/// old "0.0.0" placeholder, which read as a real release.
+#[test]
+fn the_plugins_list_shows_no_version_for_a_plugin_that_is_not_loaded() {
+    use crucible_core::types::PluginStatusEntry;
+
+    // Built from the wire shape, not from a Rust literal, so the test also
+    // pins that the daemon may send a null version.
+    let entry: PluginStatusEntry = serde_json::from_value(serde_json::json!({
+        "name": "unloaded-plugin",
+        "version": null,
+        "state": "Discovered",
+        "error": null,
+    }))
+    .expect("the daemon reports a null version for a plugin it has not loaded");
+
+    let mut app = OilChatApp::default();
+    app.set_plugin_status(vec![entry]);
+    app.handle_plugins_command();
+
+    let rendered = last_node_text(&app, 120);
+    assert!(
+        rendered.contains("unloaded-plugin"),
+        "the plugin is missing from the list: {rendered}"
+    );
+    assert!(
+        !rendered.contains("None"),
+        "a Rust debug value reached the transcript: {rendered}"
+    );
+    assert!(
+        !rendered.contains("0.0.0"),
+        "the placeholder version reached the transcript: {rendered}"
+    );
 }
 
 // ─── US-602: shell command history storage ──────────────────────────
@@ -474,4 +513,57 @@ fn one_kiln_reads_as_one() {
         rendered.contains("1 kiln attached"),
         "singular missing: {rendered}"
     );
+}
+
+// ─── Frame clock ────────────────────────────────────────────────────────────
+
+fn running_tool_call() -> ChatAppMsg {
+    ChatAppMsg::ToolCall {
+        name: "bash".into(),
+        args: "{}".into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+        diffs: Vec::new(),
+        auto_approved: None,
+    }
+}
+
+#[test]
+fn a_slow_tool_split_follows_the_frame_clock() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("run it".into()));
+    app.on_message(running_tool_call());
+    let start = app.frame_time();
+
+    assert!(!app.split_slow_tools(), "no time passed on the frame clock");
+
+    app.set_frame_time(start + BACKGROUND_TOOL_SPLIT_THRESHOLD);
+    assert!(
+        app.split_slow_tools(),
+        "the threshold passed on the frame clock"
+    );
+    assert_eq!(app.container_list().background_task_count(), 1);
+}
+
+/// The transcript must not read the wall clock. A replay test feeds a
+/// recording through `render_frame` with the frame clock frozen; on a slow CI
+/// runner the replay itself outran the split threshold, an incomplete tool
+/// left its group above the viewport, and the answer below it scrolled out of
+/// the assertion. The sleep here is deliberate: it is the only way to prove
+/// that real elapsed time changes nothing.
+#[test]
+fn the_wall_clock_alone_never_splits_a_tool() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("run it".into()));
+    app.on_message(running_tool_call());
+
+    std::thread::sleep(BACKGROUND_TOOL_SPLIT_THRESHOLD + std::time::Duration::from_millis(50));
+
+    assert!(
+        !app.split_slow_tools(),
+        "the frame clock did not move, so the tool must stay in its group"
+    );
+    assert_eq!(app.container_list().background_task_count(), 0);
 }

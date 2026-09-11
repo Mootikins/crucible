@@ -56,11 +56,6 @@ pub enum ConfigError {
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    /// YAML parsing error.
-    #[cfg(feature = "yaml")]
-    #[error("YAML parsing error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
-
     /// TOML parsing error.
     #[cfg(feature = "toml")]
     #[error("TOML parsing error: {0}")]

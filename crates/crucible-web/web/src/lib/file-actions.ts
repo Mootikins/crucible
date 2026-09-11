@@ -39,6 +39,39 @@ export function openFileWithDiff(
 }
 
 /**
+ * Open a file in the editor and scroll to one line.
+ *
+ * The route out of a locked setting: a settings control the user's `init.lua`
+ * pins names the file and the line that pins it, and this opens that line. A
+ * lock with no route out is a dead end, which is why the jump is part of the
+ * lock rather than an extra.
+ *
+ * A file already open is scrolled rather than opened twice — the editor reads
+ * `scrollToLine` off the tab, so the metadata is updated on the existing tab.
+ */
+export function openFileAtLine(filePath: string, line: number, fileName?: string): void {
+  const existing = findTabByFilePath(filePath);
+  if (existing) {
+    windowActions.updateTab(existing.groupId, existing.tab.id, {
+      metadata: { ...existing.tab.metadata, filePath, scrollToLine: line },
+    });
+    windowActions.setActiveTab(existing.groupId, existing.tab.id);
+    return;
+  }
+  const groupId = editorGroupId();
+  if (!groupId) return;
+  const title = fileName || filePath.split('/').pop() || filePath;
+  windowActions.addTab(groupId, {
+    id: `tab-file-${filePath}`,
+    title,
+    contentType: contentTypeForPath(filePath),
+    icon: iconForContentType(contentTypeForPath(filePath)),
+    metadata: { filePath, scrollToLine: line },
+  });
+  recordRecentFile(filePath, title);
+}
+
+/**
  * Open a file as a tab in a SPECIFIC tab group (drag-a-file-onto-a-pane).
  * Falls back to activating an existing tab wherever it lives — one file, one
  * tab, matching `openFileInEditor`.

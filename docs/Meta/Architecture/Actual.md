@@ -154,8 +154,8 @@ before the permission gate; only statement order protects it.
   (`crucible-cli/src/kiln_attach.rs:112`) while the doc calls the daemon
   registry the authority. `KilnRegistryContext::for_daemon` reads
   `current_dir` and `home_dir` (`kiln_registry.rs:174`).
-- `execution_roots::baseline` reads env vars and `config.toml` from disk
-  (`execution_roots.rs:73-99`); `kiln_registry.rs:323` names it as the
+- `execution_roots::baseline` reads env vars and `settings.json` from disk
+  (`execution_roots.rs`); `kiln_registry.rs:323` names it as the
   precedent for the wrong choice.
 - The web layer holds its own policy: credential-directory deny list
   (`crucible-web/src/routes/project.rs:28-76`), SSRF address classification
@@ -272,7 +272,7 @@ sweep runs every 30 min with a 72 h default (`server/mod.rs:664-667`).
   the CLI literal at `crucible-cli/src/commands/session/acp.rs:527-558`
   both repeat `SessionAgent::internal_from_config`
   (`crucible-core/src/session/types/agent.rs:335-398`).
-- The "session VM under lock, then plugin VM" two-pass loop is hand-written
+- The two-pass loop over session VM then plugin VM was hand-written
   eleven times: `tool_call.rs:358-393`; `permission.rs:331-365,502-533`;
   `stream.rs:1181-1199,1250-1279`; `tool_hooks.rs:26-70,77-121,192-218,226-274`;
   `precognition/mod.rs:159-175,253-274`.
@@ -302,8 +302,7 @@ sweep runs every 30 min with a 72 h default (`server/mod.rs:664-667`).
   agent config (`session_bridge.rs:395`); three hand-built JSON projections of
   `Session` differ on `title` (`session_bridge.rs:89,100,118`).
 - `spawn_setup_task` indexes only the first kiln of the flat set
-  (`server/session/mod.rs:126-131`). `session.set_thinking_budget` stores
-  `unwrap_or(0)` and echoes the raw `Option` (`server/session/params.rs:311-325`).
+  (`server/session/mod.rs:126-131`).
 - `inject_context_impl` returns `Result<(), String>` and the handler classifies
   by `starts_with` (`server/session/messaging.rs:161-162`).
 - `StreamingChunk` (`acp/streaming.rs:23`, 7 variants) is a translation layer
@@ -774,8 +773,7 @@ to resume and close. MCP: `InProcessMcpHost` URL goes into
   `routes/webhook.rs:149`, `routes/auth.rs:92`). `OkResponse`
   (`routes/session/mod.rs:21`) beside eight `json!({"ok": true})` literals.
   `NoteListItem` is a positional 5-tuple (`routes/helpers.rs:22`).
-  `session_get_precognition_results` hides `unwrap_or(5)` in the transport
-  wrapper (`services/daemon.rs:1038`). `KeepAlive.shell` is never `Some`
+  `KeepAlive.shell` is never `Some`
   (`routes/terminal.rs:56`). `handle_webhook` returns `Result<Json, Response>`
   (`routes/webhook.rs:68`). Dead wrappers: `capabilities`, `note_upsert`,
   `lua_discover_plugins`, `lua_plugin_health`, `session_create`,
@@ -821,7 +819,7 @@ the precognition formatter. `ModeRegistry` has no Rust default.
 `handlers/`, `lifecycle/`, `prelude/`, `sessions/`, `vault/`),
 `crucible-daemon/src/daemon_plugins/`, `plugin_tools.rs`, `plugin_ops.rs`,
 `runtime_defaults.rs`, `rules_files.rs`, `skills/`, `session_bridge.rs`,
-`tools_bridge.rs`, `agent_manager/session_vm.rs`, `server/{lua,plugins,
+`tools_bridge.rs`, `agent_manager/session_config.rs`, `server/{lua,plugins,
 plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 
 **Types.**
@@ -842,7 +840,7 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `DaemonSessionBridge` | `crucible-daemon/src/session_bridge.rs:23` | The one production `DaemonSessionApi` |
 | `DaemonToolsApi`, `DaemonToolsBridge` | `crucible-lua/src/tools_api.rs:95`, `crucible-daemon/src/tools_bridge.rs:19` | `cru.tools.*` contract and impl |
 | `SessionConfigRpc`, `Session`, `CurrentSession` | `crucible-lua/src/session_api.rs:67,297,489` | Lua `session` userdata and its knob contract |
-| `SessionDefaults`, `SessionDefaultValues`, `SessionDefaultsRpc` | `crucible-lua/src/session_defaults.rs:70,52,199` | `cru.defaults` |
+| `SessionStartScope`, `SessionStartValues`, `SessionStartScopeRpc` | `crucible-lua/src/session_start_scope.rs` | the scope an `on_session_start` hook writes |
 | `ModeRegistry`, `ModeDefinition`, `ModePermissions`, `ModeStance`, `ToolSelector` | `crucible-lua/src/modes.rs:161,149,132,42,77` | `cru.modes`; permission modes live here |
 | `IsolationRegistry` | `crucible-lua/src/isolation.rs:122` | `cru.isolation.require` |
 | `StatusRegistry`, `PublicationRegistry`, `ContextAttachRegistry`, `OptionsRegistry`, `StatuslineExprRegistry`, `LuaValidatorRegistry` | `plugin_status.rs:54`, `publications.rs:33`, `context_attach.rs:74`, `options.rs:65`, `statusline_exprs.rs:68`, `context.rs:187` | Daemon-read registries behind `Arc<Mutex>` |
@@ -871,8 +869,8 @@ of which 5 are empty).
 `create_function` (sync) and `create_async_function` (async). The daemon calls
 `runtime_handlers_for` and `execute_runtime_handler` (async),
 `execute_permission_hooks` (sync by design), `execute_tool_*_hooks` (async).
-Plugin code runs in one VM; session VMs are per session (`session_vm.rs`).
-`register_permission_hook_api` is called only from `session_vm.rs:113`; the
+All Lua files run in one VM, the daemon's.
+`register_permission_hook_api` is called only from `daemon_plugins/mod.rs`; the
 plugin loader never registers it. `load_plugin_spec` spawns a fresh sandboxed
 `Lua` per spec (`spec.rs:140`) and the daemon executes the same file again in
 the real VM (`discovery.rs:295`). `ChannelSessionRpc` uses `blocking_recv`
@@ -908,8 +906,9 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   parsed and serialized but no renderer reads them.
 - `cru.log.notify` appends to a queue only tests drain (`notify.rs:78,110,241,262`)
   while `docs/Help/Lua/Language Basics.md:74` documents it.
-- `cru.defaults.mode` is stored but never exposed to Lua
-  (`session_defaults.rs:92-175`).
+- `mode` and `model` on the start scope are settable only from an
+  `on_session_start` hook, never as a config key. That is deliberate: a global
+  `model` would silently replace the one the caller named on the command line.
 - `CONFIG` is process-global (`config.rs:55`); every VM shares theme state.
 - `daemon_plugin_paths` (`daemon_plugins/bootstrap.rs:33`) and
   `PluginManager::with_standard_paths` (`lifecycle/mod.rs:112`) both compute
@@ -1444,8 +1443,10 @@ Production items that only tests use:
   `JobKind::Subagent` remains and `delegation.rs:489` builds it.
 - `register_project_in_config` uses a serde round-trip and drops comments
   (`crucible-core/src/config/registration.rs:183`).
-- Two readers of `config.toml`: `CliAppConfig::load` and the daemon's own parse
-  in `execution_roots.rs:90-114`; the kiln registry reads a JSON view.
+- One reader of `config.toml` is left: `CliAppConfig::load`, which serves
+  `cru config migrate`. `cru web` used it too until it moved to the effective
+  config, and served the DEFAULT port, API key and allow-list while it did. `execution_roots` parses `settings.json` instead, and
+  the kiln registry reads a JSON view.
 - Config fields parsed and read by nothing: `acp.lazy_agent_selection`,
   `storage.idle_timeout_secs` (both documented as reserved; plan T3-B18 deleted
   `DiscoveryConfig` and `ResolveMode`),

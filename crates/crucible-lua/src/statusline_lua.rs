@@ -282,19 +282,28 @@ pub fn layout_from_setup_table(config: &Table) -> Layout {
 
 /// The default layout, as authored in Lua.
 ///
-/// The layout Crucible ships with lives in `runtime/statusline/default.lua`
-/// rather than in Rust, so it reads as configuration a user can copy. Parsing
-/// needs a VM, so [`crate::statusline_items::builtin_default`] stays as the
-/// compiled-in twin the TUI falls back to with no daemon; a test asserts the
-/// two agree.
-pub fn default_layout_from_lua() -> Result<Layout, LuaError> {
+/// The VM a statusline layout file is evaluated in: `cru.statusline` and its
+/// item constructors, and nothing else.
+///
+/// One function, so the surface a layout is CHECKED against cannot drift from
+/// the one it RUNS against — `vm_profiles::statusline_vm` calls this.
+pub fn statusline_vm() -> Result<Lua, LuaError> {
     let lua = Lua::new();
     let cru = lua.create_table()?;
     let statusline = lua.create_table()?;
     register_statusline_items(&lua, &statusline)?;
     cru.set("statusline", statusline)?;
     lua.globals().set("cru", cru)?;
+    Ok(lua)
+}
 
+/// The layout Crucible ships with lives in `runtime/statusline/default.lua`
+/// rather than in Rust, so it reads as configuration a user can copy. Parsing
+/// needs a VM, so [`crate::statusline_items::builtin_default`] stays as the
+/// compiled-in twin the TUI falls back to with no daemon; a test asserts the
+/// two agree.
+pub fn default_layout_from_lua() -> Result<Layout, LuaError> {
+    let lua = statusline_vm()?;
     let table: Table = lua.load(DEFAULT_STATUSLINE_LUA).eval()?;
     Ok(layout_from_setup_table(&table))
 }

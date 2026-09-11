@@ -96,7 +96,7 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
             }
             Err(SetError::UnknownKey(key)) => {
                 eprintln!(
-                    "error: unknown setting '{}'. Valid keys: model, thinkingbudget, maxiterations",
+                    "error: unknown setting '{}'. Valid keys: model, contextbudget, maxiterations",
                     key
                 );
                 std::process::exit(1);
@@ -125,24 +125,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to switch model: {}", e))?;
             }
-            SetRpcAction::SetThinkingBudget(budget) => {
-                client
-                    .session_set_thinking_budget(&session_id, *budget)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set thinking budget: {}", e))?;
-            }
-            SetRpcAction::SetMaxIterations(max_iterations) => {
-                client
-                    .session_set_max_iterations(&session_id, *max_iterations)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set max iterations: {}", e))?;
-            }
-            SetRpcAction::SetExecutionTimeout(timeout_secs) => {
-                client
-                    .session_set_execution_timeout(&session_id, *timeout_secs)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set execution timeout: {}", e))?;
-            }
             SetRpcAction::SetContextBudget(budget) => {
                 client
                     .session_set_context_budget(&session_id, *budget)
@@ -155,41 +137,11 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set context strategy: {}", e))?;
             }
-            SetRpcAction::SetContextWindow(window) => {
-                client
-                    .session_set_context_window(&session_id, *window)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set context window: {}", e))?;
-            }
-            SetRpcAction::SetOutputValidation(validation) => {
-                client
-                    .session_set_output_validation(&session_id, validation)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set output validation: {}", e))?;
-            }
-            SetRpcAction::SetValidationRetries(retries) => {
-                client
-                    .session_set_validation_retries(&session_id, *retries)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set validation retries: {}", e))?;
-            }
             SetRpcAction::SetPrecognition(enabled) => {
                 client
                     .session_set_precognition(&session_id, *enabled)
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set precognition: {}", e))?;
-            }
-            SetRpcAction::SetPrecognitionResults(count) => {
-                client
-                    .session_set_precognition_results(&session_id, *count)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set precognition results: {}", e))?;
-            }
-            SetRpcAction::SetAutocompactThreshold(threshold) => {
-                client
-                    .session_set_autocompact_threshold(&session_id, *threshold)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set autocompact threshold: {}", e))?;
             }
         }
         println!("Set {} on session {}", setting_str, session_id);
@@ -257,10 +209,10 @@ mod tests {
     }
 
     #[test]
-    fn validate_daemon_rpc_key_thinkingbudget() {
+    fn validate_daemon_rpc_key_contextbudget() {
         assert!(matches!(
-            validate_set_for_cli("thinkingbudget=high").unwrap(),
-            SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(_)))
+            validate_set_for_cli("contextbudget=32000").unwrap(),
+            SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(Some(_)))
         ));
     }
 

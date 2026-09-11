@@ -325,17 +325,19 @@ During a session:
 
 ## Configuration
 
-The internal agent is configured through the ordinary `[chat]` and `[llm]` sections of
-`~/.config/crucible/config.toml`, and stores its sessions in the default kiln:
+The internal agent is configured through the ordinary `chat` and `llm` sections of
+`~/.config/crucible/init.lua`, and stores its sessions in the default kiln:
 
-```toml
-default_kiln = "notes"
-
-[kilns]
-notes = "~/Documents/crucible-testing"
-
-[chat]
-agent_preference = "crucible"
+```lua
+cru.config.set({
+    default_kiln = "notes",
+    kilns = {
+        notes = "~/Documents/crucible-testing",
+    },
+    chat = {
+        agent_preference = "crucible",
+    },
+})
 ```
 
 See [[Help/Configuration]] for every field.

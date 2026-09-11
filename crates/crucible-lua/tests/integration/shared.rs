@@ -6,13 +6,6 @@ pub(super) fn create_plugin_files(root: &Path, name: &str, init_source: &str, mo
     let plugin_dir = root.join(name);
     std::fs::create_dir_all(&plugin_dir).unwrap();
 
-    std::fs::write(
-        plugin_dir.join("plugin.yaml"),
-        format!(
-            "name: {name}\nversion: \"1.0.0\"\nmain: init.lua\nexports:\n  auto_discover: true\n"
-        ),
-    )
-    .unwrap();
     std::fs::write(plugin_dir.join("init.lua"), init_source).unwrap();
     // `<plugin>/core.lua`, required as `<plugin>.core`: the plugin's own
     // directory IS its module namespace, under the root its parent is.

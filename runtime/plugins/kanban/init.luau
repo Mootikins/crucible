@@ -230,7 +230,8 @@ return {
     name = "kanban",
     version = "0.1.0",
     description = "A board over a folder of markdown tickets",
-    capabilities = { "filesystem", "kiln", "config" },
+    author = "Crucible Contributors",
+    license = "MIT",
 
     setup = M.setup,
 

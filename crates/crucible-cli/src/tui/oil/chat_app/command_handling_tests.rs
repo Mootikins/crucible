@@ -65,7 +65,7 @@ fn app() -> OilChatApp {
     OilChatApp::default()
 }
 
-/// Run a `:set` body (e.g. `"thinkingbudget=high"`) through the real
+/// Run a `:set` body (e.g. `"contextbudget=128000"`) through the real
 /// command handler and return the resulting action.
 fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
     app.handle_set_command(&format!("set {body}"))
@@ -74,17 +74,10 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 // Every session-scoped key must emit a daemon-sync `Action::Send` so
 // multi-client state stays consistent (see AGENTS.md cross-layer checklist).
 #[test_case("model=gpt-4o" ; "model")]
-#[test_case("thinkingbudget=high" ; "thinking budget")]
-#[test_case("maxiterations=5" ; "max iterations")]
-#[test_case("executiontimeout=30" ; "execution timeout")]
 #[test_case("contextbudget=128000" ; "context budget")]
 #[test_case("contextstrategy=truncate" ; "context strategy")]
-#[test_case("contextwindow=20" ; "context window")]
 #[test_case("outputvalidation=off" ; "output validation")]
 #[test_case("validationretries=2" ; "validation retries")]
-#[test_case("precognition.results=8" ; "precognition results")]
-#[test_case("autocompact_threshold=0.8" ; "autocompact threshold")]
-#[test_case("autocompactthreshold=0.8" ; "autocompact threshold alias")]
 #[test_case("contextstrategy=summarize" ; "context strategy summarize")]
 fn set_session_key_emits_daemon_sync(body: &str) {
     let mut app = app();
@@ -98,49 +91,12 @@ fn set_session_key_emits_daemon_sync(body: &str) {
 
 // Precise variant mapping for the load-bearing keys.
 #[test]
-fn set_thinkingbudget_maps_to_set_thinking_budget() {
-    let mut app = app();
-    assert!(matches!(
-        run_set(&mut app, "thinkingbudget=high"),
-        Action::Send(ChatAppMsg::SetThinkingBudget(_))
-    ));
-}
-
-#[test]
 fn set_model_maps_to_switch_model() {
     let mut app = app();
     assert!(matches!(
         run_set(&mut app, "model=gpt-4o"),
         Action::Send(ChatAppMsg::SwitchModel(m)) if m == "gpt-4o"
     ));
-}
-
-// Regression: `:set autocompact_threshold=…` used to fall through to the
-// generic runtime-config arm and silently skip the daemon RPC while the
-// CLI `--set` path handled it (routing-seam drift).
-#[test]
-fn set_autocompact_threshold_maps_to_daemon_msg() {
-    let mut app = app();
-    assert!(matches!(
-        run_set(&mut app, "autocompact_threshold=0.8"),
-        Action::Send(ChatAppMsg::SetAutocompactThreshold(Some(t))) if (t - 0.8).abs() < f32::EPSILON
-    ));
-    assert!(matches!(
-        run_set(&mut app, "autocompact_threshold=off"),
-        Action::Send(ChatAppMsg::SetAutocompactThreshold(Some(t))) if t == 0.0
-    ));
-    assert!(matches!(
-        run_set(&mut app, "autocompact_threshold=default"),
-        Action::Send(ChatAppMsg::SetAutocompactThreshold(None))
-    ));
-}
-
-#[test]
-fn set_autocompact_threshold_out_of_range_warns() {
-    let mut app = app();
-    let action = run_set(&mut app, "autocompact_threshold=1.5");
-    assert!(matches!(action, Action::Continue));
-    assert!(app.has_notifications());
 }
 
 // Regression: live `:set` rejected `summarize` while `--set` accepted it.
@@ -166,20 +122,17 @@ fn set_contextstrategy_normalizes_value() {
 #[test]
 fn set_then_query_round_trips() {
     let mut app = app();
-    run_set(&mut app, "thinkingbudget=high");
+    run_set(&mut app, "contextstrategy=truncate");
     let stored = app
         .runtime_config
-        .get("thinkingbudget")
+        .get("contextstrategy")
         .expect("value stored");
-    assert_eq!(stored.as_string(), Some("high"));
+    assert_eq!(stored.as_string(), Some("truncate"));
 }
 
 // Invalid values surface a warning and do NOT emit a daemon sync.
 #[test_case("contextbudget=abc" ; "non-numeric budget")]
-#[test_case("maxiterations=xyz" ; "non-numeric iterations")]
-#[test_case("thinkingbudget=boguspreset" ; "unknown preset")]
 #[test_case("contextstrategy=nonsense" ; "unknown strategy")]
-#[test_case("validationretries=-1" ; "negative retries")]
 fn set_invalid_value_warns_and_no_send(body: &str) {
     let mut app = app();
     let action = run_set(&mut app, body);
@@ -193,10 +146,11 @@ fn set_invalid_value_warns_and_no_send(body: &str) {
     );
 }
 
-/// Unknown (plugin/dynamic) keys are stored locally AND mirrored to the
-/// daemon app-config store, so `:lua cru.config.get(key)` sees them.
+/// A key the TUI does not own belongs to the daemon app-config store. `:set`
+/// sends it there and records nothing locally, so the two stores cannot hold
+/// different values for one key.
 #[test]
-fn set_unknown_key_mirrors_to_daemon_config() {
+fn set_of_an_app_config_key_records_no_local_value() {
     let mut app = app();
     let action = run_set(&mut app, "myplugin.debug=true");
     assert!(
@@ -205,11 +159,92 @@ fn set_unknown_key_mirrors_to_daemon_config() {
             Action::Send(ChatAppMsg::ConfigSet { ref key, ref value })
                 if key == "myplugin.debug" && *value == serde_json::json!(true)
         ),
-        "unknown :set keys should mirror to the daemon config store"
+        "an app-config `:set` goes to the daemon store"
     );
-    // Still stored locally for `:set key?` round-trips (set_str infers bool).
-    let stored = app.runtime_config.get("myplugin.debug").expect("stored");
-    assert_eq!(stored.as_bool(), Some(true));
+    assert!(
+        app.runtime_config.get("myplugin.debug").is_none(),
+        "the typed value must not become a local answer before the daemon replies"
+    );
+}
+
+/// The value a later read answers with is the daemon's, not the one that was
+/// typed. The two differ here on purpose: only the store's answer can produce
+/// 7 from a typed 3.
+#[test]
+fn an_app_config_read_answers_with_the_daemon_value() {
+    let mut app = app();
+    run_set(&mut app, "myplugin.retries=3");
+    app.on_message(ChatAppMsg::ConfigSetResolved {
+        key: "myplugin.retries".to_string(),
+        value: serde_json::json!(7),
+    });
+    assert_eq!(
+        app.runtime_config
+            .get("myplugin.retries")
+            .and_then(|v| v.as_int()),
+        Some(7),
+        "the store's answer is what `:set key?` reads back"
+    );
+}
+
+/// A write the daemon refuses leaves no value behind, and says so. Swallowing
+/// it into a local value is what let the TUI report a setting the daemon
+/// never took.
+#[test]
+fn a_refused_app_config_write_surfaces_and_leaves_no_value() {
+    let mut app = app();
+    run_set(&mut app, "kiln_path=/nowhere");
+    assert!(
+        app.runtime_config.get("kiln_path").is_none(),
+        "nothing is recorded before the daemon answers"
+    );
+
+    app.on_message(ChatAppMsg::Error(
+        "set kiln_path: 'kiln_path' names where the daemon acts".to_string(),
+    ));
+    assert!(
+        app.has_notifications(),
+        "a refused config write must reach the user"
+    );
+    assert!(
+        app.runtime_config.get("kiln_path").is_none(),
+        "a refused write must not leave a local value the daemon disagrees with"
+    );
+}
+
+/// The value-less spellings write the same store as `key=value` does. A
+/// local-only `:set nofoo` after a daemon-bound `foo=true` is two answers for
+/// one key.
+#[test_case(":set myplugin.debug", serde_json::json!(true) ; "enable")]
+#[test_case(":set nomyplugin.debug", serde_json::json!(false) ; "disable")]
+fn a_value_less_app_config_set_goes_to_the_daemon(input: &str, expected: serde_json::Value) {
+    let mut app = app();
+    let action = app.handle_set_command(input);
+    assert!(
+        matches!(
+            action,
+            Action::Send(ChatAppMsg::ConfigSet { ref key, ref value })
+                if key == "myplugin.debug" && *value == expected
+        ),
+        "`{input}` must reach the daemon store, got {action:?}"
+    );
+    assert!(
+        app.runtime_config.get("myplugin.debug").is_none(),
+        "`{input}` must not record a second local answer"
+    );
+}
+
+/// A key this client owns keeps answering locally: no daemon round trip, and
+/// no app-config entry for a display setting.
+#[test]
+fn a_display_key_stays_local() {
+    let mut app = app();
+    let action = run_set(&mut app, "show_diffs=false");
+    assert!(
+        matches!(action, Action::Continue),
+        "`show_diffs` is display state, not app config"
+    );
+    assert!(!app.show_diffs);
 }
 
 #[test]
@@ -323,7 +358,7 @@ fn set_reset_returns_to_base() {
 #[test]
 fn set_query_unmodified_key_is_continue() {
     let mut app = app();
-    let action = app.handle_set_command("set thinkingbudget?");
+    let action = app.handle_set_command("set contextbudget?");
     assert!(matches!(action, Action::Continue));
 }
 
@@ -758,4 +793,286 @@ fn perm_set_rejection_lists_accepted_tokens() {
     ] {
         assert!(text.contains(token), "missing {token} in: {text}");
     }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Every `:set` spelling of one key answers from one store
+// ════════════════════════════════════════════════════════════════
+
+/// The `:set` input text for one [`SetCommand`] variant and one key.
+///
+/// `None` for the two variants that carry no key. The match is exhaustive on
+/// purpose: a new spelling must be given input text here before the
+/// completeness tests below can walk it.
+fn spelling_for(command: &SetCommand, key: &str) -> Option<String> {
+    match command {
+        SetCommand::ShowModified | SetCommand::ShowAll => None,
+        SetCommand::Query { .. } => Some(format!("{key}?")),
+        SetCommand::QueryHistory { .. } => Some(format!("{key}??")),
+        SetCommand::Enable { .. } => Some(key.to_string()),
+        SetCommand::Disable { .. } => Some(format!("no{key}")),
+        SetCommand::Toggle { .. } => Some(format!("{key}!")),
+        SetCommand::Reset { .. } => Some(format!("{key}&")),
+        SetCommand::Pop { .. } => Some(format!("{key}^")),
+        SetCommand::Unset { .. } => Some(format!("{key}=")),
+        SetCommand::Set { .. } => Some(format!("{key}=1")),
+    }
+}
+
+/// `:set key?` on an app-config key must ask the daemon. This client keeps no
+/// copy of app config, so a local answer is "not set" for every key
+/// `init.lua` wrote.
+#[test]
+fn an_app_config_query_asks_the_daemon() {
+    let mut app = app();
+    let action = app.handle_set_command("set myplugin.debug?");
+    assert!(
+        matches!(action, Action::Send(_)),
+        "`:set myplugin.debug?` answered locally: {action:?}"
+    );
+}
+
+/// `:set key??` on an app-config key must ask the daemon too. The daemon
+/// records where each leaf came from; this client records nothing.
+#[test]
+fn an_app_config_history_query_asks_the_daemon() {
+    let mut app = app();
+    let action = app.handle_set_command("set myplugin.debug??");
+    assert!(
+        matches!(action, Action::Send(_)),
+        "`:set myplugin.debug??` answered locally: {action:?}"
+    );
+}
+
+/// `:set key&` must not drop this client's copy of a value the daemon still
+/// holds. Dropping it locally, and sending nothing, is two stores that
+/// disagree about one key.
+#[test]
+fn an_app_config_reset_does_not_diverge_from_the_daemon() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ConfigSetResolved {
+        key: "myplugin.retries".to_string(),
+        value: serde_json::json!(9),
+    });
+    app.handle_set_command("set myplugin.retries&");
+    assert_eq!(
+        app.runtime_config
+            .get("myplugin.retries")
+            .and_then(|v| v.as_int()),
+        Some(9),
+        "`:set key&` cleared the local copy while the daemon store still holds 9"
+    );
+}
+
+/// `:set key&` and `:set key^` on an app-config key ask the daemon, which is
+/// the only process that keeps the layers. The two spellings are different
+/// verbs there — `config.reset` drops the ephemeral layer, `config.pop` drops
+/// the highest one — so the message has to carry which.
+#[test]
+fn an_app_config_reset_and_pop_ask_the_daemon_for_the_right_verb() {
+    let mut app = app();
+    assert!(
+        matches!(
+            app.handle_set_command("set myplugin.retries&"),
+            Action::Send(ChatAppMsg::ConfigDrop { kind: DropKind::Reset, ref key })
+                if key == "myplugin.retries"
+        ),
+        "`:set key&` must send config.reset"
+    );
+    assert!(
+        matches!(
+            app.handle_set_command("set myplugin.retries^"),
+            Action::Send(ChatAppMsg::ConfigDrop { kind: DropKind::Pop, ref key })
+                if key == "myplugin.retries"
+        ),
+        "`:set key^` must send config.pop"
+    );
+}
+
+/// `:set key=` — an assignment with nothing after it — removes the key.
+///
+/// Vim has no such spelling because its option set is fixed and nothing can
+/// be removed from it. Crucible's is not: `llm.providers.<name>` is
+/// user-named, so a stale one has to go somewhere, and an empty assignment is
+/// where a Vim user would reach. It must send `config.unset`, NOT
+/// `config.reset` — a reset would put back whatever a file declares, which is
+/// the opposite of removing the key.
+#[test]
+fn an_empty_assignment_asks_the_daemon_to_unset() {
+    let mut app = app();
+    assert!(
+        matches!(
+            app.handle_set_command("set llm.providers.stale="),
+            Action::Send(ChatAppMsg::ConfigDrop { kind: DropKind::Unset, ref key })
+                if key == "llm.providers.stale"
+        ),
+        "`:set key=` must send config.unset"
+    );
+}
+
+/// The three drop spellings are three verbs, and each names its own.
+///
+/// Derived from the enum rather than written out, so a fourth spelling cannot
+/// be added without deciding which verb it maps to.
+#[test]
+fn every_drop_spelling_names_a_distinct_verb() {
+    use strum::IntoEnumIterator;
+    let verbs: Vec<&str> = DropKind::iter().map(DropKind::method).collect();
+    let mut unique = verbs.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        verbs.len(),
+        unique.len(),
+        "two DropKind variants share one RPC verb: {verbs:?}"
+    );
+}
+
+/// The daemon's answer for a `&` or a `^` is printed with the layers it
+/// dropped and the origin the leaf now has, and records nothing locally.
+///
+/// The origin is the point of the print: a pop that did not say which layer
+/// now holds the key would leave the user guessing how many more to press.
+#[test]
+fn an_app_config_drop_answer_names_the_layer_it_revealed() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ConfigDropResolved {
+        key: "chat.model".to_string(),
+        dropped: vec!["lua".to_string()],
+        value: serde_json::json!("from-settings"),
+        origin: serde_json::json!({ "source": "settings" }),
+    });
+
+    assert!(
+        app.runtime_config.get("chat.model").is_none(),
+        "a drop answer must not write this client's store"
+    );
+    let tree = crate::tui::oil::tests::helpers::view_with_default_ctx(&app);
+    let output = crucible_oil::ansi::strip_ansi(&crucible_oil::render_to_string(&tree, 80));
+    assert!(
+        output.contains("Dropped lua"),
+        "the answer must name the layer that went: {output}"
+    );
+    assert!(
+        output.contains("chat.model=from-settings"),
+        "and the value that showed: {output}"
+    );
+    assert!(
+        output.contains("from settings"),
+        "and where that value comes from: {output}"
+    );
+}
+
+/// A key with no layer left to drop says so, rather than printing a drop
+/// that did not happen.
+#[test]
+fn an_app_config_drop_that_dropped_nothing_says_so() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ConfigDropResolved {
+        key: "chat.model".to_string(),
+        dropped: Vec::new(),
+        value: serde_json::Value::Null,
+        origin: serde_json::json!({ "source": "default" }),
+    });
+    let tree = crate::tui::oil::tests::helpers::view_with_default_ctx(&app);
+    let output = crucible_oil::ansi::strip_ansi(&crucible_oil::render_to_string(&tree, 80));
+    assert!(
+        output.contains("no layer left to drop"),
+        "an untouched key must not read as a drop: {output}"
+    );
+}
+
+/// No `:set` spelling of an app-config key answers from — or writes — this
+/// client's own store. The spellings walk [`SetCommand`] through `EnumIter`,
+/// so a spelling added later cannot pass this test by being absent from it.
+#[test]
+fn every_set_spelling_of_an_app_config_key_leaves_the_local_store_alone() {
+    use strum::IntoEnumIterator;
+
+    const KEY: &str = "myplugin.retries";
+
+    for command in SetCommand::iter() {
+        let Some(spelling) = spelling_for(&command, KEY) else {
+            continue;
+        };
+        let parsed = SetCommand::parse(&spelling).expect("the spelling parses");
+        assert_eq!(
+            std::mem::discriminant(&parsed),
+            std::mem::discriminant(&command),
+            "`:set {spelling}` does not spell {command:?}"
+        );
+
+        let mut app = app();
+        // What the daemon answered for this key before the spelling runs.
+        app.on_message(ChatAppMsg::ConfigSetResolved {
+            key: KEY.to_string(),
+            value: serde_json::json!(9),
+        });
+        let action = app.handle_set_command(&format!("set {spelling}"));
+
+        assert_eq!(
+            app.runtime_config.get(KEY).and_then(|v| v.as_int()),
+            Some(9),
+            "`:set {spelling}` changed this client's copy of a key the daemon owns"
+        );
+        assert!(
+            matches!(action, Action::Send(_)) || app.has_notifications(),
+            "`:set {spelling}` answered from the local store: {action:?}"
+        );
+    }
+}
+
+/// Every declared `:set` target, under every spelling, is answered by this
+/// client. A spelling that fell through to the daemon app-config store would
+/// give one declared key two homes.
+///
+/// The targets walk `SHORTCUTS` and the spellings walk [`SetCommand`], so
+/// neither a new target nor a new spelling can pass by being absent here.
+#[test]
+fn every_declared_target_answers_locally_under_every_spelling() {
+    use crate::tui::oil::config::SHORTCUTS;
+    use strum::IntoEnumIterator;
+
+    for shortcut in SHORTCUTS {
+        for command in SetCommand::iter() {
+            let Some(spelling) = spelling_for(&command, shortcut.short) else {
+                continue;
+            };
+            let mut app = app();
+            let action = app.handle_set_command(&format!("set {spelling}"));
+            assert!(
+                !matches!(
+                    action,
+                    Action::Send(ChatAppMsg::ConfigSet { .. })
+                        | Action::Send(ChatAppMsg::ConfigQuery { .. })
+                        | Action::Send(ChatAppMsg::ConfigDrop { .. })
+                ),
+                "`:set {spelling}` sent a declared target to the daemon app-config store"
+            );
+        }
+    }
+}
+
+/// `:set key?` on an app-config key prints the daemon's answer and records
+/// nothing. A recorded answer is the second copy the write path stopped
+/// making.
+#[test]
+fn an_app_config_query_answer_is_printed_and_not_recorded() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ConfigQueryResolved {
+        key: "myplugin.retries".to_string(),
+        value: serde_json::json!(7),
+        origin: None,
+    });
+    assert!(
+        app.runtime_config.get("myplugin.retries").is_none(),
+        "a read must not write this client's store"
+    );
+
+    let tree = crate::tui::oil::tests::helpers::view_with_default_ctx(&app);
+    let output = crucible_oil::ansi::strip_ansi(&crucible_oil::render_to_string(&tree, 80));
+    assert!(
+        output.contains("myplugin.retries=7"),
+        "the daemon's answer must reach the transcript: {output}"
+    );
 }

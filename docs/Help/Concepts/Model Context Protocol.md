@@ -178,7 +178,7 @@ Crucible exposes 10 tools across three categories:
 
 | Tool | Description |
 |------|-------------|
-| `get_kiln_info` | File statistics (total_files, markdown_files, total_size_bytes), plus `name` — the kiln's registry name, omitted when no `[kilns]` entry claims it. Never the kiln's directory. |
+| `get_kiln_info` | File statistics (total_files, markdown_files, total_size_bytes), plus `name` — the kiln's registry name, omitted when no `kilns` entry claims it. Never the kiln's directory. |
 
 ### Connecting External Agents
 
@@ -210,20 +210,27 @@ These dynamic tools are discovered at startup and appear alongside the built-in 
 
 Crucible can also act as an MCP client, connecting to external MCP servers and aggregating their tools. This is the MCP Gateway.
 
-Configure external servers in your `config.toml` or `mcps.toml`:
+Configure external servers in your `init.lua`:
 
-```toml
-[[mcp.servers]]
-name = "github"
-prefix = "gh_"
-
-[mcp.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp.servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```lua
+cru.config.set({
+    mcp = {
+        servers = {
+            {
+                name = "github",
+                prefix = "gh_",
+                transport = {
+                    type = "stdio",
+                    command = "npx",
+                    args = { "-y", "@modelcontextprotocol/server-github" },
+                    env = {
+                        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN"),
+                    },
+                },
+            },
+        },
+    },
+})
 ```
 
 Crucible spawns each configured server, discovers its tools, and exposes them to agents with the configured prefix. An agent using Crucible sees both kiln tools and gateway tools in a single unified interface.

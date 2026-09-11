@@ -14,7 +14,7 @@ aliases:
 
 # Lua Runtime API
 
-This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. `cru` is the one Lua global; every module hangs off it. Note that `cru.config.get` (the app-config store) and `cru.plugin.config.get` (the plugin's own `[plugins.*]` TOML section) are **different functions** (see [[Help/Lua/Configuration]]).
+This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. `cru` is the one Lua global; every module hangs off it. Note that `cru.config.get` (the app-config store) and `cru.plugin.config.get` (the plugin's own `plugins.*` TOML section) are **different functions** (see [[Help/Lua/Configuration]]).
 
 For TUI-specific Lua APIs (Oil rendering primitives), see [[Help/Plugins/Oil Lua API]].
 
@@ -349,11 +349,10 @@ field the old plain table exposed (`session.id`, `session.state`,
   `configure_agent`, `send_message`, `cancel`, `pause`, `resume`,
   `end_session`, `interaction_respond`, `subscribe`, `unsubscribe`,
   `send_and_collect`, `inject`, `messages`, `fork`, `cache_stats`, `complete`,
-  `set_output_validation`, `undo`, `can_undo`, `undo_depth`, `undo_history`,
+  `undo`, `can_undo`, `undo_depth`, `undo_history`,
   `review_list_hunks`, `review_set_state`, `review_comment`,
   `review_resolve_comment`.
 - On the *current session's* handle (`cru.session.current()`), the live config
-  knobs also work as properties: `s.model = "…"`, `s.temperature = 0.5`,
   `s:get_variable(k)`. These need the per-session RPC binding; on a handle
   from `create`/`get`/`list` they report not-connected, and config changes go
   through `s:configure_agent(...)` instead.
@@ -373,7 +372,7 @@ errors with "No active session" when none is bound.
 Create a new session. Returns a session handle whose fields read like the old plain table: at least `{ id, session_type, state, kilns }`.
 
 `kilns` is the session's whole knowledge scope — a flat set with no primary
-member, and each member is the **name** of a `[kilns]` entry in the user's
+member, and each member is the **name** of a `kilns` entry in the user's
 config, not a directory. A name no entry claims is refused rather than
 attached, and a `kilns` list that is non-empty but names only unknown kilns is
 an error rather than "no scope". Omit it (or pass an empty table) for a
@@ -453,7 +452,7 @@ Three properties hold by construction:
   so waiting on a delegation and waiting on any other subagent job is the
   same call.
 
-`delegate = true` needs a current session on the VM. Session VMs (a
+`delegate = true` needs a current session on the VM. A bound session (a
 session's own Lua) and `lua.init_session` runtimes have one; the shared
 plugin VM does not, and a delegate there is refused with that reason —
 spawn a plain session instead, or move the call into the session's Lua.
@@ -683,7 +682,7 @@ The `cru.tools` module runs workspace tools from a plugin, and decides which too
 | `cru.tools.set_active(session_id, names)` | narrow the tools that session offers, or clear the narrowing |
 | `cru.tools.get_active(session_id)` | the patterns in force, or `nil` |
 
-`call` and `batch` are checked against the operator's `[permissions]` rules before anything runs. See [[permissions]] for what a Lua call may do without a prompt.
+`call` and `batch` are checked against the operator's `permissions` rules before anything runs. See [[permissions]] for what a Lua call may do without a prompt.
 
 ### cru.tools.set_active(session_id, names)
 
@@ -840,21 +839,6 @@ Returns `(true, nil)` when queued, `(false, reason)` when dropped. Dropping is n
 - **Duplicate key** — `opts.key` deduplicates for the whole session (surviving drains), so a handler firing on every tool call attaches once.
 - **Budget exhausted** — a cumulative 2000-character budget per session, spent permanently. Deliberately tight: every attached character is re-sent on each subsequent LLM call.
 - **Empty content.**
-
-### cru.context.register_validator(name, fn)
-
-Register a named output validator. `fn` receives the agent's text response and returns `true`, `false`, or `(false, reason)`. A validator runs when a session agent's `output_validation` is set to `lua:<name>` — via `cru.session.set_output_validation(session_id, "lua:<name>")` (which also accepts the table form `{ type = "lua", name = "<name>" }`) or the `session.set_output_validation` RPC; on failure the reason is fed back to the agent for retry (`validation_retries`, default 3). A non-boolean or missing first return value counts as a failure with a descriptive reason, as does naming a validator that was never registered.
-
-```lua
-cru.context.register_validator("has_sources", function(text)
-  if text:match("%[%[") then return true end
-  return false, "response cites no notes"
-end)
-```
-
-Registered at plugin load, before the daemon-backed `cru.context` methods are wired — so registering validators from a plugin's `init.lua` works.
-
-## Rate Limiting
 
 ### cru.ratelimit.new(opts)
 
@@ -1066,7 +1050,7 @@ Validates `name`, `desc`, `start` (required) and `stop`, `health` (optional), th
 If `spec.config` is a schema table, values are resolved **at define time**, per key. All three steps use the **service's `name`**, not the plugin's — name the service after the plugin if you want them to line up:
 
 1. keys marked `secret = true`: the env var `CRUCIBLE_<NAME>_<KEY>` (service name and key uppercased, non-alphanumerics replaced with `_` — `name = "gateway"` reads `CRUCIBLE_GATEWAY_*`)
-2. `cru.plugin.config.get("<name>.<key>")` — the `[plugins.<name>]` section of config.toml
+2. `cru.plugin.config.get("<name>.<key>")` — the `plugins.<name>` table of your `init.lua`
 3. the schema's `default`
 
 The resolved table is stored on the internal registry entry only — nothing passes it to `start`, and no accessor exposes it. A start function that needs the values must resolve them itself (the `web-search` plugin's `ws_config.lua` does exactly this, matching the env-var convention).
@@ -1289,9 +1273,11 @@ end
 
 The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The old "vault" name survives in exactly one Lua-facing place: a plugin manifest may declare `capabilities: [vault]`, which parses as the `kiln` capability. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
 
-## Session-VM-only: cru.defaults and cru.modes
+## Session-VM-only: cru.modes
 
-`cru.defaults` (session default values like `system_prompt`, `temperature`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — the VM that runs the shipped Lua defaults and a workspace's `.crucible/lua/init.lua`. The daemon's plugin VM never registers them, so referencing `cru.defaults` or `cru.modes` from a plugin's `init.lua` is a nil-index error. Set defaults and define modes from a workspace's `.crucible/lua/init.lua` (or a copied-out runtime defaults tree on the `runtimepath`), not from plugins.
+`cru.modes` (mode definitions) is registered **only on the per-session Lua VM** — and on the daemon VM, against the same store. A write from `~/.config/crucible/init.lua` at boot therefore reaches every session, and the daemon re-applies it over each session's freshly-loaded defaults file. `cru.permissions` is the one that stays session-only.
+
+Session default *values* are not here at all. `system_prompt` is a config key, `chat.system_prompt`, written with `cru.config.set`; `session.system_prompt` inside an `on_session_start` hook is the per-session tier.
 
 ## See Also
 

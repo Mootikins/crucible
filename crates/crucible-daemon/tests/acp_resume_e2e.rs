@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::protocol::SessionEventMessage;
@@ -79,10 +79,7 @@ fn acp_agent() -> SessionAgent {
         provider: BackendType::Custom,
         model: "mock-acp".to_string(),
         system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -90,15 +87,8 @@ fn acp_agent() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }

@@ -102,7 +102,7 @@ entry but no shipped proof.
 | F39 | Anthropic cache control on the system prompt and the second-to-last turn | P |
 | F40 | Cache statistics: `session.cache_stats`, `cru.session.cache_stats`, `sl.cache` | P, T |
 | F41 | Token budget tracking with `context_budget` and a chars/4 estimate | P, T, W |
-| F42 | Auto-compaction request at `context_budget * autocompact_threshold` *(in progress)* | P, T |
+| F42 | Auto-compaction request at `context_budget * chat.autocompact_threshold` *(in progress)* | P, T |
 | F43 | Context strategies: Truncate, SlidingWindow, Summarize; Lua strategies *(planned)* | P |
 | F44 | Lua context operations `cru.context.{usage, messages, remove, estimate_tokens}` | P |
 | F45 | `cru.context.attach`: mid-turn attachment, deduplicated by key, capped by budget | P |
@@ -111,7 +111,6 @@ entry but no shipped proof.
 | F48 | Turn undo `/undo [N]`: file rollback plus message truncation | P, T |
 | F49 | Undo Lua API `cru.session.{undo, can_undo, undo_depth, undo_history}` | P |
 | F50 | Output validation after each assistant turn, with retries | P, W |
-| F51 | Lua validators `cru.context.register_validator` | P |
 
 ### 2.4 Chat, sessions and agents
 
@@ -133,7 +132,7 @@ entry but no shipped proof.
 | F65 | An internal agent with session memory and tool access | P |
 | F66 | Chat providers: Ollama, OpenAI, Anthropic, Cohere, VertexAI, OpenRouter, GitHubCopilot, ZAI; FastEmbed for embeddings | P, R |
 | F67 | Model switching `:model <name>` and the web picker, with a lazy model list | P, T, W |
-| F68 | Extended thinking budget presets; Ctrl+T toggles the display | P, T |
+| F68 | Ctrl+T toggles the reasoning display; Crucible caps no reasoning | P, T |
 | F69 | Layered system prompt: workspace, kiln, base prompt, rules files, skills catalog, deferral note | P |
 | F70 | Environment overrides `--env KEY=VALUE` for an ACP subprocess | P |
 | F71 | Agent cancellation from Esc, Ctrl+C or the web stop control | P, T, W |
@@ -176,7 +175,7 @@ entry but no shipped proof.
 | F103 | `cru.ui.{ask, ask_batch, edit, show, permission, popup, panel}` open a modal and await | P |
 | F104 | Session event handlers: `turn:complete` can inject a follow-up message | P |
 | F105 | Plugin-published session status `cru.plugin.set_status{}` | P |
-| F106 | Scripted agent control: `session.thinking_budget`, `session.mode`, `temperature`, `max_tokens` | P |
+| F106 | Scripted agent control: `session.mode`, `session.model`, `session.system_prompt` | P |
 
 ### 2.6 TUI
 
@@ -268,7 +267,7 @@ entry but no shipped proof.
 | F180 | `cru.storage` per-plugin key-value store | P |
 | F181 | Plugin config: `[plugins.<name>]` TOML, then `setup{}` in `init.lua` wins | P |
 | F182 | Lua config beats TOML; `cru.config` reads and writes app config | P |
-| F183 | `cru.defaults` session default tier; `cru.modes` mode declarations | P |
+| F183 | `chat.system_prompt` session default tier; `cru.modes` mode declarations | P |
 | F184 | Plugin-declared commands reachable as `/name` and over RPC | P |
 | F185 | Plugin file watcher `[plugins] watch = true` | P |
 | F186 | HTTP client `cru.http` | P |
@@ -588,8 +587,8 @@ pub struct AcpAgent {
 }
 ```
 
-Lifecycle: built at `session.create`; rebuilt on `switch_model`, `set_mode`,
-`set_thinking_budget` or a card change. A rebuild invalidates the cached handle.
+Lifecycle: built at `session.create`; rebuilt on `switch_model`, `set_mode`
+or a card change. A rebuild invalidates the cached handle.
 
 Owner: **SessionManager** holds the record. **AgentFactory** builds the handle.
 
@@ -604,16 +603,10 @@ pub struct SessionConfig {
     context_budget: Option<u32>,
     context_window: Option<u32>,
     context_strategy: ContextStrategy,
-    autocompact_threshold: f32,      // default 0.95
     max_iterations: Option<u32>,     // default 10
     execution_timeout_secs: Option<u32>,
-    validation_retries: u32,
-    output_validation: OutputValidation,
-    thinking_budget: ThinkingBudget,
 }
 pub enum ContextStrategy { Truncate, SlidingWindow, Summarize, Lua { name: String } }
-pub enum OutputValidation { None, Lua { name: String } }
-pub enum ThinkingBudget { Off, Minimal, Low, Medium, High, Max }
 ```
 
 Owner: **SessionManager**.
@@ -1170,9 +1163,9 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 ### 4.17 PluginHost (Lua)
 
 - Responsibility: the daemon plugin VM and the per-session VM; discovery, load, reload, hooks, modes, defaults, services, schedules, theme projection, type stubs.
-- Owns: `Plugin`, `HookReg`, `ModeDecl`, `ScheduleSpec`, `ServiceDesc`, `UiConfig`, `cru.storage` keys, `cru.defaults`.
+- Owns: `Plugin`, `HookReg`, `ModeDecl`, `ScheduleSpec`, `ServiceDesc`, `UiConfig`, `cru.storage` keys.
 - Operations: `plugin.list|reload|install|remove|commands|run_command|options|set_option|publications`, `lua.eval`, `lua.init_session`, `fire_stage(stage, ctx) -> StageResult`, `broadcast_event(event)`, `modes()`, `stubs.generate`.
-- Two VMs exist. The daemon plugin VM runs plugins, `cru lua` and `:lua`. The session VM runs `cru.defaults` and `session.*` hooks. `cru.*` and `crucible.*` name the same tables.
+- Two VMs exist. The daemon plugin VM runs plugins, `cru lua` and `:lua`. The session VM runs `session.*` hooks. `cru.*` and `crucible.*` name the same tables.
 - Projection modules are safe alone: theme, statusline, geometry, oil, json, fs, notify, paths. Interception modules are capability-grade: `pre_tool_call` handled or transform, `on_request`, `precognition_select`, `transform_context`, validators, strategies.
 - The shipped `init.lua` is compiled into the binary. It is the only definition of the three modes, the plan-mode deny hook, the default system prompt and the precognition formatter. `ModeRegistry` has no Rust fallback.
 - It calls back into the daemon through a `DaemonBridge` trait: sessions, tools, kiln, context, ui, storage.
@@ -1222,13 +1215,15 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 
 ### 4.25 Config
 
-- Responsibility: load `config.toml` with value references, CLI overrides and a source trace; validate; reject legacy keys with an actionable error.
-- Owns: `AppConfig`, one canonical struct; `ValueSourceMap`.
+- Responsibility: evaluate `init.lua` once at boot and merge the layers into one store with per-leaf provenance — defaults, plugin defaults, `settings.json`, the human's Lua lines, CLI flags, the runtime knob; validate; reject legacy keys with an actionable error. `config.toml` is not a config source: the reader is gone and only `cru config migrate` still parses the file.
+- Owns: `CliAppConfig`, one canonical struct; `ConfigStore`; `SourceTag` and `ProvenanceMap`.
+- Operations: `config.effective`, `config.get`, `config.set` (runtime, in memory), `config.save` (durable, `settings.json`, refuses a pinned leaf), `config.origin`, `config.controls`.
 - Must never know: runtime state.
+- See [[Config Boot]] for the sequence, the layer order and the two verbs.
 
 ### 4.26 Daemon server and RPC client
 
-- Responsibility: bind the socket; authenticate by uid through socket permissions; dispatch JSON-RPC to the subsystems; stream events; report `daemon.capabilities`. On the client side: auto-spawn and version check.
+- Responsibility: bind the socket; authenticate by uid through socket permissions; dispatch JSON-RPC to the subsystems; stream events; report `daemon.capabilities`; end itself on a signal or after `server.idle_shutdown_minutes` idle. On the client side: auto-spawn, version check, and reaping a spawned daemon that never became reachable.
 - Owns: `SocketPath`, `RpcMethod`, `RpcRequest`, `RpcResponse`, `RpcError { code, message, data }`, `Capabilities { methods, build_sha }`, `Subscription`.
 - Operations: `Server::bind_with_data_home(data_home, config)`, `DaemonClient::connect_or_start()`, `DaemonClient::call<T>(method, params)`, `DaemonClient::subscribe(targets) -> EventStream`. Idempotent methods retry twice on a transport timeout.
 - Must never know: domain logic. A handler is a thin translation from params to one subsystem call.
@@ -1344,7 +1339,7 @@ GET  /api/plugins/{publications,options}  POST /api/plugins/:name/option  POST /
 GET  /api/review/hunks  POST /api/review/hunk/:id/state  POST /api/review/comment
 GET  /api/scm/branches  POST /api/scm/worktree  POST /api/scm/clone
 GET  /api/layout  POST /api/layout  DELETE /api/layout
-GET  /api/config  GET /api/mcp/status
+GET  /api/config  POST /api/config  GET /api/mcp/status
 POST /api/webhook/:name
 POST /exec  (SSE)   GET /api/terminal/ws  (WebSocket; localhost, or remote_shell opt-in)
 GET  /  and static assets, SPA fallback
@@ -1732,11 +1727,10 @@ is on `runtimepath`. [D7]
 `Personal`, `Workspace`, `Kiln`, `Bundled`. A higher scope shadows a lower one.
 [D6]
 
-### 8.18 Thinking budgets, context strategies, output validations
+### 8.18 Context strategies
 
-`ThinkingBudget::{Off, Minimal, Low, Medium, High, Max}`.
 `ContextStrategy::{Truncate, SlidingWindow, Summarize, Lua{name}}`.
-`OutputValidation::{None, Lua{name}}`.
+Output validation was removed on 2026-09-10: see the Product backlog.
 
 ### 8.19 Built-in ACP profiles
 
@@ -1792,10 +1786,9 @@ Declare `cru.modes.<id> = { tools = selector, permissions = { default, allow,
 deny, ask }, label, color }` in `init.lua`. The TUI derives the badge, the
 BackTab cycle and the `/<id>` command from `session.list_modes`.
 
-### 9.7 A context strategy or validator
+### 9.7 A context strategy
 
-Call `cru.context.register_strategy(name, fn)` or
-`cru.context.register_validator(name, fn)`. `SessionConfig` enables one per
+Call `cru.context.register_strategy(name, fn)`. `SessionConfig` enables one per
 session. A strategy may not trigger a turn on its own session. An unregistered
 name degrades to a failure, not a panic.
 
@@ -1927,13 +1920,13 @@ determine the design.
 5. **ACP filesystem capability.** Deliberately unwired. If read-only capture is wanted, `readTextFile: true` is the documented direction, and the content capture path needs a home.
 6. **`handled` ordering.** The `oci` plugin takes over execution before the gate. The isolation claim in section 9.5 is stronger than the docs require. A capability token on the session is possible but unspecified.
 7. **Project config `kilns` table.** Parsed and ignored. Multi-kiln association uses a global registry plus `session.connect_kiln`. The docs do not say which wins, or whether `project.toml` seeds the kiln set at creation.
-8. **Kiln-local `.crucible/config.toml`.** `cru init` writes it. It appears never to load. Whether per-kiln config is a layer at all is undecided.
+8. **Kiln-local config.** `cru init` writes `.crucible/init.lua`, which loads into that kiln's session runtimes. The `.crucible/config.toml` older versions wrote never loaded at all. Whether per-kiln app config is a layer is undecided.
 9. **Webhook auth posture.** The route sits inside bearer auth, so a remote sender gets 401 before its HMAC is read. Move it outside, or add an opt-in key. Not decided.
 10. **Agent-initiated questions.** Seven interaction kinds render in both clients. No agent tool produces an `Ask`. Should `ask` be a `BuiltinTool` with surface `Daemon`, or a Lua-only primitive through `cru.ui`? Its plan-mode class is unspecified.
 11. **`cru.session.fork`.** The Lua path copies history with no agent config. Whether fork copies the agent, the mode and the kiln set is unspecified.
 12. **`cru.session.inject`.** Writes the log only. Whether inject also appends to the conversation tree for the next turn is unspecified. `cru.context.attach` covers this turn.
 13. **Two Lua objects named `session`.** The hook parameter reaches `SessionAgent`. The `cru.get_session()` object on the plugin VM does not. One of them should go, or the plugin VM should reach session state only through `cru.session.*`. — *Resolved 2026-08: one canonical `cru.session` module (lifecycle verbs, `current()`, handle-returning `create`/`get`/`list`/`fork`); `cru.get_session()` and the plural `cru.sessions` are deprecated aliases into it. The hook parameter remains a distinct argument-passed `Session` — same type, different delivery — with its gap to `SessionAgent` unchanged.*
-14. **Session VM versus plugin VM.** `cru.defaults` lives on the session VM, so `cru lua` cannot see it. Should the two VMs merge, or should the plugin VM get a read-only view?
+14. **Session VM versus plugin VM.** RESOLVED: the session default tier is the config store, which both VMs read, so `cru lua` sees it.
 15. **`cru.oil` versus `cru.ui`.** `cru.oil` builds nodes that no client consumes. `cru.ui` opens real modals. Withdraw `cru.oil` or wire it.
 16. **Review gate for ACP agents.** The daemon cannot hold an external agent at a pre-write gate. The effective policy for an ACP session is "review at turn end". Whether to block the turn's result is open.
 17. **Kiln attach from the web composer.** `session.connect_kiln` exists, yet the web story says the daemon has no RPC to change a live session's kiln set. One of the two docs is stale. The design keeps the RPC.

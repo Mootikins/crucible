@@ -25,7 +25,7 @@ This document records the order in which the daemon checks a `bash` tool call. F
 |---|---|---|---|
 | Hardcoded deny | `is_hardcoded_denied` (`config/components/permissions/hardcoded.rs`) | compiled in | Deny only. No config overrides it. |
 | Config rules | `PermissionConfig.{allow,deny,ask}` (`config/components/permissions/types.rs`) | `[permissions]` in the daemon config, the agent card, or a mode | Deny beats ask. Ask beats allow. `default` decides the rest. |
-| Saved patterns | `BashPatterns.allowed_prefixes` (`config/patterns.rs`) | the user chose "always allow" at a prompt; a `Project` grant is saved per project under the whitelists directory, a `User` grant in `user.toml` there; the gate reads both | Allow only. A prefix match skips the prompt. |
+| Saved patterns | `BashPatterns.allowed_prefixes` (`config/patterns.rs`) | the user chose "always allow" at a prompt; a `Project` grant is saved per project under the whitelists directory, a `User` grant in `user.toml` there; the gate reads both | Allow only. A trailing `*` makes the pattern a prefix; without one the pattern is the whole statement. The prompt suggests the command it displayed, so the default grant is that command alone. The loader refuses a rule that is one command name plus `*`. |
 | Shell policy | `ShellPolicy.{whitelist,blacklist}` (`config/security.rs`) | `[security.shell]` in `.crucible/project.toml` | Blacklist beats whitelist. An empty policy imposes nothing. A non-empty whitelist denies every command that it does not list. |
 
 ## Order of evaluation
@@ -34,7 +34,7 @@ The gate evaluates the steps below in order. The first step that returns a decis
 
 1. **Session override.** A session with permission mode `Allow` or `Deny` returns that decision. `Ask` continues.
 2. **Permission engine** (`PermissionEngine::evaluate`). The engine splits the command on `;`, `&&`, `||`, `|` and newlines. For each segment it checks, in order: the hardcoded deny list, the `deny` rules, the `ask` rules, then the `allow` rules. A command is allowed only when every segment matches an `allow` rule. A construct the splitter cannot read (for example `$(...)`) can only tighten the result. Deny and allow end the gate. Ask continues.
-3. **Saved patterns** (`PatternStore::matches_bash`). A prefix match on the full command string allows the call. No match continues.
+3. **Saved patterns** (`PatternStore::matches_bash`). Every statement must match a saved pattern. A pattern with a trailing `*` is a prefix, the way `matches_tool` already reads one. A pattern without a `*` is the whole statement. The prompt suggests the command it displayed, so one "Allowlist" click grants that command and no wider one; the user who wants a wider grant edits the suggestion and types the `*`. The loader refuses a saved rule that is one command name plus `*` — `rm *` grants every `rm`, on every argument — and logs the rule and the file. It drops that one rule and keeps the other rules in the file. A wider grant therefore keeps at least one argument: `cargo build *`, not `cargo *`. No match continues.
 4. **Lua hooks** (`execute_permission_hooks_with_timeout`). A hook can allow, deny or prompt. Allow and deny end the gate. Prompt continues.
 5. **Mode stance** (`ModePermissions`). When the mode has rules, the daemon evaluates them with the same `PermissionEngine` as step 2. Otherwise it uses the mode's `default` stance. Allow and deny end the gate. Ask continues.
 6. **Prompt.** An interactive session asks the user. A non-interactive session denies.

@@ -69,28 +69,28 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
     let config_dir = dirs::config_dir()
         .ok_or_else(|| "no config directory".to_string())?
         .join("crucible");
-    // Either extension. `list_available_themes` was routed through
-    // `source_files` and this was not, so the two disagreed: the shipped
-    // themes are `.luau`, `cru setup` copies them verbatim, and the error path
-    // listed "default, opencode" while neither would load.
-    let themes_dir = config_dir.join("themes");
-    let path = crucible_lua::source_files::SOURCE_EXTENSIONS
-        .iter()
-        .map(|ext| themes_dir.join(format!("{name}.{ext}")))
-        .find(|candidate| candidate.is_file())
-        .unwrap_or_else(|| themes_dir.join(format!("{name}.luau")));
+    // One root list for both halves. This handler used to build its own path
+    // under `config_dir` while the error message called
+    // `list_available_themes`, so the two could disagree about what exists.
+    // They now resolve through the same list: a theme that is listed is a
+    // theme that loads.
+    let roots = crucible_lua::theme_roots(&config_dir);
 
-    let source = std::fs::read_to_string(&path).map_err(|e| {
-        let available = crucible_lua::list_available_themes(&config_dir);
-        if available.is_empty() {
-            format!("theme '{name}' not found ({e})")
-        } else {
-            format!(
-                "theme '{name}' not found; available: {}",
-                available.join(", ")
-            )
+    let source = match crucible_lua::resolve_theme_file(&roots, name) {
+        Some(path) => std::fs::read_to_string(&path)
+            .map_err(|e| format!("theme '{name}' could not be read ({e})"))?,
+        None => {
+            let available = crucible_lua::list_available_themes(&roots);
+            return Err(if available.is_empty() {
+                format!("theme '{name}' not found")
+            } else {
+                format!(
+                    "theme '{name}' not found; available: {}",
+                    available.join(", ")
+                )
+            });
         }
-    })?;
+    };
 
     let theme = crucible_lua::theme::load_theme_from_lua(&source)
         .map_err(|e| format!("theme '{name}' failed to load: {e}"))?;

@@ -90,6 +90,9 @@ impl BackgroundJobManager {
                 info,
                 cancel_tx,
                 task_handle,
+                work: self
+                    .activity
+                    .start(crate::activity::WorkKind::BackgroundJob),
             },
         );
 

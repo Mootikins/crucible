@@ -10,24 +10,27 @@ tags:
 
 # ACP Configuration
 
-The `[acp]` section controls how Crucible hosts external agents over the
+The `acp` section controls how Crucible hosts external agents over the
 [[Help/Concepts/Agent Client Protocol|Agent Client Protocol]] — which agent it reaches for
 by default, how it discovers them, and what each named profile is allowed to do.
 
-Add it to `~/.config/crucible/config.toml` (or whatever `-C` / `$CRUCIBLE_CONFIG` points
-at). Every field has a default, so `[acp]` is optional.
+Add it to `~/.config/crucible/init.lua` (or whatever `-C` / `$CRUCIBLE_CONFIG` points
+at). Every field has a default, so `acp` is optional.
 
-## `[acp]`
+## `acp`
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_agent` | string | *(unset)* | Profile to use when `--acp` is omitted. Unset means auto-discover the first available agent. |
 | `streaming_timeout_minutes` | integer | `15` | Time allowed for one complete response |
 
-```toml
-[acp]
-default_agent = "claude"
-streaming_timeout_minutes = 15
+```lua
+cru.config.set({
+    acp = {
+        default_agent = "claude",
+        streaming_timeout_minutes = 15,
+    },
+})
 ```
 
 Earlier versions also parsed `enable_discovery`, `session_timeout_minutes`,
@@ -37,7 +40,7 @@ A config file that still contains them loads without an error; the values are ig
 `streaming_timeout_minutes` defaults to 15 rather than something tighter because reasoning
 models routinely go quiet for minutes at a time mid-turn.
 
-## `[acp.agents.<name>]` — agent profiles
+## `acp.agents.<name>` — agent profiles
 
 A profile either extends a built-in (`opencode`, `claude`, `gemini`, `codex`, `cursor`) or
 defines its own command. The profile name is what you pass to `cru chat -a <name>`.
@@ -50,30 +53,37 @@ defines its own command. The profile name is what you pass to `cru chat -a <name
 | `env` | table | `{}` | Environment variables for the agent process |
 | `description` | string | *(unset)* | Human-readable label |
 | `delegation` | table | *(unset)* | See the delegation sub-table below |
-| `permissions` | table | *(unset)* | Per-agent override of the global `[permissions]` |
+| `permissions` | table | *(unset)* | Per-agent override of the global `permissions` |
 
 A profile with neither `command` nor a resolvable `extends` is rejected at spawn time —
 Crucible has nothing to run.
 
-```toml
-# Point Claude Code at a local proxy
-[acp.agents.claude-proxy]
-extends = "claude"
-description = "Claude Code through a local gateway"
-env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
-
-# A completely custom agent binary
-[acp.agents.my-agent]
-command = "/usr/local/bin/my-agent"
-args = ["--mode", "acp"]
-env = { MY_AGENT_ENDPOINT = "http://localhost:8080" }
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            ["claude-proxy"] = {
+                -- Point Claude Code at a local proxy
+                extends = "claude",
+                description = "Claude Code through a local gateway",
+                env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+            },
+            ["my-agent"] = {
+                -- A completely custom agent binary
+                command = "/usr/local/bin/my-agent",
+                args = { "--mode", "acp" },
+                env = { MY_AGENT_ENDPOINT = "http://localhost:8080" },
+            },
+        },
+    },
+})
 ```
 
 `env` values are passed to the agent process verbatim. Keep secrets out of this table —
 the agent inherits Crucible's environment, so exporting the variable in your shell is both
 simpler and safer.
 
-### `[acp.agents.<name>.delegation]`
+### `acp.agents.<name>.delegation`
 
 Controls whether this agent may hand work to another agent via the `delegate_session` tool.
 Absent means no delegation configuration, which leaves the tool unadvertised.
@@ -87,25 +97,32 @@ Absent means no delegation configuration, which leaves the tool unadvertised.
 | `max_concurrent_delegations` | integer | `3` | Concurrent children one session may spawn |
 | `timeout_secs` | integer | `300` | Seconds a delegated child may run before cancellation, blocking or background |
 
-```toml
-[acp.agents.orchestrator]
-extends = "claude"
-
-[acp.agents.orchestrator.delegation]
-enabled = true
-max_depth = 2
-allowed_targets = ["researcher", "reviewer"]
-result_max_bytes = 102400
-max_concurrent_delegations = 5
-timeout_secs = 600
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            orchestrator = {
+                extends = "claude",
+                delegation = {
+                    enabled = true,
+                    max_depth = 2,
+                    allowed_targets = { "researcher", "reviewer" },
+                    result_max_bytes = 102400,
+                    max_concurrent_delegations = 5,
+                    timeout_secs = 600,
+                },
+            },
+        },
+    },
+})
 ```
 
 Depth is derived from the child session's parent chain at every level, so a chain cannot be
 extended by handing off through an intermediary.
 
-### `[acp.agents.<name>.permissions]`
+### `acp.agents.<name>.permissions`
 
-Same shape as the global `[permissions]` section. When set, it replaces the global config
+Same shape as the global `permissions` section. When set, it replaces the global config
 for sessions using this profile — use it to give different agents different trust levels.
 
 | Field | Type | Default | Description |
@@ -115,14 +132,25 @@ for sessions using this profile — use it to give different agents different tr
 | `deny` | array of string | `[]` | Patterns that refuse |
 | `ask` | array of string | `[]` | Patterns that always prompt |
 
-```toml
-[acp.agents.claude.permissions]
-default = "ask"
-deny = ["bash:rm *", "write_file:*"]
-
-[acp.agents.opencode.permissions]
-default = "allow"
-deny = ["bash:rm -rf *"]
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            claude = {
+                permissions = {
+                    default = "ask",
+                    deny = { "bash:rm *", "write_file:*" },
+                },
+            },
+            opencode = {
+                permissions = {
+                    default = "allow",
+                    deny = { "bash:rm -rf *" },
+                },
+            },
+        },
+    },
+})
 ```
 
 See [[Help/Config/permissions]] for pattern syntax and
@@ -130,28 +158,33 @@ See [[Help/Config/permissions]] for pattern syntax and
 
 ## Full example
 
-```toml
-[acp]
-default_agent = "claude-proxy"
-streaming_timeout_minutes = 30
-
-[acp.agents.claude-proxy]
-extends = "claude"
-description = "Claude Code through a local gateway"
-env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
-
-[acp.agents.claude-proxy.delegation]
-enabled = true
-max_depth = 1
-
-[acp.agents.claude-proxy.permissions]
-default = "ask"
-deny = ["bash:rm *"]
+```lua
+cru.config.set({
+    acp = {
+        default_agent = "claude-proxy",
+        streaming_timeout_minutes = 30,
+        agents = {
+            ["claude-proxy"] = {
+                extends = "claude",
+                description = "Claude Code through a local gateway",
+                env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+                delegation = {
+                    enabled = true,
+                    max_depth = 1,
+                },
+                permissions = {
+                    default = "ask",
+                    deny = { "bash:rm *" },
+                },
+            },
+        },
+    },
+})
 ```
 
 ## See Also
 
-- [[Help/Config/agents]] — `[chat]` and `[acp]` in the context of agent selection
+- [[Help/Config/agents]] — `chat` and `acp` in the context of agent selection
 - [[Help/Concepts/Agent Client Protocol]] — the protocol and the built-in profiles
 - [[Help/Concepts/Delegation]] — how delegation works end to end
 - [[Help/Config/permissions]] — permission rule syntax

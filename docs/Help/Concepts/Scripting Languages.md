@@ -39,7 +39,7 @@ Place files in:
 
 ```
 ~/.config/crucible/plugins/     # Global personal
-<runtimepath entry>/plugins/    # Opt-in extra trees, named in config.toml
+<runtimepath entry>/plugins/    # Opt-in extra trees, named in init.lua
 ```
 
 Plugins are user-scoped: no kiln, project or workspace directory is searched on

@@ -421,8 +421,8 @@ impl AgentManager {
         let is_acp = agent_config.agent_type == "acp";
 
         // A setting the session's agent cannot carry is refused, not stored.
-        // `AcpAgentHandle` used to cache temperature, thinking budget and max
-        // tokens in fields nothing read, so the value was accepted, reported
+        // `AcpAgentHandle` used to cache temperature and max tokens in
+        // fields nothing read, so the value was accepted, reported
         // back, and never reached the agent process. Storing it here has the
         // same effect one layer up, because these setters never ask the
         // handle at all — they write the session's config and stop.
@@ -470,84 +470,9 @@ impl AgentManager {
         Ok(())
     }
 
-    pub async fn set_thinking_budget(
-        &self,
-        session_id: &str,
-        budget: i64,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ThinkingBudget,
-            event_tx,
-            "thinking_budget_changed",
-            serde_json::json!({ "budget": budget }),
-            "Failed to emit thinking_budget_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.thinking_budget = Some(budget);
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    budget = budget,
-                    "Thinking budget updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
     pub fn get_mode(&self, session_id: &str) -> Result<Option<String>, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.mode)
-    }
-
-    pub fn get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.thinking_budget)
-    }
-
-    pub async fn set_system_prompt(
-        &self,
-        session_id: &str,
-        prompt: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        if self.slot(session_id).has_agent() {
-            return Err(AgentError::InvalidConfig(
-                "system_prompt is locked after the first message has been sent".to_string(),
-            ));
-        }
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::SystemPrompt,
-            event_tx,
-            "system_prompt_changed",
-            serde_json::json!({ "system_prompt": prompt }),
-            "Failed to emit system_prompt_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.system_prompt = prompt.to_string();
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    "System prompt updated"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_system_prompt(&self, session_id: &str) -> Result<Option<String>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        let prompt = &agent_config.system_prompt;
-        if prompt.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(prompt.clone()))
-        }
     }
 
     pub async fn set_precognition(
@@ -581,72 +506,6 @@ impl AgentManager {
     pub fn get_precognition(&self, session_id: &str) -> Result<bool, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.precognition_enabled)
-    }
-
-    pub async fn set_precognition_results(
-        &self,
-        session_id: &str,
-        count: usize,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::PrecognitionResults,
-            event_tx,
-            "precognition_results_changed",
-            serde_json::json!({ "precognition_results": count }),
-            "Failed to emit precognition_results_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.precognition_results = count;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    count = count,
-                    "Precognition results count updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_precognition_results(&self, session_id: &str) -> Result<usize, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.precognition_results)
-    }
-
-    pub async fn set_temperature(
-        &self,
-        session_id: &str,
-        temperature: f64,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::Temperature,
-            event_tx,
-            "temperature_changed",
-            serde_json::json!({ "temperature": temperature }),
-            "Failed to emit temperature_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.temperature = Some(temperature);
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    temperature = temperature,
-                    "Temperature updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_temperature(&self, session_id: &str) -> Result<Option<f64>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.temperature)
     }
 
     pub async fn add_notification(
@@ -738,105 +597,6 @@ impl AgentManager {
         Ok(success)
     }
 
-    pub async fn set_max_tokens(
-        &self,
-        session_id: &str,
-        max_tokens: Option<u32>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::MaxTokens,
-            event_tx,
-            "max_tokens_changed",
-            serde_json::json!({ "max_tokens": max_tokens }),
-            "Failed to emit max_tokens_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.max_tokens = max_tokens;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    max_tokens = ?max_tokens,
-                    "Max tokens updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_max_tokens(&self, session_id: &str) -> Result<Option<u32>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.max_tokens)
-    }
-
-    pub async fn set_max_iterations(
-        &self,
-        session_id: &str,
-        max_iterations: Option<u32>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::MaxIterations,
-            event_tx,
-            "max_iterations_changed",
-            serde_json::json!({ "max_iterations": max_iterations }),
-            "Failed to emit max_iterations_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.max_iterations = max_iterations;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    max_iterations = ?max_iterations,
-                    "Max iterations updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_max_iterations(&self, session_id: &str) -> Result<Option<u32>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.max_iterations)
-    }
-
-    pub async fn set_execution_timeout(
-        &self,
-        session_id: &str,
-        timeout_secs: Option<u64>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ExecutionTimeout,
-            event_tx,
-            "execution_timeout_changed",
-            serde_json::json!({ "timeout_secs": timeout_secs }),
-            "Failed to emit execution_timeout_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.execution_timeout_secs = timeout_secs;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    timeout_secs = ?timeout_secs,
-                    "Execution timeout updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_execution_timeout(&self, session_id: &str) -> Result<Option<u64>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.execution_timeout_secs)
-    }
-
     pub async fn set_context_budget(
         &self,
         session_id: &str,
@@ -868,46 +628,6 @@ impl AgentManager {
     pub fn get_context_budget(&self, session_id: &str) -> Result<Option<usize>, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.context_budget)
-    }
-
-    pub async fn set_autocompact_threshold(
-        &self,
-        session_id: &str,
-        threshold: Option<f32>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        if let Some(t) = threshold {
-            if !(0.0..=1.0).contains(&t) {
-                return Err(AgentError::InvalidConfig(format!(
-                    "autocompact_threshold {t} out of range; expected 0.0..=1.0"
-                )));
-            }
-        }
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::AutocompactThreshold,
-            event_tx,
-            "autocompact_threshold_changed",
-            serde_json::json!({ "autocompact_threshold": threshold }),
-            "Failed to emit autocompact_threshold_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.autocompact_threshold = threshold;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    autocompact_threshold = ?threshold,
-                    "Autocompact threshold updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_autocompact_threshold(&self, session_id: &str) -> Result<Option<f32>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.autocompact_threshold)
     }
 
     pub async fn set_context_strategy(
@@ -942,106 +662,6 @@ impl AgentManager {
     pub fn get_context_strategy(&self, session_id: &str) -> Result<ContextStrategy, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.context_strategy)
-    }
-
-    pub async fn set_context_window(
-        &self,
-        session_id: &str,
-        window: Option<usize>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ContextWindow,
-            event_tx,
-            "context_window_changed",
-            serde_json::json!({ "context_window": window }),
-            "Failed to emit context_window_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.context_window = window;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    context_window = ?window,
-                    "Context window updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_context_window(&self, session_id: &str) -> Result<Option<usize>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.context_window)
-    }
-
-    pub async fn set_output_validation(
-        &self,
-        session_id: &str,
-        validation: OutputValidation,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        let validation_str = validation.to_string();
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::OutputValidation,
-            event_tx,
-            "output_validation_changed",
-            serde_json::json!({ "output_validation": validation_str }),
-            "Failed to emit output_validation_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.output_validation = validation.clone();
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    output_validation = %validation_str,
-                    "Output validation updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_output_validation(&self, session_id: &str) -> Result<OutputValidation, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.output_validation.clone())
-    }
-
-    pub async fn set_validation_retries(
-        &self,
-        session_id: &str,
-        retries: u32,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<(), AgentError> {
-        self.update_agent_config_and_emit(
-            session_id,
-            crucible_core::types::SessionKnob::ValidationRetries,
-            event_tx,
-            "validation_retries_changed",
-            serde_json::json!({ "validation_retries": retries }),
-            "Failed to emit validation_retries_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.validation_retries = retries;
-                Ok(())
-            },
-            || {
-                info!(
-                    session_id = %session_id,
-                    validation_retries = retries,
-                    "Validation retries updated (agent cache invalidated)"
-                );
-            },
-        )
-        .await
-    }
-
-    pub fn get_validation_retries(&self, session_id: &str) -> Result<u32, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
-        Ok(agent_config.validation_retries)
     }
 
     /// Undo the last N agent turns for a session by rewinding the

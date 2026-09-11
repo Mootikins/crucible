@@ -255,7 +255,7 @@ pub enum MockSubagentBehavior {
     Pending,
     StreamFailure(String),
     /// Emits `marker` text plus a tool call every turn, so the execution loop
-    /// only terminates when it hits `max_turns`. Used to verify turn caps.
+    /// never terminates on its own; the caller cancels it.
     RepeatingToolCall(String),
 }
 

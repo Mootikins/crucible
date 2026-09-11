@@ -66,7 +66,6 @@ Tests comprehensive configuration scenarios for agent creation:
 - **Edge Cases and Error Handling** (5 tests)
   - Empty LLM config
   - Provider variant testing
-  - Temperature boundary values
   - Max tokens boundary values
   - Timeout boundary values
 
@@ -176,7 +175,6 @@ Tests explicitly fail if:
 
 Tests verify extreme but valid values:
 - Zero and very large token limits
-- Minimum and maximum temperature values
 - Very short and very long timeout values
 
 ### Realistic Scenarios

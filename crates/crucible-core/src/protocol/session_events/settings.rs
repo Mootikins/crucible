@@ -1,6 +1,6 @@
-//! The eighteen session-settings events.
+//! The twelve session-settings events.
 //!
-//! Fourteen of them are one-field acknowledgements routed through
+//! Most of them are one-field acknowledgements routed through
 //! `AgentManager::update_agent_config_and_emit`; the field name in each variant
 //! is already the JSON key that helper wrote by hand, so these variants are a
 //! rename with no shape change.
@@ -38,10 +38,6 @@ pub enum SettingsPayload {
         #[serde(default)]
         title: String,
     },
-    ThinkingBudgetChanged {
-        #[serde(default)]
-        budget: i64,
-    },
     SystemPromptChanged {
         #[serde(default)]
         system_prompt: String,
@@ -50,49 +46,13 @@ pub enum SettingsPayload {
         #[serde(default)]
         enabled: bool,
     },
-    PrecognitionResultsChanged {
-        #[serde(default)]
-        precognition_results: usize,
-    },
-    TemperatureChanged {
-        #[serde(default)]
-        temperature: f64,
-    },
-    MaxTokensChanged {
-        #[serde(default)]
-        max_tokens: Option<u32>,
-    },
-    MaxIterationsChanged {
-        #[serde(default)]
-        max_iterations: Option<u32>,
-    },
-    ExecutionTimeoutChanged {
-        #[serde(default)]
-        timeout_secs: Option<u64>,
-    },
     ContextBudgetChanged {
         #[serde(default)]
         context_budget: Option<usize>,
     },
-    AutocompactThresholdChanged {
-        #[serde(default)]
-        autocompact_threshold: Option<f32>,
-    },
     ContextStrategyChanged {
         #[serde(default)]
         context_strategy: String,
-    },
-    ContextWindowChanged {
-        #[serde(default)]
-        context_window: Option<usize>,
-    },
-    OutputValidationChanged {
-        #[serde(default)]
-        output_validation: String,
-    },
-    ValidationRetriesChanged {
-        #[serde(default)]
-        validation_retries: u32,
     },
 }
 

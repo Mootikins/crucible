@@ -615,8 +615,13 @@ You are a test agent.
         let config = test_config(kiln_path.clone());
         let dirs = hermetic_dirs(&config);
 
-        // Global default plus the kiln's config dir.
-        assert_eq!(dirs[0], PathBuf::from("/cfg/crucible/agents"), "{dirs:?}");
+        // Highest-priority first now, so the global default is LAST and the
+        // kiln's own directory is present above it.
+        assert_eq!(
+            dirs.last(),
+            Some(&PathBuf::from("/cfg/crucible/agents")),
+            "{dirs:?}"
+        );
         assert!(dirs.contains(&kiln_path.join(".crucible/agents")));
     }
 
@@ -683,19 +688,20 @@ You are a test agent.
             .position(|p| p == &kiln_path.join(".crucible/agents"))
             .expect("kiln config dir present");
 
-        // Later shadows earlier, so the kiln's own cards win over a
-        // globally-configured directory.
-        assert!(custom_idx < kiln_idx, "{dirs:?}");
+        // Highest priority first, first match wins, so the kiln's own cards
+        // still beat a globally-configured directory — it now sits EARLIER
+        // rather than later. Same outcome, opposite spelling.
+        assert!(kiln_idx < custom_idx, "{dirs:?}");
     }
 
-    /// The workspace's own `.crucible/agents/` is searched last, so a
+    /// The workspace's own `.crucible/agents/` is searched FIRST, so a
     /// project card shadows everything else — as it does in the daemon.
     #[test]
-    fn test_collect_agent_directories_ends_with_the_workspace() {
+    fn test_collect_agent_directories_starts_with_the_workspace() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path);
         let dirs = hermetic_dirs(&config);
-        assert_eq!(dirs.last(), Some(&PathBuf::from("/ws/.crucible/agents")));
+        assert_eq!(dirs.first(), Some(&PathBuf::from("/ws/.crucible/agents")));
     }
 
     #[test]

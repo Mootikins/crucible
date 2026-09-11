@@ -825,10 +825,11 @@ end
 M.activate()
 
 local plugin = {
+  author = "Crucible Team",
+  license = "MIT",
     name = "retrieval-lab",
     version = "0.1.0",
     description = "Retrieval strategies over block trajectories, for measurement",
-    capabilities = { "kiln", "config" },
 
     -- Exposed for unit tests.
     counters = M.counters,

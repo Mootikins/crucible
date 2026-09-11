@@ -117,71 +117,6 @@ async fn sessions_cache_stats_returns_aggregate_table() {
     );
 }
 
-/// Pass a raw string spec — the Lua binding hands it to the daemon
-/// verbatim (the daemon parses with `OutputValidation::from_str`).
-#[tokio::test]
-async fn sessions_set_output_validation_accepts_string_spec() {
-    let mock = Arc::new(MockDaemonApi::new());
-    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
-    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
-
-    let result: (Value, Value) = lua
-        .load(r#"return cru.session.set_output_validation("s1", "json")"#)
-        .eval_async()
-        .await
-        .unwrap();
-    assert!(matches!(result.0, Value::Boolean(true)));
-    assert!(matches!(result.1, Value::Nil));
-
-    let captured = mock.last_validation_spec().expect("api was invoked");
-    assert_eq!(captured.0, "s1");
-    assert_eq!(captured.1, "json");
-}
-
-/// Pass a `{ type = "lua", name = "..." }` table — the Lua binding
-/// serialises it to the canonical `lua:<name>` form before calling the
-/// trait. Same path used by all four typed shapes (none/json/regex/lua).
-#[tokio::test]
-async fn sessions_set_output_validation_serialises_lua_table_spec() {
-    let mock = Arc::new(MockDaemonApi::new());
-    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
-    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
-
-    let result: (Value, Value) = lua
-        .load(r#"return cru.session.set_output_validation("s1", { type = "lua", name = "x" })"#)
-        .eval_async()
-        .await
-        .unwrap();
-    assert!(matches!(result.0, Value::Boolean(true)));
-    assert!(matches!(result.1, Value::Nil));
-
-    let captured = mock.last_validation_spec().expect("api was invoked");
-    assert_eq!(captured.0, "s1");
-    assert_eq!(captured.1, "lua:x");
-}
-
-/// `{ type = "regex", pattern = "..." }` serialises to `regex:<pattern>`.
-#[tokio::test]
-async fn sessions_set_output_validation_serialises_regex_table_spec() {
-    let mock = Arc::new(MockDaemonApi::new());
-    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
-    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
-
-    let result: (Value, Value) = lua
-        .load(
-            r#"return cru.session.set_output_validation("s1", { type = "regex", pattern = "^OK$" })"#,
-        )
-        .eval_async()
-        .await
-        .unwrap();
-    assert!(matches!(result.0, Value::Boolean(true)));
-
-    let captured = mock.last_validation_spec().expect("api was invoked");
-    assert_eq!(captured.1, "regex:^OK$");
-}
-
-/// `cru.session.undo(session_id, count?)` returns the number of turns
-/// undone. Default count is 1.
 #[tokio::test]
 async fn sessions_undo_returns_count() {
     let mock = Arc::new(MockDaemonApi::new());
@@ -279,28 +214,4 @@ async fn sessions_undo_history_returns_list() {
     let second: Table = result.get(2).unwrap();
     assert_eq!(second.get::<i64>("turn_index").unwrap(), 1);
     assert_eq!(second.get::<i64>("messages_removed").unwrap(), 3);
-}
-
-/// Unknown `type` keys raise a runtime error from the Lua binding —
-/// the daemon never sees the call.
-#[tokio::test]
-async fn sessions_set_output_validation_rejects_unknown_type() {
-    let mock = Arc::new(MockDaemonApi::new());
-    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
-    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
-
-    let res: mlua::Result<(Value, Value)> = lua
-        .load(r#"return cru.session.set_output_validation("s1", { type = "bogus" })"#)
-        .eval_async()
-        .await;
-    let err = res.expect_err("expected error from unknown type");
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("unknown validation type"),
-        "expected 'unknown validation type' in error, got: {msg}"
-    );
-    assert!(
-        mock.last_validation_spec().is_none(),
-        "api should not have been called"
-    );
 }

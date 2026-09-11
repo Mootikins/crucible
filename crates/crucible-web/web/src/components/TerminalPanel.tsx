@@ -362,10 +362,10 @@ export const TerminalPanel: Component = () => {
           <span class="text-xs text-muted-dark max-w-md">
             A terminal is full shell access, so Crucible only serves it to localhost by default —
             you're connected from {window.location.hostname}. To allow authenticated remote
-            devices, run the server with `cru web --remote-shell` (or set remote_shell = true
-            under [web] in config.toml). An API key must be configured. If the terminal still
+            devices, run the server with `cru web --remote-shell` (or set `web.remote_shell`
+            to true in your init.lua). An API key must be configured. If the terminal still
             refuses after that, this host is not one the server answers to — add "
-            {window.location.host}" to allowed_hosts under [web].
+            {window.location.host}" to `web.allowed_hosts`.
           </span>
         </div>
       </Match>

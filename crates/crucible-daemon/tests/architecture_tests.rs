@@ -194,7 +194,7 @@ fn captures(re: &str, hay: &str) -> BTreeSet<String> {
 // A1 — RPC field-name parity for session config get/set pairs.
 //
 // The historical bug class: the client serializes a request field under one
-// JSON name (e.g. `thinking_budget`) while the daemon handler reads a
+// JSON name (e.g. `context_budget`) while the daemon handler reads a
 // different name (e.g. `budget`), so the value is silently dropped. These
 // gates diff the field-name *sets* used on each side of the wire per method.
 //
@@ -228,44 +228,9 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         result_field: "mode",
     },
     ConfigMethod {
-        suffix: "thinking_budget",
-        request_field: "thinking_budget",
-        result_field: "thinking_budget",
-    },
-    ConfigMethod {
-        suffix: "system_prompt",
-        request_field: "system_prompt",
-        result_field: "system_prompt",
-    },
-    ConfigMethod {
         suffix: "precognition",
         request_field: "precognition_enabled",
         result_field: "precognition_enabled",
-    },
-    ConfigMethod {
-        suffix: "precognition_results",
-        request_field: "precognition_results",
-        result_field: "precognition_results",
-    },
-    ConfigMethod {
-        suffix: "temperature",
-        request_field: "temperature",
-        result_field: "temperature",
-    },
-    ConfigMethod {
-        suffix: "max_tokens",
-        request_field: "max_tokens",
-        result_field: "max_tokens",
-    },
-    ConfigMethod {
-        suffix: "max_iterations",
-        request_field: "max_iterations",
-        result_field: "max_iterations",
-    },
-    ConfigMethod {
-        suffix: "execution_timeout",
-        request_field: "timeout_secs",
-        result_field: "timeout_secs",
     },
     ConfigMethod {
         suffix: "context_budget",
@@ -276,26 +241,6 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         suffix: "context_strategy",
         request_field: "context_strategy",
         result_field: "context_strategy",
-    },
-    ConfigMethod {
-        suffix: "context_window",
-        request_field: "context_window",
-        result_field: "context_window",
-    },
-    ConfigMethod {
-        suffix: "output_validation",
-        request_field: "output_validation",
-        result_field: "output_validation",
-    },
-    ConfigMethod {
-        suffix: "validation_retries",
-        request_field: "validation_retries",
-        result_field: "validation_retries",
-    },
-    ConfigMethod {
-        suffix: "autocompact_threshold",
-        request_field: "autocompact_threshold",
-        result_field: "autocompact_threshold",
     },
 ];
 

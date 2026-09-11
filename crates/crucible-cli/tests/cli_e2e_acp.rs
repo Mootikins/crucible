@@ -93,8 +93,8 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
     );
 
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "\n[acp.agents.mock]\ncommand = \"{}\"\nargs = []\ndescription = \"Mock ACP agent for CLI E2E tests\"\n",
-        toml_escape(&mock_path)
+        "cru.config.set({{ acp = {{ agents = {{ mock = {{ command = \"{}\", description = \"Mock ACP agent for CLI E2E tests\" }} }} }} }})\n",
+        path_literal(&mock_path)
     ));
 
     let create_output = daemon
@@ -146,8 +146,8 @@ fn session_acp_lifecycle_with_http_capable_mock() {
     );
 
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "\n[acp.agents.mock-http]\ncommand = \"{}\"\nargs = [\"--mcp-http\"]\ndescription = \"Mock ACP agent with HTTP MCP support\"\n",
-        toml_escape(&mock_path)
+        "cru.config.set({{ acp = {{ agents = {{ [\"mock-http\"] = {{ command = \"{}\", args = {{ \"--mcp-http\" }}, description = \"Mock ACP agent with HTTP MCP support\" }} }} }} }})\n",
+        path_literal(&mock_path)
     ));
 
     let create_output = daemon
@@ -207,8 +207,8 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
 
     // No --mcp-http flag: agent reports mcp_http=false
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "\n[acp.agents.mock-stdio]\ncommand = \"{}\"\nargs = []\ndescription = \"Mock ACP agent (stdio only)\"\n",
-        toml_escape(&mock_path)
+        "cru.config.set({{ acp = {{ agents = {{ [\"mock-stdio\"] = {{ command = \"{}\", description = \"Mock ACP agent (stdio only)\" }} }} }} }})\n",
+        path_literal(&mock_path)
     ));
 
     let create_output = daemon

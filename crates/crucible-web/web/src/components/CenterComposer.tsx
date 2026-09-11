@@ -577,8 +577,8 @@ export const CenterComposer: Component<{
                   </div>
                   <p class="mt-1 text-floor leading-snug text-muted-dark">
                     Reach this machine's sessions and terminal from other devices.
-                    Configure via <code class="text-muted">[web] remote_shell</code> in
-                    config.toml.
+                    Configure via <code class="text-muted">web.remote_shell</code> in your
+                    init.lua.
                   </p>
                 </div>
               }

@@ -49,10 +49,10 @@ to `runtimepath` in your config.
   config). `cru setup` never touches your kiln or project.
 - **The first-run wizard** runs automatically — before a bare `cru` or an interactive
   `cru chat` (no one-shot query, no `--record`/`--replay`), when stdin is a terminal and
-  `~/.config/crucible/config.toml` does not exist. It prompts for an LLM provider, an
+  `~/.config/crucible/init.lua` does not exist. It prompts for an LLM provider, an
   API key (stored in `secrets.toml`; skipped for Ollama), an embedding backend, and a
-  default kiln path,
-  then writes a minimal `config.toml`. `cru setup` writes neither `config.toml` nor
+  default kiln path, then writes a minimal `init.lua`. The provider selection goes to
+  the daemon's `llm.json`, not into your file. `cru setup` writes neither `init.lua` nor
   secrets; the two are disjoint, and a fresh install typically wants both.
 
 ## See Also

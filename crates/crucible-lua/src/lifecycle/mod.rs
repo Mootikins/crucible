@@ -1,6 +1,5 @@
 //! Plugin lifecycle management
 
-mod dependency;
 mod discovery;
 mod error;
 mod error_log;
@@ -135,8 +134,8 @@ impl PluginManager {
     /// What an enumeration wants. `lua.discover_plugins` used to answer with
     /// `initialize`, so listing the plugins ran all of them — a read-shaped
     /// RPC, reachable from the web UI, with arbitrary Lua as a side effect.
-    /// Manifest metadata (name, version) comes from `plugin.yaml`, which needs
-    /// no VM.
+    /// The name comes from the directory, which needs no VM. The version is
+    /// the spec table's claim, so an unloaded plugin reports none.
     pub fn discover_only() -> LifecycleResult<Self> {
         let mut manager = Self::with_standard_paths();
         manager.discover()?;

@@ -1,7 +1,5 @@
 use super::super::agent::SessionAgent;
-use super::super::config::{
-    default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
-};
+use super::super::config::ContextStrategy;
 use crate::config::BackendType;
 use std::collections::HashMap;
 
@@ -14,10 +12,7 @@ fn test_session_agent_serialization() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
         max_context_tokens: Some(8192),
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec!["filesystem".to_string()],
@@ -25,15 +20,8 @@ fn test_session_agent_serialization() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -41,11 +29,9 @@ fn test_session_agent_serialization() {
     let json = serde_json::to_string(&agent).unwrap();
     assert!(json.contains("\"agent_type\":\"internal\""));
     assert!(json.contains("\"model\":\"llama3.2\""));
-    assert!(json.contains("\"temperature\":0.7"));
 
     let parsed: SessionAgent = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.model, "llama3.2");
-    assert_eq!(parsed.temperature, Some(0.7));
     assert_eq!(parsed.mcp_servers, vec!["filesystem"]);
 }
 
@@ -63,10 +49,7 @@ fn test_session_agent_typed_provider_serialization() {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "Test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -74,15 +57,8 @@ fn test_session_agent_typed_provider_serialization() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -115,10 +91,7 @@ fn test_session_agent_typed_provider_round_trip() {
         provider: BackendType::OpenAI,
         model: "gpt-4o".to_string(),
         system_prompt: "Test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -126,15 +99,8 @@ fn test_session_agent_typed_provider_round_trip() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -160,10 +126,7 @@ fn test_session_agent_with_capabilities() {
         provider: BackendType::Custom,
         model: "opencode".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -171,15 +134,8 @@ fn test_session_agent_with_capabilities() {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -199,10 +155,7 @@ fn test_session_agent_with_agent_description() {
         provider: BackendType::Custom,
         model: "claude".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -210,15 +163,8 @@ fn test_session_agent_with_agent_description() {
         agent_description: Some("Claude AI assistant".to_string()),
         delegation_config: None,
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -255,10 +201,7 @@ fn test_session_agent_with_delegation_config() {
         provider: BackendType::Custom,
         model: "delegating-agent".to_string(),
         system_prompt: "You can delegate.".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -266,15 +209,8 @@ fn test_session_agent_with_delegation_config() {
         agent_description: None,
         delegation_config: Some(delegation),
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };
@@ -308,7 +244,6 @@ fn test_session_agent_backward_compat_without_new_fields() {
 
     let agent: SessionAgent = serde_json::from_str(old_json).unwrap();
     assert_eq!(agent.model, "llama3.2");
-    assert_eq!(agent.temperature, Some(0.7));
     assert!(agent.agent_description.is_none());
     assert!(agent.delegation_config.is_none());
 }
@@ -334,10 +269,7 @@ fn test_session_agent_round_trip_with_all_fields() {
         provider: BackendType::Custom,
         model: "full-agent".to_string(),
         system_prompt: "Full agent.".to_string(),
-        temperature: Some(0.8),
-        max_tokens: Some(8192),
         max_context_tokens: Some(16384),
-        thinking_budget: Some(10000),
         endpoint: Some("http://localhost:8000".to_string()),
         env_overrides: {
             let mut map = HashMap::new();
@@ -349,15 +281,8 @@ fn test_session_agent_round_trip_with_all_fields() {
         agent_description: Some("A full-featured agent".to_string()),
         delegation_config: Some(delegation),
         precognition_enabled: true,
-        precognition_results: default_precognition_results(),
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: ContextStrategy::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: default_validation_retries(),
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     };

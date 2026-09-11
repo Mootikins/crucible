@@ -9,13 +9,6 @@ fn test_on_unload_fires_during_unload() {
     let plugin_dir = temp.path().join("unload-hook-test");
     std::fs::create_dir_all(&plugin_dir).unwrap();
 
-    let manifest = r#"
-name: unload-hook-test
-version: "1.0.0"
-main: init.lua
-"#;
-    std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-
     let lua = r#"
 return {
     name = "unload-hook-test",
@@ -45,13 +38,6 @@ fn test_on_unload_fires_during_disable() {
     let plugin_dir = temp.path().join("disable-hook-test");
     std::fs::create_dir_all(&plugin_dir).unwrap();
 
-    let manifest = r#"
-name: disable-hook-test
-version: "1.0.0"
-main: init.lua
-"#;
-    std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-
     let lua = r#"
 return {
     name = "disable-hook-test",
@@ -80,13 +66,6 @@ fn test_on_unload_fires_once_during_reload() {
     let temp = TempDir::new().unwrap();
     let plugin_dir = temp.path().join("reload-hook-test");
     std::fs::create_dir_all(&plugin_dir).unwrap();
-
-    let manifest = r#"
-name: reload-hook-test
-version: "1.0.0"
-main: init.lua
-"#;
-    std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
 
     let lua = r#"
 return {

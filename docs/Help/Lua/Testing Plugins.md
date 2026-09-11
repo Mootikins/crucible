@@ -108,7 +108,7 @@ before_each(function()
     },
     fs = {
       files = {
-        ["config.toml"] = "key = 'value'",
+        ["fixture.toml"] = "key = 'value'",
       },
     },
   })
@@ -125,7 +125,7 @@ fs       = { files = {}, dirs = {}, real_dirs = false },
 paths    = { workspace = "/mock/workspace",
              session = false, state = "/mock/state" },
 session  = { temperature = 0.7, max_tokens = nil, model = "mock-model",
-             mode = "act", thinking_budget = nil },
+             mode = "act" },
 sessions = { info = { kiln = "/mock/kiln" }, messages = {}, response_parts = {} },
 ```
 

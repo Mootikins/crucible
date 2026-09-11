@@ -22,15 +22,25 @@ Agent cards define specialized AI agents. Each card is a markdown file: YAML fro
 - **Who is this agent?** — Name, description, system prompt
 - **What can it do?** — Per-tool permissions and MCP servers
 - **What model?** — Optional provider/model override (omit to inherit the spawning context's model)
-- **How long may it run?** — `max_turns` caps the tool loop
 
 ## File Locations
 
-Discovery order (later locations shadow earlier ones, by card name):
+Cards resolve over the same runtimepath every asset kind uses, **highest
+priority first**, and the first match by card name wins:
 
-1. `~/.config/crucible/agents/` — personal cards
+1. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
 2. `KILN/.crucible/agents/` — kiln-scoped cards
-3. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
+3. each `agent_directories` entry (deprecated; see below)
+4. `~/.config/crucible/agents/` — personal cards
+
+A project card beats a kiln card. Note that **skills go the other way** — a
+kiln's skills beat a workspace's, because a kiln is where knowledge lives
+while a workspace is where work happens. Both have always behaved this way.
+
+To add a directory, put it on `runtimepath` rather than in
+`agent_directories`: one entry there supplies `agents/`, `skills/`, `plugins/`
+and `themes/` together, where `agent_directories` supplies cards alone. The old
+knob still works and warns once.
 
 Only `.crucible/` directories. A kiln's visible tree is **not** searched:
 `KILN/agents/` and `KILN/Agents/` used to be, which meant any kiln you cloned,
@@ -82,11 +92,8 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 | `mcps` | No | MCP servers this agent can use (alias: `mcp_servers`) |
 | `provider` | No | Provider override (`ollama`, `anthropic`, …); omit to inherit |
 | `model` | No | Model override; omit to inherit (better portability) |
-| `temperature` | No | Sampling temperature override |
-| `max_tokens` | No | Max output tokens override |
-| `max_turns` | No | Max tool-loop turns per message |
 | `mode` | No | Initial mode (`auto`/`plan`) |
-| `specialty` | No | Model category resolved via `[llm.models]` (see below) |
+| `specialty` | No | Model category resolved via `llm.models` (see below) |
 | `tags` | No | Tags for discovery |
 
 ## Model Resolution
@@ -94,18 +101,23 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 A card's model resolves through one explicit chain, most specific first:
 
 1. **Card-explicit** `provider:` / `model:` — always wins.
-2. **`specialty:`** mapped through your `[llm.models]` config table.
+2. **`specialty:`** mapped through your `llm.models` config table.
 3. **Inherit from the spawning context** — the delegating parent's
    provider/model, or the configured default for `session.create`.
 
 The `specialty` layer keeps cards portable: the card says what *kind* of
 model it wants, and each machine maps that to its own preferred model:
 
-```toml
-[llm.models]
-reasoning = "openai/o1"          # provider/model — switches both
-coder = "qwen2.5-coder"          # bare model — provider inherited
-writing = "anthropic/claude-haiku"
+```lua
+cru.config.set({
+    llm = {
+        models = {
+            reasoning = "openai/o1",  -- provider/model — switches both
+            coder = "qwen2.5-coder",  -- bare model — provider inherited
+            writing = "anthropic/claude-haiku",
+        },
+    },
+})
 ```
 
 An unmapped specialty simply falls through to inheritance, so sharing a
@@ -127,7 +139,7 @@ Permission values:
 
 Tools not listed use the default behavior (safe read-only tools run freely; mutating tools go through the permission gate). Note: delegated child sessions run non-interactively — for them, `ask` is effectively `deny` unless a permission pattern or Lua hook answers the prompt.
 
-**Trust note:** `allow` skips the interactive prompt, so only install cards from sources you trust — a kiln-shipped card granting `bash: allow` runs shell commands unattended when delegated to. The operator's `[permissions]` deny rules are still evaluated for a card-allowed tool, so a card cannot sidestep them: `deny = ["bash:*"]` in your permissions config outranks any card.
+**Trust note:** `allow` skips the interactive prompt, so only install cards from sources you trust — a kiln-shipped card granting `bash: allow` runs shell commands unattended when delegated to. The operator's `permissions` deny rules are still evaluated for a card-allowed tool, so a card cannot sidestep them: `deny = ["bash:*"]` in your permissions config outranks any card.
 
 It outranks cards, not everything. Three things sit outside it, and a `deny` rule is a backstop only against what it can actually see:
 

@@ -18,10 +18,10 @@ tags:
 >
 > The plugin system Crucible ships is **Luau**: plugins are directories
 > with an `init.lua` returning a spec table (tools, commands, services), hooks
-> register via `cru.on()`, and manifest capabilities are declarative rather
-> than sandbox-enforced — `intercept_tools` is the one exception. See
-> [[Help/Extending/Creating Plugins]] and
-> [[Help/Extending/Plugin Manifest]] for the real system, and
+> register via `cru.on()`, and the spec table's declarations are documentation
+> rather than a sandbox — `intercepts_tools` is the one the host checks. See
+> [[Help/Extending/Creating Plugins]] and the plugin spec table for the real
+> system, and
 > [[Help/Extending/Event Hooks]] for the real event set.
 
 ## What this page was

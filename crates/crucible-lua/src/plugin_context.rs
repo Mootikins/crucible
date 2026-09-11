@@ -18,7 +18,7 @@
 //! 1. The plugin loader, around a plugin's execution, so the plugin's own body
 //!    runs under its identity.
 //! 2. The handler dispatcher, around each `cru.on` handler call, from the
-//!    owner and grants the handler registry recorded at registration. A
+//!    owner the handler registry recorded at registration. A
 //!    per-plugin rebind of the shared `cru.storage` table cannot do this work:
 //!    all plugins share one `cru` table, so the last rebind would win for every
 //!    late caller.
@@ -28,22 +28,15 @@
 //! 6. `cru.schedule` and `cru.timer.spawn`, around each deferred callback.
 //!
 //! Missing any of them is not a cosmetic gap. An ABSENT context means no
-//! plugin is running — the user's own `init.lua`, or a session VM — and that
-//! code carries the OPERATOR's authority: it may intercept. So a seam that
-//! forgot to re-enter its plugin ATTRIBUTED that plugin's work to the
-//! operator, and handed it more authority than its manifest declared. Three
-//! of the six above were added for exactly that reason.
+//! plugin is running — the user's own `init.lua`, or the host itself — and
+//! that code carries the OPERATOR's authority: it may intercept. So a seam
+//! that forgot to re-enter its plugin ATTRIBUTED that plugin's work to the
+//! operator, and handed it more authority than it declared. Three of the six
+//! above were added for exactly that reason.
 //!
 //! An absent context still has no storage namespace, and `cru.storage`
 //! refuses it, as it always has.
-//!
-//! The grants a context carries are the manifest's DECLARATION. Only
-//! `intercept_tools` is enforced from them (see [`PluginContext::may_intercept`]);
-//! the rest are a statement of intent, and restricting the `cru.*` API by
-//! them is deliberately out of scope — a plugin is code the operator
-//! installed, and it gets the API the way an editor plugin gets the editor.
 
-use crate::manifest::{Capability, CapabilitySet};
 use mlua::Lua;
 
 /// The plugin a Lua call runs under.
@@ -51,24 +44,14 @@ use mlua::Lua;
 pub struct PluginContext {
     /// The plugin's name. Scopes `cru.storage` and attributes registrations.
     pub name: String,
-    /// What this plugin's installation declared.
-    ///
-    /// Decided by the manifest the operator installed, never by the plugin:
-    /// the set is stamped here at load, so a plugin has no assignment that
-    /// widens it. `intercept_tools` is read from it and enforced; the other
-    /// grants are declarative.
-    pub grants: CapabilitySet,
-}
-
-impl PluginContext {
     /// Whether this plugin may take a tool call over — return
     /// `{ handled = true, … }` or a transform from `pre_tool_call`.
     ///
-    /// One bit of [`Self::grants`], named because the tool-call seam reads it
-    /// on its own. `cancel` needs no grant: refusing a call can only narrow.
-    pub fn may_intercept(&self) -> bool {
-        self.grants.holds(Capability::InterceptTools)
-    }
+    /// Decided by the operator's installation (the `intercept_tools`
+    /// declaration), never by the plugin: the bit is stamped here at load, so
+    /// a plugin has no assignment that widens it. `cancel` needs no grant:
+    /// refusing a call can only narrow.
+    pub may_intercept: bool,
 }
 
 /// The app-data slot. A newtype so the `Option` is the whole stored value:
@@ -94,77 +77,73 @@ pub fn set_plugin_context(lua: &Lua, context: Option<PluginContext>) -> Option<P
 /// grant set through all three would have put four copies of one fact in the
 /// process. The loader records it once, here, and the seams read it by name.
 ///
-/// An unrecorded name answers with NO grants, not with every grant: a plugin
-/// the loader never admitted must not gain authority by being unknown.
+/// An unrecorded name answers with NO interception right, not with every
+/// right: a plugin the loader never admitted must not gain authority by being
+/// unknown.
 #[derive(Default)]
-struct PluginGrants(std::collections::HashMap<String, CapabilitySet>);
+struct PluginIntercepts(std::collections::HashMap<String, bool>);
 
-/// Record what `name`'s installation granted it.
+/// Record whether `name`'s installation lets it intercept.
 ///
-/// Called by the loaders, which read the manifest the operator installed.
-/// Idempotent — a reload re-records, so a manifest edit takes effect.
-pub fn record_plugin_grants(lua: &Lua, name: &str, grants: CapabilitySet) {
-    let mut recorded = lua.remove_app_data::<PluginGrants>().unwrap_or_default();
-    recorded.0.insert(name.to_string(), grants);
+/// Called by the loaders, which read what the operator installed. Idempotent —
+/// a reload re-records, so an edit to the declaration takes effect.
+pub fn record_plugin_intercept(lua: &Lua, name: &str, may_intercept: bool) {
+    let mut recorded = lua.remove_app_data::<PluginIntercepts>().unwrap_or_default();
+    recorded.0.insert(name.to_string(), may_intercept);
     lua.set_app_data(recorded);
 }
 
-/// What `name`'s installation granted it, or nothing for a name the loader
-/// never recorded.
-pub fn grants_for(lua: &Lua, name: &str) -> CapabilitySet {
-    lua.app_data_ref::<PluginGrants>()
-        .and_then(|recorded| recorded.0.get(name).cloned())
-        .unwrap_or_default()
+/// Whether `name`'s installation lets it intercept, or `false` for a name the
+/// loader never recorded.
+pub fn intercept_for(lua: &Lua, name: &str) -> bool {
+    lua.app_data_ref::<PluginIntercepts>()
+        .and_then(|recorded| recorded.0.get(name).copied())
+        .unwrap_or(false)
 }
 
 /// Enter `name`'s context; return what it replaced, for the caller to restore.
 ///
 /// Shorthand for [`set_plugin_context`] with a fresh [`PluginContext`]. It
-/// also RECORDS the grants, so a later seam holding only the name can re-enter
-/// the same authority.
-pub fn enter_plugin(lua: &Lua, name: &str, grants: CapabilitySet) -> Option<PluginContext> {
-    record_plugin_grants(lua, name, grants.clone());
+/// also RECORDS the interception bit, so a later seam holding only the name
+/// can re-enter the same authority.
+pub fn enter_plugin(lua: &Lua, name: &str, may_intercept: bool) -> Option<PluginContext> {
+    record_plugin_intercept(lua, name, may_intercept);
     set_plugin_context(
         lua,
         Some(PluginContext {
             name: name.to_string(),
-            grants,
+            may_intercept,
         }),
     )
 }
 
-/// Enter `name`'s context with the grants the loader recorded for it.
+/// Enter `name`'s context with the interception bit the loader recorded.
 ///
 /// For the seams that hold a name and nothing else: a lifecycle hook's owner,
 /// a plugin command's owner.
 pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> Option<PluginContext> {
-    let grants = grants_for(lua, name);
+    let may_intercept = intercept_for(lua, name);
     set_plugin_context(
         lua,
         Some(PluginContext {
             name: name.to_string(),
-            grants,
+            may_intercept,
         }),
     )
 }
 
-/// Enter `name`'s recorded context with `cap` dropped from it.
+/// Enter `name`'s recorded context with the interception right dropped.
 ///
 /// Two callers, and the narrowing is the point: a plugin COMMAND and a plugin
-/// TOOL run under their plugin's grants minus `intercept_tools`, because
-/// neither is a tool-call hook and neither has interception to do. It does not
-/// re-record, so the narrowing applies to this call and not to the plugin.
-pub fn enter_recorded_plugin_without(
-    lua: &Lua,
-    name: &str,
-    cap: Capability,
-) -> Option<PluginContext> {
-    let grants = grants_for(lua, name).without(cap);
+/// TOOL run under their plugin's name without interception, because neither is
+/// a tool-call hook and neither has interception to do. It does not re-record,
+/// so the narrowing applies to this call and not to the plugin.
+pub fn enter_recorded_plugin_without_intercept(lua: &Lua, name: &str) -> Option<PluginContext> {
     set_plugin_context(
         lua,
         Some(PluginContext {
             name: name.to_string(),
-            grants,
+            may_intercept: false,
         }),
     )
 }
@@ -186,7 +165,7 @@ pub fn current_plugin_name(lua: &Lua) -> Option<String> {
 /// operator's authority. A LOADING plugin holds only what its installation
 /// granted.
 pub fn current_may_intercept(lua: &Lua) -> bool {
-    current_plugin_context(lua).is_none_or(|context| context.may_intercept())
+    current_plugin_context(lua).is_none_or(|context| context.may_intercept)
 }
 
 #[cfg(test)]
@@ -205,12 +184,12 @@ mod tests {
         let lua = Lua::new();
         let alpha = PluginContext {
             name: "alpha".to_string(),
-            grants: CapabilitySet::none(),
+            may_intercept: false,
         };
         assert_eq!(set_plugin_context(&lua, Some(alpha.clone())), None);
         let beta = PluginContext {
             name: "beta".to_string(),
-            grants: [Capability::InterceptTools].into_iter().collect(),
+            may_intercept: true,
         };
         assert_eq!(set_plugin_context(&lua, Some(beta)), Some(alpha));
         assert_eq!(current_plugin_name(&lua), Some("beta".to_string()));
@@ -232,7 +211,7 @@ mod tests {
             &lua,
             Some(PluginContext {
                 name: "grabby".to_string(),
-                grants: CapabilitySet::none(),
+                may_intercept: false,
             }),
         );
 
@@ -240,7 +219,7 @@ mod tests {
             .load(
                 r#"
                 for _, value in pairs(debug.getregistry()) do
-                    if type(value) == "table" and value.grants ~= nil then
+                    if type(value) == "table" and value.may_intercept ~= nil then
                         return true
                     end
                 end

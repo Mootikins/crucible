@@ -484,7 +484,7 @@ impl ReactorTestHarness {
     }
 
     /// Re-run `configure_agent` with a non-default `SessionAgent` (e.g. a
-    /// custom `max_iterations` or `output_validation`). Safe to call after
+    /// custom `autocompact_threshold`). Safe to call after
     /// `new()`'s default configuration — it's an idempotent overwrite.
     async fn reconfigure(&self, agent: SessionAgent) {
         self.agent_manager
@@ -493,23 +493,26 @@ impl ReactorTestHarness {
             .unwrap();
     }
 
-    /// Load and execute a Lua snippet in this session's Lua VM (for tests
-    /// that register `cru.on(...)` display hooks).
-    async fn load_lua(&self, script: &str) {
-        let session_state = self
-            .agent_manager
-            .get_or_create_session_state(&self.session_id);
-        let state = session_state.lock().await;
-        state.lua.load(script).exec().unwrap();
-    }
-
-    /// Bind a Lua validator registry for `OutputValidation::Lua` tests.
-    fn set_lua_validators(
-        &self,
-        registry: Arc<crucible_lua::LuaValidatorRegistry>,
-        lua: Arc<mlua::Lua>,
-    ) {
-        self.agent_manager.set_lua_validators(registry, lua);
+    /// Load a snippet on a daemon VM and bind it, as the daemon does at boot.
+    ///
+    /// The daemon VM is the only VM that runs Lua files, so every `cru.on`
+    /// and `cru.permissions.on_request` fixture goes here. Returns the
+    /// loader; drop it and the registrations go with it.
+    fn load_daemon_lua(&self, script: &str) -> crate::daemon_plugins::DaemonPluginLoader {
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("daemon VM");
+        loader.executor().lua().load(script).exec().unwrap();
+        self.agent_manager
+            .set_daemon_permissions(loader.permission_registry());
+        self.agent_manager
+            .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+        crucible_lua::register_context_attach(
+            &loader.plugin_lua(),
+            self.agent_manager.context_attach(),
+        )
+        .unwrap();
+        loader
     }
 
     /// Bind a plugin isolation registry, as the daemon does at startup.
@@ -596,10 +599,7 @@ fn test_agent() -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
@@ -607,15 +607,8 @@ fn test_agent() -> SessionAgent {
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
     }
 }
@@ -628,6 +621,34 @@ pub(super) fn test_workspace_root() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
     DIR.get_or_init(|| tempfile::tempdir().expect("test workspace tempdir"))
         .path()
+}
+
+/// A Lua VM with the `cru.on` registry bound — the shape the daemon VM has.
+///
+/// Handlers live on one VM now, so a registry test builds one directly rather
+/// than reaching into a session for it.
+pub(crate) struct HandlerVm {
+    pub(crate) lua: Arc<mlua::Lua>,
+    pub(crate) registry: Arc<crucible_lua::LuaScriptHandlerRegistry>,
+}
+
+impl HandlerVm {
+    /// The pair a dispatch takes, in the shape the daemon binds it.
+    pub(crate) fn handlers(&self) -> crate::agent_manager::PluginHandlers {
+        (self.registry.clone(), self.lua.clone())
+    }
+}
+
+pub(crate) fn handler_vm() -> HandlerVm {
+    let lua = Arc::new(mlua::Lua::new());
+    let registry = Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
+    crucible_lua::register_cru_on_api(
+        &lua,
+        registry.runtime_handlers(),
+        registry.handler_functions(),
+    )
+    .expect("register cru.on");
+    HandlerVm { lua, registry }
 }
 
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {

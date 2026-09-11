@@ -70,10 +70,10 @@ pub(crate) fn install_load_report(
     }
 }
 
-/// The config-declared plugin names, read from the effective config the
-/// daemon was bound with. Empty when the daemon has no app config.
+/// The config-declared plugin names, read from the live effective config.
+/// Empty when the daemon has no app config.
 fn declared_plugin_names(ctx: &crate::rpc::RpcContext) -> Vec<String> {
-    ctx.effective_config
+    ctx.effective_config()
         .as_ref()
         .and_then(|cfg| cfg.get("plugins"))
         .and_then(|v| {
@@ -176,6 +176,12 @@ pub(crate) async fn handle_plugin_install(
     // failure. No TOML rollback.
     let report = match crate::plugin_ops::plugins_dir() {
         Ok(plugins_dir) => {
+            // BEFORE the load, because the load runs the plugin's `setup()`
+            // and every `cru.config.set` in it is classified by the file
+            // that made the call. The boot never saw this directory when it
+            // did not yet exist, and without this the plugin's defaults pin
+            // as if the user had written them.
+            crate::daemon_plugins::boot::learn_plugin_author_root(&plugins_dir);
             let mut loader_guard = plugin_loader.lock().await;
             match loader_guard.as_mut() {
                 Some(loader) => {

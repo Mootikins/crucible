@@ -5,7 +5,7 @@ use crucible_lua::StageId;
 use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
 use std::ops::ControlFlow;
 
-use crate::agent_manager::vm_pass::fold_vms;
+use crate::agent_manager::vm_pass::run_handlers;
 
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
 /// hand the agent loop an errored result.
@@ -66,7 +66,7 @@ fn deny_tool_call(
 ///
 /// Takes `registry` and `lua` explicitly because handler bodies are
 /// `RegistryKey`s valid only against the state that created them: session
-/// handlers live in the session VM, plugin handlers in the loader's.
+/// handlers live in the loader's VM, the one VM that runs Lua files.
 async fn run_pre_tool_call_handlers(
     stream_ctx: &StreamContext,
     registry: &crucible_lua::LuaScriptHandlerRegistry,
@@ -364,11 +364,10 @@ impl AgentManager {
         // holding the session's whole state across that starves every other
         // operation on the session (and deadlocks a handler that calls back
         // into an API needing the same lock).
-        let (args, intercepted) = fold_vms(
-            &stream_ctx.session_state,
+        let (args, intercepted) = run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             (args, None),
-            |_, registry, lua, (mut args, _)| {
+            |registry, lua, (mut args, _)| {
                 let call_id = &call_id;
                 Box::pin(async move {
                     let hit = run_pre_tool_call_handlers(
@@ -678,12 +677,10 @@ impl AgentManager {
             && result_str.len() >= SPILL_THRESHOLD
             && !is_reproducible_tool(&tool_call.name);
         let spill_path = if should_spill {
-            let counter = {
-                let state = stream_ctx.session_state.lock().await;
-                state
-                    .spill_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            };
+            let counter = stream_ctx
+                .slot
+                .spill_counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             match Self::spill_tool_output(
                 &stream_ctx.session_dir,
                 &tool_call.name,

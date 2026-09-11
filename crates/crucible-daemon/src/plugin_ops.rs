@@ -335,11 +335,6 @@ mod tests {
         let dir = plugins_dir.join(name);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
-            dir.join("plugin.yaml"),
-            format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
-        )
-        .unwrap();
-        std::fs::write(
             dir.join("init.lua"),
             format!("return {{ name = '{name}' }}\n"),
         )

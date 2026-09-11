@@ -233,7 +233,7 @@ pub(crate) async fn handle_session_fork(
     }
 
     // Copy agent configuration from parent so the forked session inherits
-    // model, provider, system prompt, thinking budget, etc.
+    // model, provider, system prompt, etc.
     if let Ok((_, parent_agent)) = am.get_session_with_agent(parent_id) {
         if let Err(e) = am.configure_agent(&child.id, parent_agent).await {
             warn!(

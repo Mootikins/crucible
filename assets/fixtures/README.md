@@ -67,7 +67,7 @@ Recording uses the **programmatic session pipeline**. Create a session, send a m
 ```bash
 # Create session with recording enabled
 export OPENAI_API_KEY=dummy
-SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
+SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config/init.lua 2>&1 | grep "Created session" | awk '{print $NF}')
 
 # Configure agent if needed
 cru session configure "$SESSION_ID" --provider openai --model glm-4.7-flash-iq4 --endpoint https://llm.example.com/v1
@@ -150,7 +150,7 @@ If you need to update a fixture (e.g., to fix a response or add new content):
 2. **Record a new one using the programmatic pipeline:**
     ```bash
     export OPENAI_API_KEY=dummy
-    SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config.toml 2>&1 | grep "Created session" | awk '{print $NF}')
+    SESSION_ID=$(cru session create --recording-mode granular -C assets/demo-config/init.lua 2>&1 | grep "Created session" | awk '{print $NF}')
     cru session configure "$SESSION_ID" --provider openai --model glm-4.7-flash-iq4 --endpoint https://llm.example.com/v1
     cru session send "$SESSION_ID" "Your query" --raw
     RECORDING=$(find ./docs/.crucible/sessions/$SESSION_ID -name "recording.jsonl")
@@ -183,4 +183,7 @@ This checks all fixtures for:
 - Fixtures are version-controlled in git (they're deterministic snapshots)
 - Precognition is enabled by default (embeddings must be pre-processed via `cru process`)
 - Recording path: `./docs/.crucible/sessions/<session-id>/recording.jsonl` (inside the kiln directory)
-- Config files: `demo-config.toml.example` and `demo-acp-config.toml.example` are templates. Copy to local `.toml` files and customize for your environment.
+- Config files: `assets/demo-config/init.lua` and `assets/demo-acp-config/init.lua` are the
+  configs the recordings boot against. `--config` names a FILE whose directory is the
+  config root, so each one lives in a directory of its own. Set `CRUCIBLE_DEMO_ENDPOINT`
+  to your OpenAI-compatible endpoint; the files need no local copy.

@@ -1,32 +1,23 @@
-//! Plugin manifest parsing and validation
+//! Plugin manifest: what the host knows about a plugin before it runs it.
 //!
-//! Plugins declare metadata, dependencies, and capabilities in a `plugin.yaml`
-//! manifest.
+//! There is no manifest FILE. A plugin is a directory that holds an entry
+//! file (`init.luau`, else `init.lua`), and `plugin.yaml` is gone. The host
+//! synthesizes this struct from the directory — the directory name is the
+//! identity, because it is the only name the host knows without running Lua
+//! — and the spec table the entry file returns declares the rest.
 //!
-//! **A capability is a declaration, not a sandbox.** [`PluginManifest::grants`]
-//! is stamped into the VM's plugin context at load
-//! ([`crate::plugin_context`]) so the running plugin's declaration is always
-//! readable, and `intercept_tools` is enforced from it at the tool-call seam.
-//! The rest state what the plugin touches. Restricting the `cru.*` API by them
-//! is out of scope on purpose: a plugin is code the operator installed, and it
-//! gets the API the way an editor plugin gets the editor.
+//! ## Example entry file
 //!
-//! ## Example Manifest
+//! ```lua
+//! return {
+//!     name = "my-plugin",
+//!     version = "1.0.0",
+//!     description = "A sample plugin",
+//!     author = "Your Name",
+//!     license = "MIT",
 //!
-//! ```yaml
-//! name: my-plugin
-//! version: "1.0.0"
-//! description: A sample plugin
-//! author: Your Name
-//!
-//! main: lua/init.lua
-//!
-//! capabilities:
-//!   - filesystem
-//!   - shell
-//!
-//! dependencies:
-//!   - name: other-plugin
+//!     setup = function(opts) end,
+//! }
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -37,9 +28,6 @@ use thiserror::Error;
 pub enum ManifestError {
     #[error("Failed to read manifest: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("Failed to parse YAML: {0}")]
-    Yaml(#[from] serde_yaml::Error),
 
     #[error("Validation failed: {0}")]
     Validation(String),
@@ -56,7 +44,15 @@ pub type ManifestResult<T> = Result<T, ManifestError>;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginManifest {
     pub name: String,
-    pub version: String,
+
+    /// The version the plugin's spec table declares, once one has been read.
+    ///
+    /// `None` until then. Discovery walks directories and never runs Lua, so
+    /// between discovery and load the host knows no version at all. This
+    /// used to hold a synthesized `"0.0.0"`, which `plugin.list` and the
+    /// session-setup event both reported as if a release had said so.
+    #[serde(default)]
+    pub version: Option<String>,
 
     #[serde(default)]
     pub description: String,
@@ -67,135 +63,41 @@ pub struct PluginManifest {
     #[serde(default)]
     pub license: Option<String>,
 
-    #[serde(default = "default_main")]
-    pub main: String,
-
-    #[serde(default)]
-    pub capabilities: Vec<Capability>,
-
-    #[serde(default)]
-    pub dependencies: Vec<PluginDependency>,
-
-    #[serde(default)]
-    pub enabled: Option<bool>,
-}
-
-fn default_main() -> String {
-    "init.lua".to_string()
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum Capability {
-    Filesystem,
-    Network,
-    Shell,
-    #[serde(alias = "vault")]
-    Kiln,
-    Agent,
-    Ui,
-    Config,
-    System,
-    #[serde(rename = "websocket", alias = "web_socket")]
-    WebSocket,
-    /// Take over a tool call: return `{ handled = true, result = … }` to
-    /// replace execution, or rewrite its arguments before dispatch.
+    /// Whether this plugin takes tool calls over.
     ///
-    /// Separate from [`Self::Agent`] because it is not observation. A handler
-    /// returning `handled` returns BEFORE the permission gate
-    /// (`agent_manager/messaging/tool_call.rs`), so without this an ordinary
-    /// plugin held the power the container sandbox needs — the sandbox is the
-    /// one legitimate holder, since taking the call over *is* the sandbox.
-    /// `cancel` needs no capability: refusing a call can only narrow.
-    #[serde(rename = "intercept_tools", alias = "intercept-tools")]
-    InterceptTools,
-}
-
-/// What one plugin's installation declared.
-///
-/// A set rather than a `Vec<Capability>`, because the only question asked of
-/// it is "does this hold X". An ABSENT set and an EMPTY one mean different
-/// things: absent means no plugin is running at all, which
-/// [`crate::plugin_context`] states by having no context, not by an empty set.
-///
-/// Only `intercept_tools` is READ as authority. The others are what the
-/// manifest says the plugin touches.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CapabilitySet(std::collections::BTreeSet<Capability>);
-
-impl CapabilitySet {
-    /// A plugin that declared nothing.
-    pub fn none() -> Self {
-        Self::default()
-    }
-
-    /// Whether the grant is held.
-    pub fn holds(&self, cap: Capability) -> bool {
-        self.0.contains(&cap)
-    }
-
-    /// The same grants without `cap`.
+    /// The one declaration the host checks. NOT a sandboxing claim — plugin
+    /// Lua runs in the daemon VM with `io` and `os`, so a declaration checked
+    /// by the host is advisory against a non-adversarial author, and
+    /// installation is the real boundary. It is a COMPOSITION claim: a handler
+    /// returning `handled = true` takes another component's tool call and
+    /// returns BEFORE the permission gate. A plugin that does that by accident
+    /// should be refused; one that means it should say so.
     ///
-    /// Two callers: a plugin COMMAND and a plugin TOOL run under their
-    /// plugin's grants minus `intercept_tools`, because neither is a
-    /// tool-call hook and neither has interception to do. See
-    /// `plugin_tools.rs`.
-    pub fn without(&self, cap: Capability) -> Self {
-        let mut narrowed = self.clone();
-        narrowed.0.remove(&cap);
-        narrowed
-    }
-}
+    /// It replaced a ten-name `Capability` enum in which nine names had no
+    /// call site outside the parser's own tests, and could not have had one:
+    /// `lifecycle/mod.rs` installs `register_stdlib_compat` unconditionally,
+    /// so every plugin holds `io` and `os.remove` whether or not it declared
+    /// `filesystem`.
+    #[serde(default, rename = "intercept_tools", alias = "intercept-tools")]
+    pub intercepts_tools: bool,
 
-impl FromIterator<Capability> for CapabilitySet {
-    fn from_iter<I: IntoIterator<Item = Capability>>(iter: I) -> Self {
-        Self(iter.into_iter().collect())
-    }
+    /// The name the plugin's spec table declares, when it differs from the
+    /// directory it lives in.
+    ///
+    /// Identity is the DIRECTORY name — the only name knowable without running
+    /// Lua. This is honoured for `[plugins.<name>]` lookup so a repo cloned as
+    /// `crucible-discord` whose plugin declares `name = "discord"` still gets
+    /// its config section.
+    #[serde(skip)]
+    pub declared_name: Option<String>,
 }
 
 impl PluginManifest {
-    /// What this installation declared.
-    pub fn grants(&self) -> CapabilitySet {
-        self.capabilities.iter().copied().collect()
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PluginDependency {
-    pub name: String,
-
-    #[serde(default)]
-    pub optional: bool,
-}
-
-impl PluginManifest {
-    pub fn from_yaml(yaml: &str) -> ManifestResult<Self> {
-        let manifest: Self = serde_yaml::from_str(yaml)?;
-        manifest.validate()?;
-        Ok(manifest)
-    }
-
-    pub fn from_file(path: &Path) -> ManifestResult<Self> {
-        let content = std::fs::read_to_string(path)?;
-        Self::from_yaml(&content)
-    }
-
-    pub fn discover(plugin_dir: &Path) -> ManifestResult<Option<Self>> {
-        let candidates = ["plugin.yaml", "plugin.yml", "manifest.yaml", "manifest.yml"];
-
-        for name in candidates {
-            let path = plugin_dir.join(name);
-            if path.exists() {
-                return Self::from_file(&path).map(Some);
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Create a default manifest from a directory path (no plugin.yaml required).
+    /// Create a manifest from a directory path alone, with no Lua run.
     ///
-    /// Uses the directory stem as the plugin name with version "0.0.0".
+    /// Uses the directory stem as the plugin name, and NO version: the
+    /// version is the plugin's own claim, and the spec table that carries it
+    /// is only read at load.
     pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
         let name = dir
             .file_stem()
@@ -212,36 +114,18 @@ impl PluginManifest {
 
         Ok(Self {
             name,
-            version: "0.0.0".to_string(),
+            version: None,
             description: String::new(),
             author: String::new(),
             license: None,
-            // The file that is really there, preferred extension first. A
-            // manifest-less plugin has no `main` field to read, so guessing one
-            // name meant a `init.luau` plugin resolved to a path that does not
-            // exist.
-            main: crate::source_files::init_file(dir)
-                .ok()
-                .flatten()
-                .and_then(|path| {
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.to_string())
-                })
-                .unwrap_or_else(|| "init.lua".to_string()),
-            capabilities: Vec::new(),
-            dependencies: Vec::new(),
-            enabled: None,
+            intercepts_tools: false,
+            declared_name: None,
         })
     }
 
     pub fn validate(&self) -> ManifestResult<()> {
         if self.name.is_empty() {
             return Err(ManifestError::MissingField("name".to_string()));
-        }
-
-        if self.version.is_empty() {
-            return Err(ManifestError::MissingField("version".to_string()));
         }
 
         if !is_valid_plugin_name(&self.name) {
@@ -251,27 +135,19 @@ impl PluginManifest {
             )));
         }
 
-        if !is_valid_version(&self.version) {
-            return Err(ManifestError::InvalidVersion(self.version.clone()));
+        // A version is optional — an unloaded plugin has none — but a
+        // version that IS stated has to parse, or the plugin is claiming
+        // something no reader can compare.
+        if let Some(version) = &self.version {
+            if version.is_empty() {
+                return Err(ManifestError::MissingField("version".to_string()));
+            }
+            if !is_valid_version(version) {
+                return Err(ManifestError::InvalidVersion(version.clone()));
+            }
         }
 
         Ok(())
-    }
-
-    pub fn main_path(&self, plugin_dir: &Path) -> PathBuf {
-        plugin_dir.join(&self.main)
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled.unwrap_or(true)
-    }
-
-    pub fn has_capability(&self, cap: Capability) -> bool {
-        self.capabilities.contains(&cap)
-    }
-
-    pub fn required_dependencies(&self) -> impl Iterator<Item = &PluginDependency> {
-        self.dependencies.iter().filter(|d| !d.optional)
     }
 }
 
@@ -405,143 +281,38 @@ impl LoadedPlugin {
         &self.manifest.name
     }
 
-    pub fn version(&self) -> &str {
-        &self.manifest.version
+    /// The version the plugin declared, or `None` while it is unread.
+    pub fn version(&self) -> Option<&str> {
+        self.manifest.version.as_deref()
     }
 
+    /// The plugin's entry file: `init.luau`, else `init.lua`.
+    ///
+    /// The manifest used to name it in a `main:` field, defaulting to
+    /// `init.lua`. That field could name a file that was not there, and did:
+    /// the shipped `crucible-help` said `main: init.lua` beside an
+    /// `init.luau` and silently failed to load, because the sweep that
+    /// renamed the other eleven walked `runtime/plugins/` and it sat outside.
+    /// A field that can name the wrong file eventually does, so there is no
+    /// field.
+    ///
+    /// Falls back to the preferred name when neither exists, so the loader's
+    /// "Main file not found" error names something a user can create. A
+    /// directory holding BOTH spellings is refused at discovery, not here.
     pub fn main_path(&self) -> PathBuf {
-        self.manifest.main_path(&self.dir)
+        crate::source_files::init_file(&self.dir)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                self.dir
+                    .join(format!("init.{}", crate::source_files::PREFERRED_EXTENSION))
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_minimal_manifest() {
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(manifest.name, "my-plugin");
-        assert_eq!(manifest.version, "1.0.0");
-        assert_eq!(manifest.main, "init.lua");
-        assert!(manifest.capabilities.is_empty());
-    }
-
-    #[test]
-    fn test_parse_full_manifest() {
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-description: A sample plugin
-author: Test Author
-license: MIT
-main: lua/init.lua
-init: setup
-
-capabilities:
-  - filesystem
-  - shell
-  - kiln
-
-dependencies:
-  - name: other-plugin
-  - name: optional-dep
-    optional: true
-
-exports:
-  tools:
-    - search
-    - create
-  commands:
-    - /my-command
-  auto_discover: true
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(manifest.name, "my-plugin");
-        assert_eq!(manifest.description, "A sample plugin");
-        assert_eq!(manifest.author, "Test Author");
-        assert_eq!(manifest.license, Some("MIT".to_string()));
-        assert_eq!(manifest.main, "lua/init.lua");
-        assert_eq!(manifest.capabilities.len(), 3);
-        assert!(manifest.has_capability(Capability::Filesystem));
-        assert!(manifest.has_capability(Capability::Shell));
-        assert!(manifest.has_capability(Capability::Kiln));
-        assert!(!manifest.has_capability(Capability::Network));
-        assert_eq!(manifest.dependencies.len(), 2);
-        assert_eq!(manifest.required_dependencies().count(), 1);
-    }
-
-    #[test]
-    fn exports_block_is_ignored_for_backward_compat() {
-        // `exports` (tools/commands/views/handlers/auto_discover) was parsed
-        // but never consumed, so the field was deleted. Existing plugin.yaml
-        // files that still declare it must keep parsing (no
-        // deny_unknown_fields here).
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-exports:
-  tools:
-    - search
-  auto_discover: true
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(manifest.name, "my-plugin");
-    }
-
-    #[test]
-    fn dependency_version_field_is_ignored_for_backward_compat() {
-        // The dependency-level `version` constraint was parsed but never
-        // compared, so the field was deleted. Existing plugin.yaml files that
-        // still set it must keep parsing (no deny_unknown_fields here).
-        let yaml = r#"
-name: my-plugin
-version: "1.0.0"
-dependencies:
-  - name: other-plugin
-    version: ">=1.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert_eq!(
-            manifest.dependencies,
-            vec![PluginDependency {
-                name: "other-plugin".to_string(),
-                optional: false,
-            }]
-        );
-    }
-
-    #[test]
-    fn test_validate_missing_name() {
-        let yaml = r#"
-version: "1.0.0"
-"#;
-        let result = PluginManifest::from_yaml(yaml);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_missing_version() {
-        let yaml = r#"
-name: my-plugin
-"#;
-        let result = PluginManifest::from_yaml(yaml);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_invalid_name() {
-        let yaml = r#"
-name: My Plugin!
-version: "1.0.0"
-"#;
-        let result = PluginManifest::from_yaml(yaml);
-        assert!(matches!(result, Err(ManifestError::Validation(_))));
-    }
 
     #[test]
     fn test_valid_plugin_names() {
@@ -582,73 +353,17 @@ version: "1.0.0"
     }
 
     #[test]
-    fn test_loaded_plugin() {
-        let yaml = r#"
-name: test-plugin
-version: "1.0.0"
-main: lua/main.lua
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        let plugin = LoadedPlugin::new(manifest, PathBuf::from("/plugins/test"));
-
-        assert_eq!(plugin.name(), "test-plugin");
-        assert_eq!(plugin.version(), "1.0.0");
-        assert_eq!(
-            plugin.main_path(),
-            PathBuf::from("/plugins/test/lua/main.lua")
-        );
-        assert_eq!(plugin.state, PluginState::Discovered);
-    }
-
-    #[test]
-    fn test_manifest_enabled_default() {
-        let yaml = r#"
-name: test
-version: "1.0.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(manifest.is_enabled());
-    }
-
-    #[test]
-    fn test_manifest_explicitly_disabled() {
-        let yaml = r#"
-name: test
-version: "1.0.0"
-enabled: false
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(!manifest.is_enabled());
-    }
-
-    #[test]
     fn test_from_directory_defaults() {
         let manifest =
             PluginManifest::from_directory_defaults(Path::new("/plugins/my-plugin")).unwrap();
         assert_eq!(manifest.name, "my-plugin");
-        assert_eq!(manifest.version, "0.0.0");
-        assert_eq!(manifest.main, "init.lua");
-        assert!(manifest.capabilities.is_empty());
-        assert!(manifest.dependencies.is_empty());
+        assert_eq!(manifest.version, None);
+        assert!(!manifest.intercepts_tools);
     }
 
     #[test]
     fn test_from_directory_defaults_invalid_name() {
         let result = PluginManifest::from_directory_defaults(Path::new("/plugins/My Plugin!"));
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_vault_capability_alias() {
-        let yaml = r#"
-name: hermit
-version: "0.1.0"
-capabilities:
-  - vault
-  - ui
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(manifest.has_capability(Capability::Kiln));
-        assert!(manifest.has_capability(Capability::Ui));
     }
 }

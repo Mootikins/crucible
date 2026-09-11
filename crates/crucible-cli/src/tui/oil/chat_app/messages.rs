@@ -5,7 +5,7 @@
 //! ChatAppMsg serves a dual purpose in the TUI event loop:
 //!
 //! 1. **Commands (TUI → daemon)**: User actions that trigger side effects
-//!    - Examples: `UserMessage`, `SwitchModel`, `SetThinkingBudget`
+//!    - Examples: `UserMessage`, `SwitchModel`, `SetContextBudget`
 //!    - Flow: User input → `process_action()` → RPC call to daemon
 //!
 //! 2. **Events (daemon → TUI)**: Responses from the daemon that update display state
@@ -161,29 +161,20 @@ pub enum ChatAppMsg {
     ModesLoaded(Vec<String>),
     /// **Event** (daemon → TUI): Plugin status loaded.
     PluginStatusLoaded(Vec<PluginStatusEntry>),
-    /// **Command** (TUI → daemon): Set LLM thinking budget (extended thinking).
-    SetThinkingBudget(i64),
     /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.
-    SetMaxIterations(Option<u32>),
     /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
-    SetExecutionTimeout(Option<u64>),
     /// **Command** (TUI → daemon): Set context token budget.
     SetContextBudget(Option<usize>),
     /// **Command** (TUI → daemon): Set context truncation strategy.
     SetContextStrategy(String),
     /// **Command** (TUI → daemon): Set sliding window size (message pairs).
-    SetContextWindow(Option<usize>),
     /// **Command** (TUI → daemon): Set output validation mode.
-    SetOutputValidation(String),
     /// **Command** (TUI → daemon): Set validation retry count.
-    SetValidationRetries(u32),
     /// **Command** (TUI → daemon): Turn precognition (auto-RAG) on or off.
     SetPrecognition(bool),
     /// **Command** (TUI → daemon): Set precognition search results count.
-    SetPrecognitionResults(usize),
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
     /// `None` clears the override; `Some(0.0)` disables auto-compaction.
-    SetAutocompactThreshold(Option<f32>),
     /// **Event** (daemon → TUI): Latest prompt-cache hit rate from
     /// `message_complete`. `None` indicates "no cache data this turn".
     /// Drives the optional `cache_hit_rate` statusline component.
@@ -223,11 +214,51 @@ pub enum ChatAppMsg {
     EvalLua(String),
     /// **Event** (daemon → TUI): Result of a `:lua` evaluation.
     LuaEvaled { output: String, is_error: bool },
-    /// **Command** (TUI → daemon): Mirror an unknown/dynamic `:set` key into
-    /// the daemon app-config store (`config.set`) so Lua/plugins see it.
+    /// **Command** (TUI → daemon): write an app-config `:set` key into the
+    /// daemon store (`config.set`), the one home for it.
     ConfigSet {
         key: String,
         value: serde_json::Value,
+    },
+    /// **Event** (daemon → TUI): what the app-config store holds for a key
+    /// after [`ChatAppMsg::ConfigSet`] wrote it. The TUI keeps no second copy
+    /// of app config, so this reply — not the text the user typed — is what a
+    /// later `:set key?` answers.
+    ConfigSetResolved {
+        key: String,
+        value: serde_json::Value,
+    },
+    /// **Command** (TUI → daemon): read an app-config `:set` key back out of
+    /// the daemon store (`config.get`, plus `config.origin` when `history`).
+    /// `:set key?` and `:set key??` send this instead of reading an overlay
+    /// that holds no app config at all.
+    ConfigQuery { key: String, history: bool },
+    /// **Event** (daemon → TUI): the daemon's answer for [`ChatAppMsg::ConfigQuery`].
+    /// `value` is null when the store holds nothing; `origin` carries the
+    /// `config.origin` row for `:set key??`.
+    ConfigQueryResolved {
+        key: String,
+        value: serde_json::Value,
+        origin: Option<serde_json::Value>,
+    },
+    /// **Command** (TUI → daemon): drop config layers for an app-config key.
+    /// `:set key&` sends `pop: false` (`config.reset`, which drops the
+    /// ephemeral layer `:set` writes); `:set key^` sends `pop: true`
+    /// (`config.pop`, which drops the highest layer holding the leaf).
+    ConfigDrop {
+        key: String,
+        kind: crate::tui::oil::commands::DropKind,
+    },
+    /// **Event** (daemon → TUI): the store's answer for
+    /// [`ChatAppMsg::ConfigDrop`] — what the leaf holds once the layers are
+    /// gone, and which layers went.
+    ConfigDropResolved {
+        key: String,
+        /// The one-word source names the store dropped, lowest layer first.
+        /// Empty when nothing was dropped.
+        dropped: Vec<String>,
+        value: serde_json::Value,
+        origin: serde_json::Value,
     },
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
     ExecuteSlashCommand(String),
@@ -316,17 +347,9 @@ impl ChatAppMsg {
             | Self::ModelsFetchFailed(_)
             | Self::FetchModes
             | Self::ModesLoaded(_)
-            | Self::SetThinkingBudget(_)
-            | Self::SetMaxIterations(_)
-            | Self::SetExecutionTimeout(_)
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
-            | Self::SetContextWindow(_)
-            | Self::SetOutputValidation(_)
-            | Self::SetValidationRetries(_)
             | Self::SetPrecognition(_)
-            | Self::SetPrecognitionResults(_)
-            | Self::SetAutocompactThreshold(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
             Self::SubagentSpawned { .. }
@@ -353,6 +376,11 @@ impl ChatAppMsg {
             | Self::EvalLua(_)
             | Self::LuaEvaled { .. }
             | Self::ConfigSet { .. }
+            | Self::ConfigSetResolved { .. }
+            | Self::ConfigQuery { .. }
+            | Self::ConfigQueryResolved { .. }
+            | Self::ConfigDrop { .. }
+            | Self::ConfigDropResolved { .. }
             | Self::Undo(_)
             | Self::UndoComplete { .. }
             | Self::SessionInitialized(_)

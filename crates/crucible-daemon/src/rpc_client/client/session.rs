@@ -212,9 +212,8 @@ pub struct SessionListRequest {
 /// Used by: `session.get`, `session.status`, `session.pause`, `session.resume`,
 /// `session.end`, `session.cancel`, `session.list_models`, `session.list_modes`,
 /// `session.list_notifications`, `session.load_events`,
-/// `session.get_thinking_budget`, `session.get_precognition`,
-/// `session.get_temperature`, `session.get_max_tokens`, `session.archive`,
-/// `session.unarchive`, `session.delete`, `review.list_hunks`, `review.rebase`.
+/// `session.get_precognition`, `session.archive`, `session.unarchive`,
+/// `session.delete`, `review.list_hunks`, `review.rebase`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionIdRequest {
     pub session_id: String,

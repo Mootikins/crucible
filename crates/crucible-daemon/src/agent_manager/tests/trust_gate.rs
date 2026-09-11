@@ -17,8 +17,6 @@ fn straddling_providers() -> LlmConfig {
         provider_type,
         endpoint: None,
         default_model: None,
-        temperature: None,
-        max_tokens: None,
         api_key: None,
         available_models: None,
         trust_level: Some(trust),

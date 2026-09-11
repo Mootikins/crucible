@@ -80,9 +80,6 @@ pub struct AcpAgentHandle {
     /// which a client renders and the daemon does not interpret.
     config_options: Vec<crucible_core::types::acp::schema::SessionConfigOption>,
     session_id: Option<String>,
-    cached_temperature: Option<f64>,
-    cached_max_tokens: Option<u32>,
-    cached_thinking_budget: Option<i64>,
 }
 
 /// Parameters for creating a new ACP agent handle.
@@ -323,9 +320,6 @@ impl AcpAgentHandle {
             model,
             config_options,
             session_id: Some(session_id),
-            cached_temperature: agent_config.temperature,
-            cached_max_tokens: agent_config.max_tokens,
-            cached_thinking_budget: agent_config.thinking_budget,
         })
     }
 }
@@ -408,41 +402,15 @@ impl AgentHandle for AcpAgentHandle {
 /// The ACP agent runs its own model loop. The handle caches the three
 /// knobs the ACP wire can carry; the rest return the empty answer.
 ///
-/// `max_iterations`, `execution_timeout` and `precognition` belong to the
-/// session's `AgentConfig`: the daemon turn loop reads them from the config
-/// before it calls the handle, and the ACP wire has no field for them. A
-/// value stored here would reach nothing, so the handle refuses the setter.
-/// `DaemonAgentHandle` answers them by RPC.
+/// `precognition` belongs to the session's `AgentConfig`: the daemon turn
+/// loop reads it from the config before it calls the handle, and the ACP wire
+/// has no field for it. A value stored here would reach nothing, so the
+/// handle refuses the setter. `DaemonAgentHandle` answers it by RPC.
 #[async_trait]
 impl SessionKnobs for AcpAgentHandle {
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        debug!(temperature, "Caching temperature for ACP agent");
-        self.cached_temperature = Some(temperature);
-        Ok(())
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        self.cached_temperature
-    }
-
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        debug!(budget, "Caching thinking budget for ACP agent");
-        self.cached_thinking_budget = Some(budget);
-        Ok(())
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        self.cached_thinking_budget
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        debug!(?max_tokens, "Caching max tokens for ACP agent");
-        self.cached_max_tokens = max_tokens;
-        Ok(())
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        self.cached_max_tokens
+    /// ACP carries no system prompt; the agent owns its own.
+    fn get_system_prompt(&self) -> Option<String> {
+        None
     }
 
     /// Switch the agent's model through `session/set_config_option`.
@@ -548,30 +516,6 @@ impl SessionKnobs for AcpAgentHandle {
         Vec::new()
     }
 
-    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_system_prompt".into()))
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_max_iterations".into()))
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        None
-    }
-
-    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_execution_timeout".into()))
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        None
-    }
-
     async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_context_budget".into()))
     }
@@ -591,55 +535,12 @@ impl SessionKnobs for AcpAgentHandle {
         crucible_core::session::ContextStrategy::default()
     }
 
-    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_window".into()))
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        None
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        _validation: crucible_core::session::OutputValidation,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_output_validation".into()))
-    }
-
-    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
-        &crucible_core::session::OutputValidation::None
-    }
-
-    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_validation_retries".into()))
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        3
-    }
-
-    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        None
-    }
-
     async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition".into()))
     }
 
     fn get_precognition(&self) -> bool {
         true
-    }
-
-    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition_results".into()))
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        5
     }
 }
 

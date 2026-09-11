@@ -1,7 +1,8 @@
 --!strict
 -- Crucible built-in Lua defaults
--- Loaded into every daemon session VM automatically.
--- Override by creating .crucible/lua/init.lua in your project directory.
+-- Loaded once, at daemon boot, before ~/.config/crucible/init.lua.
+-- That file runs second on the same VM, so anything it assigns wins and
+-- `cru.modes.x = nil` removes. Nothing merges and nothing re-applies.
 
 -- Precognition context formatter
 --
@@ -10,10 +11,7 @@
 -- (event.user_message, event.results, ...). Return a string to use as the
 -- context block, or nil to fall back.
 --
--- Override example in your .crucible/lua/init.lua:
---   cru.on("precognition_format", function(ctx, event)
---     return "## Notes\n" .. event.user_message
---   end)
+-- To change it, register your own handler for this event from a plugin.
 cru.on("precognition_format", function(ctx, event)
   -- `event.payload` guard kept for sessions replaying pre-flattening
   -- recordings; live events are flat.
@@ -76,7 +74,8 @@ end)
 -- containment, the shell policy — are outside modes entirely and stay
 -- unconditional. Widening a mode here cannot widen those.
 --
--- Override or extend from your own init.lua, which runs after this file:
+-- Add or remove a mode from ~/.config/crucible/init.lua, which runs after
+-- this file:
 --
 --   cru.modes.review = { tools = { "read_*", "*_search" }, permissions = "ask" }
 --   cru.modes.auto   = nil    -- remove it entirely
@@ -143,42 +142,32 @@ cru.permissions.on_request(function(request)
   return nil
 end, { priority = 1000 })
 
--- Default system prompt
+-- The default system prompt is NOT set here.
 --
--- `cru.defaults.x` is the value a NEW session starts from; `session.x` is
--- that session's own value. (The pair Neovim spells `vim.o` / `vim.bo`. It is
--- not called `cru.o` because `vim.o` doubles as an alias for the current
--- buffer, and the daemon multiplexes sessions — there is no current one.)
+-- It ships as `chat.system_prompt` in the config store, on the Default layer.
+-- A value written from this file would carry the Lua layer instead, which
+-- outranks `settings.json`, so the settings UI could not change it.
 --
--- An agent card's own system_prompt wins: defaults only fill fields that were
--- left unset.
+-- To replace it, write the key from your ~/.config/crucible/init.lua:
 --
--- This is an ordinary assignment, so overriding it is ordinary Lua. In your
--- ~/.config/crucible/init.lua, which runs after this file:
+--   cru.config.set { chat = { system_prompt = "…" } }
 --
---   cru.defaults.system_prompt = "…"                        -- replace
---   cru.defaults.system_prompt =                            -- append
---     cru.defaults.system_prompt .. "\n\nAnswer in British English."
+-- To extend it:
 --
--- and per session, for anything conditional:
+--   cru.config.set {
+--     chat = {
+--       system_prompt = cru.config.get("chat").system_prompt
+--         .. "\n\nAnswer in British English.",
+--     },
+--   }
+--
+-- An agent card's own system_prompt wins over both.
+--
+-- For anything conditional, set it per session instead. `session.x` reads the
+-- inherited value first, so this extends rather than replaces:
 --
 --   cru.on_session_start(function(session)
 --     if session.workspace:match("/work/") then
 --       session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
 --     end
 --   end)
-cru.defaults.system_prompt = table.concat({
-  "You are Crucible, a knowledge-grounded agent working alongside the user.",
-  "",
-  "Ground your answers in the notes and context you are given. When context",
-  "is missing, say so and offer to look — never invent a note, a path, or a",
-  "quotation. Reference notes by title, and link them with [[wikilinks]] when",
-  "you write to the kiln.",
-  "",
-  "Use your tools rather than guessing: read a file before describing it, and",
-  "verify a change before reporting it done. Prefer one decisive action over a",
-  "list of options.",
-  "",
-  "Be concise. Match the depth of the question — a short question gets a short",
-  "answer, and code or structure only when it earns its place.",
-}, "\n")

@@ -43,19 +43,21 @@ pub mod overlay;
 mod patterns;
 mod project_config;
 pub mod provenance;
+pub mod redact;
 mod security;
 pub mod serde_helpers;
+pub mod settings_file;
 pub mod store;
 mod tilde;
 mod workspace;
 
 pub use components::defaults::{
     ANTHROPIC_MODELS, DEFAULT_ANTHROPIC_ENDPOINT, DEFAULT_ANTHROPIC_MODEL, DEFAULT_BATCH_SIZE,
-    DEFAULT_CHAT_MAX_TOKENS, DEFAULT_CHAT_MODEL, DEFAULT_GITHUB_COPILOT_ENDPOINT,
-    DEFAULT_GITHUB_COPILOT_MODEL, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OPENAI_ENDPOINT,
-    DEFAULT_OPENAI_MODEL, DEFAULT_OPENROUTER_ENDPOINT, DEFAULT_OPENROUTER_MODEL,
-    DEFAULT_PROVIDER_MAX_TOKENS, DEFAULT_TEMPERATURE, DEFAULT_TIMEOUT_SECS, DEFAULT_ZAI_ENDPOINT,
-    DEFAULT_ZAI_MODEL, OPENAI_HARDCODED_MODELS, OPENAI_MODEL_PREFIXES, ZAI_MODELS,
+    DEFAULT_CHAT_MODEL, DEFAULT_GITHUB_COPILOT_ENDPOINT, DEFAULT_GITHUB_COPILOT_MODEL,
+    DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OPENAI_ENDPOINT, DEFAULT_OPENAI_MODEL,
+    DEFAULT_OPENROUTER_ENDPOINT, DEFAULT_OPENROUTER_MODEL, DEFAULT_TIMEOUT_SECS,
+    DEFAULT_ZAI_ENDPOINT, DEFAULT_ZAI_MODEL, OPENAI_HARDCODED_MODELS, OPENAI_MODEL_PREFIXES,
+    ZAI_MODELS,
 };
 pub use components::mcp;
 pub use components::{
@@ -89,17 +91,22 @@ pub use enrichment::{
 pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use lua_emit::emit_lua_config;
-pub use merge::{deep_merge, REPLACE_MARKER};
+pub use merge::{deep_merge, flatten_leaves, leaf_at, nest_leaves, set_leaf};
 pub use overlay::{
     overlay_layers, overlay_registrations, LayeredOverlay, Overlay, Registration,
     RegistrationOrigin, Shadowed, ShadowedRegistration,
 };
 pub use patterns::{
-    BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
+    BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, RefusedRule,
+    ToolPatterns,
 };
 pub use project_config::{read_project_config, write_project_config, ProjectConfig};
-pub use provenance::{ProvenanceMap, SourceTag};
+pub use provenance::{LeafOrigin, ProvenanceMap, SourceOrigin, SourceTag};
+pub use redact::{names_a_credential, redact_credentials, REDACTED};
 pub use security::{ProjectFileAccess, ShellPolicy};
-pub use store::{ConfigStore, LocationPolicy};
+pub use settings_file::{load_settings, save_settings_delta, settings_path, SETTINGS_FILE_NAME};
+pub use store::{
+    split_pinned_by, ConfigStore, LayerDrop, LocationPolicy, PinnedLeaf, SavedSettings,
+};
 pub use tilde::expand_tilde;
 pub use workspace::{KilnAttachment, SecurityConfig};

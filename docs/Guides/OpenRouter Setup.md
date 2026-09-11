@@ -42,21 +42,24 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across
 
 ### Step 3: Configure the Provider
 
-Add to your `~/.config/crucible/config.toml`:
+Add to your `~/.config/crucible/init.lua`:
 
-```toml
-[llm]
-default = "openrouter"
-
-[llm.providers.openrouter]
-type = "openrouter"
-api_key = "{env:OPENROUTER_API_KEY}"
-default_model = "openai/gpt-4o"
-temperature = 0.7
-max_tokens = 4096
+```lua
+cru.config.set({
+    llm = {
+        default = "openrouter",
+        providers = {
+            openrouter = {
+                type = "openrouter",
+                api_key = os.getenv("OPENROUTER_API_KEY"),
+                default_model = "openai/gpt-4o",
+            },
+        },
+    },
+})
 ```
 
-The `{env:OPENROUTER_API_KEY}` syntax reads the key from your environment variable at runtime, keeping secrets out of config files.
+`os.getenv("OPENROUTER_API_KEY")` reads the key from your environment at boot, which keeps the secret out of the config file.
 
 ## Configuration
 
@@ -86,19 +89,23 @@ Browse the full model list at [openrouter.ai/models](https://openrouter.ai/model
 
 You can define multiple OpenRouter instances with different default models:
 
-```toml
-[llm.providers.or-fast]
-type = "openrouter"
-api_key = "{env:OPENROUTER_API_KEY}"
-default_model = "openai/gpt-4o-mini"
-temperature = 0.3
-
-[llm.providers.or-smart]
-type = "openrouter"
-api_key = "{env:OPENROUTER_API_KEY}"
-default_model = "anthropic/claude-3.5-sonnet"
-temperature = 0.7
-max_tokens = 8192
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            ["or-fast"] = {
+                type = "openrouter",
+                api_key = os.getenv("OPENROUTER_API_KEY"),
+                default_model = "openai/gpt-4o-mini",
+            },
+            ["or-smart"] = {
+                type = "openrouter",
+                api_key = os.getenv("OPENROUTER_API_KEY"),
+                default_model = "anthropic/claude-3.5-sonnet",
+            },
+        },
+    },
+})
 ```
 
 ## Usage

@@ -52,7 +52,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G13 | scope | Containment never knows tool names (4.4) | File-tool name lists at `messaging/permission.rs:1073,1098` and `is_file_tool` (`permissions/engine.rs:193`) | code-wrong | S |
 | G14 | scope | Data-class trust is enforced on every delegation (4.14) | `enforce_child_isolation` skips silently when `session_lifecycle` is unbound (`delegation.rs:181`) | code-wrong | S |
 | G15 | scope | The gate order is one function with one test (4.11) | The order is statement order in `messaging/tool_call.rs`; `requires_permission_gate` holds `unreachable!` for `ToolPolicy::Deny` (`gate_decision.rs:341`) | code-wrong | S |
-| G16 | scope | `AppConfig` reaches every subsystem by value at bind (S41) | `execution_roots::baseline` reads env vars and `config.toml` from disk (`execution_roots.rs:73-99`); `kiln_registry.rs:323` cites it as precedent | code-wrong | M |
+| G16 | scope | `AppConfig` reaches every subsystem by value at bind (S41) | `execution_roots::baseline` reads env vars and `settings.json` from disk (`execution_roots.rs`); `kiln_registry.rs:323` cites it as precedent | code-wrong | M |
 | G17 | scope | The web layer holds no policy beyond SSRF (4.27, 6.2) | The web holds a credential-directory deny list (`crucible-web/src/routes/project.rs:28-76`) and enclosing-root resolution twice (`routes/canvas.rs:195`, `routes/kiln.rs:363-437`) | code-wrong | M |
 | G18 | scope | `PatternStore` I/O is not on the async gate path (4.12) | `load_sync` and `save_sync` block inside the async gate (`messaging/permission.rs:732,1094`) | code-wrong | S |
 | G19 | scope | The permission-engine input is built once (4.12) | The `if tool == "bash" { command } else { args }` snippet is written three times (`messaging/permission.rs:585,628,690`) | code-wrong | S |
@@ -61,7 +61,6 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G22 | session | `AgentHandle` has three required methods; `configure` takes the whole record (4.9, D2) | 3 required, 41 defaulted; the `Box<dyn>` forwarder re-lists 44 (`crucible-core/src/traits/chat.rs:143,486`); `MockSubagentHandle` implements 3 | code-wrong | L |
 | G23 | session | One handle trait (4.9) | Two contracts: `Agent::turn` yields `TurnEvent` to the runtime (`crucible-core/src/turn/mod.rs:346`); `AgentHandle` faces clients and `DaemonAgentHandle` re-implements it over RPC (`rpc_client/agent/mod.rs:29`) | expectation-wrong | - |
 | G24 | session | `SessionState` is `Active`, `Paused`, `Streaming`, `Ended` (8.10) | `Active`, `Paused`, `Compacting`, `Ended`; `Compacting` is never assigned (`session/types/enums.rs:90`); no `Streaming` | code-wrong | S |
-| G25 | session | `ThinkingBudget` is an enum `Off`..`Max` (8.18) | `thinking_budget: Option<i64>` (`agent.rs:55`); the setter stores `unwrap_or(0)` (`server/session/params.rs:311-325`) | code-wrong | S |
 | G26 | session | `ContextStrategy::Lua { name }` (8.18) | Three arms, no Lua arm (`session/types/config.rs:8`) | not-built | - |
 | G27 | session | A `Turn` record with `TurnId` and `TurnOutcome` (3.11) | No turn id; the turn is `RequestState`, `StreamContext`, `AgentStreamConfig`, `TurnEnvironment` (`agent_manager/mod.rs:133,294`, `stream_config.rs:10,110`) | both-acceptable | - |
 | G28 | session | `TurnOutcome` carries `DepthCapped` (3.11) | `StopReason::MaxToolDepth` is never built (`crucible-core/src/turn/mod.rs:169`) | code-wrong | S |
@@ -167,7 +166,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G128 | lua | `Skill` carries `shadowed_by`; `name == dir` is checked (3.19) | The rule is documented and not checked (`skills/types.rs:95`); `content_hash` is computed and never read; `platform.rs:66-180` copies fields by hand and drops five | code-wrong | S |
 | G129 | lua | `cru.permissions.on_request` is available to plugins (9.4) | `register_permission_hook_api` is called only from `session_vm.rs:113`; the plugin loader never registers it | code-wrong | S |
 | G130 | lua | Hooks are named by the name table, not by position (9.3) | `register_permission_hook_api` names hooks from `guard.len()` (`handlers/permission.rs:132`) | code-wrong | S |
-| G131 | lua | `cru.defaults` exposes every default (F183) | `cru.defaults.mode` is stored but never exposed (`session_defaults.rs:92-175`) | code-wrong | S |
+| G131 | lua | ~~`cru.defaults` exposes every default (F183)~~ | RESOLVED 2026-09-10: `cru.defaults` is gone. `system_prompt` is the config key `chat.system_prompt`; `mode` and `model` are per-session by design, set by an `on_session_start` hook | resolved | — |
 | G132 | lua | One plugin path computation (8.15) | `daemon_plugin_paths` and `PluginManager::with_standard_paths` both compute it (`bootstrap.rs:33`, `lifecycle/mod.rs:112`) | code-wrong | S |
 | G133 | lua | A plugin spec loads once (3.20) | `load_plugin_spec` runs the file in a throwaway VM, then the daemon runs it again in the real VM (`spec.rs:140`, `discovery.rs:295`) | code-wrong | S |
 | G134 | lua | No dead cross-crate path (4.17) | `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command` form a dead path; `with_session_command_receiver` has no caller | code-wrong | S |
@@ -190,7 +189,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G151 | render | Web types are generated from the daemon contract (9.15) | `types.ts` mirrors eleven types by hand; `FsEntry` is mirrored at `types.ts:244` | both-acceptable | - |
 | G152 | render | `McpServerInfo` is one type (F124) | `types/mcp_status.rs:15`, `traits/mcp.rs:138` and `McpServerDisplay` | code-wrong | S |
 | G153 | render | Dead components do not ship (7) | `template/node_spec.rs` (1008 lines) dead apart from `parse_color`; `OilRunner`, `run_sync`, `ComposerConfig`, `detect_dark_terminal`, `with_alternate_screen` have no caller | code-wrong | S |
-| G154 | config | One canonical `AppConfig` (4.25) | `CliAppConfig` and `CliConfig` are re-exported under each other's names (`crucible-cli/src/config.rs:10-18`); `execution_roots.rs:90-114` parses `config.toml` a second time | code-wrong | M |
+| G154 | config | One canonical `AppConfig` (4.25) | `CliAppConfig` and `CliConfig` are re-exported under each other's names (`crucible-cli/src/config.rs:10-18`); `execution_roots.rs` parses `settings.json` on its own | code-wrong | M |
 | G155 | config | `ProviderKind` has nine variants (8.11, D8) | `BackendType` has twelve: the nine plus `Burn`, `Custom`, `Mock` (`crucible-core/src/config/components/backend.rs`) | expectation-wrong | - |
 | G156 | config | Provider knobs exist once (3.18) | `ChatConfig` and `LlmProviderConfig` repeat five knobs; five enrichment provider structs repeat five fields; `BackendType` metadata and `defaults.rs` restate endpoints and disagree on VertexAI | code-wrong | M |
 | G157 | config | `ChatError` classifies `retryable` and `retry_after` (4.10, 9.8) | Provider error classification is planned (F73); the `ChatError` prefix list is copied verbatim (`crucible-web/src/events.rs:401`, `rpc_client/agent/convert.rs:118`) | not-built | - |
@@ -298,10 +297,6 @@ the 16 knob setters one `configure(&SessionAgent, &SessionConfig)` on
 **G24.** Target: `SessionState::{Active, Paused, Streaming { turn }, Ended}`.
 First step: delete `Compacting`, then set `Streaming` in `send_message` and
 clear it in the `TurnOutcome` path.
-
-**G25.** Target: `enum ThinkingBudget` with six levels and a
-`From<i64>`. First step: add the enum in core, keep the `i64` on the wire
-through `serde(from, into)`.
 
 **G28.** Target: build `StopReason::MaxToolDepth` at the depth cap. First step:
 find the `DepthCapHit` emit in `stream.rs:751` and set the reason there.
@@ -510,9 +505,10 @@ checked. First step: replace the hand copy at `platform.rs:66-180` with
 with ids from the handler registry. First step: call
 `register_permission_hook_api` from `DaemonPluginLoader`.
 
-**G131, G132, G133, G134, G135, G138.** Target: expose `cru.defaults.mode`;
-one plugin path list; load a spec once; delete the dead channel path, the
-duplicate tool shapes and the temp-dir write. First step: one commit per item.
+**G132, G133, G134, G135, G138.** Target: one plugin path list; load a spec
+once; delete the dead channel path, the duplicate tool shapes and the temp-dir
+write. First step: one commit per item. (G131 is resolved: the tier it named no
+longer exists.)
 
 **G139.** Target: `:set` parses locally and sends `session.set_config`; the
 overlay engine shrinks to the TUI-local keys; the permission rule write becomes
@@ -673,8 +669,8 @@ to wire it or withdraw it.
    G62, G66, G69, G70, G88, G116, G117, G159, G169.
 4. **Flat records where the clean room expected sums.** `SessionAgent` with
    `agent_type: String`, `WorkspaceSnapshot` with three shapes in four fields,
-   `ThinkingBudget` as `Option<i64>`, `LinkResolution` as an `Option` plus a
-   flag, `JobResult` with `output: None`. Rows: G20, G21, G25, G35, G56, G86.
+   `LinkResolution` as an `Option` plus a flag, `JobResult` with
+   `output: None`. Rows: G20, G21, G35, G56, G86.
 5. **Wire types shared where the clean room expected privacy.** ACP helpers
    reach the CLI; `rmcp` conversions exist five times; the web imports daemon
    server modules; the CLI reads the session directory and builds a

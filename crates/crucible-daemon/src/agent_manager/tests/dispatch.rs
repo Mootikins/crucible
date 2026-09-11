@@ -7,11 +7,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_executes_when_event_fires() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
-        let state = session_state.lock().await;
+        let state = handler_vm();
 
         state
             .lua
@@ -42,11 +38,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn multiple_handlers_run_in_priority_order() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
-        let state = session_state.lock().await;
+        let state = handler_vm();
 
         state
             .lua
@@ -87,11 +79,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_errors_dont_break_chain() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
-        let state = session_state.lock().await;
+        let state = handler_vm();
 
         state
             .lua
@@ -129,63 +117,8 @@ mod event_dispatch {
     }
 
     #[tokio::test]
-    async fn handlers_are_session_scoped() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state_1 = agent_manager.get_or_create_session_state("session-1");
-        let session_state_2 = agent_manager.get_or_create_session_state("session-2");
-
-        {
-            let state = session_state_1.lock().await;
-            state
-                .lua
-                .load(
-                    r#"
-                cru.on("turn:complete", function(ctx, event)
-                    return nil
-                end)
-            "#,
-                )
-                .exec()
-                .unwrap();
-        }
-
-        {
-            let state = session_state_2.lock().await;
-            state
-                .lua
-                .load(
-                    r#"
-                cru.on("turn:complete", function(ctx, event)
-                    return nil
-                end)
-                cru.on("turn:complete", function(ctx, event)
-                    return nil
-                end)
-            "#,
-                )
-                .exec()
-                .unwrap();
-        }
-
-        let state_1 = session_state_1.lock().await;
-        let state_2 = session_state_2.lock().await;
-
-        let handlers_1 = state_1.registry.runtime_handlers_for("turn:complete", None);
-        let handlers_2 = state_2.registry.runtime_handlers_for("turn:complete", None);
-
-        assert_eq!(handlers_1.len(), 1, "Session 1 should have 1 handler");
-        assert_eq!(handlers_2.len(), 2, "Session 2 should have 2 handlers");
-    }
-
-    #[tokio::test]
     async fn handler_receives_event_payload() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
-        let state = session_state.lock().await;
+        let state = handler_vm();
 
         state
             .lua
@@ -225,11 +158,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_can_return_cancel() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
-        let state = session_state.lock().await;
+        let state = handler_vm();
 
         state
             .lua
@@ -265,14 +194,10 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_returns_inject_collected_by_dispatch() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
+        let state = handler_vm();
 
         // Register handler that returns inject
         {
-            let state = session_state.lock().await;
             state
                 .lua
                 .load(
@@ -291,8 +216,7 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
-            None,
+            Some(&state.handlers()),
             false, // is_continuation
         )
         .await;
@@ -311,12 +235,8 @@ mod event_dispatch {
     async fn plugin_vm_turn_complete_handler_fires_and_injects() {
         use crucible_lua::{register_cru_on_api, LuaScriptHandlerRegistry};
 
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-        let session_state = agent_manager.get_or_create_session_state("test-session");
-
         // A plugin VM: its own Lua state and its own registry, like the
-        // daemon's plugin loader — NOT the session VM.
+        // daemon's plugin loader.
         let plugin_lua = Arc::new(mlua::Lua::new());
         let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
         register_cru_on_api(
@@ -341,7 +261,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
             Some(&plugin_pair),
             false,
         )
@@ -355,17 +274,14 @@ mod event_dispatch {
     }
 
     /// Cross-registry inject ordering: the plugin VM pass runs after the
-    /// session VM pass, so its inject wins the last-writer race — the same
+    /// only pass, so its inject wins the last-writer race — the same
     /// rule that lets plugin transforms see session transforms' output.
     #[tokio::test]
     async fn plugin_inject_overrides_session_inject() {
         use crucible_lua::{register_cru_on_api, LuaScriptHandlerRegistry};
 
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-        let session_state = agent_manager.get_or_create_session_state("test-session");
+        let state = handler_vm();
         {
-            let state = session_state.lock().await;
             state
                 .lua
                 .load(
@@ -403,7 +319,6 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
             Some(&plugin_pair),
             false,
         )
@@ -414,14 +329,10 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn second_inject_replaces_first() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
+        let state = handler_vm();
 
         // Register two handlers that both return inject
         {
-            let state = session_state.lock().await;
             state
                 .lua
                 .load(
@@ -443,8 +354,7 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
-            None,
+            Some(&state.handlers()),
             false,
         )
         .await;
@@ -456,13 +366,9 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn inject_includes_position() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
+        let state = handler_vm();
 
         {
-            let state = session_state.lock().await;
             state
                 .lua
                 .load(
@@ -480,8 +386,7 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
-            None,
+            Some(&state.handlers()),
             false,
         )
         .await;
@@ -494,14 +399,10 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn continuation_flag_passed_to_handlers() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
+        let state = handler_vm();
 
         // Register handler that checks is_continuation and skips if true
         {
-            let state = session_state.lock().await;
             state
                 .lua
                 .load(
@@ -525,8 +426,7 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
-            None,
+            Some(&state.handlers()),
             true, // is_continuation
         )
         .await;
@@ -538,7 +438,6 @@ mod event_dispatch {
         );
 
         // Verify the flag was received
-        let state = session_state.lock().await;
         let received: bool = state
             .lua
             .load("return received_continuation")
@@ -552,13 +451,9 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn no_inject_when_handler_returns_nil() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_state = agent_manager.get_or_create_session_state("test-session");
+        let state = handler_vm();
 
         {
-            let state = session_state.lock().await;
             state
                 .lua
                 .load(
@@ -576,8 +471,7 @@ mod event_dispatch {
             "test-session",
             "msg-123",
             "Some response",
-            &session_state,
-            None,
+            Some(&state.handlers()),
             false,
         )
         .await;
@@ -599,6 +493,7 @@ async fn cleanup_session_cancels_pending_requests() {
         RequestState {
             cancel_tx: Some(cancel_tx),
             task_handle: None,
+            _work: None,
         },
     );
 
@@ -690,7 +585,6 @@ async fn cleanup_session_leaves_no_per_session_residue() {
     //
     // `get_or_create_session_state` covers two: it builds the Lua VM and
     // records the session's captured defaults in `session_overrides`.
-    let _ = agent_manager.get_or_create_session_state(session_id);
     let _ = agent_manager
         .get_or_rebuild_session_tree(session_id, std::path::Path::new("/nonexistent.jsonl"))
         .await;
@@ -724,6 +618,7 @@ async fn cleanup_session_leaves_no_per_session_residue() {
         RequestState {
             cancel_tx: Some(cancel_tx),
             task_handle: None,
+            _work: None,
         },
     );
     let (_permission_id, _response_rx) =

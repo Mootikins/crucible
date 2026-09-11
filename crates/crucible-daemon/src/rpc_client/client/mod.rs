@@ -32,6 +32,108 @@ fn validate_socket_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The daemon this client just spawned, held until it answers.
+///
+/// A spawned daemon is deliberately detached: it is shared, it outlives the
+/// command that started it, and the next `cru` invocation must find it already
+/// running. So the SUCCESS path must release it — that is what
+/// [`Self::detach`] does, and why this is not simply a kill-on-drop wrapper.
+///
+/// The failure path is the opposite. A daemon that never became reachable has
+/// nobody holding it: the client is about to return an error and exit, and the
+/// process it left behind would keep running. Dropping this guard without
+/// detaching reaps it. `std::process::Child` does none of that on its own —
+/// its `Drop` neither kills nor waits.
+#[must_use = "either detach the daemon or let the guard reap it"]
+struct SpawnedDaemon(Option<std::process::Child>);
+
+impl SpawnedDaemon {
+    /// Let the daemon live: it answered, and outliving this client is the
+    /// whole point of it.
+    fn detach(mut self) {
+        self.0.take();
+    }
+}
+
+/// How long a daemon gets to shut itself down before the reaper kills it.
+///
+/// A daemon on this path has been up for less than the connect backoff, so its
+/// shutdown has almost nothing to join and takes milliseconds. The window is
+/// wide enough to cover a loaded box and short enough that a `cru` command
+/// which is already failing does not sit here.
+const REAP_GRACE: Duration = Duration::from_secs(2);
+
+/// How often the reaper looks while it waits out [`REAP_GRACE`].
+const REAP_POLL: Duration = Duration::from_millis(20);
+
+/// Ask the daemon to stop, and kill it only if it will not.
+///
+/// SIGKILL was the whole policy here, and it is the wrong one for a reason the
+/// client cannot see from where it stands: it cannot tell "my child is still
+/// booting" from "my child bound its socket a moment after I gave up and is
+/// now serving somebody else". Boot on a loaded box — extracting the runtime
+/// tree, evaluating `init.lua`, activating plugins, opening a kiln — can
+/// outlast the ~4.6s connect backoff, and killing the daemon at that instant
+/// takes it away from a concurrent `cru` mid-write.
+///
+/// SIGTERM instead runs the daemon's own shutdown path
+/// ([`crate::lifecycle::ShutdownSignals`]): the accept loop ends, the tasks are
+/// cancelled and joined, and the socket lock is released. SIGKILL stays as the
+/// backstop for a daemon wedged badly enough to ignore the request, because the
+/// leak this guard exists to stop — an unreachable daemon nobody holds — is
+/// worse than a hard kill.
+fn reap_spawned_daemon(
+    child: &mut std::process::Child,
+) -> std::io::Result<std::process::ExitStatus> {
+    request_stop(child.id());
+
+    let deadline = std::time::Instant::now() + REAP_GRACE;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(REAP_POLL);
+    }
+
+    warn!(
+        pid = child.id(),
+        grace_ms = REAP_GRACE.as_millis() as u64,
+        "The daemon ignored SIGTERM; killing it"
+    );
+    child.kill()?;
+    child.wait()
+}
+
+/// Deliver SIGTERM to a child this process spawned and has not yet reaped.
+#[cfg(unix)]
+fn request_stop(pid: u32) {
+    // SAFETY: `kill` on the pid of a live child of this process. The pid
+    // cannot have been reused, because nothing has waited on it yet.
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+}
+
+/// No SIGTERM off Unix; the kill below is the only stop there is.
+#[cfg(not(unix))]
+fn request_stop(_pid: u32) {}
+
+impl Drop for SpawnedDaemon {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let pid = child.id();
+            let _ = reap_spawned_daemon(&mut child);
+            warn!(
+                pid,
+                "Reaped the daemon we spawned; it never became reachable"
+            );
+        }
+    }
+}
+
 // Submodules for logical organization of RPC methods.
 // Each submodule adds methods to `DaemonClient` via `impl` blocks and
 // defines the associated request/response types near the methods that use
@@ -183,19 +285,26 @@ impl DaemonClient {
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
-        Self::start_daemon().await?;
+        let spawned = Self::start_daemon().await?;
 
         let mut attempts = 0usize;
         for delay in Self::connect_backoff() {
             tokio::time::sleep(delay).await;
             attempts += 1;
             if let Ok(result) = connect().await {
+                spawned.detach();
                 return Ok(result);
             }
             if attempts > 5 {
                 warn!("Daemon not ready after {attempts} attempts");
             }
         }
+
+        // `spawned` is still held, so falling through to the bail below reaps
+        // the daemon that never answered. Before this it was dropped bare at
+        // the end of `start_daemon`, and a daemon that bound its socket a
+        // moment after the backoff ran out kept running with nobody holding
+        // it and no way to exit.
 
         let log_path = crate::rpc_client::lifecycle::daemon_log_path();
         let tail = crate::rpc_client::lifecycle::read_log_tail(&log_path, 15);
@@ -257,7 +366,7 @@ impl DaemonClient {
         args
     }
 
-    async fn start_daemon() -> Result<()> {
+    async fn start_daemon() -> Result<SpawnedDaemon> {
         use std::process::Command;
 
         let exe = std::env::current_exe()?;
@@ -286,14 +395,14 @@ impl DaemonClient {
         // Capture the daemon's output: a detached daemon that dies on startup
         // is otherwise a silent 4.6s timeout with no cause anywhere.
         let (out, err) = crate::rpc_client::lifecycle::daemon_log_stdio();
-        Command::new(&exe)
+        let child = Command::new(&exe)
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(out)
             .stderr(err)
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn daemon: {}", e))?;
-        Ok(())
+        Ok(SpawnedDaemon(Some(child)))
     }
 
     /// Connect to daemon at a specific socket path (simple mode)

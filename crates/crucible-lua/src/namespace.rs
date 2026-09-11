@@ -29,8 +29,6 @@ pub enum CruNamespace {
     Colorscheme,
     Config,
     Context,
-    /// Session VMs only: seeded session defaults (`cru.defaults.x = …`).
-    Defaults,
     /// The kiln's own embedding provider: `cru.embed(kiln, text)`.
     Embed,
     Emitter,
@@ -51,7 +49,7 @@ pub enum CruNamespace {
     /// The crate-local stub-generator VM only; the plugin VM has no MCP
     /// client API of its own.
     Mcp,
-    /// Session VMs only: the mode registry.
+    /// The mode registry, on the daemon VM.
     Modes,
     Oil,
     On,
@@ -60,11 +58,19 @@ pub enum CruNamespace {
     OnSessionStart,
     Oq,
     Paths,
-    /// Session VMs only: `cru.permissions.on_request`.
+    /// `cru.permissions.on_request`, on the VM that runs Lua files.
     Permissions,
     Plugin,
     Ratelimit,
     Retry,
+    /// `cru.rtp.append/prepend/get` — sugar over a `runtimepath` write.
+    ///
+    /// Registered beside `cru.config`, so it lands wherever that does. It
+    /// needs no VM restriction of its own: `runtimepath` is a location key,
+    /// and `ConfigStore`'s policy accepts one only during the boot phase, so
+    /// a call from a plugin after boot is withheld exactly as a direct
+    /// `cru.config.set` would be.
+    Rtp,
     Schedule,
     Service,
     /// The canonical session module: lifecycle verbs plus `current`.
@@ -100,7 +106,7 @@ impl CruNamespace {
     /// placement is stated, and the gate then proves the statement.
     pub fn on_plugin_vm(self) -> bool {
         match self {
-            Self::Defaults | Self::Include | Self::Mcp | Self::Modes | Self::Permissions => false,
+            Self::Include | Self::Mcp => false,
             Self::Check
             | Self::Colorscheme
             | Self::Config
@@ -119,6 +125,7 @@ impl CruNamespace {
             | Self::Json
             | Self::Kiln
             | Self::Log
+            | Self::Modes
             | Self::Oil
             | Self::On
             | Self::OnProviderAuth
@@ -126,9 +133,11 @@ impl CruNamespace {
             | Self::OnSessionStart
             | Self::Oq
             | Self::Paths
+            | Self::Permissions
             | Self::Plugin
             | Self::Ratelimit
             | Self::Retry
+            | Self::Rtp
             | Self::Schedule
             | Self::Service
             | Self::Session

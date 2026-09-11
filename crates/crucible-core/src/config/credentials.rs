@@ -1,14 +1,9 @@
 //! Credential storage and resolution for LLM provider API keys
 //!
 //! Stores secrets in a TOML file (`~/.config/crucible/secrets.toml`) with `0o600`
-//! permissions. The file is designed to be included into the main config via the
-//! existing `[include]` mechanism:
-//!
-//! ```toml
-//! # config.toml
-//! [include]
-//! llm = "secrets.toml"
-//! ```
+//! permissions. `cru auth` writes it and credential discovery reads it directly,
+//! so no config entry names it. It is deliberately NOT the Lua config: a key
+//! belongs in a file with its own mode, not in the file a user commits.
 //!
 //! # Secrets File Format
 //!

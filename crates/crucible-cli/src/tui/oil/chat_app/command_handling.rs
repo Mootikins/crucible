@@ -13,7 +13,8 @@ use std::path::PathBuf;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::commands::{
-    classify_set_value, SetCommand, SetEffect, SetError, SetRpcAction,
+    classify_key_without_value, classify_set_value, key_home, CliValue, DropKind, KeyHome,
+    SetCommand, SetEffect, SetError, SetRpcAction,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource};
 
@@ -56,6 +57,24 @@ fn parse_config_scalar(value: &str) -> serde_json::Value {
     serde_json::Value::String(value.to_string())
 }
 
+/// Render one `config.origin` row as the "where this came from" line of
+/// `:set key??`. The daemon owns the provenance of app config, so this is the
+/// history the client can show for such a key.
+fn format_config_origin(origin: &serde_json::Value) -> String {
+    let source = origin
+        .get("source")
+        .and_then(|s| s.as_str())
+        .unwrap_or("unknown");
+    match (
+        origin.get("file").and_then(|f| f.as_str()),
+        origin.get("line").and_then(|l| l.as_u64()),
+    ) {
+        (Some(file), Some(line)) => format!("from {} ({}:{})", source, file, line),
+        (Some(file), None) => format!("from {} ({})", source, file),
+        (None, _) => format!("from {}", source),
+    }
+}
+
 /// Categorized help text for the :help system.
 fn help_text(category: Option<&str>) -> String {
     match category {
@@ -78,10 +97,8 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set thinkingbudget=medium    — Thinking budget preset\n\
-             :set contextbudget=128000     — Context token budget (or 'none')\n\
+            ":set contextbudget=128000     — Context token budget (or 'none')\n\
              :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
-             :set contextwindow=20         — Sliding window size (message pairs)\n\
              :set precognition             — Toggle auto-RAG\n\
              :set thinking           — Show thinking blocks\n\
              :set model=<name>       — Switch LLM model\n\
@@ -196,8 +213,7 @@ impl OilChatApp {
             if let Some(suggestion) = suggest_command(word, ReplCommand::ALL) {
                 msg.push_str(&format!(" Did you mean :{} ?", suggestion.name()));
             }
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(msg));
+            self.add_notification(crucible_core::types::Notification::warning(msg));
             return Action::Continue;
         };
 
@@ -237,10 +253,9 @@ impl OilChatApp {
             ReplCommand::Export => match arg {
                 Some(path) => self.handle_export_command(path),
                 None => {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::warning(
-                            "Usage: :export <path>".to_string(),
-                        ));
+                    self.add_notification(crucible_core::types::Notification::warning(
+                        "Usage: :export <path>".to_string(),
+                    ));
                     Action::Continue
                 }
             },
@@ -256,10 +271,9 @@ impl OilChatApp {
         match code {
             Some(code) => Action::Send(ChatAppMsg::EvalLua(code.to_string())),
             None => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :lua <expr>  (or := <expr>)".to_string(),
-                    ));
+                self.add_notification(crucible_core::types::Notification::warning(
+                    "Usage: :lua <expr>  (or := <expr>)".to_string(),
+                ));
                 Action::Continue
             }
         }
@@ -289,10 +303,9 @@ impl OilChatApp {
     fn handle_model_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
         if let Some(model_name) = name {
             if model_name.is_empty() {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :model <name>".to_string(),
-                    ));
+                self.add_notification(crucible_core::types::Notification::warning(
+                    "Usage: :model <name>".to_string(),
+                ));
                 return Action::Continue;
             }
             return self.handle_set_command(&format!("set model {}", model_name));
@@ -322,10 +335,9 @@ impl OilChatApp {
     fn handle_reload_repl(&mut self, name: Option<&str>) -> Action<ChatAppMsg> {
         match name {
             Some("") => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :reload <plugin_name>".to_string(),
-                    ));
+                self.add_notification(crucible_core::types::Notification::warning(
+                    "Usage: :reload <plugin_name>".to_string(),
+                ));
                 Action::Continue
             }
             Some(plugin_name) => Action::Send(ChatAppMsg::ReloadPlugin(plugin_name.to_string())),
@@ -338,10 +350,9 @@ impl OilChatApp {
 
     pub(super) fn handle_export_command(&mut self, path: &str) -> Action<ChatAppMsg> {
         if path.is_empty() {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(
-                    "Usage: :export <path>".to_string(),
-                ));
+            self.add_notification(crucible_core::types::Notification::warning(
+                "Usage: :export <path>".to_string(),
+            ));
             return Action::Continue;
         }
 
@@ -355,20 +366,18 @@ impl OilChatApp {
 
         if let Some(parent) = export_path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Parent directory does not exist: {}",
-                        parent.display()
-                    )));
+                self.add_notification(crucible_core::types::Notification::warning(format!(
+                    "Parent directory does not exist: {}",
+                    parent.display()
+                )));
                 return Action::Continue;
             }
         }
 
         if self.session_dir.is_none() {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(
-                    "No active session — nothing to export".to_string(),
-                ));
+            self.add_notification(crucible_core::types::Notification::warning(
+                "No active session — nothing to export".to_string(),
+            ));
             return Action::Continue;
         }
 
@@ -390,36 +399,14 @@ impl OilChatApp {
                     self.add_system_message(output);
                     Action::Continue
                 }
-                SetCommand::Query { key } => {
-                    let output = self.runtime_config.format_query(&key);
-                    self.add_system_message(output);
-                    Action::Continue
-                }
-                SetCommand::QueryHistory { key } => {
-                    let output = self.runtime_config.format_history(&key);
-                    self.add_system_message(output);
-                    Action::Continue
-                }
+                SetCommand::Query { key } => self.handle_set_query(&key, false),
+                SetCommand::QueryHistory { key } => self.handle_set_query(&key, true),
                 SetCommand::Enable { key } => self.handle_set_enable(&key),
                 SetCommand::Disable { key } => self.handle_set_disable(&key),
                 SetCommand::Toggle { key } => self.handle_set_toggle(&key),
-                SetCommand::Reset { key } => {
-                    self.runtime_config.reset(&key);
-                    self.sync_runtime_to_fields(&key);
-                    let output = self.runtime_config.format_query(&key);
-                    self.add_system_message(format!("Reset: {}", output.trim()));
-                    Action::Continue
-                }
-                SetCommand::Pop { key } => {
-                    if self.runtime_config.pop(&key).is_some() {
-                        self.sync_runtime_to_fields(&key);
-                        let output = self.runtime_config.format_query(&key);
-                        self.add_system_message(output);
-                    } else {
-                        self.add_system_message(format!("  {} is at base value", key));
-                    }
-                    Action::Continue
-                }
+                SetCommand::Reset { key } => self.handle_set_drop(&key, DropKind::Reset),
+                SetCommand::Pop { key } => self.handle_set_drop(&key, DropKind::Pop),
+                SetCommand::Unset { key } => self.handle_set_drop(&key, DropKind::Unset),
                 SetCommand::Set { key, value } => self.dispatch_set_key(&key, value),
             },
             Err(e) => {
@@ -429,9 +416,118 @@ impl OilChatApp {
         }
     }
 
+    /// Answers `:set key?` and `:set key??`.
+    ///
+    /// The read follows the same classifier the write does. An app-config key
+    /// is read from the daemon, because this client keeps no copy of app
+    /// config: a local answer was "not set" for every key `init.lua` wrote,
+    /// while the daemon held the value.
+    fn handle_set_query(&mut self, key: &str, history: bool) -> Action<ChatAppMsg> {
+        match key_home(key) {
+            KeyHome::Client => {
+                let output = if history {
+                    self.runtime_config.format_history(key)
+                } else {
+                    self.runtime_config.format_query(key)
+                };
+                self.add_system_message(output);
+                Action::Continue
+            }
+            KeyHome::Daemon => Action::Send(ChatAppMsg::ConfigQuery {
+                key: key.to_string(),
+                history,
+            }),
+        }
+    }
+
+    /// Answers `:set key&` (reset) and `:set key^` (pop).
+    ///
+    /// Both spellings drop layers, and both follow the same classifier the
+    /// read and the write follow. A TUI-local key drops from this client's
+    /// own overlay; an app-config key drops in the daemon store, which keeps
+    /// the layers it merged and re-merges what is left. The client never
+    /// drops a local copy of a key the daemon owns — that is two stores
+    /// holding different values for one key.
+    fn handle_set_drop(&mut self, key: &str, kind: DropKind) -> Action<ChatAppMsg> {
+        match key_home(key) {
+            KeyHome::Client if kind == DropKind::Pop => {
+                if self.runtime_config.pop(key).is_some() {
+                    self.sync_runtime_to_fields(key);
+                    let output = self.runtime_config.format_query(key);
+                    self.add_system_message(output);
+                } else {
+                    self.add_system_message(format!("  {key} is at base value"));
+                }
+                Action::Continue
+            }
+            KeyHome::Client => {
+                self.runtime_config.reset(key);
+                self.sync_runtime_to_fields(key);
+                let output = self.runtime_config.format_query(key);
+                self.add_system_message(format!("Reset: {}", output.trim()));
+                Action::Continue
+            }
+            KeyHome::Daemon => Action::Send(ChatAppMsg::ConfigDrop {
+                key: key.to_string(),
+                kind,
+            }),
+        }
+    }
+
+    /// Print what the daemon store holds for a key once a `&` or a `^` took
+    /// its layers away.
+    ///
+    /// The daemon's row is the whole answer, exactly as it is for a read:
+    /// this client keeps no copy of app config to update.
+    pub(super) fn show_app_config_drop(
+        &mut self,
+        key: &str,
+        dropped: &[String],
+        value: serde_json::Value,
+        origin: &serde_json::Value,
+    ) {
+        if dropped.is_empty() {
+            self.add_system_message(format!("  {key} has no layer left to drop"));
+            return;
+        }
+        let mut lines = format!("Dropped {}:", dropped.join(", "));
+        lines.push('\n');
+        if value.is_null() {
+            lines.push_str(&format!("  {key} is not set"));
+        } else {
+            lines.push_str(&format!("  {}={}", key, ConfigValue::from(value)));
+        }
+        lines.push('\n');
+        lines.push_str(&format!("  {}", format_config_origin(origin)));
+        self.add_system_message(lines);
+    }
+
+    /// Print what the daemon app-config store holds for a key.
+    ///
+    /// A read records nothing. The store's value is not this client's to
+    /// keep, and the next read asks the store again.
+    pub(super) fn show_app_config_answer(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+        origin: Option<serde_json::Value>,
+    ) {
+        // `null` is the daemon's answer for a key the store does not hold.
+        let mut lines = if value.is_null() {
+            format!("  {} is not set", key)
+        } else {
+            format!("  {}={}", key, ConfigValue::from(value))
+        };
+        if let Some(origin) = origin {
+            lines.push('\n');
+            lines.push_str(&format!("  {}", format_config_origin(&origin)));
+        }
+        self.add_system_message(lines);
+    }
+
     /// Dispatches `:set key=value` through the shared classifier so the live
-    /// TUI and CLI `--set` accept exactly the same keys and values. Keys the
-    /// classifier doesn't know stay TUI-local (plugin/dynamic runtime keys).
+    /// TUI and CLI `--set` accept exactly the same keys and values. A key the
+    /// classifier does not name is app config, and the daemon store owns it.
     fn dispatch_set_key(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
         if key.starts_with("perm.") {
             return self.handle_perm_set(key, &value);
@@ -444,18 +540,16 @@ impl OilChatApp {
                 self.send_setting_ack(key, &value);
                 Action::Continue
             }
-            // Unknown (plugin/dynamic) keys: store locally for `:set key?`
-            // round-trips AND mirror into the daemon app-config store so
-            // `:lua cru.config.get(key)` and plugins see the same value.
-            Err(SetError::UnknownKey(_)) => {
-                self.runtime_config.set_str(key, &value, ModSource::Command);
-                self.sync_runtime_to_fields(key);
-                self.send_setting_ack(key, &value);
-                Action::Send(ChatAppMsg::ConfigSet {
-                    key: key.to_string(),
-                    value: parse_config_scalar(&value),
-                })
-            }
+            // Every other key is app config, which the daemon store owns.
+            // Nothing lands locally here: the write goes to the daemon and
+            // `ConfigSetResolved` brings back what the store then holds. A
+            // local write would answer the next read with a value the daemon
+            // may have refused — the divergence that hid the dead
+            // `config.set` for as long as it lasted.
+            Err(SetError::UnknownKey(_)) => Action::Send(ChatAppMsg::ConfigSet {
+                key: key.to_string(),
+                value: parse_config_scalar(&value),
+            }),
             Err(e) => {
                 self.warn_invalid(e.to_string());
                 Action::Continue
@@ -482,21 +576,6 @@ impl OilChatApp {
                 );
                 self.send_setting_ack("model", model);
             }
-            SetRpcAction::SetThinkingBudget(budget) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let budget = budget.unwrap_or_default();
-                self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
-            }
-            SetRpcAction::SetMaxIterations(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| n.to_string());
-                self.send_setting_ack("maxiterations", &display);
-            }
-            SetRpcAction::SetExecutionTimeout(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| format!("{}s", n));
-                self.send_setting_ack("executiontimeout", &display);
-            }
             SetRpcAction::SetContextBudget(n) => {
                 self.runtime_config.set_str(key, value, ModSource::Command);
                 let display = n.map_or("none".to_string(), |n| n.to_string());
@@ -506,19 +585,6 @@ impl OilChatApp {
                 self.runtime_config
                     .set_str(key, normalized, ModSource::Command);
                 self.send_setting_ack("context_strategy", normalized);
-            }
-            SetRpcAction::SetContextWindow(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = n.map_or("none".to_string(), |n| n.to_string());
-                self.send_setting_ack("context_window", &display);
-            }
-            SetRpcAction::SetOutputValidation(v) => {
-                self.runtime_config.set_str(key, v, ModSource::Command);
-                self.send_setting_ack("output_validation", v);
-            }
-            SetRpcAction::SetValidationRetries(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                self.send_setting_ack("validation_retries", n);
             }
             SetRpcAction::SetPrecognition(enabled) => {
                 // Keep the local copy in step: it is what `:set` and the
@@ -531,19 +597,6 @@ impl OilChatApp {
                 self.runtime_config
                     .set(key, ConfigValue::Bool(*enabled), ModSource::Command);
                 self.send_setting_ack("precognition", enabled);
-            }
-            SetRpcAction::SetPrecognitionResults(n) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                self.send_setting_ack("precognition.results", n);
-            }
-            SetRpcAction::SetAutocompactThreshold(t) => {
-                self.runtime_config.set_str(key, value, ModSource::Command);
-                let display = match t {
-                    Some(v) if *v == 0.0 => "off".to_string(),
-                    Some(v) => v.to_string(),
-                    None => "default".to_string(),
-                };
-                self.send_setting_ack("autocompact_threshold", &display);
             }
         }
         match action.into_chat_msg() {
@@ -565,33 +618,40 @@ impl OilChatApp {
     }
 
     fn handle_set_enable(&mut self, key: &str) -> Action<ChatAppMsg> {
-        if let Some(current) = self.runtime_config.get(key) {
-            if current.as_bool().is_some() {
+        match classify_key_without_value(key.to_string(), CliValue::Enable) {
+            Ok(SetEffect::TuiLocal { .. }) => {
                 self.runtime_config
                     .set(key, ConfigValue::Bool(true), ModSource::Command);
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, true);
-            } else {
-                let output = self.runtime_config.format_query(key);
-                self.add_system_message(output);
-                return Action::Continue;
+                Self::daemon_sync_for_bool(key, true)
             }
-        } else {
-            self.runtime_config
-                .set(key, ConfigValue::Bool(true), ModSource::Command);
-            self.sync_runtime_to_fields(key);
-            self.send_setting_ack(key, true);
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, "on", action),
+            Err(SetError::UnknownKey(_)) => Self::send_app_config_bool(key, true),
+            Err(e) => {
+                self.warn_invalid(e.to_string());
+                Action::Continue
+            }
         }
-        Self::daemon_sync_for_bool(key, true)
     }
 
     fn handle_set_disable(&mut self, key: &str) -> Action<ChatAppMsg> {
-        match self.runtime_config.disable(key, ModSource::Command) {
-            Ok(()) => {
-                self.sync_runtime_to_fields(key);
-                self.send_setting_ack(key, false);
-                Self::daemon_sync_for_bool(key, false)
+        match classify_key_without_value(key.to_string(), CliValue::Disable) {
+            Ok(SetEffect::TuiLocal { .. }) => {
+                match self.runtime_config.disable(key, ModSource::Command) {
+                    Ok(()) => {
+                        self.sync_runtime_to_fields(key);
+                        self.send_setting_ack(key, false);
+                        Self::daemon_sync_for_bool(key, false)
+                    }
+                    Err(e) => {
+                        self.warn_invalid(e.to_string());
+                        Action::Continue
+                    }
+                }
             }
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, "off", action),
+            Err(SetError::UnknownKey(_)) => Self::send_app_config_bool(key, false),
             Err(e) => {
                 self.warn_invalid(e.to_string());
                 Action::Continue
@@ -600,38 +660,73 @@ impl OilChatApp {
     }
 
     fn handle_set_toggle(&mut self, key: &str) -> Action<ChatAppMsg> {
-        match self.runtime_config.toggle(key, ModSource::Command) {
-            Ok(new_val) => {
-                self.sync_runtime_to_fields(key);
-                self.send_setting_ack(key, new_val);
-                return Self::daemon_sync_for_bool(key, new_val);
+        match classify_key_without_value(key.to_string(), CliValue::Toggle) {
+            Ok(SetEffect::TuiLocal { .. }) => {
+                match self.runtime_config.toggle(key, ModSource::Command) {
+                    Ok(new_val) => {
+                        self.sync_runtime_to_fields(key);
+                        self.send_setting_ack(key, new_val);
+                        Self::daemon_sync_for_bool(key, new_val)
+                    }
+                    Err(e) => {
+                        self.warn_invalid(e.to_string());
+                        Action::Continue
+                    }
+                }
+            }
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, "toggle", action),
+            // The daemon's last answer is the only value to invert: this
+            // client holds no independent one to toggle.
+            Err(SetError::UnknownKey(_)) => {
+                match self.runtime_config.get(key).and_then(|v| v.as_bool()) {
+                    Some(current) => Self::send_app_config_bool(key, !current),
+                    None => {
+                        self.warn_invalid(format!(
+                            "'{key}' has no known value to toggle; use {key}=on or {key}=off"
+                        ));
+                        Action::Continue
+                    }
+                }
             }
             Err(e) => {
                 self.warn_invalid(e.to_string());
+                Action::Continue
             }
         }
-        Action::Continue
+    }
+
+    /// Send one app-config boolean to the daemon store, and record nothing.
+    /// `ConfigSetResolved` writes the local copy from the daemon's answer.
+    fn send_app_config_bool(key: &str, enabled: bool) -> Action<ChatAppMsg> {
+        Action::Send(ChatAppMsg::ConfigSet {
+            key: key.to_string(),
+            value: serde_json::Value::Bool(enabled),
+        })
+    }
+
+    /// Record what the daemon app-config store holds for a key, after a
+    /// `:set` wrote it. This is the only writer of an app-config key in the
+    /// TUI's runtime config, which is what keeps the two from disagreeing.
+    pub(super) fn apply_resolved_app_config(&mut self, key: &str, value: serde_json::Value) {
+        let value = ConfigValue::from(value);
+        self.runtime_config
+            .set(key, value.clone(), ModSource::Command);
+        self.sync_runtime_to_fields(key);
+        self.send_setting_ack(key, value);
     }
 
     /// Adds a warning notification for invalid input.
     fn warn_invalid(&mut self, msg: impl Into<String>) {
-        self.notification_area
-            .add(crucible_core::types::Notification::warning(msg.into()));
+        self.add_notification(crucible_core::types::Notification::warning(msg.into()));
     }
 
     /// Acknowledges a setting change with a formatted system message.
-    fn send_setting_ack(&mut self, key: &str, value: impl std::fmt::Display) {
+    pub(super) fn send_setting_ack(&mut self, key: &str, value: impl std::fmt::Display) {
         self.add_system_message(format!("  {}={}", key, value));
     }
 
     pub(super) fn handle_config_show_command(&mut self) -> Action<ChatAppMsg> {
         let mut output = String::from("Configuration:\n");
-
-        let budget = self
-            .runtime_config
-            .get("thinkingbudget")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  thinking_budget: {}\n", budget));
 
         let mode = self
             .runtime_config
@@ -642,10 +737,6 @@ impl OilChatApp {
         output.push_str(&format!(
             "  precognition: {}\n",
             self.precognition.precognition
-        ));
-        output.push_str(&format!(
-            "  precognition.results: {}\n",
-            self.precognition.precognition_results
         ));
 
         let ctx_budget = self
@@ -660,24 +751,6 @@ impl OilChatApp {
             .unwrap_or(ConfigValue::String("truncate".to_string()));
         output.push_str(&format!("  context_strategy: {}\n", ctx_strategy));
 
-        let ctx_window = self
-            .runtime_config
-            .get("context_window")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  context_window: {}\n", ctx_window));
-
-        let out_val = self
-            .runtime_config
-            .get("output_validation")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  output_validation: {}\n", out_val));
-
-        let val_retries = self
-            .runtime_config
-            .get("validation_retries")
-            .unwrap_or(ConfigValue::String("3".to_string()));
-        output.push_str(&format!("  validation_retries: {}\n", val_retries));
-
         self.add_system_message(output);
         Action::Continue
     }
@@ -690,23 +763,21 @@ impl OilChatApp {
         ];
 
         if !valid_keys.contains(&key) {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(format!(
-                    "Unknown permission setting: {}. Valid: {}",
-                    key,
-                    valid_keys.join(", ")
-                )));
+            self.add_notification(crucible_core::types::Notification::warning(format!(
+                "Unknown permission setting: {}. Valid: {}",
+                key,
+                valid_keys.join(", ")
+            )));
             return Action::Continue;
         }
 
         let bool_value = match crate::tui::oil::commands::parse_bool(value) {
             Ok(b) => b,
             Err(message) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "{}: {}",
-                        key, message
-                    )));
+                self.add_notification(crucible_core::types::Notification::warning(format!(
+                    "{}: {}",
+                    key, message
+                )));
                 return Action::Continue;
             }
         };
@@ -715,11 +786,10 @@ impl OilChatApp {
             .set(key, ConfigValue::Bool(bool_value), ModSource::Command);
         self.sync_runtime_to_fields(key);
 
-        self.notification_area
-            .add(crucible_core::types::Notification::toast(format!(
-                "Permission setting updated: {}={}",
-                key, bool_value
-            )));
+        self.add_notification(crucible_core::types::Notification::toast(format!(
+            "Permission setting updated: {}={}",
+            key, bool_value
+        )));
 
         Action::Continue
     }
@@ -772,13 +842,6 @@ impl OilChatApp {
                     self.precognition.precognition = val.as_bool().unwrap_or(true);
                 }
             }
-            "precognition.results" => {
-                if let Some(val) = self.runtime_config.get("precognition.results") {
-                    if let Some(n) = val.as_int() {
-                        self.precognition.precognition_results = (n as usize).clamp(1, 20);
-                    }
-                }
-            }
             _ => {}
         }
     }
@@ -823,10 +886,12 @@ impl OilChatApp {
                 "Loaded" => ("✓", "loaded"),
                 _ => ("?", entry.state.as_str()),
             };
-            let version_part = if entry.version.is_empty() {
-                String::new()
-            } else {
-                format!(" v{}", entry.version)
+            // A plugin the daemon has discovered but not loaded declares no
+            // version yet, so the row shows the name and the state alone. A
+            // placeholder here read as a release; `{:?}` would read as Rust.
+            let version_part = match entry.version.as_deref() {
+                Some(version) => format!(" v{version}"),
+                None => String::new(),
             };
             let detail = if let Some(ref err) = entry.error {
                 format!("({}: {})", state_label, err)
@@ -850,11 +915,10 @@ impl OilChatApp {
             Some("commands" | "command" | "cmd") => PickSource::Commands,
             Some("files" | "file") => PickSource::Files,
             Some(unknown) => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Unknown pick source: '{}'. Valid: notes, commands, files, all",
-                        unknown
-                    )));
+                self.add_notification(crucible_core::types::Notification::warning(format!(
+                    "Unknown pick source: '{}'. Valid: notes, commands, files, all",
+                    unknown
+                )));
                 return Action::Continue;
             }
         };

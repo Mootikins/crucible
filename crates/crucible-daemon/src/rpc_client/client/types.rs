@@ -28,7 +28,6 @@ pub struct CapabilityFlags {
     pub sessions: bool,
     pub agents: bool,
     pub events: bool,
-    pub thinking_budget: bool,
     pub model_switching: bool,
 }
 

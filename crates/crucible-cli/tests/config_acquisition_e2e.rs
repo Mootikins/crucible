@@ -87,3 +87,67 @@ fn a_daemon_on_a_different_config_root_is_refused() {
         "the refusal must name the remedy: {stderr}"
     );
 }
+
+/// `cru web` serves the settings the boot evaluation holds, from the config
+/// root `--config` names.
+///
+/// Two regressions meet here. `--config` once never reached the load at all,
+/// so a named root's port, API key and allow-list were silently the defaults.
+/// Then the load kept calling `CliAppConfig::load`, which reads `config.toml`
+/// and nothing else — so after the boot stopped reading that file, `cru web`
+/// served the defaults to everyone whose settings live in `init.lua`, and
+/// reported success while doing it.
+///
+/// Three keys tell the three readers apart: `web key` prints the one it
+/// resolved. No daemon runs, so this is the local evaluation — the same path
+/// a user gets before their first `cru daemon start`.
+#[test]
+fn cru_web_key_reads_the_named_config_roots_init_lua() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut cmd, socket) = hermetic_cru(temp.path());
+
+    let default_root = temp.path().join(".config").join("crucible");
+    fs::create_dir_all(&default_root).unwrap();
+    fs::write(
+        default_root.join("init.lua"),
+        "cru.config.set({ web = { api_key = \"key-from-default-root\" } })\n",
+    )
+    .unwrap();
+
+    let named_root = temp.path().join("named-root");
+    fs::create_dir_all(&named_root).unwrap();
+    fs::write(
+        named_root.join("init.lua"),
+        "cru.config.set({ web = { api_key = \"key-from-init-lua\" } })\n",
+    )
+    .unwrap();
+    // The retired file, in the same root, holding a different key. Reading it
+    // again is the regression; reading it INSTEAD is what shipped.
+    fs::write(
+        named_root.join("config.toml"),
+        "[web]\napi_key = \"key-from-config-toml\"\n",
+    )
+    .unwrap();
+
+    let assert = cmd
+        .arg("--config")
+        .arg(named_root.join("config.toml"))
+        .args(["web", "key"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    assert!(
+        stdout.contains("key-from-init-lua"),
+        "`cru web` must serve the named root's init.lua: {stdout}"
+    );
+    assert!(
+        !stdout.contains("key-from-config-toml"),
+        "no reader loads that file: {stdout}"
+    );
+    assert!(
+        !stdout.contains("key-from-default-root"),
+        "--config must reach the load: {stdout}"
+    );
+    assert!(!socket.exists(), "`cru web key` must not spawn a daemon");
+}

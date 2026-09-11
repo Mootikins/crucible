@@ -26,6 +26,10 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// The documentation kiln, `<workspace>/docs`.
+///
+/// Each test binary compiles this module separately and uses a different part
+/// of it, so a helper only one of them calls is dead code in the other.
+#[allow(dead_code)]
 pub fn docs_root() -> PathBuf {
     workspace_root().join("docs")
 }

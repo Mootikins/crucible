@@ -25,29 +25,15 @@ use crate::services::daemon::AppState;
 
 pub(super) mod basic;
 pub(super) mod context;
-pub(super) mod execution;
 pub(super) mod prompt;
 
 #[cfg(test)]
 mod tests;
 
-pub(super) use basic::{
-    get_max_tokens, get_precognition, get_precognition_results, get_temperature,
-    get_thinking_budget, list_agent_options, set_agent_option, set_max_tokens, set_precognition,
-    set_precognition_results, set_temperature, set_thinking_budget,
-};
-pub(super) use context::{
-    get_autocompact_threshold, get_context_budget, get_context_window, set_autocompact_threshold,
-    set_context_budget, set_context_window,
-};
-pub(super) use execution::{
-    get_execution_timeout, get_max_iterations, get_validation_retries, set_execution_timeout,
-    set_max_iterations, set_validation_retries,
-};
-pub(super) use prompt::{
-    get_context_strategy, get_output_validation, get_system_prompt, set_context_strategy,
-    set_output_validation, set_system_prompt,
-};
+pub(super) use basic::{get_precognition, list_agent_options, set_agent_option, set_precognition};
+pub(super) use context::{get_context_budget, set_context_budget};
+
+pub(super) use prompt::{get_context_strategy, set_context_strategy};
 
 /// Every `/api/session/{id}/config/...` route, as a standalone router the session
 /// group merges in.
@@ -65,24 +51,8 @@ pub(super) use prompt::{
 pub(super) fn config_routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/session/{id}/config/thinking-budget",
-            put(set_thinking_budget).get(get_thinking_budget),
-        )
-        .route(
-            "/api/session/{id}/config/temperature",
-            put(set_temperature).get(get_temperature),
-        )
-        .route(
-            "/api/session/{id}/config/max-tokens",
-            put(set_max_tokens).get(get_max_tokens),
-        )
-        .route(
             "/api/session/{id}/config/precognition",
             put(set_precognition).get(get_precognition),
-        )
-        .route(
-            "/api/session/{id}/config/precognition/results",
-            put(set_precognition_results).get(get_precognition_results),
         )
         // Not one of Crucible's knobs: the settings the external agent
         // advertised for itself. One path serves both directions because the
@@ -102,35 +72,7 @@ pub(super) fn config_routes() -> Router<AppState> {
             put(set_context_budget).get(get_context_budget),
         )
         .route(
-            "/api/session/{id}/config/context-window",
-            put(set_context_window).get(get_context_window),
-        )
-        .route(
-            "/api/session/{id}/config/autocompact-threshold",
-            put(set_autocompact_threshold).get(get_autocompact_threshold),
-        )
-        .route(
-            "/api/session/{id}/config/max-iterations",
-            put(set_max_iterations).get(get_max_iterations),
-        )
-        .route(
-            "/api/session/{id}/config/execution-timeout",
-            put(set_execution_timeout).get(get_execution_timeout),
-        )
-        .route(
-            "/api/session/{id}/config/validation-retries",
-            put(set_validation_retries).get(get_validation_retries),
-        )
-        .route(
             "/api/session/{id}/config/context-strategy",
             put(set_context_strategy).get(get_context_strategy),
-        )
-        .route(
-            "/api/session/{id}/config/output-validation",
-            put(set_output_validation).get(get_output_validation),
-        )
-        .route(
-            "/api/session/{id}/config/system-prompt",
-            put(set_system_prompt).get(get_system_prompt),
         )
 }

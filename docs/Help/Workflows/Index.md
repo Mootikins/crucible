@@ -120,17 +120,20 @@ agent's own tool calls. Add the command's tool name to that plugin's
 `exempt` list if host execution is intended.
 
 **Permissions.** The command is then checked as `bash` against the
-`[permissions]` rules that apply to the session — the session's agent
-profile rules where it has them, the daemon-global `[permissions]`
+`permissions` rules that apply to the session — the session's agent
+profile rules where it has them, the daemon-global `permissions`
 otherwise. The gate is fail-closed and has no prompt to fall back on:
 a `deny` refuses, an `allow` runs, and an `ask` rule refuses because
 there is no user attached to a completed run. **The shipped default is
 `default = "ask"`, so an unconfigured daemon runs no validation
 command at all.** To let a command run, name it in `allow`:
 
-```toml
-[permissions]
-allow = ["bash:cargo test *", "bash:just ci"]
+```lua
+cru.config.set({
+    permissions = {
+        allow = { "bash:cargo test *", "bash:just ci" },
+    },
+})
 ```
 
 A refused entry is reported as a failure in `workflow.assessed`, with

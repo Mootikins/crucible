@@ -64,24 +64,28 @@ EOF
 
 ### Registered Projects
 
-For daemon mode or explicit control, register projects globally. Projects bind to one or more named kilns from the `[kilns]` registry.
+For daemon mode or explicit control, register projects globally. Projects bind to one or more named kilns from the `kilns` registry.
 
-```toml
-# ~/.config/crucible/config.toml
-
-[kilns]
-docs = "~/crucible/docs"
-shared = "~/shared-knowledge"
-
-[projects.myproject]
-path = "~/projects/myproject"
-kilns = ["docs", "shared"]
+```lua
+-- ~/.config/crucible/init.lua
+cru.config.set({
+    kilns = {
+        docs = "~/crucible/docs",
+        shared = "~/shared-knowledge",
+    },
+    projects = {
+        myproject = {
+            path = "~/projects/myproject",
+            kilns = { "docs", "shared" },
+        },
+    },
+})
 ```
 
 | Field | Type | Description |
 |---|---|---|
 | `path` | path | Project root directory |
-| `kilns` | list | Named kilns from `[kilns]` that this project uses |
+| `kilns` | list | Named kilns from `kilns` that this project uses |
 
 ### Kiln Attachment Fields
 
@@ -101,7 +105,7 @@ data_classification = "confidential"   # public | internal | confidential
 | `data_classification` | string | `"public"`, `"internal"`, or `"confidential"` (lowercase). Optional |
 
 `data_classification` is what the trust gates read: the daemon resolves a kiln's
-classification from its `[[kilns]]` entry, and multi-kiln search skips any non-primary
+classification from its `kilns` entry, and multi-kiln search skips any non-primary
 kiln whose classification exceeds the session provider's `trust_level`. An entry with no
 classification resolves to *none*, which the search filter treats as public. See
 [[Help/Concepts/Trust and Classification]].
@@ -165,36 +169,56 @@ to send classified content to a provider that is not trusted enough for it. See
 
 ## Splitting Configuration Across Files
 
-Any string value in `config.toml` can be a reference that the loader resolves before
-parsing:
+Your config is Lua, so a long one splits the way any Lua program does. There
+is no reference syntax to learn: read a value with a function call.
 
-| Reference | Resolves to |
+| Want | Write |
 |---|---|
-| `{env:VAR}` | The environment variable's value |
-| `{file:path}` | The file's contents — parsed as TOML for a `.toml` file, otherwise the trimmed text |
-| `{dir:path}` | Every non-hidden `.toml` file in the directory, merged in filename order |
+| An environment variable | `os.getenv("VAR")` |
+| A file's contents | `assert(io.open(path)):read("a")` |
+| Another config file beside `init.lua` | `cru.include("llm.lua")` |
+| A module under `~/.config/crucible/lua/` | `require("my.llm")` |
 
-That makes drop-in directories work per *section*. Setting
-`llm = "{dir:~/.config/crucible/llm.d/}"` at the top level of `config.toml` replaces the
-whole `[llm]` section with the merged contents of that directory:
+`cru.include` and `require` both count as your own config: a file either of
+them loads is held to the same rule as `init.lua`, so a syntax error in it
+names its own file and line and stops the daemon.
+
+A drop-in directory is a loop, not a feature:
+
+```lua
+-- ~/.config/crucible/init.lua
+for _, name in ipairs({ "00-default", "50-cloud" }) do
+    cru.include("llm.d/" .. name .. ".lua")
+end
+```
 
 ```
 ~/.config/crucible/
-├── config.toml           # llm = "{dir:~/.config/crucible/llm.d/}"
-└── llm.d/                # merged in filename order
-    ├── 00-default.toml   # default = "local"
-    └── 50-cloud.toml     # [providers.cloud] …
+├── init.lua              # the loop above
+└── llm.d/
+    ├── 00-default.lua    # cru.config.set({ llm = { default = "local" } })
+    └── 50-cloud.lua      # cru.config.set({ llm = { providers = { cloud = … } } })
 ```
 
-The reference is resolved best-effort: if the directory is missing, the raw string is left
-in place and the config then fails to parse, so a typo surfaces immediately.
+Each included file calls `cru.config.set` itself, and the leaf rule does the
+rest: a later file wins per key, and a key no later file names stands. To drop
+a key an earlier file set, use `config.unset` — a `cru.config.set` write adds
+and changes keys, and never removes one.
 
-Use `{file:}` to keep a secret out of the config itself:
+Keep a secret out of the config by reading it where it lives:
 
-```toml
-[llm.providers.work]
-type = "openai"
-api_key = "{file:~/.secrets/work-openai.key}"
+<!-- crucible:not-config — reads a key file that only exists on the reader's machine -->
+```lua
+cru.config.set({
+    llm = {
+        providers = {
+            work = {
+                type = "openai",
+                api_key = assert(io.open(os.getenv("HOME") .. "/.secrets/work-openai.key")):read("l"),
+            },
+        },
+    },
+})
 ```
 
 ## See Also

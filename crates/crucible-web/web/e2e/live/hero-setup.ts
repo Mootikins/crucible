@@ -65,6 +65,44 @@ function writeState(state: HeroState): void {
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+/**
+ * Prove the running daemon resolved the fake Ollama, and abort the tier if it
+ * did not.
+ *
+ * `cru config show -f json` answers from the daemon's own effective config
+ * when a daemon is running, so this reads the store the turns will use, not
+ * the file the setup wrote. A mismatch is a failure and never a skip: the
+ * stack is up, and a hero run against an unconfigured provider proves nothing
+ * while reporting success.
+ */
+function assertProviderInjected(
+  cru: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  expectedEndpoint: string,
+  cleanup: () => void,
+): void {
+  let effective: Record<string, unknown>;
+  try {
+    const shown = execFileSync(cru, ['config', 'show', '-f', 'json'], {
+      cwd, env, timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+    effective = JSON.parse(shown) as Record<string, unknown>;
+  } catch (err) {
+    cleanup();
+    throw new Error(`hero setup: could not read the daemon's effective config: ${String(err).slice(0, 400)}`);
+  }
+  const llm = effective.llm as { default?: string; providers?: Record<string, { endpoint?: string }> } | undefined;
+  const endpoint = llm?.providers?.ollama?.endpoint;
+  if (llm?.default !== 'ollama' || endpoint !== expectedEndpoint) {
+    cleanup();
+    throw new Error(
+      `hero setup: the daemon did not read the injected provider — ` +
+      `default=${String(llm?.default)} ollama.endpoint=${String(endpoint)}, expected ${expectedEndpoint}`,
+    );
+  }
+}
+
 async function globalSetup(): Promise<void> {
   const cru = resolveCruBin();
   if (!cru) {
@@ -114,22 +152,34 @@ async function globalSetup(): Promise<void> {
   // Stash for teardown (setup + teardown share this process).
   (globalThis as Record<string, unknown>).__heroFakeOllama = fake;
 
-  // The single config injection point (verified via genai/daemon source):
-  // both `cru chat` (reads its own config) and `cru web` sessions (daemon fills
-  // the endpoint from its global llm_config when the session endpoint is None)
-  // resolve the Ollama provider from CRUCIBLE_CONFIG_DIR/config.toml. The daemon
-  // force-appends `/v1/` to this endpoint, so chat lands on POST /v1/api/chat.
-  const configToml = [
-    '[llm]',
-    'default = "ollama"',
-    '',
-    '[llm.providers.ollama]',
-    'type = "ollama"',
-    `endpoint = "http://127.0.0.1:${fake.port}"`,
-    'default_model = "hero-model"',
+  // The single config injection point: both `cru chat` (reads its own config)
+  // and `cru web` sessions (the daemon fills the endpoint from its global
+  // llm_config when the session endpoint is None) resolve the Ollama provider
+  // from the daemon's boot evaluation of CRUCIBLE_CONFIG_DIR/init.lua. The
+  // daemon force-appends `/v1/` to this endpoint, so chat lands on
+  // POST /v1/api/chat.
+  //
+  // `init.lua`, not `config.toml`: the TOML reader is gone, so the old
+  // injection set nothing and every hero turn ran on whatever the defaults
+  // named. `assertProviderInjected` below proves the file landed.
+  const fakeEndpoint = `http://127.0.0.1:${fake.port}`;
+  const initLua = [
+    '-- Hero live tier: every turn must reach the fake Ollama, never a real provider.',
+    'cru.config.set({',
+    '    llm = {',
+    '        default = "ollama",',
+    '        providers = {',
+    '            ollama = {',
+    '                type = "ollama",',
+    `                endpoint = "${fakeEndpoint}",`,
+    '                default_model = "hero-model",',
+    '            },',
+    '        },',
+    '    },',
+    '})',
     '',
   ].join('\n');
-  writeFileSync(path.join(configDir, 'config.toml'), configToml);
+  writeFileSync(path.join(configDir, 'init.lua'), initLua);
 
   // Isolated env inherited by every `cru` invocation AND the auto-spawned daemon.
   // Scrub real provider creds so nothing but the fake can ever be called.
@@ -191,6 +241,13 @@ async function globalSetup(): Promise<void> {
       writeState({ skip: true, reason: 'cru web did not become ready' });
       return;
     }
+
+    // The daemon is up, so ask IT which provider it resolved. Nothing else in
+    // the tier does: every assertion downstream is about what the fake replied,
+    // and a fake nobody reached looks the same as one nobody configured. That
+    // is how the injection stayed inert through a whole release — it wrote a
+    // file the daemon had stopped reading, and the tier still passed.
+    assertProviderInjected(cru, env, kilnDir, fakeEndpoint, bestEffortCleanup);
 
     // Register the kiln dir as a project so the web Sessions panel renders its
     // list (SessionSection is gated on a registered project). A refusal here

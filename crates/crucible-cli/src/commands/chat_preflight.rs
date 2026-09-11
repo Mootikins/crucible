@@ -228,10 +228,10 @@ pub fn fill_default_model_if_missing(config: &mut CliConfig) {
 /// Generate the kiln-local `.crucible/init.lua` scaffold, once.
 ///
 /// Returns whether it generated. Nothing is written when the kiln already
-/// has an `init.lua`, or a pre-Lua `config.toml` — the not-yet-migrated
-/// form; generating a second config file beside it would leave the kiln
-/// with two, and the templates carry no provider detection at this point
-/// (that is daemon-side, after session.create).
+/// has an `init.lua`. A kiln-local `config.toml` does NOT count: no reader
+/// for it has ever existed (`cru doctor` reports it as a file nothing
+/// reads), so a kiln that has only that one is a kiln with no config, and
+/// skipping the scaffold would leave it that way for good.
 pub(crate) fn ensure_kiln_scaffold(kiln_root: &std::path::Path) -> Result<bool> {
     let crucible_dir = kiln_root.join(".crucible");
     // Either entry-point name counts as "already set up"; looking for one
@@ -240,7 +240,7 @@ pub(crate) fn ensure_kiln_scaffold(kiln_root: &std::path::Path) -> Result<bool> 
         .ok()
         .flatten()
         .is_some();
-    if has_init || crucible_dir.join("config.toml").exists() {
+    if has_init {
         return Ok(false);
     }
     let init_lua = crate::commands::init::generate_kiln_init_lua("ollama", "llama3.2");
@@ -283,17 +283,18 @@ mod tests {
         );
     }
 
-    /// A kiln that still has the pre-Lua `config.toml` is configured, not
-    /// fresh: generating an `init.lua` beside it would leave two config
-    /// files, one of them unexplained.
+    /// A kiln holding only `.crucible/config.toml` is UNCONFIGURED. Nothing
+    /// has ever read that file (`cru doctor` reports it as never read), so
+    /// treating it as "already set up" leaves the kiln with no config at all
+    /// and no way to notice.
     #[test]
-    fn the_scaffold_leaves_an_unmigrated_kiln_alone() {
+    fn the_scaffold_generates_init_lua_beside_a_never_read_config_toml() {
         let tmp = tempfile::TempDir::new().unwrap();
         let crucible_dir = tmp.path().join(".crucible");
         std::fs::create_dir_all(&crucible_dir).unwrap();
         std::fs::write(crucible_dir.join("config.toml"), "[chat]\n").unwrap();
 
-        assert!(!ensure_kiln_scaffold(tmp.path()).unwrap());
-        assert!(!crucible_dir.join("init.lua").exists());
+        assert!(ensure_kiln_scaffold(tmp.path()).unwrap());
+        assert!(crucible_dir.join("init.lua").exists());
     }
 }

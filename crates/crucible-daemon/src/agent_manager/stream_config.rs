@@ -9,31 +9,24 @@ use super::*;
 #[derive(Clone)]
 pub(crate) struct AgentStreamConfig {
     pub(crate) model: String,
-    // No temperature/max_tokens/thinking_budget/system_prompt here. Those
-    // reach the LLM through the agent handle, built from the same
-    // `SessionAgent` — the copies that used to sit in this struct were never
-    // read, and a second place to look for the authoritative value is worse
-    // than none. Surfaced by rustc once the struct moved out of `mod.rs`.
+    // No system_prompt here. It reaches the LLM through the agent handle,
+    // built from the same `SessionAgent` — the copy that used to sit in this
+    // struct was never read, and a second place to look for the authoritative
+    // value is worse than none.
     //
-    // That was true of thinking_budget and system_prompt and *not* of
-    // temperature/max_tokens: the factory dropped those two, so deleting the
-    // copies here left them reaching nothing at all. Fixed in the factory
-    // (`with_generation_settings`); the invariant this comment asserts is now
-    // pinned by `generation_settings_reach_the_outgoing_chat_options`.
-    pub(crate) max_iterations: Option<u32>,
-    pub(crate) execution_timeout_secs: Option<u64>,
+    // Deleting a copy is only safe when the factory sets the real one. It was
+    // not for temperature/max_tokens: the factory dropped those two, so
+    // removing their copies here left them reaching nothing. Both are gone
+    // entirely now — genai defaults them per model — and
+    // `the_request_leaves_sampling_to_the_provider` pins that.
     /// Snapshot of the session's `context_budget` for auto-compaction.
     /// `None` disables auto-compaction (no budget to compare against).
     pub(crate) context_budget: Option<usize>,
     /// Fraction of `context_budget` that triggers auto-compaction.
     /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
     /// [`crate::agent_manager::autocompact`].
-    pub(crate) autocompact_threshold: Option<f32>,
+    pub(crate) autocompact_threshold: f32,
     /// Validation mode for assistant text responses. Drives the
-    /// validate-retry loop in `execute_agent_stream`.
-    pub(crate) output_validation: OutputValidation,
-    /// Maximum retry count when output validation fails.
-    pub(crate) validation_retries: u32,
     /// From the session's `delegation_config.timeout_secs`; sizes the
     /// tool-dispatch timeout for `delegate_session` (a blocking delegation
     /// legitimately outlives the standard 30 s tool timeout).
@@ -41,20 +34,14 @@ pub(crate) struct AgentStreamConfig {
     /// Per-tool policy from the session's agent card: Deny blocks execution,
     /// Ask forces a prompt (even for safe tools), Allow skips the gate.
     pub(crate) tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
-    /// Registry of Lua-defined validators, populated when the daemon
-    /// has a plugin loader. The agent stream loop dispatches
-    /// `OutputValidation::Lua { name }` against this registry.
-    /// `None` outside daemon contexts (tests, isolated managers) — the
-    /// stream loop treats that as a validation failure with a clear reason.
-    pub(crate) lua_validators: Option<Arc<LuaValidatorRegistry>>,
-    /// Plugin runtime `Lua` handle used to call into validator functions.
-    /// Paired with `lua_validators`; both are `Some` together or both `None`.
-    pub(crate) plugin_lua: Option<Arc<Lua>>,
     /// Hooks registered by plugins via `cru.on`, with the `Lua` state
     /// their bodies live in. Separate from the per-session registry: plugins
     /// load once into the loader's VM, and a `RegistryKey` is only valid
     /// against the state that created it.
     pub(crate) plugin_handlers: Option<PluginHandlers>,
+    /// `cru.permissions.on_request` hooks, from the one VM that runs files.
+    /// The `Lua` travels with them: see `DaemonPermissions`.
+    pub(crate) daemon_permissions: Option<super::DaemonPermissions>,
     /// Sessions a plugin claimed isolation for. When set and the session is
     /// claimed, a host-touching tool that no handler took over is refused.
     pub(crate) isolation: Option<crucible_lua::IsolationRegistry>,
@@ -107,9 +94,8 @@ pub(crate) struct AgentStreamConfig {
 /// Every field is snapshotted per turn, so a plugin loaded or a mode redefined
 /// mid-run cannot reshape a turn already in progress.
 pub(crate) struct TurnEnvironment {
-    pub(crate) lua_validators: Option<Arc<LuaValidatorRegistry>>,
-    pub(crate) plugin_lua: Option<Arc<Lua>>,
     pub(crate) plugin_handlers: Option<PluginHandlers>,
+    pub(crate) daemon_permissions: Option<super::DaemonPermissions>,
     pub(crate) isolation: Option<crucible_lua::IsolationRegistry>,
     pub(crate) plugin_tool_names: std::collections::HashSet<String>,
     pub(crate) modes: crucible_lua::ModeRegistry,
@@ -119,9 +105,8 @@ pub(crate) struct TurnEnvironment {
 impl AgentStreamConfig {
     pub(crate) fn from_session_agent(session_agent: &SessionAgent, env: TurnEnvironment) -> Self {
         let TurnEnvironment {
-            lua_validators,
-            plugin_lua,
             plugin_handlers,
+            daemon_permissions,
             isolation,
             plugin_tool_names,
             modes,
@@ -129,20 +114,15 @@ impl AgentStreamConfig {
         } = env;
         Self {
             model: session_agent.model.clone(),
-            max_iterations: session_agent.max_iterations,
-            execution_timeout_secs: session_agent.execution_timeout_secs,
             context_budget: session_agent.context_budget,
-            autocompact_threshold: session_agent.autocompact_threshold,
-            output_validation: session_agent.output_validation.clone(),
-            validation_retries: session_agent.validation_retries,
+            autocompact_threshold: super::configured::autocompact_threshold(),
             delegation_timeout_secs: session_agent
                 .delegation_config
                 .as_ref()
                 .map(|c| c.timeout_secs),
             tool_policy: session_agent.tool_policy.clone(),
-            lua_validators,
-            plugin_lua,
             plugin_handlers,
+            daemon_permissions,
             isolation,
             plugin_tool_names,
             modes,

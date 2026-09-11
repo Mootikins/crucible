@@ -9,11 +9,6 @@ fn write_plugin(plugins_dir: &std::path::Path, name: &str) {
     let dir = plugins_dir.join(name);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
-        dir.join("plugin.yaml"),
-        format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
-    )
-    .unwrap();
-    std::fs::write(
         dir.join("init.lua"),
         format!(
             r#"return {{
@@ -211,25 +206,20 @@ async fn install_load_report_surfaces_failure_and_absence() {
     );
 }
 
-/// A repo named `crucible-greeter` whose plugin.yaml says `name: greeter` is
-/// a thoroughly conventional layout, and it puts two naming authorities in
+/// A repo named `crucible-greeter` whose spec table says `name = "greeter"`
+/// is a thoroughly conventional layout, and it puts two naming authorities in
 /// play: the installed manifest and the clone dir go by the URL name, the
-/// plugin manager by the yaml/spec name. Resolution must go through the
+/// plugin manager by the declared name. Resolution must go through the
 /// clone DIRECTORY, or install reports a healthy plugin as broken and remove
 /// silently no-ops (unload's NotFound swallowed, manifest record gone,
 /// plugin still running and now unremovable).
 #[tokio::test]
-async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes() {
+async fn a_declared_name_differing_from_the_repo_name_still_installs_and_removes() {
     let tmp = tempfile::TempDir::new().unwrap();
     let manifest_path = tmp.path().join(plugin_ops::INSTALLED_PLUGINS_FILE);
     let plugins_dir = tmp.path().join("plugins");
     let clone_dir = plugins_dir.join("crucible-greeter");
     std::fs::create_dir_all(&clone_dir).unwrap();
-    std::fs::write(
-        clone_dir.join("plugin.yaml"),
-        "name: greeter\nversion: \"0.1.0\"\nmain: init.lua\n",
-    )
-    .unwrap();
     std::fs::write(
         clone_dir.join("init.lua"),
         r#"return {
@@ -264,8 +254,8 @@ async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes
         crate::server::plugin_install::install_load_report(&loader, "crucible-greeter", &clone_dir);
     assert!(
         report.loaded,
-        "a healthy plugin must not be reported broken because its manifest \
-         name differs from its repo name: {:?}",
+        "a healthy plugin must not be reported broken because the name it \
+         declares differs from its directory: {:?}",
         report.error
     );
 
@@ -273,7 +263,11 @@ async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes
     let resolved = loader
         .plugin_name_for_dir(&clone_dir)
         .expect("the clone dir maps to the manager key");
-    assert_eq!(resolved, "greeter");
+    // Identity is the DIRECTORY name: the only name knowable without running
+    // Lua, and therefore the only one discovery can key on. The name the
+    // plugin declares is honoured for `[plugins.<name>]` lookup instead — see
+    // `PluginManifest::declared_name`.
+    assert_eq!(resolved, "crucible-greeter");
     loader
         .deactivate_and_forget_plugin(&resolved)
         .await

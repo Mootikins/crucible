@@ -182,10 +182,11 @@ pub trait SessionKnobs: Send + Sync {
     /// The session settings the external agent advertised for itself.
     ///
     /// ACP agents list these in the `session/new` reply; the model selector
-    /// is one of them, and `thought_level` is the other Crucible has a knob
-    /// for. The empty default is a true answer, not a stub: an internal
-    /// agent advertises nothing, because Crucible defines its settings
-    /// rather than discovering them.
+    /// is one of them, and `thought_level` is another. `thought_level`
+    /// belongs to the agent: Crucible has no equivalent knob and does not
+    /// interpret it. The empty default is a true answer, not a stub: an
+    /// internal agent advertises nothing, because Crucible defines its
+    /// settings rather than discovering them.
     fn agent_config_options(&self) -> &[crate::types::acp::schema::SessionConfigOption] {
         &[]
     }
@@ -205,45 +206,12 @@ pub trait SessionKnobs: Send + Sync {
     /// had rather than dropping to zero modes.
     async fn fetch_available_modes(&mut self) -> Vec<String>;
 
-    /// Set the thinking budget for reasoning models.
+    /// The system prompt the handle was built with.
     ///
-    /// Values: -1 = unlimited, 0 = disabled, >0 = max tokens
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()>;
-
-    /// Get the current thinking budget.
-    fn get_thinking_budget(&self) -> Option<i64>;
-
-    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()>;
-
+    /// Read-only: the prompt comes from config, an agent card or Lua, never
+    /// from a runtime setter. It stays on the trait because it is the one
+    /// place a test can prove that AGENTS.md rules reached the model.
     fn get_system_prompt(&self) -> Option<String>;
-
-    /// Set the temperature for response generation.
-    ///
-    /// Values: 0.0 = deterministic, 1.0 = balanced, 2.0 = maximum randomness
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()>;
-
-    /// Get the current temperature setting.
-    fn get_temperature(&self) -> Option<f64>;
-
-    /// Set the maximum tokens for response generation.
-    ///
-    /// Values: None = provider default, Some(n) = limit to n tokens
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()>;
-
-    /// Get the current max tokens setting.
-    fn get_max_tokens(&self) -> Option<u32>;
-
-    /// Set maximum tool-call iterations per turn. None = unlimited.
-    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()>;
-
-    /// Get the current max iterations setting.
-    fn get_max_iterations(&self) -> Option<u32>;
-
-    /// Set execution timeout in seconds per turn. None = no timeout.
-    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()>;
-
-    /// Get the current execution timeout setting.
-    fn get_execution_timeout(&self) -> Option<u64>;
 
     /// Set the context token budget. None = no limit.
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()>;
@@ -260,35 +228,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Get the current context truncation strategy.
     fn get_context_strategy(&self) -> crate::session::ContextStrategy;
 
-    /// Set the sliding window size (message pairs to keep). None = default (10).
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()>;
-
-    /// Get the current sliding window size.
-    fn get_context_window(&self) -> Option<usize>;
-
-    /// Set output validation mode for agent text responses.
-    async fn set_output_validation(
-        &mut self,
-        validation: crate::session::OutputValidation,
-    ) -> ChatResult<()>;
-
-    /// Get the current output validation mode.
-    fn get_output_validation(&self) -> &crate::session::OutputValidation;
-
-    /// Set maximum retry count when output validation fails.
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()>;
-
-    /// Get the current validation retry count.
-    fn get_validation_retries(&self) -> u32;
-
-    /// Set the auto-compaction threshold (fraction of `context_budget`).
-    /// `None` resets to the daemon default; `Some(0.0)` explicitly disables.
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()>;
-
-    /// Get the current auto-compaction threshold. `None` indicates the
-    /// daemon default is in effect.
-    fn get_autocompact_threshold(&self) -> Option<f32>;
-
     /// Turn Precognition (auto-RAG context injection) on or off for this
     /// session. Session-scoped, not display state: every client attached to
     /// the session sees the change.
@@ -297,12 +236,6 @@ pub trait SessionKnobs: Send + Sync {
     /// Whether Precognition is currently enabled. `AgentConfig` defaults
     /// to on.
     fn get_precognition(&self) -> bool;
-
-    /// Set the maximum number of Precognition search results.
-    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()>;
-
-    /// Get the current Precognition search results count.
-    fn get_precognition_results(&self) -> usize;
 }
 
 /// The empty answer for every knob: each setter returns
@@ -332,72 +265,6 @@ macro_rules! impl_unsupported_session_knobs {
             async fn fetch_available_modes(&mut self) -> Vec<String> {
                 Vec::new()
             }
-            async fn set_thinking_budget(
-                &mut self,
-                _budget: i64,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_thinking_budget".into(),
-                ))
-            }
-            fn get_thinking_budget(&self) -> Option<i64> {
-                None
-            }
-            async fn set_system_prompt(
-                &mut self,
-                _prompt: &str,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_system_prompt".into(),
-                ))
-            }
-            fn get_system_prompt(&self) -> Option<String> {
-                None
-            }
-            async fn set_temperature(
-                &mut self,
-                _temperature: f64,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_temperature".into(),
-                ))
-            }
-            fn get_temperature(&self) -> Option<f64> {
-                None
-            }
-            async fn set_max_tokens(
-                &mut self,
-                _max_tokens: Option<u32>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_max_tokens".into(),
-                ))
-            }
-            fn get_max_tokens(&self) -> Option<u32> {
-                None
-            }
-            async fn set_max_iterations(
-                &mut self,
-                _max_iterations: Option<u32>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_max_iterations".into(),
-                ))
-            }
-            fn get_max_iterations(&self) -> Option<u32> {
-                None
-            }
-            async fn set_execution_timeout(
-                &mut self,
-                _timeout_secs: Option<u64>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_execution_timeout".into(),
-                ))
-            }
-            fn get_execution_timeout(&self) -> Option<u64> {
-                None
-            }
             async fn set_context_budget(
                 &mut self,
                 _budget: Option<usize>,
@@ -417,52 +284,11 @@ macro_rules! impl_unsupported_session_knobs {
                     "set_context_strategy".into(),
                 ))
             }
+            fn get_system_prompt(&self) -> Option<String> {
+                None
+            }
             fn get_context_strategy(&self) -> $crate::session::ContextStrategy {
                 $crate::session::ContextStrategy::default()
-            }
-            async fn set_context_window(
-                &mut self,
-                _window: Option<usize>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_context_window".into(),
-                ))
-            }
-            fn get_context_window(&self) -> Option<usize> {
-                None
-            }
-            async fn set_output_validation(
-                &mut self,
-                _validation: $crate::session::OutputValidation,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_output_validation".into(),
-                ))
-            }
-            fn get_output_validation(&self) -> &$crate::session::OutputValidation {
-                &$crate::session::OutputValidation::None
-            }
-            async fn set_validation_retries(
-                &mut self,
-                _retries: u32,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_validation_retries".into(),
-                ))
-            }
-            fn get_validation_retries(&self) -> u32 {
-                3
-            }
-            async fn set_autocompact_threshold(
-                &mut self,
-                _threshold: Option<f32>,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_autocompact_threshold".into(),
-                ))
-            }
-            fn get_autocompact_threshold(&self) -> Option<f32> {
-                None
             }
             async fn set_precognition(
                 &mut self,
@@ -474,17 +300,6 @@ macro_rules! impl_unsupported_session_knobs {
             }
             fn get_precognition(&self) -> bool {
                 true
-            }
-            async fn set_precognition_results(
-                &mut self,
-                _count: usize,
-            ) -> $crate::traits::chat::ChatResult<()> {
-                Err($crate::traits::chat::ChatError::NotSupported(
-                    "set_precognition_results".into(),
-                ))
-            }
-            fn get_precognition_results(&self) -> usize {
-                5
             }
         }
     };
@@ -689,54 +504,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
         (**self).fetch_available_modes().await
     }
 
-    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
-        (**self).set_thinking_budget(budget).await
-    }
-
-    fn get_thinking_budget(&self) -> Option<i64> {
-        (**self).get_thinking_budget()
-    }
-
-    async fn set_system_prompt(&mut self, prompt: &str) -> ChatResult<()> {
-        (**self).set_system_prompt(prompt).await
-    }
-
-    fn get_system_prompt(&self) -> Option<String> {
-        (**self).get_system_prompt()
-    }
-
-    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
-        (**self).set_temperature(temperature).await
-    }
-
-    fn get_temperature(&self) -> Option<f64> {
-        (**self).get_temperature()
-    }
-
-    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
-        (**self).set_max_tokens(max_tokens).await
-    }
-
-    fn get_max_tokens(&self) -> Option<u32> {
-        (**self).get_max_tokens()
-    }
-
-    async fn set_max_iterations(&mut self, max_iterations: Option<u32>) -> ChatResult<()> {
-        (**self).set_max_iterations(max_iterations).await
-    }
-
-    fn get_max_iterations(&self) -> Option<u32> {
-        (**self).get_max_iterations()
-    }
-
-    async fn set_execution_timeout(&mut self, timeout_secs: Option<u64>) -> ChatResult<()> {
-        (**self).set_execution_timeout(timeout_secs).await
-    }
-
-    fn get_execution_timeout(&self) -> Option<u64> {
-        (**self).get_execution_timeout()
-    }
-
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
         (**self).set_context_budget(budget).await
     }
@@ -752,43 +519,12 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
         (**self).set_context_strategy(strategy).await
     }
 
+    fn get_system_prompt(&self) -> Option<String> {
+        (**self).get_system_prompt()
+    }
+
     fn get_context_strategy(&self) -> crate::session::ContextStrategy {
         (**self).get_context_strategy()
-    }
-
-    async fn set_context_window(&mut self, window: Option<usize>) -> ChatResult<()> {
-        (**self).set_context_window(window).await
-    }
-
-    fn get_context_window(&self) -> Option<usize> {
-        (**self).get_context_window()
-    }
-
-    async fn set_output_validation(
-        &mut self,
-        validation: crate::session::OutputValidation,
-    ) -> ChatResult<()> {
-        (**self).set_output_validation(validation).await
-    }
-
-    fn get_output_validation(&self) -> &crate::session::OutputValidation {
-        (**self).get_output_validation()
-    }
-
-    async fn set_validation_retries(&mut self, retries: u32) -> ChatResult<()> {
-        (**self).set_validation_retries(retries).await
-    }
-
-    fn get_validation_retries(&self) -> u32 {
-        (**self).get_validation_retries()
-    }
-
-    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
-        (**self).set_autocompact_threshold(threshold).await
-    }
-
-    fn get_autocompact_threshold(&self) -> Option<f32> {
-        (**self).get_autocompact_threshold()
     }
 
     async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {
@@ -797,14 +533,6 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_precognition(&self) -> bool {
         (**self).get_precognition()
-    }
-
-    async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {
-        (**self).set_precognition_results(count).await
-    }
-
-    fn get_precognition_results(&self) -> usize {
-        (**self).get_precognition_results()
     }
 }
 

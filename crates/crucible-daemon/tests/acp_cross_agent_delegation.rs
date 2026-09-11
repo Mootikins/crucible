@@ -30,7 +30,7 @@ use std::time::Duration;
 
 use crucible_core::background::JobStatus;
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::session_lifecycle::SessionLifecycle;
@@ -91,10 +91,7 @@ fn internal_parent(delegation: DelegationConfig) -> SessionAgent {
         provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "test".to_string(),
-        temperature: None,
-        max_tokens: None,
         max_context_tokens: None,
-        thinking_budget: None,
         endpoint: None,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
@@ -102,15 +99,8 @@ fn internal_parent(delegation: DelegationConfig) -> SessionAgent {
         agent_description: None,
         delegation_config: Some(delegation),
         precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
         context_budget: None,
         context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
         tool_policy: None,
         mode: None,
     }

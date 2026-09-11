@@ -865,7 +865,7 @@ Items the pass kept, with the reason:
 - [keep] McpGatewayManager::upstream_status tools/mcp_gateway.rs:454 (weak: own tests only) — The item is already gone. Nothing to remove. Strike the claim from the plan.
 - [keep-protected-path] RpcMethod::SessionReindex rpc/dispatch.rs:175 (weak; protected path; retired name in METHODS) — Referenced by a handler arm, a CLI test and the changelog. Protected path rpc/dispatch.rs. Removal is a wire change (METHODS list).
 - [keep] PluginManager::eval_runtime (crates/crucible-lua/src/lifecycle/lua_integration.rs:54) — Already test-gated; nothing further to narrow. Tests that use it verify reload and load/unload hooks, not only eval_runtime itself.
-- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/loading.rs:216) — Already test-gated; no change needed.
+- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/loading.rs:181) — Already test-gated; no change needed.
 - [keep] PluginManager::initialize (crates/crucible-lua/src/lifecycle/mod.rs:136) — Method no longer exists; it was replaced by discover_only (lifecycle/mod.rs:128) and load_all (loading.rs:93). Nothing to remove. Optionally reword the four stale doc comments that still reference ini
 - [keep-protected-path] KeepAlive.shell Some path (crucible-web routes/terminal.rs:56) — The field is the test injection seam the doc comment at terminal.rs:49-51 describes; the production const sets None on purpose. Under routes/. Keep.
 - [delete] NodeSpec, spec_to_node, NodeSpecError, NodeAttrs, parse_* (crucible-oil template/node_spec.rs) — Partial. NodeSpec, NodeAttrs, spec_to_node and every parse_* except parse_color/parse_hex_color/parse_rgb_color are dead. NodeSpecError and NodeSpecResult stay because parse_color returns them. Move p
@@ -1066,7 +1066,7 @@ last group.
 
 ### crucible-core
 
-- `traits/chat.rs`: `clear_history` still defaults to `Ok(())`; make it required. `GenaiAgentHandle` holds a `thinking_budget` field but its `SessionKnobs` answers `NotSupported`; `Genai` and `Acp` handles answer empty for `max_iterations`, `execution_timeout` and precognition because the daemon session owns them. [A1]
+- `traits/chat.rs`: `clear_history` still defaults to `Ok(())`; make it required. `Genai` and `Acp` handles answer empty for `max_iterations`, `execution_timeout` and precognition because the daemon session owns them. [A1]
 - `storage/traits.rs`: the `StorageClient` doc names `DirectStorageClient` and `crucible-rpc`, which do not exist; `MockStorageClient` under `test-utils` has no caller. [A4, A6]
 - `types/hashing.rs`: `FileHashInfo`, `BlockHashInfo`, `HashAlgorithm` and the `FileHash` alias have no callers outside re-exports; delete the file (Gaps G53). [B14]
 - `types/acp.rs`: `ToolCallInfo` is still re-exported from `acp/streaming.rs`; `FileDiff` is live in `TurnEvent::ToolCall`, so re-check B11's premise before deleting the family; `test_tool_definition_from_traits` belongs in `traits/tools.rs`. [B10, B11]
@@ -1151,7 +1151,6 @@ matches every chained statement. `just ci` and the web unit tests pass.
 
 ### 5b. Tier 6 — follow-ups from Tier 5
 
-- [T5-01] The DaemonAgentHandle mirror path for thinking_budget (session.set_thinking_budget RPC to the Genai handle) was not traced end to end; verify the daemon forwards the RPC value into GenaiAgentHandle::set_thinking_budget rather than only into AgentConfig.
 - [T5-02] docs/Meta/Architecture/Gaps.md and Actual.md still cite types/hashing.rs; a docs pass should mark G53 fully closed (file deleted).
 - [T5-02] docs/Meta/Analysis/Systems.md still cites crucible-core/src/hashing/algorithm.rs, which no longer exists.
 - [T5-03] types/mod.rs still re-exports the ACP schema types and traits::tools types at the types:: level; a later pass could check which of those re-export paths have callers.

@@ -22,6 +22,76 @@ export interface Config {
   kiln_path: string;
   /** Server allows non-loopback terminal/shell (opt-in env + API key). */
   remote_shell?: boolean;
+  /** The daemon's effective config, whole. Shapes come from the daemon. */
+  config?: Record<string, unknown>;
+  /** Where `init.lua` and `settings.json` live, when the daemon booted from a file. */
+  config_root?: string | null;
+  /** One row per recorded leaf, so a control can render its source. */
+  origins?: ConfigOrigin[];
+  /** The declared control tree the settings UI renders. */
+  controls?: AppConfigControls;
+}
+
+/**
+ * What the app config offers a settings UI: the controls, and the leaves that
+ * take none.
+ *
+ * `options` is the SAME node shape a plugin's tree uses, which is the point —
+ * one renderer draws both. `read_only` is the app config's own half: a leaf
+ * with no control still shows, with the reason it has none.
+ */
+export interface AppConfigControls {
+  options: AppConfigNode;
+  read_only: { path: string; reason: string }[];
+}
+
+/**
+ * One node of the app-config tree: a plugin option node plus the two fields
+ * only app config has.
+ *
+ * A plugin owns its storage and answers `get`; app config is stored by the
+ * daemon and read back through the effective config, so a node carries the
+ * config `path` it writes and the `default` a frontend shows when nothing set
+ * it.
+ */
+export interface AppConfigNode extends Omit<PluginOptionNode, 'args' | 'values'> {
+  /** Dot-joined config path — also the key a save writes. */
+  path?: string;
+  /** What the type defaults to when no layer set the leaf. */
+  default?: unknown;
+  values?: { value: unknown; label: string; desc?: string }[];
+  args?: AppConfigNode[];
+}
+
+/** Where one config leaf came from, as `config.origin` reports it. */
+export interface ConfigOrigin {
+  /** Dot-joined leaf path, e.g. `chat.model`. */
+  key: string;
+  value: unknown;
+  /** One word: `default`, `plugin_default`, `settings`, `lua`, `toml`, … */
+  source: string;
+  /** The file the source names, when it names one. */
+  file?: string;
+  /** The line inside `file`, when the source recorded one. */
+  line?: number;
+  /**
+   * Whether a save of this leaf would be refused.
+   *
+   * The daemon's answer, never re-derived here from `source`: which layers pin
+   * IS the refusal rule, and a copy of it in the browser would go wrong the
+   * moment a layer is added.
+   */
+  pinned?: boolean;
+}
+
+/** What one save did: the leaves that landed, and the leaves that could not. */
+export interface ConfigSaveResult {
+  /** False when anything was refused or withheld. */
+  ok: boolean;
+  /** Leaves a higher layer holds, each naming the file and line that holds it. */
+  refused: ConfigOrigin[];
+  /** Keys naming where the daemon acts; those are changed in the config file. */
+  rejected: string[];
 }
 
 /**
@@ -521,13 +591,20 @@ export async function getConfig(): Promise<Config> {
 }
 
 /**
- * What plugins published, keyed by contribution kind then plugin.
+ * Save values as the user's durable preference.
  *
- * Pass `key` to narrow daemon-side. A caller drawing one key should ask for
- * that key: without it the response carries every plugin's data, which is more
- * than the caller needs and — once third-party block code can run — more than
- * it should receive.
+ * A refusal is part of the answer, not an error: a leaf the user's `init.lua`
+ * holds comes back in `refused` with the file and the line that holds it, and
+ * the leaves beside it still saved.
  */
+export async function saveConfig(values: Record<string, unknown>): Promise<ConfigSaveResult> {
+  return request<ConfigSaveResult>('POST', '/api/config', {
+    errorMessage: 'Failed to save config',
+    ...jsonRequest({ values }),
+  });
+}
+
+
 /** One executable primitive a plugin declared, and the arguments it takes. */
 export interface PluginCommand {
   plugin: string;
@@ -573,6 +650,14 @@ export async function getPluginCommands(): Promise<PluginCommand[]> {
   return body.commands ?? [];
 }
 
+/**
+ * What plugins published, keyed by contribution kind then plugin.
+ *
+ * Pass `key` to narrow daemon-side. A caller drawing one key should ask for
+ * that key: without it the response carries every plugin's data, which is more
+ * than the caller needs and — once third-party block code can run — more than
+ * it should receive.
+ */
 export async function getPluginPublications(
   key?: string,
   caller: string = APP_CALLER,
@@ -1060,8 +1145,8 @@ export async function getSessionStatus(sessionId: string): Promise<SessionStatus
 /**
  * Which settings this session can change.
  *
- * A settings panel asks before it draws: an ACP session has no temperature
- * and no token cap, and offering one is a control that changes nothing.
+ * A settings panel asks before it draws: an ACP session runs its own turn
+ * loop, so the daemon's caps and context policy, and offering one is a control that changes nothing.
  */
 export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> {
   return request<SessionKnobSupport>(
@@ -1247,66 +1332,6 @@ export async function listAllModels(): Promise<string[]> {
 // Session Config Endpoints
 // =============================================================================
 
-/** Get the thinking budget for a session. */
-export async function getThinkingBudget(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ thinking_budget: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`,
-      { errorMessage: 'Failed to get thinking budget' },
-    )
-  ).thinking_budget;
-}
-
-/** Set the thinking budget for a session. */
-export async function setThinkingBudget(sessionId: string, budget: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/thinking-budget`, {
-    errorMessage: 'Failed to set thinking budget',
-    parseAs: 'none',
-    ...jsonRequest({ thinking_budget: budget }),
-  });
-}
-
-/** Get the temperature for a session. */
-export async function getTemperature(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ temperature: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/temperature`,
-      { errorMessage: 'Failed to get temperature' },
-    )
-  ).temperature;
-}
-
-/** Set the temperature for a session. */
-export async function setTemperature(sessionId: string, temperature: number): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/temperature`, {
-    errorMessage: 'Failed to set temperature',
-    parseAs: 'none',
-    ...jsonRequest({ temperature }),
-  });
-}
-
-/** Get the max tokens for a session. */
-export async function getMaxTokens(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ max_tokens: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`,
-      { errorMessage: 'Failed to get max tokens' },
-    )
-  ).max_tokens;
-}
-
-/** Set the max tokens for a session (null = unlimited). */
-export async function setMaxTokens(sessionId: string, maxTokens: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/max-tokens`, {
-    errorMessage: 'Failed to set max tokens',
-    parseAs: 'none',
-    ...jsonRequest({ max_tokens: maxTokens }),
-  });
-}
-
 /** Get the precognition state for a session. */
 export async function getPrecognition(sessionId: string): Promise<boolean> {
   return (
@@ -1325,30 +1350,6 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
     parseAs: 'none',
     ...jsonRequest({ enabled }),
   });
-}
-
-/** Get the precognition results-per-query count (1..=20) for a session. */
-export async function getPrecognitionResults(sessionId: string): Promise<number> {
-  return (
-    await request<{ precognition_results: number }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/precognition/results`,
-      { errorMessage: 'Failed to get precognition results' },
-    )
-  ).precognition_results;
-}
-
-/** Set the precognition results-per-query count (1..=20) for a session. */
-export async function setPrecognitionResults(sessionId: string, count: number): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/precognition/results`,
-    {
-      errorMessage: 'Failed to set precognition results',
-      parseAs: 'none',
-      ...jsonRequest({ count }),
-    },
-  );
 }
 
 // -----------------------------------------------------------------------------
@@ -1382,126 +1383,6 @@ export async function setContextBudget(sessionId: string, budget: number | null)
   });
 }
 
-/** Get the context window size. */
-export async function getContextWindow(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ context_window: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/context-window`,
-      { errorMessage: 'Failed to get context window' },
-    )
-  ).context_window;
-}
-
-/** Set the context window size. `null` restores the daemon's default. */
-export async function setContextWindow(sessionId: string, window: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/context-window`, {
-    errorMessage: 'Failed to set context window',
-    parseAs: 'none',
-    ...jsonRequest({ context_window: window }),
-  });
-}
-
-/** Get the autocompact threshold (0..1 fraction of the window). */
-export async function getAutocompactThreshold(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ autocompact_threshold: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/autocompact-threshold`,
-      { errorMessage: 'Failed to get autocompact threshold' },
-    )
-  ).autocompact_threshold;
-}
-
-/** Set the autocompact threshold. `null` restores the daemon's default. */
-export async function setAutocompactThreshold(
-  sessionId: string,
-  threshold: number | null,
-): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/autocompact-threshold`,
-    {
-      errorMessage: 'Failed to set autocompact threshold',
-      parseAs: 'none',
-      ...jsonRequest({ autocompact_threshold: threshold }),
-    },
-  );
-}
-
-/** Get the agent-loop iteration cap. */
-export async function getMaxIterations(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ max_iterations: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/max-iterations`,
-      { errorMessage: 'Failed to get max iterations' },
-    )
-  ).max_iterations;
-}
-
-/** Set the agent-loop iteration cap. `null` restores the daemon's default. */
-export async function setMaxIterations(sessionId: string, max: number | null): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/max-iterations`, {
-    errorMessage: 'Failed to set max iterations',
-    parseAs: 'none',
-    ...jsonRequest({ max_iterations: max }),
-  });
-}
-
-/**
- * Get the per-turn execution timeout, in seconds.
- *
- * The field is `timeout_secs`, not `execution_timeout`: the RPC method is
- * `session.set_execution_timeout` but its wire field never matched its name.
- */
-export async function getExecutionTimeout(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ timeout_secs: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/execution-timeout`,
-      { errorMessage: 'Failed to get execution timeout' },
-    )
-  ).timeout_secs;
-}
-
-/** Set the per-turn execution timeout. `null` restores the daemon's default. */
-export async function setExecutionTimeout(sessionId: string, secs: number | null): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/execution-timeout`,
-    {
-      errorMessage: 'Failed to set execution timeout',
-      parseAs: 'none',
-      ...jsonRequest({ timeout_secs: secs }),
-    },
-  );
-}
-
-/** Get how many times a failed output validation is retried. */
-export async function getValidationRetries(sessionId: string): Promise<number | null> {
-  return (
-    await request<{ validation_retries: number | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/validation-retries`,
-      { errorMessage: 'Failed to get validation retries' },
-    )
-  ).validation_retries;
-}
-
-/** Set how many times a failed output validation is retried. Required, not nullable. */
-export async function setValidationRetries(sessionId: string, retries: number): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/validation-retries`,
-    {
-      errorMessage: 'Failed to set validation retries',
-      parseAs: 'none',
-      ...jsonRequest({ validation_retries: retries }),
-    },
-  );
-}
-
 /** Get the context-assembly strategy, by its string spelling. */
 export async function getContextStrategy(sessionId: string): Promise<string | null> {
   return (
@@ -1530,50 +1411,6 @@ export async function setContextStrategy(sessionId: string, strategy: string): P
       ...jsonRequest({ context_strategy: strategy }),
     },
   );
-}
-
-/** Get the output-validation mode, by its string spelling. */
-export async function getOutputValidation(sessionId: string): Promise<string | null> {
-  return (
-    await request<{ output_validation: string | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/output-validation`,
-      { errorMessage: 'Failed to get output validation' },
-    )
-  ).output_validation;
-}
-
-/** Set the output-validation mode. The daemon validates the name; see above. */
-export async function setOutputValidation(sessionId: string, validation: string): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/output-validation`,
-    {
-      errorMessage: 'Failed to set output validation',
-      parseAs: 'none',
-      ...jsonRequest({ output_validation: validation }),
-    },
-  );
-}
-
-/** Get the session's system prompt override. */
-export async function getSystemPrompt(sessionId: string): Promise<string | null> {
-  return (
-    await request<{ system_prompt: string | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/system-prompt`,
-      { errorMessage: 'Failed to get system prompt' },
-    )
-  ).system_prompt;
-}
-
-/** Set the session's system prompt override. */
-export async function setSystemPrompt(sessionId: string, prompt: string): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/system-prompt`, {
-    errorMessage: 'Failed to set system prompt',
-    parseAs: 'none',
-    ...jsonRequest({ system_prompt: prompt }),
-  });
 }
 
 /**
@@ -1746,7 +1583,8 @@ export function executeShell(
  */
 export interface PluginInfo {
   name: string;
-  version: string;
+  /** Null until the plugin loads: the version is declared in its spec table. */
+  version: string | null;
   source: 'User' | 'Runtime' | 'EnvPath' | 'Builtin' | string;
   state: 'Active' | 'Error' | 'Disabled' | string;
   /** Why the plugin is not Active. Null for healthy plugins. */

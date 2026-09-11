@@ -9,8 +9,9 @@ tags: [help, configuration, reference]
 Crucible has one configuration file: `~/.config/crucible/init.lua`. It is
 Lua, the daemon evaluates it exactly once at boot, and the configuration is
 whatever the file has set when it finishes. A `config.toml` left over from an
-earlier install still loads as a deprecated *seed* underneath your Lua — run
-`cru config migrate` once to fold it in (see [[#Migrating from config.toml]]).
+earlier install sets nothing: the daemon stopped reading it, and warns once per
+boot while the file is there. Run `cru config migrate` to move its values into
+Lua (see [[#Migrating from config.toml]]).
 
 ## Quick Start
 
@@ -42,16 +43,28 @@ your file in isolation and reports the first error with its file and line.
 The daemon evaluates `init.lua` once, at boot, **before** it loads plugins.
 The full contract lives in [[Help/Lua/Configuration|Lua Configuration]]; the load-bearing rules:
 
-- **Any line may set any key; the last write wins.** The daemon reads the
-  result when the file finishes.
-- **`cru.config.set` deep-merges.** Tables merge key by key; arrays and
-  scalars replace. To replace a whole table instead of merging into it, put
-  `__replace = true` inside it — the one replacement mechanism, spelled the
-  same in Lua, in a not-yet-migrated `config.toml`, and over the `config.set`
-  RPC.
-- **A broken `init.lua` fails open.** The daemon warns with the file and
-  line, discards everything the file did, and boots on the seed values.
-  `cru doctor` reports the same error as a failed check.
+- **Any line may set any key; inside one file the last write wins.** The
+  daemon reads the result when the file finishes. Between files the LAYER
+  decides, not the order the daemon reads them in: a plugin's declared
+  default never replaces what you saved, and a saved setting never replaces
+  a line in your own file.
+- **`cru.config.set` writes one leaf per value.** A nested table is spelling:
+  `{ chat = { model = "x" } }` sets the single key `chat.model`, so every
+  other `chat` key stands. An array and a scalar are single values; an empty
+  table sets nothing. A dotted key is the same path — `{ ["chat.model"] = "x" }`
+  writes where the nested table writes. A write can add a key and change a
+  key, never remove one: `config.unset` removes a key and everything under
+  it, from the layers a `:set key&` may drop.
+- **A file that does not parse stops the daemon.** Crucible names the file
+  and the line, and refuses to start: a mistyped bracket says nothing about
+  what you meant, and a daemon that started on the defaults would report your
+  whole config as "no config". The rule reaches one level down — a file
+  `cru.include` loads, and a module under your own `lua/` directory, count as
+  your config too.
+- **A file that parses and then raises fails open.** The daemon warns with
+  the file and line, discards everything the file did, and boots on the seed
+  values. `cru doctor` reports the same error as a failed check. A plugin
+  that does not parse fails open the same way: you did not write it.
 - **Edits do not apply to a running daemon.** Every daemon-backed command
   warns when `init.lua` changed since the daemon booted; `cru daemon restart`
   applies it.
@@ -59,19 +72,27 @@ The full contract lives in [[Help/Lua/Configuration|Lua Configuration]]; the loa
   loop over kilns — anything Lua can produce is a config value. Put *actions*
   in hooks: top-level side effects run on every evaluation (the daemon's
   boot, and each bootstrap command's throwaway evaluation).
+- **A saved setting loses to your file.** The settings UI writes
+  `settings.json` beside your `init.lua`. It beats a plugin's declared
+  default and loses to any key your own file sets; a save of such a key is
+  refused, and the refusal names the file and line to edit instead.
 - **Modules resolve from `~/.config/crucible/lua/`.** `require("my.mod")`
   reads `lua/my/mod.lua` beside your `init.lua` — split a long config into
   modules and `require` them.
 
 `cru config show` prints the effective config; `--sources` annotates every
-leaf with where it came from (`default`, the `config.toml` seed, or
-`init.lua` with its exact `file:line`).
+leaf with where it came from (`default`, a plugin's declared default,
+`settings.json`, or `init.lua` with its exact `file:line`).
+
+The author is the *file* that wrote the value, not the moment it ran. A
+plugin's `setup()` runs while your `init.lua` evaluates, but the value reads
+as `plugin <name>` rather than as your own line, because a plugin supplies a
+default and you supply a decision. Your `init.lua` outranks it.
 
 ## Configuration keys
 
 Set every key below with `cru.config.set({...})`. The tables give the key's
-shape; the examples are Lua. (In a not-yet-migrated `config.toml`, the same
-keys are TOML sections.)
+shape; the examples are Lua.
 
 ### Root options
 
@@ -81,7 +102,8 @@ keys are TOML sections.)
 | `default_kiln` | string | first alphabetically | Name of the default kiln (session storage, tool scoping) |
 | `session_kiln` | path | *(unset)* | Kiln where `cru chat` stores sessions, if not the default kiln |
 | `data_home` | path | `$CRUCIBLE_HOME`, else `~/.crucible` | Daemon data root — project registry, default session storage, home kiln |
-| `agent_directories` | list | `[]` | Additional directories to search for agent cards |
+| `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. Use `runtimepath` instead: one entry there supplies `agents/`, `skills/`, `plugins/` and `themes/` alike. Still honoured, warns once. |
+| `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `plugins/` and `themes/` subdirectories are searched, ahead of the shipped runtime. |
 | `runtimepath` | list | `[]` | *Extra* runtime roots for plugins and themes, searched after the well-known ones (`~/.config/crucible/runtime`, `$CRUCIBLE_RUNTIME`, next to the binary). Skills discovery does not read it yet |
 
 The location-naming keys (`kiln_path`, `kilns`, `projects`, `data_home`,
@@ -149,8 +171,6 @@ Controls the chat interface and LLM settings for internal agents.
 | `model` | string | provider default | Model to use (e.g., "llama3.2", "gpt-4o") |
 | `agent_preference` | string | `"crucible"` | Prefer `acp` (external) or `crucible` (internal) agents |
 | `endpoint` | string | provider default | Custom API endpoint URL |
-| `temperature` | float | `0.7` | Generation temperature (0.0-2.0) |
-| `max_tokens` | int | `2048` | Maximum tokens to generate |
 | `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
 | `show_diffs` | bool | `true` | Render diff bodies under edit/write tool calls |
 
@@ -232,8 +252,6 @@ cru.config.set({
         type = "openai",
         default_model = "gpt-4o",
         api_key = os.getenv("OPENAI_API_KEY"),
-        temperature = 0.9,
-        max_tokens = 8192,
       },
     },
   },
@@ -343,13 +361,12 @@ stderr.
 | `acp`, `acp.agents.*` | External agents over ACP | [[Help/Config/acp|ACP Configuration]] |
 | `permissions` | Tool allow/deny/ask rules | [[Help/Config/permissions|Permission Configuration]] |
 | `web` | Browser UI served by `cru web` | [[Help/Config/web|Web UI Configuration]] |
-| `workspace` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/Config.toml` |
-| `server` | `auto_archive_hours`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `web` | `docs/Config.toml` |
-| `schedules` | Recurring Lua snippets run on an interval — `cru.schedule` in `init.lua` is the native spelling | `docs/Config.toml` |
+| `workspace` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/init.lua` |
+| `server` | `auto_archive_hours` and `idle_shutdown_minutes`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `web` | `docs/init.lua` |
+| `schedules` | Recurring Lua snippets run on an interval — `cru.schedule` in `init.lua` is the native spelling | `docs/init.lua` |
 | `plugins.*` | Free-form per-plugin tables, fed to that plugin's `setup(cfg)`; plus the reserved `plugins.declare` table below | [[Help/Lua/Configuration|Lua Configuration]] — the two plugin-config forms |
 
-A `[storage]` or `[discovery]` section in a leftover `config.toml` loads and
-is ignored; both were removed.
+There is no `storage` key and no `discovery` key; both were removed.
 
 ### plugins.declare — git-hosted plugin declarations
 
@@ -386,7 +403,7 @@ the declaration, because Crucible never edits your config file.
 `plugins.toml`, which used to hold declarations, is no longer read. Its
 entries are imported into the installed manifest automatically, and the
 boot warns while the leftover file exists; delete it to silence the
-warning. (The kiln-local `.crucible/config.toml` needs no such migration:
+warning. (A kiln-local `.crucible/config.toml` needs no migration at all:
 nothing ever read it, and `cru doctor` says so when one exists.)
 
 ## Secrets and computed values
@@ -401,9 +418,8 @@ local work_key = assert(io.open(os.getenv("HOME") .. "/.secrets/work.key"))
     :read("l")
 ```
 
-The TOML forms `{env:VAR}`, `{file:path}` and `{dir:path}` still resolve
-inside a not-yet-migrated `config.toml` seed; they are not processed in
-values your Lua sets.
+The TOML forms `{env:VAR}`, `{file:path}` and `{dir:path}` are gone with the
+file that carried them. A string your Lua sets is the value, verbatim.
 
 ## Environment Variables
 
@@ -430,9 +446,33 @@ There is one config **root**, resolved in this order:
    `~/Library/Application Support/crucible` on macOS,
    `%APPDATA%\crucible` on Windows
 
-The root holds `init.lua`, the `lua/` module directory, and — until you
-migrate — the `config.toml` seed. A daemon-backed command whose resolved
-root differs from the running daemon's is refused, naming both roots.
+The root holds `init.lua`, the `lua/` module directory and `settings.json`. A
+daemon-backed command whose resolved root differs from the running daemon's is
+refused, naming both roots.
+
+`settings.json` is the machine's half of the config, and Crucible owns it: a
+saved setting rewrites the file whole, with sorted keys. You may edit it by
+hand, and the next save keeps what you wrote, but prefer `init.lua` — a key
+your `init.lua` sets wins over the saved value, and the save is refused
+rather than lost, naming the line that holds the key.
+
+A save also replaces a value you set with `:set` for this run, so the value
+you save is the value in force immediately. A save the daemon refuses changes
+nothing: your `:set` value stands until the session ends.
+
+The browser writes that file. In `cru web`, open the settings gear, then
+**Configuration**: the section shows the same keys, with the daemon's own
+descriptions. A key your `init.lua` holds shows as locked — the control is
+disabled, the note names the file and the line, and a button opens that line
+in the editor. A pin can sit inside a test on the hostname, so the note says
+the line may be conditional on this host. A key that names where the daemon
+acts shows read-only, with the reason it takes no control. The fonts, the
+terminal size, the vim mode and the microphone stay in the browser: they are
+per-device, and they do not reach `settings.json`.
+
+The same dialog installs a plugin. In the **Plugins** section, give a git URL
+or the `user/repo` shorthand, then confirm the URL. The plugin's declared
+settings appear immediately, with no restart.
 
 A kiln's `.crucible/kiln.toml` holds only the kiln's display name, and a
 project's `.crucible/project.toml` holds project metadata and security
@@ -540,7 +580,7 @@ before writing anything:
 
 - Machine-written entries move to the state files where they belong: `auto`
   kiln entries (and a `default_kiln` naming one) go to `kilns.json`,
-  `[projects.*]` entries to `projects.json`.
+  `projects.*` entries to `projects.json`.
 - The remaining, hand-authored keys are emitted as Lua. With no `init.lua`,
   the chunk **becomes** your `init.lua`; with an existing one, it is written
   to `lua/migrated_config.lua` and the command prints the one
@@ -548,9 +588,9 @@ before writing anything:
   file.
 - `config.toml` is renamed `config.toml.migrated`.
 
-Until you run it, the seed keeps working: it loads *under* your `init.lua`
-(your Lua wins per key), and the daemon prints one deprecation line per boot
-naming the command. Nothing is scheduled to remove the seed path.
+Until you run it, the file sets nothing. v0.30.0 read it as a seed under your
+`init.lua` and warned once per boot; this release drops the reader, and the
+boot warns that the file no longer applies, naming the command that ends it.
 
 Migrating from the ancient `kiln_path` form is the same move spelled small:
 `kiln_path = "/home/user/notes"` becomes

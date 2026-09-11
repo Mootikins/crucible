@@ -115,7 +115,7 @@ async fn the_overrun_error_names_the_plugin() {
     let registry = LuaScriptHandlerRegistry::new();
     let lua = vm(&registry);
     let previous =
-        crate::plugin_context::enter_plugin(&lua, "grabby", crate::manifest::CapabilitySet::none());
+        crate::plugin_context::enter_plugin(&lua, "grabby", false);
     lua.load(
         r#"
         cru.on("turn:complete", { timeout_ms = 200 }, function(ctx, event)

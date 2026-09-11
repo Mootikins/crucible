@@ -5,8 +5,6 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
-const TEMPLATE_PLUGIN_YAML: &str =
-    include_str!("../../crucible-cli/src/commands/plugin/templates/plugin.yaml");
 const TEMPLATE_INIT_LUA: &str =
     include_str!("../../crucible-cli/src/commands/plugin/templates/init.luau");
 const TEMPLATE_HEALTH_LUA: &str =
@@ -19,11 +17,6 @@ const TEMPLATE_INIT_TEST_LUA: &str =
 fn write_scaffold_plugin(root: &Path, name: &str) {
     let plugin_dir = root.join(name);
     fs::create_dir_all(plugin_dir.join("tests")).unwrap();
-    fs::write(
-        plugin_dir.join("plugin.yaml"),
-        TEMPLATE_PLUGIN_YAML.replace("{{name}}", name),
-    )
-    .unwrap();
     fs::write(
         plugin_dir.join("init.lua"),
         TEMPLATE_INIT_LUA.replace("{{name}}", name),
@@ -62,13 +55,6 @@ fn configure_modules(executor: &LuaExecutor, plugin_dir: &Path) -> crucible_lua:
 fn create_reload_plugin_files(root: &Path, name: &str, module_value: &str) {
     let plugin_dir = root.join(name);
     fs::create_dir_all(&plugin_dir).unwrap();
-    fs::write(
-        plugin_dir.join("plugin.yaml"),
-        format!(
-            "name: {name}\nversion: \"1.0.0\"\nmain: init.lua\nexports:\n  auto_discover: true\n"
-        ),
-    )
-    .unwrap();
 
     let init_source = format!(
         r#"
@@ -279,12 +265,11 @@ fn test_plugin_reload_picks_up_changes() {
 fn test_scaffold_template_validity() {
     let plugin_name = "template-check";
 
-    let yaml_source = TEMPLATE_PLUGIN_YAML.replace("{{name}}", plugin_name);
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&yaml_source).unwrap();
-    assert_eq!(yaml["name"], plugin_name);
-    // `.luau` is what `cru plugin new` writes and what the manifest names:
-    // the extension Luau's own editor tooling recognises.
-    assert_eq!(yaml["main"], "init.luau");
+    // The scaffold ships no manifest. Identity comes from the spec table,
+    // and the entry file is `init.luau` by resolution rather than by a field
+    // that could name a different file.
+    let init_source = TEMPLATE_INIT_LUA.replace("{{name}}", plugin_name);
+    assert!(init_source.contains(&format!(r#"name = "{plugin_name}""#)));
 
     // LuaLS has no Luau dialect. 5.1 is the closest it models — Luau derives
     // from it — so a scaffolded plugin is not told about 5.4-only syntax

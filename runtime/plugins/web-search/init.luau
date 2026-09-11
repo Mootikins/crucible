@@ -491,10 +491,11 @@ M.display_hook_registered = register_display_hook()
 package.loaded[PLUGIN] = M
 
 return {
+    author = "Crucible Team",
+    license = "MIT",
     name = PLUGIN,
     version = VERSION,
     description = "Web search over a configurable provider chain",
-    capabilities = { "network", "config" },
 
     tools = {
         web_search = {

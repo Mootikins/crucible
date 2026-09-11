@@ -5,9 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::config::{
-    default_precognition_results, default_validation_retries, ContextStrategy, OutputValidation,
-};
+use super::config::ContextStrategy;
 use crate::serde_helpers::default_true;
 
 /// Agent configuration bound to a session.
@@ -37,22 +35,9 @@ pub struct SessionAgent {
     /// System prompt (full text, inlined from agent card if applicable)
     pub system_prompt: String,
 
-    /// Generation temperature (0.0 - 2.0)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f64>,
-
-    /// Maximum output tokens
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
-
     /// Maximum context window tokens
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_context_tokens: Option<usize>,
-
-    /// Thinking/reasoning token budget for models that support extended thinking.
-    /// -1 = unlimited, 0 = disabled, >0 = max tokens for thinking
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking_budget: Option<i64>,
 
     /// Custom endpoint URL (for self-hosted models)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,18 +67,6 @@ pub struct SessionAgent {
     #[serde(default = "default_true")]
     pub precognition_enabled: bool,
 
-    /// Maximum number of unique notes to return from Precognition search (default: 5).
-    #[serde(default = "default_precognition_results")]
-    pub precognition_results: usize,
-
-    /// Maximum tool-call iterations per turn. None = unlimited (default for interactive sessions).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_iterations: Option<u32>,
-
-    /// Execution timeout in seconds per turn. None = no timeout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution_timeout_secs: Option<u64>,
-
     /// Context window token budget. None = no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_budget: Option<usize>,
@@ -101,25 +74,6 @@ pub struct SessionAgent {
     /// Strategy for truncating context when over budget.
     #[serde(default)]
     pub context_strategy: ContextStrategy,
-
-    /// For SlidingWindow strategy: keep last N message pairs. None = 10 (default).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_window: Option<usize>,
-
-    /// Output validation mode for agent text responses.
-    #[serde(default)]
-    pub output_validation: OutputValidation,
-
-    /// Maximum retries when output validation fails (default: 3).
-    #[serde(default = "default_validation_retries")]
-    pub validation_retries: u32,
-
-    /// Trigger auto-compaction when estimated message tokens exceed
-    /// `context_budget * autocompact_threshold`. `None` uses the default
-    /// (0.95). Set to `Some(0.0)` (or surface "off" in user-facing
-    /// parsers) to disable. Range: 0.0..=1.0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub autocompact_threshold: Option<f32>,
 
     /// Session mode id ("ask" | "plan" | "auto"). Persisted so a mode set
     /// before the first message (no live handle yet) still applies when the
@@ -158,10 +112,7 @@ impl SessionAgent {
             provider: BackendType::Custom,
             model: agent_name.to_string(),
             system_prompt: String::new(),
-            temperature: None,
-            max_tokens: None,
             max_context_tokens: None,
-            thinking_budget: None,
             endpoint: None,
             // The profile's map is BTreeMap (stable config rendering); the
             // session type keeps its own shape.
@@ -171,15 +122,8 @@ impl SessionAgent {
             agent_description: profile.description.clone(),
             delegation_config: profile.delegation.clone(),
             precognition_enabled: true,
-            precognition_results: default_precognition_results(),
-            max_iterations: None,
-            execution_timeout_secs: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: default_validation_retries(),
-            autocompact_threshold: None,
             tool_policy: None,
             mode: None,
         }
@@ -199,8 +143,7 @@ impl SessionAgent {
     ///
     /// Other card fields override the base where present: system prompt (the
     /// card body — finally populating the "inlined from agent card" field),
-    /// temperature, max_tokens, max_turns → max_iterations, mode,
-    /// mcp_servers, and the per-tool policy. Everything else (endpoint
+    /// mode, mcp_servers, and the per-tool policy. Everything else (endpoint
     /// resolution, precognition, context budget, validation) inherits from
     /// the base. An unrecognized `provider:` string falls back to the base
     /// provider (validated at use, not load).
@@ -264,10 +207,7 @@ impl SessionAgent {
                 .or(mapped_model)
                 .unwrap_or_else(|| base.model.clone()),
             system_prompt: card.system_prompt.clone(),
-            temperature: card.temperature.map(|t| t as f64).or(base.temperature),
-            max_tokens: card.max_tokens.or(base.max_tokens),
             max_context_tokens: base.max_context_tokens,
-            thinking_budget: base.thinking_budget,
             // Endpoint follows the provider: a card that switches provider
             // must not inherit the base's endpoint for a different backend.
             endpoint: if provider.is_some() && provider != Some(base.provider) {
@@ -296,15 +236,8 @@ impl SessionAgent {
             agent_description: Some(card.description.clone()),
             delegation_config: base.delegation_config.clone(),
             precognition_enabled: base.precognition_enabled,
-            precognition_results: base.precognition_results,
-            max_iterations: card.max_turns.or(base.max_iterations),
-            execution_timeout_secs: base.execution_timeout_secs,
             context_budget: base.context_budget,
             context_strategy: base.context_strategy.clone(),
-            context_window: base.context_window,
-            output_validation: base.output_validation.clone(),
-            validation_retries: base.validation_retries,
-            autocompact_threshold: base.autocompact_threshold,
             // `mode` is deliberately left alone. Modes are an open set declared
             // in Lua (`cru.modes.<name> = ...`) whose permission stance this
             // crate cannot see, so there is no ordering here to take a minimum
@@ -325,7 +258,7 @@ impl SessionAgent {
     ///
     /// Every surface that configures a session agent from config (CLI chat,
     /// ACP bridge, web session create) goes through this one builder so they
-    /// all get identical provider/model/temperature/MCP defaults. The
+    /// all get identical provider/model/MCP defaults. The
     /// `[chat]` values fill the gaps only when no default provider exists.
     pub fn internal_from_config(config: &crate::config::CliAppConfig) -> Self {
         let mut agent = Self::internal_defaults(Some(&config.llm), Some(&config.mcp));
@@ -333,8 +266,6 @@ impl SessionAgent {
             if let Some(model) = config.chat.model.clone() {
                 agent.model = model;
             }
-            agent.temperature = config.chat.temperature.map(|t| t as f64);
-            agent.max_tokens = config.chat.max_tokens;
             agent.endpoint = config.chat.endpoint.clone();
         }
         agent
@@ -344,27 +275,23 @@ impl SessionAgent {
     /// server list alone. The daemon holds these two sections without a full
     /// `CliAppConfig`, so it starts here and applies request overrides on top.
     /// Without a default provider the agent points at Ollama with
-    /// `DEFAULT_CHAT_MODEL`, no endpoint, no temperature and no token cap.
+    /// `DEFAULT_CHAT_MODEL` and no endpoint.
+    ///
+    /// Neither temperature nor a token cap is set here, or anywhere: both are
+    /// per-model inference settings, so genai picks the right default for the
+    /// model actually being called. Crucible's own 4096 cap silently truncated
+    /// every Anthropic reply that genai would have allowed 64000.
     pub fn internal_defaults(
         llm: Option<&crate::config::LlmConfig>,
         mcp: Option<&crate::config::McpConfig>,
     ) -> Self {
         let default = llm.and_then(|c| c.default_provider());
-        let (provider, model, provider_key, endpoint, temperature, max_tokens) = match default {
-            Some((key, p)) => (
-                p.provider_type,
-                p.model(),
-                key.clone(),
-                Some(p.endpoint()),
-                Some(p.temperature() as f64),
-                Some(p.max_tokens()),
-            ),
+        let (provider, model, provider_key, endpoint) = match default {
+            Some((key, p)) => (p.provider_type, p.model(), key.clone(), Some(p.endpoint())),
             None => (
                 BackendType::Ollama,
                 crate::config::DEFAULT_CHAT_MODEL.to_string(),
                 BackendType::Ollama.as_str().to_string(),
-                None,
-                None,
                 None,
             ),
         };
@@ -379,10 +306,7 @@ impl SessionAgent {
             provider,
             model,
             system_prompt: String::new(),
-            temperature,
-            max_tokens,
             max_context_tokens: None,
-            thinking_budget: None,
             endpoint,
             env_overrides: HashMap::new(),
             mcp_servers,
@@ -390,15 +314,8 @@ impl SessionAgent {
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,
-            precognition_results: default_precognition_results(),
-            max_iterations: None,
-            execution_timeout_secs: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: default_validation_retries(),
-            autocompact_threshold: None,
             tool_policy: None,
             mode: None,
         }
@@ -527,9 +444,6 @@ mod narrowing_tests {
             mcp_servers: Vec::new(),
             provider: None,
             model: None,
-            temperature: None,
-            max_tokens: None,
-            max_turns: None,
             mode: None,
             tools,
             config: HashMap::new(),
@@ -710,8 +624,6 @@ mod internal_defaults_tests {
         assert_eq!(agent.provider_key.as_deref(), Some("ollama"));
         assert_eq!(agent.model, DEFAULT_CHAT_MODEL);
         assert_eq!(agent.endpoint, None);
-        assert_eq!(agent.temperature, None);
-        assert_eq!(agent.max_tokens, None);
         assert!(agent.mcp_servers.is_empty());
         assert_eq!(agent.delegation_config, None);
     }
@@ -735,8 +647,6 @@ mod internal_defaults_tests {
         assert_eq!(agent.provider_key.as_deref(), Some("anthropic"));
         assert_eq!(agent.model, "claude-x");
         assert!(agent.endpoint.is_some());
-        assert!(agent.temperature.is_some());
-        assert!(agent.max_tokens.is_some());
     }
 
     #[test]
@@ -744,7 +654,6 @@ mod internal_defaults_tests {
         let config = CliAppConfig {
             chat: crate::config::ChatConfig {
                 model: Some("chat-model".to_string()),
-                temperature: Some(0.25),
                 endpoint: Some("http://chat".to_string()),
                 ..Default::default()
             },
@@ -754,7 +663,6 @@ mod internal_defaults_tests {
         let agent = SessionAgent::internal_from_config(&config);
 
         assert_eq!(agent.model, "chat-model");
-        assert_eq!(agent.temperature, Some(0.25));
         assert_eq!(agent.endpoint.as_deref(), Some("http://chat"));
         assert_eq!(agent.provider, BackendType::Ollama);
     }

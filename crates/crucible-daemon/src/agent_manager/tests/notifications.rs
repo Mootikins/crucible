@@ -2,7 +2,7 @@
 //!
 //! The hub's own tests call the Rust sink directly. These two drive the call
 //! from Lua on each daemon VM, so a missing `upgrade_with_notify_sink` in
-//! `session_vm.rs` or in `DaemonPluginLoader` fails here.
+//! `DaemonPluginLoader` fails here.
 
 use super::*;
 use crate::daemon_plugins::DaemonPluginLoader;
@@ -14,13 +14,12 @@ struct HubFixture {
     _data_home: TempDir,
     _workspace: TempDir,
     session_id: String,
-    agent_manager: AgentManager,
     hub: Arc<NotificationHub>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
 }
 
 /// One live session with the kiln `kiln`, and a hub bound to the agent
-/// manager BEFORE any session VM exists. `ReactorTestHarness::new` builds
+/// manager BEFORE the plugin boot binds one. `ReactorTestHarness::new` builds
 /// the VM inside `configure_agent`, which is too early for a hub bound
 /// afterwards; the daemon binds the hub at boot, before any session runs.
 async fn hub_fixture() -> HubFixture {
@@ -35,38 +34,13 @@ async fn hub_fixture() -> HubFixture {
         event_tx,
     ));
     hub.spawn_drain();
-    let agent_manager = create_test_agent_manager(session_manager);
-    agent_manager.set_notification_hub(hub.clone());
     HubFixture {
         _data_home: data_home,
         _workspace: workspace,
         session_id: session.id.to_string(),
-        agent_manager,
         hub,
         event_rx,
     }
-}
-
-#[tokio::test]
-async fn cru_log_notify_on_a_session_vm_reaches_the_hub_stamped_with_the_session() {
-    let mut f = hub_fixture().await;
-
-    let state = f.agent_manager.get_or_create_session_state(&f.session_id);
-    state
-        .lock()
-        .await
-        .lua
-        .load(r#"cru.log.notify("from the session vm")"#)
-        .exec()
-        .expect("cru.log.notify must run on a session VM");
-
-    let event = next_event_or_skip(&mut f.event_rx, "notification_added").await;
-    assert_eq!(event.session_id, f.session_id);
-    assert_eq!(event.data["notification"]["message"], "from the session vm");
-    assert_eq!(
-        event.data["notification"]["scope"]["kilns"][0], "kiln",
-        "the session VM's sink must stamp the session, so the hub takes its kilns"
-    );
 }
 
 #[tokio::test]

@@ -157,25 +157,15 @@ impl Group {
             | "kiln_notes_indexed"
             | "plugins_discovered"
             | "mcp_servers_ready" => Self::Setup,
-            // Settings (18)
+            // Settings (12)
             "model_switched"
             | "mode_changed"
             | "scope_changed"
             | "title_changed"
-            | "thinking_budget_changed"
             | "system_prompt_changed"
             | "precognition_toggled"
-            | "precognition_results_changed"
-            | "temperature_changed"
-            | "max_tokens_changed"
-            | "max_iterations_changed"
-            | "execution_timeout_changed"
             | "context_budget_changed"
-            | "autocompact_threshold_changed"
-            | "context_strategy_changed"
-            | "context_window_changed"
-            | "output_validation_changed"
-            | "validation_retries_changed" => Self::Settings,
+            | "context_strategy_changed" => Self::Settings,
             // Job (7)
             "delegation_spawned"
             | "delegation_completed"

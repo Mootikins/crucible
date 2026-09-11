@@ -41,7 +41,7 @@ Precognition retrieves at the **note level**. During indexing, each block of a n
 
 The search is semantic. If you ask about "staying productive while remote," Precognition can find notes about "work from home tips" or "focus strategies" even if those exact words don't appear in your message.
 
-Every kiln the session is attached to is searched. The set is flat — no member is privileged by having been attached first — so results are merged and ranked together and one guard applies uniformly: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]). All kilns share the single `[enrichment]` config, so there is no per-kiln embedding model to reconcile.
+Every kiln the session is attached to is searched. The set is flat — no member is privileged by having been attached first — so results are merged and ranked together and one guard applies uniformly: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]). All kilns share the single `enrichment` config, so there is no per-kiln embedding model to reconcile.
 
 ## Configuration
 
@@ -57,11 +57,15 @@ Precognition is **on by default**. You can control it from within a chat session
 
 ### Number of Results
 
-Control how many notes get injected per message (1 to 20, default is 5):
+How many notes get injected per message is a config key, `chat.precognition_results`
+(default 5). It is one value per install rather than per session:
+
+```lua
+cru.config.set { chat = { precognition_results = 3 } }
+```
 
 ```
-:set precognition.results=3    # inject up to 3 notes
-:set precognition.results=10   # inject up to 10 notes
+:set chat.precognition_results=10
 ```
 
 More results means more context for the agent, but also uses more of the context window. Start with the default and adjust based on how your conversations feel.
@@ -72,7 +76,7 @@ More results means more context for the agent, but also uses more of the context
 :settings
 ```
 
-This shows all current values, including `precognition` and `precognition.results`.
+This shows all current values, including `precognition`. The result count is a config key — `:config` shows it with the rest of `chat`.
 
 ### Customizing with Lua
 
@@ -84,7 +88,7 @@ Plugins can reshape Precognition through two event seams:
 Register handlers with `cru.on("precognition_select", ...)` / `cru.on("precognition_format", ...)`. See [[Help/Extending/Event Hooks]] for handler signatures and semantics.
 
 Both seams name the kiln a note came from as `note.kiln` — the key of its
-`[kilns]` entry, not its directory. A handler can tell one corpus from another
+`kilns` entry, not its directory. A handler can tell one corpus from another
 without ever being handed a filesystem path.
 
 ## When It Activates
@@ -153,7 +157,7 @@ They work well together. Let Precognition handle the background context while yo
 - Verify an embedding provider is configured
 
 **Too much irrelevant context**
-- Lower the result count: `:set precognition.results=2`
+- Lower the result count: `:set chat.precognition_results=2`
 - Your notes might need clearer, more focused content
 
 **Responses are slow**

@@ -245,11 +245,6 @@ mod wiring_tests {
         let dir = root.join(PLUGIN);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
-            dir.join("plugin.yaml"),
-            format!("name: {PLUGIN}\nversion: \"0.1.0\"\nmain: init.lua\n"),
-        )
-        .unwrap();
-        std::fs::write(
             dir.join("init.lua"),
             r#"
             _G.optplug_state = { image = "alpine" }

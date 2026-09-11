@@ -3,17 +3,14 @@
 //! Drives an `Agent::turn()` stream, emits session events, dispatches
 //! tool calls, and steers the agent's continuation via the inbound
 //! `mpsc<TurnEvent>` channel. The plan's "one channel topology, not
-//! three" rule: `ToolResult`, `HandlerInjection`, and `DepthCapHit`
-//! all arrive on the same inbound channel and drive matching
-//! adapter-side behaviour.
+//! three" rule: `ToolResult` and `HandlerInjection` both arrive on the
+//! same inbound channel and drive matching adapter-side behaviour.
 //!
-//! Three tool-loop re-entry points all share the inbound channel:
+//! Two tool-loop re-entry points share the inbound channel:
 //!
 //! 1. **Tool continuation** — runtime sends `ToolResult` after
 //!    dispatching the agent's `ToolCall`.
-//! 2. **Depth-cap exhaustion** — runtime sends `DepthCapHit`; adapter
-//!    restarts the inner stream with the depth-cap final-answer prompt.
-//! 3. **Handler injection** — runtime's `turn:complete` handler returns
+//! 2. **Handler injection** — runtime's `turn:complete` handler returns
 //!    injected content; runtime re-enters `execute_agent_stream`
 //!    recursively with `is_continuation = true`. (The inbound channel
 //!    handles this within a single adapter turn, but handler
@@ -23,7 +20,6 @@
 use super::super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::protocol::session_events::ContextLimitSource;
-use crucible_core::session::{validate_output, OutputValidation};
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
@@ -33,20 +29,8 @@ use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 
-use crate::agent_manager::vm_pass::{fold_vms, PluginHandlers};
+use crate::agent_manager::vm_pass::{run_handlers, PluginHandlers};
 use tokio::sync::mpsc;
-
-/// Outcome of running output validation on an accumulated response.
-enum ValidationOutcome {
-    /// Validation passes (or is disabled). Continue normally.
-    Pass,
-    /// Validation failed but retries remain — the carried string is the
-    /// synthetic user message to inject for the regeneration turn.
-    Retry(String),
-    /// Validation failed and `validation_retries` is exhausted. The
-    /// caller should bail out; an `ended` event has already been emitted.
-    Exhausted,
-}
 
 impl AgentManager {
     #[allow(clippy::ptr_arg)]
@@ -121,7 +105,6 @@ impl AgentManager {
             &stream_ctx.session_id,
             &stream_ctx.message_id,
             accumulated_response,
-            &stream_ctx.session_state,
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             is_continuation,
         )
@@ -157,79 +140,6 @@ impl AgentManager {
         injection
     }
 
-    /// Validate the assistant response against the configured
-    /// `OutputValidation` and return the next action.
-    ///
-    /// `Pass` when validation is disabled or the response is valid.
-    /// `Retry` carries the synthetic user message to send next when
-    /// retries remain. `Exhausted` emits an `ended` event with reason
-    /// `error: output validation exhausted retries` and returns.
-    fn validate_response_or_retry(
-        stream_ctx: &StreamContext,
-        stream_config: &AgentStreamConfig,
-        accumulated_response: &str,
-        attempts_so_far: u32,
-    ) -> ValidationOutcome {
-        if matches!(stream_config.output_validation, OutputValidation::None) {
-            return ValidationOutcome::Pass;
-        }
-        // Lua validators bypass the pure `validate_output` (which is a
-        // no-op for the `Lua` variant) and dispatch through the plugin
-        // registry. Other variants flow through `validate_output`.
-        let validation_result: Result<(), String> = match &stream_config.output_validation {
-            OutputValidation::Lua { name } => match (
-                stream_config.lua_validators.as_ref(),
-                stream_config.plugin_lua.as_ref(),
-            ) {
-                (Some(registry), Some(lua)) => {
-                    match registry.run(lua, name, accumulated_response) {
-                        Ok(verdict) => verdict,
-                        Err(e) => Err(format!("lua validator '{name}' invocation error: {e}")),
-                    }
-                }
-                _ => Err(format!(
-                    "lua validator '{name}' unavailable: plugin runtime not bound"
-                )),
-            },
-            other => validate_output(accumulated_response, other),
-        };
-        let Err(reason) = validation_result else {
-            return ValidationOutcome::Pass;
-        };
-        if attempts_so_far >= stream_config.validation_retries {
-            warn!(
-                session_id = %stream_ctx.session_id,
-                attempts = attempts_so_far,
-                retries = stream_config.validation_retries,
-                reason = %reason,
-                "Output validation exhausted retries"
-            );
-            if !emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::ended(
-                    &stream_ctx.session_id,
-                    "error: output validation exhausted retries",
-                ),
-            ) {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    "No subscribers for validation-exhausted ended event"
-                );
-            }
-            return ValidationOutcome::Exhausted;
-        }
-        info!(
-            session_id = %stream_ctx.session_id,
-            attempt = attempts_so_far + 1,
-            retries = stream_config.validation_retries,
-            reason = %reason,
-            "Output validation failed; injecting retry prompt"
-        );
-        ValidationOutcome::Retry(format!(
-            "Output validation failed: {reason}. Please regenerate your previous response so it satisfies the validation requirement."
-        ))
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
@@ -238,9 +148,6 @@ impl AgentManager {
         stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
         is_continuation: bool,
-        mut tool_depth: usize,
-        max_tool_depth: usize,
-        validation_attempts: u32,
     ) -> StreamOutcome {
         let ttft_local = Instant::now();
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
@@ -322,9 +229,6 @@ impl AgentManager {
         // pass-through, which `continue`s before ever reaching the dispatch
         // site. Reading it as "dispatched" made the empty-response guard fire
         // on every delegated turn that ran tools and narrated nothing.
-        // Depth-capped calls deliberately do not count: they are dropped
-        // undispatched, and the guard's `depth_cap_triggered` arm is what
-        // should report them.
         let mut saw_tool_activity = false;
         // Args of tool calls an ACP-style agent announced but executed itself,
         // kept so the pass-through `tool_result` below can hand handlers the
@@ -332,16 +236,6 @@ impl AgentManager {
         // call id; entries are removed when the matching result arrives.
         let mut acp_tool_args: HashMap<String, serde_json::Value> = HashMap::new();
 
-        // Batch detection: true once a ToolCall is seen in this batch,
-        // reset on the next non-ToolCall event from the agent.
-        let mut in_tool_batch = false;
-        // When true, the current batch exceeded max_tool_depth — skip
-        // dispatching its remaining ToolCalls and let the adapter restart
-        // on the depth-cap prompt.
-        let mut capped_this_batch = false;
-        // Set once the runtime sent DepthCapHit, so the empty-response
-        // branch below can surface the right error reason.
-        let mut depth_cap_triggered = false;
         // Conjunctive early-stop signals collected per batch. The loop
         // ends after the batch only when every result in this vec is
         // true (and the vec is non-empty) — one tool can't unilaterally
@@ -515,63 +409,6 @@ impl AgentManager {
                         continue;
                     }
 
-                    // New batch? increment depth, possibly cap.
-                    if !in_tool_batch {
-                        // If the depth cap already fired once and the
-                        // model is *still* calling tools, hard-stop.
-                        // Otherwise we'd ping-pong DepthCapHit → restart
-                        // → ToolCall → DepthCapHit forever.
-                        if depth_cap_triggered {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                "tool call emitted after depth-cap response; hard-stopping"
-                            );
-                            if !emit_event(
-                                &stream_ctx.event_tx,
-                                SessionEventMessage::ended(
-                                    &stream_ctx.session_id,
-                                    "error: max_tool_depth exceeded".to_string(),
-                                ),
-                            ) {
-                                warn!(
-                                    session_id = %stream_ctx.session_id,
-                                    "No subscribers for hard-stop ended event"
-                                );
-                            }
-                            return StreamOutcome::Failed("max_tool_depth exceeded".into());
-                        }
-
-                        in_tool_batch = true;
-                        if tool_depth >= max_tool_depth {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                max_tool_depth = max_tool_depth,
-                                "max_tool_depth reached, forcing final response without tools"
-                            );
-                            if inbound_tx
-                                .send(TurnEvent::DepthCapHit {
-                                    max_depth: max_tool_depth,
-                                })
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                            capped_this_batch = true;
-                            depth_cap_triggered = true;
-                            continue;
-                        }
-                        tool_depth += 1;
-                        capped_this_batch = false;
-                    }
-
-                    if capped_this_batch {
-                        // Remaining ToolCalls in a capped batch are
-                        // dropped; the adapter has already been told to
-                        // restart and will discard them.
-                        continue;
-                    }
-
                     saw_tool_activity = true;
 
                     // Commit to scheduler-owned conversation tree
@@ -685,13 +522,6 @@ impl AgentManager {
                         } else {
                             last_failure_key = None;
                             consecutive_failure_count = 0;
-
-                            if tool_depth == max_tool_depth.saturating_sub(2) {
-                                tool_result.result.push_str(&format!(
-                                    " [Note: You have used {} of {} available tool turns.]",
-                                    tool_depth, max_tool_depth
-                                ));
-                            }
                         }
                     }
 
@@ -892,13 +722,6 @@ impl AgentManager {
                     }
                 }
                 TurnEvent::ToolBatchEnd => {
-                    // Adapter has finished emitting all tool calls for
-                    // this batch and is about to wait for ToolResults.
-                    // Reset batch tracking so the next ToolCall counts
-                    // as a new batch and re-checks the depth cap.
-                    in_tool_batch = false;
-                    capped_this_batch = false;
-
                     // Conjunctive early-stop: if every result in this
                     // batch set terminate=true, end the turn now instead
                     // of looping back to the model. Empty batches are
@@ -984,9 +807,7 @@ impl AgentManager {
                         });
                     }
                 }
-                TurnEvent::HandlerInjection { .. }
-                | TurnEvent::DepthCapHit { .. }
-                | TurnEvent::ContextAttach { .. } => {
+                TurnEvent::HandlerInjection { .. } | TurnEvent::ContextAttach { .. } => {
                     // Inbound-only variants. Adapter should not echo
                     // them, but tolerate if it ever does.
                 }
@@ -1020,14 +841,10 @@ impl AgentManager {
 
         // Empty response handling.
         if accumulated_response.trim().is_empty() && !saw_tool_activity {
-            let error_reason = if depth_cap_triggered {
-                "error: max_tool_depth exceeded".to_string()
-            } else {
-                format!(
-                    "error: {}",
-                    crate::provider::genai_handle::EMPTY_RESPONSE_ERROR
-                )
-            };
+            let error_reason = format!(
+                "error: {}",
+                crate::provider::genai_handle::EMPTY_RESPONSE_ERROR
+            );
             error!(
                 session_id = %stream_ctx.session_id,
                 "LLM stream completed with no content and no tool calls"
@@ -1064,30 +881,6 @@ impl AgentManager {
         )
         .await;
 
-        // If the Lua reactor didn't produce an injection, run output
-        // validation. Failure produces a synthetic "regenerate" prompt
-        // and increments the validation_attempts counter; exhaustion
-        // emits an ended event and aborts the turn.
-        let mut next_validation_attempts = validation_attempts;
-        let injection = match injection {
-            Some(_) => injection,
-            None => match Self::validate_response_or_retry(
-                &stream_ctx,
-                &stream_config,
-                accumulated_response,
-                validation_attempts,
-            ) {
-                ValidationOutcome::Pass => None,
-                ValidationOutcome::Retry(prompt) => {
-                    next_validation_attempts = validation_attempts + 1;
-                    Some((prompt, "after".to_string()))
-                }
-                ValidationOutcome::Exhausted => {
-                    return StreamOutcome::Failed("output validation exhausted retries".into());
-                }
-            },
-        };
-
         let mut continuation_outcome = StreamOutcome::Completed;
         if let Some((injected_content, _)) = injection {
             drop(event_stream);
@@ -1104,7 +897,7 @@ impl AgentManager {
                 session_id: stream_ctx.session_id.clone(),
                 message_id: format!("msg-{}", uuid::Uuid::new_v4()),
                 event_tx: stream_ctx.event_tx.clone(),
-                session_state: stream_ctx.session_state.clone(),
+                slot: stream_ctx.slot.clone(),
                 workspace_path: stream_ctx.workspace_path.clone(),
                 session_dir: stream_ctx.session_dir.clone(),
                 whitelists_dir: stream_ctx.whitelists_dir.clone(),
@@ -1112,7 +905,6 @@ impl AgentManager {
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,
                 conversation_tree: stream_ctx.conversation_tree.clone(),
-                slot: stream_ctx.slot.clone(),
                 session_manager: stream_ctx.session_manager.clone(),
                 // Don't re-inject Precognition on a validation retry —
                 // the original turn already prepended it.
@@ -1136,9 +928,6 @@ impl AgentManager {
                 stream_config.clone(),
                 accumulated_response,
                 true,
-                tool_depth,
-                max_tool_depth,
-                next_validation_attempts,
             ))
             .await;
         }
@@ -1172,7 +961,7 @@ impl AgentManager {
             );
         }
 
-        // Observational event; session VM first, then plugin VM with the
+        // Observational event, run against the handler VM with the
         // state lock released (plugin Lua may run for seconds).
         let post_llm_event = SessionEvent::Custom {
             name: "post_llm_call".to_string(),
@@ -1182,11 +971,10 @@ impl AgentManager {
                 "duration_ms": duration_ms,
             }),
         };
-        fold_vms(
-            &stream_ctx.session_state,
+        run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             (),
-            |_, registry, lua, ()| {
+            |registry, lua, ()| {
                 let post_llm_event = &post_llm_event;
                 let session_id = stream_ctx.session_id.as_str();
                 Box::pin(async move {
@@ -1226,7 +1014,6 @@ impl AgentManager {
         session_id: &str,
         message_id: &str,
         response: &str,
-        session_state: &Arc<Mutex<SessionEventState>>,
         plugin_handlers: Option<&PluginHandlers>,
         is_continuation: bool,
     ) -> Option<(String, String)> {
@@ -1240,31 +1027,26 @@ impl AgentManager {
             }),
         };
 
-        // Session VM first, plugin VM second — the uniform registry order.
+        // The handler VM's registry — the one that runs Lua files.
         // Inject is last-writer-wins within a registry and across them, so a
         // plugin's inject overrides a session handler's; a session that must
         // win can use priority within its own registry, but cross-registry
         // the later (plugin) pass acts last by the same rule that lets
         // plugin transforms see session transforms' output.
-        fold_vms(
-            session_state,
-            plugin_handlers,
-            None,
-            |_, registry, lua, pending_injection| {
-                let event = &event;
-                Box::pin(async move {
-                    let injection = Self::run_turn_complete_handlers(
-                        session_id,
-                        &registry,
-                        &lua,
-                        event,
-                        is_continuation,
-                    )
-                    .await;
-                    ControlFlow::Continue(injection.or(pending_injection))
-                })
-            },
-        )
+        run_handlers(plugin_handlers, None, |registry, lua, pending_injection| {
+            let event = &event;
+            Box::pin(async move {
+                let injection = Self::run_turn_complete_handlers(
+                    session_id,
+                    &registry,
+                    &lua,
+                    event,
+                    is_continuation,
+                )
+                .await;
+                ControlFlow::Continue(injection.or(pending_injection))
+            })
+        })
         .await
     }
 

@@ -99,90 +99,7 @@ async fn context_budget_round_trips() {
     assert_get_returns("context-budget", "context_budget", json!(111)).await;
 }
 
-#[tokio::test]
-async fn context_window_round_trips() {
-    assert_put_reaches_daemon(
-        "context-window",
-        "session.set_context_window",
-        "context_window",
-        json!(32000),
-    )
-    .await;
-    assert_get_returns("context-window", "context_window", json!(222)).await;
-}
-
-/// Compared with a tolerance, not for equality: the daemon's setter takes
-/// `Option<f32>`, so `0.9` from the browser is narrowed to f32 and widened again
-/// for JSON, arriving as `0.8999999761581421`. That is the daemon's field type,
-/// not a fault in this route — asserting exact equality here would encode a
-/// precision the wire does not have. `0.75` survives exactly because it is
-/// representable in binary.
-#[tokio::test]
-async fn autocompact_threshold_round_trips() {
-    let uri = "/api/session/s1/config/autocompact-threshold";
-    let (status, _, mock) = call("PUT", uri, Some(json!({ "autocompact_threshold": 0.9 }))).await;
-    assert_eq!(status, StatusCode::OK);
-
-    let params = mock
-        .received_params("session.set_autocompact_threshold")
-        .expect("PUT did not call session.set_autocompact_threshold");
-    let sent = params
-        .get("autocompact_threshold")
-        .and_then(Value::as_f64)
-        .unwrap_or_else(|| panic!("autocompact_threshold missing from {params}"));
-    assert!(
-        (sent - 0.9).abs() < 1e-6,
-        "PUT must forward ~0.9, got {sent} (params {params})"
-    );
-
-    assert_get_returns(
-        "autocompact-threshold",
-        "autocompact_threshold",
-        json!(0.75),
-    )
-    .await;
-}
-
 // ── Execution ─────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn max_iterations_round_trips() {
-    assert_put_reaches_daemon(
-        "max-iterations",
-        "session.set_max_iterations",
-        "max_iterations",
-        json!(12),
-    )
-    .await;
-    assert_get_returns("max-iterations", "max_iterations", json!(33)).await;
-}
-
-/// The knob is `execution_timeout`; the wire field is `timeout_secs`. This is
-/// the test that fails if the web structs are named after the knob — which is
-/// exactly what a reviewer reading `session.set_execution_timeout` would write.
-#[tokio::test]
-async fn execution_timeout_round_trips_under_timeout_secs_not_execution_timeout() {
-    assert_put_reaches_daemon(
-        "execution-timeout",
-        "session.set_execution_timeout",
-        "timeout_secs",
-        json!(300),
-    )
-    .await;
-    assert_get_returns("execution-timeout", "timeout_secs", json!(44)).await;
-}
-
-#[tokio::test]
-async fn validation_retries_round_trips() {
-    assert_put_reaches_daemon(
-        "validation-retries",
-        "session.set_validation_retries",
-        "validation_retries",
-        json!(3),
-    )
-    .await;
-    assert_get_returns("validation-retries", "validation_retries", json!(5)).await;
-}
 
 // ── Prompt and enum-valued knobs ──────────────────────────────────────────
 
@@ -196,30 +113,6 @@ async fn context_strategy_round_trips_its_string_spelling() {
     )
     .await;
     assert_get_returns("context-strategy", "context_strategy", json!("recent")).await;
-}
-
-#[tokio::test]
-async fn output_validation_round_trips_its_string_spelling() {
-    assert_put_reaches_daemon(
-        "output-validation",
-        "session.set_output_validation",
-        "output_validation",
-        json!("lenient"),
-    )
-    .await;
-    assert_get_returns("output-validation", "output_validation", json!("strict")).await;
-}
-
-#[tokio::test]
-async fn system_prompt_round_trips() {
-    assert_put_reaches_daemon(
-        "system-prompt",
-        "session.set_system_prompt",
-        "system_prompt",
-        json!("you are a librarian"),
-    )
-    .await;
-    assert_get_returns("system-prompt", "system_prompt", json!("be terse")).await;
 }
 
 // ── Nullable knobs ────────────────────────────────────────────────────────
@@ -239,33 +132,11 @@ async fn system_prompt_round_trips() {
 /// wire. That is what this asserts.
 #[tokio::test]
 async fn clearing_an_optional_knob_never_sends_a_value() {
-    for (tail, rpc_method, wire_field) in [
-        (
-            "context-budget",
-            "session.set_context_budget",
-            "context_budget",
-        ),
-        (
-            "context-window",
-            "session.set_context_window",
-            "context_window",
-        ),
-        (
-            "autocompact-threshold",
-            "session.set_autocompact_threshold",
-            "autocompact_threshold",
-        ),
-        (
-            "max-iterations",
-            "session.set_max_iterations",
-            "max_iterations",
-        ),
-        (
-            "execution-timeout",
-            "session.set_execution_timeout",
-            "timeout_secs",
-        ),
-    ] {
+    for (tail, rpc_method, wire_field) in [(
+        "context-budget",
+        "session.set_context_budget",
+        "context_budget",
+    )] {
         let uri = format!("/api/session/s1/config/{tail}");
         let (status, _, mock) = call("PUT", &uri, Some(json!({ wire_field: Value::Null }))).await;
         assert_eq!(status, StatusCode::OK, "PUT {uri} with null should succeed");

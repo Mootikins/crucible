@@ -4,53 +4,26 @@ use tracing::{info, warn};
 
 impl PluginManager {
     pub fn load(&mut self, name: &str) -> LifecycleResult<()> {
-        let (is_enabled, required_deps, main_path, current_state) = {
+        let (main_path, current_state) = {
             let plugin = self
                 .plugins
                 .get(name)
                 .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
 
-            let deps: Vec<String> = plugin
-                .manifest
-                .required_dependencies()
-                .map(|d| d.name.clone())
-                .collect();
-
-            (
-                plugin.manifest.is_enabled(),
-                deps,
-                plugin.main_path(),
-                plugin.state,
-            )
+            (plugin.main_path(), plugin.state)
         };
 
         if current_state == PluginState::Active {
             return Err(LifecycleError::AlreadyLoaded(name.to_string()));
         }
 
-        if !is_enabled {
-            if let Some(plugin) = self.plugins.get_mut(name) {
-                plugin.state = PluginState::Disabled;
-            }
-            info!("Plugin {} is disabled, skipping load", name);
+        // A plugin already marked disabled stays that way until something
+        // enables it. Being ON the runtimepath is what enables a plugin —
+        // there is no `enabled` field a plugin declares about itself — so
+        // this is the operator's `disable()` taking effect, nothing else.
+        if current_state == PluginState::Disabled {
+            info!("Plugin {name} is disabled, skipping load");
             return Ok(());
-        }
-
-        for dep_name in &required_deps {
-            if !self.plugins.contains_key(dep_name) {
-                return Err(LifecycleError::DependencyNotSatisfied {
-                    plugin: name.to_string(),
-                    dependency: dep_name.clone(),
-                });
-            }
-
-            let dep_plugin = &self.plugins[dep_name];
-            if dep_plugin.state != PluginState::Active {
-                return Err(LifecycleError::DependencyNotSatisfied {
-                    plugin: name.to_string(),
-                    dependency: dep_name.clone(),
-                });
-            }
         }
 
         if !main_path.exists() {
@@ -69,7 +42,10 @@ impl PluginManager {
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Active;
         plugin.last_error = None;
-        info!("Loaded plugin: {} v{}", name, plugin.version());
+        match plugin.version() {
+            Some(version) => info!("Loaded plugin: {name} v{version}"),
+            None => info!("Loaded plugin: {name} (no version declared)"),
+        }
 
         self.call_on_load_hook(name);
 
@@ -91,8 +67,15 @@ impl PluginManager {
     }
 
     pub fn load_all(&mut self) -> LifecycleResult<Vec<String>> {
-        let names: Vec<String> = self.plugins.keys().cloned().collect();
-        let order = self.resolve_load_order(&names)?;
+        // No dependency ordering. A plugin does not declare that another must
+        // load first: in Vim's model a dependency is another entry on the
+        // runtimepath, which the user adds, not a runtime contract between
+        // plugins. `resolve_load_order` and the manifest `dependencies:` list
+        // it read are both gone.
+        //
+        // Sorted so the order is at least deterministic across runs.
+        let mut order: Vec<String> = self.plugins.keys().cloned().collect();
+        order.sort();
 
         let mut loaded = Vec::new();
         for name in order {
@@ -131,22 +114,6 @@ impl PluginManager {
 
         if current_state != PluginState::Active {
             return Ok(());
-        }
-
-        for (other_name, other_plugin) in &self.plugins {
-            if other_name == name {
-                continue;
-            }
-            if other_plugin.state == PluginState::Active {
-                for dep in &other_plugin.manifest.dependencies {
-                    if dep.name == name && !dep.optional {
-                        return Err(LifecycleError::LoadError(format!(
-                            "Cannot unload {}: {} depends on it",
-                            name, other_name
-                        )));
-                    }
-                }
-            }
         }
 
         self.call_on_unload_hook(name);
@@ -220,7 +187,7 @@ impl PluginManager {
             .get_mut(name)
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
 
-        plugin.manifest.enabled = Some(true);
+        plugin.state = PluginState::Discovered;
 
         if plugin.state == PluginState::Disabled {
             self.load(name)?;
@@ -237,7 +204,6 @@ impl PluginManager {
             .get_mut(name)
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
 
-        plugin.manifest.enabled = Some(false);
         plugin.state = PluginState::Disabled;
 
         Ok(())

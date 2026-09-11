@@ -46,18 +46,24 @@ Within one directory, the config order in `rules_files` decides.
 
 ## Configuration
 
-Customize which files to search for in your `config.toml`:
+Customize which files to search for in your `init.lua`:
 
-```toml
-[context]
-rules_files = ["AGENTS.md", ".rules", ".github/copilot-instructions.md"]
+```lua
+cru.config.set({
+    context = {
+        rules_files = { "AGENTS.md", ".rules", ".github/copilot-instructions.md" },
+    },
+})
 ```
 
 To add CLAUDE.md or .cursorrules:
 
-```toml
-[context]
-rules_files = ["AGENTS.md", "CLAUDE.md", ".rules", ".cursorrules"]
+```lua
+cru.config.set({
+    context = {
+        rules_files = { "AGENTS.md", "CLAUDE.md", ".rules", ".cursorrules" },
+    },
+})
 ```
 
 ## Writing Effective Rules

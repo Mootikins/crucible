@@ -184,7 +184,7 @@ impl StatuslineExprRegistry {
 
 /// Register `cru.statusline.set/clear` on the `cru` table.
 ///
-/// The registry is passed in, never created here. Session VMs are lazy *and*
+/// The registry is passed in, never created here. VMs are built lazily *and*
 /// cached, so a VM built before a late `OnceLock` bind would hold a nil function
 /// permanently — and since this fails open, the value would simply never appear,
 /// with nothing logged. Owning the registry eagerly upstream removes the race.

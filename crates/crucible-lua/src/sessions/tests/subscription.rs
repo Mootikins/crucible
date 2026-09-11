@@ -110,14 +110,6 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         unimplemented!()
     }
 
-    fn set_output_validation(
-        &self,
-        _: String,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        unimplemented!()
-    }
-
     fn undo(
         &self,
         _: String,
