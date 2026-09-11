@@ -436,8 +436,7 @@ mod tests {
             .unwrap();
         lua.globals().set("_probe", probe).unwrap();
 
-        let previous =
-            crate::plugin_context::enter_plugin(&lua, "consolidation", false);
+        let previous = crate::plugin_context::enter_plugin(&lua, "consolidation", false);
         lua.load(r#"cru.schedule(0.05, function() _probe() end)"#)
             .eval_async::<Value>()
             .await

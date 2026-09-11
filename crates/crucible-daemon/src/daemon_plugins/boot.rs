@@ -877,8 +877,7 @@ fn boot_load_plugin_module(
     // `PluginManager` entry for the plugin yet. The one grant read as
     // authority is `intercept_tools`, and a boot-time require must not carry
     // it on a manifest nobody has admitted.
-    let previous =
-        crucible_lua::enter_plugin(lua, plugin, false);
+    let previous = crucible_lua::enter_plugin(lua, plugin, false);
     let result: mlua::Result<Value> = lua
         .load(&source)
         .set_name(format!("@{}", file.display()))

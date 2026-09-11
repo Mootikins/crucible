@@ -207,11 +207,7 @@ mod tests {
         lua.globals().set("_probe", probe).unwrap();
         lua.globals().set("ran", false).unwrap();
 
-        let previous = crate::plugin_context::enter_plugin(
-            &lua,
-            "kanban",
-            false,
-        );
+        let previous = crate::plugin_context::enter_plugin(&lua, "kanban", false);
         lua.load(r#"cru.timer.spawn(function() ran = _probe() end)"#)
             .exec_async()
             .await

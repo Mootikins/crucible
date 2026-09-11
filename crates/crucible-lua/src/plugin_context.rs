@@ -88,7 +88,9 @@ struct PluginIntercepts(std::collections::HashMap<String, bool>);
 /// Called by the loaders, which read what the operator installed. Idempotent —
 /// a reload re-records, so an edit to the declaration takes effect.
 pub fn record_plugin_intercept(lua: &Lua, name: &str, may_intercept: bool) {
-    let mut recorded = lua.remove_app_data::<PluginIntercepts>().unwrap_or_default();
+    let mut recorded = lua
+        .remove_app_data::<PluginIntercepts>()
+        .unwrap_or_default();
     recorded.0.insert(name.to_string(), may_intercept);
     lua.set_app_data(recorded);
 }

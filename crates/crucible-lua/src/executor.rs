@@ -640,11 +640,7 @@ mod tests {
         .unwrap();
 
         // Register the hook as the `reflection` plugin does: inside its load.
-        let previous = crate::plugin_context::enter_plugin(
-            executor.lua(),
-            "reflection",
-            false,
-        );
+        let previous = crate::plugin_context::enter_plugin(executor.lua(), "reflection", false);
         executor
             .lua()
             .load(
@@ -700,11 +696,7 @@ mod tests {
         )
         .unwrap();
 
-        let previous = crate::plugin_context::enter_plugin(
-            executor.lua(),
-            "reflection",
-            false,
-        );
+        let previous = crate::plugin_context::enter_plugin(executor.lua(), "reflection", false);
         executor
             .lua()
             .load(
