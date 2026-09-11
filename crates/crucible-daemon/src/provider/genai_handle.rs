@@ -29,7 +29,7 @@ pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration
 /// dropped from the request and replaced by the discovery bridge.
 const TOOL_SCHEMA_BUDGET_SHARE: f64 = 0.15;
 
-/// Message pairs that `SlidingWindow` and `Summarize` keep.
+/// Message pairs that `Summarize` keeps.
 ///
 /// This was a session knob, `context_window`, with two readers and two units:
 /// message pairs here, tokens in `visible_tools`. No value was right for both.
@@ -504,8 +504,7 @@ fn estimate_message_tokens(msg: &ChatMessage) -> usize {
 pub(crate) enum BudgetAction {
     /// Budget was respected without changes (no budget set, or under).
     NoChange,
-    /// Mutated in place (Truncate or SlidingWindow). The caller has
-    /// nothing to do.
+    /// Mutated in place (Truncate). The caller has nothing to do.
     Mutated,
     /// Summarize selected: a placeholder was inserted at
     /// `placeholder_idx`, and `drained` holds the messages that were
@@ -558,18 +557,6 @@ fn enforce_context_budget(
     match strategy {
         ContextStrategy::Truncate => {
             truncate_to_budget(messages, budget);
-            BudgetAction::Mutated
-        }
-        ContextStrategy::SlidingWindow => {
-            let keep_count = KEEP_MESSAGE_PAIRS * 2; // user + assistant pairs
-            let system_count = messages
-                .iter()
-                .take_while(|m| m.role == genai::chat::ChatRole::System)
-                .count();
-            if messages.len() > system_count + keep_count {
-                let drain_end = messages.len() - keep_count;
-                messages.drain(system_count..drain_end);
-            }
             BudgetAction::Mutated
         }
         ContextStrategy::Summarize => {
@@ -1060,8 +1047,8 @@ impl GenaiAgentHandle {
 
         let stream = Box::pin(async_stream::stream! {
             // Budget enforcement happens here (inside async) so the
-            // Summarize strategy can `.await` the LLM. Truncate /
-            // SlidingWindow are sync transforms and complete instantly.
+            // Summarize strategy can `.await` the LLM. Truncate is a sync
+            // transform and completes instantly.
             let action = enforce_context_budget(
                 &mut messages,
                 context_budget,
@@ -2807,19 +2794,14 @@ mod tests {
         }
     }
 
-    /// Truncate / SlidingWindow / under-budget Summarize must NOT
+    /// Truncate and under-budget Summarize must NOT
     /// return NeedsSummarize — the async caller would otherwise issue
     /// pointless backend calls.
     #[test]
-    fn truncate_and_window_do_not_request_summarization() {
+    fn truncate_does_not_request_summarization() {
         let long = "x".repeat(40);
         let mut messages = vec![sys("system"), user(&long), asst(&long), user("current")];
-        let action = enforce_context_budget(&mut messages.clone(), 12, &ContextStrategy::Truncate);
-        assert!(matches!(
-            action,
-            BudgetAction::Mutated | BudgetAction::NoChange
-        ));
-        let action = enforce_context_budget(&mut messages, 12, &ContextStrategy::SlidingWindow);
+        let action = enforce_context_budget(&mut messages, 12, &ContextStrategy::Truncate);
         assert!(matches!(
             action,
             BudgetAction::Mutated | BudgetAction::NoChange

@@ -94,7 +94,7 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
     ConfigShortcut {
         short: "contextstrategy",
         target: ShortcutTarget::Path("llm.context_strategy"),
-        completions: CompletionSource::Static(&["truncate", "sliding_window"]),
+        completions: CompletionSource::Static(&["truncate", "summarize"]),
         description: "Context overflow strategy",
     },
     // Permission settings (session-scoped, TUI-only)

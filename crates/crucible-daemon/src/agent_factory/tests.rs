@@ -473,7 +473,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         // Deliberately not `Truncate`: that is the default, so a handle
         // built with a default strategy would satisfy the assertion
         // without ever having read the session's choice.
-        context_strategy: crucible_core::session::ContextStrategy::SlidingWindow,
+        context_strategy: crucible_core::session::ContextStrategy::Summarize,
         ..test_agent_config()
     };
 
@@ -510,7 +510,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     // that goes on the wire — which is the stronger claim anyway.
     assert_eq!(
         handle.get_context_strategy(),
-        crucible_core::session::ContextStrategy::SlidingWindow,
+        crucible_core::session::ContextStrategy::Summarize,
         "context_strategy"
     );
 }
