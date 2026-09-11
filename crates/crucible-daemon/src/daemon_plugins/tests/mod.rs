@@ -1027,10 +1027,15 @@ mod kiln_graph {
 /// registered.
 ///
 /// Regression: the merge that deleted the capability system took
-/// `bind_fs_roots` with it. The call had ONE caller and no test, so the whole
-/// workspace still compiled and `just ci` still passed with `cru.fs` bound to
-/// nothing in production. A grep on the source text would have been satisfied
-/// by the function's own definition; this asks the running VM instead.
+/// `bind_fs_roots` with it — the call AND the definition. The whole workspace
+/// still compiled and `just ci` still passed, with `cru.fs` bound to nothing
+/// in production, because nothing outside that file named either one.
+///
+/// A grep would in fact have caught this particular loss, and an earlier
+/// version of this comment claimed otherwise. What a grep cannot catch is the
+/// other shape: a definition that survives while its single call site dies,
+/// which is what a whole-file `--theirs` resolution produces most of the
+/// time. This asks the running VM, so neither shape gets through.
 ///
 /// The plugin context matters: `scoped` returns the path unchecked when no
 /// plugin is running, so a test that skips `enter_plugin` passes either way.
