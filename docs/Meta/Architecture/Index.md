@@ -22,3 +22,9 @@ section 6. Two later notes record what the Lua-and-config program changed:
 machine-written JSON registries and how state overlays config). For the older analyses, see [[Systems]], [[Type Flows]],
 [[Storage Schema]], [[Canvas]], [[Filesystem Containment]], [[Bash Permission Layers]],
 [[Workspace and Runtime Targets]].
+
+[[Mobile Shell]] is a DRAFT, not an as-built note. It proposes the small-screen
+web shell that `crates/crucible-web/web/PRODUCT.md` still lists as undecided. Its
+section 11 names a daemon change the offline path needs first: `PUT
+/api/kiln/file` overwrites blindly today and must be able to refuse a stale
+base. Its section 12 records what a phone costs an Oil-declared plugin view.
