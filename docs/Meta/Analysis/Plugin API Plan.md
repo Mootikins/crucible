@@ -292,10 +292,13 @@ splits by sub-API, not by mode. So the ecosystem that *can* enforce declined the
 mode axis everywhere except the single resource where read alone is the whole
 attack.
 
-**Does Obsidian's reasoning transfer to us? The stated reason does not.** Luau
-ships no `io.popen` and no `os.execute`, `cru.shell` is the only gated door, and
-`modules.rs` owns `require` because lookup is import authority. There is no
-`child_process` and no raw adapter: the daemon genuinely can hold the line.
+**Does Obsidian's reasoning transfer to us? The stated reason does not, and
+the argument this paragraph once made for it was wrong.** It read `cru.shell`
+as the only door to a process. `PluginShellPolicy::default()` blocks four
+command names with an empty allow-list and never reads the arguments, so that
+door was open all along; the host now ships `io.popen` and `os.execute` and
+says so. What does hold is import authority: `modules.rs` owns `require`, and
+`loadlib` is absent, so no plugin reaches native code.
 
 **A second reason does transfer, and it is the operative one.** Obsidian starts
 disclosures opt-in because thousands of plugins must migrate. Enforcement cost

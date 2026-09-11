@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`io.popen` and `os.execute`.** Luau ships neither, and the host withheld
+  both to make `cru.shell` the one gated door to a process. That door has no
+  lock: `PluginShellPolicy::default()` blocks four command names with no
+  allow-list, and the check reads the command name and never the arguments,
+  so `cru.shell.exec("sh", { "-c", … })` already ran anything — and the
+  shipped `oci` plugin depends on that shape. A plugin is code the operator
+  installed, and it gets the API the way an editor plugin gets the editor.
+  Both follow PUC Lua 5.4: `os.execute()` reports whether a shell is there,
+  `os.execute(cmd)` answers `true|nil`, then `"exit"` or `"signal"`, then the
+  number, and closing an `io.popen` handle answers the same three values.
+  `loadlib` and `os.exit` are still absent, and for reasons this change does
+  not touch: one loads native code, the other ends the daemon.
+
 ### Breaking
 
 - **The config store is flat: one write, one leaf.** `cru.config.set` and the
@@ -162,9 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   many functions still carry `(...any) -> any`.
 
 - `io`, `os.getenv`, `os.tmpname`, `os.remove` and `os.rename` are provided by
-  the host, because Luau ships none of them. There is deliberately no
-  `io.popen` and no `os.execute`: `cru.shell` is the gated way to run a
-  command.
+  the host, because Luau ships none of them. This release shipped no
+  `io.popen` and no `os.execute`; a later one adds both.
 
 - **An ACP session's modes are the agent's own.** claude-agent-acp declares
   five and codex-acp three, with ids Crucible does not share; the session used
