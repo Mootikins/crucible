@@ -347,7 +347,9 @@ Two cases stay outside the budget:
 
 1. **Registration**: Rust handlers are registered on a `HandlerRegistry`; Lua
    handlers register via `cru.on` when their plugin loads
-2. **Execution**: Handlers execute in priority order when events are emitted
+2. **Execution**: Handlers execute in priority order when events are emitted.
+   Two handlers of equal priority run in plugin load order, which
+   [[Help/Extending/Creating Plugins]] specifies.
 3. **Cascade**: Handlers can emit new events, triggering further handlers
 4. **Shutdown**: Handlers are dropped when the EventBus is dropped
 

@@ -33,6 +33,21 @@ Plugins are discovered from these directories (highest priority first):
 
 Same-name plugins at higher priority shadow lower ones.
 
+### Load order
+
+The load order is total, and you can predict it without reading any code:
+
+1. **By directory, highest priority first.** The table above is the order.
+   Crucible reads every plugin in one directory before it opens the next.
+2. **Inside one directory, by name, ascending.** The name is the directory
+   name, or the file name for a single-file plugin. `alpha` loads before
+   `mike`, whatever order you created them in.
+
+The load order is visible in one place: two handlers of the **same priority**
+run in load order. See [[Help/Extending/Custom Handlers]] for priority itself.
+Do not depend on the load order for anything else. Give a handler the priority
+it needs instead.
+
 **Plugins are user-scoped.** Nothing loads from a kiln, project or workspace on
 its own. Two reasons, and the second is the one that does not go away:
 

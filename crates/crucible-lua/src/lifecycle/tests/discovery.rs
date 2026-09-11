@@ -213,3 +213,77 @@ fn a_directory_holding_only_the_removed_manifest_is_not_a_plugin() {
         "a manifest-only directory reached the plugin table"
     );
 }
+
+/// Discovery reads one directory in ascending order of name.
+///
+/// `std::fs::read_dir` specifies no order, and the order changes with the file
+/// system, so without the sort this assertion depends on the disk.
+///
+/// Load order is the tie-break between two handlers of equal priority, so it
+/// must give the same answer on every machine.
+#[test]
+fn discovery_reads_one_search_path_in_name_order() {
+    let temp = TempDir::new().unwrap();
+    // The creation order is neither alphabetical nor its reverse. A file
+    // system that returns entries in creation order fails this test without
+    // the sort, and so does one that returns the reverse. tmpfs on Linux
+    // returns the reverse, so a reverse alphabetical fixture passed here even
+    // with the sort removed.
+    for name in ["mike", "alpha", "zulu", "delta", "yankee"] {
+        create_test_plugin(temp.path(), name, "1.0.0");
+    }
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(
+        discovered,
+        vec!["alpha", "delta", "mike", "yankee", "zulu"],
+        "discovery must sort one directory by name"
+    );
+}
+
+/// The rank between search paths outranks the name order inside one of them.
+///
+/// `crucible_core::runtime_path::entry::Origin` declares the rank between
+/// roots, highest first, and `search_paths` preserves it. Discovery takes the
+/// roots in the order it receives them, so a plugin from a higher root loads
+/// first even when its name sorts last.
+#[test]
+fn a_higher_search_path_loads_before_a_lower_one() {
+    let high = TempDir::new().unwrap();
+    let low = TempDir::new().unwrap();
+    create_test_plugin(high.path(), "zulu", "1.0.0");
+    create_test_plugin(low.path(), "alpha", "1.0.0");
+
+    let mut manager = PluginManager::new()
+        .with_search_paths(vec![high.path().to_path_buf(), low.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(
+        discovered,
+        vec!["zulu", "alpha"],
+        "the search path rank must outrank the name order"
+    );
+}
+
+/// A single-file plugin sorts with the directories, by file name.
+///
+/// Both kinds live in one directory, so one sort must cover both. The file
+/// name carries the extension, which keeps the order total.
+#[test]
+fn discovery_sorts_single_file_plugins_with_directories() {
+    let temp = TempDir::new().unwrap();
+    create_test_plugin(temp.path(), "mike", "1.0.0");
+    std::fs::write(temp.path().join("zulu.lua"), "return {}").unwrap();
+    std::fs::write(temp.path().join("alpha.lua"), "return {}").unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(
+        discovered,
+        vec!["alpha", "mike", "zulu"],
+        "one sort must cover directory and single-file plugins"
+    );
+}
