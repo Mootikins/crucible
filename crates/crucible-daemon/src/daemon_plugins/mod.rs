@@ -126,7 +126,12 @@ pub struct DaemonPluginLoader {
     /// The daemon-backed session API `upgrade_with_sessions` registered with,
     /// so late-created Lua runtimes (`lua.init_session`) can register the
     /// same module against the same bridge instead of a second instance.
-    session_api: std::sync::Mutex<Option<Arc<dyn crucible_lua::DaemonSessionApi>>>,
+    ///
+    /// Boot installs it once and every later caller only reads it, which is
+    /// exactly [`crucible_lua::HostHook`]'s shape: the `Mutex<Option<_>>` it
+    /// replaces paid a lock per read and let a second upgrade rebind the
+    /// bridge in silence.
+    session_api: crucible_lua::HostHook<Arc<dyn crucible_lua::DaemonSessionApi>>,
     /// Service functions extracted from plugins during loading, drained by
     /// the spawn site via [`Self::take_service_fns`].
     service_fns: Vec<PluginServiceFn>,
@@ -182,6 +187,15 @@ pub struct DaemonPluginLoader {
     publications: PublicationRegistry,
     /// Settings trees plugins declared, read by TUI and web.
     options: OptionsRegistry,
+    /// The statusline expression values, owned by `AgentManager` and bound onto
+    /// this VM by [`Self::register_statusline_exprs`].
+    ///
+    /// Kept only so `make_plugin_inert` can release the values a plugin set.
+    /// A `OnceLock` because boot binds it exactly once and every read is on a
+    /// teardown path: a `Mutex<Option<_>>` would pay a lock and permit a silent
+    /// rebind onto a second registry, which is how a release would quietly
+    /// address the wrong store.
+    statusline_exprs: std::sync::OnceLock<Arc<crucible_lua::StatuslineExprRegistry>>,
     /// One notice per plugin configured BOTH ways: a `plugins.<name>` store
     /// section AND a direct `setup` call in init.lua. The direct call owns
     /// the plugin, so the section is ignored — and one layer superseding
@@ -365,7 +379,7 @@ impl DaemonPluginLoader {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
-            session_api: std::sync::Mutex::new(None),
+            session_api: crucible_lua::HostHook::new(),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
             modes,
@@ -377,6 +391,7 @@ impl DaemonPluginLoader {
             surfaces,
             publications,
             options,
+            statusline_exprs: std::sync::OnceLock::new(),
             supersession_notices: std::sync::Mutex::new(Vec::new()),
             option_store_dir: None,
         })
@@ -601,6 +616,12 @@ impl DaemonPluginLoader {
             .globals()
             .get("cru")
             .map_err(|e| anyhow::anyhow!("cru table: {e}"))?;
+        // Held as well as bound: `make_plugin_inert` has to take a plugin's
+        // values back, and the bind alone leaves the loader with no handle on
+        // the store the VM now writes to.
+        if self.statusline_exprs.set(Arc::clone(&registry)).is_err() {
+            tracing::warn!("statusline expression registry was already bound");
+        }
         crucible_lua::register_statusline_exprs(lua, &cru, registry)
             .map_err(|e| anyhow::anyhow!("statusline module: {e}"))
     }
@@ -811,7 +832,9 @@ impl DaemonPluginLoader {
             self.executor.current_session().clone(),
         )
         .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
-        *self.session_api.lock().expect("session_api: poisoned") = Some(api.clone());
+        if !self.session_api.install(Arc::clone(&api)) {
+            warn!("the daemon session API was already installed; keeping the first");
+        }
         register_ui_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("ui upgrade: {e}"))?;
         register_context_module(lua, api).map_err(|e| anyhow::anyhow!("context module: {e}"))?;
@@ -834,10 +857,7 @@ impl DaemonPluginLoader {
     /// for late-created runtimes that want the same module against the same
     /// bridge. `None` before the upgrade has run.
     pub fn session_api(&self) -> Option<Arc<dyn DaemonSessionApi>> {
-        self.session_api
-            .lock()
-            .expect("session_api: poisoned")
-            .clone()
+        self.session_api.get().map(Arc::clone)
     }
 
     /// Upgrade tools module with real daemon-backed implementations.
@@ -1167,6 +1187,11 @@ impl DaemonPluginLoader {
     ///
     /// `IsolationRegistry` and `StatusRegistry` are session-keyed, not
     /// plugin-keyed, so no plugin-scoped release exists for them or is needed.
+    /// `StatuslineExprRegistry` is session-keyed TOO and still needs one: it
+    /// records the source of each value, so the plugin's are nameable, and a
+    /// value left in it stays painted in every attached client. Being keyed by
+    /// session is not by itself a reason a store needs no plugin-scoped
+    /// release, and reading it as one is what let this hide.
     fn make_plugin_inert(&mut self, name: &str) {
         self.abort_services(name);
         self.plugin_registry.remove_plugin(name);
@@ -1182,6 +1207,15 @@ impl DaemonPluginLoader {
         self.publications.release_plugin(name);
         self.surfaces.release_plugin(name);
         self.options.release_plugin(name);
+        // Its statusline values, in every session that has one. `clear_source`
+        // above stops the next push; this stops the last one from staying
+        // painted, and the release announces itself so a client repaints.
+        if let Some(exprs) = self.statusline_exprs.get() {
+            let dropped = exprs.release_source(&crucible_lua::LuaSource::Plugin(name.to_string()));
+            if dropped > 0 {
+                debug!(plugin = %name, dropped, "released statusline expression values");
+            }
+        }
         // Dropped RegistryKeys only mark their slots; reclaim them so repeated
         // failed reloads don't grow the Lua registry.
         self.executor.lua().expire_registry_values();

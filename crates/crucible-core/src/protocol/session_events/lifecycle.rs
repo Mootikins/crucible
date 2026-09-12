@@ -295,6 +295,12 @@ pub enum SystemPayload {
     /// genuinely differ in shape, so this stays a `Value`: a client applies it
     /// with the same code path it uses at attach, and narrowing the type here
     /// would only move the drift to `rpc::ui`.
+    ///
+    /// One rule the shapes share: an `exprs` member is the session's WHOLE
+    /// expression set, and a client applies it as a replacement, because a key
+    /// missing from it is a key the daemon released. A payload that is not
+    /// addressed to one session therefore omits the member rather than carrying
+    /// an empty set.
     UiStyleChanged(Value),
     /// A subscriber fell far enough behind the broadcast ring that events were
     /// overwritten before it read them, and `dropped` of them are gone for good.

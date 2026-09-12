@@ -26,6 +26,7 @@
 //! command instead. This prevents plugins from unexpectedly changing models.
 
 use crate::error::LuaError;
+use crate::host_hook::HostHook;
 use crate::sessions::register::{
     cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
     fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
@@ -151,7 +152,10 @@ impl SessionVariables {
 /// Session object with property access (returned by get_session())
 #[derive(Clone)]
 pub struct Session {
-    rpc: Arc<Mutex<Option<Box<dyn SessionConfigRpc>>>>,
+    /// The live config RPC, installed once by whichever fire site built this
+    /// handle. See [`HostHook`]: `Mutex<Option<Box<_>>>` paid a lock on every
+    /// property read and let a second `bind` replace the first in silence.
+    rpc: HostHook<Box<dyn SessionConfigRpc>>,
     /// The lifecycle API a handle's methods delegate to. Present on handles
     /// that came from `cru.session.create/get/list/fork` (they were made
     /// *through* an API, so they carry it) and on the current-session handle
@@ -184,7 +188,7 @@ pub struct Session {
 impl Session {
     pub fn new(id: String) -> Self {
         Self {
-            rpc: Arc::new(Mutex::new(None)),
+            rpc: HostHook::new(),
             api: None,
             id,
             workspace: None,
@@ -233,11 +237,18 @@ impl Session {
         }
     }
 
+    /// Install this handle's config RPC. Every fire site builds a fresh
+    /// handle and binds it once, so a second bind is a double-wired fire site:
+    /// it is refused and logged rather than replacing the first, because a
+    /// replacement would silently change what every already-cloned handle
+    /// reads.
     pub fn bind(&self, rpc: Box<dyn SessionConfigRpc>) {
-        *self
-            .rpc
-            .lock()
-            .expect("session_config_rpc: poisoned while binding RPC client") = Some(rpc);
+        if !self.rpc.install(rpc) {
+            tracing::warn!(
+                session_id = %self.id,
+                "session config RPC was already bound; keeping the first"
+            );
+        }
     }
 
     pub fn id(&self) -> String {
@@ -247,11 +258,7 @@ impl Session {
     /// The session's model: the live value when an RPC is bound, else the
     /// `model` field of the daemon record the handle was built from.
     fn model(&self) -> mlua::Result<Option<String>> {
-        let rpc = self
-            .rpc
-            .lock()
-            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
-        Ok(match rpc.as_ref() {
+        Ok(match self.rpc.get() {
             Some(rpc) => rpc.get_model(),
             None => self
                 .record
@@ -267,9 +274,7 @@ impl Session {
         F: FnOnce(&dyn SessionConfigRpc) -> Result<T, String>,
     {
         self.rpc
-            .lock()
-            .map_err(|e| mlua::Error::runtime(e.to_string()))?
-            .as_ref()
+            .get()
             .ok_or_else(|| mlua::Error::runtime("Session not connected"))
             .and_then(|rpc| f(rpc.as_ref()).map_err(mlua::Error::runtime))
     }
@@ -620,6 +625,37 @@ pub mod tests {
         fn set_mode(&self, mode: &str) -> Result<(), String> {
             UnsupportedSessionRpc.set_mode(mode)
         }
+    }
+
+    /// A handle is built fresh per fire site and bound once, so a second bind
+    /// is a double-wired fire site. It is refused, and the FIRST binding stays.
+    ///
+    /// `Mutex<Option<Box<_>>>` let the second replace the first in silence, and
+    /// a handle is `Clone` with a shared slot — so a late rebind changed what
+    /// every already-cloned handle read, with nothing logged.
+    #[test]
+    fn a_second_bind_is_refused_and_the_first_rpc_stays() {
+        let session = Session::new("s-bind".to_string());
+        let first = MockRpc::new();
+        first.switch_model("first-model").unwrap();
+        session.bind(Box::new(first));
+
+        let clone = session.clone();
+
+        let second = MockRpc::new();
+        second.switch_model("second-model").unwrap();
+        session.bind(Box::new(second));
+
+        assert_eq!(
+            session.model().unwrap().as_deref(),
+            Some("first-model"),
+            "the first binding must survive the refused second"
+        );
+        assert_eq!(
+            clone.model().unwrap().as_deref(),
+            Some("first-model"),
+            "and a clone made before the second bind must read the same"
+        );
     }
 
     #[test]

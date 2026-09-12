@@ -1,4 +1,4 @@
-//! One storage shape for a host callback a lower crate installs once.
+//! One storage shape for a host handle a lower crate installs once.
 //!
 //! Three registries in this crate must tell the daemon that something changed:
 //! the statusline expressions, the publications and the surfaces. None of them
@@ -10,24 +10,44 @@
 //! one in `OnceLock`, so two of them permitted a silent second install and paid
 //! for a lock plus an `Arc` clone on every write.
 //!
-//! No production path re-installs any of these hooks: the plugin loader is
-//! built once and never replaced, and a plugin reload keeps the same registry
-//! instance. So all three want install-once, which is what this type gives
-//! them. A second install answers `false` rather than replacing the first —
-//! a double install is a double boot, not something to paper over.
+//! # The shape, not the census
+//!
+//! This doc used to say "three registries", and the count was the whole
+//! description. Two more slots of exactly this shape were therefore invisible
+//! until someone counted again: [`crate::session_api::Session`]'s config RPC
+//! and the plugin loader's `DaemonSessionApi`. Both are now here. A stated
+//! count is a completeness claim, and this one had none to make, so the rule is
+//! the shape rather than the list: **a host handle a lower crate holds, that
+//! boot installs exactly once and every later caller only reads, belongs in
+//! this type.** What is held is not always a callback — a `dyn` bridge object
+//! is the same slot with the same lifetime.
+//!
+//! The one slot of this shape that stays out is the runtimepath extender
+//! ([`crate::config::set_runtimepath_extender`]). It is installed for the boot
+//! evaluation and set back to `None` when that ends, and a `OnceLock` cannot
+//! serve a slot that has to empty again.
+//!
+//! No production path re-installs any of these: the plugin loader is built once
+//! and never replaced, a plugin reload keeps the same registry instance, and a
+//! `Session` handle is built fresh per fire site and bound once. So all of them
+//! want install-once, which is what this type gives them. A second install
+//! answers `false` rather than replacing the first — a double install is a
+//! double boot, not something to paper over.
 //!
 //! The slot is shared through an `Arc`, so a registry that derives `Clone`
-//! keeps one hook across every clone. A hook stored per clone would never fire
-//! for the writer that matters: the closure Lua captured holds its own clone.
+//! keeps one handle across every clone. A handle stored per clone would never
+//! serve the reader that matters: the closure Lua captured holds its own
+//! clone.
 
 use std::sync::{Arc, OnceLock};
 
-/// A host callback, installed once and read without a lock.
+/// A host handle, installed once and read without a lock.
 ///
-/// `T` is the callback type the registry declares — usually an
-/// `Arc<dyn Fn(..) + Send + Sync>`. This type says nothing about the arity:
-/// the three hooks take different arguments, and a shared payload type would
-/// force owned structs and a one-field wrapper that exists only for symmetry.
+/// `T` is whatever the holder declares — an `Arc<dyn Fn(..) + Send + Sync>` for
+/// a change hook, a boxed or `Arc`'d bridge object for a handle. This type says
+/// nothing about the shape: the hooks take different arguments, and a shared
+/// payload type would force owned structs and a one-field wrapper that exists
+/// only for symmetry.
 pub struct HostHook<T> {
     slot: Arc<OnceLock<T>>,
 }

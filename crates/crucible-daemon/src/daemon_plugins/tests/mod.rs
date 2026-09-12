@@ -1192,6 +1192,72 @@ async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() 
 }
 
 /// `make_plugin_inert` promises "nothing of this plugin's is registered or
+/// DRAWN". A statusline value is the case where being keyed by session was
+/// mistaken for needing no plugin-scoped release: the plugin's handlers are
+/// gone, so nothing will ever overwrite the value it left, and every attached
+/// client keeps painting it for the daemon's life.
+///
+/// Two halves, and the second is the one a store-only test misses: the value
+/// leaves the registry, AND the release announces itself so a client repaints.
+#[tokio::test]
+async fn a_plugin_marked_inert_leaves_no_statusline_value_and_says_so() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("painter");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+        cru.statusline.set("s1", "painter", "on")
+        cru.statusline.set("s2", "painter", "on")
+        return { name = "painter", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let exprs = Arc::new(crucible_lua::StatuslineExprRegistry::new());
+    loader
+        .register_statusline_exprs(Arc::clone(&exprs))
+        .expect("bind cru.statusline");
+
+    // The sessions the daemon would broadcast a repaint for.
+    let repainted: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = Arc::clone(&repainted);
+    assert!(exprs.set_change_notifier(Arc::new(move |id: &str| {
+        sink.lock().unwrap().push(id.to_string());
+    })));
+
+    loader
+        .execute_plugin("painter", &dir.join("init.lua"))
+        .await
+        .expect("load");
+    assert_eq!(
+        exprs.snapshot("s1").get("painter").map(String::as_str),
+        Some("on"),
+        "the plugin's value must land under its own source"
+    );
+    repainted.lock().unwrap().clear();
+
+    loader.make_plugin_inert("painter");
+
+    assert!(
+        exprs.snapshot("s1").is_empty() && exprs.snapshot("s2").is_empty(),
+        "Not Active must leave nothing of the plugin's painted: {:?} {:?}",
+        exprs.snapshot("s1"),
+        exprs.snapshot("s2")
+    );
+    let mut told = repainted.lock().unwrap().clone();
+    told.sort();
+    assert_eq!(
+        told,
+        vec!["s1".to_string(), "s2".to_string()],
+        "every session drawing the value must be told to stop"
+    );
+}
+
+/// `make_plugin_inert` promises "nothing of this plugin's is registered or
 /// RUNNING". The two things an owner has that RUN are a `cru.timer.spawn` task
 /// and a `cru.schedule` tick.
 ///

@@ -9,6 +9,15 @@
 //! sequences, and the receiving side could not sanitize it without also
 //! stripping the styling. Keeping styling structural (via highlight groups on
 //! the item) means control characters can be escaped unconditionally.
+//!
+//! # One writer, and it takes the whole set
+//!
+//! The daemon sends the session's complete expression set on every push, so a
+//! key missing from one is a key the daemon RELEASED: a provider cleared it, or
+//! the plugin that set it went inert. A per-key writer could only ever add, so
+//! a released value stayed on the bar until the client exited — the same
+//! failure as a surface nothing withdraws, arriving at the last hop. Hence
+//! [`replace`] and nothing beside it.
 
 use std::collections::BTreeMap;
 use std::sync::RwLock;
@@ -43,23 +52,30 @@ fn sanitize(value: &str) -> String {
         .collect()
 }
 
-/// Record a pushed value. Returns `true` when it actually changed.
+/// Install the daemon's whole set. Answers `true` when the rendered set
+/// actually changed.
 ///
 /// The dirty check matters because this crosses a socket: a provider firing on
-/// every turn with an unchanged value should cost nothing, not a repaint.
-pub fn set(key: &str, value: &str) -> bool {
-    let clean = sanitize(value);
+/// every turn with an unchanged set should cost nothing, not a repaint.
+pub fn replace(values: BTreeMap<String, String>) -> bool {
+    let clean: BTreeMap<String, String> = values
+        .into_iter()
+        .map(|(key, value)| (key, sanitize(&value)))
+        .collect();
     let Ok(mut guard) = EXPRS.write() else {
         return false;
     };
-    let map = guard.get_or_insert_with(BTreeMap::new);
-    match map.get(key) {
-        Some(existing) if *existing == clean => false,
-        _ => {
-            map.insert(key.to_string(), clean);
-            true
-        }
+    // An untouched store draws nothing, so an empty set arriving at one is not
+    // a change — the first full snapshot of a session with no expressions must
+    // not cost a repaint.
+    let changed = match guard.as_ref() {
+        Some(existing) => *existing != clean,
+        None => !clean.is_empty(),
+    };
+    if changed {
+        *guard = Some(clean);
     }
+    changed
 }
 
 /// Snapshot for one frame's render.
@@ -75,26 +91,70 @@ pub fn snapshot() -> BTreeMap<String, String> {
 mod tests {
     use super::*;
 
+    /// Apply a set the way the daemon's payload does.
+    fn push(pairs: &[(&str, &str)]) -> bool {
+        replace(
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect(),
+        )
+    }
+
     #[test]
     fn a_pushed_value_is_readable() {
-        assert!(set("git", "main*"));
+        assert!(push(&[("git", "main*")]));
         assert_eq!(snapshot().get("git").map(String::as_str), Some("main*"));
     }
 
     /// Push models generate redundant traffic; every comparable implementation
     /// grew a dirty check for this reason, and ours crosses a socket.
     #[test]
-    fn re_pushing_an_unchanged_value_reports_no_change() {
-        assert!(set("k", "v"));
-        assert!(!set("k", "v"), "unchanged value must not signal a repaint");
-        assert!(set("k", "w"));
+    fn re_pushing_an_unchanged_set_reports_no_change() {
+        assert!(push(&[("k", "v")]));
+        assert!(!push(&[("k", "v")]), "unchanged must not signal a repaint");
+        assert!(push(&[("k", "w")]));
+    }
+
+    /// The value a released expression leaves behind must stop being DRAWN.
+    /// The daemon pushes a full snapshot, so a key absent from it has to go —
+    /// with a per-key writer the client kept painting a value nothing could
+    /// ever refresh, for the rest of its life.
+    #[test]
+    fn a_key_the_daemon_no_longer_sends_stops_rendering() {
+        assert!(push(&[("git", "main*"), ("oci", "sandboxed")]));
+        assert_eq!(snapshot().len(), 2);
+
+        assert!(push(&[("git", "main*")]), "dropping a key is a change");
+
+        assert_eq!(snapshot().get("git").map(String::as_str), Some("main*"));
+        assert!(
+            !snapshot().contains_key("oci"),
+            "a key the daemon released must stop rendering"
+        );
+    }
+
+    /// The end state after the last value is released: reachable, and not read
+    /// as "an empty payload, so keep what you had".
+    #[test]
+    fn an_empty_set_clears_every_value() {
+        assert!(push(&[("git", "main")]));
+        assert!(push(&[]));
+        assert!(snapshot().is_empty());
+    }
+
+    /// A session that never set an expression must not cost a repaint on its
+    /// first snapshot.
+    #[test]
+    fn an_empty_set_on_an_untouched_store_is_not_a_change() {
+        assert!(!push(&[]));
     }
 
     /// The security property. A branch name or model-derived string must not be
     /// able to move the cursor or emit an OSC sequence.
     #[test]
     fn control_characters_are_stripped() {
-        set("evil", "main\x1b[2J\x1b]0;pwned\x07\r\n");
+        push(&[("evil", "main\x1b[2J\x1b]0;pwned\x07\r\n")]);
         let got = snapshot()["evil"].clone();
         assert!(!got.contains('\x1b'), "escape survived: {got:?}");
         assert!(!got.contains('\x07'), "bell survived: {got:?}");
@@ -104,7 +164,7 @@ mod tests {
 
     #[test]
     fn values_are_capped_as_a_safety_limit() {
-        set("long", &"x".repeat(MAX_VALUE_CHARS * 2));
+        push(&[("long", &"x".repeat(MAX_VALUE_CHARS * 2))]);
         assert_eq!(snapshot()["long"].chars().count(), MAX_VALUE_CHARS);
     }
 
@@ -112,7 +172,7 @@ mod tests {
     /// offset would split a UTF-8 sequence.
     #[test]
     fn multibyte_values_are_not_split_mid_character() {
-        set("cjk", &"日".repeat(MAX_VALUE_CHARS * 2));
+        push(&[("cjk", &"日".repeat(MAX_VALUE_CHARS * 2))]);
         let got = snapshot()["cjk"].clone();
         assert_eq!(got.chars().count(), MAX_VALUE_CHARS);
         assert!(got.chars().all(|c| c == '日'));

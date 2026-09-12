@@ -13,9 +13,24 @@
 //! characters unconditionally.
 //!
 //! Session-scoped, matching `cru.context.attach`. Rust owns the caps.
+//!
+//! # A value is released, never only overwritten
+//!
+//! Two things end a value besides the next push: the session ends
+//! ([`StatuslineExprRegistry::release_session`]), and the plugin that set it
+//! goes inert ([`StatuslineExprRegistry::release_source`]). The store had
+//! neither, which cost two defects at once. A session's map outlived the
+//! session for the daemon's life, and a plugin marked Not Active left its value
+//! painted in every attached client with nothing that could ever refresh it.
+//!
+//! So each value records its [`LuaSource`]. A map keyed by session can only be
+//! released by session unless something on the value names another axis, and
+//! being keyed by session is not by itself a reason a store needs no
+//! plugin-scoped release.
 
 use crate::error::LuaError;
 use crate::host_hook::HostHook;
+use crate::plugin_context::LuaSource;
 use mlua::{Lua, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -64,10 +79,21 @@ impl ExprRejection {
 /// depend on the daemon's event bus.
 pub type ChangeNotifier = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// One recorded value, and who recorded it.
+///
+/// The source is what makes a plugin-scoped release possible at all. The map is
+/// keyed by session, so without an author on each value `make_plugin_inert` has
+/// nothing to name: it would have to drop every session's whole bar, blanking
+/// the user's own expressions along with the plugin's.
+struct Expr {
+    text: String,
+    source: LuaSource,
+}
+
 /// Per-session expression values.
 #[derive(Default)]
 pub struct StatuslineExprRegistry {
-    sessions: Mutex<HashMap<String, HashMap<String, String>>>,
+    sessions: Mutex<HashMap<String, HashMap<String, Expr>>>,
     /// Installed once by the daemon at boot. See [`HostHook`].
     on_change: HostHook<ChangeNotifier>,
 }
@@ -125,7 +151,18 @@ impl StatuslineExprRegistry {
     }
 
     /// Record a value. `Ok(text)` when it changed and the TUI should repaint.
-    pub fn set(&self, session_id: &str, key: &str, value: &str) -> Result<String, ExprRejection> {
+    ///
+    /// `source` is who set it, so [`Self::release_source`] can take it back
+    /// again. The host reads it from the VM's ambient source and a caller never
+    /// names one — a plugin naming another source would make the release
+    /// unreachable, which is the whole reason to record it.
+    pub fn set(
+        &self,
+        session_id: &str,
+        key: &str,
+        value: &str,
+        source: LuaSource,
+    ) -> Result<String, ExprRejection> {
         if key.is_empty() {
             return Err(ExprRejection::EmptyKey);
         }
@@ -137,7 +174,14 @@ impl StatuslineExprRegistry {
             .map_err(|_| ExprRejection::Unavailable)?;
         let entry = sessions.entry(session_id.to_string()).or_default();
 
-        if entry.get(key).is_some_and(|existing| *existing == clean) {
+        // The dirty check reads the text and not the source: a repaint is a
+        // question about what a client draws. So the slot keeps the source that
+        // last CHANGED it, and a second source pushing an identical string does
+        // not take the slot over.
+        if entry
+            .get(key)
+            .is_some_and(|existing| existing.text == clean)
+        {
             return Err(ExprRejection::Unchanged);
         }
         if !entry.contains_key(key) && entry.len() >= MAX_KEYS_PER_SESSION {
@@ -146,7 +190,13 @@ impl StatuslineExprRegistry {
             });
         }
 
-        entry.insert(key.to_string(), clean.clone());
+        entry.insert(
+            key.to_string(),
+            Expr {
+                text: clean.clone(),
+                source,
+            },
+        );
         drop(sessions);
         self.notify(session_id);
         Ok(clean)
@@ -172,16 +222,68 @@ impl StatuslineExprRegistry {
         self.sessions
             .lock()
             .ok()
-            .and_then(|s| s.get(session_id).cloned())
+            .and_then(|s| {
+                s.get(session_id).map(|entries| {
+                    entries
+                        .iter()
+                        .map(|(key, expr)| (key.clone(), expr.text.clone()))
+                        .collect()
+                })
+            })
             .unwrap_or_default()
     }
 
-    /// Forget a session's values.
-    #[cfg(test)]
-    pub fn forget(&self, session_id: &str) {
-        if let Ok(mut s) = self.sessions.lock() {
-            s.remove(session_id);
+    /// Drop every value one source set, and tell each affected session to
+    /// repaint. Answers how many values it dropped.
+    ///
+    /// For a source that goes inert — a plugin the daemon marks Not Active.
+    /// `make_plugin_inert` promises "nothing of this plugin's is registered or
+    /// running"; dropping its handlers stops the NEXT push, and only this stops
+    /// the last one being painted in every attached client for the daemon's
+    /// life. That is the same failure as a surface nothing withdraws.
+    ///
+    /// Not called on a reload that succeeds: the plugin runs again and refreshes
+    /// its own values, so blanking the bar in between only flickers.
+    pub fn release_source(&self, source: &LuaSource) -> usize {
+        // Collected under the lock and announced after it, for the reason
+        // `notify` gives: the notifier reaches the daemon's event bus.
+        let mut dropped = 0usize;
+        let affected: Vec<String> = {
+            let Ok(mut sessions) = self.sessions.lock() else {
+                return 0;
+            };
+            let mut affected = Vec::new();
+            for (session_id, entries) in sessions.iter_mut() {
+                let before = entries.len();
+                entries.retain(|_, expr| expr.source != *source);
+                if entries.len() < before {
+                    dropped += before - entries.len();
+                    affected.push(session_id.clone());
+                }
+            }
+            sessions.retain(|_, entries| !entries.is_empty());
+            affected
+        };
+        for session_id in &affected {
+            self.notify(session_id);
         }
+        dropped
+    }
+
+    /// Forget a session's values on its way out. Answers how many it dropped.
+    ///
+    /// The map is keyed by session and had no production release, so every
+    /// session that ever set an expression kept its map for the daemon's life.
+    ///
+    /// No repaint: the session is ending, so there is no bar left to draw. The
+    /// notifier would build a payload for a session whose subscribers are
+    /// already going away.
+    pub fn release_session(&self, session_id: &str) -> usize {
+        self.sessions
+            .lock()
+            .ok()
+            .and_then(|mut s| s.remove(session_id))
+            .map_or(0, |entries| entries.len())
     }
 }
 
@@ -214,7 +316,11 @@ pub fn register_statusline_exprs(
          { ok: boolean, value: string?, reason: string?, unchanged: boolean? }",
         move |lua, (session_id, key, value): (String, String, String)| {
             let result = lua.create_table()?;
-            match set_registry.set(&session_id, &key, &value) {
+            // The AMBIENT source, never an argument: this is the tag
+            // `release_source` releases by, so a caller free to name one could
+            // park a value nothing releases.
+            let source = crate::plugin_context::current_source(lua);
+            match set_registry.set(&session_id, &key, &value, source) {
                 Ok(text) => {
                     result.set("ok", true)?;
                     result.set("value", text)?;
@@ -260,7 +366,10 @@ mod tests {
     #[test]
     fn a_value_is_recorded_and_readable() {
         let r = StatuslineExprRegistry::new();
-        assert_eq!(r.set("s1", "git", "main*"), Ok("main*".to_string()));
+        assert_eq!(
+            r.set("s1", "git", "main*", LuaSource::UserLua),
+            Ok("main*".to_string())
+        );
         assert_eq!(
             r.snapshot("s1").get("git").map(String::as_str),
             Some("main*")
@@ -272,22 +381,25 @@ mod tests {
     #[test]
     fn an_unchanged_value_is_rejected_as_unchanged() {
         let r = StatuslineExprRegistry::new();
-        r.set("s1", "git", "main").unwrap();
-        assert_eq!(r.set("s1", "git", "main"), Err(ExprRejection::Unchanged));
-        assert!(r.set("s1", "git", "main*").is_ok());
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
+        assert_eq!(
+            r.set("s1", "git", "main", LuaSource::UserLua),
+            Err(ExprRejection::Unchanged)
+        );
+        assert!(r.set("s1", "git", "main*", LuaSource::UserLua).is_ok());
     }
 
     #[test]
     fn values_are_session_scoped() {
         let r = StatuslineExprRegistry::new();
-        r.set("s1", "git", "main").unwrap();
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
         assert!(r.snapshot("s2").is_empty());
     }
 
     #[test]
     fn clearing_removes_the_value() {
         let r = StatuslineExprRegistry::new();
-        r.set("s1", "git", "main").unwrap();
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
         assert!(r.clear("s1", "git"));
         assert!(!r.snapshot("s1").contains_key("git"));
         assert!(!r.clear("s1", "git"), "clearing twice is not a change");
@@ -299,16 +411,17 @@ mod tests {
     fn the_key_count_is_capped_per_session() {
         let r = StatuslineExprRegistry::new();
         for i in 0..MAX_KEYS_PER_SESSION {
-            r.set("s1", &format!("k{i}"), "v").unwrap();
+            r.set("s1", &format!("k{i}"), "v", LuaSource::UserLua)
+                .unwrap();
         }
         assert_eq!(
-            r.set("s1", "one-too-many", "v"),
+            r.set("s1", "one-too-many", "v", LuaSource::UserLua),
             Err(ExprRejection::TooManyKeys {
                 max: MAX_KEYS_PER_SESSION
             })
         );
         // Updating an existing key still works at the cap.
-        assert!(r.set("s1", "k0", "changed").is_ok());
+        assert!(r.set("s1", "k0", "changed", LuaSource::UserLua).is_ok());
     }
 
     /// The security property: a value can originate in a branch name or model
@@ -317,7 +430,12 @@ mod tests {
     fn control_characters_are_stripped() {
         let r = StatuslineExprRegistry::new();
         let stored = r
-            .set("s1", "evil", "main\x1b[2J\x1b]0;pwned\x07\r\n")
+            .set(
+                "s1",
+                "evil",
+                "main\x1b[2J\x1b]0;pwned\x07\r\n",
+                LuaSource::UserLua,
+            )
             .unwrap();
         assert!(!stored.contains('\x1b'), "escape survived: {stored:?}");
         assert!(!stored.contains('\x07'), "bell survived: {stored:?}");
@@ -332,7 +450,12 @@ mod tests {
     fn bidi_and_zero_width_characters_are_stripped() {
         let r = StatuslineExprRegistry::new();
         let stored = r
-            .set("s1", "git", "feat/\u{202E}txt.exe\u{200B}\u{2066}x")
+            .set(
+                "s1",
+                "git",
+                "feat/\u{202E}txt.exe\u{200B}\u{2066}x",
+                LuaSource::UserLua,
+            )
             .unwrap();
 
         for bad in ['\u{202E}', '\u{200B}', '\u{2066}'] {
@@ -348,7 +471,12 @@ mod tests {
     fn values_are_capped_by_character_not_byte() {
         let r = StatuslineExprRegistry::new();
         let stored = r
-            .set("s1", "cjk", &"日".repeat(MAX_VALUE_CHARS * 2))
+            .set(
+                "s1",
+                "cjk",
+                &"日".repeat(MAX_VALUE_CHARS * 2),
+                LuaSource::UserLua,
+            )
             .unwrap();
         assert_eq!(stored.chars().count(), MAX_VALUE_CHARS);
         assert!(
@@ -375,7 +503,7 @@ mod tests {
             "the second install is refused"
         );
 
-        r.set("s1", "git", "main").unwrap();
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
         assert_eq!(
             hits.load(Ordering::SeqCst),
             1,
@@ -396,13 +524,13 @@ mod tests {
             counter.fetch_add(1, Ordering::SeqCst);
         })));
 
-        r.set("s1", "git", "main").unwrap();
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
         assert_eq!(hits.load(Ordering::SeqCst), 1);
 
-        let _ = r.set("s1", "git", "main");
+        let _ = r.set("s1", "git", "main", LuaSource::UserLua);
         assert_eq!(hits.load(Ordering::SeqCst), 1, "unchanged must not notify");
 
-        r.set("s1", "git", "main*").unwrap();
+        r.set("s1", "git", "main*", LuaSource::UserLua).unwrap();
         assert_eq!(hits.load(Ordering::SeqCst), 2);
 
         r.clear("s1", "git");
@@ -415,14 +543,115 @@ mod tests {
     #[test]
     fn an_empty_key_is_rejected() {
         let r = StatuslineExprRegistry::new();
-        assert_eq!(r.set("s1", "", "v"), Err(ExprRejection::EmptyKey));
+        assert_eq!(
+            r.set("s1", "", "v", LuaSource::UserLua),
+            Err(ExprRejection::EmptyKey)
+        );
     }
 
+    /// The leak this closes: the map is keyed by session and nothing released
+    /// it, so every session that ever set an expression kept its map for the
+    /// daemon's life.
     #[test]
-    fn forgetting_a_session_drops_its_values() {
+    fn releasing_a_session_drops_its_values() {
         let r = StatuslineExprRegistry::new();
-        r.set("s1", "git", "main").unwrap();
-        r.forget("s1");
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
+        r.set("s1", "kiln", "docs", LuaSource::Plugin("git".into()))
+            .unwrap();
+        r.set("s2", "git", "main", LuaSource::UserLua).unwrap();
+
+        assert_eq!(r.release_session("s1"), 2);
         assert!(r.snapshot("s1").is_empty());
+        assert_eq!(
+            r.snapshot("s2").get("git").map(String::as_str),
+            Some("main"),
+            "another session is untouched"
+        );
+        assert_eq!(r.release_session("s1"), 0, "releasing twice drops nothing");
+    }
+
+    /// A plugin marked Not Active must leave nothing painted. Its handlers are
+    /// gone, so nothing would ever overwrite the value it left behind.
+    #[test]
+    fn releasing_a_source_drops_only_that_sources_values() {
+        let r = StatuslineExprRegistry::new();
+        r.set("s1", "oci", "sandboxed", LuaSource::Plugin("oci".into()))
+            .unwrap();
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
+        r.set("s2", "oci", "sandboxed", LuaSource::Plugin("oci".into()))
+            .unwrap();
+        r.set("s2", "other", "x", LuaSource::Plugin("kanban".into()))
+            .unwrap();
+
+        assert_eq!(r.release_source(&LuaSource::Plugin("oci".into())), 2);
+
+        assert!(!r.snapshot("s1").contains_key("oci"));
+        assert_eq!(
+            r.snapshot("s1").get("git").map(String::as_str),
+            Some("main"),
+            "the operator's own value survives a plugin going inert"
+        );
+        assert!(!r.snapshot("s2").contains_key("oci"));
+        assert_eq!(
+            r.snapshot("s2").get("other").map(String::as_str),
+            Some("x"),
+            "another plugin's value survives"
+        );
+    }
+
+    /// The half that makes a client stop DRAWING it: a release nothing
+    /// announces leaves the value painted, which is the surface-withdrawal
+    /// failure one store over.
+    #[test]
+    fn releasing_a_source_notifies_every_affected_session() {
+        let r = StatuslineExprRegistry::new();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        assert!(r.set_change_notifier(Arc::new(move |id: &str| {
+            sink.lock().unwrap().push(id.to_string());
+        })));
+
+        r.set("s1", "oci", "on", LuaSource::Plugin("oci".into()))
+            .unwrap();
+        r.set("s2", "oci", "on", LuaSource::Plugin("oci".into()))
+            .unwrap();
+        r.set("s3", "git", "main", LuaSource::UserLua).unwrap();
+        seen.lock().unwrap().clear();
+
+        r.release_source(&LuaSource::Plugin("oci".into()));
+
+        let mut notified = seen.lock().unwrap().clone();
+        notified.sort();
+        assert_eq!(
+            notified,
+            vec!["s1".to_string(), "s2".to_string()],
+            "every session that lost a value must be told, and no other"
+        );
+
+        seen.lock().unwrap().clear();
+        assert_eq!(r.release_source(&LuaSource::Plugin("absent".into())), 0);
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "nothing dropped, nothing told"
+        );
+    }
+
+    /// A session release happens on the session's way out, so there is no bar
+    /// left to repaint and the notifier must not build a payload for it.
+    #[test]
+    fn releasing_a_session_does_not_notify() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let r = StatuslineExprRegistry::new();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&hits);
+        assert!(r.set_change_notifier(Arc::new(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })));
+
+        r.set("s1", "git", "main", LuaSource::UserLua).unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        r.release_session("s1");
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "ending is not a repaint");
     }
 }
