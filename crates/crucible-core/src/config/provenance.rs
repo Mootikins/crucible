@@ -268,6 +268,16 @@ impl ConfigSource {
             // provider would shadow the working one, so a save under it is
             // worse than lost. It names no file a person edits; `cru kiln
             // register` and the provider surfaces are the route to change it.
+            //
+            // THIS ARM IS WHY THE PIN CANNOT BE REPLACED BY A RANK
+            // COMPARISON. Every other pinning layer has a layer in the store,
+            // so a save could in principle be refused by comparing ranks. The
+            // state overlay does NOT: its leaves are not in the store at all,
+            // which is why `config.save` takes an `also_pinned` closure and
+            // why `fold_state_overlay` in the daemon's `rpc/dispatch.rs` is
+            // its only production supplier. Drop the pin and a
+            // `cru models embeddings use <NAME>` reports the change, tells the
+            // user to restart, and comes back on the old model.
             ConfigSource::Registered => true,
             // A flag typed for this invocation. It dies with the process, but
             // it outranks `Settings` for the whole of this run and no save
