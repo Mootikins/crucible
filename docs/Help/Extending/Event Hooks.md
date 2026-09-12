@@ -660,7 +660,6 @@ The event carries what the turn knows about itself:
 | `event.response_tail` | The END of the reply, up to `chat.response_tail_chars` characters |
 | `event.response_truncated` | `true` when the tail left text out |
 | `event.stop_reason` | `end_turn`, `cancelled`, `empty`, `max_tokens` or `refusal`; `nil` when the turn ended without one |
-| `event.is_continuation` | `true` on a turn an `inject` started |
 | `event.continuation_depth` | How many injects precede this turn. `0` is the user's own message |
 | `event.saw_tool_activity` | `true` when the turn ran a tool |
 
@@ -679,6 +678,10 @@ second model asked through `cru.session.complete`, or the text itself.
 cap: a long plan needs as many turns as it has steps. A handler that wants a
 bound reads the number and stops injecting. What stops a runaway loop either
 way is the user's cancel, which reaches every depth.
+
+There is no `is_continuation` beside it. The payload carried one, and it was
+exactly `continuation_depth > 0`, so it answered less about the same thing. To
+ask whether an `inject` started this turn, write `event.continuation_depth > 0`.
 
 ## Handler Return Values
 

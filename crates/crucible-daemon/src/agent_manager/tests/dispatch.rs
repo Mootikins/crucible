@@ -438,21 +438,29 @@ mod event_dispatch {
         assert_eq!(injection.as_deref(), Some("Suffix content"));
     }
 
+    /// A handler tells a re-prompted turn from the user's own, and stops.
+    ///
+    /// The payload carries `continuation_depth` and no boolean beside it. It
+    /// used to carry both, and `is_continuation` was exactly
+    /// `continuation_depth > 0`, so a handler that wants the boolean derives
+    /// it. This test derives it. It also asserts that the dropped field is
+    /// gone, and does not reach a handler as a silent `nil`.
     #[tokio::test]
-    async fn continuation_flag_passed_to_handlers() {
+    async fn a_handler_reads_the_continuation_depth_and_skips_a_re_prompt() {
         let state = handler_vm();
 
-        // Register handler that checks is_continuation and skips if true
         {
             state
                 .lua
                 .load(
                     r#"
-                received_continuation = nil
+                received_depth = nil
+                had_is_continuation = nil
                 cru.on("turn:complete", function(ctx, event)
-                    received_continuation = event.is_continuation
-                    if event.is_continuation then
-                        return nil  -- Skip injection on continuation
+                    received_depth = event.continuation_depth
+                    had_is_continuation = event.is_continuation ~= nil
+                    if event.continuation_depth > 0 then
+                        return nil  -- Skip injection on a re-prompted turn
                     end
                     return { inject = { content = "Should not inject" } }
                 end)
@@ -462,7 +470,6 @@ mod event_dispatch {
                 .unwrap();
         }
 
-        // Dispatch with is_continuation = true
         let injection = AgentManager::dispatch_turn_complete_handlers(
             "test-session",
             "msg-123",
@@ -473,21 +480,21 @@ mod event_dispatch {
         )
         .await;
 
-        // Handler should have returned nil, so no injection
         assert!(
             injection.is_none(),
-            "Handler should skip injection on continuation"
+            "Handler should skip injection on a re-prompted turn"
         );
 
-        // Verify the flag was received
-        let received: bool = state
-            .lua
-            .load("return received_continuation")
-            .eval()
-            .unwrap();
+        let received: u32 = state.lua.load("return received_depth").eval().unwrap();
+        assert_eq!(
+            received, 1,
+            "Handler should have received the re-prompt depth"
+        );
+
+        let had_boolean: bool = state.lua.load("return had_is_continuation").eval().unwrap();
         assert!(
-            received,
-            "Handler should have received is_continuation=true"
+            !had_boolean,
+            "the payload must not carry is_continuation beside the depth"
         );
     }
 
