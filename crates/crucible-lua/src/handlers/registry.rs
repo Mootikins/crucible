@@ -2,7 +2,7 @@ use crucible_core::events::SessionEvent;
 use crucible_core::utils::glob_match;
 use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use super::conversion::session_event_to_lua;
 use super::hook_name::HookName;
@@ -421,6 +421,32 @@ impl LuaScriptHandlerRegistry {
         }
     }
 
+    /// The row list, and the ONE poison policy: a poisoned lock is ENTERED.
+    ///
+    /// **The guarded value cannot be half-updated, so the poison flag carries
+    /// nothing a reader needs.** Every mutation here is one `Vec` operation —
+    /// a `push`, a `retain`, or a single index assignment — and a `Vec` that
+    /// survives a panic mid-operation is still structurally sound. There is no
+    /// multi-step invariant across two fields for a panic to break.
+    ///
+    /// Nine call sites read this lock and they used to answer FOUR ways: a
+    /// `map_err` to a Lua error, a `.map(…).unwrap_or(0)`, an `.expect` panic,
+    /// and a `let Ok(..) else { return 0 }`. The panic was the worst of them,
+    /// and it was on `for_hook` — the `pre_tool_call` selection — so a poison
+    /// that merely failed one registration would abort a turn the next time
+    /// anything read the store. The swallows were the second worst: an empty
+    /// answer from `for_hook` silently disables every guard registered on a
+    /// hook that fails closed.
+    ///
+    /// Entering is therefore both the least destructive and the honest one.
+    /// It is not "ignore an error": there is no error, because the state a
+    /// panicking thread left behind is a valid `Vec` of valid rows.
+    fn rows(&self) -> MutexGuard<'_, Vec<Registration>> {
+        self.registrations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Store `handler` under `spec`, owned by whoever is running now.
     ///
     /// The source comes from the VM's own app data, never from an argument: a
@@ -493,10 +519,7 @@ impl LuaScriptHandlerRegistry {
             required: spec.required,
             body,
         };
-        let mut rows = self
-            .registrations
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock registrations: {e}")))?;
+        let mut rows = self.rows();
         match registration.replaces(&rows) {
             // In place, so a re-registration on every history fetch does not
             // churn the tie-break order of the rows around it.
@@ -513,14 +536,10 @@ impl LuaScriptHandlerRegistry {
     /// so plugins using the real API showed 0 and plugins using the dead one
     /// showed a number that meant nothing.
     pub fn plugin_handler_count(&self, plugin: &str) -> usize {
-        self.registrations
-            .lock()
-            .map(|rows| {
-                rows.iter()
-                    .filter(|r| r.source.plugin_name() == Some(plugin))
-                    .count()
-            })
-            .unwrap_or(0)
+        self.rows()
+            .iter()
+            .filter(|r| r.source.plugin_name() == Some(plugin))
+            .count()
     }
 
     /// Every registration for `name` matching `identifier` and serving
@@ -567,10 +586,7 @@ impl LuaScriptHandlerRegistry {
         identifier: Option<&str>,
         firing: Firing<'_>,
     ) -> Vec<Registration> {
-        let rows = self
-            .registrations
-            .lock()
-            .expect("registrations: poisoned while selecting handlers");
+        let rows = self.rows();
         // No sort. `registrations` is already in registration order, which is
         // the whole of the ordering contract — see this method's doc.
         rows.iter()
@@ -602,9 +618,7 @@ impl LuaScriptHandlerRegistry {
     ///
     /// Answers how many it removed, so a caller can log the change.
     pub fn clear_source(&self, source: &LuaSource) -> usize {
-        let Ok(mut rows) = self.registrations.lock() else {
-            return 0;
-        };
+        let mut rows = self.rows();
         let before = rows.len();
         rows.retain(|r| &r.source != source);
         before - rows.len()
@@ -627,9 +641,7 @@ impl LuaScriptHandlerRegistry {
     ///
     /// Answers how many it removed.
     pub fn clear_session(&self, session: &str) -> usize {
-        let Ok(mut rows) = self.registrations.lock() else {
-            return 0;
-        };
+        let mut rows = self.rows();
         let before = rows.len();
         rows.retain(|r| r.scope != SessionScope::Session(session.to_string()));
         before - rows.len()
@@ -650,9 +662,7 @@ impl LuaScriptHandlerRegistry {
     /// reaches no other plugin's. `clear_source` already matched on exactly
     /// this, so the gate is the one that was already here.
     pub fn clear_matching(&self, source: &LuaSource, filter: &ClearFilter) -> usize {
-        let Ok(mut rows) = self.registrations.lock() else {
-            return 0;
-        };
+        let mut rows = self.rows();
         let before = rows.len();
         rows.retain(|row| !(&row.source == source && filter.selects(row)));
         before - rows.len()
@@ -681,9 +691,7 @@ impl LuaScriptHandlerRegistry {
         if !registration.once {
             return false;
         }
-        let Ok(mut rows) = self.registrations.lock() else {
-            return false;
-        };
+        let mut rows = self.rows();
         // By id, never by a held index: `register` may have replaced or
         // pushed rows since the dispatch snapshot, so an index would name
         // some other registration.
@@ -793,20 +801,12 @@ impl LuaScriptHandlerRegistry {
     /// For a caller that wants the whole store rather than one name: a test
     /// counting what a load left behind, and the boot rollback check.
     pub fn all(&self) -> Vec<Registration> {
-        self.registrations
-            .lock()
-            .expect("registrations: poisoned while listing handlers")
-            .clone()
+        self.rows().clone()
     }
 
     /// One registration by id, cloned out of the lock.
     pub fn by_id(&self, id: u64) -> Option<Registration> {
-        self.registrations
-            .lock()
-            .expect("registrations: poisoned while looking a handler up")
-            .iter()
-            .find(|r| r.id == id)
-            .cloned()
+        self.rows().iter().find(|r| r.id == id).cloned()
     }
 }
 
@@ -905,6 +905,72 @@ impl Registration {
             super::registry_of(lua)?.retire_if_once(self);
         }
         Ok(handler)
+    }
+}
+
+/// The poison policy, tested where the policy lives.
+///
+/// Inline rather than in `handlers/tests/`, because poisoning a `Mutex`
+/// requires panicking while the GUARD is held and `rows` is private. Every
+/// public method drops the guard before it returns, which is exactly why a
+/// poison here is so rare — and exactly why nothing noticed that the store
+/// answered a poison four different ways.
+#[cfg(test)]
+mod poison {
+    use super::*;
+    use crate::handlers::{register_cru_on_api, StageId};
+
+    /// A poisoned lock must not take a turn down, and must not silently
+    /// answer "no handlers" either.
+    ///
+    /// `for_hook` is the `pre_tool_call` selection, so the `.expect` this
+    /// replaces turned a poison that merely failed one registration into an
+    /// aborted turn the next time anything read the store. A swallowed
+    /// `Vec::new()` would be worse still: it disables every guard on a hook
+    /// that fails closed, with nothing logged.
+    #[test]
+    fn every_reader_and_writer_still_works_on_a_poisoned_lock() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+        register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
+        lua.load(r#"cru.on("pre_tool_call", function() end)"#)
+            .exec()
+            .expect("registers");
+
+        // The only way a `Mutex` is poisoned: panic while the guard is live.
+        let poisoner = registry.clone();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.rows();
+            panic!("a path panicked while holding the registration lock");
+        }));
+        assert!(panicked.is_err(), "the poisoning panic must have happened");
+        assert!(
+            registry.registrations.is_poisoned(),
+            "and it must have left the lock poisoned"
+        );
+
+        // Every reader keeps working, and keeps telling the truth.
+        assert_eq!(
+            registry
+                .for_hook(
+                    StageId::PreToolCall.into(),
+                    Some("bash"),
+                    crate::handlers::Firing::Sessionless
+                )
+                .len(),
+            1,
+            "`for_hook` must neither panic nor answer with an empty list"
+        );
+        assert_eq!(registry.all().len(), 1);
+        assert!(registry.by_id(0).is_some());
+        assert_eq!(registry.plugin_handler_count("nobody"), 0);
+
+        // And a write still lands, so the store is not left read-only.
+        lua.load(r#"cru.on("turn:complete", function() end)"#)
+            .exec()
+            .expect("registration must still succeed on a poisoned lock");
+        assert_eq!(registry.all().len(), 2);
+        assert_eq!(registry.clear_source(&LuaSource::UserLua), 2);
     }
 }
 
