@@ -23,13 +23,16 @@ mod inner {
     use std::sync::{Arc, Mutex};
 
     /// One live `cru.timer.spawn` task: who spawned it, and how to stop it.
-    pub(super) type LiveTask = (crate::plugin_context::LuaOwner, tokio::task::JoinHandle<()>);
+    pub(super) type LiveTask = (
+        crate::plugin_context::LuaSource,
+        tokio::task::JoinHandle<()>,
+    );
 
     /// Every task `cru.timer.spawn` started and the runtime has not finished.
     ///
     /// A `Vec`, not a map: `cru.timer.spawn` answers nothing, so no caller can
-    /// name one task. "Every task of this owner" is the only question asked of
-    /// this store, and [`super::abort_owner`] is the only reader.
+    /// name one task. "Every task of this source" is the only question asked of
+    /// this store, and [`super::abort_source`] is the only reader.
     ///
     /// `std::sync::Mutex`, as `cru.schedule` uses, because the lock covers one
     /// push or one drain and must be takeable from a synchronous closure.
@@ -38,12 +41,12 @@ mod inner {
         pub(super) tasks: Arc<Mutex<Vec<LiveTask>>>,
     }
 
-    /// The VM's task registry, in its app data, so [`super::abort_owner`]
+    /// The VM's task registry, in its app data, so [`super::abort_source`]
     /// reaches it without the host threading a handle through every caller.
     pub(super) struct InstalledTasks(pub(super) TaskRegistry);
 }
 
-/// Abort every task `owner` started through `cru.timer.spawn`. Answers how
+/// Abort every task `source` started through `cru.timer.spawn`. Answers how
 /// many handles it aborted.
 ///
 /// **What the abort guarantees, exactly.** `JoinHandle::abort` does not
@@ -57,11 +60,11 @@ mod inner {
 ///   its end. Nothing can interrupt it, because the task gives the runtime no
 ///   point at which to act.
 ///
-/// So "the owner is cleared" means that no further body of this owner STARTS.
+/// So "the source is cleared" means that no further body of this source STARTS.
 /// It does not mean that a body part-way through stops at the call to this
 /// function.
 #[cfg(feature = "send")]
-pub fn abort_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize {
+pub fn abort_source(lua: &Lua, source: &crate::plugin_context::LuaSource) -> usize {
     let Some(installed) = lua.app_data_ref::<inner::InstalledTasks>() else {
         return 0;
     };
@@ -70,12 +73,12 @@ pub fn abort_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize 
     };
     let mut aborted = 0;
     tasks.retain(|(spawned_by, handle)| {
-        if spawned_by == owner {
+        if spawned_by == source {
             handle.abort();
             aborted += 1;
             return false;
         }
-        // Another owner's task that the runtime already finished holds a
+        // Another source's task that the runtime already finished holds a
         // handle nobody can use, so drop it here too.
         !handle.is_finished()
     });
@@ -84,7 +87,7 @@ pub fn abort_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize 
 
 /// Without the `send` feature no task can be spawned, so none can be aborted.
 #[cfg(not(feature = "send"))]
-pub fn abort_owner(_lua: &Lua, _owner: &crate::plugin_context::LuaOwner) -> usize {
+pub fn abort_source(_lua: &Lua, _owner: &crate::plugin_context::LuaSource) -> usize {
     0
 }
 
@@ -166,10 +169,10 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
     // The task is called with no arguments and anything it answers is
     // dropped, so it is declared `() -> ()`.
     //
-    // The `JoinHandle` goes into an owner-keyed store in the VM's app data,
-    // so `clear_owner` can abort a task when its plugin goes inert. Before
+    // The `JoinHandle` goes into an source-keyed store in the VM's app data,
+    // so `clear_source` can abort a task when its plugin goes inert. Before
     // this the handle was dropped and the task outlived every generation of
-    // the plugin that started it. [`abort_owner`] states what the abort
+    // the plugin that started it. [`abort_source`] states what the abort
     // guarantees, which is less than "the task stops now".
     #[cfg(feature = "send")]
     {
@@ -185,13 +188,13 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
                 // no context of its own, so the task lost its plugin's name —
                 // and "no context" is also how the host spells the operator's
                 // own authority.
-                let owner = crate::plugin_context::current_owner(lua);
+                let source = crate::plugin_context::current_source(lua);
                 let vm = lua.clone();
-                let task_owner = owner.clone();
+                let task_owner = source.clone();
                 let handle = tokio::spawn(async move {
-                    let previous = crate::plugin_context::set_owner(&vm, task_owner);
+                    let previous = crate::plugin_context::set_source(&vm, task_owner);
                     let result = func.call_async::<()>(()).await;
-                    crate::plugin_context::set_owner(&vm, previous);
+                    crate::plugin_context::set_source(&vm, previous);
                     if let Err(e) = result {
                         tracing::warn!("Spawned Lua task error: {}", e);
                     }
@@ -202,7 +205,7 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
                     // a plugin that spawns on every event would grow the list
                     // for the life of the daemon.
                     tasks.retain(|(_, live)| !live.is_finished());
-                    tasks.push((owner, handle));
+                    tasks.push((source, handle));
                 }
                 Ok(())
             },
@@ -276,7 +279,7 @@ mod tests {
 
     /// A spawned task runs under the plugin that spawned it.
     ///
-    /// Same reason `cru.schedule` carries its owner: the task is detached and
+    /// Same reason `cru.schedule` carries its source: the task is detached and
     /// carries no context of its own, so without the capture a plugin's
     /// deferred work lost the name `cru.storage` keys on.
     #[cfg(feature = "send")]
@@ -308,7 +311,7 @@ mod tests {
             .await
             .unwrap();
         // The spawning call has returned; the plugin is no longer current.
-        crate::plugin_context::set_owner(&lua, previous);
+        crate::plugin_context::set_source(&lua, previous);
 
         for _ in 0..50 {
             if lua.globals().get::<bool>("ran").unwrap() {
@@ -340,7 +343,7 @@ mod tests {
 
     /// The count after the runtime has had time to act on the abort.
     ///
-    /// The abort is not immediate — see [`abort_owner`] — so the count is read
+    /// The abort is not immediate — see [`abort_source`] — so the count is read
     /// AFTER a settling window and then held still, rather than compared with
     /// the count at the moment of the abort.
     #[cfg(feature = "send")]
@@ -363,10 +366,10 @@ mod tests {
         ))
         .exec()
         .unwrap();
-        crate::plugin_context::set_owner(lua, previous);
+        crate::plugin_context::set_source(lua, previous);
     }
 
-    /// A task a plugin spawned must stop when the plugin's owner is cleared.
+    /// A task a plugin spawned must stop when the plugin's source is cleared.
     ///
     /// The `JoinHandle` used to be dropped on the floor, so nothing could
     /// abort a spawned task and a plugin marked Not Active left one running
@@ -382,9 +385,9 @@ mod tests {
         wait_until_ticking(&lua, "ticks").await;
 
         assert_eq!(
-            abort_owner(
+            abort_source(
                 &lua,
-                &crate::plugin_context::LuaOwner::Plugin("ticker".to_string())
+                &crate::plugin_context::LuaSource::Plugin("ticker".to_string())
             ),
             1,
             "the store must hold the handle of the task the plugin spawned"
@@ -395,11 +398,11 @@ mod tests {
         assert_eq!(
             lua.globals().get::<i64>("ticks").unwrap(),
             stopped_at,
-            "the task kept running after its owner was cleared"
+            "the task kept running after its source was cleared"
         );
     }
 
-    /// The abort is keyed by owner, so it must not reach another plugin's
+    /// The abort is keyed by source, so it must not reach another plugin's
     /// task. A clear that stopped every task would make one plugin's reload
     /// break every other plugin.
     #[cfg(feature = "send")]
@@ -415,12 +418,12 @@ mod tests {
         wait_until_ticking(&lua, "spared_ticks").await;
 
         assert_eq!(
-            abort_owner(
+            abort_source(
                 &lua,
-                &crate::plugin_context::LuaOwner::Plugin("doomed".to_string())
+                &crate::plugin_context::LuaSource::Plugin("doomed".to_string())
             ),
             1,
-            "exactly one task belongs to the cleared owner"
+            "exactly one task belongs to the cleared source"
         );
 
         let doomed_at = settle(&lua, "doomed_ticks").await;
@@ -429,15 +432,15 @@ mod tests {
         assert_eq!(
             lua.globals().get::<i64>("doomed_ticks").unwrap(),
             doomed_at,
-            "the cleared owner's task kept running"
+            "the cleared source's task kept running"
         );
         assert!(
             lua.globals().get::<i64>("spared_ticks").unwrap() > spared_at,
-            "another owner's task must survive a clear it was not named in"
+            "another source's task must survive a clear it was not named in"
         );
     }
 
-    /// The call site, not the capability: `clear_owner` is the one door
+    /// The call site, not the capability: `clear_source` is the one door
     /// `make_plugin_inert` uses, so the abort has to hang off it. A store that
     /// works and is never called leaves the invariant as false as before.
     #[cfg(feature = "send")]
@@ -451,14 +454,14 @@ mod tests {
         wait_until_ticking(&lua, "ticks").await;
 
         let registry = crate::handlers::LuaScriptHandlerRegistry::new();
-        let cleared = crate::handlers::clear_owner(
+        let cleared = crate::handlers::clear_source(
             &lua,
             &registry,
-            &crate::plugin_context::LuaOwner::Plugin("ticker".to_string()),
+            &crate::plugin_context::LuaSource::Plugin("ticker".to_string()),
         );
         assert_eq!(
             cleared, 1,
-            "clear_owner must count the task it aborted; it registered nothing else"
+            "clear_source must count the task it aborted; it registered nothing else"
         );
 
         let stopped_at = settle(&lua, "ticks").await;
@@ -466,7 +469,7 @@ mod tests {
         assert_eq!(
             lua.globals().get::<i64>("ticks").unwrap(),
             stopped_at,
-            "clear_owner does not reach the spawned tasks"
+            "clear_source does not reach the spawned tasks"
         );
     }
 

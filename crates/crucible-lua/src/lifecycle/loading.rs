@@ -157,7 +157,7 @@ impl PluginManager {
         // `unload` only cleans registrations for Active plugins; a plugin
         // being forgotten from Error/Disabled may still have owner-tagged
         // spec exports lying around.
-        self.unregister_by_owner(name);
+        self.unregister_by_source(name);
         self.on_load_hooks.remove(name);
         self.on_unload_hooks.remove(name);
     }

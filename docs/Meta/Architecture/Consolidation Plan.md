@@ -810,7 +810,7 @@ Recommend: one `crucible_core::fs::write_private(path, bytes)` that always sets 
 Done. Six registries merged into `LuaScriptHandlerRegistry`, keyed by four new
 `StageId` names. A store is not a dispatcher: the fire paths keep their own
 argument shape, budget and first-match rule, and `execute_permission_hooks`
-stays synchronous. `clear_owner` replaces all four partial clear paths and the
+stays synchronous. `clear_source` replaces all four partial clear paths and the
 two that did not exist.
 
 **C18. `SessionEvent::SessionEnded` vs `TurnPayload::Ended`, `PostLlmCall` x2, `Interaction*` x2.** Covered by B7.

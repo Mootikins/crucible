@@ -3,7 +3,7 @@ use tracing::debug;
 
 use super::hook_name::{hook_names, HookName};
 use super::registry::{
-    scope_from_opts, LuaScriptHandlerRegistry, RegistrationSpec, Scope, DEFAULT_PRIORITY,
+    scope_from_opts, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope, DEFAULT_PRIORITY,
 };
 
 use crucible_core::fuzzy::levenshtein;
@@ -87,7 +87,7 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                     None,
                     DEFAULT_PRIORITY,
                     None,
-                    Scope::Any,
+                    SessionScope::Global,
                     None,
                     f.clone(),
                 )

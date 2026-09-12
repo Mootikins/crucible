@@ -214,7 +214,7 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
     let scoped: Vec<_> = registry
         .all()
         .into_iter()
-        .filter(|r| r.scope == crucible_lua::Scope::Session(session.id.to_string()))
+        .filter(|r| r.scope == crucible_lua::SessionScope::Session(session.id.to_string()))
         .collect();
     assert_eq!(scoped.len(), 2, "the start hook activated two handlers");
 
@@ -231,11 +231,12 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
     assert!(
         !left
             .iter()
-            .any(|r| r.scope == crucible_lua::Scope::Session(session.id.to_string())),
+            .any(|r| r.scope == crucible_lua::SessionScope::Session(session.id.to_string())),
         "the session's own handler is gone"
     );
     assert!(
-        left.iter().any(|r| r.scope == crucible_lua::Scope::Any),
+        left.iter()
+            .any(|r| r.scope == crucible_lua::SessionScope::Global),
         "an unscoped handler belongs to the load, not the session, and survives"
     );
 }

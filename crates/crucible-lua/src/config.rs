@@ -513,7 +513,7 @@ pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
 /// The layer a write from this call site lands in.
 ///
 /// The OWNER answers first, and only for an owner with no file of its own —
-/// see [`crate::plugin_context::LuaOwner::config_layer`], which answers `None`
+/// see [`crate::plugin_context::LuaSource::config_layer`], which answers `None`
 /// for every other one. An eval's chunk name (`=lua.eval`) names no path, so
 /// without this the path classification fell back to the human layer and
 /// pinned a leaf that no file holds.
@@ -526,7 +526,7 @@ pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
 /// A poisoned lock falls back to empty roots rather than to a hand-made tag,
 /// so the "no root matches" rule is written once and both paths obey it.
 fn classify_call_site(lua: &Lua, site: &CallSite) -> SourceTag {
-    if let Some(layer) = crate::plugin_context::current_owner(lua).config_layer() {
+    if let Some(layer) = crate::plugin_context::current_source(lua).config_layer() {
         return layer;
     }
     match author_roots_slot().read() {
@@ -1099,12 +1099,12 @@ mod tests {
         // The eval bracket, with the chunk name `DaemonPluginLoader::eval`
         // gives the code it loads.
         let previous =
-            crate::plugin_context::set_owner(&lua, crate::plugin_context::LuaOwner::Eval);
+            crate::plugin_context::set_source(&lua, crate::plugin_context::LuaSource::Eval);
         lua.load(r#"cru.config.set({ probe = { from_eval = "socket" } })"#)
             .set_name("=lua.eval")
             .exec()
             .unwrap();
-        crate::plugin_context::set_owner(&lua, previous);
+        crate::plugin_context::set_source(&lua, previous);
 
         // And a line in a file the human owns, under no bracket at all.
         lua.load(r#"cru.config.set({ probe = { from_file = "human" } })"#)

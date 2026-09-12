@@ -407,7 +407,7 @@ impl PluginManager {
 
         // Restored on every exit path, error paths included: a context left
         // behind attributes whatever loads next to the wrong plugin.
-        crate::plugin_context::set_owner(&self.lua, previous);
+        crate::plugin_context::set_source(&self.lua, previous);
 
         load_result
     }

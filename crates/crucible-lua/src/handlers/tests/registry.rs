@@ -79,7 +79,7 @@ fn every_registration_api_writes_one_store() {
     .unwrap();
 
     assert_eq!(registry.plugin_handler_count("alpha"), 3);
-    registry.clear_owner(&crate::plugin_context::LuaOwner::Plugin("alpha".into()));
+    registry.clear_source(&crate::plugin_context::LuaSource::Plugin("alpha".into()));
     assert_eq!(registry.plugin_handler_count("alpha"), 0);
     assert_eq!(
         crate::hooks::session_start_hooks(&lua, crate::handlers::Firing::Sessionless)

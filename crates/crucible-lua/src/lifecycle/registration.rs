@@ -9,7 +9,7 @@ pub(super) struct RegisteredItem<T> {
 }
 
 impl PluginManager {
-    pub fn unregister_by_owner(&mut self, owner: &str) -> usize {
+    pub fn unregister_by_source(&mut self, owner: &str) -> usize {
         let before = self.tools.len() + self.commands.len();
 
         let matches_owner =

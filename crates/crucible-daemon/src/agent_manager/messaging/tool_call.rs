@@ -170,7 +170,7 @@ async fn run_pre_tool_call_handlers(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_name,
                     handler = handler.id,
-                    owner = %handler.owner,
+                    owner = %handler.source,
                     "pre_tool_call handler tried to take over a tool call without \
                      the `intercept_tools` capability; ignoring and dispatching normally"
                 );

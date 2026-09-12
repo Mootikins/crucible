@@ -119,7 +119,7 @@ async fn the_overrun_error_names_the_plugin() {
     )
     .exec()
     .expect("register the handler");
-    crate::plugin_context::set_owner(&lua, previous);
+    crate::plugin_context::set_source(&lua, previous);
 
     let error = registry
         .execute_runtime_handler(&lua, 0, &event(), None)

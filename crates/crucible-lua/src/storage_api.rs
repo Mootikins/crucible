@@ -272,9 +272,9 @@ mod store_tests {
         let lua = TestLuaBuilder::new().with_storage_store(store).build();
         // Set the plugin context so namespace resolution works. Lua cannot do
         // this: the context is Rust-side app data, which is the point.
-        crate::plugin_context::set_owner(
+        crate::plugin_context::set_source(
             &lua,
-            crate::plugin_context::LuaOwner::Plugin("test-plugin".to_string()),
+            crate::plugin_context::LuaSource::Plugin("test-plugin".to_string()),
         );
         lua
     }
@@ -408,9 +408,9 @@ mod store_tests {
         let lua = TestLuaBuilder::new()
             .with_storage_store(Arc::clone(&store))
             .build();
-        crate::plugin_context::set_owner(
+        crate::plugin_context::set_source(
             &lua,
-            crate::plugin_context::LuaOwner::Plugin("alpha".to_string()),
+            crate::plugin_context::LuaSource::Plugin("alpha".to_string()),
         );
 
         lua.load(

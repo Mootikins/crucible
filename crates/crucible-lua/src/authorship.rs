@@ -17,7 +17,7 @@
 //! arrives over a socket and its chunk name is `=lua.eval`, which matches no
 //! root here, so [`AuthorRoots::classify`] would fall back to the human layer
 //! and pin a leaf that no file holds. That case is decided BEFORE this module
-//! is reached, by `crate::plugin_context::LuaOwner::config_layer`. Nothing in
+//! is reached, by `crate::plugin_context::LuaSource::config_layer`. Nothing in
 //! this module changes for it: the rule above still holds wherever a file
 //! exists.
 //!

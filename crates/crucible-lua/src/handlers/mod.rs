@@ -37,7 +37,7 @@
 //! `None` and pattern-bearing handlers correctly do not match.
 //!
 //! `firing` is the session the dispatch belongs to, and `opts.session`
-//! filters on it the same way — see [`Scope`]. A site names the session it is
+//! filters on it the same way — see [`SessionScope`]. A site names the session it is
 //! in ([`Firing::InSession`]) or says it has none
 //! ([`Firing::Sessionless`]); it never reads a scope itself.
 
@@ -74,7 +74,7 @@ pub use permission::{
 /// caller outside this crate registers a handler.
 pub(crate) use registry::scope_from_opts;
 pub use registry::{
-    clear_owner, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec, Scope,
+    clear_source, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec, SessionScope,
     DEFAULT_PRIORITY,
 };
 pub use script_handler::{interpret_handler_result, EventOutcome, ScriptHandlerResult};

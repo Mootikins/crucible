@@ -1,7 +1,7 @@
 //! `cru.on_provider_auth` — headers a plugin supplies for a provider call.
 //!
 //! The hooks used to live in two Lua globals, `__crucible_hooks__` and
-//! `__crucible_auth_hooks__`, as a hook-name list, a parallel owner list, a
+//! `__crucible_auth_hooks__`, as a hook-name list, a parallel source list, a
 //! name→function map and a counter. The counter was a Lua global, so any
 //! plugin could assign it and make the next registration collide with a live
 //! hook's slot. They register into the shared store now, under `provider:auth`.
@@ -88,11 +88,11 @@ pub fn fire_provider_auth_hooks(
             }
         };
 
-        // The owner the registration recorded, so a hook reaching
+        // The source the registration recorded, so a hook reaching
         // `cru.storage` for a stored token finds its own namespace.
-        let previous = crate::plugin_context::set_owner(lua, hook.owner.clone());
+        let previous = crate::plugin_context::set_source(lua, hook.source.clone());
         let result = handler.call::<Value>(context.clone());
-        crate::plugin_context::set_owner(lua, previous);
+        crate::plugin_context::set_source(lua, previous);
 
         let result = match result {
             Ok(result) => result,
@@ -151,7 +151,7 @@ fn table_to_auth_headers(result_table: Table) -> LuaResult<Option<AuthHeaders>> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_context::LuaOwner;
+    use crate::plugin_context::LuaSource;
 
     fn setup() -> Lua {
         let lua = Lua::new();
@@ -161,8 +161,8 @@ mod tests {
         lua
     }
 
-    fn register(lua: &Lua, owner: LuaOwner, header: &str) {
-        crate::plugin_context::set_owner(lua, owner);
+    fn register(lua: &Lua, source: LuaSource, header: &str) {
+        crate::plugin_context::set_source(lua, source);
         lua.load(format!(
             r#"cru.on_provider_auth(function(ctx) return {{ headers = {{ ["X-Who"] = "{header}" }} }} end)"#
         ))
@@ -170,7 +170,7 @@ mod tests {
         .unwrap();
     }
 
-    /// Auth hooks follow the same owner contract as every other registration:
+    /// Auth hooks follow the same source contract as every other registration:
     /// a plugin's reload clears exactly its own, the user's own survive, and
     /// an id freed by clearing is never reissued — reuse would silently
     /// rebind a surviving hook's slot to the new function.
@@ -178,11 +178,11 @@ mod tests {
     fn clearing_an_owners_auth_hooks_keeps_others_and_never_reissues_an_id() {
         let lua = setup();
         let registry = crate::handlers::registry_of(&lua).unwrap();
-        register(&lua, LuaOwner::Plugin("alpha".into()), "alpha");
-        register(&lua, LuaOwner::Plugin("beta".into()), "beta");
-        register(&lua, LuaOwner::UserLua, "user");
+        register(&lua, LuaSource::Plugin("alpha".into()), "alpha");
+        register(&lua, LuaSource::Plugin("beta".into()), "beta");
+        register(&lua, LuaSource::UserLua, "user");
 
-        registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
+        registry.clear_source(&LuaSource::Plugin("alpha".into()));
 
         let hooks = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(hooks.len(), 2, "beta's and the user's hook survive");
@@ -194,7 +194,7 @@ mod tests {
 
         // A fresh registration must not reuse an id any live hook holds.
         let live: Vec<u64> = hooks.iter().map(|h| h.id).collect();
-        register(&lua, LuaOwner::Plugin("gamma".into()), "gamma");
+        register(&lua, LuaSource::Plugin("gamma".into()), "gamma");
         let after = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(after.len(), 3);
         let fresh = after.last().unwrap().id;
@@ -208,8 +208,8 @@ mod tests {
             .expect("first answer wins");
         assert_eq!(headers.get("X-Who"), Some(&"beta".to_string()));
 
-        registry.clear_owner(&LuaOwner::Plugin("beta".into()));
-        registry.clear_owner(&LuaOwner::Plugin("gamma".into()));
+        registry.clear_source(&LuaSource::Plugin("beta".into()));
+        registry.clear_source(&LuaSource::Plugin("gamma".into()));
         let last = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(last.len(), 1, "only the user's hook survives every clear");
         let headers = fire_provider_auth_hooks(&lua, &last, "prov", "model")

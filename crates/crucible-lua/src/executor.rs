@@ -93,15 +93,16 @@ impl LuaExecutor {
         for hook in crate::hooks::session_start_hooks(&self.lua, Firing::InSession(&id))? {
             match self.lua.registry_value::<Function>(hook.body()) {
                 Ok(func) => {
-                    // Under the owner that registered it, exactly as the end
-                    // path runs. Without this the hook ran with no owner, so
+                    // Under the source that registered it, exactly as the end
+                    // path runs. Without this the hook ran with no source, so
                     // `cru.storage` refused its writes and
                     // `cru.plugin.publish` attributed them to nobody.
-                    let previous = crate::plugin_context::set_owner(&self.lua, hook.owner.clone());
+                    let previous =
+                        crate::plugin_context::set_source(&self.lua, hook.source.clone());
                     let result = self
                         .call_lifecycle_hook(&func, session, "session_start")
                         .await;
-                    crate::plugin_context::set_owner(&self.lua, previous);
+                    crate::plugin_context::set_source(&self.lua, previous);
                     if let Err(e) = result {
                         tracing::error!(
                             required = hook.required,
@@ -166,8 +167,8 @@ impl LuaExecutor {
     /// via async `cru.shell.exec`, so a synchronous call leaks whatever the
     /// start hook acquired.
     ///
-    /// Each hook runs under the owner that registered it, as every other
-    /// registration does. `cru.storage` refuses a call from an owner that
+    /// Each hook runs under the source that registered it, as every other
+    /// registration does. `cru.storage` refuses a call from an source that
     /// names no plugin, so without this a plugin cannot read at session end
     /// what it stored during the session.
     pub async fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
@@ -176,13 +177,14 @@ impl LuaExecutor {
         for hook in crate::hooks::session_end_hooks(&self.lua, Firing::InSession(&id))? {
             match self.lua.registry_value::<Function>(hook.body()) {
                 Ok(func) => {
-                    let previous = crate::plugin_context::set_owner(&self.lua, hook.owner.clone());
+                    let previous =
+                        crate::plugin_context::set_source(&self.lua, hook.source.clone());
                     let result = self
                         .call_lifecycle_hook(&func, session, "session_end")
                         .await;
-                    // Restore on every path: an owner left behind attributes
+                    // Restore on every path: an source left behind attributes
                     // whatever runs next to the wrong author.
-                    crate::plugin_context::set_owner(&self.lua, previous);
+                    crate::plugin_context::set_source(&self.lua, previous);
                     if let Err(e) = result {
                         tracing::error!("Session end hook failed: {}", e);
                     }
@@ -605,7 +607,7 @@ mod tests {
             )
             .exec()
             .unwrap();
-        crate::plugin_context::set_owner(executor.lua(), previous);
+        crate::plugin_context::set_source(executor.lua(), previous);
 
         store
             .property_set(
@@ -624,9 +626,9 @@ mod tests {
         let read: Option<String> = executor.lua().load("return end_hook_read").eval().unwrap();
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
-            crate::plugin_context::current_owner(executor.lua())
-                == crate::plugin_context::LuaOwner::UserLua,
-            "the fire path must restore the previous owner"
+            crate::plugin_context::current_source(executor.lua())
+                == crate::plugin_context::LuaSource::UserLua,
+            "the fire path must restore the previous source"
         );
     }
 
@@ -661,7 +663,7 @@ mod tests {
             )
             .exec()
             .unwrap();
-        crate::plugin_context::set_owner(executor.lua(), previous);
+        crate::plugin_context::set_source(executor.lua(), previous);
 
         store
             .property_set(
@@ -684,9 +686,9 @@ mod tests {
             .unwrap();
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
-            crate::plugin_context::current_owner(executor.lua())
-                == crate::plugin_context::LuaOwner::UserLua,
-            "the fire path must restore the previous owner"
+            crate::plugin_context::current_source(executor.lua())
+                == crate::plugin_context::LuaSource::UserLua,
+            "the fire path must restore the previous source"
         );
     }
 

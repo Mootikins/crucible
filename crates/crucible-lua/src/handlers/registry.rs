@@ -7,12 +7,12 @@ use std::sync::{Arc, Mutex};
 use super::conversion::session_event_to_lua;
 use super::hook_name::HookName;
 use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
-use crate::plugin_context::{current_owner, enter_session, set_owner, LuaOwner};
+use crate::plugin_context::{current_source, enter_session, set_source, LuaSource};
 
 /// Which sessions a registration fires for.
 ///
-/// A third concern beside the owner and the pattern, and independent of both:
-/// the owner says whose registration it is, the pattern says which tool name,
+/// A third concern beside the source and the pattern, and independent of both:
+/// the source says whose registration it is, the pattern says which tool name,
 /// this says which session.
 ///
 /// # Activation REGISTERS
@@ -29,9 +29,13 @@ use crate::plugin_context::{current_owner, enter_session, set_owner, LuaOwner};
 /// variants cost less: no tag vocabulary to typo, no per-session state on the
 /// hot path, and no second mechanism for "which sessions" beside this one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Scope {
+pub enum SessionScope {
     /// Every session, and every dispatch that carries none.
-    Any,
+    ///
+    /// `Global` rather than `Any`, after Neovim's
+    /// `OptScope { kOptScopeGlobal, … }`: the name states the fact, where
+    /// `Any` stated the matching rule that follows from it.
+    Global,
     /// One session, by id.
     ///
     /// Registration is IDEMPOTENT for these — see
@@ -47,7 +51,7 @@ pub enum Scope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Firing<'a> {
     /// The dispatch names no session — a file event, a webhook, an index
-    /// pass. Only [`Scope::Any`] fires.
+    /// pass. Only [`SessionScope::Global`] fires.
     Sessionless,
     /// The dispatch belongs to this session.
     InSession(&'a str),
@@ -83,10 +87,10 @@ impl<'a> Firing<'a> {
 /// `cru.on` kept two parallel collections here; `cru.permissions.on_request`
 /// kept a third and a fourth; `cru.on_session_start`, `cru.on_session_end` and
 /// `cru.on_provider_auth` kept six Lua tables under two globals. Each repeated
-/// the same three things — a monotonic name allocator, an owner tag, and a
+/// the same three things — a monotonic name allocator, an source tag, and a
 /// clear-on-reload — and each got one of them wrong. The auth hooks counted
 /// through a Lua global a plugin could assign. The permission hooks derived an
-/// id from the list length, which collides after a clear, and had no owner at
+/// id from the list length, which collides after a clear, and had no source at
 /// all, so no reload ever removed one.
 ///
 /// **A store is not a dispatcher.** The six share this store and keep their
@@ -119,7 +123,7 @@ pub struct LuaScriptHandlerRegistry {
     registrations: Arc<Mutex<Vec<Registration>>>,
     /// The one id allocator.
     ///
-    /// NEVER derive an id from the list length. `clear_owner` shrinks the
+    /// NEVER derive an id from the list length. `clear_source` shrinks the
     /// list, so after a reload a length-derived id collides with one another
     /// registrant still holds. Dispatch is by id, so the collision rebinds a
     /// survivor's slot to the new body rather than merely duplicating a row —
@@ -133,8 +137,8 @@ pub struct LuaScriptHandlerRegistry {
 pub struct Registration {
     /// The hook this callback registered for.
     pub name: HookName,
-    /// Who registered it. `clear_owner` matches on exactly this.
-    pub owner: LuaOwner,
+    /// Who registered it. `clear_source` matches on exactly this.
+    pub source: LuaSource,
     /// The dispatch key, from the one monotonic allocator. Never reused.
     pub id: u64,
     /// Lower runs first. Registration order breaks a tie, and that order is
@@ -144,8 +148,8 @@ pub struct Registration {
     /// Glob over the dispatch identifier — a tool name, for the hooks that
     /// carry one. `None` matches every dispatch.
     pub pattern: Option<String>,
-    /// Which sessions this fires for. [`Scope::Any`] is every one.
-    pub scope: Scope,
+    /// Which sessions this fires for. [`SessionScope::Global`] is every one.
+    pub scope: SessionScope,
     /// What the registration called itself with `{ key = … }`.
     ///
     /// Part of the replacement key, and there for one reason: without it a
@@ -167,8 +171,8 @@ pub struct Registration {
     /// Whether this registration may take a tool call over — return
     /// `{ handled = true, … }` or a transform from `pre_tool_call`.
     ///
-    /// [`LuaOwner::may_intercept`] decides it, once, at registration. A handler
-    /// firing three turns later still runs as its own owner, which is what
+    /// [`LuaSource::may_intercept`] decides it, once, at registration. A handler
+    /// firing three turns later still runs as its own source, which is what
     /// `cru.storage` keys on and what `intercepts_tools` is read from.
     ///
     /// A registration may `cancel` whatever this says: refusing a call can
@@ -195,7 +199,7 @@ pub struct RegistrationSpec {
     /// Glob over the dispatch identifier.
     pub pattern: Option<String>,
     /// Which sessions to fire for.
-    pub scope: Scope,
+    pub scope: SessionScope,
     /// What the registration calls itself. See [`Registration::key`].
     pub key: Option<String>,
     /// An explicit time budget, in milliseconds.
@@ -212,7 +216,7 @@ impl RegistrationSpec {
             name,
             priority: DEFAULT_PRIORITY,
             pattern: None,
-            scope: Scope::Any,
+            scope: SessionScope::Global,
             key: None,
             timeout_ms: None,
             required: false,
@@ -242,10 +246,10 @@ pub fn scope_from_opts(
     api: &str,
     name: HookName,
     opts: &mlua::Table,
-) -> LuaResult<(Scope, Option<String>)> {
+) -> LuaResult<(SessionScope, Option<String>)> {
     let key = string_option(api, opts, "key")?;
     let Some(asked) = string_option(api, opts, "session")? else {
-        return Ok((Scope::Any, key));
+        return Ok((SessionScope::Global, key));
     };
     if !name.carries_session() {
         return Err(mlua::Error::RuntimeError(format!(
@@ -267,7 +271,7 @@ pub fn scope_from_opts(
              register a handler for session `{asked}`"
         )));
     }
-    Ok((Scope::Session(current), key))
+    Ok((SessionScope::Session(current), key))
 }
 
 /// One string option off a registration's table, or `None` when it is absent.
@@ -313,7 +317,7 @@ impl LuaScriptHandlerRegistry {
 
     /// Store `handler` under `spec`, owned by whoever is running now.
     ///
-    /// The owner comes from the VM's own app data, never from an argument: a
+    /// The source comes from the VM's own app data, never from an argument: a
     /// plugin must not be able to register under another plugin's name, nor
     /// grant itself the interception right read here.
     ///
@@ -321,8 +325,8 @@ impl LuaScriptHandlerRegistry {
     ///
     /// # A scoped registration REPLACES, and this is not optional
     ///
-    /// A [`Scope::Session`] registration is keyed by
-    /// `(owner, name, pattern, scope, key)` and overwrites a row that carries
+    /// A [`SessionScope::Session`] registration is keyed by
+    /// `(source, name, pattern, scope, key)` and overwrites a row that carries
     /// the same key. A second registration of the same key is the SAME
     /// registration.
     ///
@@ -334,18 +338,18 @@ impl LuaScriptHandlerRegistry {
     /// handler per history fetch, and the list has no unregister — leaving one
     /// stale copy per fetch, firing for the life of the daemon.
     ///
-    /// Every part of the key carries weight. Without the owner, two plugins
+    /// Every part of the key carries weight. Without the source, two plugins
     /// registering `cru.on("pre_tool_call", { session = id }, h)` would
     /// silently overwrite each other. Without the `key`, one plugin could not
     /// register two handlers on one hook for one session.
     ///
-    /// A [`Scope::Any`] registration still APPENDS. Two identical unscoped
+    /// A [`SessionScope::Global`] registration still APPENDS. Two identical unscoped
     /// registrations are two handlers, as they have always been: an unscoped
     /// registration is made once at load, so nothing accumulates, and
     /// collapsing them would change what every existing plugin does.
     pub fn register(&self, lua: &Lua, spec: RegistrationSpec, handler: Function) -> LuaResult<u64> {
-        let owner = current_owner(lua);
-        let may_intercept = owner.may_intercept(lua);
+        let source = current_source(lua);
+        let may_intercept = source.may_intercept(lua);
         // The body is in hand before anything is pushed: nothing lands in the
         // list without a function, which `pre_tool_call` would otherwise turn
         // into a denied tool call.
@@ -355,7 +359,7 @@ impl LuaScriptHandlerRegistry {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let registration = Registration {
             name: spec.name,
-            owner,
+            source,
             id,
             priority: spec.priority,
             pattern: spec.pattern,
@@ -390,7 +394,7 @@ impl LuaScriptHandlerRegistry {
             .lock()
             .map(|rows| {
                 rows.iter()
-                    .filter(|r| r.owner.plugin_name() == Some(plugin))
+                    .filter(|r| r.source.plugin_name() == Some(plugin))
                     .count()
             })
             .unwrap_or(0)
@@ -447,15 +451,15 @@ impl LuaScriptHandlerRegistry {
         }
     }
 
-    /// Drop every registration `owner` made, and release their bodies.
+    /// Drop every registration `source` made, and release their bodies.
     ///
     /// Answers how many it removed, so a caller can log the change.
-    pub fn clear_owner(&self, owner: &LuaOwner) -> usize {
+    pub fn clear_source(&self, source: &LuaSource) -> usize {
         let Ok(mut rows) = self.registrations.lock() else {
             return 0;
         };
         let before = rows.len();
-        rows.retain(|r| &r.owner != owner);
+        rows.retain(|r| &r.source != source);
         before - rows.len()
     }
 
@@ -466,8 +470,8 @@ impl LuaScriptHandlerRegistry {
     /// has no unregister, so without this sweep every session that ever
     /// enabled a plugin leaves a row behind for the life of the daemon.
     ///
-    /// [`Scope::Any`] rows are left alone: they belong to a plugin load, not
-    /// to a session, and a reload clears them by owner.
+    /// [`SessionScope::Global`] rows are left alone: they belong to a plugin load, not
+    /// to a session, and a reload clears them by source.
     ///
     /// A scope is a field, so a sweep is a `retain`. A per-session UNLOAD of
     /// the BODY is a different thing and stays unaffordable: a `RegistryKey`
@@ -480,7 +484,7 @@ impl LuaScriptHandlerRegistry {
             return 0;
         };
         let before = rows.len();
-        rows.retain(|r| r.scope != Scope::Session(session.to_string()));
+        rows.retain(|r| r.scope != SessionScope::Session(session.to_string()));
         before - rows.len()
     }
 
@@ -520,7 +524,7 @@ impl LuaScriptHandlerRegistry {
         payload: Value,
         session_id: Option<&str>,
     ) -> LuaResult<ScriptHandlerResult> {
-        // The owner recorded when the registration was made. A deferred call
+        // The source recorded when the registration was made. A deferred call
         // keeps that identity fixed, so a handler calling `cru.storage` from a
         // later turn still reaches its own plugin's namespace and holds no
         // more authority than its plugin does.
@@ -544,7 +548,7 @@ impl LuaScriptHandlerRegistry {
             ctx_table.set("session_id", session)?;
         }
 
-        let previous = set_owner(lua, registration.owner.clone());
+        let previous = set_source(lua, registration.source.clone());
         // The session this dispatch belongs to, so a handler that registers
         // ANOTHER handler for the session it is running in resolves the id
         // from the host rather than naming one. See
@@ -573,9 +577,9 @@ impl LuaScriptHandlerRegistry {
                 ))),
             }
         };
-        // Restored before the `?`: an owner left behind would attribute the
+        // Restored before the `?`: an source left behind would attribute the
         // next registration to the wrong author.
-        set_owner(lua, previous);
+        set_source(lua, previous);
 
         interpret_handler_result(&call?)
     }
@@ -618,7 +622,7 @@ impl Registration {
 
     /// Whether this registration fires for `firing`.
     ///
-    /// A [`Scope::Session`] registration does not fire for a dispatch that
+    /// A [`SessionScope::Session`] registration does not fire for a dispatch that
     /// names no session. There is nothing to compare it against, and firing
     /// would be firing for every session at once — the harm the scope
     /// exists to stop. [`HookName::carries_session`] refuses the combination
@@ -627,22 +631,22 @@ impl Registration {
     #[must_use]
     pub fn serves(&self, firing: Firing<'_>) -> bool {
         match (&self.scope, firing) {
-            (Scope::Any, _) => true,
-            (Scope::Session(wanted), Firing::InSession(id)) => wanted == id,
-            (Scope::Session(_), Firing::Sessionless) => false,
+            (SessionScope::Global, _) => true,
+            (SessionScope::Session(wanted), Firing::InSession(id)) => wanted == id,
+            (SessionScope::Session(_), Firing::Sessionless) => false,
         }
     }
 
     /// The index in `rows` this registration replaces, if any.
     ///
-    /// `None` for a [`Scope::Any`] registration, which appends. See
+    /// `None` for a [`SessionScope::Global`] registration, which appends. See
     /// [`LuaScriptHandlerRegistry::register`] for why a scoped one replaces.
     fn replaces(&self, rows: &[Self]) -> Option<usize> {
-        if self.scope == Scope::Any {
+        if self.scope == SessionScope::Global {
             return None;
         }
         rows.iter().position(|row| {
-            row.owner == self.owner
+            row.source == self.source
                 && row.name == self.name
                 && row.pattern == self.pattern
                 && row.scope == self.scope
@@ -673,7 +677,7 @@ impl Default for LuaScriptHandlerRegistry {
     }
 }
 
-/// Remove every registration `owner` made, wherever the host keeps one.
+/// Remove every registration `source` made, wherever the host keeps one.
 ///
 /// One free function rather than a trait: the stores it reaches have nothing
 /// else in common, and a trait would ask each of them to grow a method it has
@@ -686,26 +690,26 @@ impl Default for LuaScriptHandlerRegistry {
 /// registrations and leaked one more copy on every reload.
 ///
 /// **"Registered" it makes true at once; "running" it makes true at the next
-/// yield.** A schedule and a spawned task are the two things of an owner's
+/// yield.** A schedule and a spawned task are the two things of an source's
 /// that RUN, and neither can be interrupted mid-call: a tick already in its
 /// callback finishes it, and a stretch of Luau that awaits nothing runs to its
-/// end. See [`crate::schedule::cancel_owner`] and
-/// [`crate::timer::abort_owner`], each of which states its own half. What this
-/// call does guarantee is that no further body of `owner` starts.
+/// end. See [`crate::schedule::cancel_source`] and
+/// [`crate::timer::abort_source`], each of which states its own half. What this
+/// call does guarantee is that no further body of `source` starts.
 ///
 /// Answers how many registrations it removed.
-pub fn clear_owner(lua: &Lua, registry: &LuaScriptHandlerRegistry, owner: &LuaOwner) -> usize {
-    let dropped = registry.clear_owner(owner);
-    let schedules = crate::schedule::cancel_owner(lua, owner);
-    let tasks = crate::timer::abort_owner(lua, owner);
+pub fn clear_source(lua: &Lua, registry: &LuaScriptHandlerRegistry, source: &LuaSource) -> usize {
+    let dropped = registry.clear_source(source);
+    let schedules = crate::schedule::cancel_source(lua, source);
+    let tasks = crate::timer::abort_source(lua, source);
     let total = dropped + schedules + tasks;
     if total > 0 {
         tracing::debug!(
-            %owner,
+            %source,
             dropped,
             schedules,
             tasks,
-            "cleared owner registrations"
+            "cleared source registrations"
         );
     }
     total

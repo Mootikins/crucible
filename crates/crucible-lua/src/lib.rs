@@ -159,13 +159,13 @@ pub use notify::{
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
-    current_may_intercept, current_owner, current_plugin_name, current_session, enter_plugin,
-    enter_recorded_plugin, enter_session, intercept_for, record_plugin_intercept, set_owner,
-    LuaOwner, SessionGuard,
+    current_may_intercept, current_plugin_name, current_session, current_source, enter_plugin,
+    enter_recorded_plugin, enter_session, intercept_for, record_plugin_intercept, set_source,
+    LuaSource, SessionGuard,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
-pub use schedule::{cancel_owner, register_schedule_module};
+pub use schedule::{cancel_source, register_schedule_module};
 pub use schema::{discovered_params_to_json_schema, generate_input_schema};
 pub use shell::{register_shell_module, ExecResult, PluginShellPolicy};
 pub use statusline_exprs::{
@@ -198,11 +198,11 @@ pub use check::{
     find_checker, CheckReport, Checker, CheckerChoice, Finding, TypecheckStatus,
 };
 pub use handlers::{
-    clear_owner, execute_permission_hooks, execute_tool_before_execute_hooks,
+    clear_source, execute_permission_hooks, execute_tool_before_execute_hooks,
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks, install_registry,
     interpret_handler_result, register_cru_on_api, register_permission_hook_api, registry_of,
     EventOutcome, Firing, LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest,
-    Registration, RegistrationSpec, Scope, ScriptHandlerResult, ToolBeforeExecuteEvent,
+    Registration, RegistrationSpec, ScriptHandlerResult, SessionScope, ToolBeforeExecuteEvent,
     ToolBeforeExecuteResult, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
     ToolDisplayStartEvent, ToolDisplayStartHints, DEFAULT_PRIORITY,
 };

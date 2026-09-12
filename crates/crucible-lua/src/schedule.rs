@@ -76,7 +76,7 @@ mod inner {
 
     /// One live schedule: who created it, and how to stop it.
     pub(super) type LiveSchedule = (
-        crate::plugin_context::LuaOwner,
+        crate::plugin_context::LuaSource,
         tokio::sync::oneshot::Sender<()>,
     );
 
@@ -88,30 +88,30 @@ mod inner {
     pub(super) struct ScheduleRegistry {
         /// Each live schedule: who created it, and how to stop it.
         ///
-        /// The owner is recorded so `clear_owner` can stop a plugin's timers
+        /// The source is recorded so `clear_source` can stop a plugin's timers
         /// when the plugin goes inert. Without it a reload left the previous
         /// generation's task running, calling a body from a dead load.
         pub(super) cancellers: Arc<Mutex<HashMap<ScheduleHandle, LiveSchedule>>>,
     }
 
-    /// The VM's schedule registry, in its app data, so `cancel_owner` reaches
+    /// The VM's schedule registry, in its app data, so `cancel_source` reaches
     /// it without the host threading a handle through every caller.
     pub(super) struct InstalledSchedules(pub(super) ScheduleRegistry);
 }
 
-/// Stop every schedule `owner` created. Answers how many it stopped.
+/// Stop every schedule `source` created. Answers how many it stopped.
 ///
 /// `cru.schedule` stays its own store — it owns a tokio task and must not sit
 /// behind the per-tool-call lock the handler registry takes — so this is the
-/// one thing `clear_owner` needs from it.
+/// one thing `clear_source` needs from it.
 ///
 /// **What the stop guarantees, exactly.** The task reads `cancel_rx` in a
 /// `select!` beside the interval tick, and it reaches that `select!` only
 /// BETWEEN ticks. So a callback that is already running runs to its end, and
-/// the cancel stops the NEXT tick. "The owner is cleared" therefore means that
-/// no further tick of this owner starts.
+/// the cancel stops the NEXT tick. "The source is cleared" therefore means that
+/// no further tick of this source starts.
 #[cfg(feature = "send")]
-pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize {
+pub fn cancel_source(lua: &Lua, source: &crate::plugin_context::LuaSource) -> usize {
     let Some(installed) = lua.app_data_ref::<inner::InstalledSchedules>() else {
         return 0;
     };
@@ -120,7 +120,7 @@ pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize
     };
     let doomed: Vec<u64> = cancellers
         .iter()
-        .filter(|(_, (created_by, _))| created_by == owner)
+        .filter(|(_, (created_by, _))| created_by == source)
         .map(|(handle, _)| *handle)
         .collect();
     for handle in &doomed {
@@ -134,7 +134,7 @@ pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize
 /// Without the `send` feature no schedule can be created, so none can be
 /// stopped.
 #[cfg(not(feature = "send"))]
-pub fn cancel_owner(_lua: &Lua, _owner: &crate::plugin_context::LuaOwner) -> usize {
+pub fn cancel_source(_lua: &Lua, _owner: &crate::plugin_context::LuaSource) -> usize {
     0
 }
 
@@ -241,20 +241,20 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
             }
         }
 
-        // The owner that scheduled this, captured HERE and re-entered around
-        // every tick. A detached task carries no owner of its own, so the
+        // The source that scheduled this, captured HERE and re-entered around
+        // every tick. A detached task carries no source of its own, so the
         // callback used to run as if no plugin were running. That is why
         // `cru.storage` refused a scheduled write — the namespace is read
-        // from the owner at call time, and consolidation's cursor writes have
+        // from the source at call time, and consolidation's cursor writes have
         // been failing under `pcall` ever since.
-        let owner = crate::plugin_context::current_owner(lua);
+        let source = crate::plugin_context::current_source(lua);
 
         // Insert the cancel sender before spawning so cancel() works immediately
         reg_schedule
             .cancellers
             .lock()
             .map_err(|e| mlua::Error::external(format!("schedule lock poisoned: {e}")))?
-            .insert(handle, (owner.clone(), cancel_tx));
+            .insert(handle, (source.clone(), cancel_tx));
 
         let reg_cleanup = reg_schedule.clone();
         let vm = lua.clone();
@@ -269,11 +269,11 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
                 tokio::select! {
                     _ = interval.tick() => {
                         let previous =
-                            crate::plugin_context::set_owner(&vm, owner.clone());
+                            crate::plugin_context::set_source(&vm, source.clone());
                         let result = func.call_async::<()>(()).await;
-                        // Restored on both paths: an owner left behind
+                        // Restored on both paths: an source left behind
                         // attributes whatever runs next to this plugin.
-                        crate::plugin_context::set_owner(&vm, previous);
+                        crate::plugin_context::set_source(&vm, previous);
                         if let Err(e) = result {
                             tracing::warn!(handle, "scheduled callback error: {e}");
                         }
@@ -496,7 +496,7 @@ mod tests {
             .await
             .unwrap();
         // The scheduling call has returned; the plugin is no longer current.
-        crate::plugin_context::set_owner(&lua, previous);
+        crate::plugin_context::set_source(&lua, previous);
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert_eq!(

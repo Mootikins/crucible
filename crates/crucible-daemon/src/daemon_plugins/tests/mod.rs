@@ -489,8 +489,8 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
         "the user handler is the only bash handler, and nothing clears it"
     );
     assert_ne!(
-        handlers[0].owner,
-        crucible_lua::LuaOwner::Plugin("alpha".to_string()),
+        handlers[0].source,
+        crucible_lua::LuaSource::Plugin("alpha".to_string()),
         "the handler belongs to the evaluated source, not to alpha — that is \
          why alpha's reload does not clear it"
     );
@@ -1187,7 +1187,7 @@ async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() 
     assert_eq!(
         loader.plugin_handlers().plugin_handler_count("leaky"),
         0,
-        "clear_owner must reach every store, not five of nine"
+        "clear_source must reach every store, not five of nine"
     );
 }
 
@@ -1289,8 +1289,8 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
         registry.runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
     assert_eq!(
-        handlers[0].owner,
-        crucible_lua::LuaOwner::Eval,
+        handlers[0].source,
+        crucible_lua::LuaSource::Eval,
         "an eval must not be attributed to the user's own configuration"
     );
     assert!(
@@ -1300,10 +1300,10 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
 
     // And the clear path reaches it, which it could not while the owner was
     // absent.
-    crucible_lua::clear_owner(
+    crucible_lua::clear_source(
         loader.executor().lua(),
         &registry,
-        &crucible_lua::LuaOwner::Eval,
+        &crucible_lua::LuaSource::Eval,
     );
     assert!(registry
         .runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless)

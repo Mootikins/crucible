@@ -1,7 +1,7 @@
 use crate::handlers::{
     register_cru_on_api, LuaScriptHandlerRegistry, RegistrationSpec, ScriptHandlerResult, StageId,
 };
-use crate::plugin_context::LuaOwner;
+use crate::plugin_context::LuaSource;
 use crucible_core::events::SessionEvent;
 use mlua::Lua;
 
@@ -38,7 +38,7 @@ fn register_stub(
                 name: name.into(),
                 priority,
                 pattern: pattern.map(str::to_string),
-                scope: crate::handlers::Scope::Any,
+                scope: crate::handlers::SessionScope::Global,
                 key: None,
                 timeout_ms: None,
                 required: false,
@@ -397,7 +397,7 @@ async fn todo_enforcer_pattern_integration() {
     );
 }
 
-/// A dispatch id must never be reused. `clear_owner` shrinks the list, so an
+/// A dispatch id must never be reused. `clear_source` shrinks the list, so an
 /// id derived from that list's length would land on one another registrant
 /// still holds — and dispatch is by id, so the survivor's row would silently
 /// start running the reloaded plugin's function.
@@ -431,7 +431,7 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
         .id;
 
     // Reload alpha: drop its handlers, then let it register again.
-    registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
+    registry.clear_source(&LuaSource::Plugin("alpha".into()));
     crate::plugin_context::enter_plugin(&lua, "alpha", false);
     lua.load(
         r#"
@@ -511,7 +511,7 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
         .id;
 
     // The reload's clear lands between snapshot and execution.
-    registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
+    registry.clear_source(&LuaSource::Plugin("alpha".into()));
 
     let event = SessionEvent::Custom {
         name: "pre_tool_call".to_string(),

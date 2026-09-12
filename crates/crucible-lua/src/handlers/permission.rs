@@ -4,7 +4,8 @@ use tracing::debug;
 
 use super::hook_name::{HookName, StageId};
 use super::registry::{
-    scope_from_opts, Firing, LuaScriptHandlerRegistry, RegistrationSpec, Scope, DEFAULT_PRIORITY,
+    scope_from_opts, Firing, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope,
+    DEFAULT_PRIORITY,
 };
 
 /// The name a permission hook registers under in the shared store.
@@ -105,7 +106,7 @@ pub fn register_permission_hook_api(
                         key,
                     )
                 }
-                None => (None, DEFAULT_PRIORITY, Scope::Any, None),
+                None => (None, DEFAULT_PRIORITY, SessionScope::Global, None),
             };
 
             let id = registry.register(
@@ -221,7 +222,7 @@ pub fn execute_permission_hooks(
     let request_table = build_request_table(lua, request)?;
     // The session this gate belongs to, so a hook that registers another
     // handler for it resolves the id from the host. Held for the whole loop,
-    // as the owner bracket inside it is held for each hook.
+    // as the source bracket inside it is held for each hook.
     let _session = crate::plugin_context::enter_session(lua, firing.session());
 
     let _budget = crate::handler_budget::enter(
@@ -231,12 +232,12 @@ pub fn execute_permission_hooks(
     );
 
     for hook in hooks {
-        // The owner the registration recorded, re-entered around the call: a
+        // The source the registration recorded, re-entered around the call: a
         // hook reaching `cru.storage` must find its own plugin's namespace.
         let handler: Function = lua.registry_value(hook.body())?;
-        let previous = crate::plugin_context::set_owner(lua, hook.owner.clone());
+        let previous = crate::plugin_context::set_source(lua, hook.source.clone());
         let result = handler.call::<Value>(request_table.clone());
-        crate::plugin_context::set_owner(lua, previous);
+        crate::plugin_context::set_source(lua, previous);
 
         match result? {
             Value::Nil => {

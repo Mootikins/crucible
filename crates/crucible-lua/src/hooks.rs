@@ -9,7 +9,7 @@
 //! `session:end`. Six Lua tables under `__crucible_hooks__` held them before:
 //! the hook list, a parallel `required` list and a parallel owner list, twice
 //! over, each rebuilt in lockstep by a clear path that had to keep three
-//! indices aligned. The store keys by owner instead, so `clear_owner` removes
+//! indices aligned. The store keys by owner instead, so `clear_source` removes
 //! a plugin's hooks with no index arithmetic at all.
 //!
 //! The APIs stay separate from `cru.on` because their ARGUMENT differs: a
@@ -125,7 +125,7 @@ pub fn session_end_hooks(lua: &Lua, firing: Firing<'_>) -> LuaResult<Vec<Registr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_context::LuaOwner;
+    use crate::plugin_context::LuaSource;
     use crate::test_support::TestLuaBuilder;
 
     #[test]
@@ -263,7 +263,7 @@ mod tests {
         )
         .exec()
         .unwrap();
-        crate::plugin_context::set_owner(&lua, LuaOwner::UserLua);
+        crate::plugin_context::set_source(&lua, LuaSource::UserLua);
         // The user's own init.lua. A plugin's clear must never touch it.
         lua.load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
@@ -274,7 +274,7 @@ mod tests {
             "alpha registered a required hook"
         );
 
-        registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
+        registry.clear_source(&LuaSource::Plugin("alpha".into()));
         let start = session_start_hooks(&lua, crate::handlers::Firing::Sessionless).unwrap();
         assert_eq!(start.len(), 1, "beta's start hook survives");
         assert!(
@@ -288,7 +288,7 @@ mod tests {
             2
         );
 
-        registry.clear_owner(&LuaOwner::Plugin("beta".into()));
+        registry.clear_source(&LuaSource::Plugin("beta".into()));
         assert_eq!(
             session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
                 .unwrap()
