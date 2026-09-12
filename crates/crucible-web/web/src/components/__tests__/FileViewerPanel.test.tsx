@@ -15,6 +15,20 @@ const FILE_PATH = '/kiln/notes/from-tui.md';
 let openFilesValue: { path: string; content: string; dirty: boolean }[] = [];
 let activeFileValue: string | null = null;
 let autosaveSeconds = 0;
+let vimMode = true;
+let vimModeCompact = false;
+const device = vi.hoisted(() => ({ compact: false }));
+vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
+
+// Stub the editor and record what the panel hands it. Asserting the prop beats
+// probing the real CodeMirror, and keeps a test-only hook out of the app.
+const editorProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
+vi.mock('@/components/editor/EditorWithPreview', () => ({
+  EditorWithPreview: (props: Record<string, unknown>) => {
+    editorProps.last = props;
+    return <div data-testid="editor-stub" />;
+  },
+}));
 
 // Mock EditorContext — FileViewerPanel calls useEditorSafe()
 // The kilns the panel believes in. Autosave applies to files inside one.
@@ -47,7 +61,12 @@ vi.mock('@/contexts/SettingsContext', () => ({
         get autosaveSeconds() {
           return autosaveSeconds;
         },
-        vimMode: false,
+        get vimMode() {
+          return vimMode;
+        },
+        get vimModeCompact() {
+          return vimModeCompact;
+        },
         showSaveButton: true,
       },
     },
@@ -252,5 +271,36 @@ describe('FileViewerPanel — save UX', () => {
     render(() => <FileViewerPanel filePath={FILE_PATH} />);
     vi.advanceTimersByTime(10_000);
     expect(saveFile).not.toHaveBeenCalled();
+  });
+});
+
+// Vim is the desktop default and wrong on a phone: no Escape, no modifier row.
+describe('FileViewerPanel — vim mode per shell', () => {
+  beforeEach(() => {
+    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false }];
+    activeFileValue = FILE_PATH;
+    vimMode = true;
+    vimModeCompact = false;
+  });
+
+  it('uses the desktop key on the desktop shell', () => {
+    device.compact = false;
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+    expect(editorProps.last?.vimMode).toBe(true);
+  });
+
+  it('uses the compact key on a phone', () => {
+    device.compact = true;
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+    expect(editorProps.last?.vimMode).toBe(false);
+  });
+
+  it('lets the phone shell drive the reading/writing mode', () => {
+    device.compact = true;
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+    expect(editorProps.last?.mode).toBe('live');
+    device.compact = false;
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+    expect(editorProps.last?.mode).toBeUndefined();
   });
 });

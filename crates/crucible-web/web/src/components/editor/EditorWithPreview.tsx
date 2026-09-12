@@ -35,6 +35,11 @@ export const EditorWithPreview: Component<{
   /** Mode a markdown file opens in (hover popovers pass the configured
    * hover mode; default live). Non-markdown is always source. */
   initialMode?: EditorMode;
+  /** Drive the mode from outside. The compact shell does: its app bar carries
+   * the Read/Write control, because these floating buttons are ~26 px and sit
+   * over the text. Supplying it also hides them. */
+  mode?: EditorMode;
+  onModeChange?: (mode: EditorMode) => void;
   /** Readable line length in px (0 = full width). */
   lineWidth?: number;
   /** Render `$…$`/`$$…$$` as KaTeX in live preview (default true). */
@@ -56,20 +61,28 @@ export const EditorWithPreview: Component<{
   const isMarkdown = () => isMarkdownPath(props.path);
   const defaultMode = (): EditorMode =>
     isMarkdown() ? (props.initialMode ?? 'live') : 'source';
-  const [mode, setMode] = createSignal<EditorMode>(defaultMode());
+  const [ownMode, setOwnMode] = createSignal<EditorMode>(defaultMode());
+  const controlled = () => props.mode !== undefined;
+  const mode = () => (controlled() ? props.mode! : ownMode());
+  const setMode = (next: EditorMode | ((m: EditorMode) => EditorMode)) => {
+    const value = typeof next === 'function' ? next(mode()) : next;
+    if (controlled()) props.onModeChange?.(value);
+    else setOwnMode(value);
+  };
 
   // A different file starts back in its default mode — reading is a
   // per-look choice, and markdown always leads with prose.
   createEffect(() => {
     props.path;
-    setMode(defaultMode());
+    // A controlled mode belongs to its owner; only the internal one resets.
+    if (!controlled()) setOwnMode(defaultMode());
   });
 
   const modeButton = 'rounded border border-hairline bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
 
   return (
     <div class="relative h-full w-full" data-kiln={props.kiln || undefined}>
-      <Show when={isMarkdown()}>
+      <Show when={isMarkdown() && !controlled()}>
         <div class="absolute right-3 top-2 z-10 flex items-center gap-1">
           {/* Live ↔ source: the prose flow vs the mono/raw code flow. */}
           <Show when={mode() !== 'reading'}>

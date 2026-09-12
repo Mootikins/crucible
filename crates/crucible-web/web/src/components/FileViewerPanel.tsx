@@ -17,6 +17,8 @@ import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
 import { listKilns, rawFileUrl } from '@/lib/api';
 import { tabHost } from '@/lib/tab-host';
+import { isCompact } from '@/stores/deviceStore';
+import { compactEditorMode, setCompactEditorMode } from '@/stores/editorModeStore';
 import { swrLocal } from '@/lib/local-cache';
 import { PanelShell } from './PanelShell';
 import { ImageViewer } from './ImageViewer';
@@ -66,6 +68,11 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // whichever kiln the status bar pointed at, which is one kiln serving
   // another kiln's data.
   const [kilns, setKilns] = createSignal<{ path: string }[]>([]);
+
+  /** Vim is a desktop default. A phone has no `Escape` and no modifier row,
+   * and one shared key cannot serve both shells. */
+  const effectiveVimMode = () =>
+    isCompact() ? settings.editor.vimModeCompact : settings.editor.vimMode;
   // Kept as a promise as well as a signal. `swrLocal` applies nothing
   // synchronously on a cold start (first run, cleared storage, private mode),
   // and a click in that window has no kiln to resolve against — it would toast
@@ -256,7 +263,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     const marks = reviewMarks();
     // Reconfigure triggers visible from here — each one drops the layer.
     void props.filePath;
-    void settings.editor.vimMode;
+    void effectiveVimMode();
     void settings.editor.maxLineWidth;
     void settings.editor.renderMath;
     void settings.editor.renderDiagrams;
@@ -486,12 +493,19 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                       openNoteInEditor(target, kiln),
                     )
                   }
-                  vimMode={settings.editor.vimMode}
+                  vimMode={effectiveVimMode()}
                   lineWidth={settings.editor.maxLineWidth}
                   renderMath={settings.editor.renderMath}
                   renderDiagrams={settings.editor.renderDiagrams}
                 hideFrontmatterGap={settings.editor.hideFrontmatterGap}
                   editorApiRef={(view) => setEditorView(() => view)}
+                  // The compact shell owns the mode: its app bar carries the
+                  // Read/Write control, and the editor's own buttons are too
+                  // small for a thumb.
+                  mode={isCompact() ? compactEditorMode() : undefined}
+                  onModeChange={(next) => {
+                    if (next === 'reading' || next === 'live') setCompactEditorMode(next);
+                  }}
                   initialMode={
                     props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
                       ? props.initialMode

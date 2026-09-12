@@ -9,6 +9,7 @@ import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { DrawerTabs } from '@/components/mobile/DrawerTabs';
 import { FolderTree, Link2 } from '@/lib/icons';
 import { TabOverview } from '@/components/mobile/TabOverview';
+import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
 import { navStack } from '@/components/mobile/NavStack';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
 import { LayoutDashboard } from '@/lib/icons';
@@ -129,6 +130,9 @@ export const MobileShell: Component = () => {
         <h1 class="flex-1 truncate text-sm font-medium text-shell-ink px-1">
           {activeTab()?.title ?? 'Crucible'}
         </h1>
+        <Show when={activeTab()?.contentType === 'file' && !overviewOpen()}>
+          <MobileEditorBar filePath={String(activeTab()!.metadata?.filePath ?? '')} />
+        </Show>
         <Show when={tabStack.tabs.length > 0}>
           <button
             type="button"

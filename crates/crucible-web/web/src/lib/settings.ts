@@ -20,6 +20,10 @@ interface TranscriptionSettings {
 interface EditorSettings {
   /** Modal vim keybindings (@replit/codemirror-vim) */
   vimMode: boolean;
+  /** Modal vim keybindings on the compact shell. Off: a phone has no `Escape`
+   * key and no modifier row, and one shared key cannot serve both shells
+   * because a laptop window and a phone window share one browser profile. */
+  vimModeCompact: boolean;
   /** Save a NOTE — a file inside a kiln — this many idle seconds after its
    * last edit (0 = off). A project file always saves by hand: autosaving code
    * would fire watchers and builds mid-edit. */
@@ -95,6 +99,7 @@ export const defaultSettings: AppSettings = {
   },
   editor: {
     vimMode: true,
+    vimModeCompact: false,
     autosaveSeconds: 2,
     showSaveButton: true,
     // Matches the reading view's prose column (max-w-3xl).

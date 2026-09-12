@@ -353,9 +353,12 @@ export const EditorSettingsSection: Component = () => {
   return (
     <>
       <SectionHeader title="Editor" icon={Pencil} />
+      {/* One toggle per shell, each labelled with the shell it governs. A
+          single toggle would change whichever key the CURRENT shell reads, and
+          a phone user would see a desktop switch that seems to do nothing. */}
       <SettingRow
-        label="Vim keybindings"
-        description="Modal editing in the note/file editor."
+        label="Vim keybindings (desktop)"
+        description="Modal editing in the note/file editor, on a desktop-width window."
       >
         <input
           type="checkbox"
@@ -363,6 +366,18 @@ export const EditorSettingsSection: Component = () => {
           onChange={(e) => updateSetting('editor', 'vimMode', e.currentTarget.checked)}
           class="h-4 w-4 cursor-pointer"
           data-testid="settings-editor-vim"
+        />
+      </SettingRow>
+      <SettingRow
+        label="Vim keybindings (phone)"
+        description="Off by default: a phone has no Escape key and no modifier row."
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.vimModeCompact}
+          onChange={(e) => updateSetting('editor', 'vimModeCompact', e.currentTarget.checked)}
+          class="h-4 w-4 cursor-pointer"
+          data-testid="settings-editor-vim-compact"
         />
       </SettingRow>
       <SettingRow
