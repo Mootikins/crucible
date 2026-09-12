@@ -2,6 +2,7 @@ import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/wind
 import type { Tab } from '@/types/windowTypes';
 import { findFirstCenterPaneGroupId, firstCenterPaneId } from './panel-actions';
 import { iconForContentType } from './tab-icons';
+import { tabHost } from './tab-host';
 
 export function findTabBySessionId(sessionId: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -74,19 +75,20 @@ export function openTabBesideEditor(tab: Tab): boolean {
 }
 
 export function openSessionInChat(sessionId: string, sessionTitle: string): void {
-  const existing = findTabBySessionId(sessionId);
+  const host = tabHost();
+  const existing = host.find((t) => t.metadata?.sessionId === sessionId);
   if (existing) {
-    focusTabInPlace(existing.groupId, existing.tab.id);
+    host.activate(existing.id);
     return;
   }
 
-  const opened = openTabBesideEditor({
+  const opened = host.open({
     id: `tab-chat-${sessionId}`,
     title: sessionTitle || 'Chat',
     contentType: 'chat',
     icon: iconForContentType('chat'),
     metadata: { sessionId },
-  });
+  }, { placement: 'beside-editor' });
   if (!opened) {
     console.error('openSessionInChat: no pane available — cannot open chat tab');
   }

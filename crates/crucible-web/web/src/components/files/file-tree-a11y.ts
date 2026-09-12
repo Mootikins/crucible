@@ -5,6 +5,7 @@
  * rebuild.
  */
 import { windowStore } from '@/stores/windowStore';
+import { tabHost } from '@/lib/tab-host';
 import type { TreeCollection } from '@ark-ui/solid';
 import type { FileTreeNode } from '@/lib/file-tree/types';
 
@@ -14,6 +15,12 @@ import type { FileTreeNode } from '@/lib/file-tree/types';
  * `contentType === 'file'` and it carries `metadata.filePath`.
  */
 export function currentOpenFilePath(): string | null {
+  // The compact shell has one active tab and no groups, so the host answers
+  // for it; the desktop scan below then finds nothing.
+  const active = tabHost().activeTab();
+  if (active?.contentType === 'file' && typeof active.metadata?.filePath === 'string') {
+    return active.metadata.filePath;
+  }
   for (const group of Object.values(windowStore.tabGroups)) {
     const active = group.tabs.find((t) => t.id === group.activeTabId);
     if (active?.contentType === 'file') {

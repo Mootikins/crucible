@@ -14,11 +14,10 @@ import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { findTabByFilePath } from '@/lib/file-actions';
 import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
 import { listKilns, rawFileUrl } from '@/lib/api';
+import { tabHost } from '@/lib/tab-host';
 import { swrLocal } from '@/lib/local-cache';
-import { windowActions } from '@/stores/windowStore';
 import { PanelShell } from './PanelShell';
 import { ImageViewer } from './ImageViewer';
 import { Menu } from '@ark-ui/solid';
@@ -344,10 +343,9 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     const file = openFiles().find(f => f.path === props.filePath);
     const isModified = file?.dirty ?? false;
     untrack(() => {
-      const tabInfo = findTabByFilePath(props.filePath!);
-      if (tabInfo) {
-        windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { isModified });
-      }
+      const host = tabHost();
+      const tab = host.find((t) => t.metadata?.filePath === props.filePath);
+      if (tab) host.update(tab.id, { isModified });
     });
   });
 

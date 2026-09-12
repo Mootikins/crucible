@@ -1,7 +1,6 @@
-import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { focusTabInPlace, openTabBesideEditor } from './session-actions';
 import { iconForContentType } from './tab-icons';
+import { tabHost } from './tab-host';
 
 /**
  * First-message handoff for lazy session creation: the draft surface stores
@@ -34,12 +33,8 @@ export function consumePendingFirstMessage(sessionId: string): string | undefine
 
 let draftCounter = 0;
 
-function findDraftTab(): { groupId: string; tab: Tab } | null {
-  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
-    const tab = group.tabs.find((t) => t.contentType === 'chat-draft');
-    if (tab) return { groupId, tab };
-  }
-  return null;
+function findDraftTab(): Tab | null {
+  return tabHost().find((t) => t.contentType === 'chat-draft');
 }
 
 /**
@@ -56,19 +51,20 @@ function findDraftTab(): { groupId: string; tab: Tab } | null {
  * project would silently discard the project the user just picked.
  */
 export function openDraftSession(opts: { workspace?: string } = {}): void {
+  const host = tabHost();
   const existing = findDraftTab();
   if (existing) {
     if (opts.workspace !== undefined) {
-      windowActions.updateTab(existing.groupId, existing.tab.id, {
-        metadata: { ...existing.tab.metadata, workspace: opts.workspace },
+      host.update(existing.id, {
+        metadata: { ...existing.metadata, workspace: opts.workspace },
       });
     }
-    focusTabInPlace(existing.groupId, existing.tab.id);
+    host.activate(existing.id);
     return;
   }
 
   const tabId = `tab-draft-${++draftCounter}`;
-  const opened = openTabBesideEditor({
+  const opened = host.open({
     id: tabId,
     title: 'New Session',
     contentType: 'chat-draft',
@@ -80,7 +76,7 @@ export function openDraftSession(opts: { workspace?: string } = {}): void {
     // ribbon's explicit "no project" — and that draft could then never be
     // retargeted at a project, which is the common path.
     metadata: { draftTabId: tabId, workspace: opts.workspace },
-  });
+  }, { placement: 'beside-editor' });
   if (!opened) {
     console.error('openDraftSession: no pane available — cannot open draft tab');
   }
@@ -88,10 +84,5 @@ export function openDraftSession(opts: { workspace?: string } = {}): void {
 
 /** Close a draft tab wherever it lives (used after the real session opens). */
 export function closeDraftTab(tabId: string): void {
-  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
-    if (group.tabs.some((t) => t.id === tabId)) {
-      windowActions.removeTab(groupId, tabId);
-      return;
-    }
-  }
+  tabHost().remove(tabId);
 }

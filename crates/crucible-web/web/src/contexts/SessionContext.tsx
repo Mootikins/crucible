@@ -29,9 +29,8 @@ import {
 } from '@/lib/api';
 import type { SessionScope } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
-import { findTabBySessionId } from '@/lib/session-actions';
 import { setPendingFirstMessage } from '@/lib/draft-session';
-import { windowActions } from '@/stores/windowStore';
+import { tabHost } from '@/lib/tab-host';
 import { statusBarStore } from '@/stores/statusBarStore';
 
 
@@ -391,10 +390,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         if (idx !== -1) list.splice(idx, 1);
       }));
       // Close open chat tab if any
-      const openTab = findTabBySessionId(sessionId);
-      if (openTab) {
-        windowActions.removeTab(openTab.groupId, openTab.tab.id);
-      }
+      const openTab = tabHost().find((t) => t.metadata?.sessionId === sessionId);
+      if (openTab) tabHost().remove(openTab.id);
       // Clear current session if it was the deleted one
       if (currentSession()?.id === sessionId) {
         setCurrentSession(null);
@@ -415,10 +412,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         if (idx !== -1) list.splice(idx, 1);
       }));
       // Close open chat tab if any
-      const openTab = findTabBySessionId(sessionId);
-      if (openTab) {
-        windowActions.removeTab(openTab.groupId, openTab.tab.id);
-      }
+      const openTab = tabHost().find((t) => t.metadata?.sessionId === sessionId);
+      if (openTab) tabHost().remove(openTab.id);
       // Clear current session if it was the archived one
       if (currentSession()?.id === sessionId) {
         setCurrentSession(null);

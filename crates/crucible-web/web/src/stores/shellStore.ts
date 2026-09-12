@@ -1,9 +1,8 @@
 import { createSignal } from 'solid-js';
 import type { Tab, TabContentType } from '@/types/windowTypes';
-import { windowStore, windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { openPanelTab } from '@/lib/panel-actions';
-import { findTabBySessionId } from '@/lib/session-actions';
+import { tabHost } from '@/lib/tab-host';
 
 // ── Shell surface state ──────────────────────────────────────────────────
 // The shell has three navigable surfaces: Inbox (everything waiting on
@@ -41,14 +40,11 @@ export function syncShellSurface(tab: Tab | undefined | null): void {
 }
 
 function focusMostRecentTabOfType(contentType: TabContentType): boolean {
-  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
-    const tab = group.tabs.find((t) => t.contentType === contentType);
-    if (tab) {
-      windowActions.setActiveTab(groupId, tab.id);
-      return true;
-    }
-  }
-  return false;
+  const host = tabHost();
+  const tab = host.find((t) => t.contentType === contentType);
+  if (!tab) return false;
+  host.activate(tab.id);
+  return true;
 }
 
 function goInbox(): void {
@@ -60,9 +56,9 @@ function goInbox(): void {
 function goSession(): void {
   const sessionId = statusBarStore.activeSessionId();
   if (sessionId) {
-    const existing = findTabBySessionId(sessionId);
+    const existing = tabHost().find((t) => t.metadata?.sessionId === sessionId);
     if (existing) {
-      windowActions.setActiveTab(existing.groupId, existing.tab.id);
+      tabHost().activate(existing.id);
       return;
     }
   }

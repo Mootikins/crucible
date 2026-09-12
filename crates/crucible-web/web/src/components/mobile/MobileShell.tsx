@@ -1,4 +1,4 @@
-import { Component, createSignal, onCleanup, onMount } from 'solid-js';
+import { Component, Show, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js';
 import { ContentSurface } from '@/components/mobile/ContentSurface';
 import { Drawer } from '@/components/mobile/Drawer';
 import { createEdgeSwipe, type SwipePoint } from '@/components/mobile/edge-swipe';
@@ -8,7 +8,10 @@ import { FilesPanel } from '@/components/FilesPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { DrawerTabs } from '@/components/mobile/DrawerTabs';
 import { FolderTree, Link2 } from '@/lib/icons';
-import type { Tab } from '@/types/windowTypes';
+import { TabOverview } from '@/components/mobile/TabOverview';
+import { navStack } from '@/components/mobile/NavStack';
+import { tabStack, tabStackActions } from '@/stores/tabStackStore';
+import { LayoutDashboard } from '@/lib/icons';
 
 /** `min(85vw, 320px)`, in px, because the swipe measures against it. */
 const drawerWidthFor = (viewport: number) => Math.min(Math.round(viewport * 0.85), 320);
@@ -22,8 +25,41 @@ const drawerWidthFor = (viewport: number) => Math.min(Math.round(viewport * 0.85
  * The tab stack and the drawers' own tabs arrive in later steps of Track A.
  */
 export const MobileShell: Component = () => {
-  // Replaced by the tab stack in step 3; until then nothing opens a tab.
-  const [activeTab] = createSignal<Tab | null>(null);
+  const activeTab = () => tabStackActions.activeTab();
+  const [overviewOpen, setOverviewOpen] = createSignal(false);
+
+  // Each move to a tab gets a history entry, so the phone's back button walks
+  // the tabs a user has seen before it leaves the app. `back()` answers false
+  // once every tab has been walked; the entry is spent either way, so the next
+  // press belongs to the browser.
+  let movingBack = false;
+  createEffect(
+    on(
+      () => activeTab()?.id,
+      (id, previous) => {
+        if (!id || id === previous || movingBack) return;
+        navStack().push(() => {
+          movingBack = true;
+          tabStackActions.back();
+          movingBack = false;
+        });
+      },
+    ),
+  );
+
+  const openOverview = () => {
+    setOverviewOpen(true);
+    const release = navStack().push(() => setOverviewOpen(false));
+    releaseOverview = () => {
+      release();
+      releaseOverview = null;
+    };
+  };
+  let releaseOverview: (() => void) | null = null;
+  const closeOverview = () => {
+    setOverviewOpen(false);
+    releaseOverview?.();
+  };
   const [openSide, setOpenSide] = createSignal<DrawerSide | null>(null);
   const [viewport, setViewport] = createSignal(window.innerWidth);
   const width = () => drawerWidthFor(viewport());
@@ -93,6 +129,17 @@ export const MobileShell: Component = () => {
         <h1 class="flex-1 truncate text-sm font-medium text-shell-ink px-1">
           {activeTab()?.title ?? 'Crucible'}
         </h1>
+        <Show when={tabStack.tabs.length > 0}>
+          <button
+            type="button"
+            aria-label={`Tabs (${tabStack.tabs.length})`}
+            class="w-11 h-11 flex items-center justify-center shrink-0 gap-1 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+            onClick={() => (overviewOpen() ? closeOverview() : openOverview())}
+          >
+            <LayoutDashboard class="w-5 h-5" />
+            <span class="text-xs tabular-nums">{tabStack.tabs.length}</span>
+          </button>
+        </Show>
         <DrawerButton side="right" label="Backlinks" icon={Link2} />
       </header>
       <main
@@ -100,6 +147,20 @@ export const MobileShell: Component = () => {
         // The browser keeps vertical scroll; horizontal travel reaches the swipe.
         style={{ 'padding-bottom': 'var(--inset-bottom)', 'touch-action': 'pan-y' }}
       >
+        <Show
+          when={!overviewOpen()}
+          fallback={
+            <TabOverview
+              tabs={tabStack.tabs}
+              activeId={tabStack.activeTabId}
+              onPick={(id) => {
+                tabStackActions.activate(id);
+                closeOverview();
+              }}
+              onClose={(id) => tabStackActions.remove(id)}
+            />
+          }
+        >
         <ContentSurface
           tab={activeTab}
           empty={
@@ -108,6 +169,7 @@ export const MobileShell: Component = () => {
             </div>
           }
         />
+        </Show>
       </main>
       <div data-drawer-part="left">
         <Drawer

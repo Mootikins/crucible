@@ -1,7 +1,8 @@
-import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
-import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { windowStore } from '@/stores/windowStore';
+import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from './panel-registry';
 import { iconForContentType } from './tab-icons';
+import { tabHost } from './tab-host';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
@@ -73,15 +74,10 @@ export function findTabByContentType(
  * so the result is always visible.
  */
 export function openPanelTab(contentType: TabContentType): void {
-  const existing = findTabByContentType(contentType);
+  const host = tabHost();
+  const existing = host.find((t) => t.contentType === contentType);
   if (existing) {
-    const pos = findEdgePanelForGroup(existing.groupId);
-    if (pos) {
-      windowActions.setEdgePanelCollapsed(pos, false);
-      windowActions.setEdgePanelActiveTab(pos, existing.tab.id);
-    } else {
-      windowActions.setActiveTab(existing.groupId, existing.tab.id);
-    }
+    host.activate(existing.id);
     return;
   }
 
@@ -98,21 +94,7 @@ export function openPanelTab(contentType: TabContentType): void {
     icon: iconForContentType(contentType),
   };
 
-  if (def.defaultZone === 'center') {
-    const groupId = findFirstCenterPaneGroupId();
-    if (!groupId) {
-      console.error(`openPanelTab: no center pane group found — cannot open '${contentType}'`);
-      return;
-    }
-    windowActions.addTab(groupId, tab);
-  } else {
-    const pos = def.defaultZone;
-    const groupId = primaryEdgeGroupId(windowStore, pos);
-    if (!groupId) {
-      console.error(`openPanelTab: edge panel '${pos}' has no tab group — cannot open '${contentType}'`);
-      return;
-    }
-    windowActions.addTab(groupId, tab);
-    windowActions.setEdgePanelCollapsed(pos, false);
+  if (!host.open(tab, { placement: 'zone' })) {
+    console.error(`openPanelTab: nowhere to open '${contentType}' (zone '${def.defaultZone}')`);
   }
 }

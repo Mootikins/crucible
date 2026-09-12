@@ -1,9 +1,10 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { editorGroupId } from './panel-actions';
+
 import { iconForContentType } from './tab-icons';
 import { recordRecentFile } from './recent-files';
 import { pendingDiffActions } from '@/stores/pendingDiffStore';
+import { tabHost } from './tab-host';
 
 export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -13,11 +14,32 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
   return null;
 }
 
+/** The tab a file opens as, on either shell. */
+export function fileTab(filePath: string, fileName?: string): Tab {
+  const contentType = contentTypeForPath(filePath);
+  return {
+    id: `tab-file-${filePath}`,
+    // Last-resort basename fallback: a falsy caller value would otherwise
+    // mint a tab literally titled "undefined" (save prompts included).
+    title: fileName || filePath.split('/').pop() || filePath,
+    contentType,
+    icon: iconForContentType(contentType),
+    metadata: { filePath },
+  };
+}
+
 export function openFileInEditor(filePath: string, fileName?: string): void {
-  // The EDITOR group, not the first centre leaf. A session opens as a pane to
-  // the left of the editor, so "first" became the conversation and files
-  // opened on top of the chat.
-  openFileInGroup(editorGroupId(), filePath, fileName);
+  // Through the host: on the desktop this is the EDITOR group, not the first
+  // centre leaf (a session opens to its left, so "first" became the chat); on
+  // a phone it is the one content surface.
+  const host = tabHost();
+  const existing = host.find((t) => t.metadata?.filePath === filePath);
+  if (existing) {
+    host.activate(existing.id);
+    return;
+  }
+  const tab = fileTab(filePath, fileName);
+  if (host.open(tab, { placement: 'editor' })) recordRecentFile(filePath, tab.title);
 }
 
 /**
@@ -50,25 +72,18 @@ export function openFileWithDiff(
  * `scrollToLine` off the tab, so the metadata is updated on the existing tab.
  */
 export function openFileAtLine(filePath: string, line: number, fileName?: string): void {
-  const existing = findTabByFilePath(filePath);
+  const host = tabHost();
+  const existing = host.find((t) => t.metadata?.filePath === filePath);
   if (existing) {
-    windowActions.updateTab(existing.groupId, existing.tab.id, {
-      metadata: { ...existing.tab.metadata, filePath, scrollToLine: line },
+    host.update(existing.id, {
+      metadata: { ...existing.metadata, filePath, scrollToLine: line },
     });
-    windowActions.setActiveTab(existing.groupId, existing.tab.id);
+    host.activate(existing.id);
     return;
   }
-  const groupId = editorGroupId();
-  if (!groupId) return;
-  const title = fileName || filePath.split('/').pop() || filePath;
-  windowActions.addTab(groupId, {
-    id: `tab-file-${filePath}`,
-    title,
-    contentType: contentTypeForPath(filePath),
-    icon: iconForContentType(contentTypeForPath(filePath)),
-    metadata: { filePath, scrollToLine: line },
-  });
-  recordRecentFile(filePath, title);
+  const tab = fileTab(filePath, fileName);
+  tab.metadata = { filePath, scrollToLine: line };
+  if (host.open(tab, { placement: 'editor' })) recordRecentFile(filePath, tab.title);
 }
 
 /**
@@ -117,13 +132,10 @@ export function openFileInGroup(
  */
 export function closeTabsUnder(absPath: string, isDir: boolean): void {
   const prefix = `${absPath}/`;
-  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
-    for (const tab of [...group.tabs]) {
-      const fp = tab.metadata?.filePath;
-      if (typeof fp !== 'string') continue;
-      if (fp === absPath || (isDir && fp.startsWith(prefix))) {
-        windowActions.removeTab(groupId, tab.id);
-      }
-    }
+  const host = tabHost();
+  for (const tab of [...host.list()]) {
+    const fp = tab.metadata?.filePath;
+    if (typeof fp !== 'string') continue;
+    if (fp === absPath || (isDir && fp.startsWith(prefix))) host.remove(tab.id);
   }
 }

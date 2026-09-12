@@ -32,12 +32,11 @@ import {
   turnSegmentId,
   stripFrozenPrefix,
 } from '@/lib/api';
-import { findTabBySessionId } from '@/lib/session-actions';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
-import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
 import { attentionActions } from '@/stores/attentionStore';
+import { tabHost } from '@/lib/tab-host';
 import { createChatEventReducer } from './chatEventReducer';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 import { FALLBACK_MODES } from '@/components/ChatModeControl';
@@ -239,10 +238,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     },
     onTitleChanged: (title: string) => {
       setSessionTitle(title);
-      const tabInfo = findTabBySessionId(props.sessionId);
-      if (tabInfo) {
-        windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
-      }
+      const host = tabHost();
+      const tab = host.find((t) => t.metadata?.sessionId === props.sessionId);
+      if (tab) host.update(tab.id, { title });
       attentionActions.report(props.sessionId, { title });
       // Let the session list (Home resume, Inbox) pick up the new name.
       window.dispatchEvent(
