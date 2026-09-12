@@ -1111,10 +1111,11 @@ impl AgentManager {
 
         // The handler VM's registry — the one that runs Lua files.
         // Inject is last-writer-wins within a registry and across them, so a
-        // plugin's inject overrides a session handler's; a session that must
-        // win can use priority within its own registry, but cross-registry
-        // the later (plugin) pass acts last by the same rule that lets
-        // plugin transforms see session transforms' output.
+        // plugin's inject overrides a session handler's. Within one registry
+        // the later registration acts last, and `priority` no longer exists to
+        // change that; cross-registry the later (plugin) pass acts last by the
+        // same rule that lets plugin transforms see session transforms'
+        // output.
         run_handlers(plugin_handlers, None, |registry, lua, pending_injection| {
             let event = &event;
             Box::pin(async move {

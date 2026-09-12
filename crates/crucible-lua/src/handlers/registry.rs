@@ -877,9 +877,9 @@ impl Registration {
     /// through `execute_handler_with_payload`: the
     /// synchronous permission gate
     /// ([`execute_permission_hooks`](super::permission::execute_permission_hooks)),
-    /// the two session-lifecycle paths (`executor.rs`) and the provider-auth
-    /// gate (`auth_plugin.rs`). Each selected a `Vec<Registration>` and
-    /// loaded `body()` itself.
+    /// the session-lifecycle path (two sites in `executor.rs`, session start
+    /// and session end) and the provider-auth gate (`auth_plugin.rs`). Each
+    /// selected a `Vec<Registration>` and loaded `body()` itself.
     ///
     /// So `once` gets no per-path retire call. The accessor that handed out
     /// the slot is GONE, and `body` is private, so the only way to obtain the
