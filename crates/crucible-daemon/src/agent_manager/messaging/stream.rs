@@ -58,12 +58,6 @@ pub(in crate::agent_manager) struct TurnFacts {
     pub(in crate::agent_manager) saw_tool_activity: bool,
 }
 
-impl TurnFacts {
-    fn is_continuation(&self) -> bool {
-        self.continuation_depth > 0
-    }
-}
-
 /// The last `limit` characters of a reply, and whether anything was cut.
 ///
 /// A tail, not a head. The signal a plugin reads sits at the END of a reply —
@@ -1093,7 +1087,6 @@ impl AgentManager {
         facts: TurnFacts,
         response_tail_chars: usize,
     ) -> Option<String> {
-        let is_continuation = facts.is_continuation();
         let (response_tail, response_truncated) = response_tail(response, response_tail_chars);
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
@@ -1103,7 +1096,13 @@ impl AgentManager {
                 "response_length": response.len(),
                 "response_tail": response_tail,
                 "response_truncated": response_truncated,
-                "is_continuation": is_continuation,
+                // The depth alone, not a boolean beside it. The payload
+                // used to carry `is_continuation`, which was exactly
+                // `continuation_depth > 0` — two fields that answer
+                // one question, and a handler that read the boolean could
+                // not tell the first re-prompt from the fiftieth. A handler
+                // that wants the boolean writes
+                // `event.continuation_depth > 0`.
                 "continuation_depth": facts.continuation_depth,
                 "saw_tool_activity": facts.saw_tool_activity,
                 "stop_reason": facts.stop_reason,
@@ -1124,7 +1123,7 @@ impl AgentManager {
                     &registry,
                     &lua,
                     event,
-                    is_continuation,
+                    facts.continuation_depth,
                 )
                 .await;
                 ControlFlow::Continue(injection.or(pending_injection))
@@ -1139,7 +1138,7 @@ impl AgentManager {
         registry: &crucible_lua::LuaScriptHandlerRegistry,
         lua: &mlua::Lua,
         event: &SessionEvent,
-        is_continuation: bool,
+        continuation_depth: u32,
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
@@ -1155,7 +1154,7 @@ impl AgentManager {
         debug!(
             session_id = %session_id,
             handler_count = handlers.len(),
-            is_continuation = is_continuation,
+            continuation_depth = continuation_depth,
             "Dispatching turn:complete handlers"
         );
 

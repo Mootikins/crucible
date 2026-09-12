@@ -219,8 +219,11 @@ fn a_directory_holding_only_the_removed_manifest_is_not_a_plugin() {
 /// `std::fs::read_dir` specifies no order, and the order changes with the file
 /// system, so without the sort this assertion depends on the disk.
 ///
-/// Load order is the tie-break between two handlers of equal priority, so it
-/// must give the same answer on every machine.
+/// This sort does not decide the load order. `PluginManager::load_all` sorts
+/// its whole key set, so the load order is one alphabetical sort across every
+/// directory whatever `read_dir` answers. What the discovery sort decides is
+/// which entry wins a duplicated name, and it makes a discovery log
+/// reproducible.
 #[test]
 fn discovery_reads_one_search_path_in_name_order() {
     let temp = TempDir::new().unwrap();
@@ -247,10 +250,15 @@ fn discovery_reads_one_search_path_in_name_order() {
 ///
 /// `crucible_core::runtime_path::entry::Origin` declares the rank between
 /// roots, highest first, and `search_paths` preserves it. Discovery takes the
-/// roots in the order it receives them, so a plugin from a higher root loads
-/// first even when its name sorts last.
+/// roots in the order it receives them, so a plugin from a higher root is
+/// DISCOVERED first even when its name sorts last.
+///
+/// It does not LOAD first, and an earlier version of this test asserted that
+/// it did. `load_all` sorts every discovered name, so `alpha` from the lower
+/// root loads before `zulu` from the higher one. The rank decides which
+/// plugin a name resolves to, not when that plugin runs.
 #[test]
-fn a_higher_search_path_loads_before_a_lower_one() {
+fn a_higher_search_path_is_discovered_before_a_lower_one() {
     let high = TempDir::new().unwrap();
     let low = TempDir::new().unwrap();
     create_test_plugin(high.path(), "zulu", "1.0.0");
@@ -264,6 +272,46 @@ fn a_higher_search_path_loads_before_a_lower_one() {
         discovered,
         vec!["zulu", "alpha"],
         "the search path rank must outrank the name order"
+    );
+
+    let loaded = manager.load_all().unwrap();
+    assert_eq!(
+        loaded,
+        vec!["alpha", "zulu"],
+        "the load order is one sort over every name, not the discovery order"
+    );
+}
+
+/// A duplicated name resolves to the same entry on every file system.
+///
+/// This is what the discovery sort buys. A directory `omega` and a file
+/// `omega.lua` in ONE search path both claim the name `omega`, because a
+/// plugin's name is its file stem. Discovery keeps the first of the two and
+/// logs the second as shadowed, so without the sort the winner is whatever
+/// `read_dir` answered. The sort by file name puts `omega` before
+/// `omega.lua`, so the directory wins on every machine.
+///
+/// `dir` is the assertion because it is the only thing that separates the two:
+/// a directory plugin records the plugin directory, a single-file plugin
+/// records the search path.
+#[test]
+fn a_directory_wins_a_name_a_single_file_plugin_also_claims() {
+    let temp = TempDir::new().unwrap();
+    create_test_plugin(temp.path(), "omega", "1.0.0");
+    std::fs::write(temp.path().join("omega.lua"), "return {}").unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(
+        discovered,
+        vec!["omega"],
+        "a duplicated name must be discovered once"
+    );
+    assert_eq!(
+        manager.get("omega").expect("omega was discovered").dir,
+        temp.path().join("omega"),
+        "the directory must win the name, not the single file beside it"
     );
 }
 
