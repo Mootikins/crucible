@@ -225,6 +225,14 @@ export const MobileShell: Component = () => {
               icon={iconForPanelId(def.id)}
               onSelect={() => {
                 setMenuOpen(false);
+                // Settings is a DIALOG, not a tab. Opening the registered
+                // panel here gave a phone the stacked tab instead — one
+                // uninterrupted scroll of every section, which is what the
+                // drill-down replaced.
+                if (def.id === 'settings') {
+                  window.dispatchEvent(new CustomEvent('crucible:open-settings'));
+                  return;
+                }
                 openPanelTab(def.id as Parameters<typeof openPanelTab>[0]);
               }}
             />

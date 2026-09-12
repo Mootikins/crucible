@@ -416,6 +416,13 @@ Design: `docs/Meta/Architecture/Mobile Shell.md`. Product record: **Mobile Shell
 
 ---
 
+### WS-319: Change a setting on a phone
+**As a user on a phone**, I find a setting by reading one list and opening the category it is in, and I go back the way I came.
+**Acceptance:** Settings opens on one scrollable list of every category, grouped, with no form shown and nothing to go back to. Tapping a category replaces the list with that category's settings and names it in the bar, beside a back control. Back returns to the list. A category that holds more categories — the daemon's configuration — shows each as a row with the count it holds, and opening one drills again, to any depth the tree has. The phone's own back button walks the levels; closing the dialog from any depth gives every history entry back, so the next back press belongs to the shell. Escape means up one level and closes only at the root. The desktop keeps its two-column dialog.
+**Tests:** W1 (`settings/__tests__/settings-nav.test.ts` — the stack, the browser landing, and the entries a close returns; `settings/__tests__/SettingsModal.compact.test.tsx` — the root list, the drill, back, close and Escape). W2 (`mobile-shell.story.spec.ts` — the root list at a phone's viewport, a three-level drill through the config tree, the back button unwinding it, and the history a close gives back).
+
+---
+
 ## Infra requirements these stories impose (status)
 
 1. **vitest gates CI** — DONE: `just ci` runs `web-test unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).

@@ -9,6 +9,8 @@ import {
 } from '@/lib/api';
 import { openFileAtLine } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
+import { useSettingsStack } from './settings-nav';
+import { SettingsNavRow } from './MobileSettings';
 
 /**
  * The daemon's own config, rendered from the daemon's own declaration.
@@ -244,54 +246,113 @@ const AppConfigRow: Component<{
   );
 };
 
-/** A group heading and its children, recursively. */
-const AppConfigGroup: Component<{
+interface GroupProps {
   node: AppConfigNode;
   depth: number;
   effective?: Record<string, unknown>;
   origins: ConfigOrigin[];
   onSave: (path: string, value: unknown) => Promise<void>;
   onJump: (origin: ConfigOrigin) => void;
-}> = (props) => (
-  <>
-    {/* The ROOT group draws no heading: the left list already names it. */}
-    <Show when={props.depth > 0 && props.node.name}>
-      <tr>
-        <td
-          colSpan={2}
-          class="pt-5 pb-2 text-floor font-semibold uppercase tracking-wider text-muted-dark"
-        >
-          {props.node.name}
-        </td>
-      </tr>
-    </Show>
-    <Index each={props.node.args ?? []}>
-      {(child) => (
-        <Show
-          when={child().type === 'group'}
-          fallback={
-            <AppConfigRow
-              node={child()}
-              effective={props.effective}
-              origin={props.origins.find((row) => row.key === (child().path ?? child().key))}
-              onSave={props.onSave}
-              onJump={props.onJump}
-            />
-          }
-        >
-          <AppConfigGroup
-            node={child()}
-            depth={props.depth + 1}
-            effective={props.effective}
-            origins={props.origins}
-            onSave={props.onSave}
-            onJump={props.onJump}
-          />
-        </Show>
-      )}
-    </Index>
-  </>
-);
+}
+
+/** What a drill row promises, counted correctly at one. */
+const countLabel = (n: number) => `${n} ${n === 1 ? 'setting' : 'settings'}`;
+
+/** How many leaves a group holds, at any depth — what its row promises. */
+function leafCount(node: AppConfigNode): number {
+  return (node.args ?? []).reduce(
+    (sum, child) => sum + (child.type === 'group' ? leafCount(child) : 1),
+    0,
+  );
+}
+
+/**
+ * A group heading and its children, recursively.
+ *
+ * On a phone a child group becomes a ROW that opens its own page instead of a
+ * heading over inlined rows. The daemon's config is the deepest tree the app
+ * has, and inlining it gave a 412 px screen one scroll of every leaf the
+ * daemon declares — the thing the drill-down exists to end. Nesting keeps
+ * working: each pushed page renders at depth 0, so ITS groups drill too.
+ */
+const AppConfigGroup: Component<GroupProps> = (props) => {
+  const stack = useSettingsStack();
+
+  return (
+    <>
+      {/* The ROOT group draws no heading: the bar already names it. */}
+      <Show when={props.depth > 0 && props.node.name}>
+        <tr>
+          <td
+            colSpan={2}
+            class="pt-5 pb-2 text-floor font-semibold uppercase tracking-wider text-muted-dark"
+          >
+            {props.node.name}
+          </td>
+        </tr>
+      </Show>
+      <Index each={props.node.args ?? []}>
+        {(child) => (
+          <Show
+            when={child().type === 'group'}
+            fallback={
+              <AppConfigRow
+                node={child()}
+                effective={props.effective}
+                origin={props.origins.find((row) => row.key === (child().path ?? child().key))}
+                onSave={props.onSave}
+                onJump={props.onJump}
+              />
+            }
+          >
+            <Show
+              when={stack}
+              fallback={
+                <AppConfigGroup
+                  node={child()}
+                  depth={props.depth + 1}
+                  effective={props.effective}
+                  origins={props.origins}
+                  onSave={props.onSave}
+                  onJump={props.onJump}
+                />
+              }
+            >
+              {(nav) => (
+                <tr class="border-b border-hairline">
+                  <td colSpan={2} class="p-0">
+                    <SettingsNavRow
+                      label={child().name ?? child().key ?? 'Group'}
+                      detail={countLabel(leafCount(child()))}
+                      testId={`config-group-${child().key ?? child().name}`}
+                      onSelect={() =>
+                        nav().push({
+                          id: `config:${child().path ?? child().key ?? child().name}`,
+                          title: child().name ?? child().key ?? 'Group',
+                          rows: true,
+                          body: () => (
+                            <AppConfigGroup
+                              node={child()}
+                              depth={0}
+                              effective={props.effective}
+                              origins={props.origins}
+                              onSave={props.onSave}
+                              onJump={props.onJump}
+                            />
+                          ),
+                        })
+                      }
+                    />
+                  </td>
+                </tr>
+              )}
+            </Show>
+          </Show>
+        )}
+      </Index>
+    </>
+  );
+};
 
 /**
  * The leaves that take no control at all, each with the daemon's reason.

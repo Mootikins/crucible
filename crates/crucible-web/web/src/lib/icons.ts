@@ -26,6 +26,7 @@ export {
   LayoutDashboard,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
   ArrowUp,

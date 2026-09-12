@@ -5,9 +5,11 @@ import { X } from '@/lib/icons';
 import { settingsSections, settingsGroups } from './sections';
 import { getPluginOptions } from '@/lib/api';
 import { WithoutSectionHeaders } from './primitives';
+import { MobileSettings } from './MobileSettings';
+import { createSettingsStack, SettingsStackProvider } from './settings-nav';
 
 /**
- * Settings, as a modal with its sections down the left.
+ * Settings, as a modal with its sections down the left — on a desktop.
  *
  * It used to be a TAB in the centre tiling area, which made it a peer of the
  * work: it took a pane, it could be split beside a session, it survived a
@@ -19,9 +21,13 @@ import { WithoutSectionHeaders } from './primitives';
  * The shape is Obsidian's, for the reason Obsidian uses it: a left list turns
  * "scroll until you see it" into "read nine labels", and it keeps the section
  * you are in named on screen while you change it.
+ *
+ * A PHONE gets a different shape entirely, not this one squeezed: one list,
+ * drilled into, with a back control. See `MobileSettings`.
  */
 export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = (props) => {
   const [activeId, setActiveId] = createSignal(settingsSections()[0].id);
+  const stack = createSettingsStack();
   let panelRef: HTMLDivElement | undefined;
 
   /**
@@ -61,6 +67,10 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
     // first keystroke edits a setting the user has not looked at yet.
     queueMicrotask(() => panelRef?.focus());
 
+    // The compact shell installs its own, because Escape there means "up one
+    // level" and only closes at the root. Two handlers would close the dialog
+    // from the first keystroke at any depth.
+    if (isCompact()) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // Claim it: a settings dialog is the innermost thing on screen, and the
@@ -94,33 +104,32 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
             // outside, which `click` on the backdrop would otherwise catch.
             onClick={(e) => e.stopPropagation()}
             // A phone cannot hold the two-column form: the section list alone
-            // is 216 px of a 412 px screen. It takes the whole screen instead,
-            // with the sections as a strip across the top.
+            // is 216 px of a 412 px screen. It takes the whole screen and
+            // navigates by drilling in instead.
             class={`cru-anim-pop overflow-hidden border-hairline-strong bg-shell-panel outline-none ${
               isCompact()
                 ? 'flex h-dvh w-screen flex-col'
                 : 'grid h-[min(38rem,85vh)] w-[min(56rem,94vw)] grid-cols-[13.5rem_1fr] rounded-2xl border shadow-2xl'
             }`}
           >
+            <Show when={isCompact()}>
+              <SettingsStackProvider stack={stack}>
+                <MobileSettings
+                  sections={sections()}
+                  stack={stack}
+                  onChanged={reload}
+                  onClose={props.onClose}
+                />
+              </SettingsStackProvider>
+            </Show>
+
+            <Show when={!isCompact()}>
             {/* ── The section list ─────────────────────────────────────── */}
-            <nav
-              class={`bg-surface-base ${
-                isCompact()
-                  ? // `py-2` matches the gap between chips: a filled chip that
-                    // touches the strip's edges reads as a cut-off band.
-                    'flex shrink-0 flex-row gap-2 overflow-x-auto overflow-y-hidden border-b border-hairline px-2 py-2'
-                  : 'flex flex-col overflow-y-auto border-r border-hairline py-3'
-              }`}
-              style={isCompact() ? { 'padding-top': 'var(--inset-top)' } : undefined}
-            >
+            <nav class="flex flex-col overflow-y-auto border-r border-hairline bg-surface-base py-3">
               <For each={settingsGroups(sections())}>
                 {(group) => (
                   <>
-                    <div
-                      class={`px-4 pb-1 pt-3 text-floor font-semibold uppercase tracking-wider text-muted-dark first:pt-0 ${
-                        isCompact() ? 'hidden' : ''
-                      }`}
-                    >
+                    <div class="px-4 pb-1 pt-3 text-floor font-semibold uppercase tracking-wider text-muted-dark first:pt-0">
                       {group.group}
                     </div>
                     <For each={group.sections}>
@@ -131,12 +140,8 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                           data-testid={`settings-nav-${section.id}`}
                           aria-current={activeId() === section.id ? 'page' : undefined}
                           classList={{
-                            'focus-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-reading transition-colors':
+                            'focus-ring mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-reading transition-colors':
                               true,
-                            'mx-2': !isCompact(),
-                            // A strip of touch targets on a phone. The strip
-                            // itself spaces them, so the chip adds no margin.
-                            'h-11 shrink-0 whitespace-nowrap px-3': isCompact(),
                             // A fill, not a coloured edge bar: the selected row
                             // has to read at a glance without adding a second
                             // accent to a panel the ember already governs.
@@ -200,6 +205,7 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                 </WithoutSectionHeaders>
               </div>
             </div>
+            </Show>
           </div>
         </div>
       </Portal>

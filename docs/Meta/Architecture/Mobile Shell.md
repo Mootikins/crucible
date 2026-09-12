@@ -641,7 +641,7 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 | activity | content tab, from the overflow menu | A feed a user visits. |
 | backlinks | right drawer | The open note's context. |
 | changes | content tab, from the overflow menu | A review queue a user visits. |
-| settings | full-height sheet | |
+| settings | full-screen dialog, drilled into | Section 10a. NOT the registered panel: the overflow row opens the dialog, because the panel is the stacked tab. |
 | skills | content surface | |
 | plugins | content surface | |
 | graph | content surface, read only | Pan and zoom work. Node drag does not. |
@@ -652,6 +652,40 @@ already holds the one-draft-at-a-time rule, and the compact shell keeps it.
 
 A panel that the compact shell does not offer must say so. It must not fail
 silently.
+
+### 10a. Settings on a phone drill in, they do not tab
+
+The desktop dialog is a section list beside a form. That list alone is 216 px
+of a 412 px screen, and the first attempt flattened it to a strip of tabs
+across the top — which showed two labels out of twelve and hid the rest behind
+a horizontal scroll with no affordance. A strip is a bad list.
+
+**A phone gets one list at a time.** The root names every category, grouped.
+A tap opens that category as its own page, with the category named in the bar
+and a back control beside it. This is the shape iOS Settings, Android Settings
+and Obsidian mobile all use, and they use it for the reason it applies here:
+a phone can show one level legibly, and legibility beats simultaneity.
+
+**Depth is not capped at two.** A page can push another, and the daemon's
+configuration tree does: `Configuration` lists `Chat`, `Embeddings` and the
+rest as rows carrying a count, each opening its own page, and a group holding
+groups drills again. Every pushed page renders at depth 0, so the nesting is
+the tree's, not the renderer's. Inlining that tree gave a 412 px screen one
+scroll of every leaf the daemon declares.
+
+**Each level takes a history entry**, so the phone's own back button walks the
+levels before it leaves the app (`createSettingsStack`, over `NavStack`). Two
+rules follow, and both are tested:
+
+- Closing the dialog from three levels deep gives back all three entries.
+  Otherwise the next back press walks a dialog that is no longer on screen.
+- Escape means "up one level", and only closes at the root. The dialog does
+  not install its own Escape handler while a phone is showing, or the first
+  keystroke would close it from any depth.
+
+**A section does not know which shell it is in.** `useSettingsStack()` answers
+null on the desktop, and a section that would push a sub-page renders it
+inline there instead. Null is the ordinary case, not an error.
 
 ## 11. An offline kiln, and the sync
 

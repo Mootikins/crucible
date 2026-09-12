@@ -14,6 +14,38 @@ import { waitForFonts } from './_helpers/fonts';
  */
 test.use({ ...devices['Pixel 7'] });
 
+/**
+ * A config with a group inside a group, which the shared fixture has none of.
+ * The third level is the point: it is what a strip of tabs could never show.
+ */
+const NESTED_CONFIG = {
+  kiln_path: '/home/user/notes',
+  config: { chat: { model: 'sonnet' } },
+  origins: [],
+  controls: {
+    read_only: [],
+    options: {
+      type: 'group',
+      args: [
+        {
+          type: 'group',
+          key: 'chat',
+          name: 'Chat',
+          args: [
+            { type: 'toggle', key: 'stream', path: 'chat.stream', name: 'Stream replies' },
+            {
+              type: 'group',
+              key: 'context',
+              name: 'Context',
+              args: [{ type: 'toggle', key: 'trim', path: 'chat.context.trim', name: 'Trim old turns' }],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
 test.describe('WS-317 the compact shell', () => {
   test.beforeEach(async ({ page }) => {
     await setupBasicMocks(page);
@@ -81,5 +113,90 @@ test.describe('WS-317 the compact shell', () => {
     await page.getByRole('textbox', { name: 'Message' }).fill('summarise my notes');
     await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled();
     await story.step(page, 'the first message');
+  });
+
+  // Settings on a phone is a drill-down, not the desktop's two columns and
+  // not a strip of tabs across the top. Section 10a of the design note.
+  test('walks settings by drilling in, and back out again', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:open-settings')));
+    const dialog = page.getByTestId('settings-modal');
+    await expect(dialog).toBeVisible();
+
+    // The root is ONE list of every category. No form is open yet, and the
+    // desktop's section list is not rendered at all.
+    await expect(dialog.locator('nav')).toHaveCount(0);
+    await expect(dialog.getByTestId('settings-nav-appearance')).toBeVisible();
+    await expect(dialog.getByTestId('settings-nav-app-config')).toBeVisible();
+    await expect(dialog.getByTestId('settings-back')).toHaveCount(0);
+    await story.step(page, 'settings root');
+
+    await dialog.getByTestId('settings-nav-appearance').click();
+    await expect(dialog.getByRole('heading', { name: 'Appearance' })).toBeVisible();
+    // The list it came from is gone, not scrolled past.
+    await expect(dialog.getByTestId('settings-nav-app-config')).toHaveCount(0);
+    await story.step(page, 'a category');
+
+    await dialog.getByTestId('settings-back').click();
+    await expect(dialog.getByTestId('settings-nav-app-config')).toBeVisible();
+    await expect(dialog.getByTestId('settings-back')).toHaveCount(0);
+  });
+
+  test('drills three levels into the config tree, and the back button unwinds them', async ({
+    page,
+  }) => {
+    await setupBasicMocks(page, { config: NESTED_CONFIG });
+    await page.reload();
+    await expect(page.getByTestId('mobile-shell')).toBeVisible();
+
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:open-settings')));
+    const dialog = page.getByTestId('settings-modal');
+    const title = dialog.getByRole('heading').first();
+
+    await dialog.getByTestId('settings-nav-app-config').click();
+    await expect(title).toHaveText('Configuration');
+
+    // A group is a ROW that opens a page, carrying what it holds.
+    const chat = dialog.getByTestId('config-group-chat');
+    await expect(chat).toContainText('2 settings');
+    await chat.click();
+    await expect(title).toHaveText('Chat');
+
+    // A group inside a group drills again — the renderer does not cap depth.
+    await dialog.getByTestId('config-group-context').click();
+    await expect(title).toHaveText('Context');
+    await expect(dialog.getByText('Trim old turns')).toBeVisible();
+
+    // The PHONE's back button, three times, without leaving the page.
+    await page.goBack();
+    await expect(title).toHaveText('Chat');
+    await page.goBack();
+    await expect(title).toHaveText('Configuration');
+    await page.goBack();
+    await expect(title).toHaveText('Settings');
+    await expect(dialog).toBeVisible();
+  });
+
+  // Closing from depth must give every history entry back, or the next back
+  // press walks a dialog that is no longer on screen. Measured on the nav id
+  // the shell stamps into history, which is what `NavStack` counts by.
+  test('gives the history back when settings close from a deep page', async ({ page }) => {
+    const navId = () =>
+      page.evaluate(() => (history.state as { crucibleNav?: number } | null)?.crucibleNav ?? 0);
+    const before = await navId();
+
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:open-settings')));
+    const dialog = page.getByTestId('settings-modal');
+    await dialog.getByTestId('settings-nav-appearance').click();
+    await expect(dialog.getByTestId('settings-back')).toBeVisible();
+    expect(await navId()).toBeGreaterThan(before);
+
+    await dialog.getByTestId('settings-modal-close').click();
+    await expect(dialog).toHaveCount(0);
+
+    // Back where it started: the drill-down took no entry with it.
+    await expect.poll(navId).toBe(before);
+    await expect(page.getByTestId('mobile-shell')).toBeVisible();
   });
 });
