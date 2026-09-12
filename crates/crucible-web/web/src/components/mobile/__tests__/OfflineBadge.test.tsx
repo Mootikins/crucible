@@ -28,7 +28,11 @@ describe('OfflineBadge', () => {
   // Nothing to say when everything is sent and the daemon answers.
   it('shows nothing when online with an empty queue', async () => {
     render(() => <OfflineBadge />);
-    await waitFor(() => expect(screen.queryByTestId('offline-badge')).toBeNull());
+    // `waitFor` runs its callback immediately, so asserting absence alone
+    // passes at t=0 — before the async count has even been read. Wait for a
+    // POSITIVE signal that the component has done its work, THEN assert.
+    await waitFor(() => expect(state.warmed).toBeGreaterThan(0));
+    expect(screen.queryByTestId('offline-badge')).toBeNull();
   });
 
   it('says so when the device is offline', async () => {

@@ -7,10 +7,15 @@ function mediaAnswering(matches: boolean) {
 }
 
 describe('detectCompact', () => {
-  it('asks exactly the compact query', () => {
+  // The LITERAL, not the constant. Asserting `COMPACT_QUERY` against itself
+  // is satisfied by any value, and this 767 px decides which shell every user
+  // gets. It is also written a second time in `index.css`, which is why it is
+  // pinned here rather than left to whatever the module happens to hold.
+  it('asks for the 767 px breakpoint the stylesheet also uses', () => {
     const mm = mediaAnswering(true);
     detectCompact(mm);
-    expect(mm).toHaveBeenCalledWith(COMPACT_QUERY);
+    expect(mm).toHaveBeenCalledWith('(max-width: 767px)');
+    expect(COMPACT_QUERY).toBe('(max-width: 767px)');
   });
 
   it('is compact when the viewport matches the query', () => {

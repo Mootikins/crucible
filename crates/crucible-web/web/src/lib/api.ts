@@ -2053,6 +2053,59 @@ export async function saveFileContent(path: string, content: string): Promise<vo
   });
 }
 
+/** One anchored edit: replace `expect` with `replace`, matched whole-line. */
+export interface AnchoredEdit {
+  expect: string;
+  replace: string;
+  /** Which match, when `expect` appears more than once. Zero-based. */
+  occurrence?: number;
+}
+
+/** Why one edit could not be applied. `index` is the caller's edit index. */
+export interface EditRefusal {
+  reason: string;
+  index: number;
+  matches?: number;
+  other?: number;
+}
+
+export interface PatchRefused {
+  ok: false;
+  failed: EditRefusal[];
+  current_hash: string;
+  /** The file moved on since `base_hash` was read, so the anchors are stale. */
+  stale_base: boolean;
+}
+
+/**
+ * Change a note's LINES, or change nothing.
+ *
+ * The whole batch is matched against the file as it is on disk and applied
+ * all-or-none, so two clients editing different parts of one note do not
+ * overwrite each other the way `saveFileContent` does — that sends the whole
+ * body and the daemon writes it blind.
+ *
+ * A refusal is a value, not a throw: it names the edit and why, because a
+ * caller that can only say "failed" makes the user re-read the file.
+ */
+export async function patchKilnFile(
+  path: string,
+  edits: AnchoredEdit[],
+  baseHash?: string,
+): Promise<{ ok: true; content_hash: string } | PatchRefused> {
+  const response = await fetch('/api/kiln/file', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ path, edits, base_hash: baseHash }),
+  });
+  if (response.status === 409) return (await response.json()) as PatchRefused;
+  if (!response.ok) {
+    throw Object.assign(new Error(`Failed to edit ${path}`), { status: response.status });
+  }
+  return (await response.json()) as { ok: true; content_hash: string };
+}
+
 // =============================================================================
 // Utilities
 // =============================================================================

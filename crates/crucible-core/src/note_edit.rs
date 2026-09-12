@@ -159,7 +159,10 @@ fn matches_of(text: &str, expect: &str) -> Vec<(usize, usize)> {
 pub fn apply_anchored_edits(original: &str, edits: &[AnchoredEdit]) -> EditOutcome {
     let newline = dominant_newline(original);
     let mut refusals = Vec::new();
-    let mut spans: Vec<(usize, usize, String)> = Vec::new();
+    // The caller's edit index travels WITH the span. An edit that is already
+    // applied contributes no span, so the two lists drift — and a refusal
+    // that reported a span index named edits the caller never wrote.
+    let mut spans: Vec<(usize, usize, String, usize)> = Vec::new();
 
     for (index, edit) in edits.iter().enumerate() {
         if edit.expect.is_empty() {
@@ -191,7 +194,7 @@ pub fn apply_anchored_edits(original: &str, edits: &[AnchoredEdit]) -> EditOutco
                 continue;
             }
         };
-        spans.push((chosen.0, chosen.1, edit.replace.replace('\n', newline)));
+        spans.push((chosen.0, chosen.1, edit.replace.replace('\n', newline), index));
     }
 
     // Overlap is checked across the whole batch, because two edits that cover
@@ -201,9 +204,10 @@ pub fn apply_anchored_edits(original: &str, edits: &[AnchoredEdit]) -> EditOutco
     for pair in ordered.windows(2) {
         let (a, b) = (pair[0], pair[1]);
         if spans[b].0 < spans[a].1 {
+            let (first, second) = (spans[a].3, spans[b].3);
             refusals.push(EditRefusal::Overlaps {
-                index: b.min(a),
-                other: b.max(a),
+                index: first.min(second),
+                other: first.max(second),
             });
         }
     }
@@ -215,7 +219,7 @@ pub fn apply_anchored_edits(original: &str, edits: &[AnchoredEdit]) -> EditOutco
     let mut out = String::with_capacity(original.len());
     let mut cursor = 0usize;
     for &i in &ordered {
-        let (start, end, ref replacement) = spans[i];
+        let (start, end, ref replacement, _) = spans[i];
         out.push_str(&original[cursor..start]);
         out.push_str(replacement);
         cursor = end;

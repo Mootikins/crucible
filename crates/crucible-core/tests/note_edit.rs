@@ -136,7 +136,27 @@ fn an_edit_already_applied_succeeds_unchanged() {
 fn refuses_two_edits_that_cover_the_same_lines() {
     let note = "alpha\nbeta\n";
     let why = refused(note, &[edit("alpha\nbeta", "one"), edit("beta", "two")]);
-    assert!(matches!(why.as_slice(), [EditRefusal::Overlaps { .. }]), "got {why:?}");
+    assert_eq!(why, vec![EditRefusal::Overlaps { index: 0, other: 1 }], "got {why:?}");
+}
+
+/// The index a refusal reports is the CALLER's edit index.
+///
+/// An edit that is already applied is a success and contributes no span, so
+/// indexing the span list reported the wrong edits to a caller who has no way
+/// to see the span list. Here edit 0 is already applied, and the overlap is
+/// between edits 1 and 2 — not 0 and 1.
+#[test]
+fn an_overlap_names_the_caller_s_edit_indices_past_a_skipped_edit() {
+    let note = "done\nalpha\nbeta\n";
+    let why = refused(
+        note,
+        &[
+            edit("todo", "done"), // already applied: no span
+            edit("alpha\nbeta", "one"),
+            edit("beta", "two"),
+        ],
+    );
+    assert_eq!(why, vec![EditRefusal::Overlaps { index: 1, other: 2 }], "got {why:?}");
 }
 
 /// Resolving against the ORIGINAL is what stops an edit matching text the

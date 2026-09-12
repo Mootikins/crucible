@@ -24,9 +24,16 @@ export interface KeptKiln {
 
 type KeptMap = Record<string, KeptKiln>;
 
-function load(): KeptMap {
+/**
+ * Read the stored map, keeping only entries this app understands.
+ *
+ * Exported so the filtering can be tested on its own. `load()` runs once at
+ * import, so a test that writes to `localStorage` afterwards is never parsed
+ * — which is how the gate for this ended up asserting only that the answer
+ * was one of the values its return type already permits.
+ */
+export function parseKept(raw: string | null): KeptMap {
   try {
-    const raw = localStorage.getItem(KEPT_KILNS_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     const out: KeptMap = {};
@@ -36,7 +43,15 @@ function load(): KeptMap {
     }
     return out;
   } catch {
-    return {}; // private mode, or storage a human edited
+    return {}; // storage a human edited into nonsense
+  }
+}
+
+function load(): KeptMap {
+  try {
+    return parseKept(localStorage.getItem(KEPT_KILNS_KEY));
+  } catch {
+    return {}; // private mode: no storage at all
   }
 }
 

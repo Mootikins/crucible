@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { KEPT_KILNS_KEY, kept, keptActions, keptMode } from '@/lib/offline/kept';
+import { parseKept, KEPT_KILNS_KEY, kept, keptActions, keptMode } from '@/lib/offline/kept';
 import { sameDaemon } from '@/lib/offline/identity';
 
 beforeEach(() => {
@@ -36,10 +36,16 @@ describe('kept kilns', () => {
     });
   });
 
-  it('ignores storage a human edited into nonsense', () => {
-    localStorage.setItem(KEPT_KILNS_KEY, '{"/k": {"mode": "wishful"}, "/j": 7}');
-    // The module read at import; re-reading is what a reload does.
-    expect(['notes', 'everything', null]).toContain(keptMode('/k'));
+  // The old version of this asserted that the answer was one of the three
+  // values the return type permits, which every possible answer satisfies.
+  it('drops a mode it does not recognise, and an entry that is not an object', () => {
+    expect(parseKept('{"/k": {"mode": "wishful"}, "/j": 7, "/ok": {"mode": "notes"}}')).toEqual({
+      '/ok': { mode: 'notes' },
+    });
+  });
+
+  it('answers nothing for storage that is not even JSON', () => {
+    expect(parseKept('not json at all')).toEqual({});
   });
 });
 
