@@ -79,3 +79,4 @@ describe('the settings section registry', () => {
     expect(settingsSections(undefined).length).toBeGreaterThan(0);
   });
 });
+

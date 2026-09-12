@@ -1428,3 +1428,32 @@ details.callout[open] > summary.callout-title::after {
   --inset-bottom: env(safe-area-inset-bottom, 0px);
   --inset-left: env(safe-area-inset-left, 0px);
 }
+
+/* ── Settings on a phone ───────────────────────────────────────────────
+ * The settings form is a two-column table built for a desktop dialog. On a
+ * phone the label and its control cannot share a row and still leave the
+ * control a thumb-sized target, so the row stacks and the controls grow.
+ * One block, because the alternative is a compact branch in every section. */
+@media (max-width: 767px) {
+  [data-testid='settings-modal'] tr {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-block: 0.5rem;
+  }
+  [data-testid='settings-modal'] td {
+    display: block;
+    text-align: left;
+    padding-block: 0;
+  }
+  [data-testid='settings-modal'] input[type='checkbox'] {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  [data-testid='settings-modal'] input[type='number'],
+  [data-testid='settings-modal'] input[type='text'],
+  [data-testid='settings-modal'] select {
+    min-height: 2.75rem;
+    width: 100%;
+  }
+}

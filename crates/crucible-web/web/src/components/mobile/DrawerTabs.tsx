@@ -21,7 +21,7 @@ export const DrawerTabs: Component<{ tabs: DrawerTab[]; label: string }> = (prop
 
   return (
     <div class="flex-1 min-h-0 flex flex-col">
-      <div role="tablist" aria-label={props.label} class="shrink-0 flex border-b border-hairline">
+      <div role="tablist" aria-label={props.label} class="shrink-0 flex border-b border-hairline bg-surface-elevated">
         <For each={props.tabs}>
           {(tab) => (
             <button
@@ -30,10 +30,13 @@ export const DrawerTabs: Component<{ tabs: DrawerTab[]; label: string }> = (prop
               id={tabId(tab.id)}
               aria-selected={active() === tab.id}
               aria-controls={panelId(tab.id)}
-              class={`flex-1 h-11 text-sm font-medium focus-ring ${
+              // The tab strip reads like the desktop's: an active tab in
+              // shell ink over the panel surface, the rest muted, the active
+              // one marked by the primary rule the window manager uses.
+              class={`flex-1 h-11 text-xs font-medium transition-colors focus-ring ${
                 active() === tab.id
-                  ? 'text-shell-ink border-b-2 border-primary'
-                  : 'text-muted-dark hover:text-shell-ink'
+                  ? 'text-shell-ink bg-surface-base border-b-2 border-primary'
+                  : 'text-muted-dark hover:text-shell-ink hover:bg-hover-wash'
               }`}
               onClick={() => setActive(tab.id)}
             >

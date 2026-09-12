@@ -8,7 +8,9 @@ import { sessionWorkspace } from '@/lib/session-scope';
 import { sessionStatus } from '@/lib/session-status';
 import { inboxSessions } from '@/lib/session-inbox';
 import { terseAge } from '@/lib/format-time';
-import { ChevronDown, Plus } from '@/lib/icons';
+import { ChevronDown, GitBranch, Plus } from '@/lib/icons';
+import { treeChevron, treeSectionHeader } from '@/components/tree/tree-style';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 import type { Session } from '@/lib/types';
 
 /** The switcher's "every project" choice. Not a path, so it collides with none. */
@@ -58,24 +60,42 @@ export const SessionsTab: Component = () => {
     return projects().find((p) => p.path === workspace)?.name ?? null;
   };
 
+  // The desktop row's vocabulary — `SessionTree.tsx`'s `SessionRow` — at a
+  // thumb's height. Same tints, same text sizes, same chips; only the row box
+  // and the target size differ, because 26 px is not tappable.
   const Row = (props: { session: Session; showProject?: boolean }) => (
     <button
       type="button"
-      class={`w-full h-11 px-3 flex items-center gap-2 rounded text-left focus-ring ${
-        currentSession()?.id === props.session.id ? 'bg-primary/10' : 'hover:bg-hover-wash'
+      class={`w-full h-11 px-3 flex items-center gap-2 rounded text-left transition-colors focus-ring ${
+        currentSession()?.id === props.session.id
+          ? 'bg-primary/10 text-shell-ink'
+          : 'hover:bg-hover-wash text-shell-body'
       }`}
       data-session-id={props.session.id}
       onClick={() => void selectSession(props.session.id)}
     >
       <SessionStatusDot status={sessionStatus(props.session)} />
-      <span class="flex-1 min-w-0 truncate text-sm text-shell-body">
+      <span class="text-reading flex-1 min-w-0 truncate">
         {sessionDisplayTitle(props.session)}
       </span>
-      <Show when={props.showProject && projectOf(props.session)}>
-        {(name) => <span class="text-xs text-muted-dark shrink-0 truncate max-w-24">{name()}</span>}
+      <Show when={sessionDefaultKiln(props.session)} keyed>
+        {(kilnName) => (
+          <span class="shrink-0 truncate max-w-[80px] text-floor text-muted-dark">{kilnName}</span>
+        )}
       </Show>
-      <span class="text-xs text-muted-dark shrink-0">
-        {terseAge(props.session.last_activity ?? props.session.started_at)}
+      <Show when={props.showProject && projectOf(props.session)}>
+        {(name) => (
+          <span
+            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-floor text-muted-dark"
+            title={`project · ${name()}`}
+          >
+            <GitBranch class="w-2.5 h-2.5 shrink-0" />
+            <span class="truncate max-w-[80px]">{name()}</span>
+          </span>
+        )}
+      </Show>
+      <span class="w-8 shrink-0 text-right text-floor text-muted-dark">
+        {terseAge(props.session.last_activity ?? props.session.started_at) ?? ''}
       </span>
     </button>
   );
@@ -86,11 +106,11 @@ export const SessionsTab: Component = () => {
         <button
           type="button"
           aria-label={`Project: ${chosenName()}`}
-          class="flex-1 h-11 px-2 flex items-center gap-1 rounded text-left text-sm font-medium text-shell-ink hover:bg-hover-wash focus-ring"
+          class="flex-1 h-11 px-2 flex items-center gap-1 rounded text-left text-xs font-medium text-muted hover:bg-hover-wash transition-colors focus-ring"
           onClick={() => setPicking(true)}
         >
           <span class="flex-1 truncate">{chosenName()}</span>
-          <ChevronDown class="w-4 h-4 shrink-0 text-muted-dark" />
+          <ChevronDown class={`${treeChevron} text-muted-dark`} />
         </button>
         <Show when={chosen() !== ALL_PROJECTS}>
           <button
@@ -111,20 +131,24 @@ export const SessionsTab: Component = () => {
       <div class="flex-1 min-h-0 overflow-y-auto p-1">
         <Show when={inbox().length > 0}>
           <section data-testid="compact-inbox" class="mb-2">
-            <h2 class="px-3 py-1 text-xs uppercase tracking-wide text-muted-dark">
-              Inbox ({inbox().length})
-            </h2>
-            <For each={inbox()}>{(s) => <Row session={s} showProject />}</For>
+            <h2 class={treeSectionHeader}>Inbox ({inbox().length})</h2>
+            {/* A gap between rows: two tinted rows that touch read as one
+                block, and the tint is what says which session is open. */}
+            <div class="flex flex-col gap-0.5 px-1">
+              <For each={inbox()}>{(s) => <Row session={s} showProject />}</For>
+            </div>
           </section>
         </Show>
 
         <section>
-          <h2 class="px-3 py-1 text-xs uppercase tracking-wide text-muted-dark">{chosenName()}</h2>
-          <For each={listed()}>
-            {(s) => <Row session={s} showProject={chosen() === ALL_PROJECTS} />}
-          </For>
+          <h2 class={treeSectionHeader}>{chosenName()}</h2>
+          <div class="flex flex-col gap-0.5 px-1">
+            <For each={listed()}>
+              {(s) => <Row session={s} showProject={chosen() === ALL_PROJECTS} />}
+            </For>
+          </div>
           <Show when={listed().length === 0}>
-            <p class="px-3 py-6 text-center text-sm text-muted-dark">No sessions here yet.</p>
+            <p class="px-3 py-6 text-center text-reading text-muted-dark">No sessions here yet.</p>
           </Show>
         </section>
       </div>

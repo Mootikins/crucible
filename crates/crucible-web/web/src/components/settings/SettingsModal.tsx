@@ -1,4 +1,5 @@
 import { Component, For, Show, createEffect, createResource, createSignal, onCleanup } from 'solid-js';
+import { isCompact } from '@/stores/deviceStore';
 import { Portal, Dynamic } from 'solid-js/web';
 import { X } from '@/lib/icons';
 import { settingsSections, settingsGroups } from './sections';
@@ -75,7 +76,9 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
     <Show when={props.open}>
       <Portal>
         <div
-          class="cru-anim-fade fixed inset-0 z-[60] flex items-center justify-center bg-shell-bg/70 p-6 backdrop-blur-[2px]"
+          class={`cru-anim-fade fixed inset-0 z-[60] flex items-center justify-center bg-shell-bg/70 backdrop-blur-[2px] ${
+            isCompact() ? 'p-0' : 'p-6'
+          }`}
           onClick={props.onClose}
           data-testid="settings-modal-backdrop"
         >
@@ -90,14 +93,32 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
             // dismiss — including a drag that starts on a slider and releases
             // outside, which `click` on the backdrop would otherwise catch.
             onClick={(e) => e.stopPropagation()}
-            class="cru-anim-pop grid h-[min(38rem,85vh)] w-[min(56rem,94vw)] grid-cols-[13.5rem_1fr] overflow-hidden rounded-2xl border border-hairline-strong bg-shell-panel shadow-2xl outline-none"
+            // A phone cannot hold the two-column form: the section list alone
+            // is 216 px of a 412 px screen. It takes the whole screen instead,
+            // with the sections as a strip across the top.
+            class={`cru-anim-pop overflow-hidden border-hairline-strong bg-shell-panel outline-none ${
+              isCompact()
+                ? 'flex h-dvh w-screen flex-col'
+                : 'grid h-[min(38rem,85vh)] w-[min(56rem,94vw)] grid-cols-[13.5rem_1fr] rounded-2xl border shadow-2xl'
+            }`}
           >
             {/* ── The section list ─────────────────────────────────────── */}
-            <nav class="flex flex-col overflow-y-auto border-r border-hairline bg-surface-base py-3">
+            <nav
+              class={`overflow-y-auto bg-surface-base ${
+                isCompact()
+                  ? 'flex shrink-0 flex-row gap-1 overflow-x-auto border-b border-hairline p-1'
+                  : 'flex flex-col border-r border-hairline py-3'
+              }`}
+              style={isCompact() ? { 'padding-top': 'var(--inset-top)' } : undefined}
+            >
               <For each={settingsGroups(sections())}>
                 {(group) => (
                   <>
-                    <div class="px-4 pb-1 pt-3 text-floor font-semibold uppercase tracking-wider text-muted-dark first:pt-0">
+                    <div
+                      class={`px-4 pb-1 pt-3 text-floor font-semibold uppercase tracking-wider text-muted-dark first:pt-0 ${
+                        isCompact() ? 'hidden' : ''
+                      }`}
+                    >
                       {group.group}
                     </div>
                     <For each={group.sections}>
@@ -110,6 +131,8 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                           classList={{
                             'focus-ring mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-reading transition-colors':
                               true,
+                            // A strip of touch targets on a phone.
+                            'h-11 shrink-0 whitespace-nowrap px-3': isCompact(),
                             // A fill, not a coloured edge bar: the selected row
                             // has to read at a glance without adding a second
                             // accent to a panel the ember already governs.

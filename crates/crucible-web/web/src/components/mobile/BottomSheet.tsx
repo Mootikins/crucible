@@ -1,5 +1,6 @@
 import { Component, JSX, Show, createEffect, on, onCleanup } from 'solid-js';
 import { navStack } from '@/components/mobile/NavStack';
+import { menuItem } from '@/components/ui/menu-style';
 
 /**
  * A sheet from the bottom edge: the phone's menu, its picker and its dialog.
@@ -50,7 +51,7 @@ export const BottomSheet: Component<{
         aria-label={props.label}
         tabIndex={-1}
         data-testid="bottom-sheet"
-        class="fixed inset-x-0 bottom-0 z-[61] max-h-[75vh] overflow-y-auto rounded-t-xl border-t border-hairline bg-surface-base shadow-xl outline-none"
+        class="focus-ring fixed inset-x-0 bottom-0 z-[61] max-h-[75vh] overflow-y-auto rounded-t border-t border-hairline-strong bg-surface-elevated px-1 py-1 text-xs text-shell-ink shadow-md outline-none"
         style={{ 'padding-bottom': 'var(--inset-bottom)' }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -79,14 +80,16 @@ export const SheetOption: Component<{
     type="button"
     aria-label={props.label}
     aria-pressed={props.selected}
-    class={`w-full h-11 px-4 flex items-center gap-2 text-left text-sm focus-ring ${
+    // `menuItem`'s vocabulary at a thumb's height: the shell's menu rows are
+    // px-3/py-1.5; only the height and the focus ring differ.
+    class={`${menuItem} w-full h-11 px-3 rounded text-left focus-ring ${
       props.selected ? 'bg-control text-shell-ink font-medium' : 'text-shell-body hover:bg-hover-wash'
     }`}
     onClick={() => props.onSelect()}
   >
     <span class="flex-1 truncate">{props.label}</span>
     <Show when={props.detail}>
-      <span class="text-xs text-muted-dark shrink-0">{props.detail}</span>
+      <span class="text-floor text-muted-dark shrink-0">{props.detail}</span>
     </Show>
   </button>
 );

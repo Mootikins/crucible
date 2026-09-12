@@ -133,7 +133,7 @@ export const MobileShell: Component = () => {
         type="button"
         aria-label={props.label}
         aria-expanded={openSide() === props.side}
-        class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+        class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
         onClick={() => setSide(props.side)(openSide() !== props.side)}
       >
         <Icon class="w-5 h-5" />
@@ -151,11 +151,11 @@ export const MobileShell: Component = () => {
       onPointerCancel={() => swipes.forEach((s) => s.cancel())}
     >
       <header
-        class="shrink-0 flex items-center gap-1 h-12 px-1 border-b border-hairline bg-surface-base"
+        class="shrink-0 flex items-center gap-1 h-12 px-1 border-b border-hairline bg-surface-elevated"
         style={{ 'padding-top': 'var(--inset-top)', 'box-sizing': 'content-box' }}
       >
         <DrawerButton side="left" label="Sessions and files" icon={FolderTree} />
-        <h1 class="flex-1 truncate text-sm font-medium text-shell-ink px-1">
+        <h1 class="text-reading flex-1 truncate font-medium text-shell-ink px-1">
           {activeTab()?.title ?? 'Crucible'}
         </h1>
         <Show when={activeTab()?.contentType === 'file' && !overviewOpen()}>
@@ -165,17 +165,17 @@ export const MobileShell: Component = () => {
           <button
             type="button"
             aria-label={`Tabs (${tabStack.tabs.length})`}
-            class="w-11 h-11 flex items-center justify-center shrink-0 gap-1 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+            class="w-11 h-11 flex items-center justify-center shrink-0 gap-1 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
             onClick={() => (overviewOpen() ? closeOverview() : openOverview())}
           >
             <LayoutDashboard class="w-5 h-5" />
-            <span class="text-xs tabular-nums">{tabStack.tabs.length}</span>
+            <span class="text-floor tabular-nums">{tabStack.tabs.length}</span>
           </button>
         </Show>
         <button
           type="button"
           aria-label="More"
-          class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+          class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
           onClick={() => setMenuOpen(true)}
         >
           <MoreHorizontal class="w-5 h-5" />
@@ -205,7 +205,7 @@ export const MobileShell: Component = () => {
           tab={activeTab}
           empty={
             <div class="flex-1 flex items-center justify-center px-6">
-              <p class="text-muted-dark text-sm">No note is open.</p>
+              <p class="text-reading text-muted-dark">No note is open.</p>
             </div>
           }
         />

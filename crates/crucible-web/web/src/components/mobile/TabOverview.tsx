@@ -37,7 +37,7 @@ export const TabOverview: Component<{
         when={props.tabs.length > 0}
         fallback={
           <div class="flex-1 flex items-center justify-center p-8">
-            <p class="text-muted-dark text-sm">No tabs are open.</p>
+            <p class="text-reading text-muted-dark">No tabs are open.</p>
           </div>
         }
       >
@@ -47,17 +47,17 @@ export const TabOverview: Component<{
               <li class="flex flex-col gap-1">
                 <Show when={asking() === tab.id}>
                   <div class="flex items-center gap-2 h-14 px-3 rounded bg-control">
-                    <span class="flex-1 text-sm text-shell-ink">Discard unsaved changes?</span>
+                    <span class="text-reading flex-1 text-shell-ink">Discard unsaved changes?</span>
                     <button
                       type="button"
-                      class="h-11 px-3 rounded text-sm text-shell-ink hover:bg-hover-wash focus-ring"
+                      class="h-11 px-3 rounded text-xs text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
                       onClick={() => setAsking(null)}
                     >
                       Keep
                     </button>
                     <button
                       type="button"
-                      class="h-11 px-3 rounded text-sm font-medium text-on-primary bg-primary hover:bg-primary-hover focus-ring"
+                      class="h-11 px-3 rounded text-xs font-medium text-on-primary bg-primary hover:bg-primary-hover transition-colors focus-ring"
                       onClick={() => {
                         setAsking(null);
                         props.onClose(tab.id);
@@ -70,8 +70,10 @@ export const TabOverview: Component<{
                 <div class="flex items-stretch gap-1">
                 <button
                   type="button"
-                  class={`flex-1 min-w-0 flex items-center gap-2 h-14 px-3 rounded text-left focus-ring ${
-                    tab.id === props.activeId ? 'bg-control' : 'hover:bg-hover-wash'
+                  class={`flex-1 min-w-0 flex items-center gap-2 h-14 px-3 rounded text-left transition-colors focus-ring ${
+                    tab.id === props.activeId
+                      ? 'bg-primary/10 text-shell-ink'
+                      : 'hover:bg-hover-wash text-shell-body'
                   }`}
                   onClick={() => props.onPick(tab.id)}
                 >
@@ -79,7 +81,7 @@ export const TabOverview: Component<{
                     component={iconForContentType(tab.contentType) ?? X}
                     class="w-4 h-4 shrink-0 text-muted-dark"
                   />
-                  <span class="flex-1 truncate text-sm text-shell-ink">{tab.title}</span>
+                  <span class="text-reading flex-1 truncate">{tab.title}</span>
                   <Show when={tab.isModified}>
                     <span
                       aria-label={`${tab.title} has unsaved changes`}

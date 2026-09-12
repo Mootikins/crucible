@@ -19,10 +19,10 @@ export const MobileEditorBar: Component<{ filePath: string }> = (props) => {
       type="button"
       aria-label={label}
       aria-pressed={compactEditorMode() === mode}
-      class={`h-11 px-3 text-sm rounded focus-ring ${
+      class={`h-11 px-3 text-xs rounded transition-colors focus-ring ${
         compactEditorMode() === mode
           ? 'bg-control text-shell-ink font-medium'
-          : 'text-muted-dark hover:text-shell-ink'
+          : 'text-muted-dark hover:text-shell-ink hover:bg-hover-wash'
       }`}
       onClick={() => setCompactEditorMode(mode)}
     >
@@ -38,10 +38,10 @@ export const MobileEditorBar: Component<{ filePath: string }> = (props) => {
         <button
           type="button"
           aria-label="Save"
-          class="h-11 px-3 flex items-center gap-1.5 text-sm rounded text-shell-ink hover:bg-hover-wash focus-ring"
+          class="h-11 px-3 flex items-center gap-1.5 text-xs rounded text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
           onClick={() => void editor.saveFile(props.filePath)}
         >
-          <span aria-hidden="true" class="w-2 h-2 rounded-full bg-primary" />
+          <span aria-hidden="true" class="h-1.5 w-1.5 rounded-full bg-attention" />
           Save
         </button>
       </Show>

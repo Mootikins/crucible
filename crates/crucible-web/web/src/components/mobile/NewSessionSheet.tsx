@@ -172,11 +172,11 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   return (
     <div class="flex-1 min-h-0 flex flex-col">
       <header class="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-hairline">
-        <h2 class="flex-1 text-sm font-medium text-shell-ink">{stepTitle()}</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted flex-1">{stepTitle()}</h2>
         <Show when={step() !== 'agent'}>
           <button
             type="button"
-            class="h-11 px-3 text-sm rounded text-muted-dark hover:text-shell-ink focus-ring"
+            class="h-11 px-3 text-xs rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
             onClick={() => setStep(step() === 'prompt' ? 'context' : 'agent')}
           >
             Back
@@ -185,7 +185,7 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
         <Show when={step() !== 'prompt'}>
           <button
             type="button"
-            class="h-11 px-3 text-sm font-medium rounded text-shell-ink hover:bg-hover-wash focus-ring"
+            class="h-11 px-3 text-xs font-medium rounded text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
             onClick={() => setStep(step() === 'agent' ? 'context' : 'prompt')}
           >
             Next
@@ -202,17 +202,19 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
                   type="button"
                   role="radio"
                   aria-checked={agentName() === agent.name}
-                  class={`flex items-start gap-3 p-3 rounded text-left focus-ring ${
-                    agentName() === agent.name ? 'bg-control' : 'hover:bg-hover-wash'
+                  class={`flex items-start gap-3 p-3 rounded text-left transition-colors focus-ring ${
+                    agentName() === agent.name
+                      ? 'bg-primary/10 text-shell-ink'
+                      : 'hover:bg-hover-wash text-shell-body'
                   }`}
                   onClick={() => setAgentName(agent.name)}
                 >
                   <Dynamic component={iconForAgent(agent.name)} class="w-5 h-5 mt-0.5 shrink-0 text-muted-dark" />
                   <span class="min-w-0">
-                    <span class="block text-sm font-medium text-shell-ink">
+                    <span class="text-reading block font-medium text-shell-ink">
                       {agent.name || 'Crucible'}
                     </span>
-                    <span class="block text-xs text-muted-dark">
+                    <span class="block text-floor text-muted-dark">
                       {agent.description || 'An ACP agent.'}
                     </span>
                   </span>
@@ -229,10 +231,10 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
                 <button
                   type="button"
                   aria-label={`${axis.label}: ${axis.shown()}`}
-                  class="h-11 px-4 flex items-center gap-2 text-left text-sm hover:bg-hover-wash focus-ring"
+                  class="text-reading h-11 px-4 flex items-center gap-2 text-left hover:bg-hover-wash transition-colors focus-ring"
                   onClick={() => setPicking(axis)}
                 >
-                  <span class="w-24 shrink-0 text-muted-dark">{axis.label}</span>
+                  <span class="w-24 shrink-0 text-floor uppercase tracking-wide text-muted-dark">{axis.label}</span>
                   <span class="flex-1 truncate text-shell-ink">{axis.shown()}</span>
                   <ChevronRight class="w-4 h-4 shrink-0 text-muted-dark" />
                 </button>
@@ -245,7 +247,7 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
           <div class="flex flex-col h-full p-2 gap-2">
             <textarea
               aria-label="Message"
-              class="flex-1 min-h-40 w-full resize-none rounded border border-hairline bg-surface-base p-3 text-sm text-shell-ink focus-ring"
+              class="text-reading flex-1 min-h-40 w-full resize-none rounded border border-hairline bg-surface-base p-3 text-shell-ink focus-ring"
               placeholder="What do you want to do?"
               value={message()}
               onInput={(e) => setMessage(e.currentTarget.value)}
@@ -253,7 +255,7 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
             <button
               type="button"
               disabled={!message().trim() || busy()}
-              class="h-11 rounded bg-primary text-on-primary text-sm font-medium disabled:opacity-50 focus-ring"
+              class="h-11 rounded bg-primary hover:bg-primary-hover text-on-primary text-xs font-medium transition-colors disabled:opacity-50 focus-ring"
               onClick={() => void send()}
             >
               Send
