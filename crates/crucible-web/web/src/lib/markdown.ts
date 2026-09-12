@@ -242,6 +242,13 @@ function sanitizeHtml(value: string): string {
     ADD_ATTR: [
       'data-note',
       'data-copy',
+      // The SOURCE line a task box came from, so a tap can anchor a one-line
+      // edit on it. Note content can forge one, and the blast radius is
+      // bounded: the handler re-reads the buffer at that index, does nothing
+      // unless the line IS a task line, and anchors the edit on that line's
+      // real text. The worst a crafted note achieves is ticking a different
+      // checkbox in the same file, which the user can see and undo.
+      'data-task-line',
       'data-callout',
       'align',
       'data-plugin-name',
@@ -376,10 +383,16 @@ function taskListPlugin(md: MarkdownIt): void {
       const firstText = inline.children.find((c) => c.type === 'text');
       if (firstText) firstText.content = firstText.content.replace(TASK_MARKER_RE, '');
 
+      // The SOURCE line the box came from, so a tap can anchor an edit on it
+      // (`lib/task-toggle.ts`). `map` is markdown-it's [start, end) in lines.
+      const sourceLine = tokens[i - 2].map?.[0];
       const box = new state.Token('html_inline', '', 0);
+      // Disabled by default. A view that can WRITE the file enables them —
+      // the same preview renders chat messages and hover cards, where an
+      // enabled box would look actionable and do nothing.
       box.content = `<input class="task-checkbox" type="checkbox" disabled${
         checked ? ' checked' : ''
-      }>`;
+      }${sourceLine === undefined ? '' : ` data-task-line="${sourceLine}"`}>`;
       inline.children.unshift(box);
     }
   });

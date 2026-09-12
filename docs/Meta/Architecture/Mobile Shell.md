@@ -36,15 +36,13 @@ record generated from `git diff`, not a plan.
 
 What is NOT built, and named as such: the kiln-wide checkbox index (open
 question 11), a cross-file atomic move (10), the scope vocabulary (9),
-`base_hash` on the three blind-write routes (section 11 — and Track C ships
-the browser-side compare that section forbids), a browser caller for
-`PATCH /api/kiln/file`, screenshot baselines for the phone (W3), and a live
-offline drain (W4).
+screenshot baselines for the phone (W3), and a live offline drain (W4).
 
-A doorway that is missing on purpose: `patchKilnFile` exists and nothing in
-the UI calls it yet. Choosing its first caller is a product decision — the
-obvious candidate is toggling a checkbox in the reading view, which is the
-"one or two lines at a time" case section 13 was written for.
+**Closed since:** `base_hash` now guards all three blind-write routes through
+one helper (`refuse_if_base_is_stale`), so the compare lives in the daemon
+where section 11 says it belongs, and the browser-side compare is gone.
+Ticking a checkbox in the reading view is the anchored edit's first caller —
+the "one or two lines at a time" case section 13 was written for.
 
 ## 1. What the code holds today
 
@@ -911,7 +909,7 @@ The daemon compares the hashes. The browser must never make that decision. A
 client-side test would be a second copy of the rule, and it would run on the
 one machine with a stale view of the disk.
 
-> **NOT BUILT, and Track C ships the thing this forbids.** `PUT
+> **BUILT, 2026-09-12, after shipping the thing this forbids.** `PUT
 > /api/kiln/file` still takes `{path, content}` and writes blind
 > (`routes/kiln.rs`); none of the three routes gained `base_hash`. So
 > `networkSink.write` reads the note, compares the hash IN THE BROWSER, and

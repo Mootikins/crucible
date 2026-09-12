@@ -81,4 +81,41 @@ describe('MarkdownPreview — frontmatter Properties card', () => {
     expect(preview.querySelector('[data-testid="fm-card"]')).toBeNull();
     expect(preview.textContent).not.toContain('nested');
   });
+
+  /**
+   * A task box is rendered disabled, because the same pipeline draws chat
+   * messages and hover cards, where there is no file behind it. A view that
+   * can write the file enables them.
+   */
+  it('leaves task boxes disabled when no caller can write the file', async () => {
+    const { container } = render(() => (
+      <MarkdownPreview content={'- [ ] alpha\n- [x] beta\n'} />
+    ));
+    await waitFor(() =>
+      expect(container.querySelectorAll('input.task-checkbox').length).toBe(2),
+    );
+    for (const box of container.querySelectorAll<HTMLInputElement>('input.task-checkbox')) {
+      expect(box.disabled, 'an enabled box that does nothing is worse than one that cannot be pressed').toBe(true);
+    }
+  });
+
+  it('enables them and reports the SOURCE line when a caller can write', async () => {
+    const toggled: number[] = [];
+    const { container } = render(() => (
+      <MarkdownPreview
+        content={'# Tasks\n\n- [ ] alpha\n- [ ] beta\n'}
+        path="/k/Tasks.md"
+        onToggleTask={(line) => toggled.push(line)}
+      />
+    ));
+    await waitFor(() =>
+      expect(container.querySelectorAll('input.task-checkbox:not([disabled])').length).toBe(2),
+    );
+
+    // The SECOND box. Its source line is 3, not its index among the boxes —
+    // a box can sit inside a blockquote, a nested list or a callout.
+    const boxes = container.querySelectorAll<HTMLInputElement>('input.task-checkbox');
+    fireEvent.click(boxes[1]);
+    expect(toggled).toEqual([3]);
+  });
 });

@@ -424,6 +424,13 @@ Design: `docs/Meta/Architecture/Mobile Shell.md`. Product record: **Mobile Shell
 
 ---
 
+### WS-320: Tick a task without sending the whole note
+**As a user**, I tick a checkbox in the reading view and only that line changes on disk.
+**Acceptance:** A task box is interactive wherever the file can be written, and inert in a chat message or a hover card, where there is no file behind it. Ticking sends ONE anchored edit, not the whole note, so an edit made elsewhere in the same file between the read and the tap survives. The box that was tapped is the one that changes, even when several task lines are identical — the edit names which occurrence it meant. The box flips immediately and the daemon's answer stands: a refusal puts it back and says why.
+**Tests:** W1 (`lib/__tests__/task-toggle.test.ts` — the marker forms GFM allows, a flip that changes the box and nothing else, the occurrence count over identical lines, a line that is no longer a task; `editor/__tests__/MarkdownPreview.test.tsx` — inert without a writer, enabled with one, and the SOURCE line reported rather than the box's index). W4 (`kiln-truth.live.spec.ts` — a tick against a real daemon leaves a concurrent edit to another paragraph byte-exact, an ambiguous anchor is refused, and naming the occurrence lands it).
+
+---
+
 ## Infra requirements these stories impose (status)
 
 1. **vitest gates CI** — DONE: `just ci` runs `web-test unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).

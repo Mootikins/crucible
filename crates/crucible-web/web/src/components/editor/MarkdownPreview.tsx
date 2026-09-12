@@ -31,6 +31,14 @@ export const MarkdownPreview: Component<{
   /** Scroll to the first rendered wikilink pointing at this note key —
    * backlinks hover previews open at the referencing section. */
   scrollToNote?: string;
+  /**
+   * Tick a task box, by the SOURCE line it came from.
+   *
+   * Absent leaves every box disabled, which is right for a chat message or a
+   * hover card: there is no file behind them, and an enabled box that does
+   * nothing is worse than one that plainly cannot be pressed.
+   */
+  onToggleTask?: (sourceLine: number) => void;
 }> = (props) => {
   const [html] = createResource(
     () => [props.content, props.path] as const,
@@ -107,6 +115,32 @@ export const MarkdownPreview: Component<{
   });
   onCleanup(releaseImages);
 
+  // A task box is rendered disabled, because the same pipeline draws chat
+  // messages. Where a caller can write the file, enable them once the HTML
+  // lands — and send the SOURCE line, not the DOM order, because a box can be
+  // inside a blockquote, a nested list or a callout.
+  createEffect(() => {
+    if (html() === undefined || !proseHost || !props.onToggleTask) return;
+    for (const box of proseHost.querySelectorAll<HTMLInputElement>(
+      'input.task-checkbox[data-task-line]',
+    )) {
+      box.disabled = false;
+      box.style.cursor = 'pointer';
+    }
+  });
+
+  const onTaskClick = (e: MouseEvent) => {
+    const box = (e.target as HTMLElement | null)?.closest?.('input.task-checkbox');
+    if (!(box instanceof HTMLInputElement) || !props.onToggleTask) return;
+    const line = Number(box.dataset.taskLine);
+    if (!Number.isInteger(line)) return;
+    // The rendered box is a picture of the file. Let the file decide and the
+    // re-render follow, rather than leaving a ticked box over an unwritten
+    // change if the daemon refuses it.
+    e.preventDefault();
+    props.onToggleTask(line);
+  };
+
   // After the async render lands, jump to the wikilink that points at the
   // requested note (rendered wikilinks carry data-note = raw target text).
   createEffect(() => {
@@ -130,7 +164,10 @@ export const MarkdownPreview: Component<{
       // hover controller, which cannot be passed props. Same value the click
       // handler uses, so hover and click can never target different kilns.
       data-kiln={kiln()}
-      onClick={handleClick}
+      onClick={(e) => {
+        onTaskClick(e);
+        handleClick(e);
+      }}
     >
       <div
         ref={proseHost}

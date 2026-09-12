@@ -338,4 +338,57 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     expect(retried.status).toBe(200);
     expect(readFileSync(notePath, 'utf-8')).toBe('now we agree\n');
   });
+
+  /**
+   * WS-320: the first caller of the anchored-edit primitive.
+   *
+   * Ticking a box in the reading view must change ONE line. A whole-file save
+   * would carry the reader's entire copy back, so an agent's edit to another
+   * paragraph of the same note — made between the read and the tap — would be
+   * silently erased. That is the case section 13 was written for.
+   */
+  test('WS-320: ticking a task changes its line and leaves a concurrent edit alone', async ({
+    page,
+  }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const notePath = path.join(kilnDir, 'Tasks.md');
+    const before = '# Tasks\n\n- [ ] ship it\n- [ ] ping\n- [ ] ping\n\nnotes below\n';
+    writeFileSync(notePath, before);
+
+    await page.goto(baseURL);
+    const tick = (edits: unknown[]) =>
+      page.evaluate(
+        async ({ file, body }) => {
+          const res = await fetch('/api/kiln/file', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: file, edits: body }),
+          });
+          return { status: res.status, body: await res.json() };
+        },
+        { file: notePath, body: edits },
+      );
+
+    // Another writer changes a DIFFERENT paragraph after the reader loaded it.
+    writeFileSync(notePath, before.replace('notes below', 'AN AGENT WROTE HERE'));
+
+    const ticked = await tick([{ expect: '- [ ] ship it', replace: '- [x] ship it' }]);
+    expect(ticked.status).toBe(200);
+    expect(readFileSync(notePath, 'utf-8')).toBe(
+      '# Tasks\n\n- [x] ship it\n- [ ] ping\n- [ ] ping\n\nAN AGENT WROTE HERE\n',
+    );
+
+    // Two identical lines: without an occurrence the daemon refuses as
+    // ambiguous, which is why `taskEditForLine` counts identical lines.
+    const ambiguous = await tick([{ expect: '- [ ] ping', replace: '- [x] ping' }]);
+    expect(ambiguous.status).toBe(409);
+    expect(ambiguous.body.failed[0].reason).toBe('ambiguous');
+
+    const second = await tick([{ expect: '- [ ] ping', replace: '- [x] ping', occurrence: 1 }]);
+    expect(second.status).toBe(200);
+    expect(readFileSync(notePath, 'utf-8')).toBe(
+      '# Tasks\n\n- [x] ship it\n- [ ] ping\n- [x] ping\n\nAN AGENT WROTE HERE\n',
+    );
+  });
 });

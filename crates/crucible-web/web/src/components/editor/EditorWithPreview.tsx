@@ -14,6 +14,9 @@ import { Component, Show, createSignal, createEffect } from 'solid-js';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { Eye, Pencil, Code } from '@/lib/icons';
+import { patchKilnFile } from '@/lib/api';
+import { applyTaskToggle, taskEditForLine } from '@/lib/task-toggle';
+import { notificationActions } from '@/stores/notificationStore';
 import { isMarkdownPath } from '@/lib/markdown-path';
 
 type EditorMode = 'live' | 'source' | 'reading';
@@ -59,6 +62,42 @@ export const EditorWithPreview: Component<{
   scrollToLine?: number;
 }> = (props) => {
   const isMarkdown = () => isMarkdownPath(props.path);
+
+  /**
+   * Tick a task box from the reading view, as ONE anchored line edit.
+   *
+   * Not a whole-file save. `saveFileContent` sends the entire note, so ticking
+   * a box would overwrite an agent's edit to a different paragraph of the same
+   * file — the exact case section 13 of the mobile design note was written
+   * for, and the first caller of `patchKilnFile`.
+   *
+   * The box is flipped locally first so the tap feels immediate, and the
+   * daemon's answer is what stands: a refusal names which edit failed, and the
+   * buffer goes back to what it was.
+   */
+  const toggleTask = (sourceLine: number) => {
+    const before = props.content;
+    const edit = taskEditForLine(before, sourceLine);
+    const optimistic = applyTaskToggle(before, sourceLine);
+    if (!edit || optimistic === null) return;
+
+    props.onChange(optimistic);
+    void patchKilnFile(props.path, [edit])
+      .then((answer) => {
+        if (answer.ok) return;
+        props.onChange(before);
+        notificationActions.addNotification(
+          'warning',
+          answer.stale_base
+            ? 'The note changed elsewhere. Reopen it to see the current text.'
+            : 'That task could not be ticked — the line it was on has moved.',
+        );
+      })
+      .catch((error: unknown) => {
+        props.onChange(before);
+        notificationActions.addNotification('error', `Could not tick the task: ${error}`);
+      });
+  };
   const defaultMode = (): EditorMode =>
     isMarkdown() ? (props.initialMode ?? 'live') : 'source';
   const [ownMode, setOwnMode] = createSignal<EditorMode>(defaultMode());
@@ -120,6 +159,7 @@ export const EditorWithPreview: Component<{
             kiln={props.kiln}
             maxWidth={props.lineWidth}
             scrollToNote={props.scrollToNote}
+            onToggleTask={toggleTask}
           />
         }
       >
