@@ -207,8 +207,8 @@ pub use handlers::{
     ToolDisplayStartEvent, ToolDisplayStartHints,
 };
 pub use handlers::{
-    hook_names, EventName, HookName, StageId, PERMISSION_REQUEST_HOOK,
-    TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
+    hook_names, EventName, HookName, StageId, PERMISSION_REQUEST_HOOK, TOOL_BEFORE_EXECUTE_EVENT,
+    TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use host_api::render_declarations;
 pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};

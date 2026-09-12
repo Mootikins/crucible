@@ -909,72 +909,6 @@ impl Registration {
     }
 }
 
-/// The poison policy, tested where the policy lives.
-///
-/// Inline rather than in `handlers/tests/`, because poisoning a `Mutex`
-/// requires panicking while the GUARD is held and `rows` is private. Every
-/// public method drops the guard before it returns, which is exactly why a
-/// poison here is so rare — and exactly why nothing noticed that the store
-/// answered a poison four different ways.
-#[cfg(test)]
-mod poison {
-    use super::*;
-    use crate::handlers::{register_cru_on_api, StageId};
-
-    /// A poisoned lock must not take a turn down, and must not silently
-    /// answer "no handlers" either.
-    ///
-    /// `for_hook` is the `pre_tool_call` selection, so the `.expect` this
-    /// replaces turned a poison that merely failed one registration into an
-    /// aborted turn the next time anything read the store. A swallowed
-    /// `Vec::new()` would be worse still: it disables every guard on a hook
-    /// that fails closed, with nothing logged.
-    #[test]
-    fn every_reader_and_writer_still_works_on_a_poisoned_lock() {
-        let lua = Lua::new();
-        let registry = LuaScriptHandlerRegistry::new();
-        register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
-        lua.load(r#"cru.on("pre_tool_call", function() end)"#)
-            .exec()
-            .expect("registers");
-
-        // The only way a `Mutex` is poisoned: panic while the guard is live.
-        let poisoner = registry.clone();
-        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = poisoner.rows();
-            panic!("a path panicked while holding the registration lock");
-        }));
-        assert!(panicked.is_err(), "the poisoning panic must have happened");
-        assert!(
-            registry.registrations.is_poisoned(),
-            "and it must have left the lock poisoned"
-        );
-
-        // Every reader keeps working, and keeps telling the truth.
-        assert_eq!(
-            registry
-                .for_hook(
-                    StageId::PreToolCall.into(),
-                    Some("bash"),
-                    crate::handlers::Firing::Sessionless
-                )
-                .len(),
-            1,
-            "`for_hook` must neither panic nor answer with an empty list"
-        );
-        assert_eq!(registry.all().len(), 1);
-        assert!(registry.by_id(0).is_some());
-        assert_eq!(registry.plugin_handler_count("nobody"), 0);
-
-        // And a write still lands, so the store is not left read-only.
-        lua.load(r#"cru.on("turn:complete", function() end)"#)
-            .exec()
-            .expect("registration must still succeed on a poisoned lock");
-        assert_eq!(registry.all().len(), 2);
-        assert_eq!(registry.clear_source(&LuaSource::UserLua), 2);
-    }
-}
-
 impl Default for LuaScriptHandlerRegistry {
     fn default() -> Self {
         Self::new()
@@ -1049,4 +983,70 @@ pub fn clear_source(lua: &Lua, registry: &LuaScriptHandlerRegistry, source: &Lua
         );
     }
     total
+}
+
+/// The poison policy, tested where the policy lives.
+///
+/// Inline rather than in `handlers/tests/`, because poisoning a `Mutex`
+/// requires panicking while the GUARD is held and `rows` is private. Every
+/// public method drops the guard before it returns, which is exactly why a
+/// poison here is so rare — and exactly why nothing noticed that the store
+/// answered a poison four different ways.
+#[cfg(test)]
+mod poison {
+    use super::*;
+    use crate::handlers::{register_cru_on_api, StageId};
+
+    /// A poisoned lock must not take a turn down, and must not silently
+    /// answer "no handlers" either.
+    ///
+    /// `for_hook` is the `pre_tool_call` selection, so the `.expect` this
+    /// replaces turned a poison that merely failed one registration into an
+    /// aborted turn the next time anything read the store. A swallowed
+    /// `Vec::new()` would be worse still: it disables every guard on a hook
+    /// that fails closed, with nothing logged.
+    #[test]
+    fn every_reader_and_writer_still_works_on_a_poisoned_lock() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+        register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
+        lua.load(r#"cru.on("pre_tool_call", function() end)"#)
+            .exec()
+            .expect("registers");
+
+        // The only way a `Mutex` is poisoned: panic while the guard is live.
+        let poisoner = registry.clone();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.rows();
+            panic!("a path panicked while holding the registration lock");
+        }));
+        assert!(panicked.is_err(), "the poisoning panic must have happened");
+        assert!(
+            registry.registrations.is_poisoned(),
+            "and it must have left the lock poisoned"
+        );
+
+        // Every reader keeps working, and keeps telling the truth.
+        assert_eq!(
+            registry
+                .for_hook(
+                    StageId::PreToolCall.into(),
+                    Some("bash"),
+                    crate::handlers::Firing::Sessionless
+                )
+                .len(),
+            1,
+            "`for_hook` must neither panic nor answer with an empty list"
+        );
+        assert_eq!(registry.all().len(), 1);
+        assert!(registry.by_id(0).is_some());
+        assert_eq!(registry.plugin_handler_count("nobody"), 0);
+
+        // And a write still lands, so the store is not left read-only.
+        lua.load(r#"cru.on("turn:complete", function() end)"#)
+            .exec()
+            .expect("registration must still succeed on a poisoned lock");
+        assert_eq!(registry.all().len(), 2);
+        assert_eq!(registry.clear_source(&LuaSource::UserLua), 2);
+    }
 }

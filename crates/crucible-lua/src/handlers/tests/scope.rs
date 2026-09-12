@@ -126,7 +126,11 @@ async fn two_scoped_registrations_alike_in_the_whole_key_collapse() {
 
     let handlers =
         registry.runtime_handlers_for(StageId::PreToolCall.as_str(), None, Firing::InSession("s1"));
-    assert_eq!(handlers.len(), 1, "the second registration replaced the first");
+    assert_eq!(
+        handlers.len(),
+        1,
+        "the second registration replaced the first"
+    );
 
     // WHICH one survived, read by running it rather than assumed.
     let event = crucible_core::events::SessionEvent::Custom {
