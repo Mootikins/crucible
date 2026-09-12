@@ -1,8 +1,19 @@
 import { Component, JSX, createMemo } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { getGlobalRegistry } from '@/lib/panel-registry';
+import { NewSessionSheet } from '@/components/mobile/NewSessionSheet';
 import { reactiveMetadataProps } from '@/lib/panel-props';
 import type { Tab } from '@/types/windowTypes';
+
+/**
+ * Content types the compact shell draws differently from the desktop.
+ *
+ * `chat-draft` is the one that matters: the desktop composer puts five chips
+ * and a model picker on one row, which needs width a phone has not.
+ */
+const COMPACT_PANELS: Partial<Record<string, Component<Record<string, unknown>>>> = {
+  'chat-draft': NewSessionSheet as Component<Record<string, unknown>>,
+};
 
 /**
  * The compact shell's one content area: the registered panel for one tab.
@@ -27,10 +38,12 @@ export const ContentSurface: Component<{
     const id = tabId();
     const type = contentType();
     if (!id || !type) return null;
-    const def = getGlobalRegistry().get(type);
-    if (!def) return 'unknown' as const;
+    // A few content types the phone draws its own way. The registry is NOT
+    // changed: the desktop keeps its composer, and this map is consulted first.
+    const component = COMPACT_PANELS[type] ?? getGlobalRegistry().get(type)?.component;
+    if (!component) return 'unknown' as const;
     const panelProps = reactiveMetadataProps(props.tab);
-    return <Dynamic component={def.component} {...panelProps} />;
+    return <Dynamic component={component} {...panelProps} />;
   });
 
   // Read inside JSX braces so the surface re-reads `panel()` when it changes.

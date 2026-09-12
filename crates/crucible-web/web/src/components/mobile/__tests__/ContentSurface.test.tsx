@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// The real sheet needs every session context; this test is about which
+// component the surface chooses, not what that component draws.
+vi.mock('@/components/mobile/NewSessionSheet', () => ({
+  NewSessionSheet: () => <div data-testid="new-session-sheet" />,
+}));
 import { render, screen } from '@solidjs/testing-library';
 import { createSignal, onMount } from 'solid-js';
 import { ContentSurface } from '@/components/mobile/ContentSurface';
@@ -72,5 +78,21 @@ describe('ContentSurface', () => {
     setTab(noteTab({ id: 'tab-2', metadata: { label: 'other' } }));
     expect(mounts).toBe(2);
     expect(screen.getByTestId('counting-panel').textContent).toBe('other');
+  });
+});
+
+describe('ContentSurface overrides', () => {
+  it('draws the phone’s own new-session sheet, not the desktop composer', () => {
+    resetGlobalRegistry();
+    getGlobalRegistry().register('chat-draft', 'New Session', () => <div data-testid="desktop-composer" />, 'center');
+    const [tab] = createSignal<Tab | null>({
+      id: 'draft',
+      title: 'New Session',
+      contentType: 'chat-draft',
+      metadata: {},
+    });
+    render(() => <ContentSurface tab={tab} empty={<p>empty</p>} />);
+    expect(screen.queryByTestId('new-session-sheet')).toBeTruthy();
+    expect(screen.queryByTestId('desktop-composer')).toBeNull();
   });
 });

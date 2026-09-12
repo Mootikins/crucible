@@ -18,7 +18,6 @@ import { notificationActions } from '@/stores/notificationStore';
 import { closeDraftTab } from '@/lib/draft-session';
 import type {
   AgentProfileEntry,
-  CreateSessionParams,
   KilnListEntry,
   Project,
 } from '@/lib/types';
@@ -27,6 +26,7 @@ import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
 import { syncRecentsFromServer } from '@/lib/recent-files';
 import { kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
+import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
 import { swrLocal } from '@/lib/local-cache';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import { iconForAgent } from '@/lib/agent-icons';
@@ -42,15 +42,8 @@ import {
   Shield,
 } from '@/lib/icons';
 
-/**
- * The runtime chip's built-in "run here" row.
- *
- * Not a `provider:target` spec and deliberately not published by anything:
- * running on this machine is what happens when no provider is asked, so it
- * cannot depend on a plugin being installed. Picking it says "not isolated"
- * out loud, which the daemon acts on differently from saying nothing.
- */
-const HOST = 'host';
+/** The runtime chip's built-in "run here" row — see `lib/session-draft.ts`. */
+const HOST = HOST_RUNTIME;
 
 /** A provider's mark, by the axis-agnostic name it published itself under. */
 const PROVIDER_ICONS: Record<string, Component<{ class?: string }>> = {
@@ -178,33 +171,21 @@ export const CenterComposer: Component<{
    * this channel now, and a name meant for one used to be a hard error inside
    * another.
    */
-  const runtimeParam = (): Partial<Pick<CreateSessionParams, 'isolation'>> => {
-    const spec = runtime();
-    if (!spec) return {};
-    if (spec === HOST) return { isolation: false };
-    const [plugin, ...rest] = spec.split(':');
-    return { isolation: { plugin, target: rest.join(':') } };
-  };
-
   const submit = async () => {
     const text = message().trim();
     if (!text || busy()) return;
     setBusy(true);
     try {
       await createSession(
-        {
-          // Registry names, never paths — see `kilnsForCreate`.
-          kilns: kilnsForCreate(),
-          workspace: workspace() || undefined,
-          ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
-          // The workspace axis: the daemon resolves this to a path before it
-          // creates anything, so the session is born in the right checkout.
-          ...(wsTarget() ? { workspace_target: wsTarget() } : {}),
-          // The runtime axis. Spread on truthiness of the SPEC, then translated
-          // — because `false` is an instruction the server acts on and must not
-          // be dropped, while an untouched chip must send nothing at all.
-          ...runtimeParam(),
-        },
+        // One copy of the empty-value contract, shared with the phone's sheet.
+        draftCreateParams({
+          kiln: kiln(),
+          defaultKiln: defaultKilnName(),
+          workspace: workspace(),
+          agentName: agentName(),
+          wsTarget: wsTarget(),
+          runtime: runtime(),
+        }),
         {
           initialMessage: text,
           model: !isAcp() && model() ? model() : undefined,
@@ -264,11 +245,7 @@ export const CenterComposer: Component<{
    * sent — a path here would name a directory the registration floor never
    * saw, and comes back 422.
    */
-  const kilnsForCreate = (): string[] => {
-    if (kiln() === 'none') return [];
-    const name = kiln() || defaultKilnName();
-    return name ? [name] : [];
-  };
+  const kilnsForCreate = (): string[] => kilnsToAttach(kiln(), defaultKilnName());
 
   /**
    * The selected kiln's directory, for the composer's wikilink autocomplete —
