@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 use super::helpers::{
+    refuse_if_base_is_stale,
     reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
     MAX_CONTENT_SIZE,
 };
@@ -41,6 +42,10 @@ struct CanvasPathQuery {
 struct PutCanvasRequest {
     path: String,
     content: String,
+    /// The hash the caller read. Absent keeps the blind overwrite; present
+    /// refuses with 409 and the current hash when the file moved on.
+    #[serde(default)]
+    base_hash: Option<String>,
 }
 
 /// `GET /api/canvas?path=<path>` — read and validate a canvas document.
@@ -168,6 +173,8 @@ async fn put_canvas(
     let serialized = canvas
         .to_json_pretty()
         .map_err(|e| WebError::Validation(format!("Could not serialize canvas: {e}")))?;
+
+    refuse_if_base_is_stale(&path, req.base_hash.as_deref()).await?;
 
     fs::write(&path, &serialized).await.map_err(WebError::Io)?;
 

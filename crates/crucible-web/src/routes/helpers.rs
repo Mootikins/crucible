@@ -164,3 +164,124 @@ pub(crate) fn validate_file_within_kiln(
 
 /// Maximum note/file content size (10 MB).
 pub(crate) const MAX_CONTENT_SIZE: usize = 10 * 1024 * 1024;
+
+// =========================================================================
+// Concurrent writers
+// =========================================================================
+
+/// Refuse a whole-file write whose base no longer matches what is on disk.
+///
+/// THE one place this rule lives. Three routes overwrite a file whole — `PUT
+/// /api/kiln/file`, `PUT /api/notes/{name}` and `PUT /api/canvas` — and each
+/// of them could silently destroy another writer's work. Gating one leaves
+/// the other two open, and three copies of the compare drift.
+///
+/// The check belongs HERE, next to the write, not in a client: a browser's
+/// read-then-compare-then-PUT is three round trips with a window in the
+/// middle, and it runs on the machine with the stale view of the disk.
+/// `crucible-web/web/src/lib/offline/sync.ts` did exactly that before this
+/// existed, because the alternative was no check at all.
+///
+/// `None` keeps the blind overwrite, deliberately: the desktop editor and
+/// every existing caller save without a base, and making the field required
+/// would break them all on one commit. A caller that sends a base gets the
+/// guarantee; one that does not is no worse off than before.
+///
+/// A missing file compares as the empty hash, so a base sent for a note that
+/// was deleted meanwhile is stale rather than silently recreating it.
+pub(crate) async fn refuse_if_base_is_stale(
+    path: &Path,
+    base_hash: Option<&str>,
+) -> Result<(), WebError> {
+    let Some(base) = base_hash else {
+        return Ok(());
+    };
+    let current = match tokio::fs::read_to_string(path).await {
+        Ok(text) => crucible_core::note_edit::disk_hash(&text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(WebError::Io(e)),
+    };
+    if current == base {
+        return Ok(());
+    }
+    Err(WebError::StaleBase {
+        current_hash: current,
+    })
+}
+
+#[cfg(test)]
+mod stale_base_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    /// The gate section 11 asked for and could not have, because until now
+    /// there was no comparison in a route to break.
+    #[tokio::test]
+    async fn a_write_with_no_base_still_overwrites_blind() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("note.md");
+        tokio::fs::write(&file, "on disk").await.unwrap();
+
+        // Every existing caller saves without a base. They must keep working.
+        refuse_if_base_is_stale(&file, None)
+            .await
+            .expect("no base means no check");
+    }
+
+    #[tokio::test]
+    async fn a_write_whose_base_matches_the_disk_is_allowed() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("note.md");
+        tokio::fs::write(&file, "on disk").await.unwrap();
+        let base = crucible_core::note_edit::disk_hash("on disk");
+
+        refuse_if_base_is_stale(&file, Some(&base))
+            .await
+            .expect("an unchanged file accepts its own hash");
+    }
+
+    #[tokio::test]
+    async fn a_write_whose_base_moved_on_is_refused_with_the_current_hash() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("note.md");
+        tokio::fs::write(&file, "another writer got here first")
+            .await
+            .unwrap();
+        let stale = crucible_core::note_edit::disk_hash("what the caller read");
+
+        let err = refuse_if_base_is_stale(&file, Some(&stale))
+            .await
+            .expect_err("a moved file must refuse the write");
+        match err {
+            WebError::StaleBase { current_hash } => assert_eq!(
+                current_hash,
+                crucible_core::note_edit::disk_hash("another writer got here first"),
+                "the refusal carries what is on disk NOW, so the caller need not re-read"
+            ),
+            other => panic!("expected StaleBase, got {other:?}"),
+        }
+    }
+
+    /// A base sent for a note that was deleted meanwhile is stale. Accepting
+    /// it would silently recreate a note the user removed.
+    #[tokio::test]
+    async fn a_base_for_a_file_that_is_gone_is_stale() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("deleted.md");
+        let base = crucible_core::note_edit::disk_hash("it used to say this");
+
+        let err = refuse_if_base_is_stale(&missing, Some(&base))
+            .await
+            .expect_err("a deleted file must not be recreated by a stale write");
+        assert!(matches!(err, WebError::StaleBase { current_hash } if current_hash.is_empty()));
+    }
+
+    /// Creating a NEW file sends no base, so it is not caught by the above.
+    #[tokio::test]
+    async fn creating_a_new_file_is_not_refused() {
+        let dir = tempdir().unwrap();
+        refuse_if_base_is_stale(&dir.path().join("new.md"), None)
+            .await
+            .expect("a new file has no base to be stale");
+    }
+}

@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { readState } from './_state';
 
@@ -285,5 +285,57 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     expect(listed.properties).toMatchObject({ status: 'doing' });
     expect(listed.properties).not.toHaveProperty('scope');
     expect(JSON.stringify(listed)).not.toContain(kilnDir);
+  });
+
+  /**
+   * WS-318: two writers, one note, a real daemon and a real disk.
+   *
+   * This is the rule section 11 states — "the daemon compares the hashes, the
+   * browser must never make that decision" — and until now no route could
+   * enforce it, so the offline drain compared in the browser instead. The
+   * check is only real against a file another process can move under it.
+   */
+  test('WS-318: a whole-file write whose base moved on is refused, and the disk is untouched', async ({
+    page,
+  }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const notePath = path.join(kilnDir, 'Race.md');
+
+    await page.goto(baseURL);
+    const put = (body: string, base?: string) =>
+      page.evaluate(
+        async ({ file, content, base_hash }) => {
+          const res = await fetch('/api/kiln/file', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: file, content, base_hash }),
+          });
+          return { status: res.status, body: await res.json().catch(() => null) };
+        },
+        { file: notePath, content: body, base_hash: base },
+      );
+
+    // A first write with no base: the blind path every existing caller uses.
+    const first = await put('the original\n');
+    expect(first.status).toBe(200);
+    const base = first.body.content_hash as string;
+    expect(base).toMatch(/^[0-9a-f]{64}$/);
+
+    // Another writer — the agent, the TUI, a second browser — gets there first.
+    writeFileSync(notePath, 'ANOTHER WRITER GOT HERE\n');
+
+    const refused = await put('what the first caller had\n', base);
+    expect(refused.status).toBe(409);
+    expect(refused.body.ok).toBe(false);
+    expect(refused.body.current_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(refused.body.current_hash).not.toBe(base);
+    // The other writer's work survives, byte for byte.
+    expect(readFileSync(notePath, 'utf-8')).toBe('ANOTHER WRITER GOT HERE\n');
+
+    // The hash the refusal handed back is the one that works.
+    const retried = await put('now we agree\n', refused.body.current_hash as string);
+    expect(retried.status).toBe(200);
+    expect(readFileSync(notePath, 'utf-8')).toBe('now we agree\n');
   });
 });

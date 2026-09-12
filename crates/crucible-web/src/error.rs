@@ -41,10 +41,35 @@ pub enum WebError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// The file moved on since the caller read it.
+    ///
+    /// Carries the hash on disk NOW, so a client can decide what to do — re-read,
+    /// or write its version beside the note — without a second round trip that
+    /// would race the same way.
+    #[error("The file changed since it was read")]
+    StaleBase { current_hash: String },
 }
 
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
+        // A stale base answers with the hash it holds, not only a message:
+        // the whole point is to tell the caller what it is racing against.
+        // Shaped like the PATCH refusal so one client branch reads both.
+        if let WebError::StaleBase { current_hash } = &self {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "ok": false,
+                    "current_hash": current_hash,
+                    "error": {
+                        "code": StatusCode::CONFLICT.as_u16(),
+                        "message": self.to_string(),
+                    }
+                })),
+            )
+                .into_response();
+        }
         let (status, message) = match &self {
             WebError::Config(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
             WebError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
@@ -55,6 +80,8 @@ impl IntoResponse for WebError {
             WebError::UnsupportedMediaType(e) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, e.clone()),
             WebError::Forbidden(e) => (StatusCode::FORBIDDEN, e.clone()),
             WebError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
+            // Handled above, with its hash.
+            WebError::StaleBase { .. } => (StatusCode::CONFLICT, self.to_string()),
         };
 
         error_response(status, &message)

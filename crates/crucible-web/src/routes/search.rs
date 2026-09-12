@@ -1,4 +1,5 @@
 use super::helpers::{
+    refuse_if_base_is_stale,
     note_to_metadata_json, validate_note_name, validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
 // The daemon owns the grep request shape. The copy that used to live in
@@ -338,6 +339,11 @@ async fn get_backlinks(
 
 #[derive(Debug, Deserialize)]
 struct PutNoteRequest {
+    /// The hash the caller read. Absent keeps the blind overwrite; present
+    /// refuses with 409 and the current hash when the file moved on.
+    #[serde(default)]
+    base_hash: Option<String>,
+
     kiln: PathBuf,
     content: String,
 }
@@ -412,6 +418,8 @@ async fn put_note(
     // NoteRecord here: the old code wrote a stub (default hash, empty tags/links,
     // null embedding) that CLOBBERED the properly-enriched record — dropping the
     // note from vector search and backlinks until the watcher re-enriched it.
+    refuse_if_base_is_stale(&file_path, req.base_hash.as_deref()).await?;
+
     fs::write(&file_path, &req.content)
         .await
         .map_err(WebError::Io)?;

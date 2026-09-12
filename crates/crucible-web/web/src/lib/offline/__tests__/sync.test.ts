@@ -3,12 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const net = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
+  guardedSave: vi.fn(),
   list: vi.fn(async (_kiln: string) => [] as unknown[]),
   online: true,
 }));
 vi.mock('@/lib/api', () => ({
   getFileWithHash: (p: string) => net.read(p),
   saveFileContent: (p: string, c: string) => net.save(p, c),
+  saveFileIfUnchanged: (p: string, c: string, b: string) => net.guardedSave(p, c, b),
   getFileContent: async () => '',
   listNotes: (k: string) => net.list(k),
   rawFileUrl: (p: string) => `/raw?${p}`,
@@ -39,6 +41,7 @@ beforeEach(() => {
   localStorage.clear();
   net.read.mockReset();
   net.save.mockReset();
+  net.guardedSave.mockReset();
   setOfflineStore(memoryStore());
   keptActions.keep(KILN, 'notes');
 });
@@ -164,13 +167,12 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     });
 
     net.online = true;
-    net.save.mockResolvedValue(undefined);
-    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
 
     const result = await syncNow();
     expect(result.foreign, 'a write this device queued is not from a foreign daemon').toBe(0);
     expect(result.sent).toBe(1);
-    expect(net.save).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT');
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT', 'h0');
   });
 });
 
@@ -183,7 +185,14 @@ const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), 
  * `PUT /api/kiln/file` carries no hash and writes blind, so the compare in
  * here is the only guard there is.
  */
-describe('networkSink does not overwrite what it could not read', () => {
+/**
+ * The sink sends the base and lets the DAEMON compare it.
+ *
+ * It used to read the note, compare in the browser, then PUT — three round
+ * trips with a window in the middle, which is what section 11 of the mobile
+ * note forbids. The compare now lives inside the route's write.
+ */
+describe('networkSink lets the daemon refuse a stale write', () => {
   const entry = {
     path: PATH,
     body: 'mine',
@@ -194,40 +203,44 @@ describe('networkSink does not overwrite what it could not read', () => {
     sequence: 1,
   };
 
-  it('writes when the note still reads as the base it was edited from', async () => {
-    net.read.mockResolvedValue({ content: '', content_hash: 'h0' });
-    net.save.mockResolvedValue(undefined);
-    expect(await networkSink.write(entry)).toEqual({ ok: true, hash: 'h0' });
-    expect(net.save).toHaveBeenCalledWith(PATH, 'mine');
+  it('sends the base it was edited from, and never reads first', async () => {
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    expect(await networkSink.write(entry)).toEqual({ ok: true, hash: 'h1' });
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'mine', 'h0');
+    expect(net.read, 'the daemon compares; the browser must not').not.toHaveBeenCalled();
   });
 
-  it('conflicts when the note moved on', async () => {
-    net.read.mockResolvedValue({ content: '', content_hash: 'MOVED' });
+  it('takes the hash the route answered with, rather than reading it back', async () => {
+    // A third read to learn the hash could land after ANOTHER writer, storing
+    // a hash that described someone else's bytes beside this body.
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'written' });
+    const answer = await networkSink.write(entry);
+    expect(answer).toEqual({ ok: true, hash: 'written' });
+    expect(net.read).not.toHaveBeenCalled();
+  });
+
+  it('conflicts when the daemon says the note moved on', async () => {
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'MOVED' });
     expect(await networkSink.write(entry)).toEqual({ ok: false, current: 'MOVED' });
-    expect(net.save, 'a moved note must not be overwritten').not.toHaveBeenCalled();
   });
 
-  // A deleted note must not come back, and the writing must not vanish with
-  // it — so it goes to a conflict copy.
+  // The daemon answers an empty hash when the file is gone. The writing is
+  // still the user's, so it becomes a conflict copy rather than resurrecting
+  // a note that was deleted.
   it('conflicts rather than resurrecting a note that was deleted', async () => {
-    net.read.mockRejectedValue(answered(404));
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: '' });
     expect(await networkSink.write(entry)).toEqual({ ok: false, current: '' });
-    expect(net.save, 'a deleted note must not be written back').not.toHaveBeenCalled();
   });
 
-  // The defect: a failed read was treated as "no current file", and the whole
-  // body was written over whatever was really there.
-  it('raises on a read it cannot interpret, leaving the entry queued', async () => {
-    net.read.mockRejectedValue(answered(500));
+  it('raises anything else, leaving the entry queued', async () => {
+    net.guardedSave.mockRejectedValue(answered(500));
     await expect(networkSink.write(entry)).rejects.toThrow();
-    expect(net.save, 'a 500 is not consent to overwrite').not.toHaveBeenCalled();
   });
 
   it('takes a free name when a conflict copy already exists for today', async () => {
-    // The dated name reads back, so it is taken; the numbered one does not.
     net.read
-      .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // base name taken
-      .mockRejectedValueOnce(answered(404)); // " 2" is free
+      .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // dated name taken
+      .mockRejectedValueOnce(answered(404)); // the numbered one is free
     net.save.mockResolvedValue(undefined);
 
     const copy = await networkSink.writeConflictCopy(entry);

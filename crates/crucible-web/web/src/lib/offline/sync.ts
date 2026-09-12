@@ -1,5 +1,6 @@
 import {
   getFileWithHash,
+  saveFileIfUnchanged,
   listNotes,
   rawFileUrl,
   saveFileContent,
@@ -72,28 +73,21 @@ function isMissing(error: unknown): boolean {
 
 export const networkSink: OutboxSink = {
   write: async (entry) => {
-    // `PUT /api/kiln/file` carries no hash and writes blind, so THIS compare
-    // is the only guard there is. A read that fails is not consent to write:
+    // The DAEMON compares the hash, inside its own write. This used to read
+    // the note, compare in the browser and then PUT — three round trips with
+    // a window in the middle, on the machine with the stale view of the disk.
+    // Section 11 of the mobile note forbids exactly that; it was here only
+    // because no route could refuse a stale base yet.
     //
-    //  - 404, the note was deleted meanwhile. Writing it back would resurrect
-    //    it, so the writing goes to a conflict copy instead — it is the
-    //    user's, and it must not vanish with the note.
-    //  - anything else — a 500, a blip — is unknown ground. Throwing leaves
-    //    the entry queued for the next drain. Treating it as "no current
-    //    file" used to overwrite another writer with no conflict copy at all.
-    let current: { content_hash: string } | null = null;
-    try {
-      current = await getFileWithHash(entry.path);
-    } catch (error) {
-      if (!isMissing(error)) throw error;
-      return { ok: false, current: '' };
-    }
-    if (current.content_hash !== entry.base) {
-      return { ok: false, current: current.content_hash };
-    }
-    await saveFileContent(entry.path, entry.body);
-    const after = await getFileWithHash(entry.path);
-    return { ok: true, hash: after.content_hash };
+    // An empty `current` means the note is gone. Its writing still belongs to
+    // the user, so it goes to a conflict copy rather than resurrecting a note
+    // that was deleted.
+    const answer = await saveFileIfUnchanged(entry.path, entry.body, entry.base);
+    if (!answer.ok) return { ok: false, current: answer.current_hash };
+    // The route answers with the hash of what it wrote. The old code issued a
+    // THIRD read to learn it, which another writer could land inside — storing
+    // a hash that described someone else's bytes beside this body.
+    return { ok: true, hash: answer.content_hash };
   },
   writeConflictCopy: async (entry) => {
     // A free name, not merely a dated one. The stamp is a DATE, so a second

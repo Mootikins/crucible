@@ -1,4 +1,5 @@
 use super::helpers::{
+    refuse_if_base_is_stale,
     note_to_file_json, reject_path_traversal, validate_file_within_kiln,
     validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
@@ -47,6 +48,10 @@ struct FilePathQuery {
 struct PutFileRequest {
     path: String,
     content: String,
+    /// The hash the caller read. Absent keeps the blind overwrite; present
+    /// refuses with 409 and the current hash when the file moved on.
+    #[serde(default)]
+    base_hash: Option<String>,
 }
 
 /// `PATCH /api/kiln/file` — change a few lines, not the whole file.
@@ -365,6 +370,10 @@ async fn put_kiln_file(
     }
 
     validate_write_target_within_kiln(&file_path, root.path())?;
+
+    // Before the write, and after containment: a caller that names the bytes
+    // it read does not overwrite a writer who got there first.
+    refuse_if_base_is_stale(&file_path, req.base_hash.as_deref()).await?;
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {

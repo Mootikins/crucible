@@ -2053,6 +2053,41 @@ export async function saveFileContent(path: string, content: string): Promise<vo
   });
 }
 
+/**
+ * Save a whole file, refusing if it moved on since `baseHash` was read.
+ *
+ * The compare happens inside the daemon's write, which is the only place it
+ * can be right: a browser that reads, compares and then PUTs leaves a window
+ * between the read and the write, and runs on the machine with the stale view
+ * of the disk.
+ *
+ * A 409 is a VALUE, not a throw — it carries the hash on disk now, which is
+ * what a caller needs to decide between re-reading and keeping its own copy.
+ */
+export async function saveFileIfUnchanged(
+  path: string,
+  content: string,
+  baseHash: string,
+): Promise<{ ok: true; content_hash: string } | { ok: false; current_hash: string }> {
+  const response = await fetch('/api/kiln/file', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ path, content, base_hash: baseHash }),
+  });
+  if (response.status === 409) {
+    const body = (await response.json()) as { current_hash?: string };
+    return { ok: false, current_hash: body.current_hash ?? '' };
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(`Failed to save ${path}`), { status: response.status });
+  }
+  // The route answers with the hash of what it wrote, so nothing here needs a
+  // hash function and nothing needs a second read to learn it.
+  const body = (await response.json()) as { content_hash?: string };
+  return { ok: true, content_hash: body.content_hash ?? '' };
+}
+
 /** One anchored edit: replace `expect` with `replace`, matched whole-line. */
 export interface AnchoredEdit {
   expect: string;
