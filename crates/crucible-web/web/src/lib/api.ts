@@ -908,6 +908,21 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
 }
 
 /** List sessions with optional filters. */
+/**
+ * The list a reply was supposed to carry.
+ *
+ * A shape the client did not expect — a reverse proxy's error page served as
+ * 200, a daemon one field-rename ahead, a truncated body — used to reach the
+ * user as `Cannot read properties of undefined (reading 'map')`. That is a
+ * stack trace wearing a toast: it names nothing anyone can act on, and it
+ * hides which call failed. Each caller already declares a human `errorMessage`
+ * for an HTTP failure; a wrong shape deserves the same sentence.
+ */
+function expectList<T>(value: T[] | undefined, field: string, what: string): T[] {
+  if (Array.isArray(value)) return value;
+  throw new Error(`${what}: the server's reply carried no "${field}" list`);
+}
+
 export async function listSessions(filters?: {
   kiln?: string;
   workspace?: string;
@@ -928,7 +943,7 @@ export async function listSessions(filters?: {
   const data = await request<{ sessions: RawSession[]; total: number }>('GET', url, {
     errorMessage: 'Failed to list sessions',
   });
-  return data.sessions.map(mapSession);
+  return expectList(data.sessions, 'sessions', 'Failed to list sessions').map(mapSession);
 }
 
 /**
@@ -952,7 +967,8 @@ export async function searchSessions(
   const data = await request<RawSession[]>('GET', `/api/sessions/search?${params.toString()}`, {
     errorMessage: 'Failed to search sessions',
   });
-  return data.map(mapSession);
+  // A BARE array here, not a field on an object. Same failure either way.
+  return expectList(data, 'results', 'Failed to search sessions').map(mapSession);
 }
 
 export async function getSession(id: string): Promise<Session> {
@@ -1062,7 +1078,7 @@ export async function semanticSearch(
     errorMessage: 'Semantic search failed',
     ...jsonRequest({ kiln, query, limit }),
   });
-  return data.results.map((r) => ({
+  return expectList(data.results, 'results', 'Failed to search notes').map((r) => ({
     path: r.path,
     relPath: r.rel_path,
     score: r.score,
@@ -1272,9 +1288,10 @@ export async function getSessionHistory(
 
 /** List available LLM providers and their models. */
 export async function listProviders(): Promise<ProviderInfo[]> {
-  return (await request<{ providers: ProviderInfo[] }>('GET', '/api/providers', {
+  const data = await request<{ providers: ProviderInfo[] }>('GET', '/api/providers', {
     errorMessage: 'Failed to list providers',
-  })).providers;
+  });
+  return expectList(data.providers, 'providers', 'Failed to list providers');
 }
 
 /** Session scope echoed by kiln/workspace mutations. */
