@@ -20,6 +20,7 @@
 //! Unlike [`crate::plugin_status`] these are not session-scoped. A status slot
 //! describes one live session; a publication describes the plugin.
 
+use crate::host_hook::HostHook;
 use mlua::{Lua, LuaSerdeExt, Result as LuaResult};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -46,7 +47,9 @@ pub struct PublicationRegistry {
     /// not know what a `SessionEventMessage` is. The daemon installs the
     /// closure at boot; a registry with none set simply stores, which is what
     /// every test and the `cru plugin check` path want.
-    on_change: Arc<Mutex<Option<PublicationChangeHook>>>,
+    ///
+    /// Install-once, and shared across clones. See [`HostHook`].
+    on_change: HostHook<PublicationChangeHook>,
 }
 
 impl std::fmt::Debug for PublicationRegistry {
@@ -61,11 +64,12 @@ impl PublicationRegistry {
         Self::default()
     }
 
-    /// Install the change hook. The daemon calls this once at boot.
-    pub fn set_change_hook(&self, hook: PublicationChangeHook) {
-        if let Ok(mut g) = self.on_change.lock() {
-            *g = Some(hook);
-        }
+    /// Install the change hook, once. The daemon calls this at boot. Answers
+    /// `false` when one is already installed, which is a double boot rather
+    /// than something to paper over.
+    #[must_use]
+    pub fn set_change_hook(&self, hook: PublicationChangeHook) -> bool {
+        self.on_change.install(hook)
     }
 
     /// Store a publication and tell anyone listening.
@@ -79,8 +83,7 @@ impl PublicationRegistry {
                 .or_default()
                 .insert(plugin.to_string(), value);
         }
-        let hook = self.on_change.lock().ok().and_then(|g| g.clone());
-        if let Some(hook) = hook {
+        if let Some(hook) = self.on_change.get() {
             hook(plugin, key);
         }
     }
@@ -225,6 +228,29 @@ mod tests {
         assert_eq!(registry.get("isolation")[0].0, "oci");
     }
 
+    /// The hook is installed once at boot. A second install used to replace the
+    /// first in silence, so a double boot looked exactly like a working one.
+    #[test]
+    fn the_change_hook_installs_once() {
+        use std::sync::{Arc, Mutex};
+        let registry = PublicationRegistry::new();
+        let hits: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
+
+        let sink = Arc::clone(&hits);
+        assert!(registry.set_change_hook(Arc::new(move |_: &str, _: &str| {
+            *sink.lock().unwrap() += 1;
+        })));
+        assert!(
+            !registry.set_change_hook(Arc::new(|_: &str, _: &str| {
+                panic!("the second hook must never fire")
+            })),
+            "the second install is refused"
+        );
+
+        registry.set("kanban", "kanban:board", json!({}));
+        assert_eq!(*hits.lock().unwrap(), 1, "the first hook survives");
+    }
+
     /// The hook fires with the plugin and key, after the value has landed.
     #[test]
     fn a_publication_notifies_after_it_is_stored() {
@@ -234,14 +260,16 @@ mod tests {
 
         let sink = seen.clone();
         let observed = registry.clone();
-        registry.set_change_hook(Arc::new(move |plugin: &str, key: &str| {
-            // Reading inside the hook proves the value is stored BEFORE the
-            // notification: a client told to re-read must not race the write.
-            assert_eq!(observed.get(key).len(), 1);
-            sink.lock()
-                .unwrap()
-                .push((plugin.to_string(), key.to_string()));
-        }));
+        assert!(
+            registry.set_change_hook(Arc::new(move |plugin: &str, key: &str| {
+                // Reading inside the hook proves the value is stored BEFORE the
+                // notification: a client told to re-read must not race the write.
+                assert_eq!(observed.get(key).len(), 1);
+                sink.lock()
+                    .unwrap()
+                    .push((plugin.to_string(), key.to_string()));
+            }))
+        );
 
         registry.set("kanban", "kanban:board", json!({ "tickets": [] }));
         assert_eq!(

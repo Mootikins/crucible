@@ -92,6 +92,7 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
         dir.join("init.lua"),
         r#"
         cru.on("pre_tool_call", function() return { cancel = true, reason = "stale" } end)
+        cru.surface.declare{ plugin = "halfdead", name = "board", title = "Board" }
         cru.plugin.options{
             type = "group", name = "Halfdead",
             get = function() return true end,
@@ -128,6 +129,16 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
     assert!(
         !loader.options().plugins().contains(&"halfdead".to_string()),
         "a dead plugin's option tree must be released"
+    );
+    // A panel drawn from a dead plugin cannot be refreshed, so it must be
+    // withdrawn rather than left on the TUI and the web showing stale rows.
+    assert!(
+        loader
+            .surfaces()
+            .list()
+            .iter()
+            .all(|s| s.plugin != "halfdead"),
+        "a dead plugin's surfaces must be released"
     );
     // …but the plugin still shows what it DECLARES:
     assert_eq!(

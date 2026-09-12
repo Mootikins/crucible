@@ -170,9 +170,11 @@ pub struct DaemonPluginLoader {
     status: StatusRegistry,
     /// Panels plugins declared, read by TUI and web.
     ///
-    /// Deliberately not released by `make_plugin_inert`: a reload re-declares
-    /// the same `(plugin, name)` keys, and dropping them first would orphan
-    /// every window a client had open on one.
+    /// Released by `make_plugin_inert`, like the publications beside it. A
+    /// successful reload never reaches that path — it re-declares the same
+    /// `(plugin, name)` keys and keeps the rows — so the only callers are the
+    /// failure paths and the uninstall, and a panel whose plugin is inert must
+    /// close rather than keep drawing rows nothing can refresh.
     surfaces: SurfaceRegistry,
     /// Data plugins published about themselves, read by TUI and web.
     ///
@@ -1194,6 +1196,7 @@ impl DaemonPluginLoader {
             warn!("clear session hooks for dead plugin '{name}': {e}");
         }
         self.publications.release_plugin(name);
+        self.surfaces.release_plugin(name);
         self.options.release_plugin(name);
         // Dropped RegistryKeys only mark their slots; reclaim them so repeated
         // failed reloads don't grow the Lua registry.

@@ -401,6 +401,24 @@ pub enum SystemPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<String>,
     },
+    /// A plugin's published data changed, so a client re-reads it.
+    ///
+    /// Carries who published and under which key, never the value: a
+    /// publication is opaque JSON of the plugin's own choosing, and a client
+    /// that already holds the key refetches through
+    /// `GET /api/plugins/publications`.
+    ///
+    /// Not an `EventName`, so no Lua handler subscribes to it: those are the
+    /// daemon events a plugin listens for, and this travels the other way —
+    /// plugin to client. A hook here would offer a plugin a handler on its own
+    /// writes, which is a loop waiting to happen.
+    #[serde(rename = "publication_changed")]
+    PublicationChanged {
+        #[serde(default)]
+        plugin: String,
+        #[serde(default)]
+        key: String,
+    },
     /// A session ended, reported daemon-wide. See [`Self::SessionCreated`].
     #[serde(rename = "session:ended")]
     SessionEnded {
