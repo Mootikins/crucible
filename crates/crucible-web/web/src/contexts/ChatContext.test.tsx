@@ -232,6 +232,85 @@ describe('streaming reconciliation', () => {
   });
 });
 
+describe('a reply the provider cut off', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSession.mockResolvedValue(mockSession);
+    mockListSessions.mockResolvedValue([]);
+    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
+  });
+
+  // The daemon names the reason on `message_complete`. This is where a reader
+  // meets it: a system line under the reply, drawn from the wire payload.
+  it('draws a system note under the reply', async () => {
+    let eventCallback: ((event: any) => void) | null = null;
+    mockSubscribeToEvents.mockImplementation(
+      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
+        eventCallback = callback;
+        onOpen?.();
+        return () => { eventCallback = null; };
+      },
+    );
+    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => expect(eventCallback).not.toBeNull());
+    screen.getByText('Send').click();
+    await waitFor(() => expect(mockSendChatMessage).toHaveBeenCalled());
+
+    eventCallback!({
+      type: 'message_complete',
+      id: 'msg-turn-1',
+      content: 'Half an ans',
+      stop_reason: 'max_tokens',
+    });
+
+    await waitFor(() => {
+      const items = screen.getAllByRole('listitem');
+      const system = items.find((i) => i.getAttribute('data-role') === 'system');
+      expect(system?.textContent).toContain('output limit');
+    });
+  });
+
+  it('draws nothing extra when the reply finished', async () => {
+    let eventCallback: ((event: any) => void) | null = null;
+    mockSubscribeToEvents.mockImplementation(
+      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
+        eventCallback = callback;
+        onOpen?.();
+        return () => { eventCallback = null; };
+      },
+    );
+    mockSendChatMessage.mockResolvedValue('msg-turn-2');
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => expect(eventCallback).not.toBeNull());
+    screen.getByText('Send').click();
+    await waitFor(() => expect(mockSendChatMessage).toHaveBeenCalled());
+
+    eventCallback!({
+      type: 'message_complete',
+      id: 'msg-turn-2',
+      content: 'A whole answer',
+      stop_reason: 'end_turn',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    const items = screen.getAllByRole('listitem');
+    expect(items.some((i) => i.getAttribute('data-role') === 'system')).toBe(false);
+  });
+});
+
 describe('draft first-message handoff', () => {
   beforeEach(() => {
     vi.clearAllMocks();

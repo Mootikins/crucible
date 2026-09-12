@@ -12,7 +12,7 @@
 //!    dispatching the agent's `ToolCall`.
 //! 2. **Handler injection** — runtime's `turn:complete` handler returns
 //!    injected content; runtime re-enters `execute_agent_stream`
-//!    recursively with `is_continuation = true`. (The inbound channel
+//!    recursively at one greater `continuation_depth`. (The inbound channel
 //!    handles this within a single adapter turn, but handler
 //!    injection happens after `Done`, so we re-enter for a fresh
 //!    message_id + user_message visibility.)
@@ -32,14 +32,67 @@ use std::ops::ControlFlow;
 use crate::agent_manager::vm_pass::{run_handlers, PluginHandlers};
 use tokio::sync::mpsc;
 
+/// What the finished turn knows about itself.
+///
+/// The host reads none of these. They ride the `turn:complete` payload so a
+/// plugin can decide whether the model stopped before the work was done — from
+/// a plan file, a subsession, a tool result or the reply text. The host
+/// provides the inputs and holds no opinion, which is why there is no depth
+/// cap and no budget check here: a plugin that wants a bound sets its own.
+#[derive(Debug, Clone, Copy)]
+pub(in crate::agent_manager) struct TurnFacts {
+    /// Why the provider or the delegated agent ended the turn. `None` when
+    /// the stream closed without a terminal `Done`.
+    pub(in crate::agent_manager) stop_reason: Option<StopReason>,
+    /// How many re-prompts precede this turn. 0 is the user's own message.
+    ///
+    /// A FACT, not a cap. A 500-step plan needs 500 re-prompts, so any depth
+    /// the host enforced would be wrong for some plan. What stops a runaway
+    /// re-prompt is the user's cancel, which reaches every recursion depth
+    /// through the `tokio::select!` in `send.rs`.
+    pub(in crate::agent_manager) continuation_depth: u32,
+    /// Did the turn run a tool the user can see?
+    ///
+    /// A turn that ends right after a tool result is a model still working,
+    /// which removes a class of false positive no reply text can.
+    pub(in crate::agent_manager) saw_tool_activity: bool,
+}
+
+impl TurnFacts {
+    fn is_continuation(&self) -> bool {
+        self.continuation_depth > 0
+    }
+}
+
+/// The last `limit` characters of a reply, and whether anything was cut.
+///
+/// A tail, not a head. The signal a plugin reads sits at the END of a reply —
+/// what the model says it will do next comes after the work, not before it.
+/// (`post_llm_call` sends a 200-character HEAD for display. The two are not
+/// interchangeable.)
+///
+/// `limit` of 0 means the whole reply. The cut lands on a character boundary,
+/// so a reply that ends in a multi-byte glyph still crosses to Lua.
+fn response_tail(response: &str, limit: usize) -> (String, bool) {
+    if limit == 0 {
+        return (response.to_string(), false);
+    }
+    match response.char_indices().rev().nth(limit - 1) {
+        // Fewer characters than the limit, or exactly the limit: nothing cut.
+        None => (response.to_string(), false),
+        Some((0, _)) => (response.to_string(), false),
+        Some((start, _)) => (response[start..].to_string(), true),
+    }
+}
+
 impl AgentManager {
     #[allow(clippy::ptr_arg)]
     pub(super) async fn run_reactor_handlers(
         stream_ctx: &StreamContext,
         usage: Option<&TokenUsage>,
         accumulated_response: &mut String,
-        is_continuation: bool,
-    ) -> Option<(String, String)> {
+        facts: TurnFacts,
+    ) -> Option<String> {
         // Scheduler-owned conversation tree: commit the assistant
         // response text as an Agent node. Today this is shadow state;
         // later phases flip the handle to read from the tree.
@@ -93,6 +146,7 @@ impl AgentManager {
                 &stream_ctx.message_id,
                 accumulated_response.clone(),
                 usage,
+                facts.stop_reason,
             ),
         ) {
             warn!(
@@ -106,15 +160,15 @@ impl AgentManager {
             &stream_ctx.message_id,
             accumulated_response,
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
-            is_continuation,
+            facts,
+            stream_ctx.agent_stream_config.response_tail_chars,
         )
         .await;
 
-        if let Some((injected_content, position)) = &injection {
+        if let Some(injected_content) = &injection {
             info!(
                 session_id = %stream_ctx.session_id,
                 content_len = injected_content.len(),
-                position = %position,
                 "Processing handler injection"
             );
 
@@ -125,7 +179,6 @@ impl AgentManager {
                     "injection_pending",
                     serde_json::json!({
                         "content": injected_content,
-                        "position": position,
                         "is_continuation": true,
                     }),
                 ),
@@ -147,7 +200,7 @@ impl AgentManager {
         stream_ctx: StreamContext,
         stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
-        is_continuation: bool,
+        continuation_depth: u32,
     ) -> StreamOutcome {
         let ttft_local = Instant::now();
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
@@ -185,7 +238,7 @@ impl AgentManager {
         let mut turn_ctx = TurnContext::new(content)
             .with_inbound(inbound_rx)
             .with_messages(flattened_messages);
-        if is_continuation {
+        if continuation_depth > 0 {
             turn_ctx = turn_ctx.continuation();
         }
 
@@ -877,12 +930,16 @@ impl AgentManager {
             &stream_ctx,
             last_usage.as_ref(),
             accumulated_response,
-            is_continuation,
+            TurnFacts {
+                stop_reason: terminal_stop_reason,
+                continuation_depth,
+                saw_tool_activity,
+            },
         )
         .await;
 
         let mut continuation_outcome = StreamOutcome::Completed;
-        if let Some((injected_content, _)) = injection {
+        if let Some(injected_content) = injection {
             drop(event_stream);
             // Release the handle lock before recursing so the inner
             // invocation can re-acquire it.
@@ -927,7 +984,10 @@ impl AgentManager {
                 continuation_ctx,
                 stream_config.clone(),
                 accumulated_response,
-                true,
+                // The host counts; the plugin decides. No cap: the payload
+                // carries this number so a plugin that wants a bound sets its
+                // own, and the user's cancel reaches every depth.
+                continuation_depth + 1,
             ))
             .await;
         }
@@ -1010,20 +1070,39 @@ impl AgentManager {
         }
     }
 
+    /// Hand every `turn:complete` handler what the turn knows about itself,
+    /// and return the last inject.
+    ///
+    /// The payload carries the reply TAIL rather than only its length. The
+    /// text is already in memory, and a plugin that wants it otherwise has to
+    /// read `session.jsonl` — a whole file per turn, growing with the session.
+    ///
+    /// It carries NO phrase list, NO regex and NO "the model means to
+    /// continue" flag. A shipped pattern becomes an API, and Crucible would
+    /// then own the accuracy of a guess about another vendor's prose. Policy
+    /// over model output belongs in Lua.
     pub(in crate::agent_manager) async fn dispatch_turn_complete_handlers(
         session_id: &str,
         message_id: &str,
         response: &str,
         plugin_handlers: Option<&PluginHandlers>,
-        is_continuation: bool,
-    ) -> Option<(String, String)> {
+        facts: TurnFacts,
+        response_tail_chars: usize,
+    ) -> Option<String> {
+        let is_continuation = facts.is_continuation();
+        let (response_tail, response_truncated) = response_tail(response, response_tail_chars);
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({
                 "session_id": session_id,
                 "message_id": message_id,
                 "response_length": response.len(),
+                "response_tail": response_tail,
+                "response_truncated": response_truncated,
                 "is_continuation": is_continuation,
+                "continuation_depth": facts.continuation_depth,
+                "saw_tool_activity": facts.saw_tool_activity,
+                "stop_reason": facts.stop_reason,
             }),
         };
 
@@ -1057,7 +1136,7 @@ impl AgentManager {
         lua: &mlua::Lua,
         event: &SessionEvent,
         is_continuation: bool,
-    ) -> Option<(String, String)> {
+    ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
         let handlers = registry.runtime_handlers_for(StageId::TurnComplete.as_str(), None);
@@ -1072,7 +1151,7 @@ impl AgentManager {
             "Dispatching turn:complete handlers"
         );
 
-        let mut pending_injection: Option<(String, String)> = None;
+        let mut pending_injection: Option<String> = None;
         for handler in handlers {
             match registry
                 .execute_runtime_handler(lua, handler.id, event, Some(session_id))
@@ -1086,15 +1165,14 @@ impl AgentManager {
                         "Handler executed"
                     );
 
-                    if let ScriptHandlerResult::Inject { content, position } = result {
+                    if let ScriptHandlerResult::Inject { content } = result {
                         debug!(
                             session_id = %session_id,
                             handler = handler.id,
                             content_len = content.len(),
-                            position = %position,
                             "Handler returned inject"
                         );
-                        pending_injection = Some((content, position));
+                        pending_injection = Some(content);
                     }
                 }
                 Err(e) => {

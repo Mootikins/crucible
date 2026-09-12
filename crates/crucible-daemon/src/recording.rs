@@ -167,7 +167,7 @@ mod tests {
                 json!({ "ok": true }),
             ),
             SessionEventMessage::user_message("session-1", "msg-1", "hello"),
-            SessionEventMessage::message_complete("session-1", "msg-2", "done", None),
+            SessionEventMessage::message_complete("session-1", "msg-2", "done", None, None),
             SessionEventMessage::model_switched("session-1", "gpt-5", "openai"),
             SessionEventMessage::ended("session-1", "complete"),
             SessionEventMessage::new("session-1", "custom_event", json!({ "x": 1 })),

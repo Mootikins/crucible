@@ -97,7 +97,8 @@ fn test_session_event_to_json_line() {
 
 #[test]
 fn test_session_event_message_complete() {
-    let event = SessionEventMessage::message_complete("chat-test", "msg-123", "Hello World!", None);
+    let event =
+        SessionEventMessage::message_complete("chat-test", "msg-123", "Hello World!", None, None);
     let json = serde_json::to_string(&event).unwrap();
     println!("message_complete JSON: {}", json);
     assert!(json.contains("\"event\":\"message_complete\""));
@@ -259,7 +260,7 @@ fn event_message_complete_with_usage() {
         cache_read_tokens: None,
         cache_creation_tokens: None,
     };
-    let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", Some(&usage));
+    let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", Some(&usage), None);
     assert_eq!(evt.event, "message_complete");
     assert_eq!(evt.data["prompt_tokens"], 100);
     assert_eq!(evt.data["completion_tokens"], 50);
@@ -271,7 +272,7 @@ fn event_message_complete_with_usage() {
 // GOLDEN: captures current behavior — no usage means no token keys at all
 #[test]
 fn event_message_complete_without_usage() {
-    let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", None);
+    let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", None, None);
     assert_eq!(evt.event, "message_complete");
     assert!(evt.data.get("prompt_tokens").is_none());
     assert!(evt.data.get("completion_tokens").is_none());
@@ -568,7 +569,7 @@ fn golden_ended() {
 /// Three shapes: no usage at all, usage without cache, usage with cache.
 #[test]
 fn golden_message_complete_three_shapes() {
-    let bare = SessionEventMessage::message_complete("s1", "m-1", "done", None);
+    let bare = SessionEventMessage::message_complete("s1", "m-1", "done", None, None);
     assert_eq!(
         wire(&bare, "message_complete"),
         serde_json::json!({"message_id": "m-1", "full_response": "done"})
@@ -585,6 +586,7 @@ fn golden_message_complete_three_shapes() {
             cache_read_tokens: None,
             cache_creation_tokens: None,
         }),
+        None,
     );
     assert_eq!(
         wire(&no_cache, "message_complete"),
@@ -608,6 +610,7 @@ fn golden_message_complete_three_shapes() {
             cache_read_tokens: Some(8),
             cache_creation_tokens: Some(2),
         }),
+        None,
     );
     assert_eq!(
         wire(&cached, "message_complete"),
@@ -768,7 +771,7 @@ fn event_msg_type_always_event() {
         SessionEventMessage::tool_result("s1", "c", "t", Value::Null),
         SessionEventMessage::ended("s1", "done"),
         SessionEventMessage::model_switched("s1", "m", "p"),
-        SessionEventMessage::message_complete("s1", "m", "r", None),
+        SessionEventMessage::message_complete("s1", "m", "r", None, None),
         SessionEventMessage::user_message("s1", "m", "c"),
     ];
     for (i, evt) in factories.iter().enumerate() {

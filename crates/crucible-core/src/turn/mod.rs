@@ -109,7 +109,10 @@ pub enum TurnEvent {
     /// Inbound only. The runtime's post-turn handler returned an
     /// injection; the agent should treat `content` as the next turn's
     /// user message.
-    HandlerInjection { content: String, position: String },
+    ///
+    /// The content is the WHOLE next user message, so there is nothing to
+    /// place it against and the variant carries no placement field.
+    HandlerInjection { content: String },
 
     /// Inbound only. Knowledge retrieved mid-turn (a Lua handler called
     /// `cru.context.attach`) that the agent should have available for its
@@ -153,7 +156,19 @@ pub enum TurnEvent {
 }
 
 /// Reason a turn ended, carried on `TurnEvent::Done`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// It reaches a plugin on the `turn:complete` payload and a front end on
+/// `message_complete`, so a handler can tell a model that finished from a
+/// model the provider cut off. The host itself reads none of it: what to do
+/// about a premature stop is the plugin's decision.
+///
+/// Two variants this deliberately does NOT have. A stop-sequence variant,
+/// because Crucible sets no stop sequence anywhere, so no provider can report
+/// one. A tool-use variant, because the turn loop emits `Done` only when no
+/// tool call is pending — a provider that says "tool_use" has already had its
+/// calls dispatched, and the turn after them ends for some other reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StopReason {
     /// Model finished naturally.
     EndTurn,
@@ -164,6 +179,36 @@ pub enum StopReason {
     /// stream yielded no content (and on an unexpected stream close),
     /// `AcpAgentHandle` when a delegated turn ended without emitting anything.
     Empty,
+    /// The provider truncated the answer at the model's OUTPUT cap. The reply
+    /// stops mid-thought, and another turn continues it.
+    ///
+    /// This is NOT a reason to compact. `should_autocompact` compares the
+    /// PROMPT tokens against the input window; this variant reports the output
+    /// cap. The two numbers answer different questions, and a session that
+    /// hits this one can have an almost empty context.
+    MaxTokens,
+    /// The model or its provider declined to answer: a safety filter, a
+    /// content filter, or a delegated agent's own refusal. The same request
+    /// gets the same answer, so a re-prompt of it is waste.
+    Refusal,
+}
+
+impl StopReason {
+    /// The line a renderer draws beside the reply, or `None` when the reason
+    /// needs no note.
+    ///
+    /// One wording for both Rust front ends, so the TUI transcript and a
+    /// `cru` client cannot drift. `EndTurn` says nothing because a completed
+    /// answer explains itself; `Cancelled` and `Empty` already have their own
+    /// paths in every renderer.
+    #[must_use]
+    pub fn user_notice(&self) -> Option<&'static str> {
+        match self {
+            Self::MaxTokens => Some("the model reached its output limit, so the reply stops here"),
+            Self::Refusal => Some("the model declined to answer"),
+            Self::EndTurn | Self::Cancelled | Self::Empty => None,
+        }
+    }
 }
 
 /// Does this streamed text count as something the user can see?

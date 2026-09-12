@@ -133,6 +133,12 @@ pub enum ChatAppMsg {
     Error(String),
     /// **Dual-duty**: Status message (from daemon or user action).
     Status(String),
+    /// **Event** (daemon → TUI): a line the transcript draws beside the reply.
+    ///
+    /// Distinct from `Status`, which writes the status bar and leaves no
+    /// record, and from `Error`, which raises a warning toast. A turn the
+    /// provider cut off needs a note the user can still read after scrolling.
+    SystemNotice(String),
     /// **Command** (TUI → daemon): this client asked for a mode change.
     /// Reaches `set_mode_str`, so it must never be produced from an inbound
     /// daemon event — that is `ModeSynced`, and confusing the two makes the
@@ -400,6 +406,7 @@ impl ChatAppMsg {
 
             Self::Error(_)
             | Self::Status(_)
+            | Self::SystemNotice(_)
             | Self::ModeChanged(_)
             | Self::ModeSynced(_)
             | Self::ContextUsage { .. }

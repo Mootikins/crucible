@@ -49,6 +49,7 @@ fn scripted_turn(session_id: &str) -> Vec<SessionEventMessage> {
                 cache_read_tokens: Some(12),
                 cache_creation_tokens: None,
             }),
+            None,
         ),
     ]
 }

@@ -268,6 +268,9 @@ impl OilChatApp {
             ChatAppMsg::Status(status) => {
                 self.status = status;
             }
+            ChatAppMsg::SystemNotice(text) => {
+                self.add_system_message(text);
+            }
             // Opens the modal, or refreshes the one already open. Refresh keeps
             // the cursor on the same row id — see `SurfaceModal::update`.
             ChatAppMsg::SurfaceLoaded {

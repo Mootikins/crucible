@@ -261,6 +261,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             total_tokens,
             cache_read_tokens,
             cache_creation_tokens,
+            stop_reason,
             ..
         } => {
             let mut msgs = Vec::new();
@@ -291,6 +292,12 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 msgs.push(ChatAppMsg::CacheHitRate(rate));
             }
             msgs.push(ChatAppMsg::StreamComplete);
+            // After `StreamComplete`, never before: the completion seals the
+            // trailing assistant bubble only while that bubble is the last
+            // node, so a notice pushed first would leave the reply unsealed.
+            if let Some(notice) = stop_reason.and_then(|r| r.user_notice()) {
+                msgs.push(ChatAppMsg::SystemNotice(notice.to_string()));
+            }
             msgs
         }
         TurnPayload::PrecognitionComplete {

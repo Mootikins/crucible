@@ -1,3 +1,5 @@
+import type { StopReason } from './stop-reason';
+
 /** Token usage data for a completed message */
 export interface TokenUsage {
   promptTokens: number;
@@ -576,6 +578,11 @@ interface MessageCompleteEvent {
   total_tokens?: number;
   cache_read_tokens?: number;
   cache_creation_tokens?: number;
+  /**
+   * Why the turn ended. Absent when the daemon reported none: an older
+   * recording, or a stream that closed without a terminal event.
+   */
+  stop_reason?: StopReason;
 }
 
 /** An error occurred */

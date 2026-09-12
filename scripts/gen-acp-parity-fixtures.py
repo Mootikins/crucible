@@ -108,7 +108,13 @@ common_head = [
 ]
 common_tail = [
     ("text_delta", {"content": CODA}),
-    ("message_complete", {"message_id": MSG_ID, "full_response": FULL}),
+    # `stop_reason` rides `message_complete` so a plugin and a renderer can
+    # tell a finished answer from one the provider cut off. A mock agent
+    # ends its stream naturally, so the capture reads `end_turn`.
+    (
+        "message_complete",
+        {"message_id": MSG_ID, "full_response": FULL, "stop_reason": "end_turn"},
+    ),
 ]
 
 internal = common_head + [
@@ -222,7 +228,14 @@ read_head = [
 ]
 read_tail = [
     ("text_delta", {"content": READ_CODA}),
-    ("message_complete", {"message_id": READ_MSG_ID, "full_response": READ_FULL}),
+    (
+        "message_complete",
+        {
+            "message_id": READ_MSG_ID,
+            "full_response": READ_FULL,
+            "stop_reason": "end_turn",
+        },
+    ),
 ]
 
 read_internal = (

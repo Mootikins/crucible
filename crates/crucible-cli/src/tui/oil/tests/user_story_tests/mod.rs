@@ -23,6 +23,7 @@ mod paste_tests; // US-106
 mod permission_tests; // US-401
 mod scroll_tests; // US-801
 mod shell_tests; // US-601 / US-602
+mod stop_reason_tests; // US-206
 mod stream_gap_tests; // US-907
 mod subagent_mcp_tests; // US-302 / US-303
 mod surface_tests; // US-908

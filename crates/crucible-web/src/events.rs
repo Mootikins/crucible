@@ -1,4 +1,5 @@
 use crucible_core::protocol::session_events::turn::ToolResultBody;
+use crucible_core::turn::StopReason;
 use crucible_daemon::SessionEvent;
 use serde::{Deserialize, Serialize};
 
@@ -68,6 +69,11 @@ pub enum ChatEvent {
         cache_read_tokens: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_creation_tokens: Option<u64>,
+        /// Why the turn ended (`end_turn`, `max_tokens`, `refusal`, …). The
+        /// browser draws a note under a reply the provider cut off. Absent
+        /// when the daemon reported none.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stop_reason: Option<StopReason>,
     },
 
     Error {
@@ -300,6 +306,7 @@ impl ChatEvent {
                     total_tokens,
                     cache_read_tokens,
                     cache_creation_tokens,
+                    stop_reason,
                 } => ChatEvent::MessageComplete {
                     id: message_id,
                     content: full_response,
@@ -308,6 +315,7 @@ impl ChatEvent {
                     total_tokens: total_tokens.map(u64::from),
                     cache_read_tokens: cache_read_tokens.map(u64::from),
                     cache_creation_tokens: cache_creation_tokens.map(u64::from),
+                    stop_reason,
                 },
 
                 // `ended` carries the turn's failure as an `"error: "`-prefixed
@@ -555,8 +563,13 @@ mod tests {
             cache_read_tokens: None,
             cache_creation_tokens: None,
         };
-        let event =
-            SessionEventMessage::message_complete("s1", "msg-1", "final answer", Some(&usage));
+        let event = SessionEventMessage::message_complete(
+            "s1",
+            "msg-1",
+            "final answer",
+            Some(&usage),
+            None,
+        );
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "message_complete");

@@ -15,29 +15,23 @@
 /// dropped; at that point the stream body that would yield this event is gone,
 /// so nothing could ever read a stop reason derived from it.)
 ///
-/// `MaxTokens`, `MaxTurnRequests` and `Refusal` all describe a turn the agent
-/// chose to end and that the user sees as complete; Crucible has no variant for
-/// them, so they collapse to `EndTurn`. That collapse is a real loss — a
-/// budget-truncated answer is reported as a natural completion, which is the
-/// same failure mode divergence B3 named — but it is *parity*: the internal
-/// agent collapses identically, having no upstream reason to carry either.
-/// They are listed explicitly rather than left to the wildcard so the loss is
-/// visible at the call site, so it is logged, and so a future
+/// `MaxTokens` and `Refusal` now have variants of their own, and the internal
+/// agent reports the same two from `genai_handle::turn_stop_reason`, so a
+/// delegated turn and an internal turn describe a truncation or a refusal with
+/// the same word.
+///
+/// `MaxTurnRequests` still collapses to `EndTurn`, and it is listed explicitly
+/// rather than left to the wildcard. It names a cap on the AGENT's own request
+/// count, which no internal turn has and no provider reports, so a variant for
+/// it would have exactly one producer and no distinct handler. The collapse is
+/// logged so the loss stays visible at the call site, and a future
 /// `#[non_exhaustive]` variant lands in the wildcard as an unreviewed default
-/// instead of being quietly folded into this set.
+/// rather than being quietly folded into this set.
 ///
 /// `produced_anything` is "the turn yielded text, thinking or a tool call". It
-/// outranks the budget reasons: a refusal or a token cap that produced nothing
+/// outranks the other reasons: a refusal or a token cap that produced nothing
 /// is still a turn the user saw nothing from, and `Empty` is the variant that
 /// says so.
-///
-/// **No consumer reads any of this yet.** `terminal_stop_reason`
-/// (`agent_manager/messaging/stream.rs`) is only ever tested for `is_none()`,
-/// nothing matches on the value, and the daemon-proxy path re-fabricates
-/// `EndTurn` (`rpc_client/agent/convert.rs`). This lands for contract
-/// consistency with `GenaiAgentHandle` — so the first consumer that does read a
-/// stop reason is not silently wrong on delegated turns — not because a reader
-/// exists today.
 pub(super) fn turn_stop_reason(
     acp: agent_client_protocol::schema::v1::StopReason,
     produced_anything: bool,
@@ -48,7 +42,9 @@ pub(super) fn turn_stop_reason(
     match acp {
         Acp::Cancelled => StopReason::Cancelled,
         _ if !produced_anything => StopReason::Empty,
-        reason @ (Acp::MaxTokens | Acp::MaxTurnRequests | Acp::Refusal) => {
+        Acp::MaxTokens => StopReason::MaxTokens,
+        Acp::Refusal => StopReason::Refusal,
+        reason @ Acp::MaxTurnRequests => {
             tracing::debug!(
                 acp_stop_reason = ?reason,
                 "ACP turn ended for a reason Crucible has no variant for; reporting EndTurn"
@@ -277,21 +273,42 @@ mod tests {
         );
     }
 
+    /// A delegated turn keeps the two reasons a plugin acts on.
+    ///
+    /// They used to collapse to `EndTurn`, so a plugin reading the payload saw
+    /// a truncated answer described as a natural completion — and the internal
+    /// agent said the same thing, so the two agreed on the wrong word.
     #[test]
-    fn budget_and_refusal_endings_are_completions_not_cancellations() {
+    fn a_truncation_and_a_refusal_keep_their_own_names() {
         use crucible_core::turn::StopReason;
 
-        // Crucible has no variant for these. Reporting them as `Cancelled`
-        // would claim the user stopped the turn; reporting `Empty` would claim
-        // the agent said nothing. Both are false — the agent ended a turn that
-        // produced output, which is `EndTurn`.
-        for acp in [
-            agent_client_protocol::schema::v1::StopReason::MaxTokens,
-            agent_client_protocol::schema::v1::StopReason::MaxTurnRequests,
-            agent_client_protocol::schema::v1::StopReason::Refusal,
-        ] {
-            assert_eq!(turn_stop_reason(acp, true), StopReason::EndTurn, "{acp:?}");
-        }
+        assert_eq!(
+            turn_stop_reason(
+                agent_client_protocol::schema::v1::StopReason::MaxTokens,
+                true
+            ),
+            StopReason::MaxTokens
+        );
+        assert_eq!(
+            turn_stop_reason(agent_client_protocol::schema::v1::StopReason::Refusal, true),
+            StopReason::Refusal
+        );
+    }
+
+    /// The agent's own request cap has no Crucible variant, so it stays a
+    /// completion. Nothing else reports it: no provider sends it, and no
+    /// internal turn can reach it.
+    #[test]
+    fn the_agents_request_cap_is_still_a_completion() {
+        use crucible_core::turn::StopReason;
+
+        assert_eq!(
+            turn_stop_reason(
+                agent_client_protocol::schema::v1::StopReason::MaxTurnRequests,
+                true
+            ),
+            StopReason::EndTurn
+        );
     }
 
     /// A budget or refusal ending that produced nothing is still empty.

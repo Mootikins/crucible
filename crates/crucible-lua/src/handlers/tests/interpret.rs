@@ -28,7 +28,7 @@ fn test_interpret_handler_result_transform() {
 }
 
 #[test]
-fn test_interpret_handler_result_inject_with_default_position() {
+fn an_inject_carries_its_content() {
     let lua = Lua::new();
     let table = lua.create_table().unwrap();
     let inject_table = lua.create_table().unwrap();
@@ -37,16 +37,21 @@ fn test_interpret_handler_result_inject_with_default_position() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Inject { content, position } => {
+        ScriptHandlerResult::Inject { content } => {
             assert_eq!(content, "Continue with task");
-            assert_eq!(position, "user_prefix");
         }
         _ => panic!("Expected Inject variant"),
     }
 }
 
+/// A plugin that still writes the deleted `position` key keeps working, and
+/// the key means nothing.
+///
+/// The old test asserted only that `position` survived the parse. It never
+/// asserted that the value did anything, so it passed while both values
+/// behaved identically.
 #[test]
-fn test_interpret_handler_result_inject_with_custom_position() {
+fn an_inject_ignores_an_unknown_key() {
     let lua = Lua::new();
     let table = lua.create_table().unwrap();
     let inject_table = lua.create_table().unwrap();
@@ -56,9 +61,8 @@ fn test_interpret_handler_result_inject_with_custom_position() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Inject { content, position } => {
+        ScriptHandlerResult::Inject { content } => {
             assert_eq!(content, "Follow-up message");
-            assert_eq!(position, "user_suffix");
         }
         _ => panic!("Expected Inject variant"),
     }
@@ -75,9 +79,8 @@ fn test_inject_takes_precedence_over_transform() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Inject { content, position } => {
+        ScriptHandlerResult::Inject { content } => {
             assert_eq!(content, "injected");
-            assert_eq!(position, "user_prefix");
         }
         _ => panic!("Expected Inject variant, not Transform"),
     }
@@ -94,9 +97,8 @@ fn test_inject_checked_before_cancel() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Inject { content, position } => {
+        ScriptHandlerResult::Inject { content } => {
             assert_eq!(content, "injected message");
-            assert_eq!(position, "user_prefix");
         }
         _ => panic!("Expected Inject variant, not Cancel"),
     }
@@ -107,7 +109,7 @@ fn test_inject_without_content_field_errors() {
     let lua = Lua::new();
     let table = lua.create_table().unwrap();
     let inject_table = lua.create_table().unwrap();
-    inject_table.set("position", "user_prefix").unwrap();
+    inject_table.set("unrelated", "value").unwrap();
     table.set("inject", inject_table).unwrap();
 
     let result = interpret_handler_result(&Value::Table(table));
@@ -128,9 +130,8 @@ fn test_inject_with_empty_content_is_valid() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Inject { content, position } => {
+        ScriptHandlerResult::Inject { content } => {
             assert_eq!(content, "");
-            assert_eq!(position, "user_prefix");
         }
         _ => panic!("Expected Inject variant"),
     }

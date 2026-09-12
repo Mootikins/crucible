@@ -105,6 +105,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** usage updates after each `message_complete`; Lua config drives layout with builtin fallback; overflow degrades gracefully at narrow widths (badges stay intact, model/toast spans elide with `…`, sections never overlap).
 **Tests:** T1 (statusline config), T2 (status_bar width snapshots at 40/50/80/120; narrow-width graceful degradation shipped 2026-07-10 via oil row flex-shrink + `no_shrink` badges).
 
+### US-206: A reply the model did not finish
+**As a user**, a reply the provider cut off, or one the model declined to give, says so under the text instead of reading as a finished answer.
+**Acceptance:** `message_complete` carrying `stop_reason = max_tokens` draws a system line naming the output limit; `refusal` draws one naming the refusal; `end_turn` and a payload with no `stop_reason` draw nothing extra; the model's own partial text stays on screen beside the note.
+**Tests:** T1 `chat_runner/tests/translate.rs::{a_truncated_reply_draws_a_note_after_the_bubble, a_finished_reply_mints_no_notice}`; T2 `user_story_tests/stop_reason_tests`.
+
 ## 3. Tools, Subagents & MCP
 
 ### US-301: Tool call lifecycle display

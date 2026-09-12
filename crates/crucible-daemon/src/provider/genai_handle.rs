@@ -260,6 +260,48 @@ fn normalize_tool_args(args: serde_json::Value) -> serde_json::Value {
     }
 }
 
+/// Map the reason `genai` captured from the provider onto Crucible's own.
+///
+/// `genai` normalises every provider's spelling first (`length`, `max_tokens`,
+/// `MAX_TOKENS` and `incomplete` all arrive as `MaxTokens`), so this one
+/// function covers every genai provider rather than one vendor.
+///
+/// Three of the six collapse on purpose. `ToolCall` cannot reach a `Done`: the
+/// adapter emits one only when no tool call is pending. `StopSequence` cannot
+/// happen: Crucible sets no stop sequence. `Other` is a provider string
+/// Crucible has no name for. A missing reason is the streaming case where the
+/// provider sent none.
+fn turn_stop_reason(captured: Option<&genai::chat::StopReason>) -> StopReason {
+    use genai::chat::StopReason as Genai;
+    match captured {
+        Some(Genai::MaxTokens(_)) => StopReason::MaxTokens,
+        Some(Genai::ContentFilter(_)) => StopReason::Refusal,
+        Some(
+            Genai::Completed(_) | Genai::ToolCall(_) | Genai::StopSequence(_) | Genai::Other(_),
+        )
+        | None => StopReason::EndTurn,
+    }
+}
+
+/// What the turn reports once its LLM stream asked for no further tool call.
+///
+/// `inner` is the reason the stream itself gave. A turn that showed the user
+/// nothing is `Empty` whatever the provider said, because `Empty` is the
+/// variant that names a blank screen — the ACP path decides the same way
+/// (`acp_handle/translate.rs::turn_stop_reason`).
+///
+/// This is a function rather than an `if` inside the stream body so it can be
+/// tested. The `if` there RECOMPUTED the reason from a local flag and threw
+/// the provider's answer away, which is why fixing the translator alone
+/// changed nothing.
+fn final_stop_reason(produced_content: bool, inner: StopReason) -> StopReason {
+    if produced_content {
+        inner
+    } else {
+        StopReason::Empty
+    }
+}
+
 /// Translate a single `ChatStreamEvent` into the equivalent `TurnEvent`(s).
 /// Returns `(events, terminal)` where `terminal == true` indicates the stream
 /// should be consumed no further (an `End` event was seen).
@@ -317,7 +359,7 @@ fn translate_chat_stream_event(
                 out.push(TurnEvent::Usage(usage_to_token_usage(usage)));
             }
             out.push(TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
+                stop_reason: turn_stop_reason(end.captured_stop_reason.as_ref()),
             });
             return (out, true);
         }
@@ -1230,6 +1272,18 @@ impl GenaiAgentHandle {
                 // Collect ToolCall events emitted during this LLM iteration
                 // so the outer loop can dispatch them when the stream ends.
                 let mut pending_calls: Vec<ChatToolCall> = Vec::new();
+                // What the inner stream said its reason was. The translator
+                // reads it off `StreamEnd::captured_stop_reason`, and this
+                // loop re-yields its own `Done` below — so dropping it here
+                // discarded the provider's answer a second time, and a fix in
+                // the translator alone would have changed nothing.
+                //
+                // No initial value: the `Done` arm is the ONLY way out of the
+                // loop below that reaches the read, so a default here would be
+                // dead, and a later arm that breaks without setting it must
+                // fail to compile rather than report a stop reason nobody
+                // chose.
+                let inner_stop_reason;
 
                 loop {
                     let Some(event) = chat_stream.next().await else {
@@ -1248,7 +1302,10 @@ impl GenaiAgentHandle {
                             });
                             yield event;
                         }
-                        TurnEvent::Done { .. } => break,
+                        TurnEvent::Done { stop_reason } => {
+                            inner_stop_reason = stop_reason;
+                            break;
+                        }
                         TurnEvent::Error(e) => {
                             yield TurnEvent::Error(e);
                             return;
@@ -1271,12 +1328,9 @@ impl GenaiAgentHandle {
                 }
 
                 if pending_calls.is_empty() {
-                    let stop_reason = if produced_content {
-                        StopReason::EndTurn
-                    } else {
-                        StopReason::Empty
+                    yield TurnEvent::Done {
+                        stop_reason: final_stop_reason(produced_content, inner_stop_reason),
                     };
-                    yield TurnEvent::Done { stop_reason };
                     return;
                 }
 
@@ -1315,7 +1369,7 @@ impl GenaiAgentHandle {
                                 terminate: false,
                             });
                         }
-                        TurnEvent::HandlerInjection { content, .. } => {
+                        TurnEvent::HandlerInjection { content } => {
                             drop(chat_stream);
                             for attachment in attached.drain(..) {
                                 messages.push(ChatMessage::system(&attachment));
@@ -1867,6 +1921,99 @@ mod tests {
             }
         }
         out
+    }
+
+    // ─── stop reasons ─────────────────────────────────────────────────
+
+    /// The provider's own answer reaches the turn.
+    ///
+    /// `genai` normalises every provider's spelling into its own enum, and
+    /// this handle bound the struct that carries it and then hard-coded
+    /// `EndTurn` — so a truncated answer was reported as a completed one.
+    #[test]
+    fn a_truncation_and_a_filtered_answer_keep_their_own_names() {
+        use genai::chat::StopReason as Genai;
+
+        assert_eq!(
+            turn_stop_reason(Some(&Genai::MaxTokens("length".into()))),
+            StopReason::MaxTokens
+        );
+        assert_eq!(
+            turn_stop_reason(Some(&Genai::ContentFilter("content_filter".into()))),
+            StopReason::Refusal
+        );
+    }
+
+    /// The genai reasons Crucible has no variant for, and the provider that
+    /// sends none, are all completions.
+    #[test]
+    fn the_reasons_with_no_variant_are_completions() {
+        use genai::chat::StopReason as Genai;
+
+        for genai in [
+            Genai::Completed("stop".into()),
+            Genai::ToolCall("tool_use".into()),
+            Genai::StopSequence("stop_sequence".into()),
+            Genai::Other("something_new".into()),
+        ] {
+            assert_eq!(
+                turn_stop_reason(Some(&genai)),
+                StopReason::EndTurn,
+                "{genai:?}"
+            );
+        }
+        assert_eq!(turn_stop_reason(None), StopReason::EndTurn);
+    }
+
+    /// The translated reason rides the terminal `Done`.
+    #[test]
+    fn the_end_event_carries_the_captured_reason() {
+        let events = drive_translate(vec![ChatStreamEvent::End(StreamEnd {
+            captured_stop_reason: Some(genai::chat::StopReason::MaxTokens("length".into())),
+            ..Default::default()
+        })]);
+
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                TurnEvent::Done {
+                    stop_reason: StopReason::MaxTokens
+                }
+            )),
+            "got {events:?}"
+        );
+    }
+
+    /// The turn keeps the stream's reason instead of recomputing one.
+    ///
+    /// The tool loop re-yields its own `Done` after the translated stream
+    /// ends, so a fix in the translator alone reached nothing.
+    #[test]
+    fn a_turn_that_showed_something_keeps_the_streams_reason() {
+        assert_eq!(
+            final_stop_reason(true, StopReason::MaxTokens),
+            StopReason::MaxTokens
+        );
+        assert_eq!(
+            final_stop_reason(true, StopReason::Refusal),
+            StopReason::Refusal
+        );
+    }
+
+    /// A turn the user saw nothing from is empty, whatever the provider said.
+    #[test]
+    fn a_turn_that_showed_nothing_is_empty() {
+        for inner in [
+            StopReason::EndTurn,
+            StopReason::MaxTokens,
+            StopReason::Refusal,
+        ] {
+            assert_eq!(
+                final_stop_reason(false, inner),
+                StopReason::Empty,
+                "{inner:?}"
+            );
+        }
     }
 
     #[test]

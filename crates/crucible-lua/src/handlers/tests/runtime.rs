@@ -313,8 +313,7 @@ async fn todo_enforcer_pattern_integration() {
             if response:find("%[ %]") then  -- Finds "[ ]" pattern
                 return {
                     inject = {
-                        content = "You have incomplete tasks. Please continue working on them.",
-                        position = "user_prefix"
+                        content = "You have incomplete tasks. Please continue working on them."
                     }
                 }
             end
@@ -342,14 +341,10 @@ async fn todo_enforcer_pattern_integration() {
 
     // Verify result is Inject with expected content
     match result {
-        ScriptHandlerResult::Inject { content, position } => {
+        ScriptHandlerResult::Inject { content } => {
             assert!(
                 content.contains("incomplete tasks"),
                 "Inject content should mention incomplete tasks"
-            );
-            assert_eq!(
-                position, "user_prefix",
-                "Position should be user_prefix by default"
             );
         }
         other => panic!("Expected ScriptHandlerResult::Inject, got {other:?}"),

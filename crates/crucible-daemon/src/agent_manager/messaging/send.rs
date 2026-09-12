@@ -413,7 +413,7 @@ impl AgentManager {
                 stream_ctx.clone(),
                 stream_config,
                 &mut accumulated_response,
-                false,
+                0,
             );
 
             let (status, error) = tokio::select! {
