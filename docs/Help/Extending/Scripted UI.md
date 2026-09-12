@@ -221,15 +221,29 @@ session — which is what lets a panel a user has open survive a reload. Surface
 are keyed by `(plugin, name)`, never by a generated id, so the same declaration
 lands on the same surface every time.
 
+`declare` announces the surface, so a panel you declare and do not fill yet is
+still something a client can list and open. A re-declare announces only when the
+title, shape or session really moved: a reload re-declares every surface, and an
+announcement per surface per reload costs every client a redraw to learn nothing.
+The version does not move for a retitle — it counts row generations, so shifting
+it would tell a client the rows changed when they did not.
+
 A plugin that goes **inert** loses its surfaces instead: an uninstall, or a
-reload that failed. The daemon withdraws each one and announces the withdrawal,
-so an open panel closes rather than keeping rows nothing can refresh.
+reload that failed. The daemon withdraws each one and marks the announcement
+`withdrawn`, so a client drops the panel straight off the event. It does not have
+to ask for the surface and read the empty answer — that costs a round trip, and
+an empty answer is also what a lost race looks like.
 
 ### Staying current
 
-`set_rows` broadcasts `surface_changed`, and both clients refetch. The event
-carries the identity and the new version and **never the rows**, because a surface
-is unbounded where an event is not.
+`declare` and `set_rows` both broadcast `surface_changed`, and both clients
+refetch. The event carries the identity and the new version and **never the
+rows**, because a surface is unbounded where an event is not.
+
+A withdrawal is the one event a client acts on without refetching. It sets
+`withdrawn`, which says the surface is gone and there is nothing left to ask for.
+The field is absent when it is false, so an ordinary change looks exactly as it
+always did.
 
 Redraw from the daemon-wide session hooks, which fire for every session rather
 than only the one a handler runs in:

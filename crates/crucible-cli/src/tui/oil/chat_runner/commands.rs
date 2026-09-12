@@ -411,8 +411,20 @@ fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
         // A refresh, never an open: a plugin that pushes rows must not put a
         // full-screen modal over whatever the user is doing. The reducer drops
         // the result when nothing is open.
-        SystemPayload::SurfaceChanged { name, .. } => {
-            vec![ChatAppMsg::RefreshSurface(name)]
+        //
+        // A withdrawal is the exception, and the only change this arm acts on
+        // by itself. There is no content left to fetch, so asking for it would
+        // spend a round trip to be told what `withdrawn` already said — and the
+        // empty answer it came back with is also what a lost race looks like.
+        // The daemon settles it instead of each client guessing.
+        SystemPayload::SurfaceChanged {
+            name, withdrawn, ..
+        } => {
+            if withdrawn {
+                vec![ChatAppMsg::SurfaceWithdrawn(name)]
+            } else {
+                vec![ChatAppMsg::RefreshSurface(name)]
+            }
         }
         // `replay_complete` is consumed by the stateful wrapper, not here.
         _ => vec![],

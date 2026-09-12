@@ -279,6 +279,7 @@ fn a_system_events_const_matches_its_serde_name() {
                 name: "board".to_string(),
                 version: 1,
                 session: None,
+                withdrawn: false,
             },
         ),
         (

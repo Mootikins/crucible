@@ -918,11 +918,18 @@ impl OilChatRunner {
 /// difference lives:
 ///
 /// - `Ok(None)`: the daemon answered, and the answer is that the surface is
-///   absent. A plugin uninstall does this. The app must stop drawing the panel,
-///   so this reports a withdrawal.
+///   absent. The app must stop drawing the panel, so this reports a withdrawal.
 /// - `Err(_)`: the refetch itself failed. A daemon under load, or one that is
 ///   briefly unreachable, produces this. The surface may still exist, so this
 ///   reports nothing and the open panel stays as it is.
+///
+/// **`Ok(None)` is no longer how a withdrawal normally arrives.** A
+/// `surface_changed` event now carries `withdrawn`, and `system_msgs` turns
+/// that straight into [`ChatAppMsg::SurfaceWithdrawn`] without a refetch, so an
+/// uninstall never reaches this function. What is left here is the second
+/// defence: a surface removed in the window between a change event and its
+/// refetch, or a withdrawal event this client never received. Both leave a
+/// panel painted for a plugin that is gone, and both answer `Ok(None)`.
 ///
 /// The failure path also stays silent because a background refresh is work the
 /// user did not ask for. A warning about it is noise the user cannot act on.

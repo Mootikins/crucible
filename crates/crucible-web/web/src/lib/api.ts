@@ -1588,6 +1588,15 @@ export interface SurfaceChangedEvent {
   name: string;
   version: number;
   session?: string | null;
+  /**
+   * The surface is gone: drop it, and do not refetch.
+   *
+   * The daemon sets this when it drops the entry, and omits the field
+   * otherwise — so absent means present. This is the one change that is
+   * actionable on its own: every other event withholds the rows so the browser
+   * has to ask, and a withdrawal has nothing left to ask for.
+   */
+  withdrawn?: boolean;
 }
 
 /**

@@ -289,6 +289,7 @@ pub fn surface_changed(change: crucible_lua::SurfaceChange) -> SessionEventMessa
             name: change.name,
             version: change.version,
             session: change.session,
+            withdrawn: change.withdrawn,
         },
     )
 }

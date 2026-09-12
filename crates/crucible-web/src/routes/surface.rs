@@ -44,6 +44,13 @@ pub struct SurfaceChangedEvent {
     pub version: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// The surface is gone, so the browser drops it instead of refetching.
+    ///
+    /// Passed through rather than re-derived. The daemon knew this when it
+    /// dropped the entry, and a browser that had to ask `GET /api/surfaces`
+    /// to find out would pay a round trip for a fact the event already held.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub withdrawn: bool,
 }
 
 impl SurfaceChangedEvent {
@@ -67,6 +74,11 @@ impl SurfaceChangedEvent {
             name: d["name"].as_str()?.to_string(),
             version: d["version"].as_u64().unwrap_or(0),
             session: d["session"].as_str().map(str::to_string),
+            // Absent means present: the daemon omits the field for an ordinary
+            // change, so only an explicit `true` withdraws a panel. Defaulting
+            // the other way would erase every panel on an event this build did
+            // not recognise.
+            withdrawn: d["withdrawn"].as_bool().unwrap_or(false),
         })
     }
 }
@@ -107,4 +119,55 @@ async fn surface_event_stream(
         });
 
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(data: serde_json::Value) -> SessionEvent {
+        SessionEvent::new("system", SurfaceChangedEvent::EVENT_NAME, data)
+    }
+
+    /// The browser reads `withdrawn` off the frame to drop a panel without a
+    /// refetch (`web/src/components/SurfacesPanel.tsx`). The contract crosses a
+    /// language boundary, so it gets a test on this side of it.
+    #[test]
+    fn a_withdrawal_reaches_the_browser_frame() {
+        let projected = SurfaceChangedEvent::from_daemon_event(&event(serde_json::json!({
+            "plugin": "p", "name": "sessions", "version": 3, "withdrawn": true,
+        })))
+        .expect("projects");
+
+        assert!(projected.withdrawn);
+        assert_eq!(
+            serde_json::to_value(&projected).unwrap(),
+            serde_json::json!({
+                "plugin": "p", "name": "sessions", "version": 3, "withdrawn": true,
+            }),
+            "the browser reads this name for the fact"
+        );
+    }
+
+    /// **Absent means present.** The daemon omits the field for an ordinary
+    /// change, so the frame must stay byte-identical to what it was before the
+    /// field existed — and must never tell the browser to erase the panel.
+    #[test]
+    fn an_ordinary_change_carries_no_withdrawal() {
+        for data in [
+            serde_json::json!({ "plugin": "p", "name": "sessions", "version": 2 }),
+            serde_json::json!({
+                "plugin": "p", "name": "sessions", "version": 2, "withdrawn": false,
+            }),
+        ] {
+            let projected =
+                SurfaceChangedEvent::from_daemon_event(&event(data.clone())).expect("projects");
+            assert!(!projected.withdrawn, "{data}");
+            assert_eq!(
+                serde_json::to_value(&projected).unwrap(),
+                serde_json::json!({ "plugin": "p", "name": "sessions", "version": 2 }),
+                "an ordinary change serialises as it always did: {data}"
+            );
+        }
+    }
 }
