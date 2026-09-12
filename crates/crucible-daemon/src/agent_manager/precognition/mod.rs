@@ -203,7 +203,11 @@ impl AgentManager {
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
-        for handler in registry.runtime_handlers_for(StageId::PrecognitionFormat.as_str(), None) {
+        for handler in registry.runtime_handlers_for(
+            StageId::PrecognitionFormat.as_str(),
+            None,
+            crucible_lua::Firing::InSession(session_id),
+        ) {
             match registry
                 .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await
@@ -292,7 +296,11 @@ impl AgentManager {
     ) -> Option<Vec<crucible_core::SearchResult>> {
         use crucible_lua::ScriptHandlerResult;
 
-        for handler in registry.runtime_handlers_for(StageId::PrecognitionSelect.as_str(), None) {
+        for handler in registry.runtime_handlers_for(
+            StageId::PrecognitionSelect.as_str(),
+            None,
+            crucible_lua::Firing::InSession(session_id),
+        ) {
             match registry
                 .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await

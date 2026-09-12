@@ -53,6 +53,13 @@
 //!
 //! Only [`Owner::Plugin`] has a storage namespace, and `cru.storage` refuses
 //! every other owner, as it always has.
+//!
+//! # The session is ambient for the same reason the owner is
+//!
+//! A registration can name the session it fires for
+//! ([`Scope`](crate::handlers::Scope)). The host resolves that id, never the
+//! caller — see [`current_session`] for the reason and for the sites that
+//! bracket it.
 
 use mlua::Lua;
 
@@ -146,6 +153,89 @@ pub fn set_owner(lua: &Lua, owner: Owner) -> Owner {
 pub fn current_owner(lua: &Lua) -> Owner {
     lua.app_data_ref::<CurrentOwner>()
         .map_or(Owner::UserLua, |current| current.0.clone())
+}
+
+/// The app-data slot holding the session the host is inside.
+struct CurrentSessionId(String);
+
+/// The session whose work runs now, or `None` outside every session.
+///
+/// # Why the host resolves the id and a plugin never writes one
+///
+/// `cru.on("pre_tool_call", { session = id }, h)` checks `id` against this
+/// value and refuses anything else. Three reasons, and the first is the one
+/// that matters:
+///
+/// 1. [`Owner::Eval`] exists because a socket call is not the operator. If a
+///    literal id were taken as written, one `lua.eval` could put a
+///    `pre_tool_call` handler on a session it merely NAMES — somebody else's
+///    turn, intercepted by a caller that never held the session. That is the
+///    exact harm a session scope exists to prevent, arriving through the
+///    scope itself.
+/// 2. `docs/Meta/Analysis/The Plugin Contract.md` states the neighbouring
+///    rule for publication scopes: "a scope binding resolves server-side …
+///    A client never writes an id it chose."
+/// 3. A literal nobody checks cannot be wrong out loud. A typo would register
+///    a handler that never fires, silently — which is the failure
+///    `resolve_hook_name` already refuses for a misspelt hook name.
+///
+/// # The bracket sites
+///
+/// Every path that runs a plugin's code inside a session sets this, beside
+/// the owner:
+///
+/// 1. The handler dispatcher, from the session the dispatch site named. This
+///    covers `cru.on` and every turn-loop stage.
+/// 2. The `session:start` and `session:end` fire paths, from the session
+///    handle they already hold. `session:start` is the natural place to
+///    activate a workflow plugin for one session.
+/// 3. The permission gate, from the session whose turn asked.
+///
+/// Plugin command dispatch and plugin tool dispatch hold NO session: the
+/// `plugin.run_command` RPC carries none, so nothing reaches them to bracket.
+/// A command therefore cannot register a scoped handler yet, and answers a
+/// registration error rather than taking an id the caller chose.
+pub fn current_session(lua: &Lua) -> Option<String> {
+    lua.app_data_ref::<CurrentSessionId>()
+        .map(|current| current.0.clone())
+}
+
+/// Install `session` as the session the host is inside; answer what it
+/// replaced.
+///
+/// `None` REMOVES the slot rather than leaving the previous id behind: a
+/// sessionless dispatch that inherited a stale id would let a scoped
+/// registration fire outside its session, which is the whole harm.
+fn set_current_session(lua: &Lua, session: Option<String>) -> Option<String> {
+    let previous = lua
+        .remove_app_data::<CurrentSessionId>()
+        .map(|current| current.0);
+    if let Some(id) = session {
+        lua.set_app_data(CurrentSessionId(id));
+    }
+    previous
+}
+
+/// Enter `session` for as long as the guard lives.
+///
+/// A guard rather than a set-then-restore pair, because the dispatch paths
+/// that need it return early with `?`: a `Drop` cannot forget the restore.
+#[must_use = "the session is restored when the guard drops"]
+pub struct SessionGuard<'lua> {
+    lua: &'lua Lua,
+    previous: Option<String>,
+}
+
+impl Drop for SessionGuard<'_> {
+    fn drop(&mut self) {
+        set_current_session(self.lua, self.previous.take());
+    }
+}
+
+/// Bracket `session` around the caller's work. See [`current_session`].
+pub fn enter_session<'lua>(lua: &'lua Lua, session: Option<&str>) -> SessionGuard<'lua> {
+    let previous = set_current_session(lua, session.map(str::to_string));
+    SessionGuard { lua, previous }
 }
 
 /// What each loaded plugin's installation granted it, by name.
@@ -260,6 +350,40 @@ mod tests {
         set_owner(&lua, Owner::Builtin);
         assert!(current_may_intercept(&lua));
         assert_eq!(current_plugin_name(&lua), None);
+    }
+
+    #[test]
+    fn a_vm_outside_every_session_is_in_no_session() {
+        let lua = Lua::new();
+        assert_eq!(current_session(&lua), None);
+    }
+
+    #[test]
+    fn a_session_guard_restores_what_it_replaced() {
+        let lua = Lua::new();
+        {
+            let _outer = enter_session(&lua, Some("outer"));
+            assert_eq!(current_session(&lua), Some("outer".to_string()));
+            {
+                let _inner = enter_session(&lua, Some("inner"));
+                assert_eq!(current_session(&lua), Some("inner".to_string()));
+            }
+            assert_eq!(current_session(&lua), Some("outer".to_string()));
+        }
+        assert_eq!(current_session(&lua), None);
+    }
+
+    /// A sessionless dispatch must not inherit the session of whatever ran
+    /// before it. A scoped registration would then fire outside its session.
+    #[test]
+    fn entering_no_session_clears_the_previous_one() {
+        let lua = Lua::new();
+        let _outer = enter_session(&lua, Some("s1"));
+        {
+            let _sessionless = enter_session(&lua, None);
+            assert_eq!(current_session(&lua), None);
+        }
+        assert_eq!(current_session(&lua), Some("s1".to_string()));
     }
 
     /// The whole point of the app-data slot: Lua has no path to it. The plugin

@@ -317,6 +317,13 @@ pub struct HookedEvent {
     pub event: SessionEvent,
     /// What `opts.pattern` filters on, when the event has an identifier.
     pub identifier: Option<String>,
+    /// The session this event is about, for the two events that name one.
+    ///
+    /// What a `Scope::Session` registration is matched against, and what the
+    /// handler reads as `ctx.session_id`. NOT `msg.session_id`: every event
+    /// here is addressed to [`SYSTEM_SESSION`], deliberately, so the
+    /// envelope names the bus and not the subject.
+    pub session: Option<String>,
 }
 
 /// Resolve a broadcast message to its hook — the **inbound** half.
@@ -359,10 +366,23 @@ pub fn decode(msg: &SessionEventMessage) -> Option<HookedEvent> {
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
+    // Read from the payload only for an event that carries a session, and
+    // from the one field both of them name. `EventName::carries_session` is
+    // the gate, so an event that grows a `session_id` field without saying it
+    // carries a session does not silently start scoping handlers.
+    let session = row
+        .hook
+        .carries_session()
+        .then(|| msg.data.get("session_id"))
+        .flatten()
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
     Some(HookedEvent {
         hook: row.hook,
         event,
         identifier,
+        session,
     })
 }
 
@@ -398,8 +418,11 @@ mod tests {
         .exec()
         .expect("register handler");
 
-        let handlers =
-            registry.runtime_handlers_for(hooked.hook.as_str(), hooked.identifier.as_deref());
+        let handlers = registry.runtime_handlers_for(
+            hooked.hook.as_str(),
+            hooked.identifier.as_deref(),
+            crucible_lua::Firing::of(hooked.session.as_deref()),
+        );
         assert_eq!(
             handlers.len(),
             1,
@@ -407,7 +430,12 @@ mod tests {
             hooked.hook.as_str()
         );
         registry
-            .execute_runtime_handler(&lua, handlers[0].id, &hooked.event, None)
+            .execute_runtime_handler(
+                &lua,
+                handlers[0].id,
+                &hooked.event,
+                hooked.session.as_deref(),
+            )
             .await
             .expect("handler runs");
         let seen = lua.globals().get("seen").expect("the handler ran");
@@ -482,7 +510,44 @@ mod tests {
         }
     }
 
-    /// Every broadcast message resolves back to its row.
+    /// An event that SAYS it carries a session must actually deliver one.
+    ///
+    /// `EventName::carries_session` decides whether `cru.on` accepts
+    /// `{ session = … }` on a name. If the decode then leaves `session`
+    /// empty, every scoped handler on that name goes quiet with nothing
+    /// logged — the registration was accepted and can never match. The
+    /// converse holds too: an event that names no session must not start
+    /// scoping handlers because its payload happens to hold a `session_id`.
+    ///
+    /// The expectation comes from the enum, over every row, so a new event
+    /// answers this rather than escaping it.
+    #[test]
+    fn a_session_carrying_event_decodes_a_session() {
+        for msg in sample_messages() {
+            let hooked = decode(&msg).unwrap_or_else(|| panic!("`{}` did not decode", msg.event));
+            assert_eq!(
+                hooked.session.is_some(),
+                hooked.hook.carries_session(),
+                "`{}` says carries_session() == {} and decoded session {:?}",
+                hooked.hook,
+                hooked.hook.carries_session(),
+                hooked.session
+            );
+        }
+    }
+
+    /// And the session it delivers is the session the event is about, not the
+    /// `system` envelope it was addressed to.
+    #[test]
+    fn a_session_event_names_the_session_it_is_about() {
+        for msg in [session_created("sess-1"), session_ended("sess-1", "done")] {
+            let hooked = decode(&msg).expect("decodes");
+            assert_eq!(hooked.session.as_deref(), Some("sess-1"));
+            assert_eq!(msg.session_id, SYSTEM_SESSION, "the envelope is the bus");
+        }
+    }
+
+    /// Every broadcast message resolves back to its hook.
     #[test]
     fn every_message_decodes_to_its_hook() {
         for (msg, row) in sample_messages().iter().zip(ROWS) {
@@ -610,8 +675,11 @@ mod tests {
         .exec()
         .expect("register handlers");
 
-        let matched =
-            registry.runtime_handlers_for(hooked.hook.as_str(), hooked.identifier.as_deref());
+        let matched = registry.runtime_handlers_for(
+            hooked.hook.as_str(),
+            hooked.identifier.as_deref(),
+            crucible_lua::Firing::Sessionless,
+        );
         assert_eq!(
             matched.len(),
             1,

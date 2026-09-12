@@ -44,7 +44,11 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
+        let handlers = state.registry.runtime_handlers_for(
+            "turn:complete",
+            None,
+            crucible_lua::Firing::Sessionless,
+        );
         assert_eq!(handlers.len(), 1);
 
         let event = SessionEvent::Custom {
@@ -81,7 +85,11 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
+        let handlers = state.registry.runtime_handlers_for(
+            "turn:complete",
+            None,
+            crucible_lua::Firing::Sessionless,
+        );
         assert_eq!(handlers.len(), 2);
 
         let event = SessionEvent::Custom {
@@ -122,7 +130,11 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
+        let handlers = state.registry.runtime_handlers_for(
+            "turn:complete",
+            None,
+            crucible_lua::Firing::Sessionless,
+        );
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({}),
@@ -159,7 +171,11 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
+        let handlers = state.registry.runtime_handlers_for(
+            "turn:complete",
+            None,
+            crucible_lua::Firing::Sessionless,
+        );
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({
@@ -195,7 +211,11 @@ mod event_dispatch {
             .exec()
             .unwrap();
 
-        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
+        let handlers = state.registry.runtime_handlers_for(
+            "turn:complete",
+            None,
+            crucible_lua::Firing::Sessionless,
+        );
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({}),

@@ -2,7 +2,9 @@ use mlua::{Lua, Result as LuaResult, Value};
 use tracing::debug;
 
 use super::hook_name::{hook_names, HookName};
-use super::registry::{LuaScriptHandlerRegistry, RegistrationSpec, DEFAULT_PRIORITY};
+use super::registry::{
+    scope_from_opts, LuaScriptHandlerRegistry, RegistrationSpec, Scope, DEFAULT_PRIORITY,
+};
 
 use crucible_core::fuzzy::levenshtein;
 
@@ -50,6 +52,10 @@ fn resolve_hook_name(event_type: &str) -> Result<HookName, mlua::Error> {
 ///
 /// -- With options (pattern + priority):
 /// cru.on("pre_tool_call", { pattern = "bash", priority = 50 }, function(ctx, event) ... end)
+///
+/// -- For one session, from inside that session. Registering it again
+/// -- replaces it, so a resume leaves one handler and not two:
+/// cru.on("pre_tool_call", { session = ctx.session_id, key = "ralph" }, handler)
 /// ```
 pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> LuaResult<()> {
     // Every registration API on this VM writes the SAME store, so the one the
@@ -74,10 +80,17 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
 
         let name = resolve_hook_name(&event_type)?;
 
-        let (pattern, priority, timeout_ms, handler) = match &args_vec[1] {
+        let (pattern, priority, timeout_ms, scope, key, handler) = match &args_vec[1] {
             Value::Function(f) => {
                 // cru.on(event_type, handler) — backward compatible
-                (None, DEFAULT_PRIORITY, None, f.clone())
+                (
+                    None,
+                    DEFAULT_PRIORITY,
+                    None,
+                    Scope::Any,
+                    None,
+                    f.clone(),
+                )
             }
             Value::Table(opts) => {
                 // cru.on(event_type, opts, handler)
@@ -100,7 +113,10 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                 // a large model call — says so here. Absent, the name it
                 // registers for decides. See `handler_budget`.
                 let timeout_ms: Option<u64> = opts.get("timeout_ms").ok();
-                (pattern, priority, timeout_ms, handler)
+                // Which sessions, and what this registration calls itself.
+                // The host resolves the session id; see `scope_from_opts`.
+                let (scope, key) = scope_from_opts(lua, "cru.on", name, opts)?;
+                (pattern, priority, timeout_ms, scope, key, handler)
             }
             _ => {
                 return Err(mlua::Error::RuntimeError(
@@ -115,6 +131,8 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                 name,
                 priority,
                 pattern: pattern.clone(),
+                scope: scope.clone(),
+                key,
                 timeout_ms,
                 required: false,
             },
@@ -122,8 +140,8 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
         )?;
 
         debug!(
-            "Registered runtime handler {} for event '{}' (priority={}, pattern={:?})",
-            id, event_type, priority, pattern
+            "Registered runtime handler {} for event '{}' (priority={}, pattern={:?}, scope={:?})",
+            id, event_type, priority, pattern, scope
         );
         Ok(())
     })?;

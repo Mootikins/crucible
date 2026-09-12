@@ -207,6 +207,22 @@ impl SessionLifecycle {
         if let Err(e) = loader.fire_session_end(&session).await {
             tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
         }
+        // Drop the handlers this session activated, for the same reason the
+        // isolation claim and the status entries go above. A plugin turned on
+        // for one session registers a row for it, and the store has no
+        // unregister: without this, every session that ever enabled a plugin
+        // leaves a row behind for the life of the daemon.
+        //
+        // AFTER the end hooks, not before: a `session:end` handler scoped to
+        // this session is one of the rows swept, and it has to run first.
+        let dropped = loader.plugin_handlers().clear_session(session_id);
+        if dropped > 0 {
+            tracing::debug!(
+                session_id = %session_id,
+                dropped,
+                "swept session-scoped plugin handlers"
+            );
+        }
     }
 
     async fn fire_session_start(&self, session_id: &str) -> anyhow::Result<()> {

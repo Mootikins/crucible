@@ -56,6 +56,7 @@ pub fn spawn_file_event_hooks(
                 hook,
                 event,
                 identifier,
+                session,
             }) = event_map::decode(&msg)
             else {
                 continue;
@@ -75,14 +76,22 @@ pub fn spawn_file_event_hooks(
             // handler that declared a pattern on one of those is asking to
             // filter on something that does not exist, and correctly does not
             // match.
-            let matched = handlers.runtime_handlers_for(hook.as_str(), identifier.as_deref());
+            //
+            // The session is what a `{ session = … }` scope is matched
+            // against. Only `session:created` and `session:ended` name one;
+            // every other event here belongs to the daemon, so a scoped
+            // handler correctly does not match — and `cru.on` refuses the
+            // scope on those names in the first place.
+            let firing = crucible_lua::Firing::of(session.as_deref());
+            let matched =
+                handlers.runtime_handlers_for(hook.as_str(), identifier.as_deref(), firing);
             if matched.is_empty() {
                 continue;
             }
 
             for handler in matched {
                 match handlers
-                    .execute_runtime_handler(&lua, handler.id, &event, None)
+                    .execute_runtime_handler(&lua, handler.id, &event, session.as_deref())
                     .await
                 {
                     Ok(result) => {

@@ -75,7 +75,11 @@ async fn run_pre_tool_call_handlers(
     args: &mut serde_json::Value,
     call_id: &str,
 ) -> Option<crucible_core::traits::chat::ChatToolResult> {
-    for handler in registry.runtime_handlers_for(StageId::PreToolCall.as_str(), Some(tool_name)) {
+    for handler in registry.runtime_handlers_for(
+        StageId::PreToolCall.as_str(),
+        Some(tool_name),
+        crucible_lua::Firing::InSession(&stream_ctx.session_id),
+    ) {
         let event = SessionEvent::Custom {
             name: "pre_tool_call".to_string(),
             payload: serde_json::json!({

@@ -318,7 +318,11 @@ async fn reloading_a_plugin_replaces_its_handlers() {
         .expect("first load");
     let after_first = loader
         .plugin_handlers()
-        .runtime_handlers_for("pre_tool_call", Some("bash"))
+        .runtime_handlers_for(
+            "pre_tool_call",
+            Some("bash"),
+            crucible_lua::Firing::Sessionless,
+        )
         .len();
     assert_eq!(after_first, 1, "first load should register exactly one");
 
@@ -328,7 +332,11 @@ async fn reloading_a_plugin_replaces_its_handlers() {
         .expect("reload");
     let after_reload = loader
         .plugin_handlers()
-        .runtime_handlers_for("pre_tool_call", Some("bash"))
+        .runtime_handlers_for(
+            "pre_tool_call",
+            Some("bash"),
+            crucible_lua::Firing::Sessionless,
+        )
         .len();
     assert_eq!(
         after_reload, 1,
@@ -391,7 +399,11 @@ async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_fu
         .expect("reload alpha");
 
     let registry = loader.plugin_handlers();
-    let handlers = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+    let handlers = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("bash"),
+        crucible_lua::Firing::Sessionless,
+    );
     assert_eq!(
         handlers.len(),
         1,
@@ -466,7 +478,11 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
         .expect("reload alpha");
 
     let registry = loader.plugin_handlers();
-    let handlers = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+    let handlers = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("bash"),
+        crucible_lua::Firing::Sessionless,
+    );
     assert_eq!(
         handlers.len(),
         1,
@@ -1128,13 +1144,25 @@ async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() 
     let counts = |loader: &DaemonPluginLoader| {
         let registry = loader.plugin_handlers();
         [
-            registry.runtime_handlers_for("pre_tool_call", None).len(),
             registry
-                .runtime_handlers_for("permission:request", Some("bash"))
+                .runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless)
                 .len(),
-            registry.runtime_handlers_for("session:start", None).len(),
-            registry.runtime_handlers_for("session:end", None).len(),
-            registry.runtime_handlers_for("provider:auth", None).len(),
+            registry
+                .runtime_handlers_for(
+                    "permission:request",
+                    Some("bash"),
+                    crucible_lua::Firing::Sessionless,
+                )
+                .len(),
+            registry
+                .runtime_handlers_for("session:start", None, crucible_lua::Firing::Sessionless)
+                .len(),
+            registry
+                .runtime_handlers_for("session:end", None, crucible_lua::Firing::Sessionless)
+                .len(),
+            registry
+                .runtime_handlers_for("provider:auth", None, crucible_lua::Firing::Sessionless)
+                .len(),
         ]
     };
 
@@ -1178,7 +1206,8 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
         .expect("the eval registers");
 
     let registry = loader.plugin_handlers();
-    let handlers = registry.runtime_handlers_for("pre_tool_call", None);
+    let handlers =
+        registry.runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
     assert_eq!(
         handlers[0].owner,
@@ -1198,6 +1227,6 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
         &crucible_lua::Owner::Eval,
     );
     assert!(registry
-        .runtime_handlers_for("pre_tool_call", None)
+        .runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless)
         .is_empty());
 }

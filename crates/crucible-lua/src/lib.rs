@@ -159,8 +159,9 @@ pub use notify::{
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
-    current_may_intercept, current_owner, current_plugin_name, enter_plugin, enter_recorded_plugin,
-    intercept_for, record_plugin_intercept, set_owner, Owner,
+    current_may_intercept, current_owner, current_plugin_name, current_session, enter_plugin,
+    enter_recorded_plugin, enter_session, intercept_for, record_plugin_intercept, set_owner, Owner,
+    SessionGuard,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
@@ -200,10 +201,10 @@ pub use handlers::{
     clear_owner, execute_permission_hooks, execute_tool_before_execute_hooks,
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks, install_registry,
     interpret_handler_result, register_cru_on_api, register_permission_hook_api, registry_of,
-    EventOutcome, LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest, Registration,
-    RegistrationSpec, ScriptHandlerResult, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
-    ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
-    ToolDisplayStartHints, DEFAULT_PRIORITY,
+    EventOutcome, Firing, LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest,
+    Registration, RegistrationSpec, Scope, ScriptHandlerResult, ToolBeforeExecuteEvent,
+    ToolBeforeExecuteResult, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
+    ToolDisplayStartEvent, ToolDisplayStartHints, DEFAULT_PRIORITY,
 };
 pub use handlers::{
     hook_names, EventName, HookName, StageId, PERMISSION_REQUEST_HOOK, SHIPPED_DEFAULT_PRIORITY,

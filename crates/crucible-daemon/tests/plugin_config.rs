@@ -418,7 +418,9 @@ return { name = "fancy-name" }
         "the file package.loaded already holds must not execute again"
     );
     let handlers = loader.plugin_handlers();
-    let count = handlers.runtime_handlers_for("turn:complete", None).len();
+    let count = handlers
+        .runtime_handlers_for("turn:complete", None, crucible_lua::Firing::Sessionless)
+        .len();
     assert_eq!(count, 1, "a re-execution would register the hook twice");
 }
 

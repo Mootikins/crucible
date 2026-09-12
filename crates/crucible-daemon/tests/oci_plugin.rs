@@ -120,7 +120,11 @@ async fn pre_tool_call(
             "args": args,
         }),
     };
-    let handlers = registry.runtime_handlers_for("pre_tool_call", Some(tool));
+    let handlers = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some(tool),
+        crucible_lua::Firing::Sessionless,
+    );
     assert!(
         !handlers.is_empty(),
         "oci registered no pre_tool_call handler for '{tool}' — the agent would \
@@ -169,7 +173,11 @@ async fn oci_registers_interception_handlers_for_every_workspace_tool() {
     ] {
         assert!(
             !registry
-                .runtime_handlers_for("pre_tool_call", Some(tool))
+                .runtime_handlers_for(
+                    "pre_tool_call",
+                    Some(tool),
+                    crucible_lua::Firing::Sessionless
+                )
                 .is_empty(),
             "no pre_tool_call handler registered for '{tool}'"
         );

@@ -5,6 +5,7 @@ use crucible_core::config::{DataClassification, TrustLevel};
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::{DocumentId, SearchResult};
+use crucible_lua::Firing;
 use crucible_lua::StageId;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -82,7 +83,13 @@ pub async fn search_across_kilns_with_stage(
     let mut best: HashMap<(PathBuf, String, Option<usize>), SearchResult> = HashMap::new();
 
     // Over-fetch only when a handler will look at the extra rows.
-    let rerank = rerank.filter(|stage| has_handlers(StageId::SearchRerank, &stage.vms));
+    let rerank = rerank.filter(|stage| {
+        has_handlers(
+            StageId::SearchRerank,
+            &stage.vms,
+            Firing::of(stage.session_id.as_deref()),
+        )
+    });
     let fetch = rerank.map_or(top_k, |_| top_k.saturating_mul(RERANK_FANOUT));
 
     for source in sources {

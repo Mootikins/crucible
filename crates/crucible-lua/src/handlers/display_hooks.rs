@@ -56,7 +56,11 @@ pub async fn execute_tool_display_start_hooks(
     session_id: Option<&str>,
     event: &ToolDisplayStartEvent,
 ) -> LuaResult<Option<ToolDisplayStartHints>> {
-    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_START_EVENT, None);
+    let handlers = registry.runtime_handlers_for(
+        TOOL_DISPLAY_START_EVENT,
+        None,
+        super::Firing::of(session_id),
+    );
     if handlers.is_empty() {
         return Ok(None);
     }
@@ -92,7 +96,11 @@ pub async fn execute_tool_display_complete_hooks(
     session_id: Option<&str>,
     event: &ToolDisplayCompleteEvent,
 ) -> LuaResult<Option<ToolDisplayCompleteHints>> {
-    let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_COMPLETE_EVENT, None);
+    let handlers = registry.runtime_handlers_for(
+        TOOL_DISPLAY_COMPLETE_EVENT,
+        None,
+        super::Firing::of(session_id),
+    );
     if handlers.is_empty() {
         return Ok(None);
     }

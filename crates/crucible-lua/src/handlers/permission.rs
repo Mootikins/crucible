@@ -3,7 +3,9 @@ use serde_json::Value as JsonValue;
 use tracing::debug;
 
 use super::hook_name::{HookName, StageId};
-use super::registry::{LuaScriptHandlerRegistry, RegistrationSpec, DEFAULT_PRIORITY};
+use super::registry::{
+    scope_from_opts, Firing, LuaScriptHandlerRegistry, RegistrationSpec, Scope, DEFAULT_PRIORITY,
+};
 
 /// The name a permission hook registers under in the shared store.
 pub const PERMISSION_REQUEST_HOOK: HookName = HookName::Stage(StageId::PermissionRequest);
@@ -85,15 +87,25 @@ pub fn register_permission_hook_api(
 
     let on_request_fn =
         lua.create_function(move |lua, (handler, opts): (Function, Option<Table>)| {
-            let (pattern, priority) = match &opts {
-                Some(o) => (
-                    o.get::<Option<String>>("pattern").ok().flatten(),
-                    o.get::<Option<i64>>("priority")
-                        .ok()
-                        .flatten()
-                        .unwrap_or(DEFAULT_PRIORITY),
-                ),
-                None => (None, DEFAULT_PRIORITY),
+            let (pattern, priority, scope, key) = match &opts {
+                Some(o) => {
+                    let (scope, key) = scope_from_opts(
+                        lua,
+                        "cru.permissions.on_request",
+                        PERMISSION_REQUEST_HOOK,
+                        o,
+                    )?;
+                    (
+                        o.get::<Option<String>>("pattern").ok().flatten(),
+                        o.get::<Option<i64>>("priority")
+                            .ok()
+                            .flatten()
+                            .unwrap_or(DEFAULT_PRIORITY),
+                        scope,
+                        key,
+                    )
+                }
+                None => (None, DEFAULT_PRIORITY, Scope::Any, None),
             };
 
             let id = registry.register(
@@ -102,6 +114,8 @@ pub fn register_permission_hook_api(
                     name: PERMISSION_REQUEST_HOOK,
                     priority,
                     pattern,
+                    scope,
+                    key,
                     timeout_ms: None,
                     required: false,
                 },
@@ -121,7 +135,7 @@ pub fn register_permission_hook_api(
         lua,
         "cru.permissions.on_request",
         "(handler: (request: PermissionRequest) -> PermissionDecision, \
-          opts: { pattern: string?, priority: number? }?) -> ()",
+          opts: { pattern: string?, priority: number?, session: string?, key: string? }?) -> ()",
     )
     .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
@@ -162,6 +176,11 @@ pub(crate) fn build_request_table(
 /// * `lua` - The Lua state
 /// * `registry` - The shared registration store
 /// * `request` - The permission request to evaluate
+/// * `firing` - The session whose turn asked, so a session-scoped hook
+///   answers for its own session and for no other. This is the synchronous
+///   twin of the selection in
+///   [`LuaScriptHandlerRegistry::for_hook`](super::registry::LuaScriptHandlerRegistry::for_hook),
+///   and the only other place a scope is read.
 ///
 /// # Returns
 /// * `PermissionHookResult::Allow` - Hook returned `{allow=true}`
@@ -187,18 +206,23 @@ pub fn execute_permission_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     request: &PermissionRequest,
+    firing: Firing<'_>,
 ) -> LuaResult<PermissionHookResult> {
     // Lower priority first, registration order breaking ties. First non-nil
     // answer wins, so this ordering is what decides whether a user hook can
     // override a shipped default — it registers later but at a lower priority,
     // so it is asked first. The pattern filters on the tool name, as `cru.on`'s
     // does.
-    let hooks = registry.for_hook(PERMISSION_REQUEST_HOOK, Some(&request.tool_name));
+    let hooks = registry.for_hook(PERMISSION_REQUEST_HOOK, Some(&request.tool_name), firing);
     if hooks.is_empty() {
         return Ok(PermissionHookResult::Prompt);
     }
 
     let request_table = build_request_table(lua, request)?;
+    // The session this gate belongs to, so a hook that registers another
+    // handler for it resolves the id from the host. Held for the whole loop,
+    // as the owner bracket inside it is held for each hook.
+    let _session = crate::plugin_context::enter_session(lua, firing.session());
 
     let _budget = crate::handler_budget::enter(
         lua,
