@@ -33,8 +33,13 @@ use serde::{Deserialize, Serialize};
 
 /// A per-session setting a client can read and write.
 ///
-/// One variant per `session.set_*` / `session.get_*` RPC pair. The name is the
-/// wire id, so `Temperature` is `temperature` in `session.list_knobs`.
+/// One variant per RPC read/write pair. The name is the wire id, so
+/// `Precognition` is `precognition` in `session.list_knobs`.
+///
+/// The id is NOT always the method suffix: [`Self::Model`] is written by
+/// `session.switch_model`, which carries no `set_` prefix. The daemon's
+/// `rpc::rpc_set_method` declares the method for each knob, and the front-end
+/// parity gates read it rather than guess at a prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
@@ -127,7 +132,7 @@ pub struct AgentConfigOption {
 /// One knob and whether this session can change it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KnobDescriptor {
-    /// The wire id, matching the `session.set_*` suffix.
+    /// The wire id, as [`SessionKnob::id`] reports it.
     pub id: String,
     /// Whether this session can change it. `false` means the control should
     /// not be offered: the daemon refuses the call.
@@ -164,7 +169,9 @@ impl SessionKnob {
         Self::Precognition,
     ];
 
-    /// The wire id, which is also the `session.set_*` suffix.
+    /// The wire id: what `session.list_knobs` reports and what a front end
+    /// keys its control on. See the type docs: this is not always the RPC
+    /// method suffix.
     pub fn id(self) -> &'static str {
         match self {
             Self::ContextStrategy => "context_strategy",

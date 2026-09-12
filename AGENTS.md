@@ -83,13 +83,19 @@ has.
 is the exemplar: exhaustive match, two module-level clippy denies (both needed — with one, a
 variant with `_ => Daemon` passed review), no `Default` on the return type, and a test
 deriving its expectation from the running system rather than from source text. Prefer this to
-a hand-maintained list checked by a source-text grep — four such greps have now been replaced,
-each of which was satisfiable without adding the entry it was meant to require.
+a hand-maintained list checked by a source-text grep — five such greps have now been replaced,
+each of which was satisfiable without adding the entry it was meant to require. The fifth cost
+two red CI runs first: `every_rpc_session_knob_is_reachable_from_the_*` read
+`"session\.set_([a-z0-9_]+)"` over the whole text of `dispatch.rs`, which names each method in
+the `rpc_methods!` table, in the setter router and in `#[cfg(test)] mod tests`, so a stale
+literal in a test body advertised a deleted knob. Both gates now read `SessionKnob::ALL`
+through `rpc::rpc_set_method` (`rpc/knob_method.rs`).
 
 The live tables: `BuiltinTool` (`crucible-daemon/src/tools/surface.rs`) and `ToolSurface`
 (`crucible-core/src/traits/tools.rs`) · `EventName` + `StageId`
 (`crucible-lua/src/handlers/hook_name.rs`) · `RpcMethod` + `METHODS`, both generated from one
-`rpc_methods!` table (`rpc/dispatch.rs`) · `ScriptingEvent`
+`rpc_methods!` table (`rpc/dispatch.rs`), which `rpc/knob_method.rs` maps `SessionKnob` onto ·
+`ScriptingEvent`
 (`crucible-core/src/events/session_event/`), the ten names the scripting and transport
 vocabularies share. Completeness of each `ALL` array is proved by walking `strum::EnumIter`,
 which is what the compiler knows.
