@@ -107,7 +107,7 @@ fn two_keys_are_two_registrations_for_one_session() {
 #[tokio::test]
 async fn two_scoped_registrations_differing_only_by_priority_collapse() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     load_in_session(
         &lua,

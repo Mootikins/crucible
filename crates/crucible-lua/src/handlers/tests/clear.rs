@@ -41,7 +41,7 @@ fn clear(lua: &Lua, call: &str) -> mlua::Result<usize> {
 fn clear_removes_only_the_calling_sources_rows() {
     let (lua, registry) = vm();
 
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(r#"cru.on("turn:complete", function() end)"#)
         .exec()
         .expect("alpha registers");
@@ -49,7 +49,7 @@ fn clear_removes_only_the_calling_sources_rows() {
         .exec()
         .expect("alpha registers a second");
 
-    enter_plugin(&lua, "beta", false);
+    enter_plugin(&lua, "beta");
     lua.load(r#"cru.on("turn:complete", function() end)"#)
         .exec()
         .expect("beta registers");
@@ -74,7 +74,7 @@ fn clear_removes_only_the_calling_sources_rows() {
 #[test]
 fn clear_with_no_filter_takes_every_row_of_the_source() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -92,7 +92,7 @@ fn clear_with_no_filter_takes_every_row_of_the_source() {
 #[test]
 fn clear_by_name_leaves_the_other_hooks() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -120,7 +120,7 @@ fn clear_by_name_leaves_the_other_hooks() {
 #[test]
 fn clear_by_pattern_matches_the_text_and_does_not_evaluate_the_glob() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("pre_tool_call", { pattern = "bash" }, function() end)
@@ -144,7 +144,7 @@ fn clear_by_pattern_matches_the_text_and_does_not_evaluate_the_glob() {
 #[test]
 fn clear_by_session_leaves_the_global_rows() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(r#"cru.on("pre_tool_call", function() end)"#)
         .exec()
         .expect("a global row");
@@ -177,7 +177,7 @@ fn clear_by_session_leaves_the_global_rows() {
 #[test]
 fn clear_naming_a_session_outside_every_session_is_refused() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(r#"cru.on("pre_tool_call", function() end)"#)
         .exec()
         .expect("registers");
@@ -196,7 +196,7 @@ fn clear_naming_a_session_outside_every_session_is_refused() {
 #[test]
 fn clear_naming_another_session_is_refused() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     load_in_session(
         &lua,
         "s1",
@@ -221,7 +221,7 @@ fn clear_naming_another_session_is_refused() {
 #[test]
 fn clear_with_a_misspelt_name_is_refused_with_a_suggestion() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(r#"cru.on("pre_tool_call", function() end)"#)
         .exec()
         .expect("registers");
@@ -247,7 +247,7 @@ fn clear_reaches_a_hook_that_has_its_own_registration_api() {
     register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
     let cru = crate::lua_util::get_or_create_namespace(&lua, "cru").expect("cru");
     crate::hooks::register_hooks_module(&lua, &cru).expect("the session hook API");
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
 
     lua.load(r#"cru.on_session_start(function(s) end)"#)
         .exec()
@@ -272,7 +272,7 @@ fn clear_reaches_a_hook_that_has_its_own_registration_api() {
 fn clear_outside_every_plugin_reaches_only_the_users_own_rows() {
     let (lua, registry) = vm();
 
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(r#"cru.on("turn:complete", function() end)"#)
         .exec()
         .expect("alpha registers");
@@ -302,7 +302,7 @@ fn clear_outside_every_plugin_reaches_only_the_users_own_rows() {
 #[test]
 fn clear_answers_how_many_it_removed_and_is_idempotent() {
     let (lua, _registry) = vm();
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -329,7 +329,7 @@ fn clear_answers_how_many_it_removed_and_is_idempotent() {
 #[test]
 fn clear_then_register_leaves_one_row_across_repeated_activations() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     // Three activations: a create and two history fetches.
     for _ in 0..3 {

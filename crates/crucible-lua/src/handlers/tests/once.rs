@@ -34,7 +34,7 @@ fn vm() -> (Lua, LuaScriptHandlerRegistry) {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
     register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
     (lua, registry)
 }
 
@@ -155,7 +155,7 @@ fn a_once_permission_hook_runs_once_and_leaves_the_store() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
     register_permission_hook_api(&lua, registry.clone()).expect("register the API");
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     lua.load(
         r#"
@@ -197,7 +197,7 @@ fn a_once_permission_hook_the_gate_never_reaches_keeps_its_registration() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
     register_permission_hook_api(&lua, registry.clone()).expect("register the API");
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     // Lower priority is asked first, and it answers, so the `once` hook
     // behind it never runs.
@@ -241,7 +241,7 @@ async fn a_once_session_start_hook_runs_once_and_leaves_the_store() {
     use crate::session_api::Session;
 
     let executor = crate::executor::LuaExecutor::new().expect("executor");
-    enter_plugin(executor.lua(), "ralph", false);
+    enter_plugin(executor.lua(), "ralph");
     executor
         .lua()
         .load(r#"cru.on_session_start(function(s) count = (count or 0) + 1 end, { once = true })"#)
@@ -283,7 +283,7 @@ async fn a_once_session_end_hook_runs_once_and_leaves_the_store() {
     use crate::session_api::Session;
 
     let executor = crate::executor::LuaExecutor::new().expect("executor");
-    enter_plugin(executor.lua(), "ralph", false);
+    enter_plugin(executor.lua(), "ralph");
     executor
         .lua()
         .load(r#"cru.on_session_end(function(s) count = (count or 0) + 1 end, { once = true })"#)
@@ -317,7 +317,7 @@ fn a_once_provider_auth_hook_runs_once_and_leaves_the_store() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
     crate::handlers::install_registry(&lua, registry.clone());
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     let handler = lua
         .load(
@@ -359,7 +359,7 @@ fn a_once_provider_auth_hook_the_gate_never_reaches_keeps_its_registration() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
     crate::handlers::install_registry(&lua, registry.clone());
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     let answers = lua
         .load(r#"function(context) return { Authorization = "Bearer t" } end"#)
