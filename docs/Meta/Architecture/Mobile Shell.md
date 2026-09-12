@@ -676,6 +676,37 @@ it a cache guessed at.
 - **Say what is happening.** A kiln being fetched shows progress, and a kiln
   that is kept shows it. A silent cache is one a user cannot trust or clear.
 
+### Attachments: two modes, the user picks per kiln
+
+A kiln holds more than notes. Notes are kilobytes; images and PDFs are the
+whole budget, so they get their own choice — **per kiln, beside the toggle that
+keeps it**:
+
+| Mode | Notes | Attachments |
+|---|---|---|
+| **Notes only** (default) | every one, at once | fetched when first opened, then kept |
+| **Everything** | every one, at once | every one, at once |
+
+**Everything** is the mode for a user who wants a kiln on a plane and expects
+its images to be there — the reason the choice exists. **Notes only** is the
+default because a kiln's attachments can be hundreds of megabytes and a phone
+should not spend them without being asked.
+
+Three rules that follow from where the bytes come from:
+
+- **A binary is not a note.** Text comes from `GET /api/kiln/file`, which
+  refuses non-UTF-8 with a 415 and says to use `/api/file/raw`. Attachments come
+  from that raw route as bytes, and are stored as Blobs, not strings.
+- **A cached binary renders only through `<img>`.** `/api/file/raw` strips power
+  from those bytes deliberately — `nosniff`, `Content-Disposition`,
+  `application/octet-stream`, and for SVG a `sandbox` CSP that gives it an
+  opaque origin (`routes/kiln.rs:209`). A `blob:` URL carries none of that and
+  inherits THIS origin. An `<img>` cannot run script even for an SVG; an
+  `<iframe>` or `<object>` can, so anything needing a document context — a PDF
+  card — re-fetches from the network when online rather than being handed a blob.
+- **Attachments are read-only.** The phone edits notes; no attachment ever
+  enters the outbox, so none of the conflict rules apply to one.
+
 Nothing else changes: the index still holds every note's name and path, the
 outbox still holds what the user wrote, and a note outside a kept kiln is still
 read from the network.
