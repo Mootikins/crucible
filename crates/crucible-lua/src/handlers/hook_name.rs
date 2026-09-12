@@ -5,8 +5,9 @@
 //!
 //! **It was a union of two contracts.** Ten of the names are *events* — the
 //! daemon broadcasts them, fan-out, nobody replies, the thing already happened.
-//! Seventeen are *stages* — synchronous interception points, run in priority
-//! order, where a handler's return value changes what happens next.
+//! Seventeen are *stages* — synchronous interception points, run in
+//! registration order, where a handler's return value changes what happens
+//! next.
 //! [`ScriptHandlerResult`](crate::ScriptHandlerResult) carries the same four
 //! variants for both, so `Cancel` meant "stop the remaining handlers" on one
 //! side and "block the operation" on the other, decided only by which name the
@@ -169,8 +170,8 @@ impl EventName {
 
 /// A synchronous interception point in a host flow.
 ///
-/// **A chain, not a broadcast.** Handlers run in priority order and the caller
-/// waits for each; the return value decides what happens next. `Cancel` blocks
+/// **A chain, not a broadcast.** Handlers run in registration order and the
+/// caller waits for each; the return value decides what happens next. `Cancel` blocks
 /// the operation, `Transform` rewrites the value the next link sees, and
 /// `Handled` replaces execution outright — which is why `Handled` and
 /// `Transform` are capability-grade on [`Self::PreToolCall`] and gated by
@@ -179,8 +180,8 @@ impl EventName {
 /// Most of these sit on the turn loop. Four do not — [`Self::PermissionRequest`],
 /// [`Self::SessionStart`], [`Self::SessionEnd`] and [`Self::ProviderAuth`] —
 /// and they are stages all the same, because a stage is defined by its
-/// contract and not by its caller: each one runs synchronously, in priority
-/// order, and each one's answer changes what the host does next. Each of the
+/// contract and not by its caller: each one runs synchronously, in
+/// registration order, and each one's answer changes what the host does next. Each of the
 /// four had its own registry and its own clear path before they merged here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]

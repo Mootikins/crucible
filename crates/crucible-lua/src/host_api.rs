@@ -103,7 +103,7 @@ fn on_declaration() -> LuaType {
                     // code. No shipped plugin used the form yet, so nothing
                     // reported it.
                     LuaType::parse(
-                        "{ pattern: string?, priority: number?, timeout_ms: number?, \
+                        "{ pattern: string?, timeout_ms: number?, \
                          session: string?, key: string?, once: boolean? }",
                     )
                     .expect("well formed"),

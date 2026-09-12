@@ -141,10 +141,6 @@ pub struct Registration {
     pub source: LuaSource,
     /// The dispatch key, from the one monotonic allocator. Never reused.
     pub id: u64,
-    /// Lower runs first. Registration order breaks a tie, and that order is
-    /// total: search paths rank by `runtime_path::Origin`, and
-    /// `lifecycle::discovery` sorts each directory by name.
-    pub priority: i64,
     /// Glob over the dispatch identifier — a tool name, for the hooks that
     /// carry one. `None` matches every dispatch.
     pub pattern: Option<String>,
@@ -160,8 +156,7 @@ pub struct Registration {
     /// Neovim names no row and keys its coarse delete on three parts
     /// (`autocmd.c:952`), so this axis has no prior art — but Neovim also
     /// ALWAYS appends, and Crucible replaces a scoped row. Under replacement
-    /// this is the only thing that tells two such rows apart, because
-    /// `priority` is not in the key either.
+    /// this is the only thing that tells two such rows apart.
     pub key: Option<String>,
     /// Whether this registration retires itself after it runs once.
     ///
@@ -198,8 +193,6 @@ pub struct Registration {
 pub struct RegistrationSpec {
     /// The hook to register for.
     pub name: HookName,
-    /// Lower runs first. 100 is the documented default.
-    pub priority: i64,
     /// Glob over the dispatch identifier.
     pub pattern: Option<String>,
     /// Which sessions to fire for.
@@ -221,7 +214,6 @@ impl RegistrationSpec {
     pub fn new(name: HookName) -> Self {
         Self {
             name,
-            priority: DEFAULT_PRIORITY,
             pattern: None,
             scope: SessionScope::Global,
             key: None,
@@ -231,9 +223,6 @@ impl RegistrationSpec {
         }
     }
 }
-
-/// The priority a registration takes when it names none.
-pub const DEFAULT_PRIORITY: i64 = 100;
 
 /// Which of one source's registrations [`LuaScriptHandlerRegistry::clear_matching`]
 /// removes.
@@ -417,8 +406,7 @@ impl LuaScriptHandlerRegistry {
     /// Crucible does not yet record. Two activations of one line are the same
     /// registration; two different lines are two. Until something supplies
     /// that, `key` is the only axis separating two scoped rows on one hook
-    /// and one pattern — `priority` is not in the key, so two rows that
-    /// differ only in priority collapse as well.
+    /// and one pattern.
     ///
     /// A [`SessionScope::Global`] registration still APPENDS. Two identical unscoped
     /// registrations are two handlers, as they have always been: an unscoped
@@ -437,7 +425,6 @@ impl LuaScriptHandlerRegistry {
             name: spec.name,
             source,
             id,
-            priority: spec.priority,
             pattern: spec.pattern,
             scope: spec.scope,
             key: spec.key,
@@ -476,11 +463,36 @@ impl LuaScriptHandlerRegistry {
             .unwrap_or(0)
     }
 
-    /// Every registration for `name`, priority first, matching `identifier`
-    /// and serving `firing`.
+    /// Every registration for `name` matching `identifier` and serving
+    /// `firing`, in REGISTRATION ORDER.
     ///
-    /// The sort is stable, so two registrations of equal priority run in
-    /// registration order.
+    /// # Nothing reorders, and registration order is total
+    ///
+    /// There was a `priority` field, and it is gone. Neovim orders no
+    /// autocommand — `nvim_create_autocmd` takes eight option fields and none
+    /// of them ranks a handler — and an author who must run last writes into
+    /// `after/` rather than negotiating a number with strangers. Composition
+    /// is a plugin's concern; a store is not a scheduler.
+    ///
+    /// So the answer to "which handler runs first" is "the one that
+    /// registered first", and three steps give that a total order:
+    ///
+    /// 1. `runtime/defaults/init.luau` runs first, as
+    ///    [`LuaSource::Builtin`](crate::plugin_context::LuaSource::Builtin)
+    ///    (`daemon_plugins::boot::load_shipped_defaults`).
+    /// 2. Then the user's `init.lua`, as
+    ///    [`LuaSource::UserLua`](crate::plugin_context::LuaSource::UserLua).
+    ///    The boot inversion puts it BEFORE plugin loading.
+    /// 3. Then the plugins, and `PluginManager::load_all`
+    ///    (`crate::lifecycle::loading`) sorts its whole key set by name, so
+    ///    they run alphabetically and the daemon executes them in that
+    ///    order.
+    ///
+    /// **Step 3 is the mechanism, and it is the plugin NAME.** Neither the
+    /// search-path rank nor `lifecycle::discovery` supplies it: the rank
+    /// decides which plugin wins a name clash, and the directory sort only
+    /// keeps `discover` itself repeatable. A plugin found on any root loads
+    /// in the same place, which is the name's place.
     ///
     /// **This closure and its synchronous twin in
     /// [`execute_permission_hooks`](super::permission::execute_permission_hooks)
@@ -499,13 +511,12 @@ impl LuaScriptHandlerRegistry {
             .registrations
             .lock()
             .expect("registrations: poisoned while selecting handlers");
-        let mut matching: Vec<Registration> = rows
-            .iter()
+        // No sort. `registrations` is already in registration order, which is
+        // the whole of the ordering contract — see this method's doc.
+        rows.iter()
             .filter(|r| r.name == name && r.matches(identifier) && r.serves(firing))
             .cloned()
-            .collect();
-        matching.sort_by_key(|r| r.priority);
-        matching
+            .collect()
     }
 
     /// [`Self::for_hook`] by registered name.

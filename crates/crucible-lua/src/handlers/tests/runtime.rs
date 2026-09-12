@@ -22,12 +22,11 @@ where
         .unwrap()
 }
 
-/// Register a no-op handler for `name` with `priority` and `pattern`.
+/// Register a no-op handler for `name` with `pattern`.
 fn register_stub(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     name: StageId,
-    priority: i64,
     pattern: Option<&str>,
 ) -> u64 {
     let func = lua.create_function(|_, ()| Ok(())).unwrap();
@@ -36,7 +35,6 @@ fn register_stub(
             lua,
             RegistrationSpec {
                 name: name.into(),
-                priority,
                 pattern: pattern.map(str::to_string),
                 scope: crate::handlers::SessionScope::Global,
                 key: None,
@@ -221,9 +219,9 @@ fn runtime_handlers_for_returns_matching_handlers() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    let a = register_stub(&lua, &registry, StageId::TurnComplete, 100, None);
-    let b = register_stub(&lua, &registry, StageId::PreToolCall, 50, None);
-    let c = register_stub(&lua, &registry, StageId::TurnComplete, 200, None);
+    let a = register_stub(&lua, &registry, StageId::TurnComplete, None);
+    let b = register_stub(&lua, &registry, StageId::PreToolCall, None);
+    let c = register_stub(&lua, &registry, StageId::TurnComplete, None);
 
     let matching =
         registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
@@ -241,32 +239,35 @@ fn runtime_handlers_for_returns_matching_handlers() {
     assert!(none.is_empty());
 }
 
+/// Selection answers in REGISTRATION ORDER and reorders nothing.
+///
+/// This test asserted a sort by `priority` before that option was deleted.
+/// The property that replaces it is stronger, because there is no option left
+/// that could produce any other order: what a handler gets is the place it
+/// registered in.
 #[test]
-fn runtime_handlers_for_returns_sorted_by_priority() {
+fn runtime_handlers_for_returns_registration_order() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    let low = register_stub(&lua, &registry, StageId::TurnComplete, 200, None);
-    let high = register_stub(&lua, &registry, StageId::TurnComplete, 10, None);
-    let medium = register_stub(&lua, &registry, StageId::TurnComplete, 100, None);
+    let first = register_stub(&lua, &registry, StageId::TurnComplete, None);
+    let second = register_stub(&lua, &registry, StageId::TurnComplete, None);
+    let third = register_stub(&lua, &registry, StageId::TurnComplete, None);
 
     let handlers =
         registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 3);
-    assert_eq!(handlers[0].id, high);
-    assert_eq!(handlers[0].priority, 10);
-    assert_eq!(handlers[1].id, medium);
-    assert_eq!(handlers[1].priority, 100);
-    assert_eq!(handlers[2].id, low);
-    assert_eq!(handlers[2].priority, 200);
+    assert_eq!(handlers[0].id, first);
+    assert_eq!(handlers[1].id, second);
+    assert_eq!(handlers[2].id, third);
 }
 
 #[test]
 fn pattern_filtering_matches_exact_tool_name() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    let bash = register_stub(&lua, &registry, StageId::PreToolCall, 10, Some("bash"));
-    let all = register_stub(&lua, &registry, StageId::PreToolCall, 100, None);
+    let bash = register_stub(&lua, &registry, StageId::PreToolCall, Some("bash"));
+    let all = register_stub(&lua, &registry, StageId::PreToolCall, None);
 
     // With identifier "bash" — both match
     let matching = registry.runtime_handlers_for(
@@ -275,8 +276,8 @@ fn pattern_filtering_matches_exact_tool_name() {
         crate::handlers::Firing::Sessionless,
     );
     assert_eq!(matching.len(), 2);
-    assert_eq!(matching[0].id, bash); // priority 10
-    assert_eq!(matching[1].id, all); // priority 100
+    assert_eq!(matching[0].id, bash); // registered first
+    assert_eq!(matching[1].id, all); // registered second
 
     // With identifier "read_file" — only the no-pattern handler matches
     let matching = registry.runtime_handlers_for(
@@ -298,7 +299,7 @@ fn pattern_filtering_matches_exact_tool_name() {
 fn pattern_filtering_supports_glob() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_stub(&lua, &registry, StageId::PreToolCall, 10, Some("read_*"));
+    register_stub(&lua, &registry, StageId::PreToolCall, Some("read_*"));
 
     let matching = registry.runtime_handlers_for(
         "pre_tool_call",

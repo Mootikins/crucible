@@ -360,12 +360,11 @@ async fn a_failing_start_hook_does_not_break_the_session() {
     );
 }
 
-/// The shipped auto-approve must be OVERRIDABLE. Before priority existed the
-/// gate was first-match-wins in registration order, the defaults always loaded
-/// first, and a user hook could never win — while the defaults file's own
-/// comment offered exactly this override as an example.
+/// A user hook must still be REACHED. The gate answers on the first hook that
+/// decides, and the shipped defaults load before any user file, so every
+/// shipped hook that declines is what leaves a user hook reachable at all.
 #[tokio::test]
-async fn a_user_hook_overrides_the_shipped_auto_approve() {
+async fn a_user_hook_is_reached_in_a_mode_the_defaults_decline() {
     let (vm, _am, _sm, _id) = session_with_lua(
         r#"cru.permissions.on_request(function(request)
              if request.tool_name == "bash" then return { deny = true } end
@@ -379,31 +378,38 @@ async fn a_user_hook_overrides_the_shipped_auto_approve() {
     assert_eq!(
         result,
         PermissionHookResult::Deny,
-        "a user hook registers later but at a lower priority, so it is asked first"
+        "the shipped hook answers nil for `auto`, so the user's hook decides"
     );
 }
 
-/// The shipped hook must stay behind user hooks. Registering it at the default
-/// priority would silently restore the un-overridable behaviour, and the test
-/// above would then be the only thing standing between us and that regression.
+/// The shipped defaults must DECLINE for every mode but `plan`.
+///
+/// This replaces a gate that read `hook.priority` against a
+/// `SHIPPED_DEFAULT_PRIORITY` constant. Both are gone: handlers run in
+/// registration order and nothing reorders them, so "the shipped hook is
+/// asked last" is no longer expressible and no longer true — it is asked
+/// FIRST. What keeps a user hook reachable is therefore the hook BODY, and
+/// this asserts that instead of an ordering number.
+///
+/// `plan` is the exception on purpose. Its deny is the one shipped decision
+/// that must hold, and the daemon enforces plan mode independently anyway.
+///
+/// The mode list comes from the running registry, not from a literal, so a
+/// mode added to `defaults/init.luau` is covered without editing this test.
 #[tokio::test]
-async fn the_shipped_permission_hook_registers_behind_user_hooks() {
+async fn the_shipped_permission_hooks_decline_for_every_mode_but_plan() {
     let (vm, _am, _sm, _session_id) = session_with_lua("").await;
-    let (registry, _lua) = vm.permission_registry();
-    let hooks = registry.runtime_handlers_for(
-        "permission:request",
-        Some("bash"),
-        crucible_lua::Firing::Sessionless,
-    );
 
-    assert!(!hooks.is_empty(), "the shipped defaults register hooks");
-    for hook in &hooks {
+    for mode in vm.mode_registry().all() {
+        if mode.name == "plan" {
+            continue;
+        }
         assert_eq!(
-            hook.priority,
-            crucible_lua::SHIPPED_DEFAULT_PRIORITY,
-            "EVERY shipped hook must register behind the priority users get by \
-             default ({}); one at 100 would be un-overridable again",
-            hook.name
+            run_permission_hooks(&vm, &tool_request(&mode.name)),
+            PermissionHookResult::Prompt,
+            "no shipped hook may decide for mode `{}`: it is asked first, so a \
+             decision here is final and no user hook could ever override it",
+            mode.name
         );
     }
 }

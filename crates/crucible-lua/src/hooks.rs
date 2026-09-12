@@ -116,13 +116,14 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-/// Every `session:start` hook on this VM that serves `firing`, priority
-/// first.
+/// Every `session:start` hook on this VM that serves `firing`, in
+/// registration order.
 pub fn session_start_hooks(lua: &Lua, firing: Firing<'_>) -> LuaResult<Vec<Registration>> {
     Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_START_HOOK, None, firing))
 }
 
-/// Every `session:end` hook on this VM that serves `firing`, priority first.
+/// Every `session:end` hook on this VM that serves `firing`, in
+/// registration order.
 pub fn session_end_hooks(lua: &Lua, firing: Firing<'_>) -> LuaResult<Vec<Registration>> {
     Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_END_HOOK, None, firing))
 }

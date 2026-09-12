@@ -737,7 +737,7 @@ end
 
 -- Observe only. A nil return leaves the selection to the next handler: the
 -- precognition hooks take the first Transform and stop, and this is not one.
-cru.on("precognition_select", { priority = 100 }, function(ctx, event)
+cru.on("precognition_select", function(ctx, event)
     local sid = type(ctx) == "table" and ctx.session_id or nil
     if type(sid) == "string" then
         M.record_injected(sid, event)

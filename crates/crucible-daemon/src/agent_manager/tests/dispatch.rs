@@ -64,7 +64,7 @@ mod event_dispatch {
     }
 
     #[tokio::test]
-    async fn multiple_handlers_run_in_priority_order() {
+    async fn multiple_handlers_run_in_registration_order() {
         let state = handler_vm();
 
         state

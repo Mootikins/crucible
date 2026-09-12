@@ -808,10 +808,10 @@ local registered = false
 function M.activate()
     if registered or not config.get("enabled") then return end
     registered = true
-    cru.on("search:rerank", { priority = 100 }, function(ctx, event)
+    cru.on("search:rerank", function(ctx, event)
         return M.rerank(event)
     end)
-    cru.on("index:blocks", { priority = 100 }, function(ctx, event)
+    cru.on("index:blocks", function(ctx, event)
         return M.index(event)
     end)
     -- A note event changes the link graph, so the cached graph goes.

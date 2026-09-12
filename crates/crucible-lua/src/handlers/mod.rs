@@ -11,7 +11,7 @@
 //!
 //! ```lua
 //! -- In a plugin's init.lua
-//! crucible.on("tool_result", { pattern = "search_*", priority = 50 }, function(ctx, event)
+//! crucible.on("tool_result", { pattern = "search_*" }, function(ctx, event)
 //!     return event  -- transformed
 //! end)
 //! ```
@@ -70,14 +70,14 @@ pub use display_hooks::{
 pub use hook_name::{hook_names, EventName, HookName, StageId};
 pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHookResult,
-    PermissionRequest, PERMISSION_REQUEST_HOOK, SHIPPED_DEFAULT_PRIORITY,
+    PermissionRequest, PERMISSION_REQUEST_HOOK,
 };
 /// Crate-internal: the registration APIs share one option parse, and no
 /// caller outside this crate registers a handler.
 pub(crate) use registry::scope_from_opts;
 pub use registry::{
     clear_source, ClearFilter, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec,
-    SessionScope, DEFAULT_PRIORITY,
+    SessionScope,
 };
 pub use script_handler::{interpret_handler_result, EventOutcome, ScriptHandlerResult};
 

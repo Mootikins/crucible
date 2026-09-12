@@ -93,19 +93,24 @@ fn two_keys_are_two_registrations_for_one_session() {
     );
 }
 
-/// `priority` is NOT in the replacement key, so two scoped rows that differ
-/// only by it collapse — and the LATER registration is the one that stands.
+/// Two scoped rows alike in every part of the key collapse — and the LATER
+/// registration is the one that stands.
 ///
-/// This is why `key` cannot go while `replaces` stays. An author separating a
-/// guard from a logger by priority alone writes two `cru.on` calls, reads two
-/// successes, and holds one handler. The narrower axes do not cover it:
-/// `pattern` is the same for both, and neither is a one-shot.
+/// This is why `key` cannot go while `replaces` stays. An author registering a
+/// guard and a logger for one session on one hook writes two `cru.on` calls,
+/// reads two successes, and holds one handler. The narrower axes do not cover
+/// it: `pattern` is the same for both, and neither is a one-shot.
+///
+/// This test carried `priority = 10` and `priority = 90` when that option
+/// existed, because it was NOT in the key either. The option is gone and the
+/// property is unchanged, so the two calls now differ in nothing at all —
+/// which is the honest statement of what `replaces` does.
 ///
 /// Pinned, not endorsed. The fix is a host-derived identity for the
 /// definition site (Neovim's `AutoCmd.script_ctx`); until then an author
 /// separates the two rows with `key`.
 #[tokio::test]
-async fn two_scoped_registrations_differing_only_by_priority_collapse() {
+async fn two_scoped_registrations_alike_in_the_whole_key_collapse() {
     let (lua, registry) = vm();
     enter_plugin(&lua, "ralph");
 
@@ -113,15 +118,15 @@ async fn two_scoped_registrations_differing_only_by_priority_collapse() {
         &lua,
         "s1",
         r#"
-        cru.on("pre_tool_call", { session = "s1", priority = 10 }, function() fired = "guard" end)
-        cru.on("pre_tool_call", { session = "s1", priority = 90 }, function() fired = "logger" end)
+        cru.on("pre_tool_call", { session = "s1" }, function() fired = "guard" end)
+        cru.on("pre_tool_call", { session = "s1" }, function() fired = "logger" end)
         "#,
     )
     .expect("both register without complaint");
 
     let handlers =
         registry.runtime_handlers_for(StageId::PreToolCall.as_str(), None, Firing::InSession("s1"));
-    assert_eq!(handlers.len(), 1, "priority does not separate two rows");
+    assert_eq!(handlers.len(), 1, "the second registration replaced the first");
 
     // WHICH one survived, read by running it rather than assumed.
     let event = crucible_core::events::SessionEvent::Custom {

@@ -44,7 +44,7 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-/// Every `provider:auth` hook on this VM, priority first.
+/// Every `provider:auth` hook on this VM, in registration order.
 ///
 /// `Sessionless`: the agent factory builds a chat client from an agent
 /// config, with no session in hand. `StageId::carries_session` says the same,

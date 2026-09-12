@@ -94,7 +94,7 @@ fn every_registration_api_writes_one_store() {
 // ============================================================================
 
 #[test]
-fn crucible_on_with_opts_table_sets_pattern_and_priority() {
+fn crucible_on_with_opts_table_sets_pattern() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
@@ -102,7 +102,7 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
 
     lua.load(
         r#"
-        cru.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "bash" }, function(ctx, event)
             return nil
         end)
     "#,
@@ -116,7 +116,6 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
         crate::handlers::Firing::Sessionless,
     );
     assert_eq!(handlers.len(), 1);
-    assert_eq!(handlers[0].priority, 10);
     assert_eq!(handlers[0].pattern, Some("bash".to_string()));
 
     // Doesn't match other tools
@@ -148,6 +147,5 @@ fn crucible_on_backward_compat_no_opts() {
     let handlers =
         registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
-    assert_eq!(handlers[0].priority, 100); // default
     assert_eq!(handlers[0].pattern, None);
 }

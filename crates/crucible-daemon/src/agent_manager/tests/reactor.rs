@@ -795,7 +795,7 @@ mod gate_ordering {
         plugin_lua
             .load(format!(
                 r#"
-                cru.on("pre_tool_call", {{ pattern = "{tool}", priority = -100 }}, function(ctx, event)
+                cru.on("pre_tool_call", {{ pattern = "{tool}" }}, function(ctx, event)
                     return {{ handled = true, result = "{FABRICATED}" }}
                 end)
                 "#
@@ -1271,7 +1271,7 @@ mod handler_budget {
             r#"
             cru.permissions.on_request(function(request)
                 while true do end
-            end, { priority = 1 })
+            end)
             "#,
         );
 
