@@ -1268,9 +1268,10 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Scope:** online only. Reads and writes go through the existing API while connected.
   - **Design:** [[Mobile Shell]] (`docs/Meta/Architecture/`), a draft.
 
-- [ ] **Offline Kiln Cache** `P3` — cache a kiln's notes so the mobile shell can read them with no connection · `crucible-web`
+- [ ] **Offline Kiln Cache** `P3` — keep a whole kiln on the phone, chosen per kiln, so the mobile shell reads it with no connection · `crucible-web`
   - **Gets you:** notes readable on a phone that is out of signal, which is most of the value of installing the PWA at all.
-  - **Blocked on a decision, not on effort:** the service worker deliberately has **zero** `runtimeCaching` and precaches only the app bundle, so no API response is ever stored. Caching kiln content means putting authenticated responses in a same-origin-writable store, which is the threat `web/src/test/pwa-scope.test.ts` exists to pin. Needs an explicit answer on what may be cached, for how long, and what happens to it on sign-out — not an incidental config addition.
+  - **The decision it was blocked on was made 2026-09-11:** a whole kiln, chosen per kiln, kept until the user turns it off; nothing wiped on a lapsed key. See the decision log and `docs/Meta/Architecture/Mobile Shell.md` section 11. What remains is the work, and the note-write primitive it depends on.
+  - **The original block, for the record:** the service worker deliberately has **zero** `runtimeCaching` and precaches only the app bundle, so no API response is ever stored. Caching kiln content means putting authenticated responses in a same-origin-writable store, which is the threat `web/src/test/pwa-scope.test.ts` exists to pin. Needs an explicit answer on what may be cached, for how long, and what happens to it on sign-out — not an incidental config addition.
 
 - [ ] **Offline Note Capture** `P3` — edit and create notes while disconnected, sync on reconnect · `crucible-web`
   - **Gets you:** the actual reason to want an editor on a phone — capture a thought in a tunnel, have it land in the kiln later.

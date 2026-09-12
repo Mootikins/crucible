@@ -651,6 +651,35 @@ silently.
 
 A phone loses the network. The shell must still open a kiln and edit a note.
 
+### One kiln, whole, when the user chooses it — decided 2026-09-11
+
+An earlier revision mirrored a working set: pinned notes, the last twenty
+opened, and anything queued. That is a heuristic, and a heuristic is the wrong
+shape here — a user who wants a kiln on a plane wants the kiln, not the part of
+it a cache guessed at.
+
+**So: a kiln is either kept offline or it is not, and the user says which.**
+
+- **Whole.** Every note in the chosen kiln, bodies and all. No cap, no
+  eviction, no recency seed. `listNotes` gives the set; each body is fetched
+  once and refreshed on change.
+- **Per kiln.** A kiln is the unit because a kiln is what a user thinks in.
+  Projects are not offered: they hold code, which the phone does not edit.
+- **Until unchosen.** That answers the record's "for how long". Nothing expires
+  on a timer; a user who wants the space back turns the kiln off, and the app
+  says how much it will free.
+- **Two ways in, one source of truth.** A settings group, **Offline**, lists
+  every kiln with a toggle and its size on disk — discoverable, reversible, and
+  the place a user goes to reclaim space. The files drawer's root picker adds a
+  long-press shortcut, **Keep offline**, so the choice is where the kiln is.
+  The settings group is the source of truth; the shortcut writes the same flag.
+- **Say what is happening.** A kiln being fetched shows progress, and a kiln
+  that is kept shows it. A silent cache is one a user cannot trust or clear.
+
+Nothing else changes: the index still holds every note's name and path, the
+outbox still holds what the user wrote, and a note outside a kept kiln is still
+read from the network.
+
 ### The decision the record asked for, and what is now answered
 
 The product record says Offline Kiln Cache is "**blocked on a decision, not on
@@ -671,41 +700,38 @@ a phone keeps, and they are not the same kind of thing:
 A "wipe the cache on sign-out" rule treats both as cache. Only the mirror is.
 Every rule below keeps that difference.
 
-**1. What may be cached — answered.** The working set below: pinned notes, the
-last 20 opened, and anything with an outbox entry. The index of note names is
-cached for every kiln the user opens.
+**1. What may be cached — answered.** Every note of a kiln the user chose to
+keep offline, and the note index of every kiln they open. Nothing else: a
+project's files are never cached.
 
-**2. For how long — still open.** A mirror with no expiry is a copy of the kiln
-on a device that may be lost. Nothing here picks a limit.
+**2. For how long — answered.** Until the user turns that kiln off. Nothing
+expires on a timer; an expiry would empty the cache exactly when the phone is
+offline and cannot refill it.
 
-**3. What happens on sign-out — answered, 2026-09-11: there is no sign-out, and
-nothing is wiped automatically.**
+**3. What happens on sign-out — answered, 2026-09-11: nothing is wiped, ever,
+by the app.**
 
-The facts that make this simple:
+The cached notes stay until the user removes them. A lapsed or rotated key
+stops sync; it does not touch what is already on the device. When a new key is
+entered and the phone reconnects, the drain resumes.
 
-- **The browser never holds the key.** It POSTs the key once, and the server
-  answers with an HttpOnly, `SameSite=Strict` cookie that carries a minted
-  session token, not the key (`crucible-web/src/routes/auth.rs:1-12`). The token
-  lasts 30 days (`SESSION_TTL`, `middleware/auth/session.rs:26`).
-- **The server can end a token** — `POST /api/auth/logout` exists — but the web
-  client never calls it, and the compact shell does not need to.
-- **Revocation already exists, at the key.** "A token … dies with the key it was
-  minted from." Rotating `api_key` ends every browser session at once.
+**Revocation cannot do what the question implied, and that is why the answer is
+simple.** A web app cannot erase a cache remotely: the bytes are on the phone,
+and rotating `api_key` only stops the phone from talking to the daemon. The
+real choices were "do not cache" or "accept that the device holds a copy", and
+the second is the bargain every offline notes app makes. The cache is as safe
+as the device, and the design must not imply otherwise.
 
-So the offline rules are:
+**One hazard is revocation-adjacent, and the rule above does not cover it: the
+outbox draining into the WRONG daemon.** A key identifies a daemon, not a
+person. A phone that reconnects to a different daemon — another machine, a
+restored backup, a different instance answering the same address — would replay
+the user's queued edits into that daemon's kiln.
 
-- **A 401 during the drain keeps the outbox.** The token expired, or the key
-  rotated. The shell shows the existing `AuthTokenPrompt`, the user enters the
-  key, and the drain resumes. Unsynced writing is never discarded because a
-  credential lapsed.
-- **Nothing deletes the mirror or the outbox on its own.** Only the user does,
-  from Settings, and the outbox's delete names how many unsynced edits it will
-  destroy.
-- **Rotating the key stops sync; it does not erase the phone's copy.** Notes
-  already in the mirror stay readable by whoever holds the device. No offline
-  cache can be erased remotely by revoking a credential, and the shell must not
-  imply otherwise. What remote revocation of a lost phone should mean is
-  **not yet decided** — open question 13.
+> **So bind the mirror and the outbox to the daemon they came from, and refuse
+> to drain into another.** There is no daemon id on the wire today; the
+> practical identity is the origin plus `config_root` (`GET /api/config`), and a
+> mismatch must stop the drain and say so rather than write.
 
 One risk belongs beside rule 3. The outbox is durable and replays with the
 user's authority **after the page that queued a write is gone**. A script that
@@ -788,64 +814,10 @@ one machine with a stale view of the disk.
 ### The three stores
 
 ```
-mirror   path → { body, baseHash, mirroredAt, lastOpenedAt, pinned }
-outbox   path → { body, baseHash, queuedAt }
-index    kiln → { NoteEntry[], indexedAt }
+mirror   path → { body, baseHash, mirroredAt }        every note of a kept kiln
+outbox   path → { body, baseHash, queuedAt, daemon }  what this device wrote
+index    kiln → { NoteEntry[], indexedAt, kept }      every kiln's note list
 ```
-
-### Index everything. Mirror a working set.
-
-An Obsidian user keeps a few notes hot and the rest cold. The mirror follows
-that shape, and the two halves have very different costs.
-
-**The index is small, so mirror all of it.** `listNotes` returns `NoteEntry` —
-name, path, title, tags and `updated_at`. No body. A kiln of 5000 notes indexes
-in well under a megabyte. So the whole tree browses offline, and every note is
-visible.
-
-**A body is large, so mirror only the working set.** The set is:
-
-```
-pinned  ∪  the last 20 opened  ∪  anything with an outbox entry
-```
-
-Cap it, evict by least-recent-open, and never evict a pinned note or one the
-outbox still holds.
-
-**Seed the set from the server, not from this device.** `/api/recents` is
-already the source of truth for recents, and `src/lib/recent-files.ts` records
-why: the list lives next to the layout blob so it survives across browsers and
-ports. It therefore crosses devices already. A phone that has never opened a
-note still mirrors what the desktop opened this week. `MAX_RECENTS` is 20
-today, which is a reasonable first cap.
-
-**Say which notes are available.** A cold note in the tree draws dimmed with a
-"not downloaded" mark. A tap on it while offline says so, and offers to fetch it
-when the network returns. A row that looks the same and then fails is the
-failure mode this rule exists to stop.
-
-**Let the user pin.** A long press on a note offers "Keep offline". That is the
-one control the heuristic cannot replace, and Obsidian's own mobile users reach
-for it.
-
-Rules:
-
-- A read fills the mirror. An open note reads the mirror first, then corrects
-  from the network. This is `swrLocal`'s rule, over IndexedDB.
-- **A refresh MUST skip any path the outbox holds, and a queued entry's
-  `baseHash` is immutable.** This is the clearest data-loss path in the design.
-  Without the rule: edit offline; reconnect; open the note, so the mirror
-  corrects to the other writer's hash H1; the drain then reads `baseHash` from
-  the mirror, the server compares H1 to H1, returns 200, and **the other
-  writer's change disappears with no conflict copy.** The base is what the user
-  edited FROM. Nothing may move it afterwards.
-- An offline save writes the outbox. It copies `baseHash` at queue time.
-- The app drains the outbox when the network returns. It sends `base_hash`.
-- A 200 answer updates the mirror, then clears the entry — in that order.
-- **One queue, ordered per path.** A body write and an anchored batch for the
-  same note must drain in the order they were made, or the batch's anchors run
-  against text the body write has not yet laid down. Keep one outbox with a
-  sequence number, not two queues by kind.
 
 ### The conflict rule
 
@@ -874,10 +846,10 @@ An offline kiln is a note store. It is not a Crucible.
 
 | Offline | Reason |
 |---------|--------|
-| Read a note in the working set | The mirror holds its body. |
-| Edit a note in the working set | The outbox holds the write. |
+| Read a note of a kept kiln | The mirror holds its body. |
+| Edit a note of a kept kiln | The outbox holds the write. |
 | Browse the WHOLE kiln tree | The index holds every note, body or not. |
-| **No cold note** | Its body was never fetched. The tree says so. |
+| **No note of a kiln that is not kept** | Its body was never fetched. The tree says so. |
 | **No agent turn** | The model call, the tools and the turn loop are daemon-side. |
 | **No search** | `grepSearch` and `semanticSearch` are daemon calls. |
 | **No graph, no backlinks** | `link_index.rs` is daemon-side SQLite. |
@@ -1575,12 +1547,14 @@ means duplicating it, or extracting it first.
    profile. A desktop and a phone that share a profile share every other
    setting too. Only vim mode gets a split key in this draft; autosave no
    longer needs one (section 8). Fonts and the terminal font do not.
-5. **The mirror cap.** Section 11 mirrors the last 20 opened notes, which is
-   `MAX_RECENTS` today. Twenty is a starting number, not a measured one.
-6. **Eviction, and the browser's own eviction.** IndexedDB has no fixed quota,
-   and a browser may drop a whole origin under storage pressure. Call
-   `navigator.storage.persist()`, and decide what the app says when the browser
-   refuses. An outbox that a browser evicts loses a user's writing.
+5. **The browser's own eviction.** IndexedDB has no fixed quota, and a browser
+   may drop a whole origin under storage pressure — which, with a whole kiln
+   kept, is the thing that would empty it. Call `navigator.storage.persist()`,
+   and decide what the app says when the browser refuses. An outbox a browser
+   evicts loses a user's writing.
+6. **A kiln too big for the device.** "Whole kiln" has no cap by decision. The
+   app should say what a kiln will cost before it fetches it, and say what
+   happened if the device runs out part way.
 7. **A read-only session transcript offline.** A session history is markdown
    too. It could mirror on the same mechanism. It is not in this draft.
 8. **A file change does not republish.** Section 13's invariant makes a
@@ -1614,11 +1588,11 @@ means duplicating it, or extracting it first.
    desktop PWA gets the window manager, not the compact shell, because the
    breakpoint decides. Section 11's offline store would then apply to a shell
    this draft never designed for it.
-13. **A lost phone.** Rotating the key cuts the phone off from the daemon, but
-    the mirror stays readable on the device. Should a revoked phone erase its
-    mirror the next time it reaches the daemon? It cannot erase it before then.
-    The outbox must never be erased this way, because it may hold the only copy
-    of the user's writing.
+13. **A lost phone — closed, 2026-09-11.** Nothing is wiped. A web app cannot
+    erase a cache remotely, so the only real choices were "do not cache" and
+    "the device holds a copy"; the second is the bargain every offline notes app
+    makes. What replaces it is the daemon-binding rule in section 11: an outbox
+    must refuse to drain into a daemon it did not come from.
 14. **A second pane in the right drawer.** Backlinks is the only one today.
     Obsidian's mobile right sidebar adds an outline and tags; Crucible has
     neither panel. Of the panels that exist, Changes is the likeliest — reviewing
