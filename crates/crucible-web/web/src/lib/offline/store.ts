@@ -99,6 +99,15 @@ export function idbStore(name = DB_NAME): OfflineStore {
   let db: Promise<IDBDatabase> | null = null;
   const database = () => (db ??= openDatabase(name));
 
+  /**
+   * One transaction, one answer.
+   *
+   * A WRITE resolves at `transaction.oncomplete`, not at the request's
+   * success. IndexedDB only guarantees durability at commit: a quota failure
+   * or a forced close aborts the transaction AFTER every request has already
+   * succeeded. Resolving on the request told the outbox a write was stored
+   * when it was not, and the editor cleared the buffer over it.
+   */
   const run = <T>(
     table: OfflineTable,
     mode: IDBTransactionMode,
@@ -107,19 +116,51 @@ export function idbStore(name = DB_NAME): OfflineStore {
     database().then(
       (open) =>
         new Promise<T>((resolve, reject) => {
-          const request = work(open.transaction(table, mode).objectStore(table));
-          request.onsuccess = () => resolve(request.result as T);
+          const transaction = open.transaction(table, mode);
+          const request = work(transaction.objectStore(table));
+          let answer: T;
+          request.onsuccess = () => {
+            answer = request.result as T;
+            if (mode === 'readonly') resolve(answer);
+          };
           request.onerror = () => reject(request.error);
+          if (mode !== 'readonly') {
+            transaction.oncomplete = () => resolve(answer);
+            transaction.onabort = () =>
+              reject(transaction.error ?? new DOMException('transaction aborted', 'AbortError'));
+          }
         }),
     );
 
-  const entries = async <T>(table: OfflineTable, prefix?: string) => {
-    const keys = await run<IDBValidKey[]>(table, 'readonly', (store) => store.getAllKeys());
-    const values = await run<T[]>(table, 'readonly', (store) => store.getAll());
-    return keys
-      .map((key, i) => ({ key: String(key), value: values[i] }))
-      .filter(({ key }) => !prefix || key.startsWith(prefix));
-  };
+  /**
+   * Keys and values from ONE cursor.
+   *
+   * `getAllKeys()` and `getAll()` in separate transactions could be
+   * interleaved by another tab's write, which shifts one array and pairs
+   * every key with the wrong value — `forgetKiln` would then delete the wrong
+   * note. A prefix is served by a key range rather than by reading the whole
+   * table and filtering, so sizing an `everything` kiln no longer pulls every
+   * attachment into memory.
+   */
+  const entries = <T>(table: OfflineTable, prefix?: string): Promise<{ key: string; value: T }[]> =>
+    database().then(
+      (open) =>
+        new Promise<{ key: string; value: T }[]>((resolve, reject) => {
+          const out: { key: string; value: T }[] = [];
+          const range = prefix ? IDBKeyRange.bound(prefix, `${prefix}\uffff`) : undefined;
+          const request = open
+            .transaction(table, 'readonly')
+            .objectStore(table)
+            .openCursor(range);
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return resolve(out);
+            out.push({ key: String(cursor.key), value: cursor.value as T });
+            cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+        }),
+    );
 
   return {
     get<T>(table: OfflineTable, key: string) {

@@ -23,6 +23,7 @@ vi.mock('@/lib/api', () => ({
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
 import {
+  networkSink,
   networkSource,
   readNote,
   setOfflineStore,
@@ -170,5 +171,82 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     expect(result.foreign, 'a write this device queued is not from a foreign daemon').toBe(0);
     expect(result.sent).toBe(1);
     expect(net.save).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT');
+  });
+});
+
+/** An error shaped like the API client's: a status means the daemon answered. */
+const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+
+/**
+ * `networkSink.write` had no test at all, and it is the whole of the drain.
+ *
+ * `PUT /api/kiln/file` carries no hash and writes blind, so the compare in
+ * here is the only guard there is.
+ */
+describe('networkSink does not overwrite what it could not read', () => {
+  const entry = {
+    path: PATH,
+    body: 'mine',
+    base: 'h0',
+    kiln: KILN,
+    daemon: 'd',
+    queuedAt: Date.now(),
+    sequence: 1,
+  };
+
+  it('writes when the note still reads as the base it was edited from', async () => {
+    net.read.mockResolvedValue({ content: '', content_hash: 'h0' });
+    net.save.mockResolvedValue(undefined);
+    expect(await networkSink.write(entry)).toEqual({ ok: true, hash: 'h0' });
+    expect(net.save).toHaveBeenCalledWith(PATH, 'mine');
+  });
+
+  it('conflicts when the note moved on', async () => {
+    net.read.mockResolvedValue({ content: '', content_hash: 'MOVED' });
+    expect(await networkSink.write(entry)).toEqual({ ok: false, current: 'MOVED' });
+    expect(net.save, 'a moved note must not be overwritten').not.toHaveBeenCalled();
+  });
+
+  // A deleted note must not come back, and the writing must not vanish with
+  // it — so it goes to a conflict copy.
+  it('conflicts rather than resurrecting a note that was deleted', async () => {
+    net.read.mockRejectedValue(answered(404));
+    expect(await networkSink.write(entry)).toEqual({ ok: false, current: '' });
+    expect(net.save, 'a deleted note must not be written back').not.toHaveBeenCalled();
+  });
+
+  // The defect: a failed read was treated as "no current file", and the whole
+  // body was written over whatever was really there.
+  it('raises on a read it cannot interpret, leaving the entry queued', async () => {
+    net.read.mockRejectedValue(answered(500));
+    await expect(networkSink.write(entry)).rejects.toThrow();
+    expect(net.save, 'a 500 is not consent to overwrite').not.toHaveBeenCalled();
+  });
+
+  it('takes a free name when a conflict copy already exists for today', async () => {
+    // The dated name reads back, so it is taken; the numbered one does not.
+    net.read
+      .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // base name taken
+      .mockRejectedValueOnce(answered(404)); // " 2" is free
+    net.save.mockResolvedValue(undefined);
+
+    const copy = await networkSink.writeConflictCopy(entry);
+    expect(copy).toMatch(/ 2\.md$/);
+    expect(net.save).toHaveBeenCalledWith(copy, 'mine');
+  });
+});
+
+describe('a read prefers writing the daemon has not received', () => {
+  it('returns the queued body, not the stale mirror', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    await readNote(PATH, KILN); // the mirror now holds "original"
+
+    net.save.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'MY OFFLINE EDIT', base: 'h0', kiln: KILN });
+
+    net.read.mockRejectedValue(new TypeError('Failed to fetch'));
+    const back = await readNote(PATH, KILN);
+    expect(back.content, 'the queued edit outranks the mirror').toBe('MY OFFLINE EDIT');
   });
 });

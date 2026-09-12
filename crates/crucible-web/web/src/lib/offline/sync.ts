@@ -6,8 +6,16 @@ import {
 } from '@/lib/api';
 import { daemonIdentity } from '@/lib/offline/identity';
 import { keptMode } from '@/lib/offline/kept';
+import { notificationActions } from '@/stores/notificationStore';
 import { forgetKiln, mirrorKiln, readMirrored, type MirrorSource } from '@/lib/offline/mirror';
-import { conflictCopyPath, drainOutbox, isQueued, queueWrite, type OutboxSink } from '@/lib/offline/outbox';
+import {
+  conflictCopyPath,
+  drainOutbox,
+  isQueued,
+  queueWrite,
+  readQueued,
+  type OutboxSink,
+} from '@/lib/offline/outbox';
 import { idbStore, type OfflineStore } from '@/lib/offline/store';
 
 /**
@@ -57,12 +65,30 @@ export const networkSource: MirrorSource = {
   },
 };
 
+/** Whether an error is the daemon saying the path is not there. */
+function isMissing(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { status?: number }).status === 404;
+}
+
 export const networkSink: OutboxSink = {
   write: async (entry) => {
-    // The whole note, anchored on the hash it was edited from: the daemon
-    // compares that to the bytes on disk inside its own read-modify-write.
-    const current = await getFileWithHash(entry.path).catch(() => null);
-    if (current && current.content_hash !== entry.base) {
+    // `PUT /api/kiln/file` carries no hash and writes blind, so THIS compare
+    // is the only guard there is. A read that fails is not consent to write:
+    //
+    //  - 404, the note was deleted meanwhile. Writing it back would resurrect
+    //    it, so the writing goes to a conflict copy instead — it is the
+    //    user's, and it must not vanish with the note.
+    //  - anything else — a 500, a blip — is unknown ground. Throwing leaves
+    //    the entry queued for the next drain. Treating it as "no current
+    //    file" used to overwrite another writer with no conflict copy at all.
+    let current: { content_hash: string } | null = null;
+    try {
+      current = await getFileWithHash(entry.path);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      return { ok: false, current: '' };
+    }
+    if (current.content_hash !== entry.base) {
       return { ok: false, current: current.content_hash };
     }
     await saveFileContent(entry.path, entry.body);
@@ -70,11 +96,39 @@ export const networkSink: OutboxSink = {
     return { ok: true, hash: after.content_hash };
   },
   writeConflictCopy: async (entry) => {
-    const copy = conflictCopyPath(entry.path, new Date(entry.queuedAt));
+    // A free name, not merely a dated one. The stamp is a DATE, so a second
+    // conflict on the same note on the same day produced the same path and
+    // the PUT destroyed the first copy — the only place that writing existed.
+    const copy = await freeConflictPath(entry.path, new Date(entry.queuedAt));
     await saveFileContent(copy, entry.body);
     return copy;
   },
 };
+
+/** The first conflict-copy path nothing occupies. */
+async function freeConflictPath(path: string, when: Date): Promise<string> {
+  const base = conflictCopyPath(path, when);
+  for (let n = 1; n <= 50; n += 1) {
+    const candidate = n === 1 ? base : numbered(base, n);
+    try {
+      await getFileWithHash(candidate);
+    } catch (error) {
+      // Nothing there: the name is free. Any other failure means we cannot
+      // tell, and guessing risks overwriting — fall through to a stamp that
+      // cannot collide.
+      if (isMissing(error)) return candidate;
+      break;
+    }
+  }
+  return numbered(conflictCopyPath(path, when), Date.now());
+}
+
+function numbered(path: string, n: number): string {
+  const dot = path.lastIndexOf('.');
+  return dot > path.lastIndexOf('/')
+    ? `${path.slice(0, dot)} ${n}${path.slice(dot)}`
+    : `${path} ${n}`;
+}
 
 /**
  * Whether a failure means "the daemon never answered".
@@ -144,7 +198,17 @@ export async function readNote(
     }
   }
   try {
-    const mirrored = await readMirrored(offlineStore(), path);
+    const db = offlineStore();
+    // Writing this device has not sent yet OUTRANKS the mirror. The mirror is
+    // the daemon's copy; the outbox is the user's own text, and it exists
+    // nowhere else. Reading past it showed the stale body after an offline
+    // save — and because the buffer had already gone clean, editing from
+    // there replaced the queued writing with an edit of the older text.
+    const queued = await readQueued(db, path);
+    if (queued) {
+      return { content: queued.body, content_hash: queued.base, fromMirror: true };
+    }
+    const mirrored = await readMirrored(db, path);
     if (mirrored) {
       return { content: mirrored.body, content_hash: mirrored.hash, fromMirror: true };
     }
@@ -196,7 +260,23 @@ export async function writeNote(opts: {
 
 /** Send everything queued for the daemon now answering. */
 export async function syncNow() {
-  return drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
+  const result = await drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
+  // A conflict copy is the one outcome a user MUST be told about: their text
+  // did not land on the note they wrote it in, and nothing else on screen
+  // says so — the queue count drops either way. Every caller discarded this.
+  for (const copy of result.conflicted) {
+    notificationActions.addNotification(
+      'warning',
+      `The note changed elsewhere. Your version was saved as ${copy.split('/').pop()}`,
+    );
+  }
+  if (result.foreign > 0) {
+    notificationActions.addNotification(
+      'warning',
+      `${result.foreign} unsent edit(s) belong to a different daemon and were not sent.`,
+    );
+  }
+  return result;
 }
 
 /** Fetch a kiln into the store, in the mode it is kept in. */

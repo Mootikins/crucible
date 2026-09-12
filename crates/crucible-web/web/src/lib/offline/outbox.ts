@@ -45,9 +45,21 @@ export interface DrainResult {
   /** Entries left alone because they belong to a different daemon. */
   foreign: number;
   failed: number;
+  /** Sent, but replaced by a newer save meanwhile: the newer one stays queued. */
+  superseded: number;
 }
 
-let nextSequence = 0;
+/**
+ * The next ordering number, read from what is stored.
+ *
+ * A module counter reset on every page load while the outbox survived it, so
+ * a write queued after a reload sorted BEFORE writes queued before it, and
+ * the drain replayed them out of order.
+ */
+async function nextSequence(store: OfflineStore): Promise<number> {
+  const held = await store.list<OutboxEntry>('outbox');
+  return held.reduce((top, e) => Math.max(top, e.value.sequence ?? 0), 0) + 1;
+}
 
 /** Queue a note's new text. Replaces an earlier queued write to the same note. */
 export async function queueWrite(
@@ -55,18 +67,27 @@ export async function queueWrite(
   entry: Omit<OutboxEntry, 'queuedAt' | 'sequence'>,
 ): Promise<void> {
   const existing = await store.get<OutboxEntry>('outbox', entry.path);
+  const sequence = await nextSequence(store);
   await store.put<OutboxEntry>('outbox', entry.path, {
     ...entry,
     // The base is what the user edited FROM, so the FIRST queue wins it.
     base: existing?.base ?? entry.base,
     queuedAt: Date.now(),
-    sequence: existing?.sequence ?? (nextSequence += 1),
+    // A REPLACEMENT takes a new sequence. A drain that is mid-flight over the
+    // old one compares this before it deletes, and leaves the newer writing
+    // alone. Reusing the sequence made the two indistinguishable.
+    sequence,
   });
 }
 
 /** Whether a path has writing the daemon has not received. */
 export async function isQueued(store: OfflineStore, path: string): Promise<boolean> {
   return (await store.get<OutboxEntry>('outbox', path)) !== null;
+}
+
+/** The writing queued for a path, or null. What a read must prefer. */
+export function readQueued(store: OfflineStore, path: string): Promise<OutboxEntry | null> {
+  return store.get<OutboxEntry>('outbox', path);
 }
 
 export async function queuedCount(store: OfflineStore): Promise<number> {
@@ -89,7 +110,7 @@ export async function drainOutbox(
   const entries = (await store.list<OutboxEntry>('outbox')).map((e) => e.value);
   entries.sort((a, b) => a.sequence - b.sequence);
 
-  const result: DrainResult = { sent: 0, conflicted: [], foreign: 0, failed: 0 };
+  const result: DrainResult = { sent: 0, conflicted: [], foreign: 0, failed: 0, superseded: 0 };
 
   for (const entry of entries) {
     if (!sameDaemon(entry.daemon, daemon)) {
@@ -105,12 +126,12 @@ export async function drainOutbox(
           kiln: entry.kiln,
           mirroredAt: Date.now(),
         });
-        await store.remove('outbox', entry.path);
-        result.sent += 1;
+        if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
+        else result.sent += 1;
       } else {
         const copy = await sink.writeConflictCopy(entry);
         // Only now: if the copy failed, the writing is still queued.
-        await store.remove('outbox', entry.path);
+        if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
         result.conflicted.push(copy);
       }
     } catch {
@@ -119,6 +140,24 @@ export async function drainOutbox(
     }
   }
   return result;
+}
+
+/**
+ * Drop an entry ONLY if it is still the one that was sent.
+ *
+ * A drain awaits the network, and a save during that await replaces the
+ * entry at the same key. Removing by path alone then deleted the NEWER
+ * writing — which existed nowhere else, because the editor had already
+ * cleared its buffer. `sequence` is stable for the life of an entry and is
+ * reissued when a queue replaces one, so it identifies which is which.
+ *
+ * Answers false when the entry was replaced, and leaves the newer one queued.
+ */
+async function clearIfUnchanged(store: OfflineStore, sent: OutboxEntry): Promise<boolean> {
+  const held = await store.get<OutboxEntry>('outbox', sent.path);
+  if (!held || held.sequence !== sent.sequence || held.queuedAt !== sent.queuedAt) return false;
+  await store.remove('outbox', sent.path);
+  return true;
 }
 
 /** The name a losing copy takes, beside the note it lost to. */

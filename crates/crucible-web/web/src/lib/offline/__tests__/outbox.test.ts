@@ -14,6 +14,12 @@ const DAEMON = 'http://host|/etc/crucible';
 const KILN = '/kilns/notes';
 const PATH = `${KILN}/Note.md`;
 
+/** A sink that accepts everything. */
+const okSink = (): OutboxSink => ({
+  write: async () => ({ ok: true, hash: 'h1' }),
+  writeConflictCopy: async () => 'copy',
+});
+
 let store: OfflineStore;
 beforeEach(() => {
   store = memoryStore();
@@ -146,5 +152,64 @@ describe('conflictCopyPath', () => {
     expect(conflictCopyPath(`${KILN}/README`, new Date('2026-09-12T10:00:00Z'))).toBe(
       `${KILN}/README (conflict, phone, 2026-09-12)`,
     );
+  });
+
+  /**
+   * A drain awaits the network. A save during that await replaces the entry
+   * at the same key, and removing by path alone deleted the NEWER writing —
+   * which existed nowhere else, because the editor had already gone clean.
+   */
+  it('does not delete a write that arrived while the send was in flight', async () => {
+    const store = memoryStore();
+    await queueWrite(store, { path: PATH, body: 'first', base: 'h0', kiln: KILN, daemon: DAEMON });
+
+    let release: () => void = () => {};
+    const inFlight = new Promise<void>((r) => (release = r));
+    const sink: OutboxSink = {
+      write: async () => {
+        await inFlight; // the user saves again while this is out
+        return { ok: true, hash: 'h1' };
+      },
+      writeConflictCopy: async () => 'copy',
+    };
+
+    const draining = drainOutbox(store, sink, DAEMON);
+    await queueWrite(store, {
+      path: PATH,
+      body: 'SECOND EDIT',
+      base: 'h0',
+      kiln: KILN,
+      daemon: DAEMON,
+    });
+    release();
+    const result = await draining;
+
+    const held = await store.get<OutboxEntry>('outbox', PATH);
+    expect(held?.body, 'the newer writing must survive the older send').toBe('SECOND EDIT');
+    expect(result.superseded).toBe(1);
+    expect(result.sent).toBe(0);
+  });
+
+  it('still clears an entry nothing replaced', async () => {
+    const store = memoryStore();
+    await queueWrite(store, { path: PATH, body: 'only', base: 'h0', kiln: KILN, daemon: DAEMON });
+    const result = await drainOutbox(store, okSink(), DAEMON);
+
+    expect(await store.get('outbox', PATH)).toBeNull();
+    expect(result).toMatchObject({ sent: 1, superseded: 0 });
+  });
+
+  // The outbox survives a reload; a module counter did not, so a write queued
+  // after one sorted before writes queued before it.
+  it('orders by what is stored, not by a counter that a reload resets', async () => {
+    const store = memoryStore();
+    await queueWrite(store, { path: `${KILN}/a.md`, body: 'a', base: '', kiln: KILN, daemon: DAEMON });
+    const first = await store.get<OutboxEntry>('outbox', `${KILN}/a.md`);
+
+    // A fresh page load cannot lower the next sequence below what is held.
+    await queueWrite(store, { path: `${KILN}/b.md`, body: 'b', base: '', kiln: KILN, daemon: DAEMON });
+    const second = await store.get<OutboxEntry>('outbox', `${KILN}/b.md`);
+
+    expect(second!.sequence).toBeGreaterThan(first!.sequence);
   });
 });
