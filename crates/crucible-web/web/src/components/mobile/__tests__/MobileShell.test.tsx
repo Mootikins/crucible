@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 
+// This shell only ever draws on a phone, so the device store says so here.
+vi.mock('@/stores/deviceStore', () => ({ isCompact: () => true }));
+
 // The drawers' panels need every context; the shell's own job is the frame.
-vi.mock('@/components/SessionsPanel', () => ({
-  SessionsPanel: () => <div data-testid="sessions-panel" />,
+vi.mock('@/components/mobile/SessionsTab', () => ({
+  SessionsTab: () => <div data-testid="sessions-panel" />,
 }));
 vi.mock('@/components/FilesPanel', () => ({
   FilesPanel: () => <div data-testid="files-panel" />,
@@ -14,6 +17,7 @@ vi.mock('@/components/BacklinksPanel', () => ({
 
 import { MobileShell } from '@/components/mobile/MobileShell';
 import { tabStackActions } from '@/stores/tabStackStore';
+import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import type { Tab } from '@/types/windowTypes';
 
 const noteTab = (id: string, title: string): Tab => ({
@@ -23,9 +27,19 @@ const noteTab = (id: string, title: string): Tab => ({
   metadata: { filePath: `/kiln/${id}.md` },
 });
 
+const Stub = () => <div />;
+
 beforeEach(() => {
   localStorage.clear();
   tabStackActions.reset();
+  // The app registers panels at boot; the shell reads that registry.
+  resetGlobalRegistry();
+  const registry = getGlobalRegistry();
+  registry.register('search', 'Search', Stub, 'center');
+  registry.register('settings', 'Settings', Stub, 'center');
+  registry.register('terminal', 'Terminal', Stub, 'right');
+  registry.register('canvas', 'Canvas', Stub, 'center');
+  registry.register('files', 'Files', Stub, 'right');
 });
 
 const isOpen = (side: 'left' | 'right') =>
@@ -84,6 +98,29 @@ describe('MobileShell', () => {
     for (const name of ['Sessions', 'Files']) {
       expect(screen.getByRole('tab', { name }).className).toMatch(/\bh-11\b/);
     }
+  });
+});
+
+describe('MobileShell overflow menu', () => {
+  // Everything that is not a picker and not the note's context: a user visits
+  // these, so they open as a content tab rather than living in a drawer.
+  it('opens a panel as a content tab', () => {
+    render(() => <MobileShell />);
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(tabStackActions.activeTab()?.contentType).toBe('search');
+    // The menu closes behind the choice.
+    expect(screen.queryByRole('button', { name: 'Search' })).toBeNull();
+  });
+
+  it('offers the panels a phone can draw, and not the ones it cannot', () => {
+    render(() => <MobileShell />);
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    const labels = screen.getAllByRole('button').map((b) => b.textContent);
+    expect(labels).toContain('Search');
+    expect(labels).toContain('Settings');
+    expect(labels).not.toContain('Terminal');
+    expect(labels).not.toContain('Canvas');
   });
 });
 

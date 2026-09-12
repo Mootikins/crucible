@@ -1,0 +1,157 @@
+import { Component, For, Show, createMemo, createSignal, onMount } from 'solid-js';
+import { useSessionSafe } from '@/contexts/SessionContext';
+import { useProjectSafe } from '@/contexts/ProjectContext';
+import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
+import { SessionStatusDot } from '@/components/shell/SessionStatusDot';
+import { sessionDisplayTitle } from '@/lib/session-display';
+import { sessionWorkspace } from '@/lib/session-scope';
+import { sessionStatus } from '@/lib/session-status';
+import { inboxSessions } from '@/lib/session-inbox';
+import { terseAge } from '@/lib/format-time';
+import { ChevronDown, Plus } from '@/lib/icons';
+import type { Session } from '@/lib/types';
+
+/** The switcher's "every project" choice. Not a path, so it collides with none. */
+const ALL_PROJECTS = '__all__';
+
+/**
+ * The phone's Sessions tab: one project at a time, with a switcher.
+ *
+ * The desktop rail nests every project's sessions in one tree. On a phone that
+ * tree is too long to scan, so the header chooses a project and the list below
+ * shows its sessions, most recent first. **The switcher is what lets a user
+ * leave the recency list** — without it a phone can only reach what it touched
+ * last.
+ *
+ * The Inbox ignores the switcher: a session waiting on the user matters
+ * whatever project is on screen, so it stays cross-project, as on the desktop.
+ */
+export const SessionsTab: Component = () => {
+  const { sessions, currentSession, selectSession, refreshSessions } = useSessionSafe();
+  const { projects, currentProject, selectProject } = useProjectSafe();
+  const [picking, setPicking] = createSignal(false);
+  const [scope, setScope] = createSignal<string | null>(null);
+
+  onMount(() => refreshSessions({ includeArchived: false }));
+
+  /** The project on screen: the user's pick, else the app's current project. */
+  const chosen = () => scope() ?? currentProject()?.path ?? ALL_PROJECTS;
+  const chosenName = () =>
+    chosen() === ALL_PROJECTS
+      ? 'All projects'
+      : (projects().find((p) => p.path === chosen())?.name ?? chosen());
+
+  const active = createMemo(() => sessions().filter((s) => !s.archived));
+  const inbox = createMemo(() => inboxSessions(active()));
+  const listed = createMemo(() => {
+    const target = chosen();
+    const all = [...active()].sort(
+      (a, b) =>
+        (Date.parse(b.last_activity ?? b.started_at) || 0) -
+        (Date.parse(a.last_activity ?? a.started_at) || 0),
+    );
+    return target === ALL_PROJECTS ? all : all.filter((s) => sessionWorkspace(s) === target);
+  });
+
+  const projectOf = (s: Session) => {
+    const workspace = sessionWorkspace(s);
+    return projects().find((p) => p.path === workspace)?.name ?? null;
+  };
+
+  const Row = (props: { session: Session; showProject?: boolean }) => (
+    <button
+      type="button"
+      class={`w-full h-11 px-3 flex items-center gap-2 rounded text-left focus-ring ${
+        currentSession()?.id === props.session.id ? 'bg-primary/10' : 'hover:bg-hover-wash'
+      }`}
+      data-session-id={props.session.id}
+      onClick={() => void selectSession(props.session.id)}
+    >
+      <SessionStatusDot status={sessionStatus(props.session)} />
+      <span class="flex-1 min-w-0 truncate text-sm text-shell-body">
+        {sessionDisplayTitle(props.session)}
+      </span>
+      <Show when={props.showProject && projectOf(props.session)}>
+        {(name) => <span class="text-xs text-muted-dark shrink-0 truncate max-w-24">{name()}</span>}
+      </Show>
+      <span class="text-xs text-muted-dark shrink-0">
+        {terseAge(props.session.last_activity ?? props.session.started_at)}
+      </span>
+    </button>
+  );
+
+  return (
+    <div class="flex-1 min-h-0 flex flex-col">
+      <div class="shrink-0 flex items-center gap-1 px-2 py-1 border-b border-hairline">
+        <button
+          type="button"
+          aria-label={`Project: ${chosenName()}`}
+          class="flex-1 h-11 px-2 flex items-center gap-1 rounded text-left text-sm font-medium text-shell-ink hover:bg-hover-wash focus-ring"
+          onClick={() => setPicking(true)}
+        >
+          <span class="flex-1 truncate">{chosenName()}</span>
+          <ChevronDown class="w-4 h-4 shrink-0 text-muted-dark" />
+        </button>
+        <Show when={chosen() !== ALL_PROJECTS}>
+          <button
+            type="button"
+            aria-label={`New session in ${chosenName()}`}
+            class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent('crucible:new-session', { detail: { workspace: chosen() } }),
+              )
+            }
+          >
+            <Plus class="w-5 h-5" />
+          </button>
+        </Show>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-y-auto p-1">
+        <Show when={inbox().length > 0}>
+          <section data-testid="compact-inbox" class="mb-2">
+            <h2 class="px-3 py-1 text-xs uppercase tracking-wide text-muted-dark">
+              Inbox ({inbox().length})
+            </h2>
+            <For each={inbox()}>{(s) => <Row session={s} showProject />}</For>
+          </section>
+        </Show>
+
+        <section>
+          <h2 class="px-3 py-1 text-xs uppercase tracking-wide text-muted-dark">{chosenName()}</h2>
+          <For each={listed()}>
+            {(s) => <Row session={s} showProject={chosen() === ALL_PROJECTS} />}
+          </For>
+          <Show when={listed().length === 0}>
+            <p class="px-3 py-6 text-center text-sm text-muted-dark">No sessions here yet.</p>
+          </Show>
+        </section>
+      </div>
+
+      <BottomSheet open={picking()} label="Choose a project" onClose={() => setPicking(false)}>
+        <SheetOption
+          label="All projects"
+          selected={chosen() === ALL_PROJECTS}
+          onSelect={() => {
+            setScope(ALL_PROJECTS);
+            setPicking(false);
+          }}
+        />
+        <For each={projects()}>
+          {(project) => (
+            <SheetOption
+              label={project.name || project.path}
+              selected={chosen() === project.path}
+              onSelect={() => {
+                setScope(project.path);
+                void selectProject(project.path);
+                setPicking(false);
+              }}
+            />
+          )}
+        </For>
+      </BottomSheet>
+    </div>
+  );
+};

@@ -1,18 +1,40 @@
-import { Component, Show, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js';
+import { Component, For, Show, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js';
 import { ContentSurface } from '@/components/mobile/ContentSurface';
 import { Drawer } from '@/components/mobile/Drawer';
 import { createEdgeSwipe, type SwipePoint } from '@/components/mobile/edge-swipe';
 import type { DrawerSide } from '@/components/mobile/drawer-gesture';
-import { SessionsPanel } from '@/components/SessionsPanel';
+import { SessionsTab } from '@/components/mobile/SessionsTab';
 import { FilesPanel } from '@/components/FilesPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { DrawerTabs } from '@/components/mobile/DrawerTabs';
-import { FolderTree, Link2 } from '@/lib/icons';
+import { FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
 import { TabOverview } from '@/components/mobile/TabOverview';
 import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
+import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
+import { openPanelTab } from '@/lib/panel-actions';
+import { getGlobalRegistry } from '@/lib/panel-registry';
 import { navStack } from '@/components/mobile/NavStack';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
 import { LayoutDashboard } from '@/lib/icons';
+
+/**
+ * Panels the overflow menu does NOT offer.
+ *
+ * The two drawers already hold sessions, files and backlinks. The rest are
+ * either undrawable on a phone — a terminal needs a keyboard, a canvas needs
+ * drag and a large field — or they open with a target rather than from a menu
+ * (a file, a chat, the draft).
+ */
+const NOT_IN_MENU = new Set([
+  'sessions',
+  'files',
+  'backlinks',
+  'terminal',
+  'canvas',
+  'file',
+  'chat',
+  'chat-draft',
+]);
 
 /** `min(85vw, 320px)`, in px, because the swipe measures against it. */
 const drawerWidthFor = (viewport: number) => Math.min(Math.round(viewport * 0.85), 320);
@@ -28,6 +50,12 @@ const drawerWidthFor = (viewport: number) => Math.min(Math.round(viewport * 0.85
 export const MobileShell: Component = () => {
   const activeTab = () => tabStackActions.activeTab();
   const [overviewOpen, setOverviewOpen] = createSignal(false);
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const menuPanels = () =>
+    getGlobalRegistry()
+      .list()
+      .filter((def) => !NOT_IN_MENU.has(def.id))
+      .sort((a, b) => a.title.localeCompare(b.title));
 
   // Each move to a tab gets a history entry, so the phone's back button walks
   // the tabs a user has seen before it leaves the app. `back()` answers false
@@ -144,6 +172,14 @@ export const MobileShell: Component = () => {
             <span class="text-xs tabular-nums">{tabStack.tabs.length}</span>
           </button>
         </Show>
+        <button
+          type="button"
+          aria-label="More"
+          class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+          onClick={() => setMenuOpen(true)}
+        >
+          <MoreHorizontal class="w-5 h-5" />
+        </button>
         <DrawerButton side="right" label="Backlinks" icon={Link2} />
       </header>
       <main
@@ -175,6 +211,19 @@ export const MobileShell: Component = () => {
         />
         </Show>
       </main>
+      <BottomSheet open={menuOpen()} label="More" onClose={() => setMenuOpen(false)}>
+        <For each={menuPanels()}>
+          {(def) => (
+            <SheetOption
+              label={def.title}
+              onSelect={() => {
+                setMenuOpen(false);
+                openPanelTab(def.id as Parameters<typeof openPanelTab>[0]);
+              }}
+            />
+          )}
+        </For>
+      </BottomSheet>
       <div data-drawer-part="left">
         <Drawer
           side="left"
@@ -187,7 +236,7 @@ export const MobileShell: Component = () => {
           <DrawerTabs
             label="Sessions and files"
             tabs={[
-              { id: 'sessions', label: 'Sessions', content: () => <SessionsPanel /> },
+              { id: 'sessions', label: 'Sessions', content: () => <SessionsTab /> },
               { id: 'files', label: 'Files', content: () => <FilesPanel /> },
             ]}
           />

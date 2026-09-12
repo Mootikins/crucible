@@ -1,0 +1,110 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@solidjs/testing-library';
+import type { Project, Session } from '@/lib/types';
+
+const state = vi.hoisted(() => ({
+  sessions: [] as Session[],
+  projects: [] as Project[],
+  currentProject: null as Project | null,
+  selected: [] as string[],
+  waiting: [] as string[],
+}));
+
+vi.mock('@/contexts/SessionContext', () => ({
+  useSessionSafe: () => ({
+    sessions: () => state.sessions,
+    currentSession: () => null,
+    selectSession: (id: string) => state.selected.push(id),
+    archiveSession: vi.fn(),
+    deleteSession: vi.fn(),
+    refreshSessions: vi.fn(),
+  }),
+}));
+vi.mock('@/contexts/ProjectContext', () => ({
+  useProjectSafe: () => ({
+    projects: () => state.projects,
+    currentProject: () => state.currentProject,
+    selectProject: (path: string) => {
+      state.currentProject = state.projects.find((p) => p.path === path) ?? null;
+    },
+  }),
+}));
+vi.mock('@/lib/session-status', () => ({
+  sessionStatus: (s: Session) => (state.waiting.includes(s.id) ? 'waiting' : 'idle'),
+  STATUS_RANK: { waiting: 0, working: 1, idle: 2 },
+}));
+
+import { SessionsTab } from '@/components/mobile/SessionsTab';
+
+const session = (id: string, workspace: string, title: string): Session =>
+  ({
+    id,
+    title,
+    started_at: new Date().toISOString(),
+    last_activity: new Date().toISOString(),
+    archived: false,
+    kilns: [],
+    metadata: { workspace },
+    workspace,
+  }) as unknown as Session;
+
+beforeEach(() => {
+  state.projects = [
+    { path: '/work/alpha', name: 'alpha', kilns: [] } as unknown as Project,
+    { path: '/work/beta', name: 'beta', kilns: [] } as unknown as Project,
+  ];
+  state.currentProject = state.projects[0];
+  state.sessions = [
+    session('a1', '/work/alpha', 'Alpha one'),
+    session('b1', '/work/beta', 'Beta one'),
+  ];
+  state.selected = [];
+  state.waiting = [];
+});
+
+describe('SessionsTab', () => {
+  it('lists only the chosen project’s sessions', () => {
+    render(() => <SessionsTab />);
+    expect(screen.queryByText('Alpha one')).toBeTruthy();
+    expect(screen.queryByText('Beta one')).toBeNull();
+  });
+
+  // The whole point of the switcher: a recency list cannot reach the rest.
+  it('switches projects, and shows that project’s sessions', () => {
+    render(() => <SessionsTab />);
+    fireEvent.click(screen.getByRole('button', { name: /Project: alpha/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'beta' }));
+    expect(screen.queryByText('Beta one')).toBeTruthy();
+    expect(screen.queryByText('Alpha one')).toBeNull();
+  });
+
+  it('shows every project at once when asked', () => {
+    render(() => <SessionsTab />);
+    fireEvent.click(screen.getByRole('button', { name: /Project: alpha/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    expect(screen.queryByText('Alpha one')).toBeTruthy();
+    expect(screen.queryByText('Beta one')).toBeTruthy();
+  });
+
+  // A session waiting on the user matters whatever project is on screen.
+  it('keeps the Inbox across projects', () => {
+    state.waiting = ['b1'];
+    render(() => <SessionsTab />);
+    const inbox = screen.getByTestId('compact-inbox');
+    expect(inbox.textContent).toContain('Beta one');
+  });
+
+  it('opens a session when a row is tapped', () => {
+    render(() => <SessionsTab />);
+    fireEvent.click(screen.getByText('Alpha one'));
+    expect(state.selected).toEqual(['a1']);
+  });
+
+  it('starts a new session aimed at the chosen project', () => {
+    const events: unknown[] = [];
+    window.addEventListener('crucible:new-session', (e) => events.push((e as CustomEvent).detail));
+    render(() => <SessionsTab />);
+    fireEvent.click(screen.getByRole('button', { name: 'New session in alpha' }));
+    expect(events).toEqual([{ workspace: '/work/alpha' }]);
+  });
+});

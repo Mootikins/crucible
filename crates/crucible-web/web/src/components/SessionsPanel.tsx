@@ -7,10 +7,8 @@ import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { PanelShell } from './PanelShell';
 import { TreeSection } from '@/components/tree/TreeSection';
 import { sessionStatus } from '@/lib/session-status';
+import { inboxSessions } from '@/lib/session-inbox';
 import { SessionRow, SessionTree } from './SessionTree';
-
-/** How long a session stays in the Inbox after its last message. */
-const INBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const byRecency = (a: Session, b: Session) =>
   (Date.parse(b.last_activity ?? b.started_at) || 0) - (Date.parse(a.last_activity ?? a.started_at) || 0);
@@ -91,7 +89,7 @@ export const SessionsPanel: Component = () => {
   const activeList = createMemo(() => sessions().filter((s) => !s.archived).sort(byRecency));
 
   /**
-   * The Inbox: sessions doing something, freshest first.
+   * The Inbox — see `lib/session-inbox.ts`, which both shells share.
    *
    * Membership is "not idle AND touched in the last day". The staleness rule
    * is what keeps it an inbox rather than a second session list — an agent
@@ -99,13 +97,7 @@ export const SessionsPanel: Component = () => {
    * in, it would sit at the top of the rail forever. It stays reachable in the
    * tree below, under its own project.
    */
-  const inbox = createMemo(() =>
-    activeList().filter((s) => {
-      if (sessionStatus(s) === 'idle') return false;
-      const touched = Date.parse(s.last_activity ?? s.started_at);
-      return !Number.isNaN(touched) && Date.now() - touched < INBOX_MAX_AGE_MS;
-    }),
-  );
+  const inbox = createMemo(() => inboxSessions(activeList()));
   const waitingCount = () => inbox().filter((s) => sessionStatus(s) === 'waiting').length;
   const archivedList = createMemo(() => sessions().filter((s) => s.archived).sort(byRecency));
 
