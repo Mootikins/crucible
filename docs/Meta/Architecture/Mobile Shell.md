@@ -19,7 +19,10 @@ of this note took that line at face value and re-derived decisions the log had
 already made, with weaker evidence. The line now points at the record. Section 2a lists where this draft now departs from
 the record, so none of the departures is silent.
 
-Nothing here is built yet. Read it as a proposal. See [[Web User Stories]] for
+**Track A — the `P2` shell — is built as of 2026-09-11**: the shell switch, the
+drawers, the tab stack and its host, the project switcher, the overflow menu,
+the plain editor and the three-step session flow. Sections 11 and 13 (offline,
+and the note-write primitive) are NOT built; they are the `P3` entries. See [[Web User Stories]] for
 the story format that the work must add to, and [[State Stores]] for the store
 conventions.
 
@@ -453,7 +456,7 @@ keeps each tree short.
 
 ### Vim mode is a separate setting, off by default on a phone
 
-**Decided 2026-09-11, and recorded in the decision log.** The P2 record said
+**Built 2026-09-11; the decision log records it.** The P2 record said
 "no vim mode". It now says vim is off by default on the compact shell, with its
 own setting. A user who pairs a keyboard with a tablet can still turn it on.
 
