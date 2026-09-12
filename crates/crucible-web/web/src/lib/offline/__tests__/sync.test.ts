@@ -3,20 +3,33 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const net = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
+  list: vi.fn(async (_kiln: string) => [] as unknown[]),
   online: true,
 }));
 vi.mock('@/lib/api', () => ({
   getFileWithHash: (p: string) => net.read(p),
   saveFileContent: (p: string, c: string) => net.save(p, c),
   getFileContent: async () => '',
-  listNotes: async () => [],
+  listNotes: (k: string) => net.list(k),
   rawFileUrl: (p: string) => `/raw?${p}`,
-  getConfig: async () => ({ config_root: '/etc/crucible' }),
+  getConfig: async () => {
+    // The real one is a plain fetch with no service-worker cache, so it
+    // THROWS offline. A mock that always resolves hides the whole defect.
+    if (!net.online) throw new TypeError('Failed to fetch');
+    return { config_root: '/etc/crucible' };
+  },
 }));
 
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
-import { readNote, setOfflineStore, writeNote } from '@/lib/offline/sync';
+import {
+  networkSource,
+  readNote,
+  setOfflineStore,
+  syncNow,
+  warmIdentity,
+  writeNote,
+} from '@/lib/offline/sync';
 
 const KILN = '/kilns/notes';
 const PATH = `${KILN}/Note.md`;
@@ -95,5 +108,67 @@ describe('writeNote', () => {
     await expect(writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).rejects.toThrow(
       'disk is full',
     );
+  });
+});
+
+/**
+ * The wire shape, not a convenient one.
+ *
+ * `GET /api/notes` sends a path RELATIVE to the kiln. The mirror is read by
+ * the ABSOLUTE path the editor holds, so a source that forwards the wire's
+ * path unchanged stores every note under a key no read asks for — and its
+ * own fill read 404s first. The old fixture for this used absolute paths and
+ * could not see either failure.
+ */
+describe('networkSource reads the wire shape', () => {
+  it('makes a kiln-relative note path absolute', async () => {
+    net.list.mockResolvedValue([
+      { name: 'Seed', path: 'Seed.md', title: 'Seed', tags: [] },
+      { name: 'Deep', path: 'sub/Deep.md', title: null, tags: [] },
+    ]);
+
+    expect((await networkSource.listNotes(KILN)).map((n) => n.path)).toEqual([
+      `${KILN}/Seed.md`,
+      `${KILN}/sub/Deep.md`,
+    ]);
+  });
+
+  it('leaves a path that is already absolute alone', async () => {
+    net.list.mockResolvedValue([{ name: 'A', path: `${KILN}/A.md`, title: null, tags: [] }]);
+    expect((await networkSource.listNotes(KILN))[0].path).toBe(`${KILN}/A.md`);
+  });
+});
+
+/**
+ * The round trip the feature exists for: edit with no network, reconnect,
+ * and watch the write land.
+ *
+ * This is the gate that was missing. `outbox.test.ts` proves the foreign
+ * guard refuses a stranger, but it hand-writes `daemon` on every fixture, so
+ * it never asked whether the PRODUCER can satisfy the guard it is testing.
+ * It could not: the identity came from a live fetch that fails offline, so
+ * every queued write was stamped empty and skipped by every drain, forever.
+ */
+describe('a write queued offline reaches the daemon on reconnect', () => {
+  it('drains what it queued, rather than calling it foreign', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    // What the app does while the network is up: the badge warms on mount and
+    // on reconnect, and keeping a kiln warms too.
+    await warmIdentity();
+
+    net.online = false;
+    net.save.mockRejectedValue(new TypeError('Failed to fetch'));
+    expect(await writeNote({ path: PATH, body: 'OFFLINE EDIT', base: 'h0', kiln: KILN })).toEqual({
+      queued: true,
+    });
+
+    net.online = true;
+    net.save.mockResolvedValue(undefined);
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+
+    const result = await syncNow();
+    expect(result.foreign, 'a write this device queued is not from a foreign daemon').toBe(0);
+    expect(result.sent).toBe(1);
+    expect(net.save).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT');
   });
 });

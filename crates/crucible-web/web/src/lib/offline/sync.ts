@@ -1,5 +1,4 @@
 import {
-  getConfig,
   getFileWithHash,
   listNotes,
   rawFileUrl,
@@ -30,11 +29,23 @@ export function setOfflineStore(next: OfflineStore | null): void {
   store = next;
 }
 
+/** A kiln-relative note path, made absolute. Already-absolute passes through. */
+export function joinKiln(kiln: string, notePath: string): string {
+  if (notePath.startsWith('/')) return notePath;
+  return `${kiln.replace(/\/$/, '')}/${notePath.replace(/^\.?\//, '')}`;
+}
+
 export const networkSource: MirrorSource = {
+  // `NoteEntry.path` is RELATIVE to the kiln root. Everything downstream —
+  // the read that fills the mirror, the key it is stored under, the directory
+  // an attachment resolves against — works in absolute paths, because that is
+  // what the editor holds. Joining here is what makes a kept kiln readable:
+  // unjoined, every read 404s and every note lands under a key no lookup asks
+  // for, so the kiln caches nothing and reports every file as failed.
   listNotes: async (kiln) =>
     (await listNotes(kiln)).map((note) => ({
       name: note.name,
-      path: note.path,
+      path: joinKiln(kiln, note.path),
       title: note.title,
       tags: note.tags,
     })),
@@ -171,7 +182,7 @@ export async function writeNote(opts: {
       body: opts.body,
       base: opts.base,
       kiln: opts.kiln ?? '',
-      daemon: await daemonIdentity(),
+      daemon: await daemonIdentity(offlineStore()),
     });
     return { queued: true };
   } catch (queueError) {
@@ -185,13 +196,16 @@ export async function writeNote(opts: {
 
 /** Send everything queued for the daemon now answering. */
 export async function syncNow() {
-  return drainOutbox(offlineStore(), networkSink, await daemonIdentity());
+  return drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
 }
 
 /** Fetch a kiln into the store, in the mode it is kept in. */
 export async function cacheKiln(kiln: string, onProgress?: (done: number, total: number) => void) {
   const mode = keptMode(kiln);
   if (!mode) throw new Error(`${kiln} is not kept offline`);
+  // Choosing to keep a kiln IS the declaration that this device will write
+  // offline against this daemon. Learn its identity now, while it answers.
+  await warmIdentity();
   return mirrorKiln(offlineStore(), networkSource, kiln, mode, (p) =>
     onProgress?.(p.done, p.total),
   );
@@ -241,7 +255,19 @@ export async function attachmentUrl(path: string, kiln: string | null): Promise<
   return url;
 }
 
-/** The config the identity is built from, prefetched so a drain can start. */
+/**
+ * Learn which daemon this is, while it can still be asked.
+ *
+ * Call this whenever the network is believed up. A write queued OFFLINE is
+ * stamped with the identity, and that is the one moment it cannot be fetched
+ * — so if nothing warmed it first, the stamp is empty and the write can never
+ * drain. Reading a note does not warm it: a read needs no identity, and
+ * spending a config fetch on every read to cover a write that may never come
+ * is the wrong trade.
+ *
+ * Cheap to repeat and safe to ignore: a failure means the daemon is not
+ * answering, which is the case the remembered value already covers.
+ */
 export async function warmIdentity(): Promise<void> {
-  await getConfig().catch(() => undefined);
+  await daemonIdentity(offlineStore()).catch(() => undefined);
 }

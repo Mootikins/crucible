@@ -1,7 +1,7 @@
 import { Component, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { Cloud } from '@/lib/icons';
 import { queuedCount } from '@/lib/offline/outbox';
-import { isOnline, offlineStore, syncNow } from '@/lib/offline/sync';
+import { isOnline, offlineStore, syncNow, warmIdentity } from '@/lib/offline/sync';
 
 /**
  * Whether this device can reach the daemon, and how much writing it owes it.
@@ -24,8 +24,12 @@ export const OfflineBadge: Component = () => {
 
   onMount(() => {
     void refresh();
+    // Learn the daemon's identity while it answers, so a write queued after
+    // the network drops carries a stamp a later drain will accept.
+    if (isOnline()) void warmIdentity().catch(() => undefined);
     const goOnline = () => {
       setOnline(true);
+      void warmIdentity().catch(() => undefined);
       // Reconnecting is exactly when the queue should empty.
       void syncNow().then(refresh).catch(() => undefined);
     };

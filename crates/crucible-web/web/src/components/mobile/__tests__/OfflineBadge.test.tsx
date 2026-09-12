@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@solidjs/testing-library';
 
-const state = vi.hoisted(() => ({ online: true, queued: 0, synced: 0 }));
+const state = vi.hoisted(() => ({ online: true, queued: 0, synced: 0, warmed: 0 }));
 vi.mock('@/lib/offline/sync', () => ({
   isOnline: () => state.online,
   offlineStore: () => ({}),
   syncNow: async () => {
     state.synced += 1;
     return { sent: 0, conflicted: [], foreign: 0, failed: 0 };
+  },
+  warmIdentity: async () => {
+    state.warmed += 1;
   },
 }));
 vi.mock('@/lib/offline/outbox', () => ({ queuedCount: async () => state.queued }));
@@ -18,6 +21,7 @@ beforeEach(() => {
   state.online = true;
   state.queued = 0;
   state.synced = 0;
+  state.warmed = 0;
 });
 
 describe('OfflineBadge', () => {
@@ -55,5 +59,22 @@ describe('OfflineBadge', () => {
     await waitFor(() => expect(screen.queryByTestId('offline-badge')).not.toBeNull());
     window.dispatchEvent(new Event('online'));
     await waitFor(() => expect(state.synced).toBe(1));
+  });
+
+  // A write queued OFFLINE is stamped with the daemon's identity, and that is
+  // the one moment it cannot be fetched. The badge is what learns it in time.
+  it('learns which daemon this is while the network is up', async () => {
+    render(() => <OfflineBadge />);
+    await waitFor(() => expect(state.warmed).toBeGreaterThan(0));
+  });
+
+  it('learns it again on reconnect, in case the daemon changed', async () => {
+    state.online = false;
+    render(() => <OfflineBadge />);
+    const before = state.warmed;
+
+    state.online = true;
+    window.dispatchEvent(new Event('online'));
+    await waitFor(() => expect(state.warmed).toBeGreaterThan(before));
   });
 });

@@ -152,6 +152,14 @@ export interface FileEntry {
 
 export interface NoteEntry {
   name: string;
+  /**
+   * RELATIVE to the kiln root, not absolute.
+   *
+   * Every consumer joins it: `notesToTree(notes, kilnAbsRoot)` strips a
+   * leading slash and rebuilds from the root it was handed. Code that passes
+   * this straight to a path-taking endpoint gets a 404 — `GET /api/kiln/file`
+   * answers "File not within any open kiln" for a bare `Seed.md`.
+   */
   path: string;
   title: string | null;
   tags: string[];
