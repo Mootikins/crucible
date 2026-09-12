@@ -90,6 +90,44 @@ mod tests {
         assert_ne!(GLOBAL, "system");
     }
 
+    /// A GLOBAL style payload must carry NO `exprs` member.
+    ///
+    /// It is addressed to the wildcard, so it names no session and its
+    /// expression set is empty by construction — and a client applies `exprs`
+    /// as a replacement, because that is the only way a released value stops
+    /// being drawn. Carrying the empty set would therefore blank every attached
+    /// bar on every theme switch, `init.lua` reload and layout change.
+    #[test]
+    fn a_global_style_payload_carries_no_expression_set() {
+        let (event_tx, _keep_open) = broadcast::channel(8);
+        let agents = crate::test_fixtures::test_agent_manager(
+            std::sync::Arc::new(crate::kiln_manager::KilnManager::new()),
+            crate::test_support::temp_session_manager(),
+            event_tx,
+            None,
+        );
+        agents
+            .statusline_exprs()
+            .set("a-session", "git", "main", crucible_lua::LuaSource::UserLua)
+            .expect("record a value");
+
+        let global = crate::rpc::ui::style_payload(&agents, GLOBAL);
+        assert!(
+            global.get("exprs").is_none(),
+            "a config-level payload must say nothing about values: {global:?}"
+        );
+
+        let scoped = crate::rpc::ui::style_payload(&agents, "a-session");
+        assert_eq!(
+            scoped
+                .get("exprs")
+                .and_then(|e| e.get("git"))
+                .and_then(serde_json::Value::as_str),
+            Some("main"),
+            "a session's own payload still carries its set"
+        );
+    }
+
     /// A client subscribed only to its own session must still be reachable by a
     /// wildcard-addressed event. `is_subscribed` alone does not give this — it
     /// answers the other direction — so the delivery path special-cases it.

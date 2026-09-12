@@ -223,6 +223,25 @@ impl SessionLifecycle {
                 "swept session-scoped plugin handlers"
             );
         }
+        // And this session's statusline expression values, which are the same
+        // shape of leak one store over: the map is keyed by session and had no
+        // production release, so every session that ever set an expression kept
+        // its map for the daemon's life.
+        //
+        // AFTER the end hooks for the same reason, read the other way round: a
+        // `session:end` handler may set or clear a value — the bar showing
+        // "shutting down" is the obvious one — so sweeping first would let the
+        // hook put the map straight back.
+        if let Some(agents) = self.agents() {
+            let forgotten = agents.statusline_exprs().release_session(session_id);
+            if forgotten > 0 {
+                tracing::debug!(
+                    session_id = %session_id,
+                    forgotten,
+                    "swept session statusline expression values"
+                );
+            }
+        }
     }
 
     async fn fire_session_start(&self, session_id: &str) -> anyhow::Result<()> {

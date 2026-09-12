@@ -37,12 +37,26 @@ pub fn apply_ui_config(payload: &Value) -> bool {
     // pushes a payload carrying *only* these, so that a provider firing on
     // every file change does not make the client reinstall four leaked stores
     // it already has. On the full snapshot this is the same work either way.
+    //
+    // A REPLACEMENT, not a merge. Both producers send the session's whole
+    // expression set, so a key absent from the payload is one the daemon
+    // released — a provider cleared it, or the plugin that set it went inert.
+    // Merging key by key could only ever add, so a released value stayed on the
+    // bar until the client exited.
+    //
+    // A payload with no `exprs` member at all still changes nothing. A
+    // config-level push — a theme switch, a layout reload — is addressed to the
+    // wildcard and names no session, so it OMITS the member rather than
+    // carrying an empty set; reading its absence as "clear everything" would
+    // blank the bar on every theme switch.
     if let Some(map) = payload.get("exprs").and_then(Value::as_object) {
-        for (key, value) in map {
-            if let Some(text) = value.as_str() {
-                super::exprs::set(key, text);
-            }
-        }
+        super::exprs::replace(
+            map.iter()
+                .filter_map(|(key, value)| {
+                    value.as_str().map(|text| (key.clone(), text.to_string()))
+                })
+                .collect(),
+        );
     }
 
     let Some(theme_wire) = payload.get("theme") else {
@@ -125,6 +139,34 @@ mod tests {
             active.colors,
             crucible_lua::theme::ThemeConfig::default_dark().colors,
             "missing colours fall back wholesale, not per-field"
+        );
+    }
+
+    /// A payload with no `exprs` member says nothing about values, and must
+    /// leave them alone.
+    ///
+    /// This is the other half of applying `exprs` as a REPLACEMENT: a
+    /// config-level push (theme, geometry, layout) is addressed to the wildcard
+    /// and names no session, so it omits the member rather than carrying an
+    /// empty set. Reading an absent member as "clear everything" would blank
+    /// the bar on every theme switch.
+    #[test]
+    fn a_payload_with_no_expression_member_leaves_the_values_alone() {
+        apply_ui_config(&json!({ "version": 1, "exprs": { "git": "main" } }));
+        assert_eq!(
+            super::super::exprs::snapshot()
+                .get("git")
+                .map(String::as_str),
+            Some("main")
+        );
+
+        apply_ui_config(&json!({ "version": 1, "theme": { "name": "x" } }));
+        assert_eq!(
+            super::super::exprs::snapshot()
+                .get("git")
+                .map(String::as_str),
+            Some("main"),
+            "a theme-only payload must not touch the values"
         );
     }
 

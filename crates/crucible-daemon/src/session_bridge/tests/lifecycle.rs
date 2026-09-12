@@ -240,3 +240,98 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
         "an unscoped handler belongs to the load, not the session, and survives"
     );
 }
+
+/// Session end forgets the session's statusline expression values.
+///
+/// Same leak as the handler sweep above, one store over: the registry is keyed
+/// by session and had no production release, so every session that ever set an
+/// expression kept its map for the daemon's life.
+///
+/// It crosses the crate boundary for the same reason, and it pins the ORDERING
+/// the other way round: the end hook here SETS a value, so a sweep placed
+/// before the hooks would let the hook put the map straight back.
+#[tokio::test]
+async fn session_end_forgets_the_sessions_statusline_values() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let tmp = TempDir::new().unwrap();
+    let plugin_loader: Arc<tokio::sync::Mutex<Option<DaemonPluginLoader>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+
+    let session_manager = temp_session_manager();
+    let (event_tx, _keep_open) = broadcast::channel(64);
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+        mcp_gateway: None,
+        llm_config: Some(bridge_llm_config()),
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: Some(plugin_loader.clone()),
+        card_roots: Default::default(),
+    }));
+    let exprs = agent_manager.statusline_exprs();
+    let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
+        Arc::new(KilnManager::new()),
+        session_manager.clone(),
+        Arc::clone(&agent_manager),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            tmp.path().join("projects.json"),
+        )),
+        event_tx,
+        tmp.path().to_path_buf(),
+        plugin_loader.clone(),
+    ));
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("plugin loader");
+    // The same registry the manager hands every client, so what the hook writes
+    // is what a client would draw.
+    loader
+        .register_statusline_exprs(agent_manager.statusline_exprs())
+        .expect("bind cru.statusline");
+    loader
+        .eval(
+            r#"
+            cru.on_session_start(function(session)
+                cru.statusline.set(session.id, "phase", "running")
+                cru.on_session_end(function(s)
+                    -- A value written by the END hook: sweeping before the
+                    -- hooks would leave exactly this behind.
+                    cru.statusline.set(s.id, "phase", "shutting down")
+                end, { session = session.id, key = "phase" })
+            end)
+            "#,
+        )
+        .await
+        .expect("register the hooks");
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    crate::session_lifecycle::fire_start_hooks(&mut loader, None, &session_manager, &session.id)
+        .await
+        .expect("start hooks run");
+    assert_eq!(
+        exprs.snapshot(&session.id).get("phase").map(String::as_str),
+        Some("running"),
+        "the start hook's value must reach the registry the clients read"
+    );
+
+    *plugin_loader.lock().await = Some(loader);
+    ctx.session_lifecycle.fire_session_end(&session.id).await;
+
+    assert!(
+        exprs.snapshot(&session.id).is_empty(),
+        "the session's expression map must not outlive the session: {:?}",
+        exprs.snapshot(&session.id)
+    );
+}

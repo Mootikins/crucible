@@ -498,6 +498,47 @@ mod tests {
         assert!(render_with_exprs(&items, exprs).contains("main*"));
     }
 
+    /// A released expression stops being DRAWN — the whole payload-to-pixels
+    /// path, because the two halves used to pass their own tests separately.
+    /// The daemon dropped the value and pushed the session's remaining set; the
+    /// client applied it key by key, which could only ever add, so the bar kept
+    /// painting a value nothing would ever refresh.
+    ///
+    /// `release_source` (a plugin marked Not Active) and `clear` (a provider
+    /// dropping its own key) both arrive here as exactly this payload.
+    #[test]
+    fn a_released_expression_stops_rendering() {
+        use crate::tui::oil::theme::{exprs, remote::apply_ui_config};
+        use serde_json::json;
+
+        let items = [
+            StatusItem::Text("[".into()),
+            StatusItem::Expr { key: "oci".into() },
+            StatusItem::Text("]".into()),
+        ];
+
+        // The return value reports a theme install, not the values: a
+        // value-only push carries no theme and answers `false`.
+        apply_ui_config(&json!({
+            "version": 1,
+            "exprs": { "oci": "sandboxed" },
+        }));
+        assert!(
+            render_with_exprs(&items, exprs::snapshot()).contains("sandboxed"),
+            "a pushed value must reach the bar"
+        );
+
+        // The plugin goes inert: the daemon releases its values and pushes what
+        // the session has left, which is nothing.
+        apply_ui_config(&json!({ "version": 1, "exprs": {} }));
+        let out = render_with_exprs(&items, exprs::snapshot());
+        assert!(
+            !out.contains("sandboxed"),
+            "a released value must leave the bar: {out:?}"
+        );
+        assert!(out.contains("[]"), "the slot renders empty again: {out:?}");
+    }
+
     #[test]
     fn align_splits_the_bar_into_sections() {
         let items = [

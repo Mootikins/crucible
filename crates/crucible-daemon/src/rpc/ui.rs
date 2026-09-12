@@ -133,24 +133,33 @@ pub fn style_payload(
     agents: &crate::agent_manager::AgentManager,
     session_id: &str,
 ) -> serde_json::Value {
-    // Current expression values ride along, so a TUI attaching after a provider
-    // has already pushed is not blank until the next change.
-    let exprs = agents.statusline_exprs().snapshot(session_id);
-
     let theme = crucible_lua::get_theme_config()
         .unwrap_or_else(crucible_lua::theme::ThemeConfig::default_dark);
 
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "version": UI_CONFIG_VERSION,
         "theme": theme_to_wire(&theme),
         "hl": crucible_lua::hl_lua::registry_to_wire(&crucible_lua::config::get_hl_registry()),
         "ui": crucible_lua::ui_geometry::geometry_to_wire(
             &crucible_lua::config::get_ui_geometry().unwrap_or_default(),
         ),
-        "exprs": exprs,
         "syntax": crucible_lua::config::get_syntax_config(),
         "layout": crucible_lua::config::get_layout()
             .unwrap_or_else(crucible_lua::statusline_items::builtin_default)
             .to_wire(),
-    })
+    });
+
+    // Current expression values ride along, so a TUI attaching after a provider
+    // has already pushed is not blank until the next change.
+    //
+    // Only for a REAL session. A theme, geometry or layout change goes out on
+    // [`GLOBAL`](crate::server::ui_broadcast::GLOBAL), which is the wildcard and
+    // names no session, so its expression set is empty by construction — and a
+    // client applies `exprs` as a replacement, so carrying that empty set would
+    // blank every attached bar on every theme switch. An absent member means
+    // "this payload says nothing about values", which is the truth here.
+    if session_id != crate::server::ui_broadcast::GLOBAL {
+        payload["exprs"] = serde_json::json!(agents.statusline_exprs().snapshot(session_id));
+    }
+    payload
 }

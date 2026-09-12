@@ -361,6 +361,15 @@ An unset expression renders nothing, so a bar does not jump when a value first
 arrives. Re-setting an unchanged value is reported as `unchanged` and costs no
 repaint.
 
+`cru.statusline.clear(session_id, key)` empties one slot. The slot renders
+nothing again from the next frame.
+
+Two releases happen with no call of your own. The daemon drops a plugin's values
+when it marks that plugin Not Active, because nothing of the plugin's is left to
+refresh them. The daemon also forgets a session's values when the session ends.
+Every push carries the session's whole set, so a client stops drawing a released
+value instead of keeping the last one it saw.
+
 Values are **text**, not escape sequences. Styling goes on the item
 (`:hl("Git")`), which is what lets Crucible strip control characters from a value
 unconditionally — a branch name should not be able to move your cursor.
