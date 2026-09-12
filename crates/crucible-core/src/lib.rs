@@ -14,6 +14,7 @@ pub mod fuzzy;
 pub mod http;
 pub mod interaction;
 pub mod kiln;
+pub mod lua_source;
 pub mod parser;
 pub mod paths;
 pub mod processing;

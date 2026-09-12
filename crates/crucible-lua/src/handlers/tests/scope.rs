@@ -47,7 +47,7 @@ fn activation(session: &str) -> String {
 #[test]
 fn registering_for_the_same_session_again_leaves_one_handler() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     // Three activations for one session: a create and two history fetches.
     for _ in 0..3 {
@@ -73,7 +73,7 @@ fn registering_for_the_same_session_again_leaves_one_handler() {
 #[test]
 fn two_keys_are_two_registrations_for_one_session() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     load_in_session(
         &lua,
@@ -144,7 +144,7 @@ async fn two_scoped_registrations_differing_only_by_priority_collapse() {
 #[tokio::test]
 async fn a_handler_scoped_to_one_session_does_not_fire_for_another() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
     load_in_session(&lua, "s1", &activation("s1")).expect("registers");
 
     let event = crucible_core::events::SessionEvent::Custom {
@@ -303,9 +303,9 @@ fn a_scope_outside_every_session_is_refused() {
 fn two_plugins_scoping_the_same_session_both_survive() {
     let (lua, registry) = vm();
 
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     load_in_session(&lua, "s1", &activation("s1")).expect("alpha registers");
-    enter_plugin(&lua, "beta", false);
+    enter_plugin(&lua, "beta");
     load_in_session(&lua, "s1", &activation("s1")).expect("beta registers");
 
     let handlers =
@@ -322,7 +322,7 @@ fn two_plugins_scoping_the_same_session_both_survive() {
 #[test]
 fn session_end_drops_that_sessions_handlers_and_keeps_the_rest() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
 
     load_in_session(&lua, "s1", &activation("s1")).expect("s1 activates");
     load_in_session(&lua, "s2", &activation("s2")).expect("s2 activates");
@@ -355,9 +355,9 @@ fn session_end_drops_that_sessions_handlers_and_keeps_the_rest() {
 fn clearing_the_owner_and_ending_the_session_are_independent() {
     let (lua, registry) = vm();
 
-    enter_plugin(&lua, "alpha", false);
+    enter_plugin(&lua, "alpha");
     load_in_session(&lua, "s1", &activation("s1")).expect("alpha registers");
-    enter_plugin(&lua, "beta", false);
+    enter_plugin(&lua, "beta");
     load_in_session(&lua, "s1", &activation("s1")).expect("beta registers");
 
     assert_eq!(registry.clear_source(&LuaSource::Plugin("alpha".into())), 1);
@@ -371,7 +371,7 @@ fn clearing_the_owner_and_ending_the_session_are_independent() {
 #[tokio::test]
 async fn a_handler_can_scope_a_registration_to_the_session_it_runs_in() {
     let (lua, registry) = vm();
-    enter_plugin(&lua, "ralph", false);
+    enter_plugin(&lua, "ralph");
     lua.load(
         r#"
         cru.on("turn:complete", function(ctx, event)

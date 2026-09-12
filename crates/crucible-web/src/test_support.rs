@@ -341,6 +341,26 @@ pub const MOCK_DAEMON_KILN_PATH: &str = "/daemon/kiln";
 /// to the browser, or a user cannot open the line that holds the key.
 pub const MOCK_PIN_FILE: &str = "/daemon/config/init.lua";
 
+/// The `config.effective` provenance row for a leaf a human's `init.lua`
+/// holds, in the wire form the real daemon sends.
+///
+/// Serialised from a real [`ConfigSource`], so the fixture cannot describe a
+/// shape the type no longer has. A hand-written literal here was the only
+/// thing asserting this variant's field shape, and a literal does not drift
+/// with the type it is imitating.
+///
+/// [`ConfigSource`]: crucible_core::config::ConfigSource
+fn mock_lua_provenance() -> serde_json::Value {
+    serde_json::to_value(crucible_core::config::ConfigSource::Lua {
+        last_set: crucible_core::config::LastSet::new(
+            crucible_core::lua_source::LuaSource::UserLua,
+            MOCK_PIN_FILE,
+            Some(12),
+        ),
+    })
+    .expect("a config source serialises")
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 /// The top-level key the mock daemon treats as pinned — see the `config.save`
 /// arm of [`mock_rpc_response`].
@@ -637,7 +657,12 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "config_root": "/daemon/config",
             "boot_hash": "mock-boot-hash",
             "kiln_path_is_default": false,
-            "provenance": { "chat.model": { "lua": { "file": MOCK_PIN_FILE, "line": 12 } } },
+            // SERIALISED from a real value, never hand-written. The wire form
+            // of a `ConfigSource` is the only thing that told the CLI where a
+            // leaf came from, and a literal here could not drift with the
+            // type — which is how one variant came to spell itself
+            // `plugin_default` on this wire while `short()` said `plugin`.
+            "provenance": { "chat.model": mock_lua_provenance() },
         }),
         // A stand-in tree, not the daemon's real one: this crate does not
         // link the Lua VM that owns it, and the route only forwards. The

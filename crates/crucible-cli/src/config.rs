@@ -117,9 +117,12 @@ mod effective_fetch_tests {
         let mut provenance = crucible_core::config::ProvenanceMap::new();
         provenance.set(
             "chat.model",
-            crucible_core::config::SourceTag::Lua {
-                file: "init.lua".into(),
-                line: Some(3),
+            crucible_core::config::ConfigSource::Lua {
+                last_set: crucible_core::config::LastSet::new(
+                    crucible_core::lua_source::LuaSource::UserLua,
+                    "init.lua",
+                    Some(3),
+                ),
             },
         );
         let wire = serde_json::to_value(&provenance).unwrap();

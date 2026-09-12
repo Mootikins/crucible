@@ -17,7 +17,7 @@
 //! arrives over a socket and its chunk name is `=lua.eval`, which matches no
 //! root here, so [`AuthorRoots::classify`] would fall back to the human layer
 //! and pin a leaf that no file holds. That case is decided BEFORE this module
-//! is reached, by `crate::plugin_context::LuaSource::config_layer`. Nothing in
+//! is reached, by [`config_layer`] below. Nothing in
 //! this module changes for it: the rule above still holds wherever a file
 //! exists.
 //!
@@ -26,8 +26,46 @@
 //! message, so a real path under a long directory stops matching its own
 //! root and every write from it is misfiled.
 
-use crucible_core::config::SourceTag;
+use crucible_core::config::{ConfigSource, LastSet};
+use crucible_core::lua_source::LuaSource;
 use std::path::{Path, PathBuf};
+
+/// The config layer a `cru.config.set` under `source` lands in, when the
+/// SOURCE decides it — and `None` when the FILE decides it.
+///
+/// A free function here rather than a method on [`LuaSource`], for the reason
+/// this module exists: the answer is a config-store question, and
+/// [`LuaSource`] answers only "who wrote this". It sits beside
+/// [`AuthorRoots::classify`] because the two are one rule with two halves,
+/// and a reader who finds one must see the other.
+///
+/// Total, with no wildcard arm, and `None` is the common answer on purpose.
+/// The module doc above argues the general rule: the file that holds the call
+/// is the honest signal, because `require("alpha").setup{}` written by the
+/// user runs alpha's file with no plugin context installed, and a plugin that
+/// calls its own `setup` from a handler runs with one. So
+/// [`LuaSource::Plugin`], [`LuaSource::UserLua`] and [`LuaSource::Builtin`]
+/// all answer `None` and let the path classification speak.
+///
+/// [`LuaSource::Eval`] is the one source with NO file. Its chunk name is
+/// `=lua.eval`, which matches no config root and no plugin root, so the path
+/// classification fell back to [`ConfigSource::Lua`] — a layer that PINS. One
+/// `cru lua 'cru.config.set{…}'` then made `config.save` refuse that leaf for
+/// the rest of the daemon's life, and the settings UI reported the value as a
+/// line a human wrote in a file that does not exist.
+///
+/// The answer is the `Rpc` layer, and no new layer is needed, because
+/// `Rpc` already means exactly "set at run time, not written in a file": it
+/// ranks highest, so an eval may override anything for this run; it pins
+/// nothing; and a `config.save` drops it. An eval is a socket call, which is
+/// what the `config.set` RPC is, so the two land on one layer.
+#[must_use]
+pub fn config_layer(source: &LuaSource) -> Option<ConfigSource> {
+    match source {
+        LuaSource::Plugin(_) | LuaSource::UserLua | LuaSource::Builtin => None,
+        LuaSource::Eval => Some(ConfigSource::Rpc { chan: None }),
+    }
+}
 
 /// The directories that decide who wrote a config line.
 ///
@@ -70,7 +108,7 @@ impl AuthorRoots {
     /// `chunk` is the raw chunk name. `modules.rs` names every module
     /// `@<full path>`; the config loader names `init.lua` by its bare path.
     /// Both forms are accepted, so the leading `@` comes off first.
-    pub fn classify(&self, chunk: &str, line: Option<u32>) -> SourceTag {
+    pub fn classify(&self, chunk: &str, line: Option<u32>) -> ConfigSource {
         let file = chunk.strip_prefix('@').unwrap_or(chunk);
         let path = Path::new(file);
 
@@ -90,14 +128,16 @@ impl AuthorRoots {
             .filter(|_| plugin_wins)
             .and_then(|root| plugin_name(root, path))
         {
-            Some(plugin) => SourceTag::PluginDefault {
-                plugin,
-                file: file.to_string(),
-                line,
+            // The layer carries the SOURCE, not a bare plugin name, so the
+            // value here is the same one the handler registry and
+            // `cru.storage` key on for that plugin.
+            Some(plugin) => ConfigSource::PluginDefault {
+                last_set: LastSet::new(LuaSource::Plugin(plugin), file, line),
             },
-            None => SourceTag::Lua {
-                file: file.to_string(),
-                line,
+            // Whatever a plugin root does not claim is the human's. The
+            // module doc argues why that is the safe absence.
+            None => ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, file, line),
             },
         }
     }
@@ -137,6 +177,53 @@ fn plugin_name(root: &Path, path: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Exactly one source answers the provenance question, and the layer it
+    /// names is the one a `config.save` can overwrite.
+    ///
+    /// The properties are DERIVED from the layer rather than restated: a
+    /// reordering of the layers in `crucible-core` fails this test instead of
+    /// silently giving an eval the power to lock a key.
+    #[test]
+    fn only_the_source_with_no_file_names_its_own_config_layer() {
+        let deciders: Vec<LuaSource> = [
+            LuaSource::Plugin("alpha".into()),
+            LuaSource::UserLua,
+            LuaSource::Builtin,
+            LuaSource::Eval,
+        ]
+        .into_iter()
+        .filter(|source| config_layer(source).is_some())
+        .collect();
+        assert_eq!(
+            deciders,
+            vec![LuaSource::Eval],
+            "a source with a file must let the file decide, or a plugin's \
+             `setup()` called from the user's own `init.lua` is misfiled"
+        );
+
+        let layer = config_layer(&LuaSource::Eval).expect("an eval names its layer");
+        assert_eq!(layer, ConfigSource::Rpc { chan: None });
+        assert_eq!(
+            layer.pin(),
+            None,
+            "an eval holds no file, so its write must not refuse a later \
+             `config.save`"
+        );
+        assert!(
+            layer.reset_drops(),
+            "a save drops the layer it can overwrite, and this is that layer"
+        );
+        assert!(
+            layer.rank() > ConfigSource::Settings.rank(),
+            "an eval sets a value for this run, so it must outrank what is saved"
+        );
+        assert_eq!(
+            layer.origin().file,
+            None,
+            "the settings UI must not report an eval as a line in a file"
+        );
+    }
+
     fn roots() -> AuthorRoots {
         AuthorRoots::new(
             vec![PathBuf::from("/home/user/.config/crucible")],
@@ -149,9 +236,12 @@ mod tests {
         let tag = roots().classify("@/home/user/.config/crucible/init.lua", Some(7));
         assert_eq!(
             tag,
-            SourceTag::Lua {
-                file: "/home/user/.config/crucible/init.lua".to_string(),
-                line: Some(7),
+            ConfigSource::Lua {
+                last_set: LastSet::new(
+                    LuaSource::UserLua,
+                    "/home/user/.config/crucible/init.lua".to_string(),
+                    Some(7)
+                )
             }
         );
     }
@@ -164,10 +254,12 @@ mod tests {
         );
         assert_eq!(
             tag,
-            SourceTag::PluginDefault {
-                plugin: "alpha".to_string(),
-                file: "/home/user/.local/share/crucible/plugins/alpha/init.lua".to_string(),
-                line: Some(3),
+            ConfigSource::PluginDefault {
+                last_set: LastSet::new(
+                    LuaSource::Plugin("alpha".to_string()),
+                    "/home/user/.local/share/crucible/plugins/alpha/init.lua".to_string(),
+                    Some(3)
+                )
             }
         );
     }
@@ -188,7 +280,7 @@ mod tests {
         );
         let tag = nested.classify("@/cfg/plugins/beta/lua/opts.lua", Some(1));
         assert_eq!(tag.short(), "plugin");
-        assert!(tag.rank() < SourceTag::Settings.rank());
+        assert!(tag.rank() < ConfigSource::Settings.rank());
     }
 
     /// A sibling directory whose name merely starts with the root's text is
@@ -220,10 +312,12 @@ mod tests {
         assert!(roots.add_plugin_root(PathBuf::from("/cfg/plugins")));
         assert_eq!(
             roots.classify("@/cfg/plugins/gamma/init.lua", Some(4)),
-            SourceTag::PluginDefault {
-                plugin: "gamma".to_string(),
-                file: "/cfg/plugins/gamma/init.lua".to_string(),
-                line: Some(4),
+            ConfigSource::PluginDefault {
+                last_set: LastSet::new(
+                    LuaSource::Plugin("gamma".to_string()),
+                    "/cfg/plugins/gamma/init.lua".to_string(),
+                    Some(4)
+                )
             }
         );
 

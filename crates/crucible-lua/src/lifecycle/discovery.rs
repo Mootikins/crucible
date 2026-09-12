@@ -357,14 +357,16 @@ impl PluginManager {
         // The private root pops when this guard drops, at the end of the load.
         let _module_scope = self.enter_plugin_modules(&plugin_dir)?;
 
-        // Both markers ride ONE context, in Rust-side app data. As Lua globals
-        // they were forgeable: a plugin assigned itself another plugin's
-        // storage namespace, or the interception right, in one line.
-        //
-        // Stamped at LOAD, read at registration: whether a handler may take a
-        // tool call over is a property of the plugin the operator installed,
-        // not of the call it later intercepts.
-        let previous = crate::plugin_context::enter_plugin(&self.lua, name, may_intercept);
+        // The declaration the operator installed, admitted at LOAD and read at
+        // the one seam that gates on it. It is a property of the plugin the
+        // operator installed, not of the call it later intercepts, and not of
+        // the source that registered the handler.
+        crate::plugin_context::record_plugin_intercept(&self.lua, name, may_intercept);
+
+        // The source, in Rust-side app data. As a Lua global it was forgeable:
+        // a plugin assigned itself another plugin's storage namespace with one
+        // line at the top of its own `init.lua`.
+        let previous = crate::plugin_context::enter_plugin(&self.lua, name);
 
         let load_result = (|| -> LifecycleResult<()> {
             let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;

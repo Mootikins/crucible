@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn the_error_names_the_plugin_whose_handler_overran() {
         let lua = vm();
-        crate::plugin_context::enter_plugin(&lua, "grabby", false);
+        crate::plugin_context::enter_plugin(&lua, "grabby");
         let _guard = enter(&lua, Duration::from_millis(50), "the pre_tool_call handler");
 
         let error = lua

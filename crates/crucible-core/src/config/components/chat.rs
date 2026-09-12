@@ -20,11 +20,11 @@ pub enum AgentPreference {
 /// The system prompt a session starts with when nothing else sets one.
 ///
 /// This lives here, rather than in `runtime/defaults/init.luau`, because a
-/// shipped value is [`SourceTag::Default`] — the lowest layer. Written from
+/// shipped value is [`ConfigSource::Default`] — the lowest layer. Written from
 /// Lua it would have outranked `settings.json`, so the settings UI could not
 /// have changed it.
 ///
-/// [`SourceTag::Default`]: crate::config::SourceTag::Default
+/// [`ConfigSource::Default`]: crate::config::ConfigSource::Default
 pub const DEFAULT_SYSTEM_PROMPT: &str = "\
 You are Crucible, a knowledge-grounded agent working alongside the user.
 

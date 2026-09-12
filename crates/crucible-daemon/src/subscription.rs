@@ -28,7 +28,8 @@ impl ClientId {
         Self(CLIENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
-    #[allow(dead_code)] // conversion API, exercised by tests
+    /// The raw id, for a provenance row that records WHICH client
+    /// wrote a config leaf (`ConfigSource::Rpc { chan }`).
     pub fn as_u64(&self) -> u64 {
         self.0
     }

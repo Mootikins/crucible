@@ -182,16 +182,6 @@ pub struct Registration {
     /// unsandboxed. Making every hook fatal would let one typo in any plugin
     /// refuse every session daemon-wide.
     pub required: bool,
-    /// Whether this registration may take a tool call over — return
-    /// `{ handled = true, … }` or a transform from `pre_tool_call`.
-    ///
-    /// [`LuaSource::may_intercept`] decides it, once, at registration. A handler
-    /// firing three turns later still runs as its own source, which is what
-    /// `cru.storage` keys on and what `intercepts_tools` is read from.
-    ///
-    /// A registration may `cancel` whatever this says: refusing a call can
-    /// only narrow.
-    pub may_intercept: bool,
     /// The Lua function.
     ///
     /// `Arc` so a selected row clones out of the lock without cloning the
@@ -372,18 +362,6 @@ fn string_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option
     }
 }
 
-impl Registration {
-    /// Whether this registration may take a tool call over.
-    ///
-    /// A registration without the grant may observe and may `cancel`; its
-    /// `handled` and transform results are refused, because `handled` returns
-    /// before the permission gate.
-    #[must_use]
-    pub fn may_intercept(&self) -> bool {
-        self.may_intercept
-    }
-}
-
 impl LuaScriptHandlerRegistry {
     /// Create an empty registry
     #[must_use]
@@ -397,8 +375,12 @@ impl LuaScriptHandlerRegistry {
     /// Store `handler` under `spec`, owned by whoever is running now.
     ///
     /// The source comes from the VM's own app data, never from an argument: a
-    /// plugin must not be able to register under another plugin's name, nor
-    /// grant itself the interception right read here.
+    /// plugin must not be able to register under another plugin's name.
+    ///
+    /// The registration records no authority. Whether a `pre_tool_call`
+    /// handler may take the call over is read at the seam that gates it, from
+    /// the declaration the loader recorded for the source's plugin — see
+    /// `crate::plugin_context`.
     ///
     /// Answers the id, which is the dispatch key.
     ///
@@ -444,7 +426,6 @@ impl LuaScriptHandlerRegistry {
     /// collapsing them would change what every existing plugin does.
     pub fn register(&self, lua: &Lua, spec: RegistrationSpec, handler: Function) -> LuaResult<u64> {
         let source = current_source(lua);
-        let may_intercept = source.may_intercept(lua);
         // The body is in hand before anything is pushed: nothing lands in the
         // list without a function, which `pre_tool_call` would otherwise turn
         // into a denied tool call.
@@ -463,7 +444,6 @@ impl LuaScriptHandlerRegistry {
             once: spec.once,
             timeout_ms: spec.timeout_ms,
             required: spec.required,
-            may_intercept,
             body,
         };
         let mut rows = self

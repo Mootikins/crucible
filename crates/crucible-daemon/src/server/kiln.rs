@@ -1587,9 +1587,12 @@ mod tests {
         crucible_lua::begin_boot_store();
         crucible_lua::merge_app_config_tagged(
             serde_json::json!({ "kilns": { "notes": dir.to_string_lossy() } }),
-            crucible_core::config::SourceTag::Lua {
-                file: "init.lua".to_string(),
-                line: Some(7),
+            crucible_core::config::ConfigSource::Lua {
+                last_set: crucible_core::config::LastSet::new(
+                    crucible_core::lua_source::LuaSource::UserLua,
+                    "init.lua".to_string(),
+                    Some(7),
+                ),
             },
         );
         crucible_lua::end_boot_phase();

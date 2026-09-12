@@ -9,7 +9,7 @@
 //! If this gate fails, the emitter is wrong. A fixture edit that turns it
 //! green is the self-satisfying-gate failure the house rules name.
 
-use crucible_core::config::{emit_lua_config, CliAppConfig, SourceTag};
+use crucible_core::config::{emit_lua_config, CliAppConfig, ConfigSource};
 use std::path::Path;
 
 /// The oracle: today's TOML-only reference implementation.
@@ -31,7 +31,7 @@ fn convert(path: &Path) -> String {
 fn evaluate_one_vm(lua_source: &str) -> CliAppConfig {
     crucible_lua::begin_boot_store();
     let defaults = serde_json::to_value(CliAppConfig::default()).expect("defaults serialize");
-    crucible_lua::merge_app_config_tagged(defaults, SourceTag::Default);
+    crucible_lua::merge_app_config_tagged(defaults, ConfigSource::Default);
 
     let executor = crucible_lua::LuaExecutor::new().expect("executor");
     executor

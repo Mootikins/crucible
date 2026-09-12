@@ -159,9 +159,8 @@ pub use notify::{
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
-    current_may_intercept, current_plugin_name, current_session, current_source, enter_plugin,
-    enter_recorded_plugin, enter_session, intercept_for, record_plugin_intercept, set_source,
-    LuaSource, SessionGuard,
+    current_plugin_name, current_session, current_source, enter_plugin, enter_session,
+    intercept_for, record_plugin_intercept, set_source, LuaSource, SessionGuard,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;

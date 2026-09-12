@@ -100,3 +100,85 @@ fn missing_tool_without_unwrap_returns_none_for_external_agent() {
     // agent — no synthetic error result.
     assert!(AgentManager::missing_tool_result(false, "acp_tool", "call-42").is_none());
 }
+
+/// A plugin WITHOUT the declaration may not take a tool call over, and an
+/// unrecorded plugin is refused the same way.
+///
+/// This is the security-relevant half of the partition: a plugin is
+/// third-party code, so `intercepts_tools` IS its boundary. The operator's own
+/// sources sit on the other side of that boundary by trust root, not by
+/// identity — `may_take_a_tool_call_over` carries the reasoning.
+///
+/// The list walks every source, so a new one cannot arrive without an answer.
+#[test]
+fn a_plugin_without_the_declaration_may_not_take_a_tool_call_over() {
+    use crucible_lua::LuaSource;
+
+    let lua = mlua::Lua::new();
+    crucible_lua::record_plugin_intercept(&lua, "oci", true);
+    crucible_lua::record_plugin_intercept(&lua, "quiet", false);
+
+    let admitted: Vec<LuaSource> = [
+        LuaSource::Plugin("oci".into()),
+        // Declared `false`: the loader admitted it and it said no.
+        LuaSource::Plugin("quiet".into()),
+        // A plugin the loader never recorded. It must not gain the power by
+        // being unknown.
+        LuaSource::Plugin("stranger".into()),
+        LuaSource::UserLua,
+        LuaSource::Builtin,
+        LuaSource::Eval,
+    ]
+    .into_iter()
+    .filter(|source| super::may_take_a_tool_call_over(&lua, source))
+    .collect();
+
+    assert_eq!(
+        admitted,
+        vec![
+            LuaSource::Plugin("oci".into()),
+            LuaSource::UserLua,
+            LuaSource::Builtin,
+        ],
+        "a plugin needs its declaration; the operator's own two sources do not, \
+         and an eval is not the operator"
+    );
+}
+
+/// An eval may NOT take a tool call over, whatever the socket caller asks for.
+///
+/// # Why the tempting reading is wrong
+///
+/// A human types `cru lua 'cru.config.set{…}'`, so an eval looks like the
+/// operator, and this arm is the one a later reader is most likely to widen on
+/// that ground. It is wrong: an eval is a SOCKET call, and the socket is the
+/// surface an RPC client reaches. Reading it as the operator would let any
+/// local caller that can open the daemon socket put a `pre_tool_call`
+/// interception on a session it merely NAMES — somebody else's turn, taken
+/// over by a caller that never held the session. That is the exact harm the
+/// session scope exists to prevent, arriving through the scope itself.
+///
+/// The recorded table is keyed by plugin NAME, so the nearest thing to a
+/// forgery available is recording a declaration under the name an eval
+/// renders as. That must not reach it either.
+#[test]
+fn an_eval_may_not_take_a_tool_call_over_whatever_it_is_recorded_as() {
+    use crucible_lua::LuaSource;
+
+    let lua = mlua::Lua::new();
+    // The string `Display` renders for an eval, plus the two an operator
+    // source renders as — none of them names a plugin.
+    for name in ["lua.eval", "init.lua", "builtin"] {
+        crucible_lua::record_plugin_intercept(&lua, name, true);
+    }
+
+    assert!(
+        !super::may_take_a_tool_call_over(&lua, &LuaSource::Eval),
+        "an eval took a declaration recorded under the name it renders as"
+    );
+    assert_eq!(
+        LuaSource::Eval.plugin_name(),
+        None,
+        "an eval must name no plugin, or the recorded table would reach it"
+    );
+}

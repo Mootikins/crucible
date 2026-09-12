@@ -353,7 +353,7 @@ mod tests {
         let lua = create_lua();
         let root = root.to_path_buf();
         register_fs_roots_resolver(&lua, Arc::new(move |_plugin| vec![root.clone()]));
-        crate::plugin_context::enter_plugin(&lua, "scoped", false);
+        crate::plugin_context::enter_plugin(&lua, "scoped");
         lua
     }
 
@@ -455,7 +455,7 @@ mod tests {
         let target = target.to_string_lossy().to_string();
 
         let lua = create_lua();
-        crate::plugin_context::enter_plugin(&lua, "scoped", false);
+        crate::plugin_context::enter_plugin(&lua, "scoped");
         let err = lua
             .load(format!(r#"return cru.fs.read("{target}")"#))
             .exec()

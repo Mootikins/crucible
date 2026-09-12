@@ -20,7 +20,7 @@ use crate::protocol::{
 use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
-use crucible_core::config::SourceTag;
+use crucible_core::config::ConfigSource;
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
 // keys the plugin-visible config store withholds cannot drift apart.
@@ -915,7 +915,7 @@ impl RpcDispatcher {
 
             // App-config store (the same store `cru.config.*` reads in Lua)
             RpcMethod::ConfigGet => to_response(id, self.handle_config_get(&req)),
-            RpcMethod::ConfigSet => to_response(id, self.handle_config_set(&req)),
+            RpcMethod::ConfigSet => to_response(id, self.handle_config_set(client_id, &req)),
             RpcMethod::ConfigSave => to_response(id, self.handle_config_save(&req)),
             RpcMethod::ConfigReset => to_response(
                 id,
@@ -1729,7 +1729,7 @@ impl RpcDispatcher {
     ///
     /// A provider the live table holds that the config store never merged came
     /// through `llm.json` — a registration, not authorship — so its leaves
-    /// carry [`SourceTag::Registered`]. The overlay never enters the store:
+    /// carry [`ConfigSource::Registered`]. The overlay never enters the store:
     /// `LlmStateStore::overlay_onto` merges it UNDER the config at bind, and a
     /// store merge would invert that rule.
     ///
@@ -1739,7 +1739,7 @@ impl RpcDispatcher {
     /// `registered` while `config.origin` called the same leaf `default` and
     /// `config.save` accepted a write that acts nowhere.
     ///
-    /// [`SourceTag::Registered`]: crucible_core::config::SourceTag::Registered
+    /// [`ConfigSource::Registered`]: crucible_core::config::ConfigSource::Registered
     fn fold_state_overlay(
         &self,
         mut config: serde_json::Value,
@@ -1854,11 +1854,26 @@ impl RpcDispatcher {
     /// seeing it. The way to add a kiln is `kiln.register` (`cru kiln
     /// register`) or a config-file edit; both pass the floor, and this
     /// method must not become a third way that does not.
-    fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
+    /// Takes `client_id` for the same reason [`Self::handle_subscribe`] does:
+    /// the provenance row records WHICH client set the leaf, so `cru config
+    /// show --sources` and the settings pane can distinguish one client's
+    /// runtime write from another's. Without it every client flattens into one
+    /// `rpc` row. This is `sctx_T`'s `sc_chan`, which Neovim records for the
+    /// same reason and reports as "Last set from API client (channel id 3)".
+    fn handle_config_set(
+        &self,
+        client_id: ClientId,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         let params: ConfigValuesParams = crate::rpc::params::parse_params(req)?;
         // One door-keeping implementation: the store's Withhold policy strips
         // the location keys and reports them; this handler only relays.
-        let rejected = crucible_lua::merge_app_config(serde_json::Value::Object(params.values));
+        let rejected = crucible_lua::merge_app_config_tagged(
+            serde_json::Value::Object(params.values),
+            crucible_core::config::ConfigSource::Rpc {
+                chan: Some(client_id.as_u64()),
+            },
+        );
         if !rejected.is_empty() {
             tracing::warn!(
                 keys = ?rejected,
@@ -1901,7 +1916,7 @@ impl RpcDispatcher {
         // file is what the next boot loads back under that same tag.
         let saved =
             crucible_lua::save_app_config(serde_json::Value::Object(params.values), &|path| {
-                registered.get(path).and_then(SourceTag::pin)
+                registered.get(path).and_then(ConfigSource::pin)
             });
         if !saved.withheld.is_empty() {
             tracing::warn!(
@@ -2079,7 +2094,7 @@ impl RpcDispatcher {
                 "dropped",
                 sources
                     .iter()
-                    .map(crucible_core::config::SourceTag::short)
+                    .map(crucible_core::config::ConfigSource::short)
                     .collect(),
             ),
         };
@@ -2317,10 +2332,10 @@ fn leaf_origin(
 
 /// The origin row for a leaf the state overlay contributed.
 ///
-/// `pinned` comes from `SourceTag::pin`, the same rule `config.save` refuses
+/// `pinned` comes from `ConfigSource::pin`, the same rule `config.save` refuses
 /// by, so the lock a settings UI draws and the refusal it would get are one
 /// answer.
-fn overlay_leaf_origin(tag: &SourceTag) -> crucible_core::config::LeafOrigin {
+fn overlay_leaf_origin(tag: &ConfigSource) -> crucible_core::config::LeafOrigin {
     crucible_core::config::LeafOrigin {
         pinned: tag.pin().is_some(),
         origin: tag.origin(),
@@ -2342,7 +2357,7 @@ fn record_registered_leaves(
             return;
         }
     }
-    provenance.set(path, crucible_core::config::SourceTag::Registered);
+    provenance.set(path, crucible_core::config::ConfigSource::Registered);
 }
 
 #[cfg(test)]
@@ -3132,9 +3147,12 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         // config root owns.
         crucible_lua::merge_app_config_tagged(
             serde_json::json!({ "a1gate": { "budget": 4096 } }),
-            crucible_core::config::SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(7),
+            crucible_core::config::ConfigSource::Lua {
+                last_set: crucible_core::config::LastSet::new(
+                    crucible_core::lua_source::LuaSource::UserLua,
+                    "/config/init.lua".to_string(),
+                    Some(7),
+                ),
             },
         );
         let (ctx, _data_home) = test_context();
@@ -3298,14 +3316,17 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     async fn config_origin_says_which_leaves_a_save_would_refuse() {
         crucible_lua::merge_app_config_tagged(
             serde_json::json!({ "a1lock": { "held": "by a human" } }),
-            crucible_core::config::SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(3),
+            crucible_core::config::ConfigSource::Lua {
+                last_set: crucible_core::config::LastSet::new(
+                    crucible_core::lua_source::LuaSource::UserLua,
+                    "/config/init.lua".to_string(),
+                    Some(3),
+                ),
             },
         );
         crucible_lua::merge_app_config_tagged(
             serde_json::json!({ "a1lock": { "saved": "by the ui" } }),
-            crucible_core::config::SourceTag::Settings,
+            crucible_core::config::ConfigSource::Settings,
         );
         let (ctx, _data_home) = test_context();
         let dispatcher = RpcDispatcher::new(ctx);

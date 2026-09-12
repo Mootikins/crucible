@@ -1216,7 +1216,7 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 ### 4.25 Config
 
 - Responsibility: evaluate `init.lua` once at boot and merge the layers into one store with per-leaf provenance — defaults, plugin defaults, `settings.json`, the human's Lua lines, CLI flags, the runtime knob; validate; reject legacy keys with an actionable error. `config.toml` is not a config source: the reader is gone and only `cru config migrate` still parses the file.
-- Owns: `CliAppConfig`, one canonical struct; `ConfigStore`; `SourceTag` and `ProvenanceMap`.
+- Owns: `CliAppConfig`, one canonical struct; `ConfigStore`; `ConfigSource` and `ProvenanceMap`.
 - Operations: `config.effective`, `config.get`, `config.set` (runtime, in memory), `config.save` (durable, `settings.json`, refuses a pinned leaf), `config.origin`, `config.controls`.
 - Must never know: runtime state.
 - See [[Config Boot]] for the sequence, the layer order and the two verbs.
