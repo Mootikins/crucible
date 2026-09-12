@@ -73,13 +73,13 @@ All gateway tools emit events. Use hooks to filter, transform, or audit:
 ```lua
 -- Transform GitHub results. `tool_result` patches the outcome as the model
 -- receives it; `pattern` globs the tool name.
-cru.on("tool_result", { pattern = "gh_*", priority = 50 }, function(ctx, event)
+cru.on("tool_result", { pattern = "gh_*" }, function(ctx, event)
     return { result = summarise(event.result) }
 end)
 
 -- Audit external access. Handlers may call async APIs directly; there is no
 -- custom-event emit on this path.
-cru.on("tool_result", { pattern = "fs_*", priority = 200 }, function(ctx, event)
+cru.on("tool_result", { pattern = "fs_*" }, function(ctx, event)
     cru.log("info", string.format(
         "external access: session=%s tool=%s", tostring(ctx.session_id), event.tool))
 end)
@@ -129,7 +129,7 @@ Only expose tools you need — use `allowed_tools` and `blocked_tools` as shown 
 *arguments* — which the config cannot see — cancel from a hook:
 
 ```lua
-cru.on("pre_tool_call", { pattern = "db_*", priority = 5 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "db_*" }, function(ctx, event)
     local query = event.args and event.args.query or ""
     if query:upper():find("DROP ") then
         return { cancel = true, reason = "DROP statements are blocked" }

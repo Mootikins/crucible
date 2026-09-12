@@ -5,8 +5,9 @@
 //!
 //! **It was a union of two contracts.** Ten of the names are *events* — the
 //! daemon broadcasts them, fan-out, nobody replies, the thing already happened.
-//! Seventeen are *stages* — synchronous interception points, run in priority
-//! order, where a handler's return value changes what happens next.
+//! Seventeen are *stages* — synchronous interception points, run in
+//! registration order, where a handler's return value changes what happens
+//! next.
 //! [`ScriptHandlerResult`](crate::ScriptHandlerResult) carries the same four
 //! variants for both, so `Cancel` meant "stop the remaining handlers" on one
 //! side and "block the operation" on the other, decided only by which name the
@@ -133,15 +134,39 @@ impl EventName {
         }
     }
 
-    /// Whether a dispatch of this event names a session.
+    /// Whether a dispatch of this event BELONGS to a session a handler could
+    /// have been scoped to.
     ///
     /// **No wildcard arm, ever** — same reason as [`Self::as_str`]. A new
     /// event must answer for itself.
     ///
     /// The file, note and webhook events belong to the daemon, not to a
-    /// session: the watcher fires them with nobody's turn running. The two
-    /// session events are ABOUT a session, and the dispatcher reads its id
-    /// from the payload.
+    /// session: the watcher fires them with nobody's turn running.
+    ///
+    /// # `session:created` answers `false`, and it is ABOUT a session
+    ///
+    /// The distinction is not "does a session id appear in the payload" — it
+    /// does, and a handler reads it as `event.session_id`. It is "could a
+    /// [`SessionScope::Session`](crate::SessionScope::Session) registration on
+    /// this name ever fire".
+    ///
+    /// For `session:created` it could not, and the registration API's stated
+    /// contract is that a handler which can never fire is refused loudly.
+    /// `session:created` for session X is broadcast once, at X's creation
+    /// (`rpc/dispatch.rs`, on create and on fork), which is before any Lua
+    /// runs inside X. And `scope_from_opts` resolves `{ session = … }`
+    /// against the session the CALLER is running in and refuses any other —
+    /// so the only id a caller may name is one whose `session:created` is
+    /// already over. The scope was accepted and could not match.
+    ///
+    /// `session:ended` is the opposite: code inside X registers for X's end
+    /// while X is still running, which is the whole point of a teardown hook.
+    ///
+    /// The consequence for `session:created` is that the dispatch is
+    /// [`Firing::Sessionless`](crate::Firing::Sessionless), so `ctx.session_id`
+    /// is absent there. That is right rather than a loss: `ctx.session_id` is
+    /// the session a dispatch belongs to, and this one belongs to the daemon.
+    /// The session it is ABOUT is `event.session_id`.
     #[must_use]
     pub const fn carries_session(self) -> bool {
         match self {
@@ -152,8 +177,9 @@ impl EventName {
             | Self::NoteModified
             | Self::NoteDeleted
             | Self::NoteRenamed
-            | Self::WebhookReceived => false,
-            Self::SessionCreated | Self::SessionEnded => true,
+            | Self::WebhookReceived
+            | Self::SessionCreated => false,
+            Self::SessionEnded => true,
         }
     }
 
@@ -169,8 +195,8 @@ impl EventName {
 
 /// A synchronous interception point in a host flow.
 ///
-/// **A chain, not a broadcast.** Handlers run in priority order and the caller
-/// waits for each; the return value decides what happens next. `Cancel` blocks
+/// **A chain, not a broadcast.** Handlers run in registration order and the
+/// caller waits for each; the return value decides what happens next. `Cancel` blocks
 /// the operation, `Transform` rewrites the value the next link sees, and
 /// `Handled` replaces execution outright — which is why `Handled` and
 /// `Transform` are capability-grade on [`Self::PreToolCall`] and gated by
@@ -179,8 +205,8 @@ impl EventName {
 /// Most of these sit on the turn loop. Four do not — [`Self::PermissionRequest`],
 /// [`Self::SessionStart`], [`Self::SessionEnd`] and [`Self::ProviderAuth`] —
 /// and they are stages all the same, because a stage is defined by its
-/// contract and not by its caller: each one runs synchronously, in priority
-/// order, and each one's answer changes what the host does next. Each of the
+/// contract and not by its caller: each one runs synchronously, in
+/// registration order, and each one's answer changes what the host does next. Each of the
 /// four had its own registry and its own clear path before they merged here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]

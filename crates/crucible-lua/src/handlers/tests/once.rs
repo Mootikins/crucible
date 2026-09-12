@@ -199,15 +199,15 @@ fn a_once_permission_hook_the_gate_never_reaches_keeps_its_registration() {
     register_permission_hook_api(&lua, registry.clone()).expect("register the API");
     enter_plugin(&lua, "ralph");
 
-    // Lower priority is asked first, and it answers, so the `once` hook
-    // behind it never runs.
+    // The first registration is asked first, and it answers, so the `once`
+    // hook behind it never runs.
     lua.load(
         r#"
-        cru.permissions.on_request(function() return { allow = true } end, { priority = 10 })
+        cru.permissions.on_request(function() return { allow = true } end)
         cru.permissions.on_request(function()
             reached = true
             return nil
-        end, { priority = 90, once = true, key = "watcher" })
+        end, { once = true, key = "watcher" })
         "#,
     )
     .exec()
@@ -365,8 +365,8 @@ fn a_once_provider_auth_hook_the_gate_never_reaches_keeps_its_registration() {
         .load(r#"function(context) return { Authorization = "Bearer t" } end"#)
         .eval::<mlua::Function>()
         .expect("a handler");
-    let mut first = RegistrationSpec::new(PROVIDER_AUTH_HOOK);
-    first.priority = 10;
+    // Registered first, so it is asked first.
+    let first = RegistrationSpec::new(PROVIDER_AUTH_HOOK);
     registry.register(&lua, first, answers).expect("registers");
 
     let never = lua
@@ -374,7 +374,6 @@ fn a_once_provider_auth_hook_the_gate_never_reaches_keeps_its_registration() {
         .eval::<mlua::Function>()
         .expect("a handler");
     let mut second = RegistrationSpec::new(PROVIDER_AUTH_HOOK);
-    second.priority = 90;
     second.once = true;
     registry.register(&lua, second, never).expect("registers");
 

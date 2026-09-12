@@ -94,7 +94,7 @@ fn every_registration_api_writes_one_store() {
 // ============================================================================
 
 #[test]
-fn crucible_on_with_opts_table_sets_pattern_and_priority() {
+fn crucible_on_with_opts_table_sets_pattern() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
@@ -102,7 +102,7 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
 
     lua.load(
         r#"
-        cru.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "bash" }, function(ctx, event)
             return nil
         end)
     "#,
@@ -116,7 +116,6 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
         crate::handlers::Firing::Sessionless,
     );
     assert_eq!(handlers.len(), 1);
-    assert_eq!(handlers[0].priority, 10);
     assert_eq!(handlers[0].pattern, Some("bash".to_string()));
 
     // Doesn't match other tools
@@ -148,6 +147,85 @@ fn crucible_on_backward_compat_no_opts() {
     let handlers =
         registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
-    assert_eq!(handlers[0].priority, 100); // default
     assert_eq!(handlers[0].pattern, None);
+}
+
+// ── A wrong-typed option RAISES ──────────────────────────────────────────
+//
+// Every option on a registration table is read through `string_option`,
+// `integer_option` or `bool_option`, and none of them is `.ok()`. Before
+// that, four of them swallowed: a wrong type read as ABSENT and the
+// registration succeeded.
+//
+// `pattern` is the one with teeth. An absent pattern matches every dispatch
+// identifier, so `{ pattern = tool }` where `tool` is a table put the handler
+// against every tool call in every session — on the one hook that fails
+// closed.
+
+/// A table where a pattern belongs must not become an every-tool handler.
+#[test]
+fn a_pattern_that_is_not_a_string_is_refused() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
+
+    let err = lua
+        .load(r#"cru.on("pre_tool_call", { pattern = { "bash" } }, function() end)"#)
+        .exec()
+        .expect_err("a non-string pattern must not register");
+    let msg = err.to_string();
+    assert!(msg.contains("`pattern` must be a string"), "{msg}");
+    assert!(
+        registry.all().is_empty(),
+        "and it must not become a handler against every tool call"
+    );
+}
+
+/// A budget that is not a number must not silently fall back to the hook's.
+#[test]
+fn a_timeout_ms_that_is_not_an_integer_is_refused() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
+
+    for value in [r#""5000""#, "-1", "1.5"] {
+        let err = lua
+            .load(format!(
+                r#"cru.on("turn:complete", {{ timeout_ms = {value} }}, function() end)"#
+            ))
+            .exec()
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("`timeout_ms` must be a non-negative integer"),
+            "timeout_ms = {value}: {msg}"
+        );
+    }
+    assert!(registry.all().is_empty(), "nothing may be stored");
+
+    // A Luau number literal is a double, so an integral one is the same
+    // option and must still be accepted.
+    lua.load(r#"cru.on("turn:complete", { timeout_ms = 5000 }, function() end)"#)
+        .exec()
+        .expect("an integral number is a valid budget");
+    assert_eq!(registry.all()[0].timeout_ms, Some(5000));
+}
+
+/// `once` opts in to retirement, so a swallowed value reads as "never
+/// retires" and the author sees a registration that succeeded.
+#[test]
+fn an_once_that_is_not_a_boolean_is_refused() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
+
+    let err = lua
+        .load(r#"cru.on("turn:complete", { once = "yes" }, function() end)"#)
+        .exec()
+        .expect_err("a non-boolean once must not register");
+    assert!(
+        err.to_string().contains("`once` must be a boolean"),
+        "{err}"
+    );
+    assert!(registry.all().is_empty(), "nothing may be stored");
 }

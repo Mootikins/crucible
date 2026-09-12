@@ -204,11 +204,11 @@ pub use handlers::{
     LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest, Registration,
     RegistrationSpec, ScriptHandlerResult, SessionScope, ToolBeforeExecuteEvent,
     ToolBeforeExecuteResult, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
-    ToolDisplayStartEvent, ToolDisplayStartHints, DEFAULT_PRIORITY,
+    ToolDisplayStartEvent, ToolDisplayStartHints,
 };
 pub use handlers::{
-    hook_names, EventName, HookName, StageId, PERMISSION_REQUEST_HOOK, SHIPPED_DEFAULT_PRIORITY,
-    TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
+    hook_names, EventName, HookName, StageId, PERMISSION_REQUEST_HOOK, TOOL_BEFORE_EXECUTE_EVENT,
+    TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use host_api::render_declarations;
 pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};

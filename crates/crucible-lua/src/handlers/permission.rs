@@ -4,8 +4,8 @@ use tracing::debug;
 
 use super::hook_name::{HookName, StageId};
 use super::registry::{
-    scope_from_opts, Firing, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope,
-    DEFAULT_PRIORITY,
+    bool_option, scope_from_opts, string_option, Firing, LuaScriptHandlerRegistry,
+    RegistrationSpec, SessionScope,
 };
 
 /// The name a permission hook registers under in the shared store.
@@ -51,14 +51,6 @@ pub struct PermissionRequest {
     pub mode: Option<String>,
 }
 
-/// Priority the shipped defaults register at: deliberately far behind the
-/// default of 100, so anything a user or plugin registers is consulted first.
-///
-/// This exists because the gate is first-match-wins: without it, ordering is
-/// registration order, the shipped defaults load before any user file, and a
-/// user hook could never override a built-in decision.
-pub const SHIPPED_DEFAULT_PRIORITY: i64 = 1000;
-
 /// Register the cru.permissions.on_request() API for permission hooks
 ///
 /// This allows Lua scripts to register callbacks that fire before permission prompts:
@@ -88,7 +80,7 @@ pub fn register_permission_hook_api(
 
     let on_request_fn =
         lua.create_function(move |lua, (handler, opts): (Function, Option<Table>)| {
-            let (pattern, priority, scope, key, once) = match &opts {
+            let (pattern, scope, key, once) = match &opts {
                 Some(o) => {
                     let (scope, key) = scope_from_opts(
                         lua,
@@ -97,24 +89,19 @@ pub fn register_permission_hook_api(
                         o,
                     )?;
                     (
-                        o.get::<Option<String>>("pattern").ok().flatten(),
-                        o.get::<Option<i64>>("priority")
-                            .ok()
-                            .flatten()
-                            .unwrap_or(DEFAULT_PRIORITY),
+                        string_option("cru.permissions.on_request", o, "pattern")?,
                         scope,
                         key,
-                        o.get::<Option<bool>>("once").ok().flatten() == Some(true),
+                        bool_option("cru.permissions.on_request", o, "once")? == Some(true),
                     )
                 }
-                None => (None, DEFAULT_PRIORITY, SessionScope::Global, None, false),
+                None => (None, SessionScope::Global, None, false),
             };
 
             let id = registry.register(
                 lua,
                 RegistrationSpec {
                     name: PERMISSION_REQUEST_HOOK,
-                    priority,
                     pattern,
                     scope,
                     key,
@@ -125,7 +112,7 @@ pub fn register_permission_hook_api(
                 handler,
             )?;
 
-            debug!("Registered permission hook {id} (priority {priority})");
+            debug!("Registered permission hook {id}");
             Ok(())
         })?;
 
@@ -138,7 +125,7 @@ pub fn register_permission_hook_api(
         lua,
         "cru.permissions.on_request",
         "(handler: (request: PermissionRequest) -> PermissionDecision, \
-          opts: { pattern: string?, priority: number?, session: string?, \
+          opts: { pattern: string?, session: string?, \
           key: string?, once: boolean? }?) -> ()",
     )
     .map_err(|e| mlua::Error::external(e.to_string()))?;
@@ -172,19 +159,18 @@ pub(crate) fn build_request_table(
 
 /// Execute permission hooks and return the result
 ///
-/// Executes every registered permission hook in priority order. The first hook
-/// to return `{allow=true}` or `{deny=true}` wins. If all hooks return nil,
-/// returns `Prompt`.
+/// Executes every registered permission hook in registration order. The first
+/// hook to return `{allow=true}` or `{deny=true}` wins. If all hooks return
+/// nil, returns `Prompt`.
 ///
 /// # Arguments
 /// * `lua` - The Lua state
 /// * `registry` - The shared registration store
 /// * `request` - The permission request to evaluate
 /// * `firing` - The session whose turn asked, so a session-scoped hook
-///   answers for its own session and for no other. This is the synchronous
-///   twin of the selection in
+///   answers for its own session and for no other. Passed straight to
 ///   [`LuaScriptHandlerRegistry::for_hook`](super::registry::LuaScriptHandlerRegistry::for_hook),
-///   and the only other place a scope is read.
+///   which is the one place a scope is read; this gate reads none itself.
 ///
 /// # Returns
 /// * `PermissionHookResult::Allow` - Hook returned `{allow=true}`
@@ -212,11 +198,11 @@ pub fn execute_permission_hooks(
     request: &PermissionRequest,
     firing: Firing<'_>,
 ) -> LuaResult<PermissionHookResult> {
-    // Lower priority first, registration order breaking ties. First non-nil
-    // answer wins, so this ordering is what decides whether a user hook can
-    // override a shipped default — it registers later but at a lower priority,
-    // so it is asked first. The pattern filters on the tool name, as `cru.on`'s
-    // does.
+    // Registration order, and the first non-nil answer wins. The shipped
+    // defaults load before any user file, so a shipped hook is asked FIRST —
+    // which is why `runtime/defaults/init.luau` answers `nil` for every mode
+    // but `plan`, leaving the decision to whatever registered after it. The
+    // pattern filters on the tool name, as `cru.on`'s does.
     let hooks = registry.for_hook(PERMISSION_REQUEST_HOOK, Some(&request.tool_name), firing);
     if hooks.is_empty() {
         return Ok(PermissionHookResult::Prompt);

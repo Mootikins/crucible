@@ -134,13 +134,16 @@ cru.modes.auto = {
 -- set and refuses plugin tools at dispatch), so this is the legible statement
 -- of the rule, not the thing holding it up.
 --
--- Registered at priority 1000 so your own hooks are asked first.
+-- This file loads before your own, so this hook is asked FIRST. It answers
+-- `nil` for every mode but `plan`, which is what leaves the decision to the
+-- hooks you register after it. In `plan` mode it decides, and a hook of yours
+-- cannot allow a mutating tool through this gate.
 cru.permissions.on_request(function(request)
   if request.mode == "plan" and not request.is_safe then
     return { deny = true }
   end
   return nil
-end, { priority = 1000 })
+end)
 
 -- The default system prompt is NOT set here.
 --

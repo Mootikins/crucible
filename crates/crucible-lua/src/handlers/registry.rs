@@ -2,7 +2,7 @@ use crucible_core::events::SessionEvent;
 use crucible_core::utils::glob_match;
 use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use super::conversion::session_event_to_lua;
 use super::hook_name::HookName;
@@ -141,10 +141,6 @@ pub struct Registration {
     pub source: LuaSource,
     /// The dispatch key, from the one monotonic allocator. Never reused.
     pub id: u64,
-    /// Lower runs first. Registration order breaks a tie, and that order is
-    /// total: search paths rank by `runtime_path::Origin`, and
-    /// `lifecycle::discovery` sorts each directory by name.
-    pub priority: i64,
     /// Glob over the dispatch identifier — a tool name, for the hooks that
     /// carry one. `None` matches every dispatch.
     pub pattern: Option<String>,
@@ -160,8 +156,7 @@ pub struct Registration {
     /// Neovim names no row and keys its coarse delete on three parts
     /// (`autocmd.c:952`), so this axis has no prior art — but Neovim also
     /// ALWAYS appends, and Crucible replaces a scoped row. Under replacement
-    /// this is the only thing that tells two such rows apart, because
-    /// `priority` is not in the key either.
+    /// this is the only thing that tells two such rows apart.
     pub key: Option<String>,
     /// Whether this registration retires itself after it runs once.
     ///
@@ -198,8 +193,6 @@ pub struct Registration {
 pub struct RegistrationSpec {
     /// The hook to register for.
     pub name: HookName,
-    /// Lower runs first. 100 is the documented default.
-    pub priority: i64,
     /// Glob over the dispatch identifier.
     pub pattern: Option<String>,
     /// Which sessions to fire for.
@@ -221,7 +214,6 @@ impl RegistrationSpec {
     pub fn new(name: HookName) -> Self {
         Self {
             name,
-            priority: DEFAULT_PRIORITY,
             pattern: None,
             scope: SessionScope::Global,
             key: None,
@@ -231,9 +223,6 @@ impl RegistrationSpec {
         }
     }
 }
-
-/// The priority a registration takes when it names none.
-pub const DEFAULT_PRIORITY: i64 = 100;
 
 /// Which of one source's registrations [`LuaScriptHandlerRegistry::clear_matching`]
 /// removes.
@@ -350,12 +339,72 @@ pub fn session_from_opts(lua: &Lua, api: &str, opts: &mlua::Table) -> LuaResult<
 /// swallowing `{ session = session }` — the handle instead of its id, which
 /// is the mistake an author will make — would silently widen a handler from
 /// one session to all of them.
-fn string_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<String>> {
+///
+/// `pattern` is the same harm on the other axis. An absent pattern matches
+/// every dispatch identifier, so `cru.on("pre_tool_call", { pattern = tool },
+/// h)` where `tool` is a table would swallow to `None` and put the handler
+/// against EVERY tool call in every session — on the one hook that fails
+/// closed.
+///
+/// **Every option on every registration table is read through this function
+/// or one of its two siblings**, [`integer_option`] and [`bool_option`].
+/// Three readers, not one per option, and none of them is `.ok()`: a wrong
+/// type is an author's mistake and it is reported where it was made.
+pub(crate) fn string_option(
+    api: &str,
+    opts: &mlua::Table,
+    field: &str,
+) -> LuaResult<Option<String>> {
     match opts.get::<Value>(field) {
         Ok(Value::Nil) => Ok(None),
         Ok(Value::String(s)) => Ok(Some(s.to_str()?.to_string())),
         Ok(other) => Err(mlua::Error::RuntimeError(format!(
             "{api}: `{field}` must be a string, not a {}",
+            other.type_name()
+        ))),
+        Err(e) => Err(e),
+    }
+}
+
+/// One non-negative integer option, or `None` when it is absent.
+///
+/// See [`string_option`] for why the wrong type raises. Here the swallowed
+/// value would drop a handler back to its hook's default time budget, so a
+/// handler that asked for a long one would be cancelled mid-call with nothing
+/// naming the reason.
+pub(crate) fn integer_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<u64>> {
+    let wrong = |found: &str| {
+        Err(mlua::Error::RuntimeError(format!(
+            "{api}: `{field}` must be a non-negative integer, not {found}"
+        )))
+    };
+    match opts.get::<Value>(field) {
+        Ok(Value::Nil) => Ok(None),
+        Ok(Value::Integer(n)) => match u64::try_from(n) {
+            Ok(n) => Ok(Some(n)),
+            Err(_) => wrong(&format!("{n}")),
+        },
+        // Luau numbers are doubles, so `{ timeout_ms = 5000 }` can arrive as
+        // one. An integral value is the same option; a fractional one is not.
+        Ok(Value::Number(n)) if n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64 => {
+            Ok(Some(n as u64))
+        }
+        Ok(other) => wrong(&format!("a {}", other.type_name())),
+        Err(e) => Err(e),
+    }
+}
+
+/// One boolean option, or `None` when it is absent.
+///
+/// See [`string_option`] for why the wrong type raises. `required` and `once`
+/// are both "opt in to something unusual", so a swallowed value reads as the
+/// ordinary case and the author sees a registration that succeeded.
+pub(crate) fn bool_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<bool>> {
+    match opts.get::<Value>(field) {
+        Ok(Value::Nil) => Ok(None),
+        Ok(Value::Boolean(b)) => Ok(Some(b)),
+        Ok(other) => Err(mlua::Error::RuntimeError(format!(
+            "{api}: `{field}` must be a boolean, not a {}",
             other.type_name()
         ))),
         Err(e) => Err(e),
@@ -370,6 +419,32 @@ impl LuaScriptHandlerRegistry {
             registrations: Arc::new(Mutex::new(Vec::new())),
             next_id: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// The row list, and the ONE poison policy: a poisoned lock is ENTERED.
+    ///
+    /// **The guarded value cannot be half-updated, so the poison flag carries
+    /// nothing a reader needs.** Every mutation here is one `Vec` operation —
+    /// a `push`, a `retain`, or a single index assignment — and a `Vec` that
+    /// survives a panic mid-operation is still structurally sound. There is no
+    /// multi-step invariant across two fields for a panic to break.
+    ///
+    /// Nine call sites read this lock and they used to answer FOUR ways: a
+    /// `map_err` to a Lua error, a `.map(…).unwrap_or(0)`, an `.expect` panic,
+    /// and a `let Ok(..) else { return 0 }`. The panic was the worst of them,
+    /// and it was on `for_hook` — the `pre_tool_call` selection — so a poison
+    /// that merely failed one registration would abort a turn the next time
+    /// anything read the store. The swallows were the second worst: an empty
+    /// answer from `for_hook` silently disables every guard registered on a
+    /// hook that fails closed.
+    ///
+    /// Entering is therefore both the least destructive and the honest one.
+    /// It is not "ignore an error": there is no error, because the state a
+    /// panicking thread left behind is a valid `Vec` of valid rows.
+    fn rows(&self) -> MutexGuard<'_, Vec<Registration>> {
+        self.registrations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Store `handler` under `spec`, owned by whoever is running now.
@@ -417,8 +492,7 @@ impl LuaScriptHandlerRegistry {
     /// Crucible does not yet record. Two activations of one line are the same
     /// registration; two different lines are two. Until something supplies
     /// that, `key` is the only axis separating two scoped rows on one hook
-    /// and one pattern — `priority` is not in the key, so two rows that
-    /// differ only in priority collapse as well.
+    /// and one pattern.
     ///
     /// A [`SessionScope::Global`] registration still APPENDS. Two identical unscoped
     /// registrations are two handlers, as they have always been: an unscoped
@@ -437,7 +511,6 @@ impl LuaScriptHandlerRegistry {
             name: spec.name,
             source,
             id,
-            priority: spec.priority,
             pattern: spec.pattern,
             scope: spec.scope,
             key: spec.key,
@@ -446,10 +519,7 @@ impl LuaScriptHandlerRegistry {
             required: spec.required,
             body,
         };
-        let mut rows = self
-            .registrations
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock registrations: {e}")))?;
+        let mut rows = self.rows();
         match registration.replaces(&rows) {
             // In place, so a re-registration on every history fetch does not
             // churn the tie-break order of the rows around it.
@@ -466,46 +536,64 @@ impl LuaScriptHandlerRegistry {
     /// so plugins using the real API showed 0 and plugins using the dead one
     /// showed a number that meant nothing.
     pub fn plugin_handler_count(&self, plugin: &str) -> usize {
-        self.registrations
-            .lock()
-            .map(|rows| {
-                rows.iter()
-                    .filter(|r| r.source.plugin_name() == Some(plugin))
-                    .count()
-            })
-            .unwrap_or(0)
+        self.rows()
+            .iter()
+            .filter(|r| r.source.plugin_name() == Some(plugin))
+            .count()
     }
 
-    /// Every registration for `name`, priority first, matching `identifier`
-    /// and serving `firing`.
+    /// Every registration for `name` matching `identifier` and serving
+    /// `firing`, in REGISTRATION ORDER.
     ///
-    /// The sort is stable, so two registrations of equal priority run in
-    /// registration order.
+    /// # Nothing reorders, and registration order is total
     ///
-    /// **This closure and its synchronous twin in
+    /// There was a `priority` field, and it is gone. Neovim orders no
+    /// autocommand — `nvim_create_autocmd` takes eight option fields and none
+    /// of them ranks a handler — and an author who must run last writes into
+    /// `after/` rather than negotiating a number with strangers. Composition
+    /// is a plugin's concern; a store is not a scheduler.
+    ///
+    /// So the answer to "which handler runs first" is "the one that
+    /// registered first", and three steps give that a total order:
+    ///
+    /// 1. `runtime/defaults/init.luau` runs first, as
+    ///    [`LuaSource::Builtin`](crate::plugin_context::LuaSource::Builtin)
+    ///    (`daemon_plugins::boot::load_shipped_defaults`).
+    /// 2. Then the user's `init.lua`, as
+    ///    [`LuaSource::UserLua`](crate::plugin_context::LuaSource::UserLua).
+    ///    The boot inversion puts it BEFORE plugin loading.
+    /// 3. Then the plugins, and `PluginManager::load_all`
+    ///    (`crate::lifecycle::loading`) sorts its whole key set by name, so
+    ///    they run alphabetically and the daemon executes them in that
+    ///    order.
+    ///
+    /// **Step 3 is the mechanism, and it is the plugin NAME.** Neither the
+    /// search-path rank nor `lifecycle::discovery` supplies it: the rank
+    /// decides which plugin wins a name clash, and the directory sort only
+    /// keeps `discover` itself repeatable. A plugin found on any root loads
+    /// in the same place, which is the name's place.
+    ///
+    /// **This closure is the ONE place a scope is read.** Every fire path
+    /// comes through here, the synchronous
     /// [`execute_permission_hooks`](super::permission::execute_permission_hooks)
-    /// are the only two places a scope is read.** A dispatch site never
-    /// checks one: it says which session it is in and gets the handlers for
-    /// it. The pattern has worked this way since it was added, and the scope
-    /// sits beside it for the same reason — a per-site check is a per-site
-    /// chance to omit the check.
+    /// included — it calls this method and reads no scope of its own. A
+    /// dispatch site never checks one either: it says which session it is in
+    /// and gets the handlers for it. The pattern has worked this way since it
+    /// was added, and the scope sits beside it for the same reason — a
+    /// per-site check is a per-site chance to omit the check.
     pub fn for_hook(
         &self,
         name: HookName,
         identifier: Option<&str>,
         firing: Firing<'_>,
     ) -> Vec<Registration> {
-        let rows = self
-            .registrations
-            .lock()
-            .expect("registrations: poisoned while selecting handlers");
-        let mut matching: Vec<Registration> = rows
-            .iter()
+        let rows = self.rows();
+        // No sort. `registrations` is already in registration order, which is
+        // the whole of the ordering contract — see this method's doc.
+        rows.iter()
             .filter(|r| r.name == name && r.matches(identifier) && r.serves(firing))
             .cloned()
-            .collect();
-        matching.sort_by_key(|r| r.priority);
-        matching
+            .collect()
     }
 
     /// [`Self::for_hook`] by registered name.
@@ -531,9 +619,7 @@ impl LuaScriptHandlerRegistry {
     ///
     /// Answers how many it removed, so a caller can log the change.
     pub fn clear_source(&self, source: &LuaSource) -> usize {
-        let Ok(mut rows) = self.registrations.lock() else {
-            return 0;
-        };
+        let mut rows = self.rows();
         let before = rows.len();
         rows.retain(|r| &r.source != source);
         before - rows.len()
@@ -556,9 +642,7 @@ impl LuaScriptHandlerRegistry {
     ///
     /// Answers how many it removed.
     pub fn clear_session(&self, session: &str) -> usize {
-        let Ok(mut rows) = self.registrations.lock() else {
-            return 0;
-        };
+        let mut rows = self.rows();
         let before = rows.len();
         rows.retain(|r| r.scope != SessionScope::Session(session.to_string()));
         before - rows.len()
@@ -579,9 +663,7 @@ impl LuaScriptHandlerRegistry {
     /// reaches no other plugin's. `clear_source` already matched on exactly
     /// this, so the gate is the one that was already here.
     pub fn clear_matching(&self, source: &LuaSource, filter: &ClearFilter) -> usize {
-        let Ok(mut rows) = self.registrations.lock() else {
-            return 0;
-        };
+        let mut rows = self.rows();
         let before = rows.len();
         rows.retain(|row| !(&row.source == source && filter.selects(row)));
         before - rows.len()
@@ -610,9 +692,7 @@ impl LuaScriptHandlerRegistry {
         if !registration.once {
             return false;
         }
-        let Ok(mut rows) = self.registrations.lock() else {
-            return false;
-        };
+        let mut rows = self.rows();
         // By id, never by a held index: `register` may have replaced or
         // pushed rows since the dispatch snapshot, so an index would name
         // some other registration.
@@ -722,20 +802,12 @@ impl LuaScriptHandlerRegistry {
     /// For a caller that wants the whole store rather than one name: a test
     /// counting what a load left behind, and the boot rollback check.
     pub fn all(&self) -> Vec<Registration> {
-        self.registrations
-            .lock()
-            .expect("registrations: poisoned while listing handlers")
-            .clone()
+        self.rows().clone()
     }
 
     /// One registration by id, cloned out of the lock.
     pub fn by_id(&self, id: u64) -> Option<Registration> {
-        self.registrations
-            .lock()
-            .expect("registrations: poisoned while looking a handler up")
-            .iter()
-            .find(|r| r.id == id)
-            .cloned()
+        self.rows().iter().find(|r| r.id == id).cloned()
     }
 }
 
@@ -863,6 +935,38 @@ impl Default for LuaScriptHandlerRegistry {
 /// [`crate::timer::abort_source`], each of which states its own half. What this
 /// call does guarantee is that no further body of `source` starts.
 ///
+/// # Why the three bodies stay three, and are not one helper
+///
+/// They look alike from here — reach a store, take a `std::sync::Mutex`,
+/// select by source equality, stop, count — and a reviewer reasonably reads
+/// that as a pattern one step from a fourth copy. It is not one shape. Four
+/// things differ, and each difference is the point of its own store:
+///
+/// - **What is stopped.** A registration needs no stop action: dropping the
+///   row IS the stop. A schedule needs `tx.send(())` on a oneshot. A task
+///   needs `JoinHandle::abort`.
+/// - **The container and the element.** A `Vec<Registration>`, a
+///   `HashMap<u64, (LuaSource, Sender)>` keyed by the handle
+///   `cru.schedule.cancel` takes, and a `Vec<(LuaSource, JoinHandle)>` with no
+///   key because `cru.timer.spawn` answers nothing a caller could name one
+///   with.
+/// - **Where the store lives.** This one is a field on the registry the host
+///   already holds. The other two are VM app data under two different types,
+///   so each has an "absent store" arm that this one cannot have.
+/// - **Pruning, which is the divergence a review flagged.** `abort_source`
+///   also drops OTHER sources' finished handles; the other two drop nothing
+///   they did not select. That asymmetry is load-bearing rather than drift:
+///   only the task store holds handles the RUNTIME may retire on its own, so
+///   only it accumulates dead entries that nothing else would ever remove. A
+///   schedule's canceller leaves its map when it is cancelled and by nothing
+///   else, and a registration leaves this list when it is cleared.
+///
+/// A shared helper would have to be generic over the container, the element,
+/// the owner projection, the stop action and the store lookup — five knobs
+/// for three call sites, which buys nothing and hides each store's own
+/// reason. So they stay three, and this comment is the thing that was
+/// missing: the record of why.
+///
 /// Answers how many registrations it removed.
 pub fn clear_source(lua: &Lua, registry: &LuaScriptHandlerRegistry, source: &LuaSource) -> usize {
     let dropped = registry.clear_source(source);
@@ -879,4 +983,70 @@ pub fn clear_source(lua: &Lua, registry: &LuaScriptHandlerRegistry, source: &Lua
         );
     }
     total
+}
+
+/// The poison policy, tested where the policy lives.
+///
+/// Inline rather than in `handlers/tests/`, because poisoning a `Mutex`
+/// requires panicking while the GUARD is held and `rows` is private. Every
+/// public method drops the guard before it returns, which is exactly why a
+/// poison here is so rare — and exactly why nothing noticed that the store
+/// answered a poison four different ways.
+#[cfg(test)]
+mod poison {
+    use super::*;
+    use crate::handlers::{register_cru_on_api, StageId};
+
+    /// A poisoned lock must not take a turn down, and must not silently
+    /// answer "no handlers" either.
+    ///
+    /// `for_hook` is the `pre_tool_call` selection, so the `.expect` this
+    /// replaces turned a poison that merely failed one registration into an
+    /// aborted turn the next time anything read the store. A swallowed
+    /// `Vec::new()` would be worse still: it disables every guard on a hook
+    /// that fails closed, with nothing logged.
+    #[test]
+    fn every_reader_and_writer_still_works_on_a_poisoned_lock() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+        register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
+        lua.load(r#"cru.on("pre_tool_call", function() end)"#)
+            .exec()
+            .expect("registers");
+
+        // The only way a `Mutex` is poisoned: panic while the guard is live.
+        let poisoner = registry.clone();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.rows();
+            panic!("a path panicked while holding the registration lock");
+        }));
+        assert!(panicked.is_err(), "the poisoning panic must have happened");
+        assert!(
+            registry.registrations.is_poisoned(),
+            "and it must have left the lock poisoned"
+        );
+
+        // Every reader keeps working, and keeps telling the truth.
+        assert_eq!(
+            registry
+                .for_hook(
+                    StageId::PreToolCall.into(),
+                    Some("bash"),
+                    crate::handlers::Firing::Sessionless
+                )
+                .len(),
+            1,
+            "`for_hook` must neither panic nor answer with an empty list"
+        );
+        assert_eq!(registry.all().len(), 1);
+        assert!(registry.by_id(0).is_some());
+        assert_eq!(registry.plugin_handler_count("nobody"), 0);
+
+        // And a write still lands, so the store is not left read-only.
+        lua.load(r#"cru.on("turn:complete", function() end)"#)
+            .exec()
+            .expect("registration must still succeed on a poisoned lock");
+        assert_eq!(registry.all().len(), 2);
+        assert_eq!(registry.clear_source(&LuaSource::UserLua), 2);
+    }
 }

@@ -3,7 +3,8 @@ use tracing::debug;
 
 use super::hook_name::{hook_names, HookName};
 use super::registry::{
-    scope_from_opts, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope, DEFAULT_PRIORITY,
+    bool_option, integer_option, scope_from_opts, string_option, LuaScriptHandlerRegistry,
+    RegistrationSpec, SessionScope,
 };
 
 /// Reject a hook name `cru.on` cannot register for.
@@ -37,8 +38,9 @@ fn resolve_hook_name(event_type: &str) -> Result<HookName, mlua::Error> {
 /// -- Simple (backward compatible):
 /// cru.on("pre_tool_call", function(ctx, event) ... end)
 ///
-/// -- With options (pattern + priority):
-/// cru.on("pre_tool_call", { pattern = "bash", priority = 50 }, function(ctx, event) ... end)
+/// -- With options. Handlers run in registration order; nothing reorders
+/// -- them. See `LuaScriptHandlerRegistry::for_hook`.
+/// cru.on("pre_tool_call", { pattern = "bash" }, function(ctx, event) ... end)
 ///
 /// -- For one session, from inside that session. Registering it again
 /// -- replaces it, so a resume leaves one handler and not two:
@@ -74,18 +76,10 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
 
         let name = resolve_hook_name(&event_type)?;
 
-        let (pattern, priority, timeout_ms, scope, key, once, handler) = match &args_vec[1] {
+        let (pattern, timeout_ms, scope, key, once, handler) = match &args_vec[1] {
             Value::Function(f) => {
                 // cru.on(event_type, handler) — backward compatible
-                (
-                    None,
-                    DEFAULT_PRIORITY,
-                    None,
-                    SessionScope::Global,
-                    None,
-                    false,
-                    f.clone(),
-                )
+                (None, None, SessionScope::Global, None, false, f.clone())
             }
             Value::Table(opts) => {
                 // cru.on(event_type, opts, handler)
@@ -102,20 +96,19 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                         ))
                     }
                 };
-                let pattern: Option<String> = opts.get("pattern").ok();
-                let priority: i64 = opts.get("priority").unwrap_or(DEFAULT_PRIORITY);
+                let pattern = string_option("cru.on", opts, "pattern")?;
                 // A handler that legitimately runs long — a container build,
                 // a large model call — says so here. Absent, the name it
                 // registers for decides. See `handler_budget`.
-                let timeout_ms: Option<u64> = opts.get("timeout_ms").ok();
+                let timeout_ms = integer_option("cru.on", opts, "timeout_ms")?;
                 // A handler that retires itself after one call. The host
                 // removes the row before it runs the body; see
                 // `LuaScriptHandlerRegistry::retire_if_once`.
-                let once: bool = opts.get("once").unwrap_or(false);
+                let once = bool_option("cru.on", opts, "once")? == Some(true);
                 // Which sessions, and what this registration calls itself.
                 // The host resolves the session id; see `scope_from_opts`.
                 let (scope, key) = scope_from_opts(lua, "cru.on", name, opts)?;
-                (pattern, priority, timeout_ms, scope, key, once, handler)
+                (pattern, timeout_ms, scope, key, once, handler)
             }
             _ => {
                 return Err(mlua::Error::RuntimeError(
@@ -128,7 +121,6 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
             lua,
             RegistrationSpec {
                 name,
-                priority,
                 pattern: pattern.clone(),
                 scope: scope.clone(),
                 key,
@@ -140,8 +132,8 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
         )?;
 
         debug!(
-            "Registered runtime handler {} for event '{}' (priority={}, pattern={:?}, scope={:?})",
-            id, event_type, priority, pattern, scope
+            "Registered runtime handler {} for event '{}' (pattern={:?}, scope={:?})",
+            id, event_type, pattern, scope
         );
         Ok(())
     })?;

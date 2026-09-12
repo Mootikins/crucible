@@ -93,16 +93,21 @@ per-project, not per-session, and survive restarts.
 
 ### 4 — Lua permission hooks
 
-Hooks run in `priority` order (lower first) and the first non-`nil` verdict
-wins:
+Hooks run in registration order and the first non-`nil` verdict wins. There
+is no priority option: the shipped `runtime/defaults/init.luau` loads first,
+then your `init.lua`, then the plugins alphabetically by name.
 
 ```lua
 cru.permissions.on_request(function(request)
   if request.tool_name == "bash" and request.args.command:match("^git push") then
     return { deny = "pushes go through review" }
   end
-end, { priority = 10 })
+end)
 ```
+
+The shipped hook is therefore asked before yours. It answers `nil` for every
+mode but `plan`, which is what leaves your hook reachable; in `plan` mode its
+deny stands.
 
 `{ pattern = "bash" }` filters at registration instead, so the hook is never
 called for other tools:

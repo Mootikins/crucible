@@ -535,7 +535,7 @@ end
 -- daemon's lifetime. Each handler resolves its own session via ctx.session_id
 -- and no-ops when that session has no container.
 for tool_name, handler_fn in pairs(TOOL_HANDLERS) do
-  cru.on("pre_tool_call", { pattern = tool_name, priority = 10 }, handler_fn)
+  cru.on("pre_tool_call", { pattern = tool_name }, handler_fn)
 end
 
 --- `required = true`: a failure here refuses the session.

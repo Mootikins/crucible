@@ -34,7 +34,7 @@ Place this in your plugin's `init.lua` or in a `.lua` file in a loaded plugins d
 cru.on(event_type, handler)
 
 -- With options:
-cru.on(event_type, { pattern = "...", priority = 50 }, handler)
+cru.on(event_type, { pattern = "..." }, handler)
 
 -- For one session, from inside that session:
 cru.on(event_type, { session = ctx.session_id, key = "ralph" }, handler)
@@ -47,7 +47,6 @@ cru.on(event_type, { once = true }, handler)
 |---|---|---|
 | `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the nineteen below — **exact match, no globs**. |
 | `opts.pattern` | string, optional | Glob filter applied to the event's identifier (e.g. tool name). Default: match all. |
-| `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
 | `opts.session` | string, optional | Fire for this session alone. Must be the session the code is running in. Default: every session. See [Scoping a handler to one session](#scoping-a-handler-to-one-session). |
 | `opts.key` | string, optional | What this registration calls itself, so one plugin can hold two scoped handlers on one event. |
 | `opts.once` | boolean, optional | Run the handler once, then retire the registration. Default: `false`. See [Retiring a handler](#retiring-a-handler). |
@@ -72,7 +71,7 @@ Handlers live in **one registry**, on the daemon VM: plugin `init.lua`s, the
 shipped defaults file, and `~/.config/crucible/init.lua`. They cannot be merged — a Lua
 function is only valid against the VM that created it — so dispatch runs them
 in a fixed order: **session-VM handlers first, then plugin-VM handlers**,
-each registry in ascending priority. Transforms chain across the boundary:
+each registry in registration order. Transforms chain across the boundary:
 a plugin handler sees arguments a session handler already rewrote.
 
 The two precognition hooks, `search:rerank` and `index:blocks` are the
@@ -130,6 +129,19 @@ Their identifiers, for `opts.pattern`:
 | `note:created`, `note:modified`, `note:deleted` | the kiln-relative note path |
 | `note:renamed` | the **destination** path |
 | `webhook:received` | the webhook name |
+| `session:created`, `session:ended` | *none* — see below |
+
+**`session:created` and `session:ended` take no `pattern`.** The session id
+was their identifier, which made `{ pattern = id }` a second way to say
+`{ session = id }` — and the two were not equal: the scope is resolved by the
+host against the session your code is running in, while the pattern accepted
+any string and validated none of it. `opts.session` is the one filter, and it
+is the one described under
+[Scoping a handler to one session](#scoping-a-handler-to-one-session).
+
+`session:created` takes neither. The only session id you could name is one
+whose `session:created` has already fired, so `opts.session` is refused there
+too — read `event.session_id` in the handler body instead.
 
 Naming: the three file events are spelled in the Rust `type_name()` style
 because they shipped that way and every config that registers one names them so.
@@ -185,6 +197,14 @@ plugin reload clears those.
 | `webhook:received` | a signed delivery from outside |
 | `index:blocks` | the note pipeline again |
 | `provider:auth` | the agent factory builds a chat client and holds no session |
+| `session:created` | it fires at the session's creation, so the only id you could name belongs to a session whose event is already over |
+
+`session:created` is the one worth spelling out. It is *about* a session, and
+the handler reads that session as `event.session_id` — but a scope on it could
+never fire, so it is refused rather than accepted and left quiet. For the same
+reason `ctx.session_id` is absent there: the dispatch belongs to the daemon.
+`session:ended` takes a scope normally, because code inside a session registers
+for that session's end while it is still running.
 
 Every other event carries one. `session:created` and `session:ended` name the
 session they are about, and `search:rerank` names one when the search came
@@ -720,7 +740,7 @@ end)
 Return `{ cancel = true, reason = "why" }`. The tool call is aborted and the reason surfaces to the agent as an error.
 
 ```lua
-cru.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "*delete*" }, function(ctx, event)
   return { cancel = true, reason = "Deletes are blocked in this session" }
 end)
 ```
@@ -730,7 +750,7 @@ end)
 Return `{ handled = true, result = ... }`. Default tool execution is skipped and your `result` becomes the tool result. Used by plugins that fully replace tool behavior — e.g. the `oci` plugin runs shell commands inside containers instead of on the host.
 
 ```lua
-cru.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "bash" }, function(ctx, event)
   local output = run_in_container(event.args.command)
   return { handled = true, result = output }
 end)
@@ -868,7 +888,7 @@ Return:
 - `{ deny = true }` — deny without prompting
 - `nil` — show the normal permission prompt
 
-The optional second argument takes `pattern`, `priority`, `session` and
+The optional second argument takes `pattern`, `session` and
 `key`. A hook scoped to one session answers for that session's turns alone —
 see [Scoping a handler to one session](#scoping-a-handler-to-one-session).
 
@@ -891,23 +911,33 @@ cru.on("note:modified", { pattern = "Daily/*" },  fn)  -- daily notes only
 cru.on("webhook:received", { pattern = "ci" },    fn)  -- one webhook
 ```
 
-## Priority Guide
+## Handler Order
 
-Lower numbers run earlier:
+**Handlers run in the order they registered. There is no priority option.**
+Neovim orders no autocommand either — `nvim_create_autocmd` takes eight
+option fields and none of them ranks a handler — and a number every author
+negotiates with strangers is not a coordination mechanism. Composition is
+your plugin's concern, not the engine's.
 
-| Range | Use |
-|-------|-----|
-| 0–9 | Security / validation / cancels |
-| 10–49 | Interception (container runtimes, sandboxing) |
-| 50–99 | Transformation |
-| 100–149 | General observation (default) |
-| 150–199 | Logging / audit |
+Registration order is total, and three steps give it:
 
-When multiple handlers fire for the same event, they run in ascending priority order. A handler that cancels or handles the call stops the chain.
+1. The shipped `runtime/defaults/init.luau`.
+2. Your `~/.config/crucible/init.lua`.
+3. The plugins, **alphabetically by plugin name** — wherever a plugin was
+   found on the runtimepath. The search path decides which plugin wins a name
+   clash, not when it runs.
+
+A handler that cancels or handles the call stops the chain.
+
+> **One consequence to know.** The shipped defaults are asked FIRST, so a
+> shipped hook that decides is final. `defaults/init.luau` answers `nil` for
+> every mode but `plan`, which is what leaves your own permission hooks
+> reachable. In `plan` mode its deny stands and your hook cannot allow a
+> mutating tool through the gate.
 
 ## Reference Plugin
 
-The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern` and priority 10), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `ctx.session_id`, since the one registration serves every session.
+The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern`), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `ctx.session_id`, since the one registration serves every session.
 
 ## Best Practices
 

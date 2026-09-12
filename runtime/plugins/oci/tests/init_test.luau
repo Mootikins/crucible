@@ -162,7 +162,7 @@ describe("oci plugin load", function()
   it("registers every workspace tool handler at load, not per session", function()
     for _, tool in ipairs({ "bash", "read_file", "write_file", "edit_file", "glob", "grep" }) do
       expect.is_not_nil(hooks[tool], "no pre_tool_call handler for " .. tool)
-      expect.equals(10, hooks[tool].opts.priority)
+      expect.equals(tool, hooks[tool].opts.pattern)
     end
   end)
 

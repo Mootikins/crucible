@@ -93,19 +93,24 @@ fn two_keys_are_two_registrations_for_one_session() {
     );
 }
 
-/// `priority` is NOT in the replacement key, so two scoped rows that differ
-/// only by it collapse — and the LATER registration is the one that stands.
+/// Two scoped rows alike in every part of the key collapse — and the LATER
+/// registration is the one that stands.
 ///
-/// This is why `key` cannot go while `replaces` stays. An author separating a
-/// guard from a logger by priority alone writes two `cru.on` calls, reads two
-/// successes, and holds one handler. The narrower axes do not cover it:
-/// `pattern` is the same for both, and neither is a one-shot.
+/// This is why `key` cannot go while `replaces` stays. An author registering a
+/// guard and a logger for one session on one hook writes two `cru.on` calls,
+/// reads two successes, and holds one handler. The narrower axes do not cover
+/// it: `pattern` is the same for both, and neither is a one-shot.
+///
+/// This test carried `priority = 10` and `priority = 90` when that option
+/// existed, because it was NOT in the key either. The option is gone and the
+/// property is unchanged, so the two calls now differ in nothing at all —
+/// which is the honest statement of what `replaces` does.
 ///
 /// Pinned, not endorsed. The fix is a host-derived identity for the
 /// definition site (Neovim's `AutoCmd.script_ctx`); until then an author
 /// separates the two rows with `key`.
 #[tokio::test]
-async fn two_scoped_registrations_differing_only_by_priority_collapse() {
+async fn two_scoped_registrations_alike_in_the_whole_key_collapse() {
     let (lua, registry) = vm();
     enter_plugin(&lua, "ralph");
 
@@ -113,15 +118,19 @@ async fn two_scoped_registrations_differing_only_by_priority_collapse() {
         &lua,
         "s1",
         r#"
-        cru.on("pre_tool_call", { session = "s1", priority = 10 }, function() fired = "guard" end)
-        cru.on("pre_tool_call", { session = "s1", priority = 90 }, function() fired = "logger" end)
+        cru.on("pre_tool_call", { session = "s1" }, function() fired = "guard" end)
+        cru.on("pre_tool_call", { session = "s1" }, function() fired = "logger" end)
         "#,
     )
     .expect("both register without complaint");
 
     let handlers =
         registry.runtime_handlers_for(StageId::PreToolCall.as_str(), None, Firing::InSession("s1"));
-    assert_eq!(handlers.len(), 1, "priority does not separate two rows");
+    assert_eq!(
+        handlers.len(),
+        1,
+        "the second registration replaced the first"
+    );
 
     // WHICH one survived, read by running it rather than assumed.
     let event = crucible_core::events::SessionEvent::Custom {
@@ -277,6 +286,40 @@ fn a_session_that_is_not_a_string_is_refused() {
         registry.all().is_empty(),
         "and it must not become an every-session handler"
     );
+}
+
+/// A scope on `session:created` is refused, because it could NEVER fire.
+///
+/// `session:created` for session X is broadcast once, at X's creation, before
+/// any Lua runs inside X — and `scope_from_opts` resolves `{ session = … }`
+/// against the session the caller is running in, so the only id a caller may
+/// write is one whose creation event is already over. The registration API's
+/// contract is that a handler which can never fire is refused loudly, and
+/// `EventName::carries_session` is the gate that keeps it.
+///
+/// `session:ended` is the opposite and stays accepted: code inside X
+/// registers for X's end while X is still running.
+#[test]
+fn a_scope_on_session_created_is_refused_and_on_session_ended_is_not() {
+    let (lua, registry) = vm();
+
+    let err = load_in_session(
+        &lua,
+        "s1",
+        r#"cru.on("session:created", { session = "s1" }, function() end)"#,
+    )
+    .expect_err("a scope that can never fire must not register");
+    let msg = err.to_string();
+    assert!(msg.contains("could never fire"), "{msg}");
+    assert!(registry.all().is_empty(), "nothing may be stored");
+
+    load_in_session(
+        &lua,
+        "s1",
+        r#"cru.on("session:ended", { session = "s1" }, function() end)"#,
+    )
+    .expect("a teardown hook for the running session is the point of the scope");
+    assert_eq!(registry.all().len(), 1);
 }
 
 /// And with no session in scope there is nothing to resolve against. A plugin
