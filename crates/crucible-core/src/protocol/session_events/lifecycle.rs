@@ -400,6 +400,17 @@ pub enum SystemPayload {
         version: u64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<String>,
+        /// The surface is gone: stop drawing it, and do not refetch.
+        ///
+        /// The one field that makes this event actionable on its own. Every
+        /// other change withholds the rows so the client asks; a withdrawal has
+        /// nothing left to ask for, and a client that had to re-derive it from
+        /// an empty refetch could not tell it apart from a lost race.
+        ///
+        /// Omitted from the wire when false, so an ordinary change serialises
+        /// exactly as it did before this field existed.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        withdrawn: bool,
     },
     /// A plugin's published data changed, so a client re-reads it.
     ///

@@ -246,13 +246,19 @@ pub enum ChatAppMsg {
     /// **Event** (daemon → TUI): the named surface is gone.
     ///
     /// A plugin uninstall drops a surface, and the registry announces the
-    /// withdrawal through the same `surface_changed` event a row push uses. The
-    /// refetch then finds nothing. The app closes the modal only when the modal
-    /// shows this surface; a withdrawal of another surface changes nothing.
+    /// withdrawal through the same `surface_changed` event a row push uses —
+    /// marked `withdrawn`, which is what tells the two apart. The app closes
+    /// the modal only when the modal shows this surface; a withdrawal of
+    /// another surface changes nothing.
     ///
-    /// Sent **only** when the daemon answers that the surface is absent. A
-    /// refetch that fails sends nothing, because an unreachable daemon is not a
-    /// withdrawal and must not close a panel the user reads.
+    /// Normally sent straight off that flag, with **no refetch**: the daemon
+    /// knew the surface was gone when it dropped it, so asking would spend a
+    /// round trip to be told the same thing.
+    ///
+    /// A refetch that answers "absent" also sends this, as the second defence
+    /// for a withdrawal this client never received. A refetch that *fails*
+    /// sends nothing, because an unreachable daemon is not a withdrawal and
+    /// must not close a panel the user reads.
     SurfaceWithdrawn(String),
     /// **Command** (TUI → daemon): Evaluate a Lua expression via `lua.eval`
     /// (the `:lua` / `:=` escape hatch).

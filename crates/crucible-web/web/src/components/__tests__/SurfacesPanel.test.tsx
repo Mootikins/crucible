@@ -1,20 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
-import type { Surface } from '@/lib/api';
+import type { Surface, SurfaceChangedEvent } from '@/lib/api';
 
 const getSurfacesMock = vi.fn();
 /** Captures the SSE callback so a test can fire a change without a server. */
-let surfaceListener: (() => void) | null = null;
+let surfaceListener: ((event: SurfaceChangedEvent) => void) | null = null;
 const unsubscribeMock = vi.fn();
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getSurfaces: (...args: unknown[]) => getSurfacesMock(...args),
-  subscribeToSurfaceEvents: (cb: () => void) => {
+  subscribeToSurfaceEvents: (cb: (event: SurfaceChangedEvent) => void) => {
     surfaceListener = cb;
     return unsubscribeMock;
   },
 }));
+
+/** One `surface_changed` frame, as the Rust route serialises it. */
+function changed(over: Partial<SurfaceChangedEvent> = {}): SurfaceChangedEvent {
+  return { plugin: 'p', name: 'sessions', version: 2, ...over };
+}
 
 import { SurfacesPanel } from '../SurfacesPanel';
 
@@ -92,10 +97,75 @@ describe('SurfacesPanel', () => {
     expect(getSurfacesMock).toHaveBeenCalledTimes(1);
 
     getSurfacesMock.mockResolvedValue([surface([{ id: 'b', text: 'second' }], { version: 2 })]);
-    surfaceListener?.();
+    surfaceListener?.(changed());
 
     await waitFor(() => expect(getByText('second')).toBeTruthy());
     expect(getSurfacesMock).toHaveBeenCalledTimes(2);
+  });
+
+  // A plugin uninstall withdraws the surface. The daemon marks it on the event,
+  // so the panel goes without asking: there is no content left to fetch, and a
+  // refetch would spend a round trip to be told what the event already said.
+  it('drops a withdrawn surface without refetching', async () => {
+    getSurfacesMock.mockResolvedValue([surface([{ id: 'a', text: 'crucible' }])]);
+    const { getByText, queryByText } = render(() => <SurfacesPanel />);
+    await waitFor(() => expect(getByText('crucible')).toBeTruthy());
+    expect(getSurfacesMock).toHaveBeenCalledTimes(1);
+
+    surfaceListener?.(changed({ withdrawn: true }));
+
+    await waitFor(() => expect(getByText('No plugin surfaces')).toBeTruthy());
+    expect(queryByText('crucible')).toBeNull();
+    expect(getSurfacesMock).toHaveBeenCalledTimes(1);
+  });
+
+  // **The negative.** One plugin goes away while the browser draws another
+  // plugin's panel. That panel must keep its rows.
+  it('leaves another plugin panel drawn when one is withdrawn', async () => {
+    getSurfacesMock.mockResolvedValue([
+      surface([{ id: 'a', text: 'crucible' }]),
+      surface([{ id: 'b', text: 'review queue' }], { name: 'reviews', title: 'Reviews' }),
+    ]);
+    const { getByText, queryByText } = render(() => <SurfacesPanel />);
+    await waitFor(() => expect(getByText('crucible')).toBeTruthy());
+
+    surfaceListener?.(changed({ name: 'reviews', withdrawn: true }));
+
+    await waitFor(() => expect(queryByText('Reviews')).toBeNull());
+    expect(getByText('crucible')).toBeTruthy();
+    expect(getSurfacesMock).toHaveBeenCalledTimes(1);
+  });
+
+  // A withdrawal must not leave the chooser pointing at a surface that is gone.
+  // If it did, a plugin that later re-declares the same name would silently
+  // steal the panel back from whatever the user had selected.
+  it('forgets a selection that named the withdrawn surface', async () => {
+    getSurfacesMock.mockResolvedValue([
+      surface([{ id: 'a', text: 'crucible' }]),
+      surface([{ id: 'b', text: 'review queue' }], { name: 'reviews', title: 'Reviews' }),
+    ]);
+    const { getByText, queryByText } = render(() => <SurfacesPanel />);
+    await waitFor(() => expect(getByText('Reviews')).toBeTruthy());
+
+    getByText('Reviews').click();
+    await waitFor(() => expect(getByText('review queue')).toBeTruthy());
+
+    surfaceListener?.(changed({ name: 'reviews', withdrawn: true }));
+    await waitFor(() => expect(queryByText('review queue')).toBeNull());
+
+    // The plugin comes back with the same name. The panel must stay where the
+    // browser put it, not jump to a stale selection.
+    getSurfacesMock.mockResolvedValue([
+      surface([{ id: 'a', text: 'crucible' }]),
+      surface([{ id: 'c', text: 'new review' }], { name: 'reviews', title: 'Reviews' }),
+    ]);
+    surfaceListener?.(changed({ name: 'reviews' }));
+
+    await waitFor(() => expect(getSurfacesMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(getByText('crucible'), 'the panel stayed where the browser put it').toBeTruthy(),
+    );
+    expect(queryByText('new review'), 'a stale selection did not steal the panel').toBeNull();
   });
 
   it('explains itself when no plugin declares a surface', async () => {

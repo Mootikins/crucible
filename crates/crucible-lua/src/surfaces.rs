@@ -58,6 +58,25 @@ pub struct SurfaceChange {
     pub name: String,
     pub version: u64,
     pub session: Option<String>,
+    /// The surface is gone, and no refetch will find it.
+    ///
+    /// `withdrawn`, not `removed`, because `remove` is the method and this is
+    /// the state it leaves behind. The word already runs the length of this
+    /// path — `withdrawing_a_surface_announces_it`, `SurfaceWithdrawn`,
+    /// `close_withdrawn_surface` — so the fact keeps one name end to end.
+    ///
+    /// The daemon knows this at the moment it drops the entry. Without the
+    /// field a client re-derives it by asking for the surface and reading the
+    /// empty answer, which costs a round trip per client to learn something
+    /// the event could have said. Worse, "the refetch found nothing" is also
+    /// what a lost race looks like, so each client has to keep that
+    /// distinction itself.
+    ///
+    /// This is the one change a client may act on without refetching. Every
+    /// other change withholds the rows on purpose and a client must ask; a
+    /// withdrawal carries the whole fact, because there is nothing left to ask
+    /// for.
+    pub withdrawn: bool,
 }
 
 /// Longest title kept, in characters.
@@ -235,15 +254,31 @@ impl SurfaceRegistry {
     }
 
     /// Report a change, if anything is listening.
-    fn announce(&self, surface: &Surface) {
+    ///
+    /// `withdrawn` is a parameter because this method cannot find the answer.
+    /// A dropped entry and a live one look the same here — the caller holds a
+    /// `Surface` either way. Each caller knows which it has, so each caller
+    /// says. Use [`Self::announce_change`] or [`Self::announce_withdrawal`].
+    fn announce(&self, surface: &Surface, withdrawn: bool) {
         if let Some(emitter) = self.emitter.get() {
             emitter(SurfaceChange {
                 plugin: surface.plugin.clone(),
                 name: surface.name.clone(),
                 version: surface.version,
                 session: surface.session.clone(),
+                withdrawn,
             });
         }
+    }
+
+    /// The surface is still there and a client must re-read it.
+    fn announce_change(&self, surface: &Surface) {
+        self.announce(surface, false);
+    }
+
+    /// The surface is gone and a client must stop drawing it.
+    fn announce_withdrawal(&self, surface: &Surface) {
+        self.announce(surface, true);
     }
 
     /// Declare a surface, or update the metadata of one already declared.
@@ -253,6 +288,34 @@ impl SurfaceRegistry {
     /// keeps its rows and its version, and only its title, shape and session
     /// are refreshed. A plugin that wants the rows gone calls
     /// [`Self::set_rows`] with none.
+    ///
+    /// # Why this announces, and when
+    ///
+    /// A client learns of a surface through the emitter and nowhere else. A
+    /// silent declare left a plugin that declared a titled panel and pushed no
+    /// rows yet invisible to every client until something unrelated woke one.
+    ///
+    /// The insert arm always announces: a panel that exists and that nobody has
+    /// been told about is the whole defect.
+    ///
+    /// The update arm announces only when a drawn field really moved. That is
+    /// not symmetry with the insert arm — it is the field list. Every field
+    /// this arm writes is a field a client paints: `title` is the panel header
+    /// and the chooser label, `shape` decides which renderer draws the surface
+    /// at all, and `session` is which session's panel it belongs to. A client
+    /// that never hears of the change paints the old one.
+    ///
+    /// It stays silent when nothing moved, for the reason
+    /// [`Self::remove`] stays silent about an absent surface: a reload
+    /// re-declares every surface with the same metadata, and an announcement
+    /// per surface per reload costs every client a round trip to learn nothing.
+    /// The comparison is against the *capped* title, because a title that
+    /// differs only in characters [`cap_title`] strips is not a change a client
+    /// can see.
+    ///
+    /// The version is deliberately not bumped. It counts row generations, so
+    /// moving it for a retitle would tell every client the rows changed when
+    /// they did not.
     pub fn declare(
         &self,
         plugin: &str,
@@ -262,27 +325,39 @@ impl SurfaceRegistry {
         session: Option<String>,
     ) {
         let key = (plugin.to_string(), name.to_string());
-        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-        match entries.get_mut(&key) {
-            Some(existing) => {
-                existing.title = cap_title(title);
-                existing.shape = shape;
-                existing.session = session;
-            }
-            None => {
-                entries.insert(
-                    key,
-                    Surface {
+        let title = cap_title(title);
+        // Announced after the lock is released, for the reason `set_rows`
+        // documents: an emitter that reaches a client synchronously must not
+        // hold the registry while it does.
+        let changed = {
+            let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+            match entries.get_mut(&key) {
+                Some(existing) => {
+                    let moved = existing.title != title
+                        || existing.shape != shape
+                        || existing.session != session;
+                    existing.title = title;
+                    existing.shape = shape;
+                    existing.session = session;
+                    moved.then(|| existing.clone())
+                }
+                None => {
+                    let surface = Surface {
                         plugin: plugin.to_string(),
                         name: name.to_string(),
-                        title: cap_title(title),
+                        title,
                         shape,
                         session,
                         rows: Vec::new(),
                         version: 0,
-                    },
-                );
+                    };
+                    entries.insert(key, surface.clone());
+                    Some(surface)
+                }
             }
+        };
+        if let Some(surface) = changed {
+            self.announce_change(&surface);
         }
     }
 
@@ -306,7 +381,7 @@ impl SurfaceRegistry {
             })
         };
         if let Some(surface) = changed {
-            self.announce(&surface);
+            self.announce_change(&surface);
         }
     }
 
@@ -347,7 +422,7 @@ impl SurfaceRegistry {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&key);
         if let Some(surface) = withdrawn {
-            self.announce(&surface);
+            self.announce_withdrawal(&surface);
         }
     }
 
@@ -371,7 +446,7 @@ impl SurfaceRegistry {
             dropped
         };
         for surface in &withdrawn {
-            self.announce(surface);
+            self.announce_withdrawal(surface);
         }
     }
 }
@@ -738,14 +813,133 @@ mod tests {
         reg.remove("p", "sessions");
 
         let changes = seen.lock().unwrap();
-        assert_eq!(changes.len(), 1, "a removal is a change a client must see");
-        assert_eq!(changes[0].plugin, "p");
-        assert_eq!(changes[0].name, "sessions");
+        // Two: the declare put the panel on screen, the removal takes it off.
+        // Both are changes a client must see, and they must not read alike.
+        assert_eq!(changes.len(), 2, "a removal is a change a client must see");
+        assert!(
+            !changes[0].withdrawn,
+            "the declare is not a withdrawal, got {:?}",
+            changes[0]
+        );
+
+        let gone = &changes[1];
+        assert_eq!(gone.plugin, "p");
+        assert_eq!(gone.name, "sessions");
         assert_eq!(
-            changes[0].session.as_deref(),
+            gone.session.as_deref(),
             Some("s1"),
             "the announcement names the session whose panel must go"
         );
+        assert!(
+            gone.withdrawn,
+            "and it says the surface is gone, so no client refetches to find out"
+        );
+    }
+
+    /// A declared surface with no rows yet must announce, or no client ever
+    /// hears of the panel.
+    ///
+    /// `declare` returned without announcing. A client learns of a surface
+    /// through the emitter and nowhere else, so a plugin that declared a titled
+    /// panel and pushed no rows yet was invisible until something unrelated
+    /// woke a client.
+    #[test]
+    fn declaring_a_surface_announces_it() {
+        let seen: Arc<Mutex<Vec<SurfaceChange>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let reg = SurfaceRegistry::new();
+        assert!(reg.set_emitter(Arc::new(move |change| {
+            sink.lock().unwrap().push(change);
+        })));
+
+        reg.declare("p", "sessions", "Sessions", Shape::List, Some("s1".into()));
+
+        let changes = seen.lock().unwrap();
+        assert_eq!(
+            changes.len(),
+            1,
+            "a new surface is a change a client must see"
+        );
+        assert_eq!(changes[0].plugin, "p");
+        assert_eq!(changes[0].name, "sessions");
+        assert_eq!(changes[0].session.as_deref(), Some("s1"));
+        assert_eq!(
+            changes[0].version, 0,
+            "no rows yet, so the row generation has not moved"
+        );
+        assert!(!changes[0].withdrawn, "it arrived, it did not leave");
+    }
+
+    /// A re-declare that moves a drawn field announces it.
+    ///
+    /// Every field the update arm writes is a field a client paints: the title
+    /// is the header and the chooser label, the shape decides which renderer
+    /// draws the surface, and the session is whose panel it is. A client that
+    /// is not told paints the old one.
+    #[test]
+    fn redeclaring_with_new_metadata_announces_it() {
+        let seen: Arc<Mutex<Vec<SurfaceChange>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let reg = SurfaceRegistry::new();
+        reg.declare("p", "s", "Old Title", Shape::List, None);
+        assert!(reg.set_emitter(Arc::new(move |change| {
+            sink.lock().unwrap().push(change);
+        })));
+
+        reg.declare("p", "s", "New Title", Shape::List, None);
+        assert_eq!(seen.lock().unwrap().len(), 1, "a retitle is redrawn");
+
+        reg.declare("p", "s", "New Title", Shape::List, Some("s1".into()));
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            2,
+            "so is a move to another session"
+        );
+
+        let changes = seen.lock().unwrap();
+        assert_eq!(changes[0].name, "s");
+        assert!(!changes[0].withdrawn, "a retitle is not a withdrawal");
+        assert_eq!(
+            changes[0].version, 0,
+            "metadata moved, rows did not, so the version holds"
+        );
+        assert_eq!(changes[1].session.as_deref(), Some("s1"));
+        assert_eq!(reg.get("p", "s").unwrap().title, "New Title");
+    }
+
+    /// An identical re-declare announces nothing.
+    ///
+    /// A reload re-runs `init.lua`, which re-declares every surface with the
+    /// same metadata. A client redraw costs a round trip, so a no-op must stay
+    /// silent — the same rule that keeps `remove` quiet about a surface that
+    /// was never there.
+    #[test]
+    fn redeclaring_the_same_metadata_announces_nothing() {
+        let seen: Arc<Mutex<Vec<SurfaceChange>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let reg = SurfaceRegistry::new();
+        reg.declare("p", "s", "Sessions", Shape::List, Some("s1".into()));
+        reg.set_rows("p", "s", vec![row("a")]);
+        assert!(reg.set_emitter(Arc::new(move |change| {
+            sink.lock().unwrap().push(change);
+        })));
+
+        reg.declare("p", "s", "Sessions", Shape::List, Some("s1".into()));
+        // A title that differs only in what `cap_title` strips is not a change
+        // a client can see, so it must stay silent too.
+        reg.declare("p", "s", "Sessions\n", Shape::List, Some("s1".into()));
+
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "a reload re-declares every surface; none of it reached a client"
+        );
+        let kept = reg.get("p", "s").unwrap();
+        assert_eq!(
+            kept.rows.len(),
+            1,
+            "and the rows a client points at survive"
+        );
+        assert_eq!(kept.version, 1, "as does the version");
     }
 
     /// Removing what is not there announces nothing. A client redraw costs a
@@ -779,6 +973,9 @@ mod tests {
         reg.declare("p", "one", "One", Shape::List, None);
         reg.declare("p", "two", "Two", Shape::List, None);
         reg.declare("other", "keep", "Keep", Shape::List, None);
+        // Three declares already announced. This test is about the release, so
+        // it starts counting from here.
+        seen.lock().unwrap().clear();
         reg.release_plugin("p");
 
         let changes = seen.lock().unwrap();
@@ -786,6 +983,10 @@ mod tests {
         let mut names: Vec<&str> = changes.iter().map(|c| c.name.as_str()).collect();
         names.sort();
         assert_eq!(names, ["one", "two"]);
+        assert!(
+            changes.iter().all(|c| c.withdrawn),
+            "every one of them says it is gone, got {changes:?}"
+        );
         assert!(
             reg.get("other", "keep").is_some(),
             "and the other plugin's surface stays"
@@ -805,10 +1006,9 @@ mod tests {
         })));
 
         reg.declare("p", "sessions", "Sessions", Shape::List, Some("s1".into()));
-        assert!(
-            seen.lock().unwrap().is_empty(),
-            "a declare has no rows to report yet"
-        );
+        // The declare announces the panel itself; this test is about the rows,
+        // so it starts counting from here.
+        seen.lock().unwrap().clear();
 
         reg.set_rows("p", "sessions", vec![row("a")]);
 
@@ -824,6 +1024,11 @@ mod tests {
             changes[0].session.as_deref(),
             Some("s1"),
             "and the session the surface is about"
+        );
+        assert!(
+            !changes[0].withdrawn,
+            "new rows are not a withdrawal; a client that read it as one would \
+             close the panel it was asked to refresh"
         );
     }
 

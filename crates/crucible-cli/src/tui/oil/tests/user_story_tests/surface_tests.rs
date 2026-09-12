@@ -206,6 +206,46 @@ fn a_withdrawn_surface_stops_being_drawn() {
     );
 }
 
+/// The wire event alone takes the panel off the screen.
+///
+/// `a_withdrawn_surface_stops_being_drawn` sends the reducer message directly,
+/// which proves the reducer and not the path a real uninstall takes. This one
+/// starts at the event the daemon actually sends and never supplies a fetch
+/// result, because a withdrawal no longer triggers a fetch: `withdrawn` on the
+/// event says the surface is gone, so there is nothing left to ask for.
+///
+/// RED-verify by dropping `withdrawn` from the match in `system_msgs`. The
+/// event becomes a plain refresh, no fetch answers it, and the rows stay drawn.
+#[test]
+fn a_withdrawal_off_the_wire_stops_the_drawing() {
+    let mut story = StoryRuntime::new(80, 24);
+    story.send(ChatAppMsg::UserMessage("mid-sentence".into()));
+    story.send(loaded(true));
+    assert!(
+        story.fresh_screen().contains("crucible"),
+        "the panel drew first"
+    );
+
+    for msg in session_event_to_chat_msgs(
+        crucible_core::protocol::SystemPayload::SURFACE_CHANGED,
+        &serde_json::json!({
+            "plugin": "p", "name": "sessions", "version": 3, "withdrawn": true,
+        }),
+    ) {
+        story.send(msg);
+    }
+
+    let screen = story.fresh_screen();
+    assert!(
+        !screen.contains("web-fix"),
+        "the withdrawn rows are gone with no refetch:\n{screen}"
+    );
+    assert!(
+        screen.contains("mid-sentence"),
+        "the transcript is back:\n{screen}"
+    );
+}
+
 /// **The negative.** One plugin goes away while the user reads another plugin's
 /// panel. That panel must stay on screen, with its rows.
 ///

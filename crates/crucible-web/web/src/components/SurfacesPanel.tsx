@@ -51,13 +51,27 @@ const SurfaceRowItem: Component<{ row: SurfaceRow }> = (props) => (
 );
 
 export const SurfacesPanel: Component = () => {
-  const [surfaces, { refetch }] = createResource(getSurfaces);
+  const [surfaces, { refetch, mutate }] = createResource(getSurfaces);
   const [selected, setSelected] = createSignal<string | null>(null);
 
-  // A change says only that a surface moved, so refetch rather than patch. The
+  // A change says only that a surface moved, so refetch rather than patch: the
   // event carries a version and no rows, which is what keeps an unbounded
   // surface off an event channel.
-  const unsubscribe = subscribeToSurfaceEvents(() => void refetch());
+  //
+  // A withdrawal is the exception, and the daemon marks it rather than leaving
+  // this layer to work it out. The surface is gone, so there is no content to
+  // fetch and asking for it would spend a round trip to be told what the event
+  // already said. Drop it here, and drop a selection that pointed at it —
+  // otherwise a plugin that later re-declares the same name silently steals the
+  // panel back. A re-declare announces, so the refetch below restores it.
+  const unsubscribe = subscribeToSurfaceEvents((event) => {
+    if (event.withdrawn) {
+      mutate((prev) => (prev ?? []).filter((s) => s.name !== event.name));
+      if (selected() === event.name) setSelected(null);
+      return;
+    }
+    void refetch();
+  });
   onCleanup(unsubscribe);
 
   const shown = (): Surface | undefined => {
