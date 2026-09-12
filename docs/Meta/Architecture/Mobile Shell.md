@@ -21,16 +21,30 @@ the record, so none of the departures is silent.
 
 **Built as of 2026-09-12.** Track A (the `P2` shell): the shell switch, the
 drawers, the tab stack and its host, the project switcher, the overflow menu,
-the plain editor and the three-step session flow. Track B (section 13's write
-primitive): anchored edits in `crucible-core`, `PATCH /api/kiln/file`,
-`cru.fs.edit`, and the note index carrying its author's frontmatter. Track C
-(section 11): the offline store, a kiln kept whole, the outbox and its conflict
-copy, and the Offline settings group.
+the plain editor, the three-step session flow, and settings as a drill-down
+(section 10a). Track B (section 13's write primitive): anchored edits in
+`crucible-core`, `PATCH /api/kiln/file`, `cru.fs.edit`, and the note index
+carrying its author's frontmatter. Track C (section 11): the offline store, a
+kiln kept whole, the outbox and its conflict copy, and the Offline settings
+group.
 
-What is NOT built: the kiln-wide checkbox index (open question 11), a
-cross-file atomic move (10), and the scope vocabulary (9). See [[Web User Stories]] for
-the story format that the work must add to, and [[State Stores]] for the store
-conventions.
+**This note drifted from the code and was reconciled against it on 2026-09-12,
+after a review found ~40 false claims.** Where a decision was NOT carried out,
+it is marked `NOT BUILT` in place rather than deleted — a decision that was
+made and then not honoured is worth more than silence. Section 14 is now a
+record generated from `git diff`, not a plan.
+
+What is NOT built, and named as such: the kiln-wide checkbox index (open
+question 11), a cross-file atomic move (10), the scope vocabulary (9),
+`base_hash` on the three blind-write routes (section 11 — and Track C ships
+the browser-side compare that section forbids), a browser caller for
+`PATCH /api/kiln/file`, screenshot baselines for the phone (W3), and a live
+offline drain (W4).
+
+A doorway that is missing on purpose: `patchKilnFile` exists and nothing in
+the UI calls it yet. Choosing its first caller is a product decision — the
+obvious candidate is toggling a checkbox in the reading view, which is the
+"one or two lines at a time" case section 13 was written for.
 
 ## 1. What the code holds today
 
@@ -155,7 +169,7 @@ Three regions, and one content surface.
 
 ```
 ┌──────────────────────────────────┐
-│ ☰   Session title          ⋯  ▸ │  app bar, 48 px
+│ ☰   Session title          ⋯  ▸ │  app bar, 56 px
 ├──────────────────────────────────┤
 │                                  │
 │                                  │
@@ -353,7 +367,7 @@ home-screen shortcut matters.
 So the shell calls:
 
 ```ts
-history.pushState({ depth }, '');   // no URL argument: the URL stays as it is
+history.pushState({ crucibleNav: id }, '');  // no URL argument: the URL stays
 ```
 
 The state carries the depth. A `popstate` listener pops the stack.
@@ -389,7 +403,8 @@ the file tree keeps its expansion and the session list its scroll
 ```
 
 **The project switcher is the header, and it is what lets a user leave the
-recency list.** A tap opens a bottom sheet with every project and worktree, plus
+recency list.** A tap opens a bottom sheet with every project — worktrees are
+NOT listed, though `buildRoster` knows them — plus
 **All projects**. The list below then shows that project's sessions, most recent
 first, with the rest reachable by scroll.
 
@@ -397,7 +412,9 @@ first, with the rest reachable by scroll.
   `selectProject` is browser-local — a signal and a remembered pin
   (`contexts/ProjectContext.tsx:123`) — so the phone's choice changes no other
   client and no daemon state.
-- **All projects** shows the grouped `SessionTree` the desktop draws, one project
+- **All projects** shows a FLAT list across projects, each row carrying its
+  project's name (`SessionsTab.tsx`). The grouped `SessionTree` the desktop
+  draws was the intent and is not what was built — one project
   tier per group. It is the fallback, not the default: on a phone, one project at
   a time is the readable form.
 - **The Inbox ignores the switcher.** A session that waits on the user matters
@@ -894,7 +911,30 @@ The daemon compares the hashes. The browser must never make that decision. A
 client-side test would be a second copy of the rule, and it would run on the
 one machine with a stale view of the disk.
 
-### The three stores
+> **NOT BUILT, and Track C ships the thing this forbids.** `PUT
+> /api/kiln/file` still takes `{path, content}` and writes blind
+> (`routes/kiln.rs`); none of the three routes gained `base_hash`. So
+> `networkSink.write` reads the note, compares the hash IN THE BROWSER, and
+> only then writes — exactly the second copy of the rule this section rules
+> out, on exactly the machine with the stale view.
+>
+> It is there because the alternative was worse: with no daemon-side check and
+> no client-side one, every drain silently overwrote whatever another writer
+> had done. The compare narrows the window; it does not close it. Two writers
+> can still interleave between the read and the PUT.
+>
+> Closing it properly means `base_hash` on all three routes, with the compare
+> inside the daemon's read-modify-write. `PATCH /api/kiln/file` already does
+> this correctly for anchored edits and is the model to copy.
+
+### The stores
+
+Five tables, not three: `mirror`, `outbox`, `index`, `blobs`, `meta`
+(`lib/offline/store.ts`). `index` and `meta` were written before they had
+readers — `meta` now holds the daemon identity, and `index` still has none, so
+an offline user cannot browse a kept kiln's note list.
+
+### The three stores (as first drafted)
 
 ```
 mirror   path → { body, baseHash, mirroredAt }        every note of a kept kiln
@@ -1492,78 +1532,151 @@ carries this.
 
 ## 14. The file plan
 
-New files:
+**This is a RECORD, not a plan.** It was a plan, and it drifted: it named five
+files that were never written (`offline/db.ts`, `conflict.ts`,
+`working-set.ts`, `query.ts`, `line-edit.ts`), omitted fourteen that were, and
+put the anchored-edit operation in `crucible-daemon` when it landed in
+`crucible-core`. Regenerated from `git diff master..HEAD`.
+
+New:
 
 ```
-src/stores/deviceStore.ts          the compact test, decided once at load
-src/lib/shell-boot.ts              layout persistence on the desktop branch only
-src/components/AppShell.tsx        draws one shell, never both
-src/components/mobile/ContentSurface.tsx  one tab's panel, rendered as Pane does
-src/lib/tab-host.ts                the TabHost seam and its two hosts (section 6)
-src/components/mobile/MobileShell.tsx         app bar, drawers, content surface
-src/components/mobile/Drawer.tsx              the gesture, the scrim, the focus trap
-src/components/mobile/NavStack.ts             the popstate bridge for the back button
-src/components/mobile/DrawerTabs.tsx          fixed tabs, every panel kept mounted
-src/components/mobile/SessionsTab.tsx         project switcher, cross-project Inbox, sessions
-(the Files tab mounts FilesPanel as it is; the right drawer mounts BacklinksPanel)
-src/components/mobile/BottomSheet.tsx         the option pickers and the action menus
-src/components/mobile/NewSessionSheet.tsx     the three steps in section 9
-src/components/mobile/MobileEditorBar.tsx     Read/Write and the toolbar
-src/components/mobile/TabOverview.tsx         the tab card list
-src/stores/tabStackStore.ts        one TabGroup, no panes
-src/lib/offline/db.ts              the IndexedDB schema: mirror, outbox, meta
-src/lib/offline/mirror.ts          read-through the mirror, then the network
-src/lib/offline/outbox.ts          queue a write, drain it, handle a 409
-src/lib/offline/conflict.ts        the conflict-copy name and the write
-src/lib/offline/working-set.ts     pins, the recents seed, the cap, eviction
-src/lib/offline/query.ts           filter/sort/group the mirrored index
-src/lib/offline/line-edit.ts       queue an anchored batch, drain it, re-anchor
+core/src/note_edit.rs
+web/src/components/AppShell.tsx
+web/src/components/mobile/BottomSheet.tsx
+web/src/components/mobile/ContentSurface.tsx
+web/src/components/mobile/Drawer.tsx
+web/src/components/mobile/DrawerTabs.tsx
+web/src/components/mobile/MobileEditorBar.tsx
+web/src/components/mobile/MobileShell.tsx
+web/src/components/mobile/NavStack.ts
+web/src/components/mobile/NewSessionSheet.tsx
+web/src/components/mobile/OfflineBadge.tsx
+web/src/components/mobile/SessionsTab.tsx
+web/src/components/mobile/TabOverview.tsx
+web/src/components/mobile/drawer-gesture.ts
+web/src/components/mobile/edge-swipe.ts
+web/src/components/settings/MobileSettings.tsx
+web/src/components/settings/OfflineSettings.tsx
+web/src/components/settings/settings-nav.tsx
+web/src/lib/offline/identity.ts
+web/src/lib/offline/images.ts
+web/src/lib/offline/kept.ts
+web/src/lib/offline/mirror.ts
+web/src/lib/offline/outbox.ts
+web/src/lib/offline/store.ts
+web/src/lib/offline/sync.ts
+web/src/lib/session-draft.ts
+web/src/lib/session-inbox.ts
+web/src/lib/shell-boot.ts
+web/src/lib/tab-host.ts
+web/src/stores/deviceStore.ts
+web/src/stores/editorModeStore.ts
+web/src/stores/tabStackStore.ts
 ```
 
-Changed files:
+Changed:
 
 ```
-src/App.tsx                        pick the shell
-src/lib/settings.ts                add vimModeCompact and the compact defaults
-src/components/FileViewerPanel.tsx read the resolver, not the raw setting
-src/components/SettingsPanel.tsx   both vim toggles in EditorSettingsSection
-src/components/SessionTree.tsx     a compact SessionRow: 44 px, a project label
-src/components/CenterComposer.tsx  the submit moves to a shared function
-index.html                         viewport-fit=cover, interactive-widget
-src/index.css                      the safe-area tokens
-src/lib/draft-session.ts, file-actions.ts, session-actions.ts,
-src/lib/panel-actions.ts, stores/shellStore.ts, stores/tabActions.ts,
-src/contexts/ChatContext.tsx, contexts/SessionContext.tsx,
-src/components/files/file-tree-a11y.ts   route through tabHost() (section 6)
-src/lib/api.ts                     carry content_hash and base_hash
-crates/crucible-core/src/…               NoteInfo gains an allowlisted properties map
-crates/crucible-daemon/src/…             the anchored-edit CORE operation
-crates/crucible-lua/src/fs.rs            cru.fs.edit — signatures live here (:85-190)
-crates/crucible-lua/src/host_api.rs      the declaration the ratchet test requires
-crates/crucible-web/src/routes/kiln.rs   PATCH, the 409, the hash fields (thin)
-crates/crucible-web/src/routes/search.rs `properties` on GET /api/notes
+core/src/lib.rs
+core/src/storage/note_store.rs
+core/src/traits/knowledge.rs
+daemon/src/rpc_client/client/mod.rs
+daemon/src/rpc_client/client/storage.rs
+daemon/src/rpc_client/mod.rs
+daemon/src/rpc_client/storage.rs
+daemon/src/server/kiln.rs
+daemon/src/skills/discovery.rs
+daemon/src/storage/sqlite/repository.rs
+lua/src/fs.rs
+web-rs/src/routes/helpers.rs
+web-rs/src/routes/kiln.rs
+web-rs/src/services/daemon.rs
+web/e2e/live/kiln-truth.live.spec.ts
+web/index.html
+web/src/App.tsx
+web/src/components/CenterComposer.tsx
+web/src/components/FileViewerPanel.tsx
+web/src/components/SessionsPanel.tsx
+web/src/components/SettingsPanel.tsx
+web/src/components/__tests__/FileViewerPanel.refcount.test.tsx
+web/src/components/__tests__/FileViewerPanel.test.tsx
+web/src/components/editor/EditorWithPreview.tsx
+web/src/components/editor/MarkdownPreview.tsx
+web/src/components/files/file-tree-a11y.ts
+web/src/components/settings/AppConfigSettings.tsx
+web/src/components/settings/SettingsModal.tsx
+web/src/components/settings/__tests__/SettingsModal.test.tsx
+web/src/components/settings/sections.tsx
+web/src/contexts/ChatContext.tsx
+web/src/contexts/EditorContext.tsx
+web/src/contexts/SessionContext.tsx
+web/src/contexts/SettingsContext.tsx
+web/src/contexts/__tests__/EditorContext.retry.test.tsx
+web/src/contexts/__tests__/EditorContext.test.tsx
+web/src/index.css
+web/src/lib/api.ts
+web/src/lib/draft-session.ts
+web/src/lib/file-actions.ts
+web/src/lib/icons.ts
+web/src/lib/panel-actions.ts
+web/src/lib/session-actions.ts
+web/src/lib/settings.test.ts
+web/src/lib/settings.ts
+web/src/lib/tab-icons.ts
+web/src/lib/types.ts
+web/src/stores/shellStore.ts
 ```
 
-**The core operation lives in `crucible-daemon`, not in an Axum route.**
-Section 11 says the daemon owns this logic, and section 13 asks for two callers;
-an operation inside `routes/kiln.rs` cannot serve the Lua one. The route is a
-thin adapter over it.
+Tests added:
 
-`cru.fs.edit` is not free on the Lua side either. `cru.fs` is declared in
-`crucible-lua/src/fs.rs` (`mkdir` at `:90`, `remove_all` at `:118`), and
-`crucible-lua/src/host_api.rs` holds `UNSIGNED` behind a ratchet test
-(`crucible-daemon/tests/plugin_stubs_contract.rs`): a VM function that
-is neither declared nor listed **fails the build**.
+```
+core/tests/note_edit.rs
+core/tests/public_properties.rs
+web/e2e/stories/mobile-shell.story.spec.ts
+web/src/components/mobile/__tests__/AppShell.test.tsx
+web/src/components/mobile/__tests__/ContentSurface.test.tsx
+web/src/components/mobile/__tests__/Drawer.test.tsx
+web/src/components/mobile/__tests__/MobileEditorBar.test.tsx
+web/src/components/mobile/__tests__/MobileShell.test.tsx
+web/src/components/mobile/__tests__/NavStack.test.ts
+web/src/components/mobile/__tests__/NewSessionSheet.test.tsx
+web/src/components/mobile/__tests__/OfflineBadge.test.tsx
+web/src/components/mobile/__tests__/SessionsTab.test.tsx
+web/src/components/mobile/__tests__/TabOverview.test.tsx
+web/src/components/mobile/__tests__/drawer-gesture.test.ts
+web/src/components/mobile/__tests__/edge-swipe.test.ts
+web/src/components/settings/__tests__/OfflineSettings.test.tsx
+web/src/components/settings/__tests__/SettingsModal.compact.test.tsx
+web/src/components/settings/__tests__/settings-nav.test.ts
+web/src/lib/__tests__/session-draft.test.ts
+web/src/lib/__tests__/session-inbox.test.ts
+web/src/lib/__tests__/shell-boot.test.ts
+web/src/lib/__tests__/tab-host-routing.test.ts
+web/src/lib/__tests__/tab-host.test.ts
+web/src/lib/offline/__tests__/idb-store.test.ts
+web/src/lib/offline/__tests__/images.test.ts
+web/src/lib/offline/__tests__/kept.test.ts
+web/src/lib/offline/__tests__/mirror.test.ts
+web/src/lib/offline/__tests__/outbox.test.ts
+web/src/lib/offline/__tests__/store.test.ts
+web/src/lib/offline/__tests__/sync.test.ts
+web/src/stores/__tests__/deviceStore.test.ts
+web/src/stores/__tests__/tabStackStore.test.ts
+```
 
-`docs/Help/Lua/Language Basics.md:66-81` is the doc that goes stale — it now
-documents `cru.fs.read` and `cru.fs.write` as the canonical access, and an
-`edit` beside them belongs in the same passage.
+**The core operation lives in `crucible-core`, not in an Axum route and not in
+the daemon.** Section 13 asks for two callers — `PATCH /api/kiln/file` and
+`cru.fs.edit` — and `crucible-lua` depends on `crucible-core`, not on
+`crucible-daemon`. Both routes are thin adapters over `apply_anchored_edits`.
 
-Nothing in `src/lib/offline/` is safe to write until all three blind-write
-routes can refuse a stale base.
+`cru.fs.edit` is not free on the Lua side: `crucible-lua/src/host_api.rs`
+holds `UNSIGNED` behind a ratchet test
+(`crucible-daemon/tests/plugin_stubs_contract.rs`), so a VM function that is
+neither declared nor listed **fails the build**.
 
-`register-panels.tsx` does not change. The compact shell reads the same
-registry.
+`docs/Help/Lua/Language Basics.md` documents `cru.fs.edit` beside
+`cru.fs.read` and `cru.fs.write`.
 
 ## 15. Tests
 
@@ -1576,16 +1689,26 @@ Follow the tiers in [[Web User Stories]].
 - **W2** — Playwright with a phone device profile. Cover the swipe, the drawer
   button, a tree tap, and the three-step session flow.
 - **W3** — screenshot baselines for the drawer open, the drawer closed and each
-  step of the session sheet.
+  step of the session sheet. **NOT BUILT.** `story.step()` attaches a frame and
+  asserts nothing, and `e2e/__screenshots__/stories/` holds no baseline for
+  `mobile-shell.story.spec.ts`. Every layout defect on the phone so far was
+  found by a human reading a screenshot, which is the gap this names.
 - **W4** — the offline sync needs a live tier, and it is the one part that
   does. The conflict rule is only real against a real file on disk. Cover
   three cases: a clean drain, a 409 that writes a conflict copy, and a drain
   that survives a reload. A mocked tier cannot prove any of them.
+  **NOT BUILT.** The three live legs that exist prove Track B's anchored
+  edits, not this. Both defects that made Track C useless — a kiln-relative
+  path never joined, and an identity fetched at the one moment it cannot be —
+  would have been caught by the clean-drain leg alone.
 
 Section 13 adds its own gates:
 
 - A Rust test that `PATCH /api/kiln/file` changes only the anchored lines and
-  leaves the rest byte-identical. The kanban comment records the regression it
+  leaves the rest byte-identical. Built as a LIVE leg
+  (`kiln-truth.live.spec.ts`), not a Rust route test — the route's guards run
+  through the same helpers the PUT route's tests already cover, but the route
+  itself has no `#[cfg(test)]` coverage of its own. The kanban comment records the regression it
   prevents: an earlier writer re-emitted the document and deleted every heading.
 - **A test per anchor rule, each red-proved, and EXACTLY-ONCE first** — every
   other rule rests on it. Cover: zero matches refuses; two matches refuses
@@ -1602,8 +1725,10 @@ Section 13 adds its own gates:
 
 Two more gates, both cheap:
 
-- A Rust unit test for the hash comparison in `kiln.rs`. Break the check and
-  watch it fail before you keep it.
+- ~~A Rust unit test for the hash comparison in `kiln.rs`.~~ **Unimplementable
+  as written**: there is no hash comparison in `kiln.rs`. `base_hash` only sets
+  `stale_base` on a PATCH refusal; the PUT routes still write blind. The gate
+  this asks for cannot exist until those routes gain the check.
 - `src/test/pwa-scope.test.ts` must still pass. It asserts that
   `runtimeCaching` stays undefined. If the offline work ever needs to touch it,
   the design in section 11 is wrong.
