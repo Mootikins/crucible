@@ -240,9 +240,13 @@ describe('a reply the provider cut off', () => {
     mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
   });
 
-  // The daemon names the reason on `message_complete`. This is where a reader
-  // meets it: a system line under the reply, drawn from the wire payload.
-  it('draws a system note under the reply', async () => {
+  // The daemon names the reason on `message_complete` and WORDS the note
+  // beside it. This is where a reader meets it: a system line under the reply.
+  //
+  // The text below is deliberately not a wording the daemon ships. The page
+  // must draw the string it received, so a test that used the real wording
+  // could pass while the page derived the words itself.
+  it('draws the note the daemon worded', async () => {
     let eventCallback: ((event: any) => void) | null = null;
     mockSubscribeToEvents.mockImplementation(
       (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
@@ -268,15 +272,18 @@ describe('a reply the provider cut off', () => {
       id: 'msg-turn-1',
       content: 'Half an ans',
       stop_reason: 'max_tokens',
+      stop_notice: 'a note only the daemon can word',
     });
 
     await waitFor(() => {
       const items = screen.getAllByRole('listitem');
       const system = items.find((i) => i.getAttribute('data-role') === 'system');
-      expect(system?.textContent).toContain('output limit');
+      expect(system?.textContent).toContain('a note only the daemon can word');
     });
   });
 
+  // No `stop_notice`, so no note — even though the reason is one the page used
+  // to keep a wording for. The page derives nothing.
   it('draws nothing extra when the reply finished', async () => {
     let eventCallback: ((event: any) => void) | null = null;
     mockSubscribeToEvents.mockImplementation(

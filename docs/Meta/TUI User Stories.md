@@ -108,7 +108,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### US-206: A reply the model did not finish
 **As a user**, a reply the provider cut off, or one the model declined to give, says so under the text instead of reading as a finished answer.
 **Acceptance:** `message_complete` carrying `stop_reason = max_tokens` draws a system line naming the output limit; `refusal` draws one naming the refusal; `end_turn` and a payload with no `stop_reason` draw nothing extra; the model's own partial text stays on screen beside the note.
-**Tests:** T1 `chat_runner/tests/translate.rs::{a_truncated_reply_draws_a_note_after_the_bubble, a_finished_reply_mints_no_notice}`; T2 `user_story_tests/stop_reason_tests`.
+**The daemon words the note.** `StopReason::user_notice` is the only wording. The TUI calls it. The browser cannot, so the web layer puts the answer on the frame as `stop_notice` and the page draws the string it received — the page holds no table of its own, because the two wordings drifted when it did.
+**Tests:** T1 `chat_runner/tests/translate.rs::{a_truncated_reply_draws_a_note_after_the_bubble, a_finished_reply_mints_no_notice}`; T2 `user_story_tests/stop_reason_tests`. Web: `crucible-web`'s `the_projection_carries_the_daemon_wording_for_every_reason` and `the_frontend_words_no_stop_reason_notice`, plus `ChatContext.test.tsx` "a reply the provider cut off".
 
 ## 3. Tools, Subagents & MCP
 

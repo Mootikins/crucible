@@ -583,6 +583,14 @@ interface MessageCompleteEvent {
    * recording, or a stream that closed without a terminal event.
    */
   stop_reason?: StopReason;
+  /**
+   * The note to draw under a reply the provider cut off, worded by the daemon.
+   * Absent when the reason needs none, which is every normal turn.
+   *
+   * The page must not derive it from `stop_reason`: `StopReason::user_notice`
+   * is the only wording, and the copy that used to live here drifted from it.
+   */
+  stop_notice?: string;
 }
 
 /** An error occurred */
