@@ -47,6 +47,62 @@ async fn a_config_set_changes_what_config_effective_serves() {
     );
 }
 
+/// A `config.set` records WHICH client wrote the leaf.
+///
+/// `ConfigSource::Rpc` carries `chan`, the dispatcher's `ClientId`, after
+/// `sctx_T`'s `sc_chan` — so `cru config show --sources` and the settings pane
+/// can tell one client's runtime write from another's rather than seeing one
+/// flat `rpc` row.
+///
+/// This has to cross the socket. The channel id is assigned per CONNECTION, so
+/// an in-process test on either half cannot observe it: the dispatcher's
+/// `client_id` argument is the only place it exists, and a unit test would have
+/// to invent one.
+///
+/// Two connections, so the test proves the id DISTINGUISHES clients rather
+/// than merely being present. A hardcoded expected number would be wrong — the
+/// counter is process-wide and other connections advance it — so the assertion
+/// is that the two rows disagree.
+#[tokio::test]
+async fn a_config_set_records_which_client_wrote_the_leaf() {
+    let daemon = TestDaemon::start().await.expect("daemon starts");
+
+    let channel_for = |key: &'static str, value: bool| {
+        let socket = daemon.socket_path.clone();
+        async move {
+            let mut conn = RpcConn::connect(&socket).await.expect("connect");
+            let set = conn
+                .call_method(
+                    "config.set",
+                    serde_json::json!({ "values": { "chat": { key: value } } }),
+                    1,
+                )
+                .await;
+            assert_eq!(set["result"]["ok"], serde_json::json!(true), "{set}");
+
+            let effective = conn
+                .call_method("config.effective", serde_json::json!({}), 2)
+                .await;
+            let row = effective["result"]["provenance"][format!("chat.{key}")].clone();
+            assert!(
+                row["rpc"].is_object(),
+                "a config.set must record the `rpc` layer for chat.{key}: {effective}"
+            );
+            row["rpc"]["chan"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("the rpc row must name a channel: {row}"))
+        }
+    };
+
+    let first = channel_for("show_thinking", true).await;
+    let second = channel_for("stream", false).await;
+    assert_ne!(
+        first, second,
+        "two connections must record two channel ids, or the field \
+         distinguishes nothing"
+    );
+}
+
 /// The location keys keep coming from the bind snapshot, so the live store
 /// does not empty them out.
 ///

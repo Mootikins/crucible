@@ -68,7 +68,17 @@ export interface ConfigOrigin {
   /** Dot-joined leaf path, e.g. `chat.model`. */
   key: string;
   value: unknown;
-  /** One word: `default`, `plugin_default`, `settings`, `lua`, `toml`, … */
+  /**
+   * One word, and the complete set: `default`, `plugin`, `settings`, `toml`,
+   * `lua`, `registered`, `cli`, `rpc`.
+   *
+   * This is `ConfigSource::short` in `crucible-core`, NOT the serde variant
+   * name. The two are now proved equal by
+   * `every_variant_serialises_as_the_word_short_names_it`, but they were not:
+   * this comment said `plugin_default`, which is what that variant spelled
+   * itself on the `config.effective` wire, while the word arriving in THIS
+   * field was always `plugin`.
+   */
   source: string;
   /** The file the source names, when it names one. */
   file?: string;

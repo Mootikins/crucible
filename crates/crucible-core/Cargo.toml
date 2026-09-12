@@ -93,7 +93,7 @@ toml = []
 # Integration tests under `tests/` compile the library without `cfg(test)`,
 # so the `test-utils` feature must turn the test helpers on for them.
 crucible-core = { path = ".", features = ["test-utils"] }
-# `EnumIter` over `ScriptingEvent` and `SourceTag`, so the tests asserting
+# `EnumIter` over `ScriptingEvent` and `ConfigSource`, so the tests asserting
 # completeness walk what the compiler knows rather than a second hand-written
 # list. Dev-only: each derive is `#[cfg_attr(test, ...)]`.
 strum = { version = "0.28", features = ["derive"] }

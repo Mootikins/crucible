@@ -68,7 +68,7 @@ the direct call, and the loader records one notice per such plugin
 The boot order inverts the layer order. `settings.json` merges at step 2, and
 a plugin's `cru.config.set` runs during step 4 — so the lower layer writes
 LAST on every boot. The store therefore ranks each write instead of taking the
-last one: `ConfigStore::merge` compares `SourceTag::rank` against the rank
+last one: `ConfigStore::merge` compares `ConfigSource::rank` against the rank
 recorded for that leaf, and drops a write that ranks below it
 (`crucible-core/src/config/store.rs`). The order is `default` < `plugin` <
 `settings` < `toml` < `lua` < `registered` < `cli` < `rpc`, and
@@ -95,32 +95,71 @@ A dropped write records nothing: no value, no provenance row, no pin.
 
 A flat write can add a key and change a key; it can never remove one. That is
 what `config.unset` is for: it takes a key and everything under it out of the
-layers `SourceTag::reset_drops` names — the same layers `config.reset` drops —
+layers `ConfigSource::reset_drops` names — the same layers `config.reset` drops —
 so a stale `llm.providers.old` goes without any verb editing a file.
 
 ### The file that made the call decides the layer
 
 `AuthorRoots` (`crucible-lua/src/authorship.rs`) reads the chunk name of the
 Lua file that called `cru.config.set`. A write from the config root is the
-human's own line (`SourceTag::Lua`) and pins the leaf. A write from a plugin
-root is that plugin's default (`SourceTag::PluginDefault`) and loses to
+human's own line (`ConfigSource::Lua`) and pins the leaf. A write from a plugin
+root is that plugin's default (`ConfigSource::PluginDefault`) and loses to
 `settings.json`. The more specific root wins a tie, because a plugin
 directory can sit under the config directory.
 
 **One caller holds no file, and its owner decides instead.** A `lua.eval` — `cru
 lua`, or `:lua` in the TUI — arrives over a socket, and its chunk name is
 `=lua.eval`. That name matches no root, so the path rule alone fell back to
-`SourceTag::Lua` and pinned the leaf: one `cru lua 'cru.config.set{…}'` made
+`ConfigSource::Lua` and pinned the leaf: one `cru lua 'cru.config.set{…}'` made
 `config.save` refuse that key for the rest of the daemon's life, and the
 settings UI named a file that does not exist.
 
-`Owner::config_layer` (`crucible-lua/src/plugin_context.rs`) answers before the
-path rule, and only for the owner that holds no file. An eval writes
-`SourceTag::Rpc`, the same layer the `config.set` RPC writes, because both are
-socket calls: the layer ranks highest, so an eval still overrides anything for
-this run, it pins nothing, and a later `config.save` takes the leaf back. Every
-other owner answers `None` and lets the file decide, which keeps the rule
-above true wherever a file exists.
+`config_layer` (`crucible-lua/src/authorship.rs`, beside `AuthorRoots` because
+the two are one rule with two halves) answers before the path rule, and only
+for the source that holds no file. An eval writes `ConfigSource::Rpc`, the same
+layer the `config.set` RPC writes, because both are socket calls: the layer
+ranks highest, so an eval still overrides anything for this run, it pins
+nothing, and a later `config.save` takes the leaf back. Every other source
+answers `None` and lets the file decide, which keeps the rule above true
+wherever a file exists.
+
+### A Lua layer carries the SOURCE, not a re-spelled name
+
+`ConfigSource::Lua` and `ConfigSource::PluginDefault` each hold one `last_set:
+LastSet` — named after Vim's `last_set_sid` and the `:verbose set` output "Last
+set from …". `LastSet` is a `LuaSource` plus the file and the line.
+
+`LuaSource` (`crucible-core/src/lua_source.rs`) is the same value the handler
+registry, the timer registry and `cru.storage` key on, so the config store and
+the registration side cannot disagree about who a plugin is. It lives in
+`crucible-core` rather than beside the VM because five subsystems key on it and
+only one of them is the VM; the `mlua`-dependent half — the ambient slot and the
+brackets that set it — stays in `crucible-lua/src/plugin_context.rs` and
+re-exports the type.
+
+It also separates two authors that were indistinguishable. The user's own
+`init.lua` and the shipped `runtime/defaults/init.luau` both landed as a `lua`
+row naming a file, so a default that ships with the daemon read as a line the
+user wrote.
+
+**There is deliberately no load sequence number.** Vim's `sctx_T` carries one
+(`sc_seq`) because Vimscript gives each *sourcing* of a file its own `s:` scope,
+so two sourcings must not share script-local variables. Our per-source state is
+`cru.storage`, whose requirement is the opposite: it MUST survive a reload, or a
+plugin loses its state whenever the operator edits a file. So a sequence number
+here would not merely be unread — anything reading it for storage would be a bug.
+
+### `ConfigSource::Rpc` names WHICH client
+
+`Rpc` carries `chan: Option<u64>`, the `ClientId` the dispatcher already holds
+(`handle_config_set`, `rpc/dispatch.rs`). This is `sctx_T`'s `sc_chan`, and Vim
+reports it as "Last set from API client (channel id 3)".
+
+A field, not a variant: the layer is one layer whatever client reaches it, and
+"which client" is not a closed set. Without it every client flattened into one
+`rpc` row, so `cru config show --sources` and the settings pane could not say
+that a value came from somewhere else this run. `None` where no client is in
+scope — a `cru.config.set` from an eval, and every in-process merge.
 
 The boot installs both root lists (`install_author_roots`, `boot.rs`), from
 the directories that exist at that moment. A plugin the user installs later
@@ -197,11 +236,11 @@ drop one.
 
 | Verb | Layer it changes | Persists | Refuses a pin | Caller |
 |---|---|---|---|---|
-| `config.set` | writes `SourceTag::Rpc` | No | No | `:set key=value`, one run |
-| `config.save` | writes `SourceTag::Settings`, drops `Rpc` on the leaves it writes | Yes — `settings.json` | Yes | a settings UI |
-| `config.reset` | drops `SourceTag::Rpc` | No | n/a | `:set key&` |
+| `config.set` | writes `ConfigSource::Rpc` | No | No | `:set key=value`, one run |
+| `config.save` | writes `ConfigSource::Settings`, drops `Rpc` on the leaves it writes | Yes — `settings.json` | Yes | a settings UI |
+| `config.reset` | drops `ConfigSource::Rpc` | No | n/a | `:set key&` |
 | `config.pop` | drops the highest layer holding the leaf | No | n/a | `:set key^` |
-| `config.unset` | drops `SourceTag::Rpc`, for the key AND everything under it | No | n/a | removing a stale map entry |
+| `config.unset` | drops `ConfigSource::Rpc`, for the key AND everything under it | No | n/a | removing a stale map entry |
 
 `config.set` is the runtime knob. It never refuses, because a user must be
 able to raise a value `init.lua` holds for one turn without editing a file,
@@ -238,7 +277,7 @@ The pin is a second record in the store, beside the provenance map
 (`crucible-core/src/config/store.rs`). Provenance names whoever wrote LAST,
 and the ephemeral `:set` writes last all the time; the pin is what runs again
 at the NEXT boot. Only a pinning source writes or clears a pin, so one `:set`
-cannot open a pinned key to a save. `SourceTag::pin` decides which sources
+cannot open a pinned key to a save. `ConfigSource::pin` decides which sources
 pin, exhaustively (`crucible-core/src/config/provenance.rs`).
 
 `config.reset` and `config.pop` are the undo half, and both work in memory
@@ -246,11 +285,11 @@ only. The store retains every overlay it merged
 (`crucible-core/src/config/store.rs`), so a drop takes the leaf out of one
 layer and merges the layers again from nothing. **The re-merge IS the merge
 rule**, which is why it is a re-merge and not a per-leaf undo stack: a stack
-would be a second copy of `SourceTag::rank`, of the wholesale-replace rule and
+would be a second copy of `ConfigSource::rank`, of the wholesale-replace rule and
 of the pin rule, free to drift from the first copy.
 
 `config.reset` drops exactly the layer `config.set` writes, and
-`SourceTag::reset_drops` decides that exhaustively. It does NOT drop
+`ConfigSource::reset_drops` decides that exhaustively. It does NOT drop
 `Settings`: that layer is a durable file, so dropping it in memory would
 report a value the next boot takes back, and deleting the leaf from the file
 would let a one-key undo of a session tweak destroy a preference the user
@@ -267,7 +306,7 @@ seeing a path.
 carries the provider selection `cru init` recorded, and
 `LlmStateStore::overlay_onto` merges it UNDER the config at bind — so it never
 enters the store, and a store merge would invert that precedence. Its leaves
-are marked `SourceTag::Registered` at answer time by one derivation,
+are marked `ConfigSource::Registered` at answer time by one derivation,
 `fold_state_overlay` (`crucible-daemon/src/rpc/dispatch.rs`), which
 `config.effective`, `config.origin` and `config.save` all call. They must, or
 they answer differently about one leaf: `config.effective` used to call a
@@ -317,7 +356,7 @@ write.
 
 `config.origin` answers `{key, value, source, file?, line?, pinned}` for one
 key or for every recorded leaf. A settings UI needs it to render a lock and to
-offer a jump to the line that locks the key. `pinned` is `SourceTag::pin`'s own
+offer a jump to the line that locks the key. `pinned` is `ConfigSource::pin`'s own
 answer — whether a save of this leaf would be refused — reported per leaf
 rather than left to each frontend to derive from the source word: which layers
 pin IS the refusal rule, and a copy of it in a renderer goes wrong the next

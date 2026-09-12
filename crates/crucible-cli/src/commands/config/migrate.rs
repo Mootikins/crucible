@@ -76,11 +76,11 @@ pub fn run(config_path_flag: Option<PathBuf>) -> Result<()> {
     let mut expected_store = crucible_core::config::ConfigStore::for_load();
     expected_store.merge(
         serde_json::to_value(CliAppConfig::default())?,
-        crucible_core::config::SourceTag::Default,
+        crucible_core::config::ConfigSource::Default,
     );
     expected_store.merge(
         remaining.clone(),
-        crucible_core::config::SourceTag::Toml(source.clone()),
+        crucible_core::config::ConfigSource::Toml(source.clone()),
     );
     let expected = expected_store.extract()?;
     if serde_json::to_value(&evaluated)? != serde_json::to_value(&expected)? {

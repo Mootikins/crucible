@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::config::{CliAppConfig, ConfigError, LOCATION_CONFIG_KEYS};
 use super::merge::{flatten_leaves, nest_leaves, set_leaf};
-use super::provenance::{LeafOrigin, ProvenanceMap, SourceOrigin, SourceTag};
+use super::provenance::{ConfigSource, LeafOrigin, ProvenanceMap, SourceOrigin};
 
 /// One leaf `config.save` refuses, and what pins it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -66,7 +66,7 @@ pub enum LayerDrop {
     /// leaf, so the value stands.
     Untouched,
     /// The sources whose hold on the leaf was dropped, lowest rank first.
-    Dropped(Vec<SourceTag>),
+    Dropped(Vec<ConfigSource>),
 }
 
 /// One merge, retained so the store can be rebuilt without part of it.
@@ -77,7 +77,7 @@ pub enum LayerDrop {
 /// sits under `settings.json`.
 #[derive(Debug, Clone)]
 struct Layer {
-    source: SourceTag,
+    source: ConfigSource,
     /// The overlay as leaves: one dot-joined path per terminal value, in the
     /// order the caller wrote them.
     ///
@@ -122,7 +122,7 @@ pub struct ConfigStore {
     /// write", and the only answer that cannot drift from the merge is the
     /// merge: drop the leaf from the layer that holds it, then replay the
     /// layers. A per-leaf stack of superseded values would be a second copy
-    /// of the layer order — `SourceTag::rank` and the pin rule all over again
+    /// of the layer order — `ConfigSource::rank` and the pin rule all over again
     /// — and the two copies would disagree the first time one of them changed.
     ///
     /// The list grows by one entry per merge and nothing prunes it. Every
@@ -178,11 +178,11 @@ impl ConfigStore {
     ///
     /// The merge is per-leaf and ranked: a leaf a higher layer already holds
     /// keeps its value and its provenance, and the write lands on every other
-    /// leaf of the same overlay. See [`SourceTag::rank`] for the order.
+    /// leaf of the same overlay. See [`ConfigSource::rank`] for the order.
     ///
     /// A non-object overlay is refused wholesale: the store's value is always
     /// an object, and no caller has a scalar to contribute at the root.
-    pub fn merge(&mut self, overlay: Value, source: SourceTag) -> Vec<String> {
+    pub fn merge(&mut self, overlay: Value, source: ConfigSource) -> Vec<String> {
         let leaves: serde_json::Map<String, Value> = flatten_leaves(overlay).into_iter().collect();
         // Retain the layer before it lands, so `reset`, `pop` and `unset` can
         // replay the store without part of it.
@@ -209,7 +209,7 @@ impl ConfigStore {
     fn apply(
         &mut self,
         leaves: &serde_json::Map<String, Value>,
-        source: SourceTag,
+        source: ConfigSource,
         policy: LocationPolicy,
     ) -> Vec<String> {
         let mut withheld: Vec<String> = Vec::new();
@@ -231,7 +231,7 @@ impl ConfigStore {
                     continue;
                 }
             }
-            // Layer precedence, decided per leaf by `SourceTag::rank` rather
+            // Layer precedence, decided per leaf by `ConfigSource::rank` rather
             // than by the order the layers happen to merge in. The order
             // inverts the rule: `settings.json` merges before `init.lua` is
             // evaluated, and a plugin writes DURING that evaluation — so the
@@ -266,7 +266,7 @@ impl ConfigStore {
     /// Drop the runtime knob's hold on one leaf: `config.reset`, which the
     /// TUI spells `:set key&`.
     ///
-    /// It drops every retained layer that [`SourceTag::reset_drops`] names —
+    /// It drops every retained layer that [`ConfigSource::reset_drops`] names —
     /// the ephemeral `config.set` writes, and nothing else — then replays.
     /// The leaf therefore returns to what the compiled defaults, the plugin
     /// defaults and the config files give it, which is the value the next
@@ -287,7 +287,7 @@ impl ConfigStore {
     /// the one need the deleted `__replace` marker really served. `unset` is
     /// that verb, and it is a PREFIX drop where [`Self::reset`] is a leaf drop.
     ///
-    /// It reaches exactly the layers [`SourceTag::reset_drops`] names, for the
+    /// It reaches exactly the layers [`ConfigSource::reset_drops`] names, for the
     /// same reason `reset` does: every other layer is restored by a file or by
     /// the invocation, and removing one in memory would answer with a store
     /// the next boot takes straight back. **It edits no file.** To drop a
@@ -334,7 +334,7 @@ impl ConfigStore {
         &mut self,
         path: &str,
         scope: LeafScope,
-        wanted: impl Fn(usize, &SourceTag) -> bool,
+        wanted: impl Fn(usize, &ConfigSource) -> bool,
     ) -> LayerDrop {
         let mut dropped = Vec::new();
         for (index, layer) in self.layers.iter_mut().enumerate() {
@@ -348,7 +348,7 @@ impl ConfigStore {
         if dropped.is_empty() {
             return LayerDrop::Untouched;
         }
-        dropped.sort_by_key(SourceTag::rank);
+        dropped.sort_by_key(ConfigSource::rank);
         self.rebuild();
         LayerDrop::Dropped(dropped)
     }
@@ -421,7 +421,7 @@ impl ConfigStore {
     /// The pin on one dot-joined leaf path, if a boot-restored layer above
     /// `Settings` holds it.
     pub fn pin(&self, path: &str) -> Option<SourceOrigin> {
-        self.pins.get(path).and_then(SourceTag::pin)
+        self.pins.get(path).and_then(ConfigSource::pin)
     }
 
     /// Split `overlay` into the part `config.save` may write and the leaves a
@@ -456,7 +456,7 @@ impl ConfigStore {
     /// removed the whole subtree under it from the ephemeral layer.
     ///
     /// A leaf the merge would then drop is refused rather than accepted (see
-    /// [`SourceTag::pin`]), so `accepted` never carries a value that would not
+    /// [`ConfigSource::pin`]), so `accepted` never carries a value that would not
     /// act — the caller writes exactly it to `settings.json`.
     ///
     /// `also_pinned` carries the pins the store cannot see: the daemon's
@@ -494,7 +494,7 @@ impl ConfigStore {
         // person can read it and a UI can round-trip it. The merge flattens it
         // straight back, and the round trip is the identity.
         let accepted = nest_leaves(kept);
-        let withheld = self.merge(accepted.clone(), SourceTag::Settings);
+        let withheld = self.merge(accepted.clone(), ConfigSource::Settings);
         SavedSettings {
             accepted,
             refused,
@@ -539,7 +539,7 @@ impl ConfigStore {
                 origin: self
                     .provenance
                     .get(path)
-                    .unwrap_or(&SourceTag::Default)
+                    .unwrap_or(&ConfigSource::Default)
                     .origin(),
             },
         }
@@ -631,7 +631,9 @@ fn remove_leaves(
 
 #[cfg(test)]
 mod tests {
+    use super::super::provenance::LastSet;
     use super::*;
+    use crate::lua_source::LuaSource;
     use serde_json::json;
     use strum::IntoEnumIterator;
 
@@ -642,9 +644,8 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"chat": {"show_thinking": true}}),
-            SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(3),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "/config/init.lua".to_string(), Some(3)),
             },
         );
 
@@ -674,13 +675,15 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"chat": {"show_thinking": true}}),
-            SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(3),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "/config/init.lua".to_string(), Some(3)),
             },
         );
 
-        store.merge(json!({"chat": {"show_thinking": false}}), SourceTag::Rpc);
+        store.merge(
+            json!({"chat": {"show_thinking": false}}),
+            ConfigSource::Rpc { chan: None },
+        );
 
         assert_eq!(
             store.value()["chat"]["show_thinking"],
@@ -691,7 +694,7 @@ mod tests {
             store
                 .provenance()
                 .get("chat.show_thinking")
-                .map(SourceTag::short),
+                .map(ConfigSource::short),
             Some("rpc"),
             "and it is the last writer"
         );
@@ -713,13 +716,15 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"chat": {"show_thinking": true}}),
-            SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(3),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "/config/init.lua".to_string(), Some(3)),
             },
         );
 
-        store.merge(json!({"chat": {"show_thinking": false}}), SourceTag::Rpc);
+        store.merge(
+            json!({"chat": {"show_thinking": false}}),
+            ConfigSource::Rpc { chan: None },
+        );
 
         let origin = store.origin("chat.show_thinking");
         let (_, refused) = store.split_pinned(json!({"chat": {"show_thinking": false}}));
@@ -739,7 +744,7 @@ mod tests {
     #[test]
     fn an_unpinned_leaf_reports_the_layer_that_wrote_it() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "sonnet"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "sonnet"}}), ConfigSource::Settings);
 
         let origin = store.origin("chat.model");
 
@@ -755,10 +760,12 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"alpha": {"retries": 3}}),
-            SourceTag::PluginDefault {
-                plugin: "alpha".to_string(),
-                file: "/plugins/alpha/init.lua".to_string(),
-                line: Some(9),
+            ConfigSource::PluginDefault {
+                last_set: LastSet::new(
+                    LuaSource::Plugin("alpha".to_string()),
+                    "/plugins/alpha/init.lua".to_string(),
+                    Some(9),
+                ),
             },
         );
 
@@ -775,9 +782,8 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"chat": {"show_thinking": true}}),
-            SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(3),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "/config/init.lua".to_string(), Some(3)),
             },
         );
 
@@ -802,14 +808,13 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"chat": {"show_thinking": true}}),
-            SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(3),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "/config/init.lua".to_string(), Some(3)),
             },
         );
         store.merge(
             json!({"chat": {"show_thinking": false, "model": "scratch", "theme": "scratch"}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
 
         let saved = store.save(
@@ -847,8 +852,14 @@ mod tests {
     #[test]
     fn a_save_leaves_the_layers_under_it_intact() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "compiled"}}), SourceTag::Default);
-        store.merge(json!({"chat": {"model": "scratch"}}), SourceTag::Rpc);
+        store.merge(
+            json!({"chat": {"model": "compiled"}}),
+            ConfigSource::Default,
+        );
+        store.merge(
+            json!({"chat": {"model": "scratch"}}),
+            ConfigSource::Rpc { chan: None },
+        );
 
         store.save(json!({"chat": {"model": "saved"}}), &|_| None);
         assert_eq!(store.value()["chat"]["model"], json!("saved"));
@@ -864,7 +875,10 @@ mod tests {
     #[test]
     fn a_load_store_accepts_location_keys() {
         let mut store = ConfigStore::for_load();
-        let withheld = store.merge(json!({"runtimepath": ["/x"], "chat": {}}), SourceTag::Rpc);
+        let withheld = store.merge(
+            json!({"runtimepath": ["/x"], "chat": {}}),
+            ConfigSource::Rpc { chan: None },
+        );
         assert!(withheld.is_empty());
         assert_eq!(store.value()["runtimepath"], json!(["/x"]));
     }
@@ -881,7 +895,7 @@ mod tests {
         }
         overlay.insert("default_kiln".to_string(), json!("notes"));
 
-        let withheld = store.merge(Value::Object(overlay), SourceTag::Rpc);
+        let withheld = store.merge(Value::Object(overlay), ConfigSource::Rpc { chan: None });
 
         for key in LOCATION_CONFIG_KEYS {
             assert!(
@@ -902,14 +916,17 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"kiln_path": "/kiln", "chat": {"show_thinking": true}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
         store.end_boot_phase();
 
         assert!(store.value().get("kiln_path").is_none());
         assert_eq!(store.value()["chat"]["show_thinking"], json!(true));
         assert_eq!(
-            store.merge(json!({"kiln_path": "/elsewhere"}), SourceTag::Rpc),
+            store.merge(
+                json!({"kiln_path": "/elsewhere"}),
+                ConfigSource::Rpc { chan: None }
+            ),
             vec!["kiln_path".to_string()]
         );
     }
@@ -919,13 +936,12 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"chat": {"show_thinking": false, "show_diffs": true}}),
-            SourceTag::Toml("/tmp/config.toml".into()),
+            ConfigSource::Toml("/tmp/config.toml".into()),
         );
         store.merge(
             json!({"chat": {"show_thinking": true}}),
-            SourceTag::Lua {
-                file: "init.lua".into(),
-                line: Some(3),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "init.lua", Some(3)),
             },
         );
 
@@ -933,14 +949,14 @@ mod tests {
             store
                 .provenance()
                 .get("chat.show_thinking")
-                .map(SourceTag::short),
+                .map(ConfigSource::short),
             Some("lua")
         );
         assert_eq!(
             store
                 .provenance()
                 .get("chat.show_diffs")
-                .map(SourceTag::short),
+                .map(ConfigSource::short),
             Some("toml")
         );
         // The sibling stands: the second write never named it.
@@ -952,7 +968,7 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"default_kiln": "notes", "myplugin": {"debug": true}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
         let config = store.extract().expect("extraction must succeed");
         assert_eq!(config.default_kiln.as_deref(), Some("notes"));
@@ -987,18 +1003,17 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"kiln_path": "/k", "chat": {"show_thinking": true, "model": "m"}}),
-            SourceTag::Toml("/tmp/config.toml".into()),
+            ConfigSource::Toml("/tmp/config.toml".into()),
         );
         store.merge(
             json!({"chat": {"model": "n"}, "llm": {"providers": {"a": {"endpoint": "x"}}}}),
-            SourceTag::Lua {
-                file: "init.lua".into(),
-                line: Some(2),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "init.lua", Some(2)),
             },
         );
         store.merge(
             json!({"llm": {"providers": {"b": {"endpoint": "y"}}}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
 
         let value = store.value().clone();
@@ -1051,7 +1066,7 @@ mod tests {
             store
                 .provenance()
                 .get("llm.providers.openai.endpoint")
-                .map(SourceTag::short),
+                .map(ConfigSource::short),
             Some("lua"),
             "and one row names the one leaf"
         );
@@ -1063,7 +1078,7 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"llm": {"providers": {}}, "chat": {}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
 
         assert!(
@@ -1082,7 +1097,10 @@ mod tests {
     #[test]
     fn a_save_the_rank_gate_would_drop_is_refused_and_carries_nothing_to_the_file() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "from-the-flag"}}), SourceTag::Cli);
+        store.merge(
+            json!({"chat": {"model": "from-the-flag"}}),
+            ConfigSource::Cli,
+        );
 
         let saved = store.save(json!({"chat": {"model": "saved"}}), &|_| None);
 
@@ -1111,7 +1129,7 @@ mod tests {
         let mut store = ConfigStore::runtime();
         store.merge(
             json!({"llm": {"providers": {"mine": {"endpoint": "scratch"}}}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
 
         let saved = store.save(json!({"llm": {"providers": {}}}), &|_| None);
@@ -1143,7 +1161,7 @@ mod tests {
             json!({"llm": {"providers": {
                 "stale": {"endpoint": "old", "default_model": "m"},
                 "keep": {"endpoint": "new"}}}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
 
         let dropped = store.unset("llm.providers.stale");
@@ -1198,11 +1216,13 @@ mod tests {
 
     /// A plugin default helper, so the four precedence tests below name the
     /// same layer without four copies of the struct literal.
-    fn plugin_default() -> SourceTag {
-        SourceTag::PluginDefault {
-            plugin: "alpha".to_string(),
-            file: "/plugins/alpha/init.lua".to_string(),
-            line: Some(9),
+    fn plugin_default() -> ConfigSource {
+        ConfigSource::PluginDefault {
+            last_set: LastSet::new(
+                LuaSource::Plugin("alpha".to_string()),
+                "/plugins/alpha/init.lua".to_string(),
+                Some(9),
+            ),
         }
     }
 
@@ -1217,7 +1237,7 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"chat": {"model": "saved-by-the-user"}}),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
 
         store.merge(
@@ -1231,7 +1251,10 @@ mod tests {
             "a lower layer that writes later must not take the leaf"
         );
         assert_eq!(
-            store.provenance().get("chat.model").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.model")
+                .map(ConfigSource::short),
             Some("settings"),
             "and the provenance must name whoever the store kept"
         );
@@ -1247,7 +1270,7 @@ mod tests {
     /// which is exactly what the save would have performed — leaves the
     /// pinning layer's value and its provenance row in place.
     ///
-    /// `SourceTag::pin` and `SourceTag::rank` agreeing is the enum half of
+    /// `ConfigSource::pin` and `ConfigSource::rank` agreeing is the enum half of
     /// this rule, and `exactly_the_layers_a_save_cannot_overwrite_refuse_one`
     /// in `provenance.rs` states it. That test reads two pure functions, so it
     /// cannot see whether the merge still consults `rank`; this one reads the
@@ -1257,7 +1280,7 @@ mod tests {
     /// takes a working write away from the user.
     #[test]
     fn every_layer_that_refuses_a_save_beats_the_settings_layer_in_the_store() {
-        for tag in SourceTag::iter() {
+        for tag in ConfigSource::iter() {
             let Some(pin) = tag.pin() else {
                 continue;
             };
@@ -1285,7 +1308,7 @@ mod tests {
             // What the save would have written, had the pin not refused it.
             // The pinning layer keeps the leaf, so the refusal took away a
             // write that would have changed nothing.
-            store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+            store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
             assert_eq!(
                 store.value()["chat"]["model"],
                 json!("from-the-pin"),
@@ -1294,7 +1317,10 @@ mod tests {
                 tag.short()
             );
             assert_eq!(
-                store.provenance().get("chat.model").map(SourceTag::short),
+                store
+                    .provenance()
+                    .get("chat.model")
+                    .map(ConfigSource::short),
                 Some(tag.short()),
                 "and the provenance must name whoever the store kept"
             );
@@ -1309,7 +1335,7 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"chat": {"model": "saved-by-the-user"}}),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
 
         store.merge(
@@ -1320,7 +1346,10 @@ mod tests {
         assert_eq!(store.value()["chat"]["model"], json!("saved-by-the-user"));
         assert_eq!(store.value()["chat"]["retries"], json!(3));
         assert_eq!(
-            store.provenance().get("chat.retries").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.retries")
+                .map(ConfigSource::short),
             Some("plugin")
         );
     }
@@ -1330,8 +1359,8 @@ mod tests {
     #[test]
     fn a_second_write_from_the_same_layer_takes_the_leaf() {
         let mut store = ConfigStore::for_load();
-        store.merge(json!({"chat": {"model": "first"}}), SourceTag::Settings);
-        store.merge(json!({"chat": {"model": "second"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "first"}}), ConfigSource::Settings);
+        store.merge(json!({"chat": {"model": "second"}}), ConfigSource::Settings);
         assert_eq!(store.value()["chat"]["model"], json!("second"));
     }
 
@@ -1347,11 +1376,14 @@ mod tests {
     #[test]
     fn a_human_lua_line_takes_a_leaf_the_settings_layer_holds() {
         let mut store = ConfigStore::for_load();
-        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
         store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
         assert_eq!(store.value()["chat"]["model"], json!("from-init"));
         assert_eq!(
-            store.provenance().get("chat.model").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.model")
+                .map(ConfigSource::short),
             Some("lua")
         );
 
@@ -1359,7 +1391,7 @@ mod tests {
         // on rank, not on write order.
         store.merge(
             json!({"chat": {"model": "saved-later"}}),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
         assert_eq!(
             store.value()["chat"]["model"],
@@ -1367,7 +1399,10 @@ mod tests {
             "a settings write that lands later must not take a human's line"
         );
         assert_eq!(
-            store.provenance().get("chat.model").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.model")
+                .map(ConfigSource::short),
             Some("lua"),
             "and the provenance must name whoever the store kept"
         );
@@ -1381,16 +1416,15 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"chat": {"model": "from-init"}}),
-            SourceTag::Lua {
-                file: "/config/init.lua".to_string(),
-                line: Some(2),
+            ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "/config/init.lua".to_string(), Some(2)),
             },
         );
 
         // `Toml` pins and ranks BELOW `Lua`, so this write must not land.
         store.merge(
             json!({"chat": {"model": "from-toml"}}),
-            SourceTag::Toml("/config/config.toml".into()),
+            ConfigSource::Toml("/config/config.toml".into()),
         );
 
         assert_eq!(store.value()["chat"]["model"], json!("from-init"));
@@ -1404,18 +1438,24 @@ mod tests {
     #[test]
     fn a_non_object_overlay_is_refused_wholesale() {
         let mut store = ConfigStore::for_load();
-        store.merge(json!({"default_kiln": "notes"}), SourceTag::Rpc);
-        store.merge(json!("scalar"), SourceTag::Rpc);
+        store.merge(
+            json!({"default_kiln": "notes"}),
+            ConfigSource::Rpc { chan: None },
+        );
+        store.merge(json!("scalar"), ConfigSource::Rpc { chan: None });
         assert_eq!(store.value()["default_kiln"], json!("notes"));
     }
 
     // ── `config.reset` and `config.pop` ──────────────────────────────────
 
     /// A human's own line, for the drop tests.
-    fn lua_line(line: u32) -> SourceTag {
-        SourceTag::Lua {
-            file: "/config/init.lua".to_string(),
-            line: Some(line),
+    fn lua_line(line: u32) -> ConfigSource {
+        ConfigSource::Lua {
+            last_set: LastSet::new(
+                LuaSource::UserLua,
+                "/config/init.lua".to_string(),
+                Some(line),
+            ),
         }
     }
 
@@ -1424,7 +1464,10 @@ mod tests {
     fn a_reset_drops_the_runtime_knob_and_reveals_the_layer_under_it() {
         let mut store = ConfigStore::runtime();
         store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
-        store.merge(json!({"chat": {"model": "for-one-turn"}}), SourceTag::Rpc);
+        store.merge(
+            json!({"chat": {"model": "for-one-turn"}}),
+            ConfigSource::Rpc { chan: None },
+        );
         assert_eq!(store.value()["chat"]["model"], json!("for-one-turn"));
 
         let dropped = store.reset("chat.model");
@@ -1435,7 +1478,10 @@ mod tests {
             "reset must return the leaf to what the files give"
         );
         assert_eq!(
-            store.provenance().get("chat.model").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.model")
+                .map(ConfigSource::short),
             Some("lua"),
             "and the provenance must name the layer that now holds it"
         );
@@ -1455,8 +1501,11 @@ mod tests {
     #[test]
     fn a_reset_leaves_the_saved_settings_standing() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
-        store.merge(json!({"chat": {"model": "for-one-turn"}}), SourceTag::Rpc);
+        store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
+        store.merge(
+            json!({"chat": {"model": "for-one-turn"}}),
+            ConfigSource::Rpc { chan: None },
+        );
 
         store.reset("chat.model");
 
@@ -1472,7 +1521,7 @@ mod tests {
     #[test]
     fn a_pop_of_the_lua_line_reveals_the_settings_value() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
         store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
         assert_eq!(store.value()["chat"]["model"], json!("from-init"));
 
@@ -1484,7 +1533,10 @@ mod tests {
             "the pop must reveal the layer under the one it dropped"
         );
         assert_eq!(
-            store.provenance().get("chat.model").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.model")
+                .map(ConfigSource::short),
             Some("settings"),
             "and the store must now say so"
         );
@@ -1499,10 +1551,16 @@ mod tests {
     #[test]
     fn a_pop_walks_down_one_layer_per_call() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "compiled"}}), SourceTag::Default);
-        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(
+            json!({"chat": {"model": "compiled"}}),
+            ConfigSource::Default,
+        );
+        store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
         store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
-        store.merge(json!({"chat": {"model": "for-one-turn"}}), SourceTag::Rpc);
+        store.merge(
+            json!({"chat": {"model": "for-one-turn"}}),
+            ConfigSource::Rpc { chan: None },
+        );
 
         for expected in ["from-init", "saved", "compiled"] {
             store.pop("chat.model");
@@ -1536,7 +1594,7 @@ mod tests {
     #[test]
     fn a_pop_reveals_a_write_the_rank_gate_refused() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
         store.merge(
             json!({"chat": {"model": "plugin-default"}}),
             plugin_default(),
@@ -1557,7 +1615,7 @@ mod tests {
     #[test]
     fn a_drop_of_a_leaf_no_layer_holds_reports_nothing() {
         let mut store = ConfigStore::runtime();
-        store.merge(json!({"chat": {"model": "saved"}}), SourceTag::Settings);
+        store.merge(json!({"chat": {"model": "saved"}}), ConfigSource::Settings);
 
         assert!(matches!(store.pop("chat.retries"), LayerDrop::Untouched));
         assert!(matches!(store.reset("chat.model"), LayerDrop::Untouched));
@@ -1575,19 +1633,25 @@ mod tests {
         let mut popped = ConfigStore::runtime();
         popped.merge(
             json!({"chat": {"model": "saved", "retries": 1}}),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
         popped.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
-        popped.merge(json!({"chat": {"retries": 9}}), SourceTag::Rpc);
+        popped.merge(
+            json!({"chat": {"retries": 9}}),
+            ConfigSource::Rpc { chan: None },
+        );
         popped.pop("chat.model");
 
         let mut merged = ConfigStore::runtime();
         merged.merge(
             json!({"chat": {"model": "saved", "retries": 1}}),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
         merged.merge(json!({}), lua_line(2));
-        merged.merge(json!({"chat": {"retries": 9}}), SourceTag::Rpc);
+        merged.merge(
+            json!({"chat": {"retries": 9}}),
+            ConfigSource::Rpc { chan: None },
+        );
 
         assert_eq!(popped.value(), merged.value());
         assert_eq!(
@@ -1614,7 +1678,7 @@ mod tests {
     #[test]
     fn a_drop_of_a_location_key_is_withheld_at_runtime() {
         let mut store = ConfigStore::for_load();
-        store.merge(json!({"kiln_path": "/a"}), SourceTag::Settings);
+        store.merge(json!({"kiln_path": "/a"}), ConfigSource::Settings);
         store.merge(json!({"kiln_path": "/b"}), lua_line(2));
         store.end_boot_phase();
 
@@ -1634,7 +1698,7 @@ mod tests {
         let mut store = ConfigStore::for_load();
         store.merge(
             json!({"kiln_path": "/notes", "chat": {"model": "saved"}}),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
         store.merge(json!({"chat": {"model": "from-init"}}), lua_line(2));
         store.end_boot_phase();
@@ -1649,7 +1713,7 @@ mod tests {
         );
         assert_eq!(store.value()["chat"]["model"], json!("saved"));
         assert_eq!(
-            store.provenance().get("kiln_path").map(SourceTag::short),
+            store.provenance().get("kiln_path").map(ConfigSource::short),
             Some("settings"),
             "and it must leave the row that says a boot layer configured the kiln"
         );
@@ -1678,9 +1742,15 @@ mod tests {
                 overlay.insert(key.to_string(), json!("/configured"));
             }
             store.merge(Value::Object(overlay), lua_line(2));
-            store.merge(json!({"chat": {"model": "compiled"}}), SourceTag::Default);
+            store.merge(
+                json!({"chat": {"model": "compiled"}}),
+                ConfigSource::Default,
+            );
             store.end_boot_phase();
-            store.merge(json!({"chat": {"model": "scratch"}}), SourceTag::Rpc);
+            store.merge(
+                json!({"chat": {"model": "scratch"}}),
+                ConfigSource::Rpc { chan: None },
+            );
             store
         }
 
@@ -1715,7 +1785,7 @@ mod tests {
             let mut store = booted();
             for key in LOCATION_CONFIG_KEYS {
                 assert_eq!(
-                    store.provenance().get(key).map(SourceTag::short),
+                    store.provenance().get(key).map(ConfigSource::short),
                     Some("lua"),
                     "the boot layer must own '{key}' before the {door}"
                 );
@@ -1725,7 +1795,7 @@ mod tests {
 
             for key in LOCATION_CONFIG_KEYS {
                 assert_eq!(
-                    store.provenance().get(key).map(SourceTag::short),
+                    store.provenance().get(key).map(ConfigSource::short),
                     Some("lua"),
                     "the {door} erased the provenance row on '{key}', so every client \
                      writes into its own cwd instead of the configured location"
@@ -1756,12 +1826,15 @@ mod tests {
     fn a_runtime_write_of_a_location_key_stays_refused_across_a_rebuild() {
         let mut store = ConfigStore::for_load();
         store.merge(json!({"kiln_path": "/configured"}), lua_line(2));
-        store.merge(json!({"chat": {"model": "compiled"}}), SourceTag::Default);
+        store.merge(
+            json!({"chat": {"model": "compiled"}}),
+            ConfigSource::Default,
+        );
         store.end_boot_phase();
 
         let withheld = store.merge(
             json!({"kiln_path": "/attacker", "chat": {"model": "scratch"}}),
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
         );
         assert_eq!(withheld, vec!["kiln_path".to_string()]);
 
@@ -1773,7 +1846,7 @@ mod tests {
             store.value()
         );
         assert_eq!(
-            store.provenance().get("kiln_path").map(SourceTag::short),
+            store.provenance().get("kiln_path").map(ConfigSource::short),
             Some("lua"),
             "and the runtime write must not take authorship of the leaf either"
         );

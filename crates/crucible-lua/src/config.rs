@@ -25,7 +25,7 @@
 
 use crate::error::LuaError;
 use crate::theme::ThemeConfig;
-use crucible_core::config::{ConfigStore, LocationPolicy, SourceTag};
+use crucible_core::config::{ConfigSource, ConfigStore, LocationPolicy};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
@@ -185,7 +185,7 @@ pub fn app_config_origins() -> Vec<(String, crucible_core::config::LeafOrigin)> 
 fn default_leaf_origin() -> crucible_core::config::LeafOrigin {
     crucible_core::config::LeafOrigin {
         pinned: false,
-        origin: SourceTag::Default.origin(),
+        origin: ConfigSource::Default.origin(),
     }
 }
 
@@ -200,7 +200,7 @@ fn default_leaf_origin() -> crucible_core::config::LeafOrigin {
 pub fn seed_app_config(config: serde_json::Value) {
     if let Ok(mut state) = get_config().write() {
         let mut store = ConfigStore::runtime();
-        store.merge(config, SourceTag::Default);
+        store.merge(config, ConfigSource::Default);
         state.app_config = Some(store);
     }
 }
@@ -213,11 +213,11 @@ pub fn seed_app_config(config: serde_json::Value) {
 /// during the boot phase). One door, one rule: the store decides, and every
 /// writer inherits the decision.
 pub fn merge_app_config(overlay: serde_json::Value) -> Vec<String> {
-    merge_app_config_tagged(overlay, SourceTag::Rpc)
+    merge_app_config_tagged(overlay, ConfigSource::Rpc { chan: None })
 }
 
 /// [`merge_app_config`] with the caller's own provenance tag.
-pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: SourceTag) -> Vec<String> {
+pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: ConfigSource) -> Vec<String> {
     match get_config().write() {
         Ok(mut state) => state
             .app_config
@@ -232,7 +232,7 @@ pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: SourceTag) -> Ve
 ///
 /// The store decides which layers go, not this function: `config.set` writes
 /// through [`merge_app_config`], and `ConfigStore::reset` drops exactly the
-/// layers [`SourceTag::reset_drops`] names.
+/// layers [`ConfigSource::reset_drops`] names.
 ///
 /// With no store — a process that never booted config — there is nothing to
 /// drop.
@@ -276,7 +276,7 @@ fn drop_app_config_layers(
 ///
 /// One call, because the verb is one decision. The store refuses the pinned
 /// leaves, drops the runtime knob's hold on the rest, and merges them as
-/// [`SourceTag::Settings`]; a caller that split here and merged in a second
+/// [`ConfigSource::Settings`]; a caller that split here and merged in a second
 /// call would hold the lock twice and could clear a leaf the merge then
 /// refused.
 ///
@@ -372,7 +372,7 @@ pub fn end_boot_phase() {
 pub fn evaluate_config_source(source: &str) -> anyhow::Result<crucible_core::config::CliAppConfig> {
     begin_boot_store();
     let defaults = serde_json::to_value(crucible_core::config::CliAppConfig::default())?;
-    merge_app_config_tagged(defaults, SourceTag::Default);
+    merge_app_config_tagged(defaults, ConfigSource::Default);
     let executor = crate::LuaExecutor::new().map_err(|e| anyhow::anyhow!("executor: {e}"))?;
     executor
         .lua()
@@ -512,8 +512,8 @@ pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
 
 /// The layer a write from this call site lands in.
 ///
-/// The OWNER answers first, and only for an owner with no file of its own —
-/// see [`crate::plugin_context::LuaSource::config_layer`], which answers `None`
+/// The SOURCE answers first, and only for a source with no file of its own —
+/// see [`crate::authorship::config_layer`], which answers `None`
 /// for every other one. An eval's chunk name (`=lua.eval`) names no path, so
 /// without this the path classification fell back to the human layer and
 /// pinned a leaf that no file holds.
@@ -525,8 +525,10 @@ pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
 ///
 /// A poisoned lock falls back to empty roots rather than to a hand-made tag,
 /// so the "no root matches" rule is written once and both paths obey it.
-fn classify_call_site(lua: &Lua, site: &CallSite) -> SourceTag {
-    if let Some(layer) = crate::plugin_context::current_source(lua).config_layer() {
+fn classify_call_site(lua: &Lua, site: &CallSite) -> ConfigSource {
+    if let Some(layer) =
+        crate::authorship::config_layer(&crate::plugin_context::current_source(lua))
+    {
         return layer;
     }
     match author_roots_slot().read() {
@@ -1026,7 +1028,9 @@ impl ConfigLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::config::LastSet;
     use crucible_core::config::LOCATION_CONFIG_KEYS;
+    use crucible_core::lua_source::LuaSource;
     use std::sync::Mutex;
     use tempfile::TempDir;
 
@@ -1064,7 +1068,7 @@ mod tests {
     /// An eval's write must not pin a leaf that no file holds.
     ///
     /// `=lua.eval` matches no config root and no plugin root, so the path
-    /// classification fell back to [`SourceTag::Lua`] — a layer that outranks
+    /// classification fell back to [`ConfigSource::Lua`] — a layer that outranks
     /// `Settings` and PINS. One `cru lua 'cru.config.set{…}'` then made
     /// `config.save` refuse that leaf for the rest of the daemon's life, and
     /// the settings UI reported the value as a line a human wrote in a file
@@ -1128,7 +1132,7 @@ mod tests {
 
         assert_eq!(
             from_eval,
-            SourceTag::Rpc,
+            ConfigSource::Rpc { chan: None },
             "an eval writes over a socket, so it lands on the layer the \
              `config.set` RPC lands on"
         );
@@ -1139,9 +1143,12 @@ mod tests {
         );
         assert_eq!(
             from_file,
-            SourceTag::Lua {
-                file: init_file.display().to_string(),
-                line: Some(1),
+            ConfigSource::Lua {
+                last_set: LastSet::new(
+                    LuaSource::UserLua,
+                    init_file.display().to_string(),
+                    Some(1)
+                )
             },
             "a line in the human's own file keeps the human's layer"
         );
@@ -1179,7 +1186,7 @@ mod tests {
         begin_boot_store();
         merge_app_config_tagged(
             serde_json::json!({ "chat": { "model": "saved" } }),
-            SourceTag::Settings,
+            ConfigSource::Settings,
         );
         merge_app_config(serde_json::json!({ "chat": { "model": "for-one-turn" } }));
 
@@ -1399,25 +1406,30 @@ mod tests {
 
         assert_eq!(
             from_plugin,
-            SourceTag::PluginDefault {
-                plugin: "alpha".to_string(),
-                file: plugin_file.display().to_string(),
-                line: Some(1),
+            ConfigSource::PluginDefault {
+                last_set: LastSet::new(
+                    LuaSource::Plugin("alpha".to_string()),
+                    plugin_file.display().to_string(),
+                    Some(1)
+                )
             }
         );
         assert!(
-            from_plugin.rank() < SourceTag::Settings.rank(),
+            from_plugin.rank() < ConfigSource::Settings.rank(),
             "a plugin default must not lock the key against settings.json"
         );
         assert_eq!(
             from_init,
-            SourceTag::Lua {
-                file: init_file.display().to_string(),
-                line: Some(1),
+            ConfigSource::Lua {
+                last_set: LastSet::new(
+                    LuaSource::UserLua,
+                    init_file.display().to_string(),
+                    Some(1)
+                )
             }
         );
         assert!(
-            from_init.rank() > SourceTag::Settings.rank(),
+            from_init.rank() > ConfigSource::Settings.rank(),
             "a line the user wrote must lock the key"
         );
     }

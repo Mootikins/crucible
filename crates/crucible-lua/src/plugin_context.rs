@@ -84,82 +84,13 @@
 
 use mlua::Lua;
 
-/// Who a Lua registration belongs to.
+/// Who defined a piece of Lua.
 ///
-/// Total by construction. Each variant names what it IS, not what it is not:
-/// the whole defect this type removes is a value that carried more than one
-/// meaning.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum LuaSource {
-    /// A plugin load. The name scopes `cru.storage` and attributes every
-    /// registration the load makes.
-    Plugin(String),
-    /// The user's own `init.lua`, and what it includes.
-    UserLua,
-    /// `runtime/defaults/init.luau`, which ships with the daemon.
-    Builtin,
-    /// One `lua.eval` RPC call.
-    Eval,
-}
-
-impl LuaSource {
-    /// The plugin this source names, or `None` for every other source.
-    ///
-    /// `cru.storage` keys on this, so a non-plugin source has no namespace and
-    /// the call is refused.
-    #[must_use]
-    pub fn plugin_name(&self) -> Option<&str> {
-        match self {
-            Self::Plugin(name) => Some(name.as_str()),
-            Self::UserLua | Self::Builtin | Self::Eval => None,
-        }
-    }
-
-    /// The config layer a `cru.config.set` under this source lands in, when the
-    /// source decides it — and `None` when the FILE decides it.
-    ///
-    /// Total, with no wildcard arm, and `None` is the common answer on
-    /// purpose. `crate::authorship` argues the general rule correctly: the file
-    /// that holds the call is the honest signal, because
-    /// `require("alpha").setup{}` written by the user runs alpha's file with no
-    /// plugin context installed, and a plugin that calls its own `setup` from a
-    /// handler runs with one. So [`Self::Plugin`], [`Self::UserLua`] and
-    /// [`Self::Builtin`] all answer `None` and let the path classification
-    /// speak.
-    ///
-    /// [`Self::Eval`] is the one source with NO file. Its chunk name is
-    /// `=lua.eval`, which matches no config root and no plugin root, so the
-    /// path classification fell back to
-    /// [`crucible_core::config::SourceTag::Lua`] — a layer that PINS. One
-    /// `cru lua 'cru.config.set{…}'` then made `config.save` refuse that leaf
-    /// for the rest of the daemon's life, and the settings UI reported the
-    /// value as a line a human wrote in a file that does not exist.
-    ///
-    /// The answer is [`crucible_core::config::SourceTag::Rpc`], and no new
-    /// layer is needed, because `Rpc` already means exactly "set at run time,
-    /// not written in a file": it ranks highest, so an eval may override
-    /// anything for this run; it pins nothing; and a `config.save` drops it. An
-    /// eval is a socket call, which is what the `config.set` RPC is, so the two
-    /// land on one layer.
-    #[must_use]
-    pub fn config_layer(&self) -> Option<crucible_core::config::SourceTag> {
-        match self {
-            Self::Plugin(_) | Self::UserLua | Self::Builtin => None,
-            Self::Eval => Some(crucible_core::config::SourceTag::Rpc),
-        }
-    }
-}
-
-impl std::fmt::Display for LuaSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Plugin(name) => f.write_str(name),
-            Self::UserLua => f.write_str("init.lua"),
-            Self::Builtin => f.write_str("builtin"),
-            Self::Eval => f.write_str("lua.eval"),
-        }
-    }
-}
+/// The type itself lives in `crucible-core` — see
+/// [`crucible_core::lua_source`] for why — because the config store's own
+/// provenance embeds it and `crucible-core` must not depend on this crate.
+/// Re-exported here so a caller inside the VM crate keeps one path to it.
+pub use crucible_core::lua_source::LuaSource;
 
 /// The app-data slot. A newtype so the stored value is exactly one [`LuaSource`].
 struct CurrentOwner(LuaSource);
@@ -369,57 +300,6 @@ mod tests {
         let lua = Lua::new();
         set_source(&lua, LuaSource::Eval);
         assert_eq!(current_plugin_name(&lua), None);
-    }
-
-    /// Exactly one source answers the provenance question, and the layer it
-    /// names is the one a `config.save` can overwrite.
-    ///
-    /// The properties are DERIVED from the layer rather than restated: a
-    /// reordering of the layers in `crucible-core` fails this test instead of
-    /// silently giving an eval the power to lock a key.
-    #[test]
-    fn only_the_owner_with_no_file_names_its_own_config_layer() {
-        use crucible_core::config::SourceTag;
-
-        let deciders: Vec<LuaSource> = [
-            LuaSource::Plugin("alpha".into()),
-            LuaSource::UserLua,
-            LuaSource::Builtin,
-            LuaSource::Eval,
-        ]
-        .into_iter()
-        .filter(|source| source.config_layer().is_some())
-        .collect();
-        assert_eq!(
-            deciders,
-            vec![LuaSource::Eval],
-            "an source with a file must let the file decide, or a plugin's \
-             `setup()` called from the user's own `init.lua` is misfiled"
-        );
-
-        let layer = LuaSource::Eval
-            .config_layer()
-            .expect("an eval names its layer");
-        assert_eq!(layer, SourceTag::Rpc);
-        assert_eq!(
-            layer.pin(),
-            None,
-            "an eval holds no file, so its write must not refuse a later \
-             `config.save`"
-        );
-        assert!(
-            layer.reset_drops(),
-            "a save drops the layer it can overwrite, and this is that layer"
-        );
-        assert!(
-            layer.rank() > SourceTag::Settings.rank(),
-            "an eval sets a value for this run, so it must outrank what is saved"
-        );
-        assert_eq!(
-            layer.origin().file,
-            None,
-            "the settings UI must not report an eval as a line in a file"
-        );
     }
 
     /// Only a loader's record answers the interception question. A name the

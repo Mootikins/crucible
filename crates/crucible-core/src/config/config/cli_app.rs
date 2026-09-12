@@ -245,7 +245,7 @@ fn annotate_leaves(
             let source = provenance
                 .get(path)
                 .cloned()
-                .unwrap_or(crate::config::provenance::SourceTag::Default);
+                .unwrap_or(crate::config::provenance::ConfigSource::Default);
             serde_json::json!({
                 "value": leaf,
                 "source": source.detail(),
@@ -268,7 +268,7 @@ fn render_sourced_table(
         provenance
             .get(path)
             .cloned()
-            .unwrap_or(crate::config::provenance::SourceTag::Default)
+            .unwrap_or(crate::config::provenance::ConfigSource::Default)
             .detail()
     };
 
@@ -398,7 +398,7 @@ impl CliAppConfig {
         embedding_url: Option<String>,
         embedding_model: Option<String>,
     ) -> anyhow::Result<Self> {
-        use crate::config::provenance::{ProvenanceMap, SourceTag};
+        use crate::config::provenance::{ConfigSource, ProvenanceMap};
 
         // Determine config file path. An explicitly named file must exist: a
         // typo'd `-C` is otherwise indistinguishable from omitting the flag,
@@ -478,9 +478,9 @@ impl CliAppConfig {
 
         for field in &all_tracked_fields {
             if file_fields.contains(&(*field).to_string()) {
-                source_map.set(*field, SourceTag::Toml(config_path.clone()));
+                source_map.set(*field, ConfigSource::Toml(config_path.clone()));
             } else {
-                source_map.set(*field, SourceTag::Default);
+                source_map.set(*field, ConfigSource::Default);
             }
         }
 
@@ -493,7 +493,7 @@ impl CliAppConfig {
                         default_key, url
                     );
                     provider.endpoint = Some(url);
-                    source_map.set("llm.default.endpoint", SourceTag::Cli);
+                    source_map.set("llm.default.endpoint", ConfigSource::Cli);
                 }
             }
         }
@@ -505,7 +505,7 @@ impl CliAppConfig {
                         default_key, model
                     );
                     provider.default_model = Some(model);
-                    source_map.set("llm.default.model", SourceTag::Cli);
+                    source_map.set("llm.default.model", ConfigSource::Cli);
                 }
             }
         }
@@ -1030,6 +1030,8 @@ mod tests {
     }
 
     use super::*;
+    use crate::config::provenance::LastSet;
+    use crate::lua_source::LuaSource;
     use crate::test_support::EnvVarGuard;
 
     use tempfile::NamedTempFile;
@@ -1095,14 +1097,13 @@ mod tests {
         let mut provenance = crate::config::provenance::ProvenanceMap::new();
         provenance.set(
             "chat.model",
-            crate::config::provenance::SourceTag::Lua {
-                file: "init.lua".to_string(),
-                line: Some(7),
+            crate::config::provenance::ConfigSource::Lua {
+                last_set: LastSet::new(LuaSource::UserLua, "init.lua".to_string(), Some(7)),
             },
         );
         provenance.set(
             "llm.default",
-            crate::config::provenance::SourceTag::Registered,
+            crate::config::provenance::ConfigSource::Registered,
         );
         config.source_map = Some(provenance);
 

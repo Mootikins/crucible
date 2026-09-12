@@ -363,7 +363,7 @@ pub(crate) async fn handle_plugin_remove(
 #[cfg(test)]
 mod declared_refusal_tests {
     use super::*;
-    use crucible_core::config::SourceTag;
+    use crucible_core::config::ConfigSource;
 
     /// The refusal names the `file:line` of the declaration — that is the
     /// whole value of the refusal: the user knows which line to edit.
@@ -375,9 +375,12 @@ mod declared_refusal_tests {
             serde_json::json!({
                 "plugins": { "declare": { "greeter": "user/greeter" } }
             }),
-            SourceTag::Lua {
-                file: "init.lua".into(),
-                line: Some(12),
+            ConfigSource::Lua {
+                last_set: crucible_core::config::LastSet::new(
+                    crucible_core::lua_source::LuaSource::UserLua,
+                    "init.lua",
+                    Some(12),
+                ),
             },
         );
 

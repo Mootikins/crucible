@@ -101,7 +101,7 @@ pub use patterns::{
     ToolPatterns,
 };
 pub use project_config::{read_project_config, write_project_config, ProjectConfig};
-pub use provenance::{LeafOrigin, ProvenanceMap, SourceOrigin, SourceTag};
+pub use provenance::{ConfigSource, LastSet, LeafOrigin, ProvenanceMap, SourceOrigin};
 pub use redact::{names_a_credential, redact_credentials, REDACTED};
 pub use security::{ProjectFileAccess, ShellPolicy};
 pub use settings_file::{load_settings, save_settings_delta, settings_path, SETTINGS_FILE_NAME};

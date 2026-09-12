@@ -10,7 +10,7 @@
 //! deferred phase after the user config.
 
 use anyhow::Context;
-use crucible_core::config::{CliAppConfig, SourceTag};
+use crucible_core::config::{CliAppConfig, ConfigSource};
 use crucible_lua::{ModuleRegistry, ModuleRequest, PluginSource, RootKind};
 use mlua::{Lua, Table, Value};
 use std::collections::{HashMap, HashSet};
@@ -294,7 +294,7 @@ pub async fn evaluate_boot_config_with_paths(
     crucible_lua::begin_boot_store();
     let defaults =
         serde_json::to_value(CliAppConfig::default()).context("serialize default config")?;
-    crucible_lua::merge_app_config_tagged(defaults, SourceTag::Default);
+    crucible_lua::merge_app_config_tagged(defaults, ConfigSource::Default);
     if config_source.exists() {
         // Once per boot, naming the one command that ends it. A file whose
         // values silently stopped applying is the failure mode a deprecation
@@ -553,10 +553,10 @@ fn load_settings_layer(config_root: &Path) {
         }
     };
     let mut probe = crucible_lua::snapshot_store().expect("the store was just seeded");
-    probe.merge(settings.clone(), SourceTag::Settings);
+    probe.merge(settings.clone(), ConfigSource::Settings);
     match probe.extract() {
         Ok(_) => {
-            crucible_lua::merge_app_config_tagged(settings, SourceTag::Settings);
+            crucible_lua::merge_app_config_tagged(settings, ConfigSource::Settings);
         }
         Err(e) => warn!(
             "{} does not extract ({e}); continuing without the saved settings",
@@ -1244,10 +1244,13 @@ error("boom")
         );
         let sources = boot.config.source_map.expect("the boot records provenance");
         assert_eq!(
-            sources.get("default_kiln").map(SourceTag::short),
+            sources.get("default_kiln").map(ConfigSource::short),
             Some("settings")
         );
-        assert_eq!(sources.get("chat.model").map(SourceTag::short), Some("lua"));
+        assert_eq!(
+            sources.get("chat.model").map(ConfigSource::short),
+            Some("lua")
+        );
     }
 
     /// The boot order inverts the layer order, and the rank has to survive it.
@@ -1290,10 +1293,10 @@ error("boom")
             Some("saved-by-the-user"),
             "a plugin default must not replace what the settings UI saved \
              (provenance says {:?})",
-            sources.get("chat.model").map(SourceTag::short)
+            sources.get("chat.model").map(ConfigSource::short)
         );
         assert_eq!(
-            sources.get("chat.model").map(SourceTag::short),
+            sources.get("chat.model").map(ConfigSource::short),
             Some("settings"),
             "and the leaf must still name the layer that owns it"
         );
