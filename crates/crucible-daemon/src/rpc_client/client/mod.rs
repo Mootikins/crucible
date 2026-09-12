@@ -146,6 +146,7 @@ pub mod plugin_requests;
 pub mod review;
 pub mod session;
 pub mod storage;
+pub use storage::NoteListRow;
 pub mod storage_requests;
 pub mod subscription;
 pub mod types;

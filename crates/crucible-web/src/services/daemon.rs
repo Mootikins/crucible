@@ -243,7 +243,7 @@ impl ReconnectingDaemon {
         &self,
         kiln_path: &Path,
         path_filter: Option<&str>,
-    ) -> anyhow::Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
+    ) -> anyhow::Result<Vec<crucible_daemon::rpc_client::NoteListRow>> {
         let kiln_path = kiln_path.to_path_buf();
         let path_filter = path_filter.map(str::to_string);
         self.call_with_reconnect("list_notes", move |daemon| {

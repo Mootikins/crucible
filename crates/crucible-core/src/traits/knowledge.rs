@@ -72,6 +72,12 @@ pub struct NoteInfo {
     pub tags: Vec<String>,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The note's own frontmatter, filtered through
+    /// [`crate::storage::note_store::public_properties`] — what the author
+    /// wrote, never what the daemon stamped. It is what lets a client filter,
+    /// sort or group notes without asking a plugin to do it.
+    #[serde(default)]
+    pub properties: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// The listing view of a stored note. `name` is the file stem, or the whole
@@ -83,6 +89,10 @@ impl From<crate::storage::note_store::NoteRecord> for NoteInfo {
             .and_then(|s| s.to_str())
             .unwrap_or(&record.path)
             .to_string();
+        // THE boundary: a stored record becomes the listing view here and
+        // nowhere else, so the daemon's own stamps are dropped here and no
+        // route can forget to.
+        let properties = crate::storage::note_store::public_properties(&record.properties);
         Self {
             name,
             path: record.path,
@@ -90,6 +100,7 @@ impl From<crate::storage::note_store::NoteRecord> for NoteInfo {
             tags: record.tags,
             created_at: None,
             updated_at: Some(record.updated_at),
+            properties,
         }
     }
 }

@@ -618,7 +618,10 @@ pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
                         "path": n.path,
                         "title": n.title,
                         "tags": n.tags,
-                        "updated_at": n.updated_at.map(|t| t.to_rfc3339())
+                        "updated_at": n.updated_at.map(|t| t.to_rfc3339()),
+                        // Already filtered: NoteInfo::from drops the daemon's
+                        // own stamps, so this is the author's frontmatter.
+                        "properties": n.properties
                     })
                 })
                 .collect();

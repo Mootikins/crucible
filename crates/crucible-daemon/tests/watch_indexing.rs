@@ -104,7 +104,7 @@ where
             .await
             .expect("list_notes RPC failed")
             .into_iter()
-            .map(|(name, _, _, _, _)| name)
+            .map(|row| row.name)
             .collect();
 
         if predicate(&names) {

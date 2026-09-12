@@ -82,7 +82,7 @@ async fn wait_until_indexed(client: &DaemonClient, kiln: &Path, name: &str) {
             .list_notes(kiln, None, None)
             .await
             .expect("list_notes RPC failed");
-        if notes.iter().any(|(n, _, _, _, _)| n == name) {
+        if notes.iter().any(|row| row.name == name) {
             return;
         }
         assert!(

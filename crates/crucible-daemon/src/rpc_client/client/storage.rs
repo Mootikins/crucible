@@ -12,6 +12,27 @@ use super::DaemonClient;
 use super::storage_requests::*;
 use crate::storage::sqlite::FtsResult;
 
+/// One row of `list_notes`, as it crosses the RPC wire.
+///
+/// A struct rather than a tuple: it grew a sixth field, and a six-tuple at
+/// three call sites is a puzzle rather than a type.
+#[derive(Debug, Clone, Default)]
+pub struct NoteListRow {
+    pub name: String,
+    pub path: String,
+    pub title: Option<String>,
+    pub tags: Vec<String>,
+    pub updated_at: Option<String>,
+    pub properties: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl NoteListRow {
+    /// The legacy five-field view, for callers that want no properties.
+    pub fn into_parts(self) -> (String, String, Option<String>, Vec<String>, Option<String>) {
+        (self.name, self.path, self.title, self.tags, self.updated_at)
+    }
+}
+
 impl DaemonClient {
     // =========================================================================
     // Kiln RPC Methods
@@ -250,7 +271,7 @@ impl DaemonClient {
         kiln_path: &Path,
         path_filter: Option<&str>,
         scope: Option<crucible_core::storage::Scope>,
-    ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
+    ) -> Result<Vec<NoteListRow>> {
         let result: serde_json::Value = self
             .typed_call(
                 "list_notes",
@@ -297,7 +318,21 @@ impl DaemonClient {
                     .get("updated_at")
                     .and_then(|v| v.as_str())
                     .map(String::from);
-                Some((name, path, title, tags, updated_at))
+                // Already filtered daemon-side: the wire carries what the note's
+                // author wrote and nothing the daemon stamped.
+                let properties = item
+                    .get("properties")
+                    .and_then(|v| v.as_object())
+                    .map(|map| map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
+                Some(NoteListRow {
+                    name,
+                    path,
+                    title,
+                    tags,
+                    updated_at,
+                    properties,
+                })
             })
             .collect();
 

@@ -19,32 +19,32 @@ pub(crate) struct ModelsResponse {
 // =========================================================================
 
 /// Tuple returned by [`crate::services::daemon::DaemonService::list_notes`].
-pub(crate) type NoteListItem = (String, String, Option<String>, Vec<String>, Option<String>);
+pub(crate) type NoteListItem = crucible_daemon::rpc_client::NoteListRow;
 
 /// Map a note list item to full metadata JSON.
 ///
 /// Produces: `{ name, path, title, tags, updated_at }`.
-pub(crate) fn note_to_metadata_json(
-    (name, path, title, tags, updated_at): NoteListItem,
-) -> serde_json::Value {
+pub(crate) fn note_to_metadata_json(row: NoteListItem) -> serde_json::Value {
     serde_json::json!({
-        "name": name,
-        "path": path,
-        "title": title,
-        "tags": tags,
-        "updated_at": updated_at,
+        "name": row.name,
+        "path": row.path,
+        "title": row.title,
+        "tags": row.tags,
+        "updated_at": row.updated_at,
+        // The note's own frontmatter: what a client needs to filter, sort or
+        // group notes without asking a plugin to do it. Filtered at the
+        // boundary (`NoteInfo::from`), so no daemon stamp is in here.
+        "properties": row.properties,
     })
 }
 
 /// Map a note list item to a file-entry JSON.
 ///
 /// Produces: `{ name, path, is_dir: false }`.
-pub(crate) fn note_to_file_json(
-    (name, path, _title, _tags, _updated_at): NoteListItem,
-) -> serde_json::Value {
+pub(crate) fn note_to_file_json(row: NoteListItem) -> serde_json::Value {
     serde_json::json!({
-        "name": name,
-        "path": path,
+        "name": row.name,
+        "path": row.path,
         "is_dir": false,
     })
 }

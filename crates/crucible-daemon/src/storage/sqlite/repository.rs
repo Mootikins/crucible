@@ -162,23 +162,10 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
                 // If path filter specified, check if note path contains it
                 path.is_none_or(|p| note.path.contains(p))
             })
-            .map(|record| {
-                // Extract name from path (filename without extension)
-                let name = std::path::Path::new(&record.path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&record.path)
-                    .to_string();
-
-                NoteInfo {
-                    name,
-                    path: record.path,
-                    title: Some(record.title),
-                    tags: record.tags,
-                    created_at: None,
-                    updated_at: Some(record.updated_at),
-                }
-            })
+            // Through the one conversion, which is also where the daemon's own
+            // property stamps are dropped. Building a NoteInfo by hand here
+            // would ship them.
+            .map(NoteInfo::from)
             .collect();
 
         Ok(filtered)

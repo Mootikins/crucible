@@ -103,7 +103,7 @@ async fn list_notes_rpc_ignores_client_supplied_scope() {
         .await
         .expect("list_notes_scoped");
 
-    let names: Vec<_> = results.iter().map(|(n, _, _, _, _)| n.as_str()).collect();
+    let names: Vec<_> = results.iter().map(|row| row.name.as_str()).collect();
     assert!(
         names.contains(&"scoped"),
         "client-supplied scope must be ignored; kiln-derived authority returns own notes: {:?}",

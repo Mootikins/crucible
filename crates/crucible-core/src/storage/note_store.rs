@@ -56,6 +56,33 @@ use crate::storage::StorageResult;
 /// from frontmatter (explicit) or kiln binding (derived default).
 pub const SCOPE_PROPERTY_KEY: &str = "scope";
 
+/// Every property key the DAEMON stamps, rather than the note's author.
+///
+/// One enumerated table, because this is the gate between what a user wrote
+/// and what the system wrote about them. `scope` is the reason it exists: it
+/// holds `{"kind":"workspace","path":"/abs/host/path"}` and IS the
+/// same-workspace SQL visibility predicate, so a client that received it would
+/// hold an absolute host path and the key to the check that hides other
+/// workspaces' notes.
+///
+/// A key added here must be added to this table. `public_properties` drops
+/// every entry in it.
+pub const DAEMON_PROPERTY_KEYS: &[&str] = &[SCOPE_PROPERTY_KEY];
+
+/// The properties a client may see: what the note's author wrote, and nothing
+/// the daemon stamped.
+///
+/// Called at the SERIALISATION boundary, so no route can forget it by handing
+/// the raw column onward.
+pub fn public_properties(
+    all: &std::collections::HashMap<String, serde_json::Value>,
+) -> std::collections::BTreeMap<String, serde_json::Value> {
+    all.iter()
+        .filter(|(key, _)| !DAEMON_PROPERTY_KEYS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
 // ============================================================================
 // Core Types
 // ============================================================================

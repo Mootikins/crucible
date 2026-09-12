@@ -267,7 +267,7 @@ async fn test_list_notes_with_data() {
     // Check that names are extracted from paths
     let names: Vec<_> = results
         .iter()
-        .map(|(name, _, _, _, _)| name.as_str())
+        .map(|row| row.name.as_str())
         .collect();
     assert!(names.contains(&"daily"), "Should have 'daily' note");
     assert!(
@@ -301,7 +301,7 @@ async fn test_list_notes_with_filter() {
         .expect("list_notes RPC failed");
 
     assert_eq!(results.len(), 1, "Expected 1 note matching filter");
-    assert_eq!(results[0].0, "rust-project");
+    assert_eq!(results[0].name, "rust-project");
 
     server.shutdown().await;
 }

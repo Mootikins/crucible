@@ -200,17 +200,18 @@ impl KnowledgeRepository for DaemonStorageClient {
 
         Ok(results
             .into_iter()
-            .map(|(name, path, title, tags, updated_at)| NoteInfo {
-                name,
-                path,
-                title,
-                tags,
+            .map(|row| NoteInfo {
+                name: row.name,
+                path: row.path,
+                title: row.title,
+                tags: row.tags,
                 created_at: None,
-                updated_at: updated_at.and_then(|s| {
+                updated_at: row.updated_at.and_then(|s| {
                     DateTime::parse_from_rfc3339(&s)
                         .ok()
                         .map(|dt| dt.with_timezone(&Utc))
                 }),
+                properties: row.properties,
             })
             .collect())
     }

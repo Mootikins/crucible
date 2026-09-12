@@ -242,4 +242,48 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     // All or nothing: the second edit was fine and must not have landed.
     expect(readFileSync(notePath, 'utf-8')).toBe(before);
   });
+
+  // A client filters and groups notes by their frontmatter. It arrives on the
+  // note index, filtered: `scope` is the same-workspace SQL predicate and
+  // carries an absolute host path, so it must never cross the wire.
+  test('WS-201: the note index carries the author\'s frontmatter, never the daemon\'s stamp', async ({ page }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const note = '---\nstatus: doing\nrating: 4\n---\n\n# Props\n';
+
+    await page.goto(baseURL);
+    await page.evaluate(
+      async ({ kiln, body }) => {
+        await fetch(`/api/notes/${encodeURIComponent('Props')}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kiln, content: body }),
+        });
+      },
+      { kiln: kilnDir, body: note },
+    );
+
+    const listed = await expect
+      .poll(
+        async () =>
+          await page.evaluate(async (kiln) => {
+            const res = await fetch(`/api/notes?kiln=${encodeURIComponent(kiln)}`);
+            const body = await res.json();
+            return (body.notes ?? []).find((n: { name: string }) => n.name === 'Props') ?? null;
+          }, kilnDir),
+        { timeout: 15_000 },
+      )
+      .not.toBeNull()
+      .then(() =>
+        page.evaluate(async (kiln) => {
+          const res = await fetch(`/api/notes?kiln=${encodeURIComponent(kiln)}`);
+          const body = await res.json();
+          return (body.notes ?? []).find((n: { name: string }) => n.name === 'Props');
+        }, kilnDir),
+      );
+
+    expect(listed.properties).toMatchObject({ status: 'doing' });
+    expect(listed.properties).not.toHaveProperty('scope');
+    expect(JSON.stringify(listed)).not.toContain(kilnDir);
+  });
 });

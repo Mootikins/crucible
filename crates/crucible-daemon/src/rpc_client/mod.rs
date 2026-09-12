@@ -17,6 +17,7 @@ mod storage;
 
 pub use agent::{strip_chat_error_prefix, DaemonAgentHandle};
 pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
+pub use client::NoteListRow;
 pub use client::{
     first_per_note, AgentsListCardsRequest, DaemonCapabilities, DaemonClient, EmbeddingCatalog,
     EmbeddingModelRow, EmbeddingModelsRequest, FsListDirRequest, FsMoveRequest, FsPathRequest,

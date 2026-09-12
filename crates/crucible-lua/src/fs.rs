@@ -542,8 +542,6 @@ mod tests {
         assert!(victim.exists(), "the guard must not delete anything");
     }
 
-    /// `remove_all` is the recursive delete, under a name that says so.
-    #[test]
     /// The feature crosses Rust and Luau, so one test crosses it: a plugin
     /// calls `cru.fs.edit` and the bytes on disk change.
     #[test]
@@ -589,6 +587,8 @@ mod tests {
         assert_eq!(fs::read_to_string(&note).unwrap(), before);
     }
 
+    /// `remove_all` is the recursive delete, under a name that says so.
+    #[test]
     fn remove_all_removes_a_directory_tree() {
         let temp = TempDir::new().unwrap();
         let dir = temp.path().join("tree");

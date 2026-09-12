@@ -123,13 +123,14 @@ async fn process_with_explicit_path_targets_that_kiln_not_the_configured_one() -
     let target_notes = client
         .list_notes(target.path(), None, Some(scope_target))
         .await?;
-    let target_has_note = target_notes.iter().any(|(_, path, ..)| {
+    let target_has_note = target_notes.iter().any(|row| {
+        let path = &row.path;
         path == "target-kiln-note.md" || path.ends_with("target-kiln-note.md")
     });
     assert!(
         target_has_note,
         "target kiln missing its note; indexed paths: {:?}",
-        target_notes.iter().map(|(_, p, ..)| p).collect::<Vec<_>>()
+        target_notes.iter().map(|row| &row.path).collect::<Vec<_>>()
     );
 
     let scope_configured = Scope::workspace(configured.path())?;
@@ -138,13 +139,13 @@ async fn process_with_explicit_path_targets_that_kiln_not_the_configured_one() -
         .await?;
     let configured_got_stray = configured_notes
         .iter()
-        .any(|(_, path, ..)| !path.contains("configured-kiln-note.md"));
+        .any(|row| !row.path.contains("configured-kiln-note.md"));
     assert!(
         !configured_got_stray || configured_notes.len() <= 1,
         "configured kiln unexpectedly received notes from the run: {:?}",
         configured_notes
             .iter()
-            .map(|(_, p, ..)| p)
+            .map(|row| &row.path)
             .collect::<Vec<_>>()
     );
     assert!(
@@ -152,7 +153,7 @@ async fn process_with_explicit_path_targets_that_kiln_not_the_configured_one() -
         "the run processed the CONFIGURED kiln instead of the named one; got {:?}",
         configured_notes
             .iter()
-            .map(|(_, p, ..)| p)
+            .map(|row| &row.path)
             .collect::<Vec<_>>()
     );
 

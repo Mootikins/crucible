@@ -947,8 +947,13 @@ mod tests {
         let paths = default_discovery_paths(None, None, Some(home));
         // None of the discovered paths should reference `.claude/skills`.
         for p in &paths {
+            // The cross-harness path is `.claude/skills`, not any path that
+            // happens to contain `.claude`: a checkout living under one — a
+            // git worktree in `.claude/worktrees/` — puts it in every build
+            // path, and the bare substring failed there having proved nothing.
+            let path = p.path.to_string_lossy().replace('\\', "/");
             assert!(
-                !p.path.to_string_lossy().contains(".claude"),
+                !path.contains(".claude/skills"),
                 "cross-harness path must not appear by default: {:?}",
                 p.path
             );
