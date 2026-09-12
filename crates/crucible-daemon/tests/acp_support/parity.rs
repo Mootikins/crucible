@@ -552,7 +552,6 @@ mod tests {
         assert!(p
             .project(&TurnEvent::HandlerInjection {
                 content: "go on".into(),
-                position: "after".into(),
             })
             .is_none());
     }

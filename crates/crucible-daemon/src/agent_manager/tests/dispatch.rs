@@ -221,9 +221,7 @@ mod event_dispatch {
         )
         .await;
 
-        assert!(injection.is_some(), "Expected injection to be returned");
-        let (content, _position) = injection.unwrap();
-        assert_eq!(content, "Continue working");
+        assert_eq!(injection.as_deref(), Some("Continue working"));
     }
 
     /// A handler registered in the PLUGIN VM (a separate registry + Lua pair,
@@ -266,7 +264,7 @@ mod event_dispatch {
         )
         .await;
 
-        let (content, _) = injection.expect("plugin VM handler must be dispatched");
+        let content = injection.expect("plugin VM handler must be dispatched");
         assert_eq!(
             content, "from the plugin VM: test-session",
             "handler must fire from the plugin registry and see ctx.session_id"
@@ -324,7 +322,7 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.unwrap().0, "plugin inject");
+        assert_eq!(injection.as_deref(), Some("plugin inject"));
     }
 
     #[tokio::test]
@@ -359,13 +357,21 @@ mod event_dispatch {
         )
         .await;
 
-        assert!(injection.is_some(), "Expected injection to be returned");
-        let (content, _position) = injection.unwrap();
-        assert_eq!(content, "Second injection", "Last inject should win");
+        assert_eq!(
+            injection.as_deref(),
+            Some("Second injection"),
+            "Last inject should win"
+        );
     }
 
+    /// A handler that still writes the deleted `position` key still injects,
+    /// and the key changes nothing.
+    ///
+    /// The test this replaces asserted that `position` survived the parse. It
+    /// never asserted that the value did anything, and the scheduler dropped
+    /// it — so both values behaved identically while the test passed.
     #[tokio::test]
-    async fn inject_includes_position() {
+    async fn an_inject_with_an_unknown_key_still_injects() {
         let state = handler_vm();
 
         {
@@ -391,10 +397,7 @@ mod event_dispatch {
         )
         .await;
 
-        assert!(injection.is_some());
-        let (content, position) = injection.unwrap();
-        assert_eq!(content, "Suffix content");
-        assert_eq!(position, "user_suffix");
+        assert_eq!(injection.as_deref(), Some("Suffix content"));
     }
 
     #[tokio::test]

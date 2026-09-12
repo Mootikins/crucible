@@ -109,7 +109,10 @@ pub enum TurnEvent {
     /// Inbound only. The runtime's post-turn handler returned an
     /// injection; the agent should treat `content` as the next turn's
     /// user message.
-    HandlerInjection { content: String, position: String },
+    ///
+    /// The content is the WHOLE next user message, so there is nothing to
+    /// place it against and the variant carries no placement field.
+    HandlerInjection { content: String },
 
     /// Inbound only. Knowledge retrieved mid-turn (a Lua handler called
     /// `cru.context.attach`) that the agent should have available for its

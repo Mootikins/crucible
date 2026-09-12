@@ -1315,7 +1315,7 @@ impl GenaiAgentHandle {
                                 terminate: false,
                             });
                         }
-                        TurnEvent::HandlerInjection { content, .. } => {
+                        TurnEvent::HandlerInjection { content } => {
                             drop(chat_stream);
                             for attachment in attached.drain(..) {
                                 messages.push(ChatMessage::system(&attachment));

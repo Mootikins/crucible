@@ -39,7 +39,7 @@ impl AgentManager {
         usage: Option<&TokenUsage>,
         accumulated_response: &mut String,
         is_continuation: bool,
-    ) -> Option<(String, String)> {
+    ) -> Option<String> {
         // Scheduler-owned conversation tree: commit the assistant
         // response text as an Agent node. Today this is shadow state;
         // later phases flip the handle to read from the tree.
@@ -110,11 +110,10 @@ impl AgentManager {
         )
         .await;
 
-        if let Some((injected_content, position)) = &injection {
+        if let Some(injected_content) = &injection {
             info!(
                 session_id = %stream_ctx.session_id,
                 content_len = injected_content.len(),
-                position = %position,
                 "Processing handler injection"
             );
 
@@ -125,7 +124,6 @@ impl AgentManager {
                     "injection_pending",
                     serde_json::json!({
                         "content": injected_content,
-                        "position": position,
                         "is_continuation": true,
                     }),
                 ),
@@ -882,7 +880,7 @@ impl AgentManager {
         .await;
 
         let mut continuation_outcome = StreamOutcome::Completed;
-        if let Some((injected_content, _)) = injection {
+        if let Some(injected_content) = injection {
             drop(event_stream);
             // Release the handle lock before recursing so the inner
             // invocation can re-acquire it.
@@ -1016,7 +1014,7 @@ impl AgentManager {
         response: &str,
         plugin_handlers: Option<&PluginHandlers>,
         is_continuation: bool,
-    ) -> Option<(String, String)> {
+    ) -> Option<String> {
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
             payload: serde_json::json!({
@@ -1057,7 +1055,7 @@ impl AgentManager {
         lua: &mlua::Lua,
         event: &SessionEvent,
         is_continuation: bool,
-    ) -> Option<(String, String)> {
+    ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
         let handlers = registry.runtime_handlers_for(StageId::TurnComplete.as_str(), None);
@@ -1072,7 +1070,7 @@ impl AgentManager {
             "Dispatching turn:complete handlers"
         );
 
-        let mut pending_injection: Option<(String, String)> = None;
+        let mut pending_injection: Option<String> = None;
         for handler in handlers {
             match registry
                 .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
@@ -1086,15 +1084,14 @@ impl AgentManager {
                         "Handler executed"
                     );
 
-                    if let ScriptHandlerResult::Inject { content, position } = result {
+                    if let ScriptHandlerResult::Inject { content } = result {
                         debug!(
                             session_id = %session_id,
                             handler = %handler.name,
                             content_len = content.len(),
-                            position = %position,
                             "Handler returned inject"
                         );
-                        pending_injection = Some((content, position));
+                        pending_injection = Some(content);
                     }
                 }
                 Err(e) => {

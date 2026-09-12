@@ -566,7 +566,7 @@ end)
 
 ### Inject
 
-Return `{ inject = { content = "...", position = "user_prefix" } }` to prepend/append content to the user's next prompt. `position` can be `"user_prefix"` or `"user_suffix"`.
+Return `{ inject = { content = "..." } }` to start another turn. The content becomes the whole user message of that turn, so there is no placement option: an earlier API documented `position = "user_prefix" | "user_suffix"`, the scheduler never read it, and both values behaved identically. A handler that still sets it keeps working, and the key means nothing.
 
 > **`turn:complete` only.** Inject is collected by the turn-completion
 > dispatcher; every other event (including `pre_tool_call`) ignores it

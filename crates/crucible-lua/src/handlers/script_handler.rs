@@ -20,12 +20,15 @@ pub enum ScriptHandlerResult {
     PassThrough,
     /// Handler returned cancel object - abort pipeline
     Cancel { reason: String },
-    /// Handler wants to inject a follow-up message
+    /// Handler wants to inject a follow-up message.
+    ///
+    /// The content becomes the whole user message of the next turn, so it
+    /// carries no placement field. An earlier API had `position`, with the
+    /// values `user_prefix` and `user_suffix`; the scheduler never read it and
+    /// the two values behaved identically for six months.
     Inject {
         /// Content to inject
         content: String,
-        /// Where to inject: "user_prefix" (default), "user_suffix"
-        position: String,
     },
     /// Handler fully handled the event — use this result instead of default execution.
     /// Returned when Lua handler returns `{ handled = true, result = ..., terminate = bool }`.
@@ -40,7 +43,7 @@ pub enum ScriptHandlerResult {
 ///
 /// Implements the neovim-style return conventions:
 /// - nil → PassThrough
-/// - table with `inject={content="...", position="..."}` → Inject
+/// - table with `inject={content="..."}` → Inject
 /// - table with `cancel=true` → Cancel
 /// - table without `cancel` or `inject` → Transform
 /// - other → Transform (treat as modified value)
@@ -56,13 +59,10 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
             // cancellation.
             let is_directive_shape = !t.contains_key("type").unwrap_or(false);
             if is_directive_shape {
-                // {inject={content="...", position="..."}}
+                // {inject={content="..."}}
                 if let Ok(inject_table) = t.get::<Table>("inject") {
                     let content = inject_table.get::<String>("content")?;
-                    let position = inject_table
-                        .get::<String>("position")
-                        .unwrap_or_else(|_| "user_prefix".to_string());
-                    return Ok(ScriptHandlerResult::Inject { content, position });
+                    return Ok(ScriptHandlerResult::Inject { content });
                 }
                 // {handled=true, result=..., terminate=bool}
                 if let Ok(true) = t.get::<bool>("handled") {
@@ -193,7 +193,6 @@ mod event_outcome_tests {
             ScriptHandlerResult::Transform(serde_json::json!({"a": 1})),
             ScriptHandlerResult::Inject {
                 content: "hi".into(),
-                position: "user_prefix".into(),
             },
             ScriptHandlerResult::Handled {
                 result: serde_json::json!("done"),
