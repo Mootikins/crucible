@@ -250,11 +250,11 @@ mod tests {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
         let registry = crate::handlers::registry_of(&lua).unwrap();
 
-        crate::plugin_context::enter_plugin(&lua, "alpha", false);
+        crate::plugin_context::enter_plugin(&lua, "alpha");
         lua.load(r#"cru.on_session_start(function(s) end, { required = true })"#)
             .exec()
             .unwrap();
-        crate::plugin_context::enter_plugin(&lua, "beta", false);
+        crate::plugin_context::enter_plugin(&lua, "beta");
         lua.load(
             r#"
             cru.on_session_start(function(s) end)

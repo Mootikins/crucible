@@ -202,7 +202,7 @@ mod tests {
         register_publish_module(&lua, registry.clone(), "web-search".to_string()).unwrap();
 
         // Now kanban's command runs, under kanban's context.
-        let restore = crate::plugin_context::enter_plugin(&lua, "kanban", false);
+        let restore = crate::plugin_context::enter_plugin(&lua, "kanban");
         lua.load(r#"cru.plugin.publish("kanban:board", { tickets = {} })"#)
             .exec()
             .unwrap();

@@ -880,14 +880,14 @@ fn boot_load_plugin_module(
         None => None,
     };
 
-    // Context restored on every exit path: an unrestored context would
+    // Source restored on every exit path: an unrestored source would
     // misattribute whatever the user's file registers next.
     //
-    // No grants: this runs BEFORE discovery, so nothing has read a
-    // `PluginManager` entry for the plugin yet. The one grant read as
-    // authority is `intercept_tools`, and a boot-time require must not carry
-    // it on a manifest nobody has admitted.
-    let previous = crucible_lua::enter_plugin(lua, plugin, false);
+    // It admits no declaration, and it must not: this runs BEFORE discovery,
+    // so nothing has read a `PluginManager` entry for the plugin yet, and a
+    // boot-time require must not admit `intercept_tools` on a manifest nobody
+    // has read. An unrecorded name answers "no", which is that rule.
+    let previous = crucible_lua::enter_plugin(lua, plugin);
     let result: mlua::Result<Value> = lua
         .load(&source)
         .set_name(format!("@{}", file.display()))

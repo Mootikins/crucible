@@ -305,7 +305,7 @@ mod tests {
         lua.globals().set("_probe", probe).unwrap();
         lua.globals().set("ran", false).unwrap();
 
-        let previous = crate::plugin_context::enter_plugin(&lua, "kanban", false);
+        let previous = crate::plugin_context::enter_plugin(&lua, "kanban");
         lua.load(r#"cru.timer.spawn(function() ran = _probe() end)"#)
             .exec_async()
             .await
@@ -355,7 +355,7 @@ mod tests {
     #[cfg(feature = "send")]
     fn spawn_a_ticking_task(lua: &Lua, plugin: &str, global: &str) {
         lua.globals().set(global, 0).unwrap();
-        let previous = crate::plugin_context::enter_plugin(lua, plugin, false);
+        let previous = crate::plugin_context::enter_plugin(lua, plugin);
         lua.load(format!(
             r#"cru.timer.spawn(function()
                  while true do

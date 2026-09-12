@@ -1305,13 +1305,14 @@ impl DaemonPluginLoader {
             &self.handler_registry,
             &crucible_lua::LuaSource::Plugin(name.to_string()),
         );
-        // The plugin context carries BOTH authority markers: the name every
-        // `cru.storage` call is scoped to, and whether this plugin may replace
-        // a tool call's execution. The grant comes from the manifest the
-        // operator installed. This VM used to stamp neither — daemon-side
-        // `cru.storage` errored, and the interception gate read a Lua global
-        // with `.unwrap_or(true)`, so it failed OPEN for every plugin here.
-        let previous = crucible_lua::enter_plugin(lua, name, self.plugin_may_intercept(name));
+        // The declaration the operator installed, read from the manifest and
+        // admitted here. The interception gate used to read a Lua global with
+        // `.unwrap_or(true)`, so it failed OPEN for every plugin this VM ran.
+        crucible_lua::record_plugin_intercept(lua, name, self.plugin_may_intercept(name));
+
+        // The source: the name every `cru.storage` call is scoped to. This VM
+        // used to stamp none, so daemon-side `cru.storage` errored.
+        let previous = crucible_lua::enter_plugin(lua, name);
 
         // Execute init.lua with eval_async — captures return value AND enables
         // async Lua. Results are captured, not `?`-ed: the context restore

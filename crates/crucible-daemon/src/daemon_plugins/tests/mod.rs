@@ -1085,7 +1085,7 @@ async fn binding_the_kiln_resolver_also_scopes_a_plugins_file_access() {
         .expect("kiln path resolver");
 
     let lua = loader.executor().lua();
-    crucible_lua::enter_plugin(lua, "probe", false);
+    crucible_lua::enter_plugin(lua, "probe");
 
     // `cru.fs.write` returns nothing and RAISES when a path lies outside the
     // roots, so `pcall` is what separates the two answers.
@@ -1270,14 +1270,14 @@ async fn a_plugin_marked_inert_stops_its_spawned_task_and_its_schedule() {
     );
 }
 
-/// A `lua.eval` is its own owner, so its registrations are clearable and hold
-/// no interception right.
+/// A `lua.eval` is its own source, so its registrations are clearable and it
+/// names no plugin — which is what leaves it unable to take a tool call over.
 ///
-/// Before this, an eval ran with no owner at all, which read as the user's own
-/// `init.lua`: the interception grant answered `true`, and no clear path could
-/// ever remove what it registered.
+/// Before this, an eval ran with no source at all, which read as the user's
+/// own `init.lua`: the interception grant answered `true`, and no clear path
+/// could ever remove what it registered.
 #[tokio::test]
-async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
+async fn an_eval_owns_what_it_registers_and_names_no_plugin() {
     let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
         .eval(r#"cru.on("pre_tool_call", function(ctx, event) end)"#)
@@ -1293,9 +1293,11 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
         crucible_lua::LuaSource::Eval,
         "an eval must not be attributed to the user's own configuration"
     );
-    assert!(
-        !handlers[0].may_intercept(),
-        "an eval must not take a tool call over"
+    assert_eq!(
+        handlers[0].source.plugin_name(),
+        None,
+        "an eval names no plugin, so no `intercepts_tools` declaration can \
+         reach it and it cannot take a tool call over"
     );
 
     // And the clear path reaches it, which it could not while the owner was

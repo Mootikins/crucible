@@ -49,6 +49,54 @@ fn deny_tool_call(
     ))
 }
 
+/// Whether code running under `source` may take a tool call over — return
+/// `{ handled = true, … }` or a transform from `pre_tool_call`.
+///
+/// This is the ONE seam that gates the power, so it is the one place that
+/// decides it. `LuaSource` used to answer for itself, which made a provenance
+/// tag grant a capability; the answer lives here now, and the type only says
+/// who wrote the registration.
+///
+/// # The partition is by TRUST ROOT, not by identity
+///
+/// `handled` returns BEFORE the permission gate and hands the model a
+/// fabricated result it reads as the tool's own. But that gate protects the
+/// USER from the AGENT. It was never a boundary between the user and their
+/// own configuration, so operator-authored code walking past it is the
+/// operator overriding their own guard, which is theirs to do.
+///
+/// - [`LuaSource::Plugin`] is third-party code, so the declaration IS the
+///   boundary: `intercepts_tools` in the plugin's own spec table, which the
+///   loader records by name. An unrecorded name answers `false` — a plugin
+///   the loader never admitted must not gain the power by being unknown.
+/// - [`LuaSource::UserLua`] is the operator's own `init.lua`. Withholding the
+///   power buys no containment: that file already runs arbitrary Lua and
+///   reaches `cru.shell`, whose default policy blocks four command names and
+///   never reads arguments, so `cru.shell.exec("sh", { "-c", … })` runs
+///   anything. Refusing it here would remove a route and close no door.
+/// - [`LuaSource::Builtin`] is `runtime/defaults/init.luau`, which ships with
+///   the daemon and is the only definition of the permission modes and the
+///   plan-mode deny hook. Refusing interception to the code that DEFINES the
+///   gate is incoherent.
+/// - [`LuaSource::Eval`] is `false`, and this arm is the one to leave alone.
+///   A human types `cru lua`, so it is tempting to read an eval as the
+///   operator. It is not: an eval is a socket call, and the socket is what an
+///   RPC client reaches. Treating it as the operator would let any local
+///   caller that can open the daemon socket register an interception on a
+///   session it merely names. `cancel` stays open to it, because refusing a
+///   call can only narrow.
+///
+/// A plugin cannot grant itself the right at call time. The recorded table
+/// lives in the VM's Rust-side app data, which Lua cannot reach, and only a
+/// loader writes it.
+fn may_take_a_tool_call_over(lua: &mlua::Lua, source: &crucible_lua::LuaSource) -> bool {
+    match source {
+        crucible_lua::LuaSource::Plugin(name) => crucible_lua::intercept_for(lua, name),
+        crucible_lua::LuaSource::UserLua | crucible_lua::LuaSource::Builtin => true,
+        crucible_lua::LuaSource::Eval => false,
+    }
+}
+
 /// Run every `cru.on("pre_tool_call", …)` handler in one registry.
 ///
 /// `Some` short-circuits the call — a handler cancelled, took it over, or
@@ -107,7 +155,7 @@ async fn run_pre_tool_call_handlers(
                 );
             }
             Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate })
-                if handler.may_intercept() =>
+                if may_take_a_tool_call_over(lua, &handler.source) =>
             {
                 debug!(
                     session_id = %stream_ctx.session_id,
@@ -131,7 +179,9 @@ async fn run_pre_tool_call_handlers(
                     terminate,
                 });
             }
-            Ok(crucible_lua::ScriptHandlerResult::Transform(val)) if handler.may_intercept() => {
+            Ok(crucible_lua::ScriptHandlerResult::Transform(val))
+                if may_take_a_tool_call_over(lua, &handler.source) =>
+            {
                 if let Some(new_args) = val.get("args") {
                     if new_args.is_object() {
                         debug!(

@@ -1,4 +1,4 @@
-//! Who a Lua registration belongs to, and what authority that source holds.
+//! Who a Lua registration belongs to.
 //!
 //! Three integrity-bearing markers used to live as ordinary Lua globals:
 //! `cru._current_plugin` (the namespace every `cru.storage` call is scoped to),
@@ -21,16 +21,35 @@
 //! and pinned the leaf. That is correct for the user's own `init.lua`. It was
 //! wrong for a `lua.eval` call that arrives over a socket.
 //!
-//! [`LuaSource`] is total, so a registration outside every group cannot exist. The
-//! three meanings are now three separate readers of one value:
+//! [`LuaSource`] is total, so a registration outside every group cannot exist.
+//! Two of the three meanings are now two separate readers of one value:
 //!
 //! - **Lifecycle** — `clear_source` removes exactly one source's registrations.
-//! - **Authority** — [`LuaSource::may_intercept`] is a total function.
 //! - **Provenance** — [`LuaSource::config_layer`] is a total function. It answers
 //!   `None` for every source that has a file, and the config store then
 //!   classifies the write by the FILE that holds the call
 //!   (`crate::authorship`). [`LuaSource::Eval`] has no file, so it answers the
 //!   `Rpc` layer, which ranks highest and pins nothing.
+//!
+//! # Authority is NOT the third meaning, and this type does not answer it
+//!
+//! A source used to answer "may this intercept a tool call" through a
+//! `may_intercept` method, which made a provenance tag grant a capability.
+//! The answer now lives at the ONE seam that gates the power —
+//! `may_take_a_tool_call_over` in `agent_manager/messaging/tool_call.rs` —
+//! and that function carries the reasoning for each arm.
+//!
+//! What this module still owns is the DECLARATION a plugin makes. A plugin is
+//! third-party code, so `intercepts_tools` in its own spec table
+//! (`crate::lifecycle::spec`) is its boundary; a loader records it by name
+//! with [`record_plugin_intercept`] and the seam reads it with
+//! [`intercept_for`]. The recorded table, not the source, is what a plugin
+//! cannot forge: it lives in the VM's Rust-side app data, which Lua cannot
+//! reach, and only a loader writes it.
+//!
+//! The operator's own sources need no declaration and have none to make —
+//! there is no spec table for `init.lua`. The seam admits them by trust root
+//! instead, and says why there rather than here.
 //!
 //! # The bracket sites
 //!
@@ -93,32 +112,6 @@ impl LuaSource {
         match self {
             Self::Plugin(name) => Some(name.as_str()),
             Self::UserLua | Self::Builtin | Self::Eval => None,
-        }
-    }
-
-    /// Whether code running under this source may take a tool call over —
-    /// return `{ handled = true, … }` or a transform from `pre_tool_call`.
-    ///
-    /// Total, with no wildcard arm: a new source must name its own answer.
-    ///
-    /// - [`Self::Plugin`] reads what the operator installed, which the loader
-    ///   recorded by name. An unrecorded name answers `false`: a plugin the
-    ///   loader never admitted must not gain authority by being unknown.
-    /// - [`Self::UserLua`] and [`Self::Builtin`] are the operator's own code
-    ///   and hold the operator's authority.
-    /// - [`Self::Eval`] is `false` for CONSISTENCY, not for security. An eval
-    ///   already runs arbitrary code on this VM, so the answer protects
-    ///   nothing; it keeps one rule — authority belongs to an installation —
-    ///   true of every source.
-    ///
-    /// `cancel` needs no grant from any source: refusing a call can only
-    /// narrow.
-    #[must_use]
-    pub fn may_intercept(&self, lua: &Lua) -> bool {
-        match self {
-            Self::Plugin(name) => intercept_for(lua, name),
-            Self::UserLua | Self::Builtin => true,
-            Self::Eval => false,
         }
     }
 
@@ -294,17 +287,20 @@ pub fn enter_session<'lua>(lua: &'lua Lua, session: Option<&str>) -> SessionGuar
     SessionGuard { lua, previous }
 }
 
-/// What each loaded plugin's installation granted it, by name.
+/// What each loaded plugin DECLARED, by name.
 ///
-/// Several seams hold a plugin NAME and nothing else — a registration's source,
-/// the plugin a command belongs to — and each must re-enter that plugin's
-/// authority when it runs. Threading the grant set through all of them would
-/// have put four copies of one fact in the process. The loader records it
-/// once, here, and the seams read it by name.
+/// The declaration is `intercepts_tools` in the plugin's own spec table. It
+/// reaches the daemon as `PluginManifest::intercepts_tools`, and a loader
+/// records it here at the moment it admits the plugin.
+///
+/// It lives in VM app data for the reason the source does: Lua cannot reach
+/// it, so a plugin cannot grant itself the right at call time. It is keyed by
+/// NAME because the seam that gates on it holds a registration whose source
+/// names a plugin and nothing more.
 #[derive(Default)]
 struct PluginIntercepts(std::collections::HashMap<String, bool>);
 
-/// Record whether `name`'s installation lets it intercept.
+/// Record whether `name`'s installation declares that it intercepts tools.
 ///
 /// Called by the loaders, which read what the operator installed. Idempotent —
 /// a reload re-records, so an edit to the declaration takes effect.
@@ -324,21 +320,14 @@ pub fn intercept_for(lua: &Lua, name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Enter `name`'s ownership; return what it replaced, for the caller to
-/// restore.
+/// Enter `name`'s source; return what it replaced, for the caller to restore.
 ///
-/// It also RECORDS the interception bit, so a later seam holding only the name
-/// re-enters the same authority.
-pub fn enter_plugin(lua: &Lua, name: &str, may_intercept: bool) -> LuaSource {
-    record_plugin_intercept(lua, name, may_intercept);
-    set_source(lua, LuaSource::Plugin(name.to_string()))
-}
-
-/// Enter `name`'s ownership with the interception bit the loader recorded.
-///
-/// For the seams that hold a name and nothing else: a lifecycle hook's source,
-/// a plugin command's source, a plugin tool's source.
-pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> LuaSource {
+/// It records nothing. A loader that admits a plugin calls
+/// [`record_plugin_intercept`] separately, because entering a source and
+/// admitting a declaration are two different acts. The seams that hold a name
+/// and nothing else — a lifecycle hook, a plugin command, a plugin tool —
+/// enter the source and re-admit nothing.
+pub fn enter_plugin(lua: &Lua, name: &str) -> LuaSource {
     set_source(lua, LuaSource::Plugin(name.to_string()))
 }
 
@@ -346,11 +335,6 @@ pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> LuaSource {
 /// source.
 pub fn current_plugin_name(lua: &Lua) -> Option<String> {
     current_source(lua).plugin_name().map(str::to_string)
-}
-
-/// Whether the code that runs now may replace a tool call's execution.
-pub fn current_may_intercept(lua: &Lua) -> bool {
-    current_source(lua).may_intercept(lua)
 }
 
 #[cfg(test)]
@@ -362,7 +346,6 @@ mod tests {
         let lua = Lua::new();
         assert_eq!(current_source(&lua), LuaSource::UserLua);
         assert_eq!(current_plugin_name(&lua), None);
-        assert!(current_may_intercept(&lua));
     }
 
     #[test]
@@ -382,10 +365,9 @@ mod tests {
     /// The defect this type removes: an eval used to be indistinguishable
     /// from the user's own `init.lua`, so it read as the operator.
     #[test]
-    fn an_eval_may_not_intercept_and_names_no_plugin() {
+    fn an_eval_names_no_plugin() {
         let lua = Lua::new();
         set_source(&lua, LuaSource::Eval);
-        assert!(!current_may_intercept(&lua));
         assert_eq!(current_plugin_name(&lua), None);
     }
 
@@ -440,23 +422,73 @@ mod tests {
         );
     }
 
+    /// Only a loader's record answers the interception question. A name the
+    /// loader never admitted answers `false`, so a plugin the host does not
+    /// know cannot gain the right by being unknown.
     #[test]
-    fn a_plugin_reads_the_grant_the_loader_recorded() {
+    fn only_a_recorded_declaration_admits_interception() {
         let lua = Lua::new();
-        enter_plugin(&lua, "quiet", false);
-        assert!(!current_may_intercept(&lua));
-        enter_plugin(&lua, "loud", true);
-        assert!(current_may_intercept(&lua));
-        // A name the loader never admitted holds no authority.
-        assert!(!LuaSource::Plugin("stranger".into()).may_intercept(&lua));
+        record_plugin_intercept(&lua, "quiet", false);
+        record_plugin_intercept(&lua, "loud", true);
+
+        assert!(!intercept_for(&lua, "quiet"));
+        assert!(intercept_for(&lua, "loud"));
+        assert!(!intercept_for(&lua, "stranger"));
     }
 
+    /// A reload re-records, so an edit to the declaration takes effect — and
+    /// a plugin that drops the declaration loses the right.
     #[test]
-    fn the_shipped_defaults_hold_the_operators_authority() {
+    fn a_reload_re_records_the_declaration_in_both_directions() {
         let lua = Lua::new();
-        set_source(&lua, LuaSource::Builtin);
-        assert!(current_may_intercept(&lua));
-        assert_eq!(current_plugin_name(&lua), None);
+        record_plugin_intercept(&lua, "oci", true);
+        assert!(intercept_for(&lua, "oci"));
+        record_plugin_intercept(&lua, "oci", false);
+        assert!(!intercept_for(&lua, "oci"));
+    }
+
+    /// Entering a source records no declaration. A declaration is a thing a
+    /// loader admits, never a thing entering a source implies — otherwise the
+    /// seams that enter a source holding only a name (a lifecycle hook, a
+    /// plugin command, a plugin tool) would each re-decide it.
+    ///
+    /// The list is the whole enum, so a new source cannot arrive already
+    /// admitted.
+    #[test]
+    fn entering_a_source_admits_no_declaration() {
+        for source in [
+            LuaSource::Plugin("alpha".into()),
+            LuaSource::UserLua,
+            LuaSource::Builtin,
+            LuaSource::Eval,
+        ] {
+            let lua = Lua::new();
+            set_source(&lua, source.clone());
+            // The name every seam would key on, for the one source that has
+            // one, plus the two names a non-plugin source renders as.
+            for name in ["alpha", &source.to_string()] {
+                assert!(
+                    !intercept_for(&lua, name),
+                    "'{source}' admitted '{name}' without a loader recording it"
+                );
+            }
+        }
+    }
+
+    /// `enter_plugin` used to record the declaration as a side effect of
+    /// entering. It must not: a seam that holds only a name — a lifecycle
+    /// hook, a plugin command, a plugin tool — enters the source, and an
+    /// entering-records rule let the last such seam overwrite what the loader
+    /// admitted.
+    #[test]
+    fn entering_a_plugin_does_not_overwrite_what_the_loader_recorded() {
+        let lua = Lua::new();
+        record_plugin_intercept(&lua, "oci", true);
+        enter_plugin(&lua, "oci");
+        assert!(
+            intercept_for(&lua, "oci"),
+            "entering the plugin must not clear its declaration"
+        );
     }
 
     #[test]
@@ -504,7 +536,7 @@ mod tests {
                 mlua::LuaOptions::default(),
             )
         };
-        enter_plugin(&lua, "grabby", false);
+        enter_plugin(&lua, "grabby");
 
         let found = lua
             .load(
@@ -522,6 +554,39 @@ mod tests {
             found.is_err() || !found.expect("a successful registry walk returns a boolean"),
             "the source must not be reachable from Lua"
         );
-        assert!(!current_may_intercept(&lua));
+    }
+
+    /// The recorded declaration is the value a plugin must not be able to
+    /// forge, so it must be as unreachable from Lua as the source is.
+    #[test]
+    fn lua_cannot_reach_the_recorded_declaration_through_the_registry() {
+        let lua = unsafe {
+            Lua::unsafe_new_with(
+                mlua::StdLib::ALL_SAFE | mlua::StdLib::DEBUG,
+                mlua::LuaOptions::default(),
+            )
+        };
+        record_plugin_intercept(&lua, "grabby", true);
+
+        let found = lua
+            .load(
+                r#"
+                for _, value in pairs(debug.getregistry()) do
+                    if type(value) == "table" then
+                        for k, v in pairs(value) do
+                            if k == "grabby" or v == "grabby" then
+                                return true
+                            end
+                        end
+                    end
+                end
+                return false
+                "#,
+            )
+            .eval::<bool>();
+        assert!(
+            found.is_err() || !found.expect("a successful registry walk returns a boolean"),
+            "the recorded declaration must not be reachable from Lua"
+        );
     }
 }

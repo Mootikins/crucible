@@ -299,7 +299,7 @@ impl PluginRegistry {
         // manifest declared. Authority is a total function of the owner now,
         // not a bit the caller narrows: what a command registers holds exactly
         // the grant the operator installed, as the plugin's own body does.
-        let restore = crucible_lua::enter_recorded_plugin(&lua, &plugin);
+        let restore = crucible_lua::enter_plugin(&lua, &plugin);
         let result = call_plugin_fn(&lua, &func, args).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
@@ -359,7 +359,7 @@ impl ToolExecutor for PluginToolExecutor {
         // A tool used to run under whatever owner was left behind, so a
         // plugin tool reached `cru.storage`'s wrong namespace and held the
         // operator's own authority rather than its plugin's.
-        let restore = crucible_lua::enter_recorded_plugin(&lua, &plugin);
+        let restore = crucible_lua::enter_plugin(&lua, &plugin);
         let result = call_plugin_fn(&lua, &func, params).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.

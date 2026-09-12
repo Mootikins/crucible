@@ -67,7 +67,7 @@ fn every_registration_api_writes_one_store() {
     crate::hooks::register_hooks_module(&lua, &cru).unwrap();
     crate::handlers::register_permission_hook_api(&lua, registry.clone()).unwrap();
 
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("turn:complete", function(ctx, event) end)

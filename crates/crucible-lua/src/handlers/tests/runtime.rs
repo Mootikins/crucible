@@ -409,7 +409,7 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
     register_cru_on_api(&lua, registry.clone()).unwrap();
 
     // Two plugins, loaded in order, exactly as the loader does it.
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -419,7 +419,7 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
     .exec()
     .unwrap();
 
-    crate::plugin_context::enter_plugin(&lua, "beta", false);
+    crate::plugin_context::enter_plugin(&lua, "beta");
     lua.load(r#"cru.on("pre_tool_call", function() end)"#)
         .exec()
         .unwrap();
@@ -432,7 +432,7 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
 
     // Reload alpha: drop its handlers, then let it register again.
     registry.clear_source(&LuaSource::Plugin("alpha".into()));
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha");
     lua.load(
         r#"
         cru.on("turn:complete", function() end)
@@ -501,7 +501,7 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
     let registry = LuaScriptHandlerRegistry::new();
     register_cru_on_api(&lua, registry.clone()).unwrap();
 
-    crate::plugin_context::enter_plugin(&lua, "alpha", false);
+    crate::plugin_context::enter_plugin(&lua, "alpha");
     lua.load(r#"cru.on("pre_tool_call", function() return { cancel = true } end)"#)
         .exec()
         .unwrap();
