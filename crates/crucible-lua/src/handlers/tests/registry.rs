@@ -27,7 +27,8 @@ fn test_crucible_on_api_registration() {
     .exec()
     .unwrap();
 
-    let handlers = registry.runtime_handlers_for("pre_tool_call", None);
+    let handlers =
+        registry.runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].name, StageId::PreToolCall.into());
 }
@@ -47,7 +48,9 @@ fn crucible_on_rejects_a_hook_name_nothing_dispatches() {
     let msg = err.to_string();
     assert!(msg.contains("did you mean `pre_tool_call`"), "{msg}");
     assert_eq!(
-        registry.runtime_handlers_for("pre_tool_call", None).len(),
+        registry
+            .runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless)
+            .len(),
         0,
         "nothing may be stored"
     );
@@ -78,7 +81,12 @@ fn every_registration_api_writes_one_store() {
     assert_eq!(registry.plugin_handler_count("alpha"), 3);
     registry.clear_owner(&crate::plugin_context::Owner::Plugin("alpha".into()));
     assert_eq!(registry.plugin_handler_count("alpha"), 0);
-    assert_eq!(crate::hooks::session_start_hooks(&lua).unwrap().len(), 0);
+    assert_eq!(
+        crate::hooks::session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 // ============================================================================
@@ -102,13 +110,21 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
     .exec()
     .unwrap();
 
-    let handlers = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+    let handlers = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("bash"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].priority, 10);
     assert_eq!(handlers[0].pattern, Some("bash".to_string()));
 
     // Doesn't match other tools
-    let handlers = registry.runtime_handlers_for("pre_tool_call", Some("grep"));
+    let handlers = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("grep"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(handlers.len(), 0);
 }
 
@@ -129,7 +145,8 @@ fn crucible_on_backward_compat_no_opts() {
     .exec()
     .unwrap();
 
-    let handlers = registry.runtime_handlers_for("turn:complete", None);
+    let handlers =
+        registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].priority, 100); // default
     assert_eq!(handlers[0].pattern, None);

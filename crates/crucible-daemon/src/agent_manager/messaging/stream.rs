@@ -1056,7 +1056,11 @@ impl AgentManager {
         lua: &mlua::Lua,
         event: &SessionEvent,
     ) {
-        for handler in registry.runtime_handlers_for(StageId::PostLlmCall.as_str(), None) {
+        for handler in registry.runtime_handlers_for(
+            StageId::PostLlmCall.as_str(),
+            None,
+            crucible_lua::Firing::InSession(session_id),
+        ) {
             if let Err(error) = registry
                 .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await
@@ -1139,7 +1143,11 @@ impl AgentManager {
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
-        let handlers = registry.runtime_handlers_for(StageId::TurnComplete.as_str(), None);
+        let handlers = registry.runtime_handlers_for(
+            StageId::TurnComplete.as_str(),
+            None,
+            crucible_lua::Firing::InSession(session_id),
+        );
         if handlers.is_empty() {
             return None;
         }

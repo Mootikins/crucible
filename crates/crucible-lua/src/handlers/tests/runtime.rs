@@ -38,6 +38,8 @@ fn register_stub(
                 name: name.into(),
                 priority,
                 pattern: pattern.map(str::to_string),
+                scope: crate::handlers::Scope::Any,
+                key: None,
                 timeout_ms: None,
                 required: false,
             },
@@ -68,7 +70,8 @@ fn runtime_handler_stores_function_reference() {
     "#;
     lua.load(handler_code).eval::<()>().unwrap();
 
-    let handlers = registry.runtime_handlers_for("pre_tool_call", None);
+    let handlers =
+        registry.runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].name, StageId::PreToolCall.into());
     assert_eq!(handlers[0].id, 0, "the first id the allocator hands out");
@@ -221,16 +224,19 @@ fn runtime_handlers_for_returns_matching_handlers() {
     let b = register_stub(&lua, &registry, StageId::PreToolCall, 50, None);
     let c = register_stub(&lua, &registry, StageId::TurnComplete, 200, None);
 
-    let matching = registry.runtime_handlers_for("turn:complete", None);
+    let matching =
+        registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert_eq!(matching.len(), 2);
     assert_eq!(matching[0].id, a);
     assert_eq!(matching[1].id, c);
 
-    let other = registry.runtime_handlers_for("pre_tool_call", None);
+    let other =
+        registry.runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless);
     assert_eq!(other.len(), 1);
     assert_eq!(other[0].id, b);
 
-    let none = registry.runtime_handlers_for("nonexistent", None);
+    let none =
+        registry.runtime_handlers_for("nonexistent", None, crate::handlers::Firing::Sessionless);
     assert!(none.is_empty());
 }
 
@@ -243,7 +249,8 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
     let high = register_stub(&lua, &registry, StageId::TurnComplete, 10, None);
     let medium = register_stub(&lua, &registry, StageId::TurnComplete, 100, None);
 
-    let handlers = registry.runtime_handlers_for("turn:complete", None);
+    let handlers =
+        registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 3);
     assert_eq!(handlers[0].id, high);
     assert_eq!(handlers[0].priority, 10);
@@ -261,18 +268,27 @@ fn pattern_filtering_matches_exact_tool_name() {
     let all = register_stub(&lua, &registry, StageId::PreToolCall, 100, None);
 
     // With identifier "bash" — both match
-    let matching = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+    let matching = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("bash"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(matching.len(), 2);
     assert_eq!(matching[0].id, bash); // priority 10
     assert_eq!(matching[1].id, all); // priority 100
 
     // With identifier "read_file" — only the no-pattern handler matches
-    let matching = registry.runtime_handlers_for("pre_tool_call", Some("read_file"));
+    let matching = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("read_file"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(matching.len(), 1);
     assert_eq!(matching[0].id, all);
 
     // With no identifier — only no-pattern handler matches (pattern handlers require identifier)
-    let matching = registry.runtime_handlers_for("pre_tool_call", None);
+    let matching =
+        registry.runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless);
     assert_eq!(matching.len(), 1);
     assert_eq!(matching[0].id, all);
 }
@@ -283,10 +299,18 @@ fn pattern_filtering_supports_glob() {
     let registry = LuaScriptHandlerRegistry::new();
     register_stub(&lua, &registry, StageId::PreToolCall, 10, Some("read_*"));
 
-    let matching = registry.runtime_handlers_for("pre_tool_call", Some("read_file"));
+    let matching = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("read_file"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(matching.len(), 1);
 
-    let matching = registry.runtime_handlers_for("pre_tool_call", Some("write_file"));
+    let matching = registry.runtime_handlers_for(
+        "pre_tool_call",
+        Some("write_file"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(matching.len(), 0);
 }
 
@@ -324,7 +348,10 @@ async fn todo_enforcer_pattern_integration() {
     .exec()
     .unwrap();
 
-    let id = registry.runtime_handlers_for("turn:complete", None)[0].id;
+    let id =
+        registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless)
+            [0]
+        .id;
 
     // Step 3: Test with incomplete todo - should trigger injection
     let event_with_todo = SessionEvent::Custom {
@@ -398,7 +425,7 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
         .unwrap();
 
     let beta_id = registry
-        .runtime_handlers_for("pre_tool_call", None)
+        .runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless)
         .first()
         .expect("beta registered one handler")
         .id;
@@ -415,7 +442,8 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
     .exec()
     .unwrap();
 
-    let after_reload = registry.runtime_handlers_for("turn:complete", None);
+    let after_reload =
+        registry.runtime_handlers_for("turn:complete", None, crate::handlers::Firing::Sessionless);
     assert!(
         !after_reload.iter().any(|h| h.id == beta_id),
         "reload reused id {beta_id}, which beta still holds"
@@ -477,7 +505,10 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
     lua.load(r#"cru.on("pre_tool_call", function() return { cancel = true } end)"#)
         .exec()
         .unwrap();
-    let stale_id = registry.runtime_handlers_for("pre_tool_call", None)[0].id;
+    let stale_id =
+        registry.runtime_handlers_for("pre_tool_call", None, crate::handlers::Firing::Sessionless)
+            [0]
+        .id;
 
     // The reload's clear lands between snapshot and execution.
     registry.clear_owner(&Owner::Plugin("alpha".into()));
@@ -542,7 +573,8 @@ async fn a_search_rerank_handler_returns_the_hits_it_reordered() {
     .exec()
     .unwrap();
 
-    let handlers = registry.runtime_handlers_for("search:rerank", None);
+    let handlers =
+        registry.runtime_handlers_for("search:rerank", None, crate::handlers::Firing::Sessionless);
     assert_eq!(handlers.len(), 1);
 
     let event = SessionEvent::Custom {

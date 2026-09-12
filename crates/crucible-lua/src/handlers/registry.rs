@@ -7,7 +7,71 @@ use std::sync::{Arc, Mutex};
 use super::conversion::session_event_to_lua;
 use super::hook_name::HookName;
 use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
-use crate::plugin_context::{current_owner, set_owner, Owner};
+use crate::plugin_context::{current_owner, enter_session, set_owner, Owner};
+
+/// Which sessions a registration fires for.
+///
+/// A third concern beside the owner and the pattern, and independent of both:
+/// the owner says whose registration it is, the pattern says which tool name,
+/// this says which session.
+///
+/// # Activation REGISTERS
+///
+/// A workflow plugin must fire for the sessions a user turned it on for and
+/// for no others — a loop that re-prompts a model would otherwise take over
+/// turns nobody asked it to. The set of sessions a handler serves is
+/// therefore the set of registrations that exist: a plugin turned on for one
+/// session registers a handler scoped to it, at the moment it is turned on.
+/// Nothing is looked up while a turn runs.
+///
+/// The earlier draft of this had a third variant, where sessions joined a
+/// list and a handler registered once read the list at fire time. Two
+/// variants cost less: no tag vocabulary to typo, no per-session state on the
+/// hot path, and no second mechanism for "which sessions" beside this one.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Scope {
+    /// Every session, and every dispatch that carries none.
+    Any,
+    /// One session, by id.
+    ///
+    /// Registration is IDEMPOTENT for these — see
+    /// [`LuaScriptHandlerRegistry::register`].
+    Session(String),
+}
+
+/// The session a dispatch belongs to.
+///
+/// Its own type rather than a second `Option<&str>` beside the pattern
+/// identifier: two adjacent options of one type let a caller swap them, and
+/// the swap compiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Firing<'a> {
+    /// The dispatch names no session — a file event, a webhook, an index
+    /// pass. Only [`Scope::Any`] fires.
+    Sessionless,
+    /// The dispatch belongs to this session.
+    InSession(&'a str),
+}
+
+impl<'a> Firing<'a> {
+    /// The dispatch for a site that holds `Option<&str>`, as most do.
+    #[must_use]
+    pub const fn of(session: Option<&'a str>) -> Self {
+        match session {
+            Some(id) => Self::InSession(id),
+            None => Self::Sessionless,
+        }
+    }
+
+    /// The session id, or `None` when the dispatch names none.
+    #[must_use]
+    pub const fn session(self) -> Option<&'a str> {
+        match self {
+            Self::InSession(id) => Some(id),
+            Self::Sessionless => None,
+        }
+    }
+}
 
 /// Every Lua callback the host holds, in one store.
 ///
@@ -36,8 +100,10 @@ use crate::plugin_context::{current_owner, set_owner, Owner};
 /// // Registration happens from Lua, via the APIs this registry backs.
 /// register_cru_on_api(&lua, registry.clone())?;
 ///
-/// // Dispatch: select by name, then execute each match by id.
-/// for handler in registry.runtime_handlers_for("tool_result", Some(tool_name)) {
+/// // Dispatch: select by name, pattern and session, then execute each
+/// // match by id.
+/// let firing = Firing::InSession(session_id);
+/// for handler in registry.runtime_handlers_for("tool_result", Some(tool_name), firing) {
 ///     let outcome = registry
 ///         .execute_runtime_handler(&lua, handler.id, &event, Some(session_id))
 ///         .await?;
@@ -78,6 +144,15 @@ pub struct Registration {
     /// Glob over the dispatch identifier — a tool name, for the hooks that
     /// carry one. `None` matches every dispatch.
     pub pattern: Option<String>,
+    /// Which sessions this fires for. [`Scope::Any`] is every one.
+    pub scope: Scope,
+    /// What the registration called itself with `{ key = … }`.
+    ///
+    /// Part of the replacement key, and there for one reason: without it a
+    /// plugin could not register two scoped handlers on one hook for one
+    /// session, which is a legal thing to want. Lua spells it `key` rather
+    /// than `name` because `name` above is already the hook.
+    pub key: Option<String>,
     /// What the registration asked for with `{ timeout_ms = … }`, in
     /// milliseconds. `None` takes the budget of the name it registered for.
     pub timeout_ms: Option<u64>,
@@ -119,6 +194,10 @@ pub struct RegistrationSpec {
     pub priority: i64,
     /// Glob over the dispatch identifier.
     pub pattern: Option<String>,
+    /// Which sessions to fire for.
+    pub scope: Scope,
+    /// What the registration calls itself. See [`Registration::key`].
+    pub key: Option<String>,
     /// An explicit time budget, in milliseconds.
     pub timeout_ms: Option<u64>,
     /// Whether a failure refuses the session; `session:start` only.
@@ -133,6 +212,8 @@ impl RegistrationSpec {
             name,
             priority: DEFAULT_PRIORITY,
             pattern: None,
+            scope: Scope::Any,
+            key: None,
             timeout_ms: None,
             required: false,
         }
@@ -141,6 +222,72 @@ impl RegistrationSpec {
 
 /// The priority a registration takes when it names none.
 pub const DEFAULT_PRIORITY: i64 = 100;
+
+/// Read `{ session = …, key = … }` from a registration's options table.
+///
+/// One function so every registration API reads the two options the same way
+/// and refuses the same things. `api` names the caller in the messages.
+///
+/// Three refusals, all at registration:
+///
+/// 1. `session` on a hook that dispatches without one. Nothing would ever
+///    fire, and [`HookName::carries_session`] knows which names those are.
+/// 2. `session` where the host is in no session. There is nothing to resolve
+///    the id against.
+/// 3. `session` naming a session other than the one the host is in. The host
+///    resolves the id; a caller never writes one it chose. See
+///    [`crate::plugin_context::current_session`] for the reason.
+pub fn scope_from_opts(
+    lua: &Lua,
+    api: &str,
+    name: HookName,
+    opts: &mlua::Table,
+) -> LuaResult<(Scope, Option<String>)> {
+    let key = string_option(api, opts, "key")?;
+    let Some(asked) = string_option(api, opts, "session")? else {
+        return Ok((Scope::Any, key));
+    };
+    if !name.carries_session() {
+        return Err(mlua::Error::RuntimeError(format!(
+            "{api}: `{name}` is dispatched without a session, so a \
+             `session` scope on it could never fire"
+        )));
+    }
+    let Some(current) = crate::plugin_context::current_session(lua) else {
+        return Err(mlua::Error::RuntimeError(format!(
+            "{api}: a `session` scope names the session this code is running \
+             in, and nothing is running in one here. Register from \
+             `cru.on_session_start` or from a handler, where the host holds \
+             the session"
+        )));
+    };
+    if asked != current {
+        return Err(mlua::Error::RuntimeError(format!(
+            "{api}: this code runs in session `{current}`, so it may not \
+             register a handler for session `{asked}`"
+        )));
+    }
+    Ok((Scope::Session(current), key))
+}
+
+/// One string option off a registration's table, or `None` when it is absent.
+///
+/// A value of the wrong type RAISES rather than reading as absent. That
+/// matters most for `session`: an absent scope means every session, so
+/// swallowing `{ session = session }` — the handle instead of its id, which
+/// is the mistake an author will make — would silently widen a handler from
+/// one session to all of them.
+fn string_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<String>> {
+    match opts.get::<Value>(field) {
+        Ok(Value::Nil) => Ok(None),
+        Ok(Value::String(s)) => Ok(Some(s.to_str()?.to_string())),
+        Ok(other) => Err(mlua::Error::RuntimeError(format!(
+            "{api}: `{field}` must be a string, not a {}",
+            other.type_name()
+        ))),
+        Err(e) => Err(e),
+    }
+}
 
 impl Registration {
     /// Whether this registration may take a tool call over.
@@ -171,6 +318,31 @@ impl LuaScriptHandlerRegistry {
     /// grant itself the interception right read here.
     ///
     /// Answers the id, which is the dispatch key.
+    ///
+    /// # A scoped registration REPLACES, and this is not optional
+    ///
+    /// A [`Scope::Session`] registration is keyed by
+    /// `(owner, name, pattern, scope, key)` and overwrites a row that carries
+    /// the same key. A second registration of the same key is the SAME
+    /// registration.
+    ///
+    /// `runtime/plugins/oci/init.luau` records the bug this closes, because
+    /// it had to avoid the seam entirely to escape it: `on_session_start`
+    /// fires on create, on resume AND on `resume_from_storage`, and a web
+    /// history fetch calls `resume_from_storage` on every request, while
+    /// `on_session_end` fires once. So "activation registers" would append one
+    /// handler per history fetch, and the list has no unregister — leaving one
+    /// stale copy per fetch, firing for the life of the daemon.
+    ///
+    /// Every part of the key carries weight. Without the owner, two plugins
+    /// registering `cru.on("pre_tool_call", { session = id }, h)` would
+    /// silently overwrite each other. Without the `key`, one plugin could not
+    /// register two handlers on one hook for one session.
+    ///
+    /// A [`Scope::Any`] registration still APPENDS. Two identical unscoped
+    /// registrations are two handlers, as they have always been: an unscoped
+    /// registration is made once at load, so nothing accumulates, and
+    /// collapsing them would change what every existing plugin does.
     pub fn register(&self, lua: &Lua, spec: RegistrationSpec, handler: Function) -> LuaResult<u64> {
         let owner = current_owner(lua);
         let may_intercept = owner.may_intercept(lua);
@@ -187,15 +359,23 @@ impl LuaScriptHandlerRegistry {
             id,
             priority: spec.priority,
             pattern: spec.pattern,
+            scope: spec.scope,
+            key: spec.key,
             timeout_ms: spec.timeout_ms,
             required: spec.required,
             may_intercept,
             body,
         };
-        self.registrations
+        let mut rows = self
+            .registrations
             .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock registrations: {e}")))?
-            .push(registration);
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock registrations: {e}")))?;
+        match registration.replaces(&rows) {
+            // In place, so a re-registration on every history fetch does not
+            // churn the tie-break order of the rows around it.
+            Some(index) => rows[index] = registration,
+            None => rows.push(registration),
+        }
         Ok(id)
     }
 
@@ -216,18 +396,32 @@ impl LuaScriptHandlerRegistry {
             .unwrap_or(0)
     }
 
-    /// Every registration for `name`, priority first, matching `identifier`.
+    /// Every registration for `name`, priority first, matching `identifier`
+    /// and serving `firing`.
     ///
     /// The sort is stable, so two registrations of equal priority run in
     /// registration order.
-    pub fn for_hook(&self, name: HookName, identifier: Option<&str>) -> Vec<Registration> {
+    ///
+    /// **This closure and its synchronous twin in
+    /// [`execute_permission_hooks`](super::permission::execute_permission_hooks)
+    /// are the only two places a scope is read.** A dispatch site never
+    /// checks one: it says which session it is in and gets the handlers for
+    /// it. The pattern has worked this way since it was added, and the scope
+    /// sits beside it for the same reason — a per-site check is a per-site
+    /// chance to omit the check.
+    pub fn for_hook(
+        &self,
+        name: HookName,
+        identifier: Option<&str>,
+        firing: Firing<'_>,
+    ) -> Vec<Registration> {
         let rows = self
             .registrations
             .lock()
             .expect("registrations: poisoned while selecting handlers");
         let mut matching: Vec<Registration> = rows
             .iter()
-            .filter(|r| r.name == name && r.matches(identifier))
+            .filter(|r| r.name == name && r.matches(identifier) && r.serves(firing))
             .cloned()
             .collect();
         matching.sort_by_key(|r| r.priority);
@@ -245,9 +439,10 @@ impl LuaScriptHandlerRegistry {
         &self,
         event_type: &str,
         identifier: Option<&str>,
+        firing: Firing<'_>,
     ) -> Vec<Registration> {
         match HookName::parse(event_type) {
-            Some(name) => self.for_hook(name, identifier),
+            Some(name) => self.for_hook(name, identifier, firing),
             None => Vec::new(),
         }
     }
@@ -261,6 +456,31 @@ impl LuaScriptHandlerRegistry {
         };
         let before = rows.len();
         rows.retain(|r| &r.owner != owner);
+        before - rows.len()
+    }
+
+    /// Drop every registration scoped to `session`, and release their bodies.
+    ///
+    /// **This is what makes activation-registers legal, not an optimisation.**
+    /// A plugin turned on for a session registers a row for it, and the list
+    /// has no unregister, so without this sweep every session that ever
+    /// enabled a plugin leaves a row behind for the life of the daemon.
+    ///
+    /// [`Scope::Any`] rows are left alone: they belong to a plugin load, not
+    /// to a session, and a reload clears them by owner.
+    ///
+    /// A scope is a field, so a sweep is a `retain`. A per-session UNLOAD of
+    /// the BODY is a different thing and stays unaffordable: a `RegistryKey`
+    /// is valid only against the VM that made it, and the per-session VMs
+    /// were deliberately deleted.
+    ///
+    /// Answers how many it removed.
+    pub fn clear_session(&self, session: &str) -> usize {
+        let Ok(mut rows) = self.registrations.lock() else {
+            return 0;
+        };
+        let before = rows.len();
+        rows.retain(|r| r.scope != Scope::Session(session.to_string()));
         before - rows.len()
     }
 
@@ -325,6 +545,11 @@ impl LuaScriptHandlerRegistry {
         }
 
         let previous = set_owner(lua, registration.owner.clone());
+        // The session this dispatch belongs to, so a handler that registers
+        // ANOTHER handler for the session it is running in resolves the id
+        // from the host rather than naming one. See
+        // `plugin_context::current_session`.
+        let _session = enter_session(lua, session_id);
         // Two mechanisms, because one is not enough. The tokio timeout ends a
         // handler that AWAITS — a sleep, an http call, a shell command — by
         // cancelling the future at an await point. It cannot end
@@ -389,6 +614,40 @@ impl Registration {
             (Some(_), None) => false,
             (None, _) => true,
         }
+    }
+
+    /// Whether this registration fires for `firing`.
+    ///
+    /// A [`Scope::Session`] registration does not fire for a dispatch that
+    /// names no session. There is nothing to compare it against, and firing
+    /// would be firing for every session at once — the harm the scope
+    /// exists to stop. [`HookName::carries_session`] refuses the combination
+    /// at registration, so this arm covers the sites that legitimately
+    /// dispatch a session-carrying name with no session in hand.
+    #[must_use]
+    pub fn serves(&self, firing: Firing<'_>) -> bool {
+        match (&self.scope, firing) {
+            (Scope::Any, _) => true,
+            (Scope::Session(wanted), Firing::InSession(id)) => wanted == id,
+            (Scope::Session(_), Firing::Sessionless) => false,
+        }
+    }
+
+    /// The index in `rows` this registration replaces, if any.
+    ///
+    /// `None` for a [`Scope::Any`] registration, which appends. See
+    /// [`LuaScriptHandlerRegistry::register`] for why a scoped one replaces.
+    fn replaces(&self, rows: &[Self]) -> Option<usize> {
+        if self.scope == Scope::Any {
+            return None;
+        }
+        rows.iter().position(|row| {
+            row.owner == self.owner
+                && row.name == self.name
+                && row.pattern == self.pattern
+                && row.scope == self.scope
+                && row.key == self.key
+        })
     }
 
     /// How long this registration may run: what it asked for, else the budget

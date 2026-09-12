@@ -5,6 +5,7 @@
 
 use crate::error::LuaError;
 use crate::fs::register_fs_module;
+use crate::handlers::Firing;
 use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
 use crate::modules::{ModuleRegistry, PrivateRootGuard, RootKind};
@@ -57,7 +58,7 @@ impl LuaExecutor {
     /// Every `session:start` hook registered on this VM.
     #[cfg(test)]
     pub fn session_start_hooks(&self) -> Vec<crate::Registration> {
-        crate::hooks::session_start_hooks(&self.lua).unwrap_or_default()
+        crate::hooks::session_start_hooks(&self.lua, Firing::Sessionless).unwrap_or_default()
     }
 
     /// Fire all registered session start hooks.
@@ -82,7 +83,14 @@ impl LuaExecutor {
     /// reported together.
     pub async fn fire_session_start_hooks(&self, session: &Session) -> Result<(), LuaError> {
         let mut failures = Vec::new();
-        for hook in crate::hooks::session_start_hooks(&self.lua)? {
+        let id = session.id();
+        // The session these hooks run for, so a hook that activates its
+        // plugin FOR this session resolves the id from the host rather than
+        // naming one. `on_session_start` is the place a plugin author will
+        // reach for, so the bracket has to be here and not only on the
+        // `cru.on` dispatch path.
+        let _session = crate::plugin_context::enter_session(&self.lua, Some(&id));
+        for hook in crate::hooks::session_start_hooks(&self.lua, Firing::InSession(&id))? {
             match self.lua.registry_value::<Function>(hook.body()) {
                 Ok(func) => {
                     // Under the owner that registered it, exactly as the end
@@ -163,7 +171,9 @@ impl LuaExecutor {
     /// names no plugin, so without this a plugin cannot read at session end
     /// what it stored during the session.
     pub async fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
-        for hook in crate::hooks::session_end_hooks(&self.lua)? {
+        let id = session.id();
+        let _session = crate::plugin_context::enter_session(&self.lua, Some(&id));
+        for hook in crate::hooks::session_end_hooks(&self.lua, Firing::InSession(&id))? {
             match self.lua.registry_value::<Function>(hook.body()) {
                 Ok(func) => {
                     let previous = crate::plugin_context::set_owner(&self.lua, hook.owner.clone());
@@ -525,7 +535,7 @@ mod tests {
             .exec()
             .unwrap();
         assert_eq!(
-            crate::hooks::session_end_hooks(executor.lua())
+            crate::hooks::session_end_hooks(executor.lua(), crate::handlers::Firing::Sessionless)
                 .unwrap()
                 .len(),
             1

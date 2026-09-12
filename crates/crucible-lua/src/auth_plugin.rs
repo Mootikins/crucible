@@ -45,8 +45,16 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 }
 
 /// Every `provider:auth` hook on this VM, priority first.
+///
+/// `Sessionless`: the agent factory builds a chat client from an agent
+/// config, with no session in hand. `StageId::carries_session` says the same,
+/// so a scoped registration here is refused rather than dropped here.
 pub fn get_provider_auth_hooks(lua: &Lua) -> LuaResult<Vec<Registration>> {
-    Ok(crate::handlers::registry_of(lua)?.for_hook(PROVIDER_AUTH_HOOK, None))
+    Ok(crate::handlers::registry_of(lua)?.for_hook(
+        PROVIDER_AUTH_HOOK,
+        None,
+        crate::handlers::Firing::Sessionless,
+    ))
 }
 
 /// Ask each hook in turn for headers; the first that answers wins.

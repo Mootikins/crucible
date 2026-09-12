@@ -20,7 +20,11 @@ fn test_permission_hook_registration() {
     .exec()
     .unwrap();
 
-    let hooks = registry.runtime_handlers_for("permission:request", Some("bash"));
+    let hooks = registry.runtime_handlers_for(
+        "permission:request",
+        Some("bash"),
+        crate::handlers::Firing::Sessionless,
+    );
     assert_eq!(hooks.len(), 1);
     let _body: mlua::Function = lua.registry_value(hooks[0].body()).unwrap();
 }
@@ -52,7 +56,12 @@ fn test_permission_hook_returns_allow() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Allow);
@@ -85,7 +94,12 @@ fn test_permission_hook_returns_deny() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Deny);
@@ -115,7 +129,12 @@ fn test_permission_hook_returns_nil_for_prompt() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Prompt);
@@ -134,7 +153,12 @@ fn test_permission_hook_no_hooks_returns_prompt() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Prompt);
@@ -167,7 +191,12 @@ fn test_permission_hook_receives_args() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Allow);
@@ -200,7 +229,12 @@ fn test_permission_hook_receives_file_path() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Allow);
@@ -233,7 +267,12 @@ fn test_permission_hook_first_decision_wins() {
         is_safe: false,
     };
 
-    let result = execute_permission_hooks(&lua, &registry, &request);
+    let result = execute_permission_hooks(
+        &lua,
+        &registry,
+        &request,
+        crate::handlers::Firing::Sessionless,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Allow);
@@ -264,12 +303,24 @@ fn a_pattern_scopes_a_hook_to_matching_tools() {
     };
 
     assert_eq!(
-        execute_permission_hooks(&lua, &registry, &req("bash")).unwrap(),
+        execute_permission_hooks(
+            &lua,
+            &registry,
+            &req("bash"),
+            crate::handlers::Firing::Sessionless
+        )
+        .unwrap(),
         PermissionHookResult::Deny,
         "the hook must fire for a matching tool"
     );
     assert_eq!(
-        execute_permission_hooks(&lua, &registry, &req("read_file")).unwrap(),
+        execute_permission_hooks(
+            &lua,
+            &registry,
+            &req("read_file"),
+            crate::handlers::Firing::Sessionless
+        )
+        .unwrap(),
         PermissionHookResult::Prompt,
         "and must not be consulted for a non-matching one"
     );
@@ -303,13 +354,25 @@ fn a_pattern_uses_the_same_glob_syntax_as_crucible_on() {
 
     for tool in ["bash", "edit"] {
         assert_eq!(
-            execute_permission_hooks(&lua, &registry, &req(tool)).unwrap(),
+            execute_permission_hooks(
+                &lua,
+                &registry,
+                &req(tool),
+                crate::handlers::Firing::Sessionless
+            )
+            .unwrap(),
             PermissionHookResult::Deny,
             "{tool} must match the alternation"
         );
     }
     assert_eq!(
-        execute_permission_hooks(&lua, &registry, &req("read_file")).unwrap(),
+        execute_permission_hooks(
+            &lua,
+            &registry,
+            &req("read_file"),
+            crate::handlers::Firing::Sessionless
+        )
+        .unwrap(),
         PermissionHookResult::Prompt
     );
 }

@@ -189,9 +189,11 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
     );
 
     // The user's handler must still dispatch after the dead plugin's reload.
-    let handlers = loader
-        .plugin_handlers()
-        .runtime_handlers_for("pre_tool_call", None);
+    let handlers = loader.plugin_handlers().runtime_handlers_for(
+        "pre_tool_call",
+        None,
+        crucible_lua::Firing::Sessionless,
+    );
     let event = crucible_core::events::SessionEvent::Custom {
         name: "pre_tool_call".to_string(),
         payload: serde_json::json!({}),
@@ -441,7 +443,7 @@ async fn a_setup_registered_handler_is_owned_so_reload_does_not_duplicate_it() {
     assert_eq!(
         loader
             .plugin_handlers()
-            .runtime_handlers_for("pre_tool_call", None)
+            .runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless)
             .len(),
         1,
         "one reload must not leave a second copy of the handler"

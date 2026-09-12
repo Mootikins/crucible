@@ -84,12 +84,16 @@ fn run_permission_hooks(
     let (hooks, lua) = loader.permission_registry();
     assert!(
         !hooks
-            .runtime_handlers_for("permission:request", Some(&request.tool_name))
+            .runtime_handlers_for(
+                "permission:request",
+                Some(&request.tool_name),
+                crucible_lua::Firing::Sessionless
+            )
             .is_empty(),
         "defaults/init.lua must register a permission hook on the daemon VM; \
          an empty list means cru.permissions.on_request was missing there"
     );
-    execute_permission_hooks(&lua, &hooks, request).unwrap()
+    execute_permission_hooks(&lua, &hooks, request, crucible_lua::Firing::Sessionless).unwrap()
 }
 
 fn tool_request(mode: &str) -> PermissionRequest {
@@ -386,7 +390,11 @@ async fn a_user_hook_overrides_the_shipped_auto_approve() {
 async fn the_shipped_permission_hook_registers_behind_user_hooks() {
     let (vm, _am, _sm, _session_id) = session_with_lua("").await;
     let (registry, _lua) = vm.permission_registry();
-    let hooks = registry.runtime_handlers_for("permission:request", Some("bash"));
+    let hooks = registry.runtime_handlers_for(
+        "permission:request",
+        Some("bash"),
+        crucible_lua::Firing::Sessionless,
+    );
 
     assert!(!hooks.is_empty(), "the shipped defaults register hooks");
     for hook in &hooks {
@@ -613,7 +621,13 @@ async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: Permis
     let (vm, _am, _sm, _session_id) = session_with_lua("").await;
     let (hooks, lua) = vm.permission_registry();
 
-    let result = crucible_lua::execute_permission_hooks(&lua, &hooks, &tool_request(mode)).unwrap();
+    let result = crucible_lua::execute_permission_hooks(
+        &lua,
+        &hooks,
+        &tool_request(mode),
+        crucible_lua::Firing::Sessionless,
+    )
+    .unwrap();
     assert_eq!(result, expected);
 }
 

@@ -117,10 +117,13 @@ Handlers live in plugins, and register with `cru.on` at load:
 <runtimepath entry>/plugins/     # trees you opt into in init.lua
 ```
 
-Registration is daemon-wide — a handler fires for every session, and filters on
-what it is given (`ctx.session_id`, the event payload, `opts.pattern`) rather
-than on where it was installed from. See [[Help/Extending/Event Hooks]] for the
-fourteen events and the cancel / handled / transform contract, and
+Registration is daemon-wide by default — a handler fires for every session,
+and filters on what it is given (`ctx.session_id`, the event payload,
+`opts.pattern`) rather than on where it was installed from. A handler that
+must fire for *some* sessions and not the rest names one with
+`opts.session`, from inside that session; see
+[[Help/Extending/Event Hooks]] for that, for the events and for the
+cancel / handled / transform contract, and
 [[Help/Extending/Creating Plugins]] for how a kiln can ship a plugin.
 
 ### Basic Structure

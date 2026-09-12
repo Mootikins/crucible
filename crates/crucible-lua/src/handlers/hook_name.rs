@@ -133,6 +133,30 @@ impl EventName {
         }
     }
 
+    /// Whether a dispatch of this event names a session.
+    ///
+    /// **No wildcard arm, ever** — same reason as [`Self::as_str`]. A new
+    /// event must answer for itself.
+    ///
+    /// The file, note and webhook events belong to the daemon, not to a
+    /// session: the watcher fires them with nobody's turn running. The two
+    /// session events are ABOUT a session, and the dispatcher reads its id
+    /// from the payload.
+    #[must_use]
+    pub const fn carries_session(self) -> bool {
+        match self {
+            Self::FileChanged
+            | Self::FileDeleted
+            | Self::FileMoved
+            | Self::NoteCreated
+            | Self::NoteModified
+            | Self::NoteDeleted
+            | Self::NoteRenamed
+            | Self::WebhookReceived => false,
+            Self::SessionCreated | Self::SessionEnded => true,
+        }
+    }
+
     /// The variant for a registered name, or `None` when nothing broadcasts it.
     ///
     /// Derived from [`Self::ALL`] rather than a second `match`, so the two
@@ -288,6 +312,45 @@ impl StageId {
         }
     }
 
+    /// Whether a dispatch of this stage names a session.
+    ///
+    /// **No wildcard arm, ever** — same reason as [`Self::as_str`]. A new
+    /// stage must answer for itself, because the answer decides whether a
+    /// plugin may scope a handler to one session here.
+    ///
+    /// Two answer `false`, and neither is an oversight:
+    ///
+    /// - [`Self::IndexBlocks`] runs in the note pipeline, over a kiln's own
+    ///   rows. No turn is running.
+    /// - [`Self::ProviderAuth`] runs while the agent factory builds a chat
+    ///   client. `build_chat_client_for_agent` holds an agent config and no
+    ///   session, so there is no id to compare against.
+    ///
+    /// [`Self::SearchRerank`] answers `true` even though `RerankStage` may
+    /// carry no session: a search made inside a session dispatches one, and a
+    /// scope is meaningful for exactly those.
+    #[must_use]
+    pub const fn carries_session(self) -> bool {
+        match self {
+            Self::PreToolCall
+            | Self::ToolResult
+            | Self::PreLlmCall
+            | Self::PostLlmCall
+            | Self::TransformContext
+            | Self::PrecognitionSelect
+            | Self::PrecognitionFormat
+            | Self::TurnComplete
+            | Self::ToolBeforeExecute
+            | Self::ToolDisplayStart
+            | Self::ToolDisplayComplete
+            | Self::SearchRerank
+            | Self::PermissionRequest
+            | Self::SessionStart
+            | Self::SessionEnd => true,
+            Self::IndexBlocks | Self::ProviderAuth => false,
+        }
+    }
+
     /// The variant for a registered name, or `None` when nothing dispatches it.
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
@@ -324,6 +387,21 @@ impl HookName {
         match self {
             Self::Event(e) => e.budget(),
             Self::Stage(s) => s.budget(),
+        }
+    }
+
+    /// Whether a dispatch of this name carries a session.
+    ///
+    /// `cru.on` and the other registration APIs refuse a
+    /// [`Scope::Session`](super::registry::Scope::Session) on a name that
+    /// answers `false`. Refused at REGISTRATION rather than ignored at fire
+    /// time: a handler that can never fire is a broken plugin, and a silent
+    /// one is worse than a loud one.
+    #[must_use]
+    pub const fn carries_session(self) -> bool {
+        match self {
+            Self::Event(e) => e.carries_session(),
+            Self::Stage(s) => s.carries_session(),
         }
     }
 

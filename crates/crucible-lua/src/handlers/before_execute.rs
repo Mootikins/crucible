@@ -31,7 +31,11 @@ pub async fn execute_tool_before_execute_hooks(
     session_id: Option<&str>,
     event: &ToolBeforeExecuteEvent,
 ) -> LuaResult<Option<ToolBeforeExecuteResult>> {
-    let handlers = registry.runtime_handlers_for(TOOL_BEFORE_EXECUTE_EVENT, None);
+    let handlers = registry.runtime_handlers_for(
+        TOOL_BEFORE_EXECUTE_EVENT,
+        None,
+        super::Firing::of(session_id),
+    );
     if handlers.is_empty() {
         return Ok(None);
     }

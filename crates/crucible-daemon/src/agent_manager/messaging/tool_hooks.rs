@@ -133,8 +133,11 @@ pub(super) async fn apply_tool_result_handlers(
         result: &mut String,
         error: &mut Option<String>,
     ) {
-        for handler in registry.runtime_handlers_for(StageId::ToolResult.as_str(), Some(tool_name))
-        {
+        for handler in registry.runtime_handlers_for(
+            StageId::ToolResult.as_str(),
+            Some(tool_name),
+            crucible_lua::Firing::InSession(&stream_ctx.session_id),
+        ) {
             let event = crucible_core::events::SessionEvent::Custom {
                 name: "tool_result".to_string(),
                 payload: serde_json::json!({

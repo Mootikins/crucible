@@ -35,6 +35,9 @@ cru.on(event_type, handler)
 
 -- With options:
 cru.on(event_type, { pattern = "...", priority = 50 }, handler)
+
+-- For one session, from inside that session:
+cru.on(event_type, { session = ctx.session_id, key = "ralph" }, handler)
 ```
 
 | Argument | Type | Description |
@@ -42,6 +45,8 @@ cru.on(event_type, { pattern = "...", priority = 50 }, handler)
 | `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the nineteen below — **exact match, no globs**. |
 | `opts.pattern` | string, optional | Glob filter applied to the event's identifier (e.g. tool name). Default: match all. |
 | `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
+| `opts.session` | string, optional | Fire for this session alone. Must be the session the code is running in. Default: every session. See [Scoping a handler to one session](#scoping-a-handler-to-one-session). |
+| `opts.key` | string, optional | What this registration calls itself, so one plugin can hold two scoped handlers on one event. |
 | `handler` | `function(ctx, event)` | Called when the event fires and matches |
 
 `event_type` is validated at registration. A name outside the closed set below
@@ -125,6 +130,66 @@ Their identifiers, for `opts.pattern`:
 Naming: the three file events are spelled in the Rust `type_name()` style
 because they shipped that way and every config that registers one names them so.
 Everything since is colon-namespaced.
+
+## Scoping a Handler to One Session
+
+A handler fires for every session by default. `opts.session` narrows it to
+one:
+
+```lua
+cru.on_session_start(function(session)
+  if not enabled_for(session) then return end
+  -- A loop that re-prompts the model when the work is not done. It must run
+  -- for the sessions the user turned it on for, and for no others.
+  cru.on("turn:complete", { session = session.id, key = "ralph" }, function(ctx, event)
+    if not done(event) then
+      return { inject = "Keep going." }
+    end
+  end)
+end)
+```
+
+**Activation registers.** There is no list of sessions to join and nothing to
+look up while a turn runs: the set of sessions a handler serves is the set of
+registrations that exist.
+
+**The host resolves the session id.** `opts.session` must name the session the
+code is running in — `session.id` inside `cru.on_session_start`, or
+`ctx.session_id` inside a handler. Naming any other session raises at
+registration, and so does a scope from code that is in no session (a plugin
+body at load, for example). A caller never writes an id it chose.
+
+**Registering the same handler again replaces it.** The registration is keyed
+by the plugin, the event, the pattern, the session and `opts.key`, so a second
+call with the same five is the same registration. That matters because
+`on_session_start` fires on create, on resume *and* on resume-from-storage —
+and a web history fetch resumes from storage on every request. Without the
+replacement each fetch would add one more handler, for ever. Give two
+registrations on one event for one session two different `key` values.
+
+**A session scope ends with the session.** Session end drops every handler
+scoped to it. An unscoped handler belongs to the plugin load instead, and a
+plugin reload clears those.
+
+**A scope needs an event that carries a session.** These do not, and a
+`session` scope on one raises at registration:
+
+| Event | Why |
+|---|---|
+| `FileChanged`, `FileDeleted`, `FileMoved` | the file watcher fires them with no turn running |
+| `note:created`, `note:modified`, `note:deleted`, `note:renamed` | the note pipeline, over a kiln's own files |
+| `webhook:received` | a signed delivery from outside |
+| `index:blocks` | the note pipeline again |
+| `provider:auth` | the agent factory builds a chat client and holds no session |
+
+Every other event carries one. `session:created` and `session:ended` name the
+session they are about, and `search:rerank` names one when the search came
+from a session.
+
+To let an activation outlive a daemon restart, record it with
+`session:set_variable(key, value)` and register again on the next
+`session:start`. That is the plugin's decision — the host keeps no activation
+list.
 
 ### Note lifecycle
 
@@ -637,6 +702,10 @@ cru.on_session_start(function(session)
 end, { required = true })
 ```
 
+The options table also takes `session` and `key`, as `cru.on` does. A start
+hook scoped to one session fires when that session resumes and for no other —
+see [Scoping a handler to one session](#scoping-a-handler-to-one-session).
+
 **Where the hook runs decides what it may do.** On the plugin-VM path the
 hooks are fired asynchronously, so they may call async APIs
 (`cru.shell.exec`, `cru.http`, ...), and `required = true` is honoured. There
@@ -645,7 +714,7 @@ is one fire site, at session create, so those properties hold for every
 session refusal stays with the plugin loader, where isolation claims live.
 
 
-### `cru.on_session_end(fn)`
+### `cru.on_session_end(fn, opts?)`
 
 Fires when a session ends. Use for cleanup (stopping containers, closing files).
 
@@ -654,6 +723,21 @@ cru.on_session_end(function(session)
   cleanup(session.id)
 end)
 ```
+
+The options table takes `session` and `key`, so a plugin activated for one
+session can tear down for that session alone:
+
+```lua
+cru.on_session_start(function(session)
+  cru.on_session_end(function(s)
+    release(s.id)
+  end, { session = session.id, key = "ralph" })
+end)
+```
+
+There is no `required` here: the session is already over, so a failure is
+logged and that is all. The end hooks run **before** the session's scoped
+handlers are swept, so a scoped end hook does run.
 
 **An `on_session_end` hook runs under the plugin that registered it.** The
 executor records the owner of each hook at registration and enters that
@@ -700,6 +784,10 @@ Return:
 - `{ allow = true }` — grant without prompting
 - `{ deny = true }` — deny without prompting
 - `nil` — show the normal permission prompt
+
+The optional second argument takes `pattern`, `priority`, `session` and
+`key`. A hook scoped to one session answers for that session's turns alone —
+see [Scoping a handler to one session](#scoping-a-handler-to-one-session).
 
 ## Pattern Matching
 

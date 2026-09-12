@@ -18,7 +18,7 @@
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
 
-use crate::handlers::{HookName, StageId};
+use crate::handlers::{scope_from_opts, Firing, HookName, StageId};
 use crate::handlers::{Registration, RegistrationSpec};
 
 /// The name a session start hook registers under.
@@ -65,30 +65,41 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     let mut ns = crate::host_registry::Ns::over(lua, "cru", crucible.clone());
     ns.func(
         "on_session_start",
-        &format!("(handler: {SESSION_HOOK}, options: {{ required: boolean? }}?) -> ()"),
+        &format!(
+            "(handler: {SESSION_HOOK}, options: {{ required: boolean?, \
+             session: string?, key: string? }}?) -> ()"
+        ),
         |lua, (func, opts): (Function, Option<Table>)| {
-            let required = opts
-                .and_then(|o| o.get::<Option<bool>>("required").ok().flatten())
-                .unwrap_or(false);
             let mut spec = RegistrationSpec::new(SESSION_START_HOOK);
-            spec.required = required;
+            if let Some(opts) = &opts {
+                spec.required = opts.get::<Option<bool>>("required").ok().flatten() == Some(true);
+                let (scope, key) =
+                    scope_from_opts(lua, "cru.on_session_start", SESSION_START_HOOK, opts)?;
+                spec.scope = scope;
+                spec.key = key;
+            }
             crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())
         },
     )
     .map_err(|e| mlua::Error::external(e.to_string()))?;
 
-    // No options table: an end hook has nothing to escalate — the session is
-    // already over, so a failure is logged and that is all.
+    // The options table carries no `required`: an end hook has nothing to
+    // escalate — the session is already over, so a failure is logged and that
+    // is all. It does carry the scope, so a plugin activated for one session
+    // can tear down for that session alone. The sweep runs after these fire.
     ns.func(
         "on_session_end",
-        &format!("(handler: {SESSION_HOOK}) -> ()"),
-        |lua, func: Function| {
-            crate::handlers::registry_of(lua)?.register(
-                lua,
-                RegistrationSpec::new(SESSION_END_HOOK),
-                func,
-            )?;
+        &format!("(handler: {SESSION_HOOK}, options: {{ session: string?, key: string? }}?) -> ()"),
+        |lua, (func, opts): (Function, Option<Table>)| {
+            let mut spec = RegistrationSpec::new(SESSION_END_HOOK);
+            if let Some(opts) = &opts {
+                let (scope, key) =
+                    scope_from_opts(lua, "cru.on_session_end", SESSION_END_HOOK, opts)?;
+                spec.scope = scope;
+                spec.key = key;
+            }
+            crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())
         },
     )
@@ -100,14 +111,15 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-/// Every `session:start` hook on this VM, priority first.
-pub fn session_start_hooks(lua: &Lua) -> LuaResult<Vec<Registration>> {
-    Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_START_HOOK, None))
+/// Every `session:start` hook on this VM that serves `firing`, priority
+/// first.
+pub fn session_start_hooks(lua: &Lua, firing: Firing<'_>) -> LuaResult<Vec<Registration>> {
+    Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_START_HOOK, None, firing))
 }
 
-/// Every `session:end` hook on this VM, priority first.
-pub fn session_end_hooks(lua: &Lua) -> LuaResult<Vec<Registration>> {
-    Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_END_HOOK, None))
+/// Every `session:end` hook on this VM that serves `firing`, priority first.
+pub fn session_end_hooks(lua: &Lua, firing: Firing<'_>) -> LuaResult<Vec<Registration>> {
+    Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_END_HOOK, None, firing))
 }
 
 #[cfg(test)]
@@ -134,7 +146,12 @@ mod tests {
             .exec()
             .unwrap();
 
-        assert_eq!(session_start_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -151,7 +168,12 @@ mod tests {
         .exec()
         .unwrap();
 
-        assert_eq!(session_start_hooks(&lua).unwrap().len(), 3);
+        assert_eq!(
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -167,8 +189,18 @@ mod tests {
         .exec()
         .unwrap();
 
-        assert_eq!(session_start_hooks(&lua).unwrap().len(), 1);
-        assert_eq!(session_end_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            session_end_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -179,7 +211,12 @@ mod tests {
             .exec()
             .unwrap();
 
-        assert_eq!(session_end_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(
+            session_end_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -196,7 +233,12 @@ mod tests {
         .exec()
         .unwrap();
 
-        assert_eq!(session_end_hooks(&lua).unwrap().len(), 3);
+        assert_eq!(
+            session_end_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     /// Reloading a plugin re-runs its init.lua, so without owner-keyed
@@ -228,23 +270,35 @@ mod tests {
             .unwrap();
 
         assert!(
-            session_start_hooks(&lua).unwrap()[0].required,
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless).unwrap()[0].required,
             "alpha registered a required hook"
         );
 
         registry.clear_owner(&Owner::Plugin("alpha".into()));
-        let start = session_start_hooks(&lua).unwrap();
+        let start = session_start_hooks(&lua, crate::handlers::Firing::Sessionless).unwrap();
         assert_eq!(start.len(), 1, "beta's start hook survives");
         assert!(
             !start[0].required,
             "the survivor is beta's non-required hook"
         );
-        assert_eq!(session_end_hooks(&lua).unwrap().len(), 2);
+        assert_eq!(
+            session_end_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            2
+        );
 
         registry.clear_owner(&Owner::Plugin("beta".into()));
-        assert_eq!(session_start_hooks(&lua).unwrap().len(), 0);
         assert_eq!(
-            session_end_hooks(&lua).unwrap().len(),
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            session_end_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
             1,
             "the user's own hook is never cleared by a plugin"
         );
@@ -264,7 +318,17 @@ mod tests {
         .exec()
         .unwrap();
 
-        assert_eq!(session_start_hooks(&lua).unwrap().len(), 1);
-        assert_eq!(session_end_hooks(&lua).unwrap().len(), 2);
+        assert_eq!(
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            session_end_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }

@@ -11,7 +11,7 @@
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::BlockRecord;
-use crucible_lua::{LuaScriptHandlerRegistry, ScriptHandlerResult, StageId};
+use crucible_lua::{Firing, LuaScriptHandlerRegistry, ScriptHandlerResult, StageId};
 use mlua::Lua;
 use std::sync::{Arc, OnceLock};
 use tracing::warn;
@@ -39,7 +39,7 @@ pub async fn first_usable_transform<T>(
     mut apply: impl FnMut(&serde_json::Value) -> Option<T>,
 ) -> Option<T> {
     for (registry, lua) in vms {
-        for handler in registry.runtime_handlers_for(stage.as_str(), None) {
+        for handler in registry.runtime_handlers_for(stage.as_str(), None, Firing::of(session_id)) {
             match registry
                 .execute_runtime_handler(lua, handler.id, event, session_id)
                 .await
@@ -100,12 +100,16 @@ pub fn lua_array(value: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
     Some(keyed.into_iter().map(|(_, value)| value).collect())
 }
 
-/// Whether any VM has a handler at `stage`. A search over-fetches only when
-/// something will rerank the extra rows.
-pub fn has_handlers(stage: StageId, vms: &[StageVm]) -> bool {
+/// Whether any VM has a handler at `stage` that fires for `firing`. A search
+/// over-fetches only when something will rerank the extra rows.
+///
+/// It asks the same question the dispatch asks, `firing` included: a handler
+/// scoped to another session reranks nothing here, so over-fetching for it
+/// would pay five times the rows for a pass that cannot run.
+pub fn has_handlers(stage: StageId, vms: &[StageVm], firing: Firing<'_>) -> bool {
     vms.iter().any(|(registry, _)| {
         !registry
-            .runtime_handlers_for(stage.as_str(), None)
+            .runtime_handlers_for(stage.as_str(), None, firing)
             .is_empty()
     })
 }
@@ -135,7 +139,10 @@ pub async fn index_blocks(
     records: &mut Vec<BlockRecord>,
 ) {
     let vms = std::slice::from_ref(vm);
-    if !has_handlers(StageId::IndexBlocks, vms) {
+    // The note pipeline, not a turn: `StageId::carries_session` says
+    // `index:blocks` names no session, so a scoped registration here is
+    // refused at registration rather than dropped here.
+    if !has_handlers(StageId::IndexBlocks, vms, Firing::Sessionless) {
         return;
     }
 

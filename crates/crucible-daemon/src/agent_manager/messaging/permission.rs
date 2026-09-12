@@ -364,7 +364,11 @@ impl AgentManager {
         model: &str,
         mut current_content: String,
     ) -> (String, bool) {
-        for handler in registry.runtime_handlers_for(StageId::PreLlmCall.as_str(), None) {
+        for handler in registry.runtime_handlers_for(
+            StageId::PreLlmCall.as_str(),
+            None,
+            crucible_lua::Firing::InSession(&stream_ctx.session_id),
+        ) {
             let event = SessionEvent::Custom {
                 name: "pre_llm_call".to_string(),
                 payload: serde_json::json!({
@@ -466,7 +470,11 @@ impl AgentManager {
         model: &str,
         mut current: Vec<crucible_core::traits::ContextMessage>,
     ) -> Result<Vec<crucible_core::traits::ContextMessage>, ()> {
-        for handler in registry.runtime_handlers_for(StageId::TransformContext.as_str(), None) {
+        for handler in registry.runtime_handlers_for(
+            StageId::TransformContext.as_str(),
+            None,
+            crucible_lua::Firing::InSession(&stream_ctx.session_id),
+        ) {
             let event = SessionEvent::Custom {
                 name: "transform_context".to_string(),
                 payload: serde_json::json!({
@@ -1213,7 +1221,12 @@ impl AgentManager {
             is_safe: crate::agent_manager::believed_read_only(tool_name, mcp_read_only),
         };
 
-        match execute_permission_hooks(lua, hooks, &request) {
+        match execute_permission_hooks(
+            lua,
+            hooks,
+            &request,
+            crucible_lua::Firing::InSession(session_id),
+        ) {
             Ok(hook_result) => hook_result,
             Err(e) => {
                 warn!(session_id = %session_id, tool = %tool_name, error = %e, "Permission hook failed");

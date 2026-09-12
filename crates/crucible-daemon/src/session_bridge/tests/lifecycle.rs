@@ -129,3 +129,113 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
         "llama3.2"
     );
 }
+
+/// Session end sweeps the handlers that session activated, and leaves the
+/// rest alone.
+///
+/// **The sweep is what makes activation-registers legal, not an
+/// optimisation.** A plugin turned on for a session registers a row for it,
+/// and the store has no unregister — so without this every session that ever
+/// enabled a plugin leaves a row behind for the life of the daemon.
+///
+/// It crosses the crate boundary on purpose: `clear_session` is unit-tested in
+/// `crucible-lua`, and what this pins is that `fire_session_end` calls it, and
+/// calls it AFTER the end hooks. A `session:end` handler scoped to this
+/// session is one of the rows swept, and it has to run first.
+#[tokio::test]
+async fn session_end_sweeps_the_handlers_that_session_activated() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let tmp = TempDir::new().unwrap();
+    let plugin_loader: Arc<tokio::sync::Mutex<Option<DaemonPluginLoader>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+
+    let session_manager = temp_session_manager();
+    let (event_tx, _keep_open) = broadcast::channel(64);
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+        mcp_gateway: None,
+        llm_config: Some(bridge_llm_config()),
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: Some(plugin_loader.clone()),
+        card_roots: Default::default(),
+    }));
+    let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
+        Arc::new(KilnManager::new()),
+        session_manager.clone(),
+        agent_manager,
+        Arc::new(crate::project_manager::ProjectManager::new(
+            tmp.path().join("projects.json"),
+        )),
+        event_tx,
+        tmp.path().to_path_buf(),
+        plugin_loader.clone(),
+    ));
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("plugin loader");
+    let registry = loader.plugin_handlers();
+    let plugin_lua = loader.plugin_lua();
+    // One handler for every session, registered at load, and one activated
+    // for the session that starts — the shape a workflow plugin has.
+    loader
+        .eval(
+            r#"
+            cru.on("turn:complete", function() end)
+            cru.on_session_start(function(session)
+                cru.on("turn:complete", { session = session.id, key = "ralph" }, function() end)
+                -- Scoped too, so the sweep running first would take it and
+                -- this hook would never run.
+                cru.on_session_end(function(s)
+                    _G.end_hook_ran = s.id
+                end, { session = session.id, key = "ralph" })
+            end)
+            "#,
+        )
+        .await
+        .expect("register the hooks");
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    crate::session_lifecycle::fire_start_hooks(&mut loader, None, &session_manager, &session.id)
+        .await
+        .expect("start hooks run");
+    let scoped: Vec<_> = registry
+        .all()
+        .into_iter()
+        .filter(|r| r.scope == crucible_lua::Scope::Session(session.id.to_string()))
+        .collect();
+    assert_eq!(scoped.len(), 2, "the start hook activated two handlers");
+
+    *plugin_loader.lock().await = Some(loader);
+    ctx.session_lifecycle.fire_session_end(&session.id).await;
+
+    let end_hook_ran: Option<String> = plugin_lua.globals().get("end_hook_ran").unwrap();
+    assert_eq!(
+        end_hook_ran.as_deref(),
+        Some(session.id.as_str()),
+        "the end hooks must run before the sweep, not be swept away first"
+    );
+    let left = registry.all();
+    assert!(
+        !left
+            .iter()
+            .any(|r| r.scope == crucible_lua::Scope::Session(session.id.to_string())),
+        "the session's own handler is gone"
+    );
+    assert!(
+        left.iter().any(|r| r.scope == crucible_lua::Scope::Any),
+        "an unscoped handler belongs to the load, not the session, and survives"
+    );
+}
