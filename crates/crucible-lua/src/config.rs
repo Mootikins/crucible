@@ -513,7 +513,7 @@ pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
 /// The layer a write from this call site lands in.
 ///
 /// The OWNER answers first, and only for an owner with no file of its own —
-/// see [`crate::plugin_context::Owner::config_layer`], which answers `None`
+/// see [`crate::plugin_context::LuaOwner::config_layer`], which answers `None`
 /// for every other one. An eval's chunk name (`=lua.eval`) names no path, so
 /// without this the path classification fell back to the human layer and
 /// pinned a leaf that no file holds.
@@ -1098,7 +1098,8 @@ mod tests {
 
         // The eval bracket, with the chunk name `DaemonPluginLoader::eval`
         // gives the code it loads.
-        let previous = crate::plugin_context::set_owner(&lua, crate::plugin_context::Owner::Eval);
+        let previous =
+            crate::plugin_context::set_owner(&lua, crate::plugin_context::LuaOwner::Eval);
         lua.load(r#"cru.config.set({ probe = { from_eval = "socket" } })"#)
             .set_name("=lua.eval")
             .exec()

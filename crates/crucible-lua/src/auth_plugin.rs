@@ -151,7 +151,7 @@ fn table_to_auth_headers(result_table: Table) -> LuaResult<Option<AuthHeaders>> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_context::Owner;
+    use crate::plugin_context::LuaOwner;
 
     fn setup() -> Lua {
         let lua = Lua::new();
@@ -161,7 +161,7 @@ mod tests {
         lua
     }
 
-    fn register(lua: &Lua, owner: Owner, header: &str) {
+    fn register(lua: &Lua, owner: LuaOwner, header: &str) {
         crate::plugin_context::set_owner(lua, owner);
         lua.load(format!(
             r#"cru.on_provider_auth(function(ctx) return {{ headers = {{ ["X-Who"] = "{header}" }} }} end)"#
@@ -178,11 +178,11 @@ mod tests {
     fn clearing_an_owners_auth_hooks_keeps_others_and_never_reissues_an_id() {
         let lua = setup();
         let registry = crate::handlers::registry_of(&lua).unwrap();
-        register(&lua, Owner::Plugin("alpha".into()), "alpha");
-        register(&lua, Owner::Plugin("beta".into()), "beta");
-        register(&lua, Owner::UserLua, "user");
+        register(&lua, LuaOwner::Plugin("alpha".into()), "alpha");
+        register(&lua, LuaOwner::Plugin("beta".into()), "beta");
+        register(&lua, LuaOwner::UserLua, "user");
 
-        registry.clear_owner(&Owner::Plugin("alpha".into()));
+        registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
 
         let hooks = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(hooks.len(), 2, "beta's and the user's hook survive");
@@ -194,7 +194,7 @@ mod tests {
 
         // A fresh registration must not reuse an id any live hook holds.
         let live: Vec<u64> = hooks.iter().map(|h| h.id).collect();
-        register(&lua, Owner::Plugin("gamma".into()), "gamma");
+        register(&lua, LuaOwner::Plugin("gamma".into()), "gamma");
         let after = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(after.len(), 3);
         let fresh = after.last().unwrap().id;
@@ -208,8 +208,8 @@ mod tests {
             .expect("first answer wins");
         assert_eq!(headers.get("X-Who"), Some(&"beta".to_string()));
 
-        registry.clear_owner(&Owner::Plugin("beta".into()));
-        registry.clear_owner(&Owner::Plugin("gamma".into()));
+        registry.clear_owner(&LuaOwner::Plugin("beta".into()));
+        registry.clear_owner(&LuaOwner::Plugin("gamma".into()));
         let last = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(last.len(), 1, "only the user's hook survives every clear");
         let headers = fire_provider_auth_hooks(&lua, &last, "prov", "model")

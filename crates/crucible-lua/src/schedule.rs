@@ -76,7 +76,7 @@ mod inner {
 
     /// One live schedule: who created it, and how to stop it.
     pub(super) type LiveSchedule = (
-        crate::plugin_context::Owner,
+        crate::plugin_context::LuaOwner,
         tokio::sync::oneshot::Sender<()>,
     );
 
@@ -111,7 +111,7 @@ mod inner {
 /// the cancel stops the NEXT tick. "The owner is cleared" therefore means that
 /// no further tick of this owner starts.
 #[cfg(feature = "send")]
-pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::Owner) -> usize {
+pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize {
     let Some(installed) = lua.app_data_ref::<inner::InstalledSchedules>() else {
         return 0;
     };
@@ -134,7 +134,7 @@ pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::Owner) -> usize {
 /// Without the `send` feature no schedule can be created, so none can be
 /// stopped.
 #[cfg(not(feature = "send"))]
-pub fn cancel_owner(_lua: &Lua, _owner: &crate::plugin_context::Owner) -> usize {
+pub fn cancel_owner(_lua: &Lua, _owner: &crate::plugin_context::LuaOwner) -> usize {
     0
 }
 

@@ -125,7 +125,7 @@ pub fn session_end_hooks(lua: &Lua, firing: Firing<'_>) -> LuaResult<Vec<Registr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_context::Owner;
+    use crate::plugin_context::LuaOwner;
     use crate::test_support::TestLuaBuilder;
 
     #[test]
@@ -263,7 +263,7 @@ mod tests {
         )
         .exec()
         .unwrap();
-        crate::plugin_context::set_owner(&lua, Owner::UserLua);
+        crate::plugin_context::set_owner(&lua, LuaOwner::UserLua);
         // The user's own init.lua. A plugin's clear must never touch it.
         lua.load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
@@ -274,7 +274,7 @@ mod tests {
             "alpha registered a required hook"
         );
 
-        registry.clear_owner(&Owner::Plugin("alpha".into()));
+        registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
         let start = session_start_hooks(&lua, crate::handlers::Firing::Sessionless).unwrap();
         assert_eq!(start.len(), 1, "beta's start hook survives");
         assert!(
@@ -288,7 +288,7 @@ mod tests {
             2
         );
 
-        registry.clear_owner(&Owner::Plugin("beta".into()));
+        registry.clear_owner(&LuaOwner::Plugin("beta".into()));
         assert_eq!(
             session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
                 .unwrap()

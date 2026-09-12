@@ -8,7 +8,7 @@
 //! wrong, and a sweep at session end.
 
 use crate::handlers::{register_cru_on_api, Firing, LuaScriptHandlerRegistry, Scope, StageId};
-use crate::plugin_context::{enter_plugin, enter_session, Owner};
+use crate::plugin_context::{enter_plugin, enter_session, LuaOwner};
 use mlua::Lua;
 
 /// A VM with `cru.on` wired to a fresh store.
@@ -194,7 +194,7 @@ fn a_scope_on_a_sessionless_name_is_refused_at_registration() {
 }
 
 /// The host resolves the session id; a caller never writes one it chose.
-/// `Owner::Eval` exists because a socket call is not the operator — if a
+/// `LuaOwner::Eval` exists because a socket call is not the operator — if a
 /// literal id were taken as written, one `lua.eval` could put a
 /// `pre_tool_call` handler on a session it merely names.
 #[test]
@@ -263,9 +263,9 @@ fn two_plugins_scoping_the_same_session_both_survive() {
     let handlers =
         registry.runtime_handlers_for(StageId::PreToolCall.as_str(), None, Firing::InSession("s1"));
     assert_eq!(handlers.len(), 2, "the owner is part of the key");
-    let owners: Vec<&Owner> = handlers.iter().map(|h| &h.owner).collect();
-    assert!(owners.contains(&&Owner::Plugin("alpha".into())));
-    assert!(owners.contains(&&Owner::Plugin("beta".into())));
+    let owners: Vec<&LuaOwner> = handlers.iter().map(|h| &h.owner).collect();
+    assert!(owners.contains(&&LuaOwner::Plugin("alpha".into())));
+    assert!(owners.contains(&&LuaOwner::Plugin("beta".into())));
 }
 
 /// The sweep is what makes activation-registers legal. Without it every
@@ -311,7 +311,7 @@ fn clearing_the_owner_and_ending_the_session_are_independent() {
     enter_plugin(&lua, "beta", false);
     load_in_session(&lua, "s1", &activation("s1")).expect("beta registers");
 
-    assert_eq!(registry.clear_owner(&Owner::Plugin("alpha".into())), 1);
+    assert_eq!(registry.clear_owner(&LuaOwner::Plugin("alpha".into())), 1);
     assert_eq!(registry.all().len(), 1, "beta's row is untouched");
     assert_eq!(registry.clear_session("s1"), 1, "and the sweep takes it");
 }

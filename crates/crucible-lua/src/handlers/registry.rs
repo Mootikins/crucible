@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use super::conversion::session_event_to_lua;
 use super::hook_name::HookName;
 use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
-use crate::plugin_context::{current_owner, enter_session, set_owner, Owner};
+use crate::plugin_context::{current_owner, enter_session, set_owner, LuaOwner};
 
 /// Which sessions a registration fires for.
 ///
@@ -134,7 +134,7 @@ pub struct Registration {
     /// The hook this callback registered for.
     pub name: HookName,
     /// Who registered it. `clear_owner` matches on exactly this.
-    pub owner: Owner,
+    pub owner: LuaOwner,
     /// The dispatch key, from the one monotonic allocator. Never reused.
     pub id: u64,
     /// Lower runs first. Registration order breaks a tie, and that order is
@@ -167,7 +167,7 @@ pub struct Registration {
     /// Whether this registration may take a tool call over — return
     /// `{ handled = true, … }` or a transform from `pre_tool_call`.
     ///
-    /// [`Owner::may_intercept`] decides it, once, at registration. A handler
+    /// [`LuaOwner::may_intercept`] decides it, once, at registration. A handler
     /// firing three turns later still runs as its own owner, which is what
     /// `cru.storage` keys on and what `intercepts_tools` is read from.
     ///
@@ -450,7 +450,7 @@ impl LuaScriptHandlerRegistry {
     /// Drop every registration `owner` made, and release their bodies.
     ///
     /// Answers how many it removed, so a caller can log the change.
-    pub fn clear_owner(&self, owner: &Owner) -> usize {
+    pub fn clear_owner(&self, owner: &LuaOwner) -> usize {
         let Ok(mut rows) = self.registrations.lock() else {
             return 0;
         };
@@ -694,7 +694,7 @@ impl Default for LuaScriptHandlerRegistry {
 /// call does guarantee is that no further body of `owner` starts.
 ///
 /// Answers how many registrations it removed.
-pub fn clear_owner(lua: &Lua, registry: &LuaScriptHandlerRegistry, owner: &Owner) -> usize {
+pub fn clear_owner(lua: &Lua, registry: &LuaScriptHandlerRegistry, owner: &LuaOwner) -> usize {
     let dropped = registry.clear_owner(owner);
     let schedules = crate::schedule::cancel_owner(lua, owner);
     let tasks = crate::timer::abort_owner(lua, owner);

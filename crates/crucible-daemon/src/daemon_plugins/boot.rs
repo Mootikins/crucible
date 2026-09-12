@@ -577,7 +577,7 @@ fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf]) {
     // This file ships with the daemon, so its registrations are the host's
     // own. Naming the owner is what lets a later clear tell a shipped mode
     // hook from a plugin's.
-    let previous = crucible_lua::set_owner(lua, crucible_lua::Owner::Builtin);
+    let previous = crucible_lua::set_owner(lua, crucible_lua::LuaOwner::Builtin);
     if let Err(e) = lua.load(&src).set_name(origin.to_string()).exec() {
         warn!(source = %origin, error = %e, "Failed to load Lua defaults (fail-open)");
     }
@@ -612,7 +612,7 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), InitFailu
     // The user's own file, named as such. It is also what an unbracketed VM
     // answers, so this bracket buys one thing: an owner a previous load left
     // behind cannot claim the user's registrations.
-    let previous = crucible_lua::set_owner(lua, crucible_lua::Owner::UserLua);
+    let previous = crucible_lua::set_owner(lua, crucible_lua::LuaOwner::UserLua);
     let outcome = {
         let _budget = crucible_lua::enter_handler_budget(
             lua,

@@ -936,7 +936,7 @@ impl DaemonPluginLoader {
                 crucible_lua::clear_owner(
                     self.executor.lua(),
                     &self.handler_registry,
-                    &crucible_lua::Owner::Plugin(name.clone()),
+                    &crucible_lua::LuaOwner::Plugin(name.clone()),
                 );
                 info!("Plugin '{name}' is disabled; its boot-require registrations were cleared");
             }
@@ -1177,7 +1177,7 @@ impl DaemonPluginLoader {
         crucible_lua::clear_owner(
             self.executor.lua(),
             &self.handler_registry,
-            &crucible_lua::Owner::Plugin(name.to_string()),
+            &crucible_lua::LuaOwner::Plugin(name.to_string()),
         );
         self.publications.release_plugin(name);
         self.surfaces.release_plugin(name);
@@ -1303,7 +1303,7 @@ impl DaemonPluginLoader {
         crucible_lua::clear_owner(
             lua,
             &self.handler_registry,
-            &crucible_lua::Owner::Plugin(name.to_string()),
+            &crucible_lua::LuaOwner::Plugin(name.to_string()),
         );
         // The plugin context carries BOTH authority markers: the name every
         // `cru.storage` call is scoped to, and whether this plugin may replace
@@ -1674,7 +1674,7 @@ impl DaemonPluginLoader {
         // bracket it ran as the user's own `init.lua`: its `cru.on` handler
         // could intercept a tool call, no clear path could ever remove it, and
         // its `cru.config.set` pinned a leaf no file holds.
-        let previous = crucible_lua::set_owner(lua, crucible_lua::Owner::Eval);
+        let previous = crucible_lua::set_owner(lua, crucible_lua::LuaOwner::Eval);
         let result = lua
             .load(&code)
             .set_name("=lua.eval")

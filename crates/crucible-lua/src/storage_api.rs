@@ -274,7 +274,7 @@ mod store_tests {
         // this: the context is Rust-side app data, which is the point.
         crate::plugin_context::set_owner(
             &lua,
-            crate::plugin_context::Owner::Plugin("test-plugin".to_string()),
+            crate::plugin_context::LuaOwner::Plugin("test-plugin".to_string()),
         );
         lua
     }
@@ -410,7 +410,7 @@ mod store_tests {
             .build();
         crate::plugin_context::set_owner(
             &lua,
-            crate::plugin_context::Owner::Plugin("alpha".to_string()),
+            crate::plugin_context::LuaOwner::Plugin("alpha".to_string()),
         );
 
         lua.load(

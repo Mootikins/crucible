@@ -490,7 +490,7 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
     );
     assert_ne!(
         handlers[0].owner,
-        crucible_lua::Owner::Plugin("alpha".to_string()),
+        crucible_lua::LuaOwner::Plugin("alpha".to_string()),
         "the handler belongs to the evaluated source, not to alpha — that is \
          why alpha's reload does not clear it"
     );
@@ -1290,7 +1290,7 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
     assert_eq!(handlers.len(), 1);
     assert_eq!(
         handlers[0].owner,
-        crucible_lua::Owner::Eval,
+        crucible_lua::LuaOwner::Eval,
         "an eval must not be attributed to the user's own configuration"
     );
     assert!(
@@ -1303,7 +1303,7 @@ async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
     crucible_lua::clear_owner(
         loader.executor().lua(),
         &registry,
-        &crucible_lua::Owner::Eval,
+        &crucible_lua::LuaOwner::Eval,
     );
     assert!(registry
         .runtime_handlers_for("pre_tool_call", None, crucible_lua::Firing::Sessionless)

@@ -21,15 +21,15 @@
 //! and pinned the leaf. That is correct for the user's own `init.lua`. It was
 //! wrong for a `lua.eval` call that arrives over a socket.
 //!
-//! [`Owner`] is total, so a registration outside every group cannot exist. The
+//! [`LuaOwner`] is total, so a registration outside every group cannot exist. The
 //! three meanings are now three separate readers of one value:
 //!
 //! - **Lifecycle** — `clear_owner` removes exactly one owner's registrations.
-//! - **Authority** — [`Owner::may_intercept`] is a total function.
-//! - **Provenance** — [`Owner::config_layer`] is a total function. It answers
+//! - **Authority** — [`LuaOwner::may_intercept`] is a total function.
+//! - **Provenance** — [`LuaOwner::config_layer`] is a total function. It answers
 //!   `None` for every owner that has a file, and the config store then
 //!   classifies the write by the FILE that holds the call
-//!   (`crate::authorship`). [`Owner::Eval`] has no file, so it answers the
+//!   (`crate::authorship`). [`LuaOwner::Eval`] has no file, so it answers the
 //!   `Rpc` layer, which ranks highest and pins nothing.
 //!
 //! # The bracket sites
@@ -47,13 +47,13 @@
 //!    `session:end` hook.
 //! 4. Plugin command dispatch, and 5. plugin tool dispatch.
 //! 6. `cru.schedule` and `cru.timer.spawn`, around each deferred callback.
-//! 7. The user config loader ([`Owner::UserLua`]), the shipped defaults loader
-//!    ([`Owner::Builtin`]) and the `lua.eval` RPC ([`Owner::Eval`]).
+//! 7. The user config loader ([`LuaOwner::UserLua`]), the shipped defaults loader
+//!    ([`LuaOwner::Builtin`]) and the `lua.eval` RPC ([`LuaOwner::Eval`]).
 //!
 //! Missing one of them is not a cosmetic gap. It attributes that code to
 //! whatever owner the VM last held, and hands it that owner's authority.
 //!
-//! Only [`Owner::Plugin`] has a storage namespace, and `cru.storage` refuses
+//! Only [`LuaOwner::Plugin`] has a storage namespace, and `cru.storage` refuses
 //! every other owner, as it always has.
 //!
 //! # The session is ambient for the same reason the owner is
@@ -71,7 +71,7 @@ use mlua::Lua;
 /// the whole defect this type removes is a value that carried more than one
 /// meaning.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Owner {
+pub enum LuaOwner {
     /// A plugin load. The name scopes `cru.storage` and attributes every
     /// registration the load makes.
     Plugin(String),
@@ -83,7 +83,7 @@ pub enum Owner {
     Eval,
 }
 
-impl Owner {
+impl LuaOwner {
     /// The plugin this owner names, or `None` for every other owner.
     ///
     /// `cru.storage` keys on this, so a non-plugin owner has no namespace and
@@ -157,7 +157,7 @@ impl Owner {
     }
 }
 
-impl std::fmt::Display for Owner {
+impl std::fmt::Display for LuaOwner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Plugin(name) => f.write_str(name),
@@ -168,8 +168,8 @@ impl std::fmt::Display for Owner {
     }
 }
 
-/// The app-data slot. A newtype so the stored value is exactly one [`Owner`].
-struct CurrentOwner(Owner);
+/// The app-data slot. A newtype so the stored value is exactly one [`LuaOwner`].
+struct CurrentOwner(LuaOwner);
 
 /// Install `owner` as the current owner; return what it replaced.
 ///
@@ -177,18 +177,18 @@ struct CurrentOwner(Owner);
 /// included — an owner left behind attributes whatever runs next to the wrong
 /// author, up to and including the user's `init.lua`.
 ///
-/// A VM that has entered no bracket answers [`Owner::UserLua`]. Every other
+/// A VM that has entered no bracket answers [`LuaOwner::UserLua`]. Every other
 /// owner reaches the VM through a bracket the host installs, so the code
 /// running outside all of them is the host's own or the user's own.
-pub fn set_owner(lua: &Lua, owner: Owner) -> Owner {
+pub fn set_owner(lua: &Lua, owner: LuaOwner) -> LuaOwner {
     lua.set_app_data(CurrentOwner(owner))
-        .map_or(Owner::UserLua, |previous| previous.0)
+        .map_or(LuaOwner::UserLua, |previous| previous.0)
 }
 
 /// The owner a Lua call runs under.
-pub fn current_owner(lua: &Lua) -> Owner {
+pub fn current_owner(lua: &Lua) -> LuaOwner {
     lua.app_data_ref::<CurrentOwner>()
-        .map_or(Owner::UserLua, |current| current.0.clone())
+        .map_or(LuaOwner::UserLua, |current| current.0.clone())
 }
 
 /// The app-data slot holding the session the host is inside.
@@ -202,7 +202,7 @@ struct CurrentSessionId(String);
 /// value and refuses anything else. Three reasons, and the first is the one
 /// that matters:
 ///
-/// 1. [`Owner::Eval`] exists because a socket call is not the operator. If a
+/// 1. [`LuaOwner::Eval`] exists because a socket call is not the operator. If a
 ///    literal id were taken as written, one `lua.eval` could put a
 ///    `pre_tool_call` handler on a session it merely NAMES — somebody else's
 ///    turn, intercepted by a caller that never held the session. That is the
@@ -309,17 +309,17 @@ pub fn intercept_for(lua: &Lua, name: &str) -> bool {
 ///
 /// It also RECORDS the interception bit, so a later seam holding only the name
 /// re-enters the same authority.
-pub fn enter_plugin(lua: &Lua, name: &str, may_intercept: bool) -> Owner {
+pub fn enter_plugin(lua: &Lua, name: &str, may_intercept: bool) -> LuaOwner {
     record_plugin_intercept(lua, name, may_intercept);
-    set_owner(lua, Owner::Plugin(name.to_string()))
+    set_owner(lua, LuaOwner::Plugin(name.to_string()))
 }
 
 /// Enter `name`'s ownership with the interception bit the loader recorded.
 ///
 /// For the seams that hold a name and nothing else: a lifecycle hook's owner,
 /// a plugin command's owner, a plugin tool's owner.
-pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> Owner {
-    set_owner(lua, Owner::Plugin(name.to_string()))
+pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> LuaOwner {
+    set_owner(lua, LuaOwner::Plugin(name.to_string()))
 }
 
 /// The name of the plugin a call runs under, or `None` under every other
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn a_vm_outside_every_bracket_is_the_users_own_lua() {
         let lua = Lua::new();
-        assert_eq!(current_owner(&lua), Owner::UserLua);
+        assert_eq!(current_owner(&lua), LuaOwner::UserLua);
         assert_eq!(current_plugin_name(&lua), None);
         assert!(current_may_intercept(&lua));
     }
@@ -349,12 +349,12 @@ mod tests {
     fn setting_an_owner_returns_the_previous_one() {
         let lua = Lua::new();
         assert_eq!(
-            set_owner(&lua, Owner::Plugin("alpha".into())),
-            Owner::UserLua
+            set_owner(&lua, LuaOwner::Plugin("alpha".into())),
+            LuaOwner::UserLua
         );
         assert_eq!(
-            set_owner(&lua, Owner::Plugin("beta".into())),
-            Owner::Plugin("alpha".into())
+            set_owner(&lua, LuaOwner::Plugin("beta".into())),
+            LuaOwner::Plugin("alpha".into())
         );
         assert_eq!(current_plugin_name(&lua), Some("beta".to_string()));
     }
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn an_eval_may_not_intercept_and_names_no_plugin() {
         let lua = Lua::new();
-        set_owner(&lua, Owner::Eval);
+        set_owner(&lua, LuaOwner::Eval);
         assert!(!current_may_intercept(&lua));
         assert_eq!(current_plugin_name(&lua), None);
     }
@@ -379,23 +379,25 @@ mod tests {
     fn only_the_owner_with_no_file_names_its_own_config_layer() {
         use crucible_core::config::SourceTag;
 
-        let deciders: Vec<Owner> = [
-            Owner::Plugin("alpha".into()),
-            Owner::UserLua,
-            Owner::Builtin,
-            Owner::Eval,
+        let deciders: Vec<LuaOwner> = [
+            LuaOwner::Plugin("alpha".into()),
+            LuaOwner::UserLua,
+            LuaOwner::Builtin,
+            LuaOwner::Eval,
         ]
         .into_iter()
         .filter(|owner| owner.config_layer().is_some())
         .collect();
         assert_eq!(
             deciders,
-            vec![Owner::Eval],
+            vec![LuaOwner::Eval],
             "an owner with a file must let the file decide, or a plugin's \
              `setup()` called from the user's own `init.lua` is misfiled"
         );
 
-        let layer = Owner::Eval.config_layer().expect("an eval names its layer");
+        let layer = LuaOwner::Eval
+            .config_layer()
+            .expect("an eval names its layer");
         assert_eq!(layer, SourceTag::Rpc);
         assert_eq!(
             layer.pin(),
@@ -426,13 +428,13 @@ mod tests {
         enter_plugin(&lua, "loud", true);
         assert!(current_may_intercept(&lua));
         // A name the loader never admitted holds no authority.
-        assert!(!Owner::Plugin("stranger".into()).may_intercept(&lua));
+        assert!(!LuaOwner::Plugin("stranger".into()).may_intercept(&lua));
     }
 
     #[test]
     fn the_shipped_defaults_hold_the_operators_authority() {
         let lua = Lua::new();
-        set_owner(&lua, Owner::Builtin);
+        set_owner(&lua, LuaOwner::Builtin);
         assert!(current_may_intercept(&lua));
         assert_eq!(current_plugin_name(&lua), None);
     }

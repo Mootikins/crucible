@@ -625,7 +625,7 @@ mod tests {
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
             crate::plugin_context::current_owner(executor.lua())
-                == crate::plugin_context::Owner::UserLua,
+                == crate::plugin_context::LuaOwner::UserLua,
             "the fire path must restore the previous owner"
         );
     }
@@ -685,7 +685,7 @@ mod tests {
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
             crate::plugin_context::current_owner(executor.lua())
-                == crate::plugin_context::Owner::UserLua,
+                == crate::plugin_context::LuaOwner::UserLua,
             "the fire path must restore the previous owner"
         );
     }

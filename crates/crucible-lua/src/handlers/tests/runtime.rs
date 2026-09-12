@@ -1,7 +1,7 @@
 use crate::handlers::{
     register_cru_on_api, LuaScriptHandlerRegistry, RegistrationSpec, ScriptHandlerResult, StageId,
 };
-use crate::plugin_context::Owner;
+use crate::plugin_context::LuaOwner;
 use crucible_core::events::SessionEvent;
 use mlua::Lua;
 
@@ -431,7 +431,7 @@ fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
         .id;
 
     // Reload alpha: drop its handlers, then let it register again.
-    registry.clear_owner(&Owner::Plugin("alpha".into()));
+    registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
     crate::plugin_context::enter_plugin(&lua, "alpha", false);
     lua.load(
         r#"
@@ -511,7 +511,7 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
         .id;
 
     // The reload's clear lands between snapshot and execution.
-    registry.clear_owner(&Owner::Plugin("alpha".into()));
+    registry.clear_owner(&LuaOwner::Plugin("alpha".into()));
 
     let event = SessionEvent::Custom {
         name: "pre_tool_call".to_string(),

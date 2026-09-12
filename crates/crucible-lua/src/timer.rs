@@ -23,7 +23,7 @@ mod inner {
     use std::sync::{Arc, Mutex};
 
     /// One live `cru.timer.spawn` task: who spawned it, and how to stop it.
-    pub(super) type LiveTask = (crate::plugin_context::Owner, tokio::task::JoinHandle<()>);
+    pub(super) type LiveTask = (crate::plugin_context::LuaOwner, tokio::task::JoinHandle<()>);
 
     /// Every task `cru.timer.spawn` started and the runtime has not finished.
     ///
@@ -61,7 +61,7 @@ mod inner {
 /// It does not mean that a body part-way through stops at the call to this
 /// function.
 #[cfg(feature = "send")]
-pub fn abort_owner(lua: &Lua, owner: &crate::plugin_context::Owner) -> usize {
+pub fn abort_owner(lua: &Lua, owner: &crate::plugin_context::LuaOwner) -> usize {
     let Some(installed) = lua.app_data_ref::<inner::InstalledTasks>() else {
         return 0;
     };
@@ -84,7 +84,7 @@ pub fn abort_owner(lua: &Lua, owner: &crate::plugin_context::Owner) -> usize {
 
 /// Without the `send` feature no task can be spawned, so none can be aborted.
 #[cfg(not(feature = "send"))]
-pub fn abort_owner(_lua: &Lua, _owner: &crate::plugin_context::Owner) -> usize {
+pub fn abort_owner(_lua: &Lua, _owner: &crate::plugin_context::LuaOwner) -> usize {
     0
 }
 
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(
             abort_owner(
                 &lua,
-                &crate::plugin_context::Owner::Plugin("ticker".to_string())
+                &crate::plugin_context::LuaOwner::Plugin("ticker".to_string())
             ),
             1,
             "the store must hold the handle of the task the plugin spawned"
@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(
             abort_owner(
                 &lua,
-                &crate::plugin_context::Owner::Plugin("doomed".to_string())
+                &crate::plugin_context::LuaOwner::Plugin("doomed".to_string())
             ),
             1,
             "exactly one task belongs to the cleared owner"
@@ -454,7 +454,7 @@ mod tests {
         let cleared = crate::handlers::clear_owner(
             &lua,
             &registry,
-            &crate::plugin_context::Owner::Plugin("ticker".to_string()),
+            &crate::plugin_context::LuaOwner::Plugin("ticker".to_string()),
         );
         assert_eq!(
             cleared, 1,

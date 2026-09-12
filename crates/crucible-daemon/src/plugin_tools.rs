@@ -295,7 +295,7 @@ impl PluginRegistry {
         // filed under the wrong plugin. The kanban board published itself as
         // `web-search`, then as `reflection`, depending on load order.
         //
-        // Under the plugin's own `Owner`, so a command may reach what its
+        // Under the plugin's own `LuaOwner`, so a command may reach what its
         // manifest declared. Authority is a total function of the owner now,
         // not a bit the caller narrows: what a command registers holds exactly
         // the grant the operator installed, as the plugin's own body does.
@@ -351,7 +351,7 @@ impl ToolExecutor for PluginToolExecutor {
         let Some((plugin, lua, func)) = self.registry.tool_func(name) else {
             return Err(ToolError::NotFound(name.to_string()));
         };
-        // Under the owning plugin's `Owner`, exactly as `run_command` runs.
+        // Under the owning plugin's `LuaOwner`, exactly as `run_command` runs.
         // A tool used to run under whatever owner was left behind, so a
         // plugin tool reached `cru.storage`'s wrong namespace and held the
         // operator's own authority rather than its plugin's.
