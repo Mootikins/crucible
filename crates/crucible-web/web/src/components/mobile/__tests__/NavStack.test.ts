@@ -139,4 +139,29 @@ describe('createNavStack', () => {
     fake.pressBack();
     expect(layer).not.toHaveBeenCalled();
   });
+
+  /**
+   * The interleaving the phone actually produces.
+   *
+   * Opening a note from the Files drawer pushes a TAB layer on top of the
+   * DRAWER layer. Dismissing the drawer by its scrim then releases a layer
+   * that is no longer the newest — and `history.back()` always pops the
+   * newest. The drawer's release eats the tab's entry, the popstate lands
+   * below the tab layer, and the tab layer's `onBack` runs: the note the user
+   * just opened is closed by the act of dismissing the drawer.
+   */
+  it('does not close a newer layer when an older one is released', () => {
+    const drawerBack = vi.fn();
+    const tabBack = vi.fn();
+
+    const nav = createNavStack(fake.win);
+    const releaseDrawer = nav.push(drawerBack); // the drawer opens
+    nav.push(tabBack); // opening a note activates a tab
+
+    releaseDrawer(); // the scrim is tapped
+    fake.firePop(); // the browser delivers the popstate that back() caused
+
+    expect(drawerBack, 'a layer released by its own control must not re-fire').not.toHaveBeenCalled();
+    expect(tabBack, 'dismissing the drawer must not close the tab above it').not.toHaveBeenCalled();
+  });
 });

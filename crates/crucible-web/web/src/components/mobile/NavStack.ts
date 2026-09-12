@@ -61,8 +61,20 @@ export function createNavStack(win: Window = window): NavStack {
         const at = layers.indexOf(layer);
         // Already gone: back ran it, so its entry is already consumed.
         if (at === -1) return;
+        const wasTop = at === layers.length - 1;
         layers.splice(at, 1);
-        win.history.back();
+        // `history.back()` pops the NEWEST entry, never a chosen one, and the
+        // History API cannot remove an entry from the middle. So only the top
+        // layer may consume an entry. An older layer that closes by itself
+        // leaves its entry behind, inert, and costs one extra back press.
+        //
+        // Calling back() here regardless was a real defect: opening a note
+        // from the Files drawer pushes a TAB layer above the DRAWER layer, so
+        // dismissing the drawer by its scrim ate the tab's entry, the popstate
+        // landed below the tab layer, and the tab layer's handler closed the
+        // note the user had just opened. The tab overview could not switch
+        // tabs at all for the same reason.
+        if (wasTop) win.history.back();
       };
     },
     dispose() {
