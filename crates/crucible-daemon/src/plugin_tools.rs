@@ -346,11 +346,15 @@ impl ToolExecutor for PluginToolExecutor {
         &self,
         name: &str,
         params: serde_json::Value,
-        _context: &ExecutionContext,
+        context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
         let Some((plugin, lua, func)) = self.registry.tool_func(name) else {
             return Err(ToolError::NotFound(name.to_string()));
         };
+        // The session the turn asked from. `ExecutionContext` carries it, and
+        // this arm discarded it, so a plugin tool could not register a
+        // session-scoped handler even though the id was in hand.
+        let _session = crucible_lua::enter_session(&lua, context.session_id.as_deref());
         // Under the owning plugin's `LuaOwner`, exactly as `run_command` runs.
         // A tool used to run under whatever owner was left behind, so a
         // plugin tool reached `cru.storage`'s wrong namespace and held the

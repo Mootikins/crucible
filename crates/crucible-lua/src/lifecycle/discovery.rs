@@ -21,12 +21,18 @@ pub struct PluginDiscoveryError {
 /// Every entry in `dir`, in ascending order of file name.
 ///
 /// `std::fs::read_dir` returns entries in an order the platform does not
-/// specify. The order changes with the file system, so the plugin load order
-/// was a property of the disk and not of Crucible.
+/// specify, so DISCOVERY order was a property of the disk.
 ///
-/// The load order is observable. Handler dispatch sorts by priority with a
-/// stable sort (`handlers/registry.rs`), so two handlers of equal priority run
-/// in load order. That tie-break must give the same answer on every machine.
+/// **This does not decide the load order, and an earlier version of this
+/// comment claimed it did.** `PluginManager::load_all` sorts its whole key set
+/// (`lifecycle/loading.rs`), so the load order was already one alphabetical
+/// sort across every directory, whatever `read_dir` answered. The handler
+/// tie-break reads that order, not this one.
+///
+/// What this sort decides is narrower: which plugin wins a duplicated name.
+/// Discovery walks the search paths in `Origin` order and the first name seen
+/// wins, so an unsorted read inside one directory made shadowing depend on the
+/// disk. It also makes a discovery log reproducible.
 ///
 /// The file name is the key because the directory name IS a plugin's
 /// identity — the only name the host knows before it runs any Lua. File names

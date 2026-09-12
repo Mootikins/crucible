@@ -227,10 +227,30 @@ struct CurrentSessionId(String);
 ///    activate a workflow plugin for one session.
 /// 3. The permission gate, from the session whose turn asked.
 ///
-/// Plugin command dispatch and plugin tool dispatch hold NO session: the
-/// `plugin.run_command` RPC carries none, so nothing reaches them to bracket.
-/// A command therefore cannot register a scoped handler yet, and answers a
-/// registration error rather than taking an id the caller chose.
+/// 4. Plugin TOOL dispatch, from the turn that called the tool.
+///    `ExecutionContext::session_id` carries it.
+///
+/// Plugin COMMAND dispatch holds no session: the `plugin.run_command` RPC
+/// carries none, so nothing reaches it to bracket. A command therefore cannot
+/// register a scoped handler, and answers a registration error rather than
+/// taking an id the caller chose.
+/// # A known race, and what it costs
+///
+/// The ambient owner and the ambient session each live in ONE slot of VM app
+/// data. Every seam sets the slot, awaits the plugin's Lua, then restores it.
+/// Nothing serialises dispatch, so two sessions running in this one VM
+/// interleave at any await point, and the second overwrites the slot the first
+/// is still inside.
+///
+/// So a handler can read a session id that is not the one it fires for. That
+/// matters most in [`crate::handlers::registry`], where the registration path
+/// reads this function as its CHECK that a caller may not name another
+/// session: under interleaving the check can resolve the wrong id.
+///
+/// This is not fixed. It is written down because a reader of the scope
+/// machinery will otherwise assume the slot is safe. The shape of a fix is a
+/// task-local value rather than VM app data, or a dispatch lock — and the
+/// second costs concurrency the daemon currently has.
 pub fn current_session(lua: &Lua) -> Option<String> {
     lua.app_data_ref::<CurrentSessionId>()
         .map(|current| current.0.clone())

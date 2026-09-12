@@ -35,13 +35,17 @@ Same-name plugins at higher priority shadow lower ones.
 
 ### Load order
 
-The load order is total, and you can predict it without reading any code:
+Two different orders matter, and they are not the same rule.
 
-1. **By directory, highest priority first.** The table above is the order.
-   Crucible reads every plugin in one directory before it opens the next.
-2. **Inside one directory, by name, ascending.** The name is the directory
-   name, or the file name for a single-file plugin. `alpha` loads before
-   `mike`, whatever order you created them in.
+**Which directory wins a name.** Crucible reads the search paths in the order
+of the table above, highest priority first, and the FIRST plugin of a given
+name wins. A plugin in your config directory therefore shadows a bundled one
+with the same name. Inside one directory, discovery reads by name, ascending.
+
+**Which order they load.** One alphabetical sort over every discovered name,
+across all directories. `alpha` from a low-priority directory loads before
+`mike` from a high-priority one. Directory precedence decides WHICH plugin a
+name resolves to; it does not group the load order.
 
 The load order is visible in one place: two handlers of the **same priority**
 run in load order. See [[Help/Extending/Custom Handlers]] for priority itself.
