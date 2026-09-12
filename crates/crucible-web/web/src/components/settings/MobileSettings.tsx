@@ -127,7 +127,7 @@ export const MobileSettings: Component<{
             <ChevronLeft class="h-5 w-5" />
           </button>
         </Show>
-        <h2 class="min-w-0 flex-1 truncate px-1 text-reading font-semibold text-shell-ink">
+        <h2 class="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-shell-ink">
           {top()?.title ?? 'Settings'}
         </h2>
         <button

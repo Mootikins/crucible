@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { X } from '@/lib/icons';
+import { btnNeutral, btnPrimary } from '@/lib/button-style';
 import { iconForContentType } from '@/lib/tab-icons';
 import type { Tab } from '@/types/windowTypes';
 
@@ -50,14 +51,14 @@ export const TabOverview: Component<{
                     <span class="text-reading flex-1 text-shell-ink">Discard unsaved changes?</span>
                     <button
                       type="button"
-                      class="h-11 px-3 rounded text-xs text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
+                      class={`h-11 ${btnNeutral} focus-ring`}
                       onClick={() => setAsking(null)}
                     >
                       Keep
                     </button>
                     <button
                       type="button"
-                      class="h-11 px-3 rounded text-xs font-medium text-on-primary bg-primary hover:bg-primary-hover transition-colors focus-ring"
+                      class={`h-11 ${btnPrimary} focus-ring`}
                       onClick={() => {
                         setAsking(null);
                         props.onClose(tab.id);
@@ -91,7 +92,7 @@ export const TabOverview: Component<{
                   <Show when={tab.isModified}>
                     <span
                       aria-label={`${tab.title} has unsaved changes`}
-                      class="w-2 h-2 rounded-full bg-primary shrink-0"
+                      class="w-2 h-2 rounded-full bg-attention shrink-0"
                     />
                   </Show>
                 </button>

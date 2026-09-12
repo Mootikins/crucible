@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createEffect, createRoot } from 'solid-js';
 import { createSettingsStack } from '@/components/settings/settings-nav';
 import type { NavStack } from '@/components/mobile/NavStack';

@@ -21,7 +21,7 @@ export const DrawerTabs: Component<{ tabs: DrawerTab[]; label: string }> = (prop
 
   return (
     <div class="flex-1 min-h-0 flex flex-col">
-      <div role="tablist" aria-label={props.label} class="shrink-0 flex border-b border-hairline bg-surface-elevated">
+      <div role="tablist" aria-label={props.label} class="shrink-0 flex border-b border-hairline bg-shell-bg">
         <For each={props.tabs}>
           {(tab) => (
             <button
@@ -35,7 +35,7 @@ export const DrawerTabs: Component<{ tabs: DrawerTab[]; label: string }> = (prop
               // one marked by the primary rule the window manager uses.
               class={`flex-1 h-11 text-xs font-medium transition-colors focus-ring ${
                 active() === tab.id
-                  ? 'text-shell-ink bg-surface-base border-b-2 border-primary'
+                  ? 'text-shell-ink bg-surface-elevated border-b-2 border-primary'
                   : 'text-muted-dark hover:text-shell-ink hover:bg-hover-wash'
               }`}
               onClick={() => setActive(tab.id)}

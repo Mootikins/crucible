@@ -225,11 +225,28 @@ const AppConfigRow: Component<{
           />
         </Show>
 
-        {/* `input`, `path`, `text`, and any kind added after this file was
-            written. An unfamiliar kind renders plainly rather than vanishing:
-            a newer daemon talking to a cached bundle is real skew, and a
-            setting that is in effect must stay visible. */}
-        <Show when={!['toggle', 'select', 'range'].includes(props.node.type)}>
+        {/* `text` is declared FREE MULTI-LINE by the daemon
+            (`crucible-lua/src/options/control.rs`), and the system prompt is
+            one. It used to fall through to the single-line box below, which
+            the phone then pinned to 10rem — a prompt could be neither read
+            nor written in it. */}
+        <Show when={props.node.type === 'text'}>
+          <textarea
+            class={`${inputClass} min-h-[6rem] w-full resize-y text-left align-top`}
+            value={text()}
+            disabled={!editable()}
+            onChange={(e) => {
+              const raw = e.currentTarget.value;
+              void commit(raw === '' ? null : raw);
+            }}
+          />
+        </Show>
+
+        {/* `input`, `path`, and any kind added after this file was written.
+            An unfamiliar kind renders plainly rather than vanishing: a newer
+            daemon talking to a cached bundle is real skew, and a setting that
+            is in effect must stay visible. */}
+        <Show when={!['toggle', 'select', 'range', 'text'].includes(props.node.type)}>
           <input
             type="text"
             class={inputClass}
@@ -385,7 +402,7 @@ const ReadOnlyRows: Component<{
             </div>
             <p class="mt-0.5 max-w-[34rem] text-floor leading-4 text-muted-dark">{row.reason}</p>
           </td>
-          <td class="py-3 text-right text-sm text-muted">
+          <td class="max-w-[12rem] truncate py-3 text-right text-sm text-muted" title={String(valueAt(props.effective, row.path) ?? "")}>
             {(() => {
               const held = valueAt(props.effective, row.path);
               return held === undefined || held === null || typeof held === 'object'

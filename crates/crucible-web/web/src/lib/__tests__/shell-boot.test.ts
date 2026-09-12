@@ -9,7 +9,7 @@ vi.mock('@/lib/layout-persistence', () => ({
   setupLayoutAutoSave: autosave,
 }));
 
-import { startLayoutPersistence } from '@/lib/shell-boot';
+import { markShell, startLayoutPersistence } from '@/lib/shell-boot';
 
 beforeEach(() => {
   load.mockClear();
@@ -31,3 +31,25 @@ describe('startLayoutPersistence', () => {
     expect(autosave).not.toHaveBeenCalled();
   });
 });
+
+describe('markShell', () => {
+  /**
+   * The stylesheet must agree with the shell, not with the viewport.
+   * `isCompact()` is decided once at load; a live `@media` query is not, so
+   * narrowing a desktop window past 767 px used to apply the phone's settings
+   * layout to the two-column dialog still rendering.
+   */
+  it('stamps the document when the compact shell is drawing', () => {
+    const root = document.createElement('html');
+    markShell(true, root);
+    expect(root.hasAttribute('data-compact-shell')).toBe(true);
+  });
+
+  it('leaves the document unstamped for the desktop shell', () => {
+    const root = document.createElement('html');
+    markShell(true, root);
+    markShell(false, root);
+    expect(root.hasAttribute('data-compact-shell')).toBe(false);
+  });
+});
+

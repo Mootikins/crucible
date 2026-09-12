@@ -1,5 +1,5 @@
 import { Component, JSX, Show, createEffect, on, onCleanup } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
+import { Dynamic, Portal } from 'solid-js/web';
 import { navStack } from '@/components/mobile/NavStack';
 import { menuItem } from '@/components/ui/menu-style';
 
@@ -39,9 +39,16 @@ export const BottomSheet: Component<{
 
   return (
     <Show when={props.open}>
+      {/* Portalled, because `fixed` is relative to the nearest TRANSFORMED
+          ancestor, and the drawer animates with `translateX`. A sheet opened
+          from inside the drawer — the project switcher, the kiln picker —
+          was clipped to the drawer's 320 px and left the rest of the screen
+          un-scrimmed. The same sheet opened from the shell was full width,
+          which is the contrast that gave it away. */}
+      <Portal>
       <div
         data-testid="sheet-scrim"
-        class="fixed inset-0 z-[60] bg-black/40"
+        class="fixed inset-0 z-[60] bg-black/60"
         onClick={() => props.onClose()}
         aria-hidden="true"
       />
@@ -52,7 +59,10 @@ export const BottomSheet: Component<{
         aria-label={props.label}
         tabIndex={-1}
         data-testid="bottom-sheet"
-        class="focus-ring fixed inset-x-0 bottom-0 z-[61] max-h-[75vh] overflow-y-auto rounded-t border-t border-hairline-strong bg-surface-elevated px-1 py-1 text-xs text-shell-ink shadow-md outline-none"
+        // A modal surface wears modal chrome: `rounded-t` is 3 px, which is
+        // the popover radius this inherited from `menu-style`, and every
+        // other modal in the app pairs a large radius with `shadow-2xl`.
+        class="focus-ring fixed inset-x-0 bottom-0 z-[61] max-h-[75vh] overflow-y-auto rounded-t-2xl border-t border-hairline-strong bg-surface-elevated px-2 py-2 text-reading text-shell-ink shadow-2xl"
         style={{ 'padding-bottom': 'var(--inset-bottom)' }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -66,6 +76,7 @@ export const BottomSheet: Component<{
         </div>
         {props.children}
       </div>
+      </Portal>
     </Show>
   );
 };
@@ -85,7 +96,7 @@ export const SheetOption: Component<{
     aria-pressed={props.selected}
     // `menuItem`'s vocabulary at a thumb's height: the shell's menu rows are
     // px-3/py-1.5; only the height and the focus ring differ.
-    class={`${menuItem} w-full h-11 px-3 rounded text-left focus-ring ${
+    class={`${menuItem} w-full h-11 rounded text-left focus-ring ${
       props.selected ? 'bg-control text-shell-ink font-medium' : 'text-shell-body hover:bg-hover-wash'
     }`}
     onClick={() => props.onSelect()}

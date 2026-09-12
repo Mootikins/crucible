@@ -10,7 +10,7 @@ import { registerPanels } from '@/lib/register-panels';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import type { TabContentType } from '@/types/windowTypes';
 import { getConfig } from '@/lib/api';
-import { startLayoutPersistence } from '@/lib/shell-boot';
+import { markShell, startLayoutPersistence } from '@/lib/shell-boot';
 import { isCompact } from '@/stores/deviceStore';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
@@ -248,6 +248,9 @@ const App: Component = () => {
     // Users build their own home from panels. The compact shell has no layout,
     // and must never save one: see `startLayoutPersistence`.
     startLayoutPersistence({ compact: isCompact() });
+    // The stylesheet's compact rules read this, rather than a live media
+    // query that would disagree with the shell on a narrowed desktop window.
+    markShell(isCompact());
 
     const onGlobalKeyDown = (event: KeyboardEvent) => {
       if (isCommandPaletteOpen() && event.key === 'Escape') {

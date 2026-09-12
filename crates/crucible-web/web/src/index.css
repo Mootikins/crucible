@@ -1209,8 +1209,17 @@ details.callout[open] > summary.callout-title::after {
   color: var(--color-primary, #e0653a);
 }
 @media (hover: none) {
+  /* No hover to reveal it, so the button is always there — which means the
+     code must not run underneath it. A long first line was drawn straight
+     through the button on a phone, and the tail was lost with no way to
+     scroll to it. The block scrolls; the button stays put over the padding
+     it reserves. */
   .md-codeblock .md-copy {
     opacity: 1;
+  }
+  .md-codeblock pre {
+    overflow-x: auto;
+    padding-right: 4.5rem;
   }
 }
 
@@ -1430,61 +1439,76 @@ details.callout[open] > summary.callout-title::after {
 }
 
 /* ── Settings on a phone ───────────────────────────────────────────────
- * The settings form is a two-column table built for a desktop dialog. On a
- * phone it becomes a flex row: the label on the left, its control on the
- * RIGHT of that label — the way iOS, Android and Obsidian all place a switch.
- * The label wraps; the control keeps a fixed column and a thumb-sized height.
+ * The settings form is a two-column table built for a desktop dialog. On the
+ * compact shell it becomes a flex row: the label on the left, its control on
+ * the RIGHT of that label — the way iOS, Android and Obsidian all place a
+ * switch. The label wraps; the control keeps a fixed column and a thumb-sized
+ * height. One block, because the alternative is a compact branch in every
+ * section.
  *
- * One block, because the alternative is a compact branch in every section.
+ * Scoped to `[data-compact-shell]`, NOT to a width. `isCompact()` decides once
+ * at load and never again, by design (`deviceStore.ts`) — so a live media
+ * query disagreed with it the moment a desktop window narrowed past 767 px,
+ * and applied these rules to the two-column grid dialog that was still
+ * rendering. One source of truth: the shell stamps the attribute.
  *
- * `:only-child` is what separates the two cases. A status, an error and a
- * section header are one `td` spanning both columns, and that cell is BOTH
- * first and last child — so a rule written as `td:last-child` would right-
- * align every message in the dialog. */
-@media (max-width: 767px) {
-  [data-testid='settings-modal'] tr {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding-block: 0.5rem;
-  }
-  [data-testid='settings-modal'] td {
-    display: block;
-    padding-block: 0;
-  }
-  /* A cell spanning both columns keeps the whole row, left-aligned. */
-  [data-testid='settings-modal'] td:only-child {
-    flex: 1 1 100%;
-    min-width: 0;
-    text-align: left;
-  }
-  /* The label takes what is left and wraps inside it. */
-  [data-testid='settings-modal'] td:first-child:not(:only-child) {
-    flex: 1 1 auto;
-    min-width: 0;
-    text-align: left;
-    padding-right: 0;
-  }
-  /* The control sits at the right-hand end of the row. */
-  [data-testid='settings-modal'] td:last-child:not(:only-child) {
-    flex: 0 0 auto;
-    text-align: right;
-  }
-  /* A row that draws its own full-width control — a navigation row. */
-  [data-testid='settings-modal'] tr[data-row='plain'] {
-    padding-block: 0;
-    gap: 0;
-  }
-  [data-testid='settings-modal'] input[type='checkbox'] {
-    width: 1.5rem;
-    height: 1.5rem;
-  }
-  [data-testid='settings-modal'] input[type='number'],
-  [data-testid='settings-modal'] input[type='text'],
-  [data-testid='settings-modal'] input[type='password'],
-  [data-testid='settings-modal'] select {
-    min-height: 2.75rem;
-    width: 10rem;
-    max-width: 100%;
-  }
+ * `:only-child` is what separates the two cases below. A status, an error and
+ * a section header are one `td` spanning both columns, and that cell is BOTH
+ * first and last child — so a rule written as `td:last-child` would
+ * right-align every message in the dialog. */
+[data-compact-shell] [data-testid='settings-modal'] tr {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+}
+[data-compact-shell] [data-testid='settings-modal'] td {
+  display: block;
+  padding-block: 0;
+}
+/* A cell spanning both columns keeps the whole row, left-aligned. */
+[data-compact-shell] [data-testid='settings-modal'] td:only-child {
+  flex: 1 1 100%;
+  min-width: 0;
+  text-align: left;
+}
+/* The label takes what is left and wraps inside it. */
+[data-compact-shell] [data-testid='settings-modal'] td:first-child:not(:only-child) {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  padding-right: 0;
+}
+/* The control sits at the right-hand end of the row. */
+[data-compact-shell] [data-testid='settings-modal'] td:last-child:not(:only-child) {
+  flex: 0 0 auto;
+  text-align: right;
+}
+/* A row that draws its own full-width control — a navigation row. */
+[data-compact-shell] [data-testid='settings-modal'] tr[data-row='plain'] {
+  padding-block: 0;
+  gap: 0;
+}
+[data-compact-shell] [data-testid='settings-modal'] input[type='number'],
+[data-compact-shell] [data-testid='settings-modal'] input[type='text'],
+[data-compact-shell] [data-testid='settings-modal'] input[type='password'],
+[data-compact-shell] [data-testid='settings-modal'] select {
+  min-height: 2.75rem;
+  width: 10rem;
+  max-width: 100%;
+}
+/* A free-text control is prose, not a value. It takes the row and the row
+   stacks for it — a system prompt cannot be read in a 10rem box. */
+[data-compact-shell] [data-testid='settings-modal'] tr:has(textarea) {
+  flex-direction: column;
+  align-items: stretch;
+}
+[data-compact-shell] [data-testid='settings-modal'] tr:has(textarea) td:last-child:not(:only-child) {
+  text-align: left;
+}
+/* A checkbox is the most-used control on the Editor page and was its
+   smallest. 1.75rem with the row's own height behind it clears the thumb. */
+[data-compact-shell] [data-testid='settings-modal'] input[type='checkbox'] {
+  width: 1.75rem;
+  height: 1.75rem;
 }

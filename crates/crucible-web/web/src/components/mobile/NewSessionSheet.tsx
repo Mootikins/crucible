@@ -171,7 +171,9 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
 
   return (
     <div class="flex-1 min-h-0 flex flex-col">
-      <header class="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-hairline">
+      {/* 56 px, matching the app bar: 44 px controls in a 44 px bar have no
+          clearance at all, so a filled one reads as a cut-off band. */}
+      <header class="shrink-0 flex items-center gap-2 px-3 h-14 border-b border-hairline">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted flex-1">{stepTitle()}</h2>
         <Show when={step() !== 'agent'}>
           <button
