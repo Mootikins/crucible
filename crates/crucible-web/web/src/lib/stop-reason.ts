@@ -3,8 +3,14 @@
  *
  * The daemon owns the set (`crucible_core::turn::StopReason`). A reason this
  * client does not know is a newer daemon talking to an older page, so the type
- * keeps a string fallback and `stopReasonNotice` answers null for it rather
- * than drawing a word nobody wrote.
+ * keeps a string fallback.
+ *
+ * **This page words no note about a reason.** It used to hold a
+ * `stopReasonNotice` table that restated `StopReason::user_notice`, and the two
+ * drifted — a capital letter and a trailing full stop. The daemon now sends the
+ * words as `stop_notice` on the same event, and the reducer draws that string.
+ * `crucible-web`'s `the_frontend_words_no_stop_reason_notice` refuses a second
+ * wording here.
  */
 export type StopReason =
   | 'end_turn'
@@ -13,22 +19,3 @@ export type StopReason =
   | 'max_tokens'
   | 'refusal'
   | (string & {});
-
-/**
- * The line the transcript draws beside a reply, or null when the reason needs
- * no note.
- *
- * It mirrors `StopReason::user_notice` on the Rust side. `end_turn` says
- * nothing because a completed answer explains itself, and `cancelled` and
- * `empty` already have their own paths here.
- */
-export function stopReasonNotice(reason: StopReason | undefined): string | null {
-  switch (reason) {
-    case 'max_tokens':
-      return 'The model reached its output limit, so the reply stops here.';
-    case 'refusal':
-      return 'The model declined to answer.';
-    default:
-      return null;
-  }
-}

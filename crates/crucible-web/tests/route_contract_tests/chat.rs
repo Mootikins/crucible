@@ -59,6 +59,7 @@ fn chat_event_message_complete_event_name() {
         cache_read_tokens: None,
         cache_creation_tokens: None,
         stop_reason: None,
+        stop_notice: None,
     };
     assert_eq!(event.event_name(), "message_complete");
 }
@@ -110,6 +111,7 @@ fn chat_event_message_complete_has_no_tool_calls_field() {
         cache_read_tokens: None,
         cache_creation_tokens: None,
         stop_reason: None,
+        stop_notice: None,
     };
     let json: Value = serde_json::to_value(&event).unwrap();
     assert!(json.get("tool_calls").is_none());

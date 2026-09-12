@@ -168,6 +168,7 @@ pub enum TurnEvent {
 /// tool call is pending — a provider that says "tool_use" has already had its
 /// calls dispatched, and the turn after them ends for some other reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
     /// Model finished naturally.
@@ -194,13 +195,33 @@ pub enum StopReason {
 }
 
 impl StopReason {
+    /// Every reason, for a caller that must consider all of them.
+    ///
+    /// `all_holds_every_stop_reason` proves the array complete by a walk over
+    /// `strum::EnumIter`, which is what the compiler knows. A crate that does
+    /// not depend on `strum` reads this instead.
+    pub const ALL: &'static [Self] = &[
+        Self::EndTurn,
+        Self::Cancelled,
+        Self::Empty,
+        Self::MaxTokens,
+        Self::Refusal,
+    ];
+
     /// The line a renderer draws beside the reply, or `None` when the reason
     /// needs no note.
     ///
-    /// One wording for both Rust front ends, so the TUI transcript and a
-    /// `cru` client cannot drift. `EndTurn` says nothing because a completed
-    /// answer explains itself; `Cancelled` and `Empty` already have their own
-    /// paths in every renderer.
+    /// **This is the only wording.** The TUI calls the function. The browser
+    /// cannot, so `crucible_web::ChatEvent::MessageComplete` carries the
+    /// answer as `stop_notice` and the page draws the string the daemon sent.
+    /// A second wording in TypeScript is what this replaced, and the two had
+    /// already drifted — a capital letter and a full stop. The gate
+    /// `the_frontend_words_no_stop_reason_notice` in `crucible-web` refuses a
+    /// new one.
+    ///
+    /// `EndTurn` says nothing because a completed answer explains itself;
+    /// `Cancelled` and `Empty` already have their own paths in every
+    /// renderer.
     #[must_use]
     pub fn user_notice(&self) -> Option<&'static str> {
         match self {
@@ -504,5 +525,22 @@ mod tests {
     fn turn_error_variants_have_context() {
         let e = TurnError::Communication("boom".into());
         assert!(e.to_string().contains("boom"));
+    }
+
+    /// A reason missing from `ALL` is a reason the cross-language wording gate
+    /// never looks at, so a new notice could reach the frontend unguarded.
+    /// `EnumIter` walks what the compiler knows, so the array cannot fall
+    /// behind the enum.
+    #[test]
+    fn all_holds_every_stop_reason() {
+        use strum::IntoEnumIterator;
+
+        let walked: Vec<StopReason> = StopReason::iter().collect();
+        assert!(!walked.is_empty(), "EnumIter walked nothing");
+        assert_eq!(
+            walked,
+            StopReason::ALL.to_vec(),
+            "StopReason::ALL and the enum disagree"
+        );
     }
 }

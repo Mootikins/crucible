@@ -1,6 +1,5 @@
 import { statusBarActions } from '@/stores/statusBarStore';
 import { generateMessageId, turnResponseId, turnSegmentId, stripFrozenPrefix } from '@/lib/api';
-import { stopReasonNotice } from '@/lib/stop-reason';
 import type {
   Message,
   ChatEvent,
@@ -338,8 +337,9 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         frozenSegments = [];
         // A reply the provider cut off gets a note of its own, under the
         // bubble rather than inside it: the text is the model's, the note is
-        // the daemon's.
-        const stopNotice = stopReasonNotice(event.stop_reason);
+        // the daemon's. The daemon also WORDS it — `stop_notice` carries the
+        // string, so this page holds no second copy to drift from.
+        const stopNotice = event.stop_notice;
         if (stopNotice) {
           deps.addMessage({
             id: `${event.id}-stop-reason`,

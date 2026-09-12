@@ -70,10 +70,21 @@ pub enum ChatEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_creation_tokens: Option<u64>,
         /// Why the turn ended (`end_turn`, `max_tokens`, `refusal`, …). The
-        /// browser draws a note under a reply the provider cut off. Absent
-        /// when the daemon reported none.
+        /// browser reads it to style the turn. Absent when the daemon
+        /// reported none.
         #[serde(skip_serializing_if = "Option::is_none")]
         stop_reason: Option<StopReason>,
+        /// The note the browser draws under a reply the provider cut off, or
+        /// absent when the reason needs none — which is every normal turn.
+        ///
+        /// **The daemon words it, not the page.** `StopReason::user_notice`
+        /// is the only wording; the browser held a second one in TypeScript
+        /// and the two drifted. One `Option<String>` once per turn is cheaper
+        /// than a wording nothing compares, and `AGENTS.md` puts the decision
+        /// in the daemon for exactly this reason: a web front end must not
+        /// duplicate it.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stop_notice: Option<String>,
     },
 
     Error {
@@ -316,6 +327,9 @@ impl ChatEvent {
                     cache_read_tokens: cache_read_tokens.map(u64::from),
                     cache_creation_tokens: cache_creation_tokens.map(u64::from),
                     stop_reason,
+                    stop_notice: stop_reason
+                        .and_then(|r| r.user_notice())
+                        .map(str::to_string),
                 },
 
                 // `ended` carries the turn's failure as an `"error: "`-prefixed
@@ -993,6 +1007,132 @@ mod tests {
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::SessionEvent { event, .. } => assert_eq!(event, "ended"),
             other => panic!("expected passthrough, got {other:?}"),
+        }
+    }
+
+    // ── The stop-reason notice: one wording, served from Rust ────────
+
+    /// The daemon words the note and the browser draws the string it sent, so
+    /// the page holds no wording of its own. Every reason goes through, which
+    /// is what keeps the page from needing a table.
+    #[test]
+    fn the_projection_carries_the_daemon_wording_for_every_reason() {
+        for reason in StopReason::ALL {
+            let event =
+                SessionEventMessage::message_complete("s1", "m1", "hi", None, Some(*reason));
+            let ChatEvent::MessageComplete { stop_notice, .. } =
+                ChatEvent::from_daemon_event(&event)
+            else {
+                panic!("expected MessageComplete for {reason:?}");
+            };
+            assert_eq!(
+                stop_notice.as_deref(),
+                reason.user_notice(),
+                "{reason:?}: the wire note and `user_notice` disagree"
+            );
+        }
+    }
+
+    /// Every `.ts` and `.tsx` file the frontend ships.
+    ///
+    /// A walk rather than `include_str!`, because the gate below must refuse a
+    /// wording wherever a future edit puts it, not only in the one file that
+    /// held the old copy.
+    fn frontend_sources() -> Vec<(String, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/src");
+        walkdir::WalkDir::new(&root)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| {
+                matches!(
+                    e.path().extension().and_then(|x| x.to_str()),
+                    Some("ts" | "tsx")
+                )
+            })
+            .filter_map(|e| {
+                let name = e.path().strip_prefix(&root).ok()?.display().to_string();
+                Some((name, std::fs::read_to_string(e.path()).ok()?))
+            })
+            .collect()
+    }
+
+    /// **The H3 gate.** `StopReason::user_notice` is the only wording. The page
+    /// held a second one (`stopReasonNotice` in `lib/stop-reason.ts`) and the
+    /// two had already drifted — a capital letter and a trailing full stop — so
+    /// the comparison ignores case and a trailing stop. Any frontend file that
+    /// spells a notice again fails here.
+    ///
+    /// The notices come from the running enum through [`StopReason::ALL`], not
+    /// from a list in this file, and the walk must find sources: an empty parse
+    /// is a gate that passes because it looked at nothing.
+    #[test]
+    fn the_frontend_words_no_stop_reason_notice() {
+        let sources = frontend_sources();
+        assert!(
+            !sources.is_empty(),
+            "walked no frontend sources — the path moved, fix this test"
+        );
+
+        let notices: Vec<&str> = StopReason::ALL
+            .iter()
+            .filter_map(StopReason::user_notice)
+            .collect();
+        assert!(
+            !notices.is_empty(),
+            "no reason words a notice — `user_notice` changed, fix this test"
+        );
+
+        let normalize = |s: &str| s.to_lowercase().replace('.', "");
+        let mut offenders = Vec::new();
+        for (name, body) in &sources {
+            let flat = normalize(body);
+            for notice in &notices {
+                if flat.contains(&normalize(notice)) {
+                    offenders.push(format!("web/src/{name}: {notice:?}"));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "the daemon words the stop-reason note; the page must draw \
+             `stop_notice` instead of spelling it again:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
+    // ── The side-channel SSE names ───────────────────────────────────
+
+    /// The publication and surface streams do not travel the chat channel, so
+    /// `sse_event_names_match_the_frontend_listener_list` never looked at
+    /// either: neither `ChatEvent::event_name()` nor `SSE_EVENT_TYPES`
+    /// mentions them, and a gate that compares two sets an event is absent
+    /// from cannot see it. That is why a fresh literal for one of these two
+    /// names passed review.
+    ///
+    /// Each name comes from the compiled const, which
+    /// `a_system_events_const_matches_its_serde_name` ties to the daemon's own
+    /// serde rename. So the chain is: rename → core const → route const →
+    /// browser listener, with a test on every link.
+    #[test]
+    fn every_side_channel_event_name_has_a_frontend_listener() {
+        let sources = frontend_sources();
+        assert!(
+            !sources.is_empty(),
+            "walked no frontend sources — the path moved, fix this test"
+        );
+
+        let declared = [
+            crate::routes::PublicationChangedEvent::EVENT_NAME,
+            crate::routes::SurfaceChangedEvent::EVENT_NAME,
+        ];
+
+        for name in declared {
+            let call = format!("addEventListener('{name}'");
+            assert!(
+                sources.iter().any(|(_, body)| body.contains(&call)),
+                "the daemon sends `{name}` and no frontend file listens for it"
+            );
         }
     }
 }
