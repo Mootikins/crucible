@@ -16,13 +16,24 @@ export const SettingsNavRow: Component<{
   detail?: string;
   icon?: Component<{ class?: string }>;
   testId?: string;
+  /**
+   * Drop the row's own side padding.
+   *
+   * A row inside a settings TABLE already sits in the page's padding, so its
+   * own `px-3` indented it 12 px past every leaf and heading on the same
+   * page. In a card — the root list — the padding is what holds the rows off
+   * the card's edge, so it stays.
+   */
+  flush?: boolean;
   onSelect: () => void;
 }> = (props) => (
   <button
     type="button"
     data-testid={props.testId}
     onClick={() => props.onSelect()}
-    class="focus-ring flex h-14 w-full items-center gap-3 px-3 text-left transition-colors hover:bg-hover-wash"
+    class={`focus-ring flex h-14 w-full items-center gap-3 text-left transition-colors hover:bg-hover-wash ${
+      props.flush ? 'px-0' : 'px-3'
+    }`}
   >
     <Show when={props.icon}>
       <Dynamic component={props.icon!} class="h-4 w-4 flex-none text-muted-dark" />
