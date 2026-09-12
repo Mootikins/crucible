@@ -295,11 +295,10 @@ impl PluginRegistry {
         // filed under the wrong plugin. The kanban board published itself as
         // `web-search`, then as `reflection`, depending on load order.
         //
-        // Under the plugin's own grants, so a command may reach what its
-        // manifest declared — MINUS `intercept_tools`, because a command is
-        // not a tool-call hook and has no interception to do. The grants come
-        // from what the loader recorded for this plugin, which is the same
-        // manifest the loader read.
+        // Under the plugin's own `Owner`, so a command may reach what its
+        // manifest declared. Authority is a total function of the owner now,
+        // not a bit the caller narrows: what a command registers holds exactly
+        // the grant the operator installed, as the plugin's own body does.
         let restore = crucible_lua::enter_recorded_plugin(&lua, &plugin);
         let result = call_plugin_fn(&lua, &func, args).await;
         // Restored on BOTH paths: a context left behind attributes whatever
@@ -352,11 +351,10 @@ impl ToolExecutor for PluginToolExecutor {
         let Some((plugin, lua, func)) = self.registry.tool_func(name) else {
             return Err(ToolError::NotFound(name.to_string()));
         };
-        // Under the owning plugin's context, exactly as `run_command` runs.
-        // A tool used to run under whatever context was left behind, so a
-        // plugin tool reached `cru.storage`'s wrong namespace — and, once the
-        // grants are enforced, would have held the operator's own authority
-        // rather than its plugin's.
+        // Under the owning plugin's `Owner`, exactly as `run_command` runs.
+        // A tool used to run under whatever owner was left behind, so a
+        // plugin tool reached `cru.storage`'s wrong namespace and held the
+        // operator's own authority rather than its plugin's.
         let restore = crucible_lua::enter_recorded_plugin(&lua, &plugin);
         let result = call_plugin_fn(&lua, &func, params).await;
         // Restored on BOTH paths: a context left behind attributes whatever
