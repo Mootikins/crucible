@@ -1,4 +1,5 @@
 import { Component, JSX, Show, createEffect, on, onCleanup } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { navStack } from '@/components/mobile/NavStack';
 import { menuItem } from '@/components/ui/menu-style';
 
@@ -74,6 +75,8 @@ export const SheetOption: Component<{
   label: string;
   detail?: string;
   selected?: boolean;
+  /** The mark the desktop gives this row, so a menu reads the same on both. */
+  icon?: Component<{ class?: string }>;
   onSelect: () => void;
 }> = (props) => (
   <button
@@ -87,6 +90,9 @@ export const SheetOption: Component<{
     }`}
     onClick={() => props.onSelect()}
   >
+    <Show when={props.icon}>
+      <Dynamic component={props.icon!} class="w-4 h-4 shrink-0 text-muted-dark" />
+    </Show>
     <span class="flex-1 truncate">{props.label}</span>
     <Show when={props.detail}>
       <span class="text-floor text-muted-dark shrink-0">{props.detail}</span>

@@ -1,7 +1,7 @@
 import { windowStore } from '@/stores/windowStore';
 import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from './panel-registry';
-import { iconForContentType } from './tab-icons';
+import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
 
@@ -91,7 +91,7 @@ export function openPanelTab(contentType: TabContentType): void {
     id: `tab-${contentType}`,
     title: def.title,
     contentType,
-    icon: iconForContentType(contentType),
+    icon: iconForPanelId(contentType),
   };
 
   if (!host.open(tab, { placement: 'zone' })) {

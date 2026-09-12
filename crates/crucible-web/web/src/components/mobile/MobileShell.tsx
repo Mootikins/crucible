@@ -13,6 +13,7 @@ import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
 import { OfflineBadge } from '@/components/mobile/OfflineBadge';
 import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
 import { openPanelTab } from '@/lib/panel-actions';
+import { iconForPanelId } from '@/lib/tab-icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { navStack } from '@/components/mobile/NavStack';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
@@ -152,7 +153,10 @@ export const MobileShell: Component = () => {
       onPointerCancel={() => swipes.forEach((s) => s.cancel())}
     >
       <header
-        class="shrink-0 flex items-center gap-1 h-12 px-1 border-b border-hairline bg-surface-elevated"
+        // 56 px, not 48: the controls inside are 44 px touch targets, and a
+        // filled one (Read/Write) in a 48 px bar leaves 2 px of clearance, so
+        // its background reads as touching the bar's edges.
+        class="shrink-0 flex items-center gap-1 h-14 px-2 border-b border-hairline bg-surface-elevated"
         style={{ 'padding-top': 'var(--inset-top)', 'box-sizing': 'content-box' }}
       >
         <DrawerButton side="left" label="Sessions and files" icon={FolderTree} />
@@ -218,6 +222,7 @@ export const MobileShell: Component = () => {
           {(def) => (
             <SheetOption
               label={def.title}
+              icon={iconForPanelId(def.id)}
               onSelect={() => {
                 setMenuOpen(false);
                 openPanelTab(def.id as Parameters<typeof openPanelTab>[0]);

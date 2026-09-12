@@ -67,13 +67,19 @@ export const TabOverview: Component<{
                     </button>
                   </div>
                 </Show>
-                <div class="flex items-stretch gap-1">
+                {/* The tint belongs to the ROW, not to the part of it that
+                    picks the tab: with it on the button alone, the fill
+                    stopped short of the close control and the selected row
+                    read as a clipped band. */}
+                <div
+                  class={`flex items-stretch overflow-hidden rounded transition-colors ${
+                    tab.id === props.activeId ? 'bg-primary/10' : 'hover:bg-hover-wash'
+                  }`}
+                >
                 <button
                   type="button"
-                  class={`flex-1 min-w-0 flex items-center gap-2 h-14 px-3 rounded text-left transition-colors focus-ring ${
-                    tab.id === props.activeId
-                      ? 'bg-primary/10 text-shell-ink'
-                      : 'hover:bg-hover-wash text-shell-body'
+                  class={`flex-1 min-w-0 flex items-center gap-2 h-14 px-3 rounded text-left focus-ring ${
+                    tab.id === props.activeId ? 'text-shell-ink' : 'text-shell-body'
                   }`}
                   onClick={() => props.onPick(tab.id)}
                 >
@@ -92,7 +98,7 @@ export const TabOverview: Component<{
                 <button
                   type="button"
                   aria-label={`Close ${tab.title}`}
-                  class="w-11 shrink-0 flex items-center justify-center rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+                  class="w-11 shrink-0 flex items-center justify-center rounded text-muted-dark hover:text-shell-ink focus-ring"
                   onClick={() => requestClose(tab)}
                 >
                   <X class="w-4 h-4" />

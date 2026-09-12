@@ -104,10 +104,12 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
           >
             {/* ── The section list ─────────────────────────────────────── */}
             <nav
-              class={`overflow-y-auto bg-surface-base ${
+              class={`bg-surface-base ${
                 isCompact()
-                  ? 'flex shrink-0 flex-row gap-1 overflow-x-auto border-b border-hairline p-1'
-                  : 'flex flex-col border-r border-hairline py-3'
+                  ? // `py-2` matches the gap between chips: a filled chip that
+                    // touches the strip's edges reads as a cut-off band.
+                    'flex shrink-0 flex-row gap-2 overflow-x-auto overflow-y-hidden border-b border-hairline px-2 py-2'
+                  : 'flex flex-col overflow-y-auto border-r border-hairline py-3'
               }`}
               style={isCompact() ? { 'padding-top': 'var(--inset-top)' } : undefined}
             >
@@ -129,9 +131,11 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                           data-testid={`settings-nav-${section.id}`}
                           aria-current={activeId() === section.id ? 'page' : undefined}
                           classList={{
-                            'focus-ring mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-reading transition-colors':
+                            'focus-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-reading transition-colors':
                               true,
-                            // A strip of touch targets on a phone.
+                            'mx-2': !isCompact(),
+                            // A strip of touch targets on a phone. The strip
+                            // itself spaces them, so the chip adds no margin.
                             'h-11 shrink-0 whitespace-nowrap px-3': isCompact(),
                             // A fill, not a coloured edge bar: the selected row
                             // has to read at a glance without adding a second
