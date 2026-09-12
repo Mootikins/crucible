@@ -142,21 +142,36 @@ export const MobileSettings: Component<{
       </header>
 
       <div class="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        <Show when={top()} fallback={<RootList {...props} />} keyed>
-          {(page) => (
-            <Show
-              when={page.rows}
-              fallback={<div class="flex flex-col gap-1">{page.body()}</div>}
-            >
-              {/* Sections are written as table rows; they need a table. */}
-              <WithoutSectionHeaders>
-                <table class="w-full">
-                  <tbody>{page.body()}</tbody>
-                </table>
-              </WithoutSectionHeaders>
-            </Show>
+        {/* Every level stays MOUNTED and all but the top are hidden.
+            Rendering only the top unmounted the section that owns the data:
+            drilling into a config group disposed `AppConfigSettingsSection`,
+            so its inline save error had no reader, and every press of Back
+            remounted it and refetched the whole tree with a loading flash. */}
+        <div class={top() ? 'hidden' : ''}>
+          <RootList
+            sections={props.sections}
+            stack={props.stack}
+            onChanged={props.onChanged}
+            onCloseAll={close}
+          />
+        </div>
+        <For each={props.stack.pages()}>
+          {(page, index) => (
+            <div class={index() === props.stack.pages().length - 1 ? '' : 'hidden'}>
+              <Show
+                when={page.rows}
+                fallback={<div class="flex flex-col gap-1">{page.body()}</div>}
+              >
+                {/* Sections are written as table rows; they need a table. */}
+                <WithoutSectionHeaders>
+                  <table class="w-full">
+                    <tbody>{page.body()}</tbody>
+                  </table>
+                </WithoutSectionHeaders>
+              </Show>
+            </div>
           )}
-        </Show>
+        </For>
       </div>
     </>
   );
@@ -167,7 +182,8 @@ const RootList: Component<{
   sections: SettingsSection[];
   stack: SettingsStack;
   onChanged: () => void | Promise<unknown>;
-  onClose: () => void;
+  /** Dismiss the whole dialog AND give its history entries back. */
+  onCloseAll: () => void;
 }> = (props) => (
   <For each={settingsGroups(props.sections)}>
     {(group) => (
@@ -180,7 +196,7 @@ const RootList: Component<{
               testId={`settings-nav-${section.id}`}
               onSelect={() =>
                 props.stack.push(
-                  sectionPage(section, { onChanged: props.onChanged, onClose: props.onClose }),
+                  sectionPage(section, { onChanged: props.onChanged, onClose: props.onCloseAll }),
                 )
               }
             />

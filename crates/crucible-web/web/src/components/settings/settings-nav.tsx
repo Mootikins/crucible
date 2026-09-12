@@ -77,9 +77,13 @@ export function createSettingsStack(back: NavStack = navStack()): SettingsStack 
 
     reset() {
       const held = entries();
+      if (held.length === 0) return;
       setEntries([]);
-      // Newest first, so each `history.back()` unwinds the entry it owns.
-      for (let i = held.length - 1; i >= 0; i -= 1) held[i].release();
+      // ONE traversal. Releasing each in turn queued one `back()` per level,
+      // and a section that closes the dialog in order to navigate — the
+      // jump to the line that pins a setting — pushes its own entry into the
+      // middle of that queue.
+      back.dropTop(held.length);
     },
   };
 }

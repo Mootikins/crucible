@@ -28,6 +28,14 @@ interface Layer {
 export interface NavStack {
   /** Add a layer. Returns `release`, to call when the layer closes by itself. */
   push(onBack: BackHandler): () => void;
+  /**
+   * Drop the top `n` layers in ONE history traversal.
+   *
+   * `n` separate `release()` calls queue `n` separate `back()` calls, and a
+   * `pushState` that lands between them truncates the entries the rest were
+   * going to traverse. One `go(-n)` cannot be interleaved that way.
+   */
+  dropTop(n: number): void;
   dispose(): void;
 }
 
@@ -76,6 +84,12 @@ export function createNavStack(win: Window = window): NavStack {
         // tabs at all for the same reason.
         if (wasTop) win.history.back();
       };
+    },
+    dropTop(n) {
+      const count = Math.min(n, layers.length);
+      if (count <= 0) return;
+      layers.splice(layers.length - count, count);
+      win.history.go(-count);
     },
     dispose() {
       win.removeEventListener('popstate', onPopState);

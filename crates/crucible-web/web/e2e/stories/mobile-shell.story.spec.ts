@@ -137,8 +137,9 @@ test.describe('WS-317 the compact shell', () => {
     // control sits beside the text it labels.
     await dialog.getByTestId('settings-nav-editor').click();
     await expect(dialog.getByTestId('settings-editor-vim')).toBeVisible();
-    // The list it came from is gone, not scrolled past.
-    await expect(dialog.getByTestId('settings-nav-app-config')).toHaveCount(0);
+    // The list it came from is HIDDEN, not scrolled past — and still mounted,
+    // because a level that owns data must survive being drilled into.
+    await expect(dialog.getByTestId('settings-nav-app-config')).not.toBeVisible();
     await story.step(page, 'a category');
 
     await dialog.getByTestId('settings-back').click();

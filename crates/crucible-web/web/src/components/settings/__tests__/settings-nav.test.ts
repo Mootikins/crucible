@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createRoot } from 'solid-js';
+import { createEffect, createRoot } from 'solid-js';
 import { createSettingsStack } from '@/components/settings/settings-nav';
 import type { NavStack } from '@/components/mobile/NavStack';
 import type { SettingsPage } from '@/components/settings/settings-nav';
@@ -10,6 +10,7 @@ import type { SettingsPage } from '@/components/settings/settings-nav';
  */
 function fakeBack() {
   const layers: { id: number; onBack: () => void }[] = [];
+  const dropped: number[] = [];
   let seq = 0;
   const stack: NavStack = {
     push(onBack) {
@@ -20,12 +21,18 @@ function fakeBack() {
         if (at !== -1) layers.splice(at, 1);
       };
     },
+    dropTop(n: number) {
+      const count = Math.min(n, layers.length);
+      if (count > 0) layers.splice(layers.length - count, count);
+      dropped.push(n);
+    },
     dispose() {
       layers.length = 0;
     },
   };
   return {
     stack,
+    dropped,
     depth: () => layers.length,
     /** The phone's back button, landing on `id` (0 = below everything). */
     land(id: number) {
@@ -127,16 +134,38 @@ describe('the settings drill-down', () => {
       dispose();
     }));
 
-  it('is reactive, so the shell redraws when a page opens', () =>
+  it('is reactive, so the shell redraws when a page opens', async () => {
+    const seen: string[] = [];
+    let nav!: ReturnType<typeof createSettingsStack>;
+    const dispose = createRoot((d) => {
+      nav = createSettingsStack(fakeBack().stack);
+      // Inside a real computation, and AWAITED. The earlier version called
+      // the getter directly, outside any tracking scope, and asserted inside
+      // a nested microtask that never ran — so it survived wrapping the read
+      // in `untrack` twice over.
+      createEffect(() => seen.push(nav.pages().map((p) => p.title).join('/')));
+      return d;
+    });
+    await Promise.resolve();
+    nav.push(page('a'));
+    await Promise.resolve();
+    expect(seen, 'the shell must re-render when a page is pushed').toEqual(['', 'a']);
+    dispose();
+  });
+
+  // A section that closes the whole dialog from depth must give every entry
+  // back. The jump to the line that pins a setting does exactly this.
+  it('gives the entries back in ONE traversal, not one call per level', () =>
     createRoot((dispose) => {
-      const nav = createSettingsStack(fakeBack().stack);
-      const seen = vi.fn();
-      // Reading inside a computation must re-run when the stack changes.
-      const titles = () => nav.pages().map((p) => p.title).join('/');
-      seen(titles());
+      const back = fakeBack();
+      const nav = createSettingsStack(back.stack);
       nav.push(page('a'));
-      seen(titles());
-      expect(seen.mock.calls.flat()).toEqual(['', 'a']);
+      nav.push(page('b'));
+      nav.push(page('c'));
+
+      nav.reset();
+      expect(back.dropped, 'one go(-n), not n back() calls').toEqual([3]);
+      expect(back.depth()).toBe(0);
       dispose();
     }));
 });
