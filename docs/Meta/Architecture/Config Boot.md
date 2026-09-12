@@ -107,6 +107,21 @@ root is that plugin's default (`SourceTag::PluginDefault`) and loses to
 `settings.json`. The more specific root wins a tie, because a plugin
 directory can sit under the config directory.
 
+**One caller holds no file, and its owner decides instead.** A `lua.eval` — `cru
+lua`, or `:lua` in the TUI — arrives over a socket, and its chunk name is
+`=lua.eval`. That name matches no root, so the path rule alone fell back to
+`SourceTag::Lua` and pinned the leaf: one `cru lua 'cru.config.set{…}'` made
+`config.save` refuse that key for the rest of the daemon's life, and the
+settings UI named a file that does not exist.
+
+`Owner::config_layer` (`crucible-lua/src/plugin_context.rs`) answers before the
+path rule, and only for the owner that holds no file. An eval writes
+`SourceTag::Rpc`, the same layer the `config.set` RPC writes, because both are
+socket calls: the layer ranks highest, so an eval still overrides anything for
+this run, it pins nothing, and a later `config.save` takes the leaf back. Every
+other owner answers `None` and lets the file decide, which keeps the rule
+above true wherever a file exists.
+
 The boot installs both root lists (`install_author_roots`, `boot.rs`), from
 the directories that exist at that moment. A plugin the user installs later
 creates a directory the boot never saw, so `plugin.install` registers that
