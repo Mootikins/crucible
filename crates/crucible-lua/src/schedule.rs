@@ -104,6 +104,12 @@ mod inner {
 /// `cru.schedule` stays its own store — it owns a tokio task and must not sit
 /// behind the per-tool-call lock the handler registry takes — so this is the
 /// one thing `clear_owner` needs from it.
+///
+/// **What the stop guarantees, exactly.** The task reads `cancel_rx` in a
+/// `select!` beside the interval tick, and it reaches that `select!` only
+/// BETWEEN ticks. So a callback that is already running runs to its end, and
+/// the cancel stops the NEXT tick. "The owner is cleared" therefore means that
+/// no further tick of this owner starts.
 #[cfg(feature = "send")]
 pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::Owner) -> usize {
     let Some(installed) = lua.app_data_ref::<inner::InstalledSchedules>() else {

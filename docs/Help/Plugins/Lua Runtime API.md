@@ -115,7 +115,7 @@ cru.log("info", string.format("Took %.2fs", elapsed))
 
 ### cru.timer.spawn(fn)
 
-Spawn `fn` as an independent async tokio task (fire-and-forget). The function runs concurrently with the caller. Only available in daemon context when the `send` feature is enabled (`mlua/send`).
+Spawn `fn` as an independent async tokio task. The function runs concurrently with the caller, and the caller does not wait for it. Only available in daemon context when the `send` feature is enabled (`mlua/send`).
 
 Formerly `cru.spawn`, which is removed — it lives beside `cru.timer.sleep`, the module that owns yielding.
 
@@ -129,6 +129,18 @@ end)
 This is primarily needed when gateway event handlers (which run under `pcall`) need to call async functions that yield, such as `cru.session.subscribe()`. Since `pcall`/`xpcall` create a yield barrier in Lua, the async work must be moved to a separate task.
 
 Errors in the spawned function are logged as warnings but do not propagate to the caller.
+
+### A spawned task lives as long as the plugin
+
+The task belongs to the plugin that started it. When that plugin goes inert — a reload, a disable, or a load error — the host stops the task. `cru.schedule` obeys the same rule.
+
+The stop is not immediate, and the guarantee is exact: **no new run of your task or your schedule starts**. What is already part-way through can finish:
+
+- A task that waits at `cru.timer.sleep`, or at any other async call, stops there. It never continues, so the lines after that call do not run. Write no cleanup step that must run after an await.
+- A stretch of Luau that waits for nothing runs to its end. The host has no point at which to interrupt it.
+- A scheduled callback that already runs completes. The cancel stops the next tick.
+
+A plugin can also stop its own schedule at any time with `cru.schedule.cancel(handle)`.
 
 ## Shell
 
