@@ -6,7 +6,8 @@
 //!   A2b — canonical parser types are defined only in crucible-core/parser.
 //!   A2c — every `/api` path the web frontend calls has a backend route.
 //!   A2d — the CLI does not build its own knowledge-base context block.
-//!   A2e — every session config knob the daemon advertises has a web route.
+//!   A2e — every session knob the daemon advertises has a web route and a
+//!         TUI `:set` key, both derived from `SessionKnob`.
 //!   A2f — nobody hand-rolls the "is this file markdown" predicate.
 //!   A2g — the hook counts AGENTS.md prints match `StageId`/`EventName`.
 //!
@@ -17,9 +18,11 @@
 //! Source-scan style: read files and match, so they are fast and build-free.
 //! When one fails, fix the code, not the test — see each failure message.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crucible_core::types::SessionKnob;
+use crucible_daemon::rpc::{rpc_set_method, RpcMethod, METHODS};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -360,126 +363,203 @@ fn the_cli_does_not_build_its_own_context_block() {
 }
 
 // ===========================================================================
-// A2e — every session config knob the daemon advertises is reachable from the
-// web.
+// A2e — every session knob the daemon advertises is reachable from the web,
+// and from the TUI.
 //
-// Nine of fifteen were not, and nothing failed: the daemon grows a knob, the
-// TUI wires it (`tui/oil/config/shortcuts.rs`), and the web silently falls a
-// knob further behind. A1 in the daemon's companion file already gates
-// client↔server field-name parity for all fifteen; daemon↔web was the only
-// ungated axis, and it is a different failure (a route that does not exist at
-// all, rather than a field name that disagrees).
+// Nine of fifteen knobs had no web route and nothing failed: the daemon grows
+// a knob, the TUI wires it, and the web falls a knob further behind. A1 in the
+// daemon's companion file gates client↔server field-name parity; daemon↔front
+// end was the ungated axis, and it is a different failure (a route or a `:set`
+// key that does not exist at all, rather than a field name that disagrees).
 //
-// The ledger below is SHRINK-ONLY: a NEW knob is not in it and so fails
+// DERIVED, NOT GREPPED. Both gates once read `"session\.set_([a-z0-9_]+)"`
+// over the whole text of `dispatch.rs`. That file names each method three
+// times — in the `rpc_methods!` table, in the setter router, and in
+// `#[cfg(test)] mod tests` — and a regex cannot tell the three apart. A stale
+// literal in a unit-test sample value therefore advertised a knob the daemon
+// had deleted, and the gates demanded a route and a key for it. That cost two
+// red CI runs. The prefix scan also missed `session.switch_model` entirely, so
+// the `model` knob was never gated on either front end.
+//
+// The source is now `SessionKnob::ALL` joined to `RpcMethod` through
+// `rpc::rpc_set_method`. Both arrays are proved complete by an `EnumIter` walk
+// in their own crate, the mapping is an exhaustive match under two clippy
+// denies, and `RpcMethod` cannot name a method `METHODS` does not advertise.
+// A literal in a test body reaches none of that.
+//
+// The ledgers below are SHRINK-ONLY: a NEW knob is not in one and so fails
 // immediately.
 // ===========================================================================
 
-fn captures(re: &str, hay: &str) -> BTreeSet<String> {
-    let re = Regex::new(re).unwrap();
-    re.captures_iter(hay).map(|c| c[1].to_string()).collect()
-}
-
-/// `session.set_<suffix>` → the `/api/session/{}/config/<path>` tail.
+/// `session.set_agent_option` is guarded, and it is NOT a [`SessionKnob`].
 ///
-/// Declared rather than derived: a knob's route is not always its name in
-/// kebab case, so a naive snake→kebab transform would need special-casing.
-const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
-    ("context_strategy", "context-strategy"),
-    ("precognition", "precognition"),
-    // Not a Crucible knob: the settings the external agent advertised for
-    // itself. One route serves both directions — GET lists them, POST sets one
-    // — because the value belongs to the agent and is read back from its list.
-    ("agent_option", "agent-options"),
-];
-
-/// Knobs with no web route yet. REMOVE entries as routes land; never add.
+/// The gate exists because of this name: `agent_option` shipped to the web and
+/// not to the TUI and passed review. A gate driven by `SessionKnob` alone
+/// would drop it, which is why it is named here rather than omitted.
 ///
-/// Empty: all fifteen advertised knobs are reachable from the web. It held nine
-/// when this gate landed, and the gate is what forced each row out — adding a
-/// route while leaving its row here fails just as loudly as the reverse, which
-/// is how the ledger stays a record of work outstanding rather than of work
-/// forgotten.
-const WEB_ROUTE_LEDGER: &[&str] = &[];
-
-/// Exempt permanently, with a reason: `mode` is not a `config/` knob. It has
-/// its own `POST /api/session/{id}/mode` and `GET .../modes`, because switching
-/// mode changes tool policy rather than a scalar setting.
-const WEB_ROUTE_EXEMPT: &[&str] = &["mode"];
+/// It stays out of the enum because it is not one setting. It projects the
+/// settings an EXTERNAL agent advertised for itself, so its value space
+/// changes with the agent, an internal session has none at all, and the report
+/// of what it holds is `session.list_agent_options` rather than a getter. A
+/// `SessionKnob` variant would put a `{ id, supported }` row in
+/// `session.list_knobs` for something no session has until an agent says so,
+/// and would demand an `on_acp` answer for a setting that exists only over
+/// ACP. `AgentConfigOption`'s own docs state the same rule: "Crucible has no
+/// knob for these."
+///
+/// The pair is compiler-checked all the same — the method is an `RpcMethod`
+/// variant, so a deleted method breaks this file rather than silencing it.
+const NON_KNOB_GUARDED: &[(&str, RpcMethod)] =
+    &[("agent_option", RpcMethod::SessionSetAgentOption)];
 
 /// `session.set_*` methods that mutate session SCOPE rather than configure the
 /// agent. They share the prefix but are not knobs, and neither belongs under
 /// `config/`.
 const SCOPE_MUTATIONS: &[&str] = &["title", "workspace"];
 
-// UNIQUE: the daemon's METHODS list and the web's axum Router are in different
-// crates with no shared type; a knob present in one and absent from the other is
-// not a compile error, and A1 only compares the daemon's own client to its own
-// server. Route EXISTENCE, not field names — field names are already A1's job,
-// which matters because `execution_timeout`'s wire field is `timeout_secs` and a
-// web struct named after the knob would compile, pass review, and drop the value.
+/// Every id the two parity gates guard, with the method that writes it.
+///
+/// `SessionKnob::ALL` plus [`NON_KNOB_GUARDED`]. A knob's method comes from
+/// `rpc_set_method`, which is why `model` is guarded at last: `session.switch_model`
+/// writes it, and a `set_` prefix scan never saw that name.
+fn guarded_ids() -> BTreeMap<String, RpcMethod> {
+    let mut out: BTreeMap<String, RpcMethod> = SessionKnob::ALL
+        .iter()
+        .map(|k| (k.id().to_string(), rpc_set_method(*k)))
+        .collect();
+    for (id, method) in NON_KNOB_GUARDED {
+        out.insert((*id).to_string(), *method);
+    }
+    out
+}
+
+/// Nothing guarded names a method the daemon does not answer, and no
+/// `session.set_*` method escapes the gates.
+///
+/// The second half keeps the enumerated source honest. A new setter in
+/// `rpc_methods!` is neither a `SessionKnob` nor a scope mutation, so it fails
+/// here until somebody says which it is. Without it, the swap from a grep to
+/// the enum would have narrowed what the gates cover.
+#[test]
+fn every_session_setter_is_either_guarded_or_declared_out_of_scope() {
+    let guarded = guarded_ids();
+    let mut failures = Vec::new();
+
+    for (id, method) in &guarded {
+        assert!(
+            METHODS.contains(&method.as_str()),
+            "guarded id `{id}` maps to `{}`, which METHODS does not advertise",
+            method.as_str()
+        );
+    }
+
+    let guarded_methods: BTreeSet<&str> = guarded.values().map(|m| m.as_str()).collect();
+    let scope: BTreeSet<String> = SCOPE_MUTATIONS
+        .iter()
+        .map(|s| format!("session.set_{s}"))
+        .collect();
+
+    for method in RpcMethod::ALL {
+        let name = method.as_str();
+        if !name.starts_with("session.set_") {
+            continue;
+        }
+        if guarded_methods.contains(name) || scope.contains(name) {
+            continue;
+        }
+        failures.push(format!(
+            "`{name}` is a session setter that no front-end gate covers. Add a \
+             `SessionKnob` variant for it, add it to NON_KNOB_GUARDED with a \
+             reason, or add its suffix to SCOPE_MUTATIONS"
+        ));
+    }
+
+    assert!(
+        failures.is_empty(),
+        "ungated session setters:\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
+/// knob id → the web route that reaches it.
+///
+/// Declared rather than derived: a knob's route is not always its id in kebab
+/// case, and two of them sit outside `config/` altogether. Full paths, not
+/// tails, so `mode` and `model` get the same existence check as the rest
+/// instead of a blanket exemption.
+const WEB_KNOB_ROUTES: &[(&str, &str)] = &[
+    // Switching model and switching mode each have their own route: mode
+    // changes tool policy and model re-resolves the provider, so neither is a
+    // scalar under `config/`.
+    ("model", "/api/session/{}/model"),
+    ("mode", "/api/session/{}/mode"),
+    (
+        "context_strategy",
+        "/api/session/{}/config/context-strategy",
+    ),
+    ("precognition", "/api/session/{}/config/precognition"),
+    // One path serves both directions — GET lists them, POST sets one —
+    // because the value belongs to the agent and is read back from its list.
+    ("agent_option", "/api/session/{}/config/agent-options"),
+];
+
+/// Knobs with no web route yet. REMOVE entries as routes land; never add.
+///
+/// Empty: every guarded id is reachable from the web. It held nine when this
+/// gate landed, and the gate is what forced each row out — a route that lands
+/// while its row stays here fails just as loudly as the reverse, which is how
+/// the ledger stays a record of work outstanding rather than of work
+/// forgotten.
+const WEB_ROUTE_LEDGER: &[&str] = &[];
+
+// UNIQUE: the daemon's method table and the web's axum Router are in different
+// crates with no shared type; a knob present in one and absent from the other
+// is not a compile error, and A1 only compares the daemon's own client to its
+// own server. Route EXISTENCE, not field names — field names are already A1's
+// job, which matters because a web struct named after the knob would compile,
+// pass review, and drop the value.
 #[test]
 fn every_rpc_session_knob_is_reachable_from_the_web() {
     let root = workspace_root();
-    let dispatch = read(&root.join("crates/crucible-daemon/src/rpc/dispatch.rs"));
+    let guarded = guarded_ids();
 
-    // Knobs the daemon advertises, read from METHODS itself — the same list
-    // `daemon.capabilities` returns, so this is a client's view of the surface.
-    let advertised = captures(r#""session\.set_([a-z0-9_]+)""#, &dispatch);
-    let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
-    let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
-
-    // Sanity check on the scan, not on the knob count — the count is meant to
-    // shrink. `precognition` is Crucible's own retrieval knob and is not going
-    // anywhere, so its absence means the regex broke rather than that a knob
-    // was deleted.
-    assert!(
-        advertised.contains("precognition"),
-        "the scan found no `session.set_precognition`, so the regex probably \
-         broke; it found: {advertised:?}"
-    );
-
-    let mapped: BTreeSet<String> = WEB_CONFIG_ROUTES
-        .iter()
-        .map(|(k, _)| k.to_string())
-        .collect();
-    let exempt: BTreeSet<String> = WEB_ROUTE_EXEMPT.iter().map(|s| s.to_string()).collect();
+    let mapped: BTreeSet<String> = WEB_KNOB_ROUTES.iter().map(|(k, _)| k.to_string()).collect();
     let ledger: BTreeSet<&str> = WEB_ROUTE_LEDGER.iter().copied().collect();
-
     let mut failures = Vec::new();
 
-    // (1) Table completeness: every advertised knob is mapped or exempt.
-    let covered: BTreeSet<String> = mapped.union(&exempt).cloned().collect();
-    for knob in advertised.difference(&covered) {
-        failures.push(format!(
-            "session.set_{knob} has no WEB_CONFIG_ROUTES row — add the route tail, \
-             or add it to WEB_ROUTE_EXEMPT with a reason"
-        ));
+    // (1) Table completeness: every guarded id has a route row.
+    for id in guarded.keys() {
+        if !mapped.contains(id) {
+            failures.push(format!(
+                "`{id}` has no WEB_KNOB_ROUTES row — add the route path, or \
+                 (temporarily) add `{id}` to WEB_ROUTE_LEDGER"
+            ));
+        }
     }
-    // (2) Table staleness: no row for a knob the daemon dropped.
-    for stale in mapped.difference(&advertised) {
+    // (2) Table staleness: no row for an id the daemon dropped.
+    for stale in mapped.iter().filter(|id| !guarded.contains_key(*id)) {
         failures.push(format!(
-            "WEB_CONFIG_ROUTES row `{stale}` is not in METHODS — remove the row or \
-             restore the knob"
+            "WEB_KNOB_ROUTES row `{stale}` is no longer guarded — remove the row \
+             or restore the knob"
         ));
     }
 
     // (3) The routes actually exist in the axum Router.
     let backend = backend_api_paths(&root);
-    for (knob, tail) in WEB_CONFIG_ROUTES {
-        let path = format!("/api/session/{{}}/config/{tail}");
-        let present = backend.contains(&path);
-        let ledgered = ledger.contains(*knob);
+    for (id, path) in WEB_KNOB_ROUTES {
+        let present = backend.contains(*path);
+        let ledgered = ledger.contains(*id);
         if !present && !ledgered {
             failures.push(format!(
-                "session.set_{knob}: no web route at {path}. Add it under \
+                "`{id}`: no web route at {path}. Add it under \
                  crucible-web/src/routes/session_config/, register it in \
-                 routes/session/mod.rs, or (temporarily) add `{knob}` to \
+                 routes/session/mod.rs, or (temporarily) add `{id}` to \
                  WEB_ROUTE_LEDGER"
             ));
         }
         if present && ledgered {
             failures.push(format!(
-                "session.set_{knob}: route {path} now exists — REMOVE `{knob}` from \
+                "`{id}`: route {path} now exists — REMOVE `{id}` from \
                  WEB_ROUTE_LEDGER (the ledger only shrinks)"
             ));
         }
@@ -492,109 +572,109 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
     );
 }
 
-/// `session.set_<suffix>` → the `:set` key that reaches it.
+/// knob id → the `:set` key that reaches it, and a value that key accepts.
 ///
-/// Declared rather than derived, like `WEB_CONFIG_ROUTES`: the TUI spells most
+/// Declared rather than derived, like [`WEB_KNOB_ROUTES`]: the TUI spells most
 /// keys without underscores, and some carry an alias for both spellings. No
-/// transform covers that, and a knob whose key differs between the two front
-/// ends is worth stating once here.
-const TUI_SET_KEYS: &[(&str, &str)] = &[
-    ("context_strategy", "contextstrategy"),
-    ("precognition", "precognition"),
+/// transform covers that.
+///
+/// The sample value must be VALID for the key, because the gate demands
+/// `Ok(SetEffect::DaemonRpc(_))`. An earlier version accepted any error but
+/// `UnknownKey`, and a knob demoted to `SetEffect::TuiLocal` passed it. That
+/// regression is on record in `tui/oil/commands/set.rs`: `precognition` looked
+/// like its TUI-local neighbours, became one, and the toggle then changed only
+/// the `:set` readout.
+const TUI_SET_KEYS: &[(&str, &str, &str)] = &[
+    ("model", "model", "claude-opus-4"),
+    ("context_strategy", "contextstrategy", "truncate"),
+    ("precognition", "precognition", "true"),
 ];
 
-/// Knobs the TUI cannot set at all. REMOVE entries as keys land; never add.
+/// Ids the TUI cannot set at all. REMOVE entries as keys land; never add.
 ///
 /// `agent_option` is the live gap. `session.list_agent_options` and
 /// `session.set_agent_option` project the settings an external agent
-/// advertises for itself, and only the web reads them, so a TUI user talking
+/// advertises for itself, and only the web reads them, so a TUI user who talks
 /// to an ACP agent cannot see or change what that agent offers.
 const TUI_KEY_LEDGER: &[&str] = &["agent_option"];
 
-/// Exempt permanently, with a reason: `mode` has Shift-Tab and `:mode`, and
-/// switching it changes tool policy rather than a scalar setting.
+/// Exempt permanently, with a reason: `mode` has Shift-Tab and `:mode`, and a
+/// mode switch changes tool policy rather than a scalar setting.
 const TUI_KEY_EXEMPT: &[&str] = &["mode"];
 
 /// A knob the daemon advertises must be reachable from the TUI as well as the
 /// web.
 ///
 /// AGENTS.md asks "Where does a user meet it? TUI *and* web", and the web half
-/// already has a gate above. Without this half a knob can ship to one renderer
-/// and pass review — which is what happened to `agent_option`.
+/// is the gate above. Without this half a knob can ship to one renderer and
+/// pass review — which is what happened to `agent_option`.
 ///
 /// Derived, not grepped: it calls the real `:set` classifier, so a row cannot
-/// be satisfied by a string appearing somewhere in the file. Any error but
-/// `UnknownKey` proves the key is wired; the sample value is deliberately not
-/// valid for every key, because validity is the classifier's business.
+/// be satisfied by a string that appears somewhere in the file.
 #[test]
 fn every_rpc_session_knob_is_reachable_from_the_tui() {
-    use crucible_cli::tui::oil::commands::{classify_set_value, SetError};
+    use crucible_cli::tui::oil::commands::{classify_set_value, SetEffect, SetError};
 
-    let root = workspace_root();
-    let dispatch = read(&root.join("crates/crucible-daemon/src/rpc/dispatch.rs"));
-    let advertised = captures(r#""session\.set_([a-z0-9_]+)""#, &dispatch);
-    let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
-    let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
-
-    // See the web gate: a count assertion would fail every time a knob is
-    // deliberately removed. `precognition` staying is the real signal.
-    assert!(
-        advertised.contains("precognition"),
-        "the scan found no `session.set_precognition`, so the regex probably \
-         broke; it found: {advertised:?}"
-    );
-
-    let mapped: BTreeSet<String> = TUI_SET_KEYS.iter().map(|(k, _)| k.to_string()).collect();
+    let guarded = guarded_ids();
+    let mapped: BTreeSet<String> = TUI_SET_KEYS.iter().map(|(k, _, _)| k.to_string()).collect();
     let exempt: BTreeSet<String> = TUI_KEY_EXEMPT.iter().map(|s| s.to_string()).collect();
     let ledger: BTreeSet<String> = TUI_KEY_LEDGER.iter().map(|s| s.to_string()).collect();
     let mut failures = Vec::new();
 
-    // (1) Table completeness: every advertised knob is mapped, exempt or ledgered.
-    let covered: BTreeSet<String> = mapped
-        .union(&exempt)
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .union(&ledger)
-        .cloned()
-        .collect();
-    for knob in advertised.difference(&covered) {
-        failures.push(format!(
-            "session.set_{knob} has no TUI_SET_KEYS row — add the `:set` key, mark it \
-             TUI_KEY_EXEMPT with a reason, or (temporarily) add it to TUI_KEY_LEDGER"
-        ));
-    }
-    // (2) Table staleness: no row for a knob the daemon dropped.
-    for stale in mapped
-        .union(&ledger)
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .difference(&advertised)
-    {
-        failures.push(format!(
-            "TUI row `{stale}` is not in METHODS — remove the row or restore the knob"
-        ));
-    }
-    // (3) The keys are real: the running classifier knows each one.
-    for (knob, key) in TUI_SET_KEYS {
-        if matches!(
-            classify_set_value(key.to_string(), "1".to_string()),
-            Err(SetError::UnknownKey(_))
-        ) {
+    // (1) Table completeness: every guarded id is mapped, exempt or ledgered.
+    for id in guarded.keys() {
+        if !mapped.contains(id) && !exempt.contains(id) && !ledger.contains(id) {
             failures.push(format!(
-                "session.set_{knob}: `:set {key}=…` is an unknown key. Add an arm to \
-                 `classify_set_value` in tui/oil/commands/set.rs, or fix the row"
+                "`{id}` has no TUI_SET_KEYS row — add the `:set` key, mark it \
+                 TUI_KEY_EXEMPT with a reason, or (temporarily) add it to \
+                 TUI_KEY_LEDGER"
             ));
         }
     }
-    // (4) A ledgered knob really is unreachable, so the ledger only shrinks.
-    for knob in &ledger {
+    // (2) Table staleness: no row for an id the daemon dropped.
+    let declared: BTreeSet<String> = mapped
+        .union(&ledger)
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .union(&exempt)
+        .cloned()
+        .collect();
+    for stale in declared.iter().filter(|id| !guarded.contains_key(*id)) {
+        failures.push(format!(
+            "TUI row `{stale}` is no longer guarded — remove the row or restore \
+             the knob"
+        ));
+    }
+    // (3) The keys are real AND they still reach the daemon. `Ok(DaemonRpc)`,
+    // not "any error but UnknownKey": a key that validates and then writes a
+    // TUI-local value is the regression this gate is here to catch.
+    for (id, key, sample) in TUI_SET_KEYS {
+        match classify_set_value((*key).to_string(), (*sample).to_string()) {
+            Ok(SetEffect::DaemonRpc(_)) => {}
+            Err(SetError::UnknownKey(_)) => failures.push(format!(
+                "`{id}`: `:set {key}=…` is an unknown key. Add an arm to \
+                 `classify_set_value` in tui/oil/commands/set.rs, or fix the row"
+            )),
+            Ok(SetEffect::TuiLocal { .. }) => failures.push(format!(
+                "`{id}`: `:set {key}={sample}` writes a TUI-local value, so the \
+                 daemon never hears it. Return SetEffect::DaemonRpc from \
+                 `classify_set_value`"
+            )),
+            Err(other) => failures.push(format!(
+                "`{id}`: `:set {key}={sample}` was refused ({other:?}). The sample \
+                 value must be one the key accepts"
+            )),
+        }
+    }
+    // (4) A ledgered or exempt id really is unreachable, so both lists shrink.
+    for id in ledger.union(&exempt) {
         if !matches!(
-            classify_set_value(knob.clone(), "1".to_string()),
+            classify_set_value(id.clone(), "1".to_string()),
             Err(SetError::UnknownKey(_))
         ) {
             failures.push(format!(
-                "session.set_{knob}: `:set {knob}` now works — move it from \
-                 TUI_KEY_LEDGER into TUI_SET_KEYS"
+                "`{id}`: `:set {id}` now classifies — move it into TUI_SET_KEYS \
+                 with a valid sample value"
             ));
         }
     }
