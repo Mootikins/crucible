@@ -573,13 +573,14 @@ impl LuaScriptHandlerRegistry {
     /// keeps `discover` itself repeatable. A plugin found on any root loads
     /// in the same place, which is the name's place.
     ///
-    /// **This closure and its synchronous twin in
+    /// **This closure is the ONE place a scope is read.** Every fire path
+    /// comes through here, the synchronous
     /// [`execute_permission_hooks`](super::permission::execute_permission_hooks)
-    /// are the only two places a scope is read.** A dispatch site never
-    /// checks one: it says which session it is in and gets the handlers for
-    /// it. The pattern has worked this way since it was added, and the scope
-    /// sits beside it for the same reason — a per-site check is a per-site
-    /// chance to omit the check.
+    /// included — it calls this method and reads no scope of its own. A
+    /// dispatch site never checks one either: it says which session it is in
+    /// and gets the handlers for it. The pattern has worked this way since it
+    /// was added, and the scope sits beside it for the same reason — a
+    /// per-site check is a per-site chance to omit the check.
     pub fn for_hook(
         &self,
         name: HookName,

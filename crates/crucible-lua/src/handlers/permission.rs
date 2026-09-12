@@ -168,10 +168,9 @@ pub(crate) fn build_request_table(
 /// * `registry` - The shared registration store
 /// * `request` - The permission request to evaluate
 /// * `firing` - The session whose turn asked, so a session-scoped hook
-///   answers for its own session and for no other. This is the synchronous
-///   twin of the selection in
+///   answers for its own session and for no other. Passed straight to
 ///   [`LuaScriptHandlerRegistry::for_hook`](super::registry::LuaScriptHandlerRegistry::for_hook),
-///   and the only other place a scope is read.
+///   which is the one place a scope is read; this gate reads none itself.
 ///
 /// # Returns
 /// * `PermissionHookResult::Allow` - Hook returned `{allow=true}`

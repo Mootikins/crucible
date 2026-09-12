@@ -29,15 +29,21 @@ pub const SESSION_END_HOOK: HookName = HookName::Stage(StageId::SessionEnd);
 /// What a session lifecycle hook is called with: the session HANDLE, and
 /// nothing else.
 ///
-/// One argument, from the two fire sites — `LuaExecutor::call_lifecycle_hook`
-/// (`func.call_async::<()>(session.clone())`) and the synchronous
-/// `fire_session_start_hooks` (`func.call::<()>(lua_session.clone())`). A
+/// One argument, from the ONE call — `LuaExecutor::call_lifecycle_hook`
+/// (`func.call_async::<()>(session.clone())`), which both
+/// `fire_session_start_hooks` and `fire_session_end_hooks` go through. A
 /// two-parameter handler type would reject every correct hook a plugin has.
 ///
+/// There is no synchronous fire site. An earlier note here cited one in
+/// `fire_session_start_hooks` (`func.call::<()>(…)`); both fire paths are
+/// `async` and always were in this shape, for the reason
+/// `fire_session_end_hooks` records — a teardown hook releases resources
+/// through `cru.shell.exec`, which awaits.
+///
 /// The handle is userdata, which a declaration has no name for, so it is
-/// `any`. The return is `...any` rather than `()` because both fire sites
-/// DISCARD the result: a hook that ends in `return something` is correct, and
-/// a declared `-> ()` would make it a type error.
+/// `any`. The return is `...any` rather than `()` because the call DISCARDS
+/// the result: a hook that ends in `return something` is correct, and a
+/// declared `-> ()` would make it a type error.
 const SESSION_HOOK: &str = "(session: any) -> ...any";
 
 /// Register the lifecycle hooks on the given `cru` table
