@@ -126,7 +126,12 @@ pub struct DaemonPluginLoader {
     /// The daemon-backed session API `upgrade_with_sessions` registered with,
     /// so late-created Lua runtimes (`lua.init_session`) can register the
     /// same module against the same bridge instead of a second instance.
-    session_api: std::sync::Mutex<Option<Arc<dyn crucible_lua::DaemonSessionApi>>>,
+    ///
+    /// Boot installs it once and every later caller only reads it, which is
+    /// exactly [`crucible_lua::HostHook`]'s shape: the `Mutex<Option<_>>` it
+    /// replaces paid a lock per read and let a second upgrade rebind the
+    /// bridge in silence.
+    session_api: crucible_lua::HostHook<Arc<dyn crucible_lua::DaemonSessionApi>>,
     /// Service functions extracted from plugins during loading, drained by
     /// the spawn site via [`Self::take_service_fns`].
     service_fns: Vec<PluginServiceFn>,
@@ -374,7 +379,7 @@ impl DaemonPluginLoader {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
-            session_api: std::sync::Mutex::new(None),
+            session_api: crucible_lua::HostHook::new(),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
             modes,
@@ -827,7 +832,9 @@ impl DaemonPluginLoader {
             self.executor.current_session().clone(),
         )
         .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
-        *self.session_api.lock().expect("session_api: poisoned") = Some(api.clone());
+        if !self.session_api.install(Arc::clone(&api)) {
+            warn!("the daemon session API was already installed; keeping the first");
+        }
         register_ui_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("ui upgrade: {e}"))?;
         register_context_module(lua, api).map_err(|e| anyhow::anyhow!("context module: {e}"))?;
@@ -850,10 +857,7 @@ impl DaemonPluginLoader {
     /// for late-created runtimes that want the same module against the same
     /// bridge. `None` before the upgrade has run.
     pub fn session_api(&self) -> Option<Arc<dyn DaemonSessionApi>> {
-        self.session_api
-            .lock()
-            .expect("session_api: poisoned")
-            .clone()
+        self.session_api.get().map(Arc::clone)
     }
 
     /// Upgrade tools module with real daemon-backed implementations.
