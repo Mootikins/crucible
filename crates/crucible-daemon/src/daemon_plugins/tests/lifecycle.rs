@@ -188,7 +188,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
     for handler in &handlers {
         loader
             .plugin_handlers()
-            .execute_runtime_handler(&lua, &handler.name, &event, None)
+            .execute_runtime_handler(&lua, handler.id, &event, None)
             .await
             .expect("dispatch");
     }

@@ -84,14 +84,14 @@ async fn run_pre_tool_call_handlers(
             }),
         };
         match registry
-            .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
+            .execute_runtime_handler(lua, handler.id, &event, Some(&stream_ctx.session_id))
             .await
         {
             Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
                 debug!(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_name,
-                    handler = %handler.name,
+                    handler = handler.id,
                     reason = %reason,
                     "pre_tool_call handler cancelled"
                 );
@@ -108,7 +108,7 @@ async fn run_pre_tool_call_handlers(
                 debug!(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_name,
-                    handler = %handler.name,
+                    handler = handler.id,
                     "pre_tool_call handler provided result"
                 );
                 let result_string = match result {
@@ -133,7 +133,7 @@ async fn run_pre_tool_call_handlers(
                         debug!(
                             session_id = %stream_ctx.session_id,
                             tool = %tool_name,
-                            handler = %handler.name,
+                            handler = handler.id,
                             "pre_tool_call handler rewrote arguments"
                         );
                         *args = new_args.clone();
@@ -141,7 +141,7 @@ async fn run_pre_tool_call_handlers(
                         warn!(
                             session_id = %stream_ctx.session_id,
                             tool = %tool_name,
-                            handler = %handler.name,
+                            handler = handler.id,
                             "pre_tool_call Transform `args` is not an object; ignoring"
                         );
                     }
@@ -165,8 +165,8 @@ async fn run_pre_tool_call_handlers(
                 warn!(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_name,
-                    handler = %handler.name,
-                    plugin = ?handler.plugin,
+                    handler = handler.id,
+                    owner = %handler.owner,
                     "pre_tool_call handler tried to take over a tool call without \
                      the `intercept_tools` capability; ignoring and dispatching normally"
                 );
@@ -177,7 +177,7 @@ async fn run_pre_tool_call_handlers(
                 warn!(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_name,
-                    handler = %handler.name,
+                    handler = handler.id,
                     error = %error,
                     "pre_tool_call handler error, denying tool (fail-closed)"
                 );

@@ -1,22 +1,30 @@
-//! Hook registration system for Crucible Lua API
+//! Session lifecycle hook registration for the Crucible Lua API.
 //!
-//! Provides `cru.on_session_start(fn)` and `cru.on_session_end(fn)`
-//! for registering lifecycle hooks. (`cru.on_tools_registered` existed
-//! here for months without a single fire site anywhere in the daemon —
-//! registered, synced, stored, never called. Deleted rather than documented.)
+//! Provides `cru.on_session_start(fn)` and `cru.on_session_end(fn)`.
+//! (`cru.on_tools_registered` existed here for months without a single fire
+//! site anywhere in the daemon — registered, synced, stored, never called.
+//! Deleted rather than documented.)
 //!
-//! Tool execution hooks use the RuntimeHandler system via `cru.on("tool:before_execute", fn)`.
-//! See `handlers.rs` for details.
+//! Both register into the one shared store, under `session:start` and
+//! `session:end`. Six Lua tables under `__crucible_hooks__` held them before:
+//! the hook list, a parallel `required` list and a parallel owner list, twice
+//! over, each rebuilt in lockstep by a clear path that had to keep three
+//! indices aligned. The store keys by owner instead, so `clear_owner` removes
+//! a plugin's hooks with no index arithmetic at all.
 //!
-//! Hooks are owner-tagged: registration reads the VM's plugin context (set by
-//! the daemon plugin loader around each plugin's execution) so that
-//! [`clear_plugin_hooks`] can remove exactly one plugin's hooks on its reload,
-//! leaving unowned registrations — the user's `init.lua` — untouched.
-//! A VM that never sets a plugin context leaves the hook unowned,
-//! so all their hooks are unowned by construction; `clear_plugin_hooks` is
-//! never called there and no change is needed.
+//! The APIs stay separate from `cru.on` because their ARGUMENT differs: a
+//! session hook is called with the session handle alone, and a `cru.on`
+//! handler with `(ctx, event)`. A store is not a dispatcher.
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
+
+use crate::handlers::{HookName, StageId};
+use crate::handlers::{Registration, RegistrationSpec};
+
+/// The name a session start hook registers under.
+pub const SESSION_START_HOOK: HookName = HookName::Stage(StageId::SessionStart);
+/// The name a session end hook registers under.
+pub const SESSION_END_HOOK: HookName = HookName::Stage(StageId::SessionEnd);
 
 /// What a session lifecycle hook is called with: the session HANDLE, and
 /// nothing else.
@@ -34,9 +42,9 @@ const SESSION_HOOK: &str = "(session: any) -> ...any";
 
 /// Register the lifecycle hooks on the given `cru` table
 ///
-/// This function is called during executor initialization to set up hook registration.
-/// Hooks are stored in a Lua table that the executor can access via `get_session_start_hooks()`
-/// and `get_session_end_hooks()`.
+/// This function is called during executor initialization to set up hook
+/// registration. Hooks land in the VM's shared registration store, which
+/// [`session_start_hooks`] and [`session_end_hooks`] read back.
 ///
 /// # Example
 ///
@@ -62,36 +70,9 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
             let required = opts
                 .and_then(|o| o.get::<Option<bool>>("required").ok().flatten())
                 .unwrap_or(false);
-            let owner = plugin_owner(lua);
-            let key = lua.create_registry_value(func)?;
-
-            let globals = lua.globals();
-            let hooks_table: Table = globals
-                .get("__crucible_hooks__")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            let session_start_hooks: Table = hooks_table
-                .get("on_session_start")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-            // Parallel to the hook list by index; kept separate because the hook
-            // slot holds a registry key, not a table we can hang a flag off.
-            let required_flags: Table = hooks_table
-                .get("on_session_start_required")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-            let owners: Table = hooks_table
-                .get("on_session_start_owners")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            let len = session_start_hooks.raw_len();
-            session_start_hooks.raw_set(len + 1, key)?;
-            required_flags.raw_set(len + 1, required)?;
-            owners.raw_set(len + 1, owner)?;
-
-            hooks_table.set("on_session_start", session_start_hooks)?;
-            hooks_table.set("on_session_start_required", required_flags)?;
-            hooks_table.set("on_session_start_owners", owners)?;
-            globals.set("__crucible_hooks__", hooks_table)?;
-
+            let mut spec = RegistrationSpec::new(SESSION_START_HOOK);
+            spec.required = required;
+            crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())
         },
     )
@@ -103,244 +84,36 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         "on_session_end",
         &format!("(handler: {SESSION_HOOK}) -> ()"),
         |lua, func: Function| {
-            let owner = plugin_owner(lua);
-            let key = lua.create_registry_value(func)?;
-
-            let globals = lua.globals();
-            let hooks_table: Table = globals
-                .get("__crucible_hooks__")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            let session_end_hooks: Table = hooks_table
-                .get("on_session_end")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-            let owners: Table = hooks_table
-                .get("on_session_end_owners")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            let len = session_end_hooks.raw_len();
-            session_end_hooks.raw_set(len + 1, key)?;
-            owners.raw_set(len + 1, owner)?;
-
-            hooks_table.set("on_session_end", session_end_hooks)?;
-            hooks_table.set("on_session_end_owners", owners)?;
-            globals.set("__crucible_hooks__", hooks_table)?;
-
+            crate::handlers::registry_of(lua)?.register(
+                lua,
+                RegistrationSpec::new(SESSION_END_HOOK),
+                func,
+            )?;
             Ok(())
         },
     )
     .map_err(|e| mlua::Error::external(e.to_string()))?;
 
-    // Tool execution hooks use the RuntimeHandler system via cru.on("tool:before_execute", fn).
-    // See handlers.rs for execute_tool_before_execute_hooks().
+    // Tool execution hooks use the shared store via cru.on("tool:before_execute", fn).
+    // See handlers/mod.rs.
 
     Ok(())
 }
 
-/// The plugin currently being loaded, or `false` when none is (user init.lua,
-/// unowned hooks). `false` rather than nil because the owner slots live in Lua
-/// array tables, and a nil mid-sequence truncates `raw_len`.
-///
-/// The name comes from the VM's plugin context — Rust-side app data — so a
-/// plugin cannot register a hook under another plugin's name.
-fn plugin_owner(lua: &Lua) -> mlua::Value {
-    match crate::plugin_context::current_plugin_name(lua) {
-        Some(name) => lua
-            .create_string(&name)
-            .map(mlua::Value::String)
-            .unwrap_or(mlua::Value::Boolean(false)),
-        None => mlua::Value::Boolean(false),
-    }
+/// Every `session:start` hook on this VM, priority first.
+pub fn session_start_hooks(lua: &Lua) -> LuaResult<Vec<Registration>> {
+    Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_START_HOOK, None))
 }
 
-/// Remove every session hook registered by `plugin`; other plugins' hooks and
-/// unowned (user-registered) hooks survive.
-///
-/// Each hook list is rebuilt together with ALL of its parallel tables in one
-/// pass so the indices stay aligned. The tables hold the hook functions
-/// themselves (`raw_set` converts the registration's `RegistryKey` through
-/// `IntoLua`; the getters mint fresh keys per read), so dropping an entry here
-/// drops the only reference — no registry-expiry choreography is involved.
-pub fn clear_plugin_hooks(lua: &Lua, plugin: &str) -> LuaResult<()> {
-    let globals = lua.globals();
-    let Ok(hooks_table) = globals.get::<Table>("__crucible_hooks__") else {
-        return Ok(());
-    };
-
-    // Start hooks carry a parallel `required` table; end hooks take no opts,
-    // so their pair is hooks + owners only.
-    retain_other_owners(
-        lua,
-        &hooks_table,
-        plugin,
-        "on_session_start",
-        "on_session_start_owners",
-        &["on_session_start_required"],
-    )?;
-    retain_other_owners(
-        lua,
-        &hooks_table,
-        plugin,
-        "on_session_end",
-        "on_session_end_owners",
-        &[],
-    )?;
-    // Auth hooks live in the same `__crucible_hooks__` container but carry a
-    // name→function side table, so their clearing is owned by their module.
-    crate::auth_plugin::clear_plugin_auth_hooks(lua, plugin)?;
-    Ok(())
-}
-
-/// Rebuild `list_name` (plus its owner table and any extra parallel tables)
-/// keeping only entries whose owner is not `plugin`.
-fn retain_other_owners(
-    lua: &Lua,
-    hooks_table: &Table,
-    plugin: &str,
-    list_name: &str,
-    owners_name: &str,
-    extra_names: &[&str],
-) -> LuaResult<()> {
-    let Ok(hooks) = hooks_table.get::<Table>(list_name) else {
-        return Ok(());
-    };
-    let Ok(owners) = hooks_table.get::<Table>(owners_name) else {
-        // No owner table means nothing was ever attributed — all unowned.
-        return Ok(());
-    };
-    let extras: Vec<Table> = extra_names
-        .iter()
-        .filter_map(|name| hooks_table.get::<Table>(*name).ok())
-        .collect();
-
-    let new_hooks = lua.create_table()?;
-    let new_owners = lua.create_table()?;
-    let new_extras: Vec<Table> = extras
-        .iter()
-        .map(|_| lua.create_table())
-        .collect::<LuaResult<_>>()?;
-
-    let mut kept = 0;
-    for i in 1..=hooks.raw_len() {
-        let owner: mlua::Value = owners.raw_get(i)?;
-        let owned_by_plugin = match &owner {
-            mlua::Value::String(s) => s.to_str().is_ok_and(|s| &*s == plugin),
-            _ => false,
-        };
-        if owned_by_plugin {
-            continue;
-        }
-        kept += 1;
-        new_hooks.raw_set(kept, hooks.raw_get::<mlua::Value>(i)?)?;
-        new_owners.raw_set(kept, owner)?;
-        for (old, new) in extras.iter().zip(&new_extras) {
-            new.raw_set(kept, old.raw_get::<mlua::Value>(i)?)?;
-        }
-    }
-
-    hooks_table.set(list_name, new_hooks)?;
-    hooks_table.set(owners_name, new_owners)?;
-    for (name, new) in extra_names.iter().zip(new_extras) {
-        hooks_table.set(*name, new)?;
-    }
-    Ok(())
-}
-
-pub fn get_session_start_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
-    get_hooks_by_name(lua, "on_session_start")
-}
-
-/// Which start hooks opted into refusing the session on failure, by index.
-///
-/// Parallel to [`get_session_start_hooks`]; a missing entry means `false`, so
-/// a hook registered before this flag existed stays non-fatal.
-pub fn get_session_start_required_flags(lua: &Lua) -> LuaResult<Vec<bool>> {
-    let globals = lua.globals();
-    let Ok(hooks_table) = globals.get::<Table>("__crucible_hooks__") else {
-        return Ok(Vec::new());
-    };
-    let Ok(flags) = hooks_table.get::<Table>("on_session_start_required") else {
-        return Ok(Vec::new());
-    };
-    let len = flags.raw_len();
-    let mut out = Vec::with_capacity(len);
-    for i in 1..=len {
-        out.push(flags.raw_get::<Option<bool>>(i)?.unwrap_or(false));
-    }
-    Ok(out)
-}
-
-/// Which plugin registered each START hook, by index; `None` for a hook the
-/// user's own `init.lua` registered.
-///
-/// The owner table has been written since hooks were owner-tagged; only the
-/// end path read it. Without this the start path ran every hook with NO plugin
-/// context: `cru.storage` had no namespace to key on, `cru.plugin.publish`
-/// had nobody to attribute to, and the absent context read as the operator's
-/// own authority to intercept.
-pub fn get_session_start_owners(lua: &Lua) -> LuaResult<Vec<Option<String>>> {
-    owners_by_name(lua, "on_session_start_owners")
-}
-
-pub fn get_session_end_hooks(lua: &Lua) -> LuaResult<Vec<mlua::RegistryKey>> {
-    get_hooks_by_name(lua, "on_session_end")
-}
-
-/// Which plugin registered each end hook, by index; `None` for a hook the
-/// user's own `init.lua` registered.
-///
-/// Parallel to [`get_session_end_hooks`]. The fire path enters this plugin's
-/// context around the call, so `cru.storage` resolves the namespace the
-/// plugin wrote to during the session.
-pub fn get_session_end_owners(lua: &Lua) -> LuaResult<Vec<Option<String>>> {
-    owners_by_name(lua, "on_session_end_owners")
-}
-
-/// One owner table, read into a list parallel to its hook list.
-fn owners_by_name(lua: &Lua, table_name: &str) -> LuaResult<Vec<Option<String>>> {
-    let globals = lua.globals();
-    let Ok(hooks_table) = globals.get::<Table>("__crucible_hooks__") else {
-        return Ok(Vec::new());
-    };
-    let Ok(owners) = hooks_table.get::<Table>(table_name) else {
-        return Ok(Vec::new());
-    };
-    let len = owners.raw_len();
-    let mut out = Vec::with_capacity(len);
-    for i in 1..=len {
-        out.push(match owners.raw_get::<mlua::Value>(i)? {
-            mlua::Value::String(s) => Some(s.to_str()?.to_string()),
-            _ => None,
-        });
-    }
-    Ok(out)
-}
-
-fn get_hooks_by_name(lua: &Lua, name: &str) -> LuaResult<Vec<mlua::RegistryKey>> {
-    let globals = lua.globals();
-    let hooks_table: Table = match globals.get("__crucible_hooks__") {
-        Ok(t) => t,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let hook_list: Table = match hooks_table.get(name) {
-        Ok(t) => t,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let mut keys = Vec::new();
-    for i in 1..=hook_list.raw_len() {
-        if let Ok(key) = hook_list.raw_get::<mlua::RegistryKey>(i) {
-            keys.push(key);
-        }
-    }
-
-    Ok(keys)
+/// Every `session:end` hook on this VM, priority first.
+pub fn session_end_hooks(lua: &Lua) -> LuaResult<Vec<Registration>> {
+    Ok(crate::handlers::registry_of(lua)?.for_hook(SESSION_END_HOOK, None))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin_context::Owner;
     use crate::test_support::TestLuaBuilder;
 
     #[test]
@@ -361,9 +134,7 @@ mod tests {
             .exec()
             .unwrap();
 
-        let hooks_table: Table = lua.globals().get("__crucible_hooks__").unwrap();
-        let session_start_hooks: Table = hooks_table.get("on_session_start").unwrap();
-        assert_eq!(session_start_hooks.raw_len(), 1);
+        assert_eq!(session_start_hooks(&lua).unwrap().len(), 1);
     }
 
     #[test]
@@ -380,9 +151,7 @@ mod tests {
         .exec()
         .unwrap();
 
-        let hooks_table: Table = lua.globals().get("__crucible_hooks__").unwrap();
-        let session_start_hooks: Table = hooks_table.get("on_session_start").unwrap();
-        assert_eq!(session_start_hooks.raw_len(), 3);
+        assert_eq!(session_start_hooks(&lua).unwrap().len(), 3);
     }
 
     #[test]
@@ -398,8 +167,8 @@ mod tests {
         .exec()
         .unwrap();
 
-        assert_eq!(get_session_start_hooks(&lua).unwrap().len(), 1);
-        assert_eq!(get_session_end_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(session_start_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(session_end_hooks(&lua).unwrap().len(), 1);
     }
 
     #[test]
@@ -410,8 +179,7 @@ mod tests {
             .exec()
             .unwrap();
 
-        let hooks = get_session_end_hooks(&lua).unwrap();
-        assert_eq!(hooks.len(), 1);
+        assert_eq!(session_end_hooks(&lua).unwrap().len(), 1);
     }
 
     #[test]
@@ -428,17 +196,17 @@ mod tests {
         .exec()
         .unwrap();
 
-        let hooks = get_session_end_hooks(&lua).unwrap();
-        assert_eq!(hooks.len(), 3);
+        assert_eq!(session_end_hooks(&lua).unwrap().len(), 3);
     }
 
-    /// Reloading a plugin re-runs its init.lua, so without owner-tagged
+    /// Reloading a plugin re-runs its init.lua, so without owner-keyed
     /// clearing its session hooks accumulate one copy per reload. oci's
     /// on_session_start owns a container isolation boundary and is
     /// `required = true` — running it twice is not cosmetic.
     #[test]
-    fn clearing_a_plugins_hooks_removes_only_that_plugins_and_keeps_flags_aligned() {
+    fn clearing_an_owner_removes_only_that_owners_hooks_and_keeps_the_flags() {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
+        let registry = crate::handlers::registry_of(&lua).unwrap();
 
         crate::plugin_context::enter_plugin(&lua, "alpha", false);
         lua.load(r#"cru.on_session_start(function(s) end, { required = true })"#)
@@ -453,28 +221,32 @@ mod tests {
         )
         .exec()
         .unwrap();
-        crate::plugin_context::set_plugin_context(&lua, None);
-        // Unowned hook — user init.lua shape. Must survive every clear.
+        crate::plugin_context::set_owner(&lua, Owner::UserLua);
+        // The user's own init.lua. A plugin's clear must never touch it.
         lua.load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
             .unwrap();
 
-        clear_plugin_hooks(&lua, "alpha").unwrap();
-        assert_eq!(
-            get_session_start_hooks(&lua).unwrap().len(),
-            1,
-            "beta's start hook survives"
+        assert!(
+            session_start_hooks(&lua).unwrap()[0].required,
+            "alpha registered a required hook"
         );
-        // Flags rebuilt in lockstep — the survivor is beta's non-required hook:
-        assert_eq!(get_session_start_required_flags(&lua).unwrap(), vec![false]);
-        assert_eq!(get_session_end_hooks(&lua).unwrap().len(), 2);
 
-        clear_plugin_hooks(&lua, "beta").unwrap();
-        assert_eq!(get_session_start_hooks(&lua).unwrap().len(), 0);
+        registry.clear_owner(&Owner::Plugin("alpha".into()));
+        let start = session_start_hooks(&lua).unwrap();
+        assert_eq!(start.len(), 1, "beta's start hook survives");
+        assert!(
+            !start[0].required,
+            "the survivor is beta's non-required hook"
+        );
+        assert_eq!(session_end_hooks(&lua).unwrap().len(), 2);
+
+        registry.clear_owner(&Owner::Plugin("beta".into()));
+        assert_eq!(session_start_hooks(&lua).unwrap().len(), 0);
         assert_eq!(
-            get_session_end_hooks(&lua).unwrap().len(),
+            session_end_hooks(&lua).unwrap().len(),
             1,
-            "the unowned hook is never cleared"
+            "the user's own hook is never cleared by a plugin"
         );
     }
 
@@ -492,7 +264,7 @@ mod tests {
         .exec()
         .unwrap();
 
-        assert_eq!(get_session_start_hooks(&lua).unwrap().len(), 1);
-        assert_eq!(get_session_end_hooks(&lua).unwrap().len(), 2);
+        assert_eq!(session_start_hooks(&lua).unwrap().len(), 1);
+        assert_eq!(session_end_hooks(&lua).unwrap().len(), 2);
     }
 }

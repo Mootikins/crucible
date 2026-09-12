@@ -23,12 +23,7 @@ fn vm(registry: &LuaScriptHandlerRegistry) -> Lua {
     let lua = Lua::new();
     crate::handler_budget::install_deadline_hook(&lua).expect("install the hook");
     crate::timer::register_timer_module(&lua).expect("cru.timer");
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .expect("cru.on");
+    register_cru_on_api(&lua, registry.clone()).expect("cru.on");
     lua
 }
 
@@ -54,7 +49,7 @@ async fn a_sleeping_handler_is_cancelled_at_its_budget() {
 
     let started = Instant::now();
     let outcome = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event(), None)
+        .execute_runtime_handler(&lua, 0, &event(), None)
         .await;
 
     let error = outcome.expect_err("a handler over its budget must not return a result");
@@ -90,7 +85,7 @@ async fn a_spinning_handler_is_stopped_at_its_budget() {
 
     let started = Instant::now();
     let outcome = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event(), None)
+        .execute_runtime_handler(&lua, 0, &event(), None)
         .await;
 
     let error = outcome.expect_err("a spinning handler must not return a result");
@@ -124,10 +119,10 @@ async fn the_overrun_error_names_the_plugin() {
     )
     .exec()
     .expect("register the handler");
-    crate::plugin_context::set_plugin_context(&lua, previous);
+    crate::plugin_context::set_owner(&lua, previous);
 
     let error = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event(), None)
+        .execute_runtime_handler(&lua, 0, &event(), None)
         .await
         .expect_err("a spinning handler must not return a result");
     assert!(
@@ -155,7 +150,7 @@ async fn a_handler_inside_its_budget_returns_normally() {
 
     for _ in 0..2 {
         let outcome = registry
-            .execute_runtime_handler(&lua, "runtime_handler_0", &event(), None)
+            .execute_runtime_handler(&lua, 0, &event(), None)
             .await
             .expect("a handler inside its budget must return its result");
         assert!(
@@ -168,14 +163,47 @@ async fn a_handler_inside_its_budget_returns_normally() {
 /// The declared budget wins over the name's default, in both directions.
 #[test]
 fn a_registration_can_name_its_own_budget() {
-    use crate::handlers::hook_name::budget_for;
+    use crate::handlers::{RegistrationSpec, StageId};
+
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    let func = lua.create_function(|_, ()| Ok(())).unwrap();
+    let mut spec = RegistrationSpec::new(StageId::PreToolCall.into());
+    let default_id = registry.register(&lua, spec.clone(), func.clone()).unwrap();
+    spec.timeout_ms = Some(250);
+    let named_id = registry.register(&lua, spec, func).unwrap();
 
     assert_eq!(
-        budget_for("pre_tool_call", None),
+        registry.by_id(default_id).unwrap().budget(),
         crate::handler_budget::TURN_STAGE_BUDGET
     );
     assert_eq!(
-        budget_for("pre_tool_call", Some(250)),
+        registry.by_id(named_id).unwrap().budget(),
         Duration::from_millis(250)
+    );
+}
+
+/// The four merged names carry the budget their own fire path arms, not the
+/// turn-stage default. A wrong answer here would cut `oci`'s container pull
+/// off at 30 s, or let a permission hook hold the user's prompt for 30.
+#[test]
+fn a_merged_name_carries_its_own_budget() {
+    use crate::handlers::{HookName, StageId};
+
+    assert_eq!(
+        HookName::from(StageId::PermissionRequest).budget(),
+        crate::handler_budget::PERMISSION_BUDGET
+    );
+    assert_eq!(
+        HookName::from(StageId::SessionStart).budget(),
+        crate::handler_budget::LIFECYCLE_BUDGET
+    );
+    assert_eq!(
+        HookName::from(StageId::SessionEnd).budget(),
+        crate::handler_budget::LIFECYCLE_BUDGET
+    );
+    assert_eq!(
+        HookName::from(StageId::ProviderAuth).budget(),
+        crate::handler_budget::TURN_STAGE_BUDGET
     );
 }

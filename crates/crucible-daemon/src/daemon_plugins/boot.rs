@@ -574,9 +574,14 @@ fn load_settings_layer(config_root: &Path) {
 fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf]) {
     let (src, origin) = crate::runtime_defaults::load_defaults(runtimepath);
     debug!(source = %origin, "Loading Lua defaults");
+    // This file ships with the daemon, so its registrations are the host's
+    // own. Naming the owner is what lets a later clear tell a shipped mode
+    // hook from a plugin's.
+    let previous = crucible_lua::set_owner(lua, crucible_lua::Owner::Builtin);
     if let Err(e) = lua.load(&src).set_name(origin.to_string()).exec() {
         warn!(source = %origin, error = %e, "Failed to load Lua defaults (fail-open)");
     }
+    crucible_lua::set_owner(lua, previous);
 }
 
 /// Evaluate one init.lua in the boot VM: guards on, budget armed. `Err`
@@ -604,6 +609,10 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), InitFailu
         }
     };
 
+    // The user's own file, named as such. It is also what an unbracketed VM
+    // answers, so this bracket buys one thing: an owner a previous load left
+    // behind cannot claim the user's registrations.
+    let previous = crucible_lua::set_owner(lua, crucible_lua::Owner::UserLua);
     let outcome = {
         let _budget = crucible_lua::enter_handler_budget(
             lua,
@@ -619,6 +628,7 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), InitFailu
         )
         .await
     };
+    crucible_lua::set_owner(lua, previous);
 
     if let Err(e) = restore_boot_guards(lua, guards) {
         warn!("boot guards failed to restore: {e}");
@@ -882,7 +892,7 @@ fn boot_load_plugin_module(
         .load(&source)
         .set_name(format!("@{}", file.display()))
         .call(());
-    crucible_lua::set_plugin_context(lua, previous);
+    crucible_lua::set_owner(lua, previous);
     let value = result?;
 
     BootRequireState::record_module(lua, module_name, file.to_path_buf());
@@ -1102,13 +1112,7 @@ error("boom")
         // the VM. The shipped defaults file is re-run onto the fresh VM, so
         // its handlers are the ones that remain.
         let handlers = boot.loader.plugin_handlers();
-        let names: Vec<String> = handlers
-            .runtime_handlers()
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|h| h.event_type.clone())
-            .collect();
+        let names: Vec<String> = handlers.all().iter().map(|h| h.name.to_string()).collect();
         assert!(
             !names.contains(&"turn:complete".to_string()),
             "a hook registered before the error must not survive the rollback: {names:?}"

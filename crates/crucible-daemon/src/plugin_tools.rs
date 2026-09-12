@@ -300,11 +300,11 @@ impl PluginRegistry {
         // not a tool-call hook and has no interception to do. The grants come
         // from what the loader recorded for this plugin, which is the same
         // manifest the loader read.
-        let restore = crucible_lua::enter_recorded_plugin_without_intercept(&lua, &plugin);
+        let restore = crucible_lua::enter_recorded_plugin(&lua, &plugin);
         let result = call_plugin_fn(&lua, &func, args).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
-        crucible_lua::set_plugin_context(&lua, restore);
+        crucible_lua::set_owner(&lua, restore);
         result
             .map(Some)
             .map_err(|e| anyhow::anyhow!("plugin command '{name}': {e}"))
@@ -357,11 +357,11 @@ impl ToolExecutor for PluginToolExecutor {
         // plugin tool reached `cru.storage`'s wrong namespace — and, once the
         // grants are enforced, would have held the operator's own authority
         // rather than its plugin's.
-        let restore = crucible_lua::enter_recorded_plugin_without_intercept(&lua, &plugin);
+        let restore = crucible_lua::enter_recorded_plugin(&lua, &plugin);
         let result = call_plugin_fn(&lua, &func, params).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
-        crucible_lua::set_plugin_context(&lua, restore);
+        crucible_lua::set_owner(&lua, restore);
         result.map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 

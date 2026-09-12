@@ -194,7 +194,7 @@ async fn a_plugin_tool_runs_under_its_own_plugins_context() {
         "the tool body must run under the PLUGIN that declared it, not under the tool"
     );
     assert!(
-        crucible_lua::current_plugin_context(&lua).is_none(),
+        crucible_lua::current_owner(&lua) == crucible_lua::Owner::UserLua,
         "the executor must restore the previous (absent) context"
     );
 }

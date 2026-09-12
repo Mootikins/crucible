@@ -5,9 +5,8 @@
 //!
 //! **It was a union of two contracts.** Ten of the names are *events* — the
 //! daemon broadcasts them, fan-out, nobody replies, the thing already happened.
-//! Thirteen are *stages* — synchronous interception points on the turn loop,
-//! run in priority order, where a handler's return value changes what happens
-//! next.
+//! Seventeen are *stages* — synchronous interception points, run in priority
+//! order, where a handler's return value changes what happens next.
 //! [`ScriptHandlerResult`](crate::ScriptHandlerResult) carries the same four
 //! variants for both, so `Cancel` meant "stop the remaining handlers" on one
 //! side and "block the operation" on the other, decided only by which name the
@@ -34,7 +33,7 @@
 
 use std::time::Duration;
 
-use crate::handler_budget::TURN_STAGE_BUDGET;
+use crate::handler_budget::{LIFECYCLE_BUDGET, PERMISSION_BUDGET, TURN_STAGE_BUDGET};
 
 /// A daemon broadcast event a Lua handler can observe.
 ///
@@ -144,14 +143,21 @@ impl EventName {
     }
 }
 
-/// A synchronous interception point on the turn loop.
+/// A synchronous interception point in a host flow.
 ///
-/// **A chain, not a broadcast.** Handlers run in priority order and the loop
+/// **A chain, not a broadcast.** Handlers run in priority order and the caller
 /// waits for each; the return value decides what happens next. `Cancel` blocks
 /// the operation, `Transform` rewrites the value the next link sees, and
 /// `Handled` replaces execution outright — which is why `Handled` and
 /// `Transform` are capability-grade on [`Self::PreToolCall`] and gated by
 /// the `intercepts_tools` declaration.
+///
+/// Most of these sit on the turn loop. Four do not — [`Self::PermissionRequest`],
+/// [`Self::SessionStart`], [`Self::SessionEnd`] and [`Self::ProviderAuth`] —
+/// and they are stages all the same, because a stage is defined by its
+/// contract and not by its caller: each one runs synchronously, in priority
+/// order, and each one's answer changes what the host does next. Each of the
+/// four had its own registry and its own clear path before they merged here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum StageId {
@@ -181,6 +187,23 @@ pub enum StageId {
     SearchRerank,
     /// Over a note's block rows, before the pipeline writes them.
     IndexBlocks,
+    /// Before the permission prompt for one tool call. `cru.permissions.on_request`
+    /// registers here; the first hook that answers `allow` or `deny` wins.
+    PermissionRequest,
+    /// A session started. `cru.on_session_start` registers here.
+    ///
+    /// Distinct from [`EventName::SessionCreated`], which is the daemon-wide
+    /// broadcast: this one runs BEFORE the session is handed back, and a hook
+    /// registered `{ required = true }` can refuse the session.
+    SessionStart,
+    /// A session ended. `cru.on_session_end` registers here.
+    ///
+    /// Distinct from [`EventName::SessionEnded`], for the reason
+    /// [`Self::SessionStart`] gives.
+    SessionEnd,
+    /// The daemon is about to call a provider. `cru.on_provider_auth`
+    /// registers here; the first hook that answers headers wins.
+    ProviderAuth,
 }
 
 impl StageId {
@@ -199,6 +222,10 @@ impl StageId {
         Self::ToolDisplayComplete,
         Self::SearchRerank,
         Self::IndexBlocks,
+        Self::PermissionRequest,
+        Self::SessionStart,
+        Self::SessionEnd,
+        Self::ProviderAuth,
     ];
 
     /// The name a plugin registers.
@@ -220,6 +247,10 @@ impl StageId {
             Self::ToolDisplayComplete => "tool:display_complete",
             Self::SearchRerank => "search:rerank",
             Self::IndexBlocks => "index:blocks",
+            Self::PermissionRequest => "permission:request",
+            Self::SessionStart => "session:start",
+            Self::SessionEnd => "session:end",
+            Self::ProviderAuth => "provider:auth",
         }
     }
 
@@ -246,7 +277,14 @@ impl StageId {
             | Self::ToolDisplayStart
             | Self::ToolDisplayComplete
             | Self::SearchRerank
-            | Self::IndexBlocks => TURN_STAGE_BUDGET,
+            | Self::IndexBlocks
+            | Self::ProviderAuth => TURN_STAGE_BUDGET,
+            // A permission answer blocks the turn and the user, so it gets the
+            // short budget the gate already armed for it.
+            Self::PermissionRequest => PERMISSION_BUDGET,
+            // `oci` pulls a container image in `session:start`, so a
+            // turn-stage budget would break a shipped plugin.
+            Self::SessionStart | Self::SessionEnd => LIFECYCLE_BUDGET,
         }
     }
 
@@ -309,6 +347,54 @@ impl HookName {
             .map(Self::Event)
             .chain(StageId::ALL.iter().copied().map(Self::Stage))
     }
+
+    /// The API that registers this name, when `cru.on` is not it.
+    ///
+    /// The four merged names share one STORE with `cru.on`, and nothing else.
+    /// Each carries a payload that is not `cru.on`'s `(ctx, event)` pair — a
+    /// session handle, a permission request, a provider context — so a
+    /// handler written for `cru.on` would read the wrong argument and fail at
+    /// fire time rather than at registration. `cru.on` therefore refuses them
+    /// and names the API whose argument shape matches.
+    ///
+    /// **No wildcard arm, ever.** A new name must say which API registers it.
+    #[must_use]
+    pub const fn own_api(self) -> Option<&'static str> {
+        match self {
+            Self::Event(_) => None,
+            Self::Stage(stage) => match stage {
+                StageId::PreToolCall
+                | StageId::ToolResult
+                | StageId::PreLlmCall
+                | StageId::PostLlmCall
+                | StageId::TransformContext
+                | StageId::PrecognitionSelect
+                | StageId::PrecognitionFormat
+                | StageId::TurnComplete
+                | StageId::ToolBeforeExecute
+                | StageId::ToolDisplayStart
+                | StageId::ToolDisplayComplete
+                | StageId::SearchRerank
+                | StageId::IndexBlocks => None,
+                StageId::PermissionRequest => Some("cru.permissions.on_request"),
+                StageId::SessionStart => Some("cru.on_session_start"),
+                StageId::SessionEnd => Some("cru.on_session_end"),
+                StageId::ProviderAuth => Some("cru.on_provider_auth"),
+            },
+        }
+    }
+}
+
+impl From<EventName> for HookName {
+    fn from(event: EventName) -> Self {
+        Self::Event(event)
+    }
+}
+
+impl From<StageId> for HookName {
+    fn from(stage: StageId) -> Self {
+        Self::Stage(stage)
+    }
 }
 
 impl std::fmt::Display for EventName {
@@ -329,23 +415,15 @@ impl std::fmt::Display for HookName {
     }
 }
 
-/// How long a handler registered for `name` may run, honouring the `timeout_ms`
-/// the registration asked for.
-///
-/// An unparseable name cannot register (`cru.on` refuses it), so the fallback
-/// only covers a dispatch site that invents a name; it takes the stage budget
-/// rather than no budget at all.
-#[must_use]
-pub fn budget_for(name: &str, timeout_ms: Option<u64>) -> Duration {
-    match timeout_ms {
-        Some(ms) => Duration::from_millis(ms),
-        None => HookName::parse(name).map_or(TURN_STAGE_BUDGET, HookName::budget),
-    }
-}
-
 /// Every name `crucible.on()` accepts, for error messages and documentation.
+///
+/// The four names with their own registration API are NOT here: `cru.on`
+/// refuses them, so listing them would advertise a registration that fails.
+/// See [`HookName::own_api`].
 pub fn hook_names() -> impl Iterator<Item = &'static str> {
-    HookName::all().map(HookName::as_str)
+    HookName::all()
+        .filter(|hook| hook.own_api().is_none())
+        .map(HookName::as_str)
 }
 
 #[cfg(test)]

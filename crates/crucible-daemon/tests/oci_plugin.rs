@@ -127,7 +127,7 @@ async fn pre_tool_call(
          dispatch it straight to the host executor"
     );
     registry
-        .execute_runtime_handler(&lua, &handlers[0].name, &event, Some(session_id))
+        .execute_runtime_handler(&lua, handlers[0].id, &event, Some(session_id))
         .await
         .expect("handler execution")
 }

@@ -12,7 +12,7 @@ use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, CurrentSession, Session};
 #[cfg(any(test, feature = "test-utils"))]
 use crate::types::LuaExecutionResult;
-use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
+use mlua::{Function, Lua, LuaSerdeExt, Table, Value};
 use serde_json::Value as JsonValue;
 use std::path::{Path, PathBuf};
 #[cfg(any(test, feature = "test-utils"))]
@@ -26,17 +26,6 @@ pub struct LuaExecutor {
     lua: Lua,
     modules: ModuleRegistry,
     current_session: CurrentSession,
-    on_session_start_hooks: Vec<RegistryKey>,
-    /// Parallel to `on_session_start_hooks`: whether each opted into refusing
-    /// the session on failure via `{ required = true }`.
-    on_session_start_required: Vec<bool>,
-    /// Parallel to `on_session_start_hooks`: the plugin that registered each
-    /// hook, or `None` for the user's own `init.lua`.
-    on_session_start_owners: Vec<Option<String>>,
-    on_session_end_hooks: Vec<RegistryKey>,
-    /// Parallel to `on_session_end_hooks`: the plugin that registered each
-    /// hook, or `None` for the user's own `init.lua`.
-    on_session_end_owners: Vec<Option<String>>,
 }
 
 impl LuaExecutor {
@@ -58,11 +47,6 @@ impl LuaExecutor {
             lua,
             modules,
             current_session,
-            on_session_start_hooks: Vec::new(),
-            on_session_start_required: Vec::new(),
-            on_session_start_owners: Vec::new(),
-            on_session_end_hooks: Vec::new(),
-            on_session_end_owners: Vec::new(),
         })
     }
 
@@ -70,21 +54,10 @@ impl LuaExecutor {
         &self.current_session
     }
 
-    /// Get all session start hooks
+    /// Every `session:start` hook registered on this VM.
     #[cfg(test)]
-    pub fn session_start_hooks(&self) -> &[RegistryKey] {
-        &self.on_session_start_hooks
-    }
-
-    /// Sync session start hooks from Lua environment
-    pub fn sync_session_start_hooks(&mut self) -> Result<(), LuaError> {
-        use crate::hooks::{
-            get_session_start_hooks, get_session_start_owners, get_session_start_required_flags,
-        };
-        self.on_session_start_hooks = get_session_start_hooks(&self.lua)?;
-        self.on_session_start_required = get_session_start_required_flags(&self.lua)?;
-        self.on_session_start_owners = get_session_start_owners(&self.lua)?;
-        Ok(())
+    pub fn session_start_hooks(&self) -> Vec<crate::Registration> {
+        crate::hooks::session_start_hooks(&self.lua).unwrap_or_default()
     }
 
     /// Fire all registered session start hooks.
@@ -94,6 +67,7 @@ impl LuaExecutor {
     /// must be driven from a coroutine — a plain `Function::call` cannot suspend
     /// them. Firing these synchronously meant a hook that starts a container
     /// (the `oci` plugin's entire purpose) could never work.
+    ///
     /// A hook registered with `{ required = true }` is **fatal to the
     /// session**; every other hook's failure is logged and the session
     /// continues.
@@ -108,42 +82,36 @@ impl LuaExecutor {
     /// reported together.
     pub async fn fire_session_start_hooks(&self, session: &Session) -> Result<(), LuaError> {
         let mut failures = Vec::new();
-        for (i, key) in self.on_session_start_hooks.iter().enumerate() {
-            // Absent flag => not required, so a hook registered by older code
-            // stays non-fatal.
-            let required = self
-                .on_session_start_required
-                .get(i)
-                .copied()
-                .unwrap_or(false);
-            match self.lua.registry_value::<Function>(key) {
+        for hook in crate::hooks::session_start_hooks(&self.lua)? {
+            match self.lua.registry_value::<Function>(hook.body()) {
                 Ok(func) => {
-                    // Under the plugin that registered it, exactly as the end
-                    // path runs. Without this the hook ran with NO context,
-                    // so `cru.storage` refused its writes and
-                    // `cru.plugin.publish` attributed them to nobody — and
-                    // an absent context is also how the host spells the
-                    // operator's own authority to intercept.
-                    let owner = self.on_session_start_owners.get(i).cloned().flatten();
-                    let previous = self.enter_hook_owner(owner);
+                    // Under the owner that registered it, exactly as the end
+                    // path runs. Without this the hook ran with no owner, so
+                    // `cru.storage` refused its writes and
+                    // `cru.plugin.publish` attributed them to nobody.
+                    let previous = crate::plugin_context::set_owner(&self.lua, hook.owner.clone());
                     let result = self
                         .call_lifecycle_hook(&func, session, "session_start")
                         .await;
-                    crate::plugin_context::set_plugin_context(&self.lua, previous);
+                    crate::plugin_context::set_owner(&self.lua, previous);
                     if let Err(e) = result {
-                        tracing::error!(required, "Session start hook failed: {}", e);
-                        if required {
+                        tracing::error!(
+                            required = hook.required,
+                            "Session start hook failed: {}",
+                            e
+                        );
+                        if hook.required {
                             failures.push(e.to_string());
                         }
                     }
                 }
                 Err(e) => {
                     tracing::error!(
-                        required,
+                        required = hook.required,
                         "Failed to retrieve session start hook from registry: {}",
                         e
                     );
-                    if required {
+                    if hook.required {
                         failures.push(e.to_string());
                     }
                 }
@@ -156,22 +124,6 @@ impl LuaExecutor {
                 "session_start hook(s) failed: {}",
                 failures.join("; ")
             )))
-        }
-    }
-
-    /// Install the hook owner's plugin context; answer with what it replaced,
-    /// for the caller to restore on every exit path.
-    ///
-    /// The grants come from what the loader recorded for that plugin, not from
-    /// the hook: a hook holds exactly its plugin's authority, and the owner
-    /// name is all the hook table carries.
-    fn enter_hook_owner(
-        &self,
-        owner: Option<String>,
-    ) -> Option<crate::plugin_context::PluginContext> {
-        match owner {
-            Some(name) => crate::plugin_context::enter_recorded_plugin(&self.lua, &name),
-            None => crate::plugin_context::set_plugin_context(&self.lua, None),
         }
     }
 
@@ -198,14 +150,6 @@ impl LuaExecutor {
         }
     }
 
-    /// Sync session end hooks from Lua environment
-    pub fn sync_session_end_hooks(&mut self) -> Result<(), LuaError> {
-        use crate::hooks::{get_session_end_hooks, get_session_end_owners};
-        self.on_session_end_hooks = get_session_end_hooks(&self.lua)?;
-        self.on_session_end_owners = get_session_end_owners(&self.lua)?;
-        Ok(())
-    }
-
     /// Fire all registered session end hooks.
     ///
     /// Errors are logged per-hook and do not propagate — unlike the start
@@ -214,23 +158,21 @@ impl LuaExecutor {
     /// via async `cru.shell.exec`, so a synchronous call leaks whatever the
     /// start hook acquired.
     ///
-    /// Each hook runs under the plugin that registered it, as a runtime
-    /// handler does. `cru.storage` refuses a call with no plugin context, so
-    /// without this a plugin cannot read at session end what it stored
-    /// during the session. An absent owner (the user's `init.lua`) runs with
-    /// no context.
+    /// Each hook runs under the owner that registered it, as every other
+    /// registration does. `cru.storage` refuses a call from an owner that
+    /// names no plugin, so without this a plugin cannot read at session end
+    /// what it stored during the session.
     pub async fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
-        for (i, key) in self.on_session_end_hooks.iter().enumerate() {
-            let owner = self.on_session_end_owners.get(i).cloned().flatten();
-            match self.lua.registry_value::<Function>(key) {
+        for hook in crate::hooks::session_end_hooks(&self.lua)? {
+            match self.lua.registry_value::<Function>(hook.body()) {
                 Ok(func) => {
-                    let previous = self.enter_hook_owner(owner);
+                    let previous = crate::plugin_context::set_owner(&self.lua, hook.owner.clone());
                     let result = self
                         .call_lifecycle_hook(&func, session, "session_end")
                         .await;
-                    // Restore on every path: a context left behind attributes
-                    // whatever runs next to the wrong plugin.
-                    crate::plugin_context::set_plugin_context(&self.lua, previous);
+                    // Restore on every path: an owner left behind attributes
+                    // whatever runs next to the wrong author.
+                    crate::plugin_context::set_owner(&self.lua, previous);
                     if let Err(e) = result {
                         tracing::error!("Session end hook failed: {}", e);
                     }
@@ -535,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_on_session_start_registers_hook() {
-        let mut executor = LuaExecutor::new().unwrap();
+        let executor = LuaExecutor::new().unwrap();
         executor
             .lua()
             .load(
@@ -545,7 +487,6 @@ mod tests {
             )
             .exec()
             .unwrap();
-        executor.sync_session_start_hooks().unwrap();
         assert_eq!(executor.session_start_hooks().len(), 1);
     }
 
@@ -553,7 +494,7 @@ mod tests {
     async fn test_fire_hooks_calls_registered_hooks() {
         use crate::session_api::Session;
 
-        let mut executor = LuaExecutor::new().unwrap();
+        let executor = LuaExecutor::new().unwrap();
         executor
             .lua()
             .load(
@@ -566,7 +507,6 @@ mod tests {
             )
             .exec()
             .unwrap();
-        executor.sync_session_start_hooks().unwrap();
 
         let session = Session::new("test".to_string());
         session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
@@ -578,21 +518,25 @@ mod tests {
 
     #[test]
     fn test_on_session_end_registers_hook() {
-        let mut executor = LuaExecutor::new().unwrap();
+        let executor = LuaExecutor::new().unwrap();
         executor
             .lua()
             .load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
             .unwrap();
-        executor.sync_session_end_hooks().unwrap();
-        assert_eq!(executor.on_session_end_hooks.len(), 1);
+        assert_eq!(
+            crate::hooks::session_end_hooks(executor.lua())
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
     async fn test_fire_session_end_hooks_calls_registered_hooks() {
         use crate::session_api::Session;
 
-        let mut executor = LuaExecutor::new().unwrap();
+        let executor = LuaExecutor::new().unwrap();
         executor
             .lua()
             .load(
@@ -605,7 +549,6 @@ mod tests {
             )
             .exec()
             .unwrap();
-        executor.sync_session_end_hooks().unwrap();
 
         let session = Session::new("test".to_string());
         session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
@@ -630,7 +573,7 @@ mod tests {
         use crucible_core::storage::PropertyStore;
         use std::sync::Arc;
 
-        let mut executor = LuaExecutor::new().unwrap();
+        let executor = LuaExecutor::new().unwrap();
         let store = Arc::new(MemoryPropertyStore::new());
         crate::register_storage_module(executor.lua()).unwrap();
         crate::register_storage_module_with_store(
@@ -652,8 +595,7 @@ mod tests {
             )
             .exec()
             .unwrap();
-        crate::plugin_context::set_plugin_context(executor.lua(), previous);
-        executor.sync_session_end_hooks().unwrap();
+        crate::plugin_context::set_owner(executor.lua(), previous);
 
         store
             .property_set(
@@ -672,8 +614,9 @@ mod tests {
         let read: Option<String> = executor.lua().load("return end_hook_read").eval().unwrap();
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
-            crate::plugin_context::current_plugin_context(executor.lua()).is_none(),
-            "the fire path must restore the previous (absent) context"
+            crate::plugin_context::current_owner(executor.lua())
+                == crate::plugin_context::Owner::UserLua,
+            "the fire path must restore the previous owner"
         );
     }
 
@@ -687,7 +630,7 @@ mod tests {
         use crucible_core::storage::PropertyStore;
         use std::sync::Arc;
 
-        let mut executor = LuaExecutor::new().unwrap();
+        let executor = LuaExecutor::new().unwrap();
         let store = Arc::new(MemoryPropertyStore::new());
         crate::register_storage_module(executor.lua()).unwrap();
         crate::register_storage_module_with_store(
@@ -708,8 +651,7 @@ mod tests {
             )
             .exec()
             .unwrap();
-        crate::plugin_context::set_plugin_context(executor.lua(), previous);
-        executor.sync_session_start_hooks().unwrap();
+        crate::plugin_context::set_owner(executor.lua(), previous);
 
         store
             .property_set(
@@ -732,8 +674,9 @@ mod tests {
             .unwrap();
         assert_eq!(read.as_deref(), Some("[\"Kilns\"]"));
         assert!(
-            crate::plugin_context::current_plugin_context(executor.lua()).is_none(),
-            "the fire path must restore the previous (absent) context"
+            crate::plugin_context::current_owner(executor.lua())
+                == crate::plugin_context::Owner::UserLua,
+            "the fire path must restore the previous owner"
         );
     }
 

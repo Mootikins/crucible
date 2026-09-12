@@ -1,8 +1,12 @@
-use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::{Function, Lua, LuaSerdeExt, Result as LuaResult, Table, Value};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use tracing::{debug, warn};
+use tracing::debug;
+
+use super::hook_name::{HookName, StageId};
+use super::registry::{LuaScriptHandlerRegistry, RegistrationSpec, DEFAULT_PRIORITY};
+
+/// The name a permission hook registers under in the shared store.
+pub const PERMISSION_REQUEST_HOOK: HookName = HookName::Stage(StageId::PermissionRequest);
 
 /// Result of permission hook execution
 ///
@@ -44,28 +48,12 @@ pub struct PermissionRequest {
     pub mode: Option<String>,
 }
 
-/// Stored permission hook callback
-pub struct PermissionHook {
-    /// Handler name for debugging
-    pub name: String,
-    /// Only consult this hook for tool names matching this glob.
-    ///
-    /// Same option name and same matcher as `cru.on`
-    /// (`crucible_core::utils::glob_match`), so `pattern` means one thing
-    /// across both hooks. `None` means every tool.
-    pub pattern: Option<String>,
-    /// Lower runs first, matching `cru.on`'s `priority` option.
-    ///
-    /// This exists because the gate is first-match-wins: without it, ordering
-    /// is registration order, the shipped defaults load before any user file,
-    /// and a user hook could never override a built-in decision. Shipped
-    /// defaults register at [`SHIPPED_DEFAULT_PRIORITY`] so user hooks — which
-    /// take the same default as `cru.on`, 100 — precede them.
-    pub priority: i64,
-}
-
 /// Priority the shipped defaults register at: deliberately far behind the
 /// default of 100, so anything a user or plugin registers is consulted first.
+///
+/// This exists because the gate is first-match-wins: without it, ordering is
+/// registration order, the shipped defaults load before any user file, and a
+/// user hook could never override a built-in decision.
 pub const SHIPPED_DEFAULT_PRIORITY: i64 = 1000;
 
 /// Register the cru.permissions.on_request() API for permission hooks
@@ -89,13 +77,12 @@ pub const SHIPPED_DEFAULT_PRIORITY: i64 = 1000;
 /// ```
 pub fn register_permission_hook_api(
     lua: &Lua,
-    permission_hooks: Arc<Mutex<Vec<PermissionHook>>>,
-    permission_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
+    registry: LuaScriptHandlerRegistry,
 ) -> LuaResult<()> {
+    // Same store as `cru.on`; see `register_cru_on_api`.
+    super::install_registry(lua, registry.clone());
     let permissions = crate::lua_util::get_or_create_module(lua, "permissions")?;
 
-    let hooks = permission_hooks.clone();
-    let functions = permission_functions.clone();
     let on_request_fn =
         lua.create_function(move |lua, (handler, opts): (Function, Option<Table>)| {
             let (pattern, priority) = match &opts {
@@ -104,32 +91,24 @@ pub fn register_permission_hook_api(
                     o.get::<Option<i64>>("priority")
                         .ok()
                         .flatten()
-                        .unwrap_or(100),
+                        .unwrap_or(DEFAULT_PRIORITY),
                 ),
-                None => (None, 100),
+                None => (None, DEFAULT_PRIORITY),
             };
 
-            let mut guard = hooks
-                .lock()
-                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock hooks: {}", e)))?;
+            let id = registry.register(
+                lua,
+                RegistrationSpec {
+                    name: PERMISSION_REQUEST_HOOK,
+                    priority,
+                    pattern,
+                    timeout_ms: None,
+                    required: false,
+                },
+                handler,
+            )?;
 
-            let name = format!("permission_hook_{}", guard.len());
-            guard.push(PermissionHook {
-                name: name.clone(),
-                pattern,
-                priority,
-            });
-
-            let key = lua.create_registry_value(handler)?;
-            let mut func_guard = functions.lock().map_err(|e| {
-                mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e))
-            })?;
-            func_guard.insert(name.clone(), key);
-
-            debug!(
-                "Registered permission hook '{}' (priority {})",
-                name, priority
-            );
+            debug!("Registered permission hook {id} (priority {priority})");
             Ok(())
         })?;
 
@@ -175,13 +154,13 @@ pub(crate) fn build_request_table(
 
 /// Execute permission hooks and return the result
 ///
-/// Executes all registered permission hooks in order. The first hook to return
-/// `{allow=true}` or `{deny=true}` wins. If all hooks return nil, returns `Prompt`.
+/// Executes every registered permission hook in priority order. The first hook
+/// to return `{allow=true}` or `{deny=true}` wins. If all hooks return nil,
+/// returns `Prompt`.
 ///
 /// # Arguments
 /// * `lua` - The Lua state
-/// * `hooks` - List of registered permission hooks
-/// * `functions` - Map of hook names to registry keys
+/// * `registry` - The shared registration store
 /// * `request` - The permission request to evaluate
 ///
 /// # Returns
@@ -206,28 +185,20 @@ pub(crate) fn build_request_table(
 /// held the thread and the permission request never came back at all.
 pub fn execute_permission_hooks(
     lua: &Lua,
-    hooks: &[PermissionHook],
-    functions: &HashMap<String, RegistryKey>,
+    registry: &LuaScriptHandlerRegistry,
     request: &PermissionRequest,
 ) -> LuaResult<PermissionHookResult> {
+    // Lower priority first, registration order breaking ties. First non-nil
+    // answer wins, so this ordering is what decides whether a user hook can
+    // override a shipped default — it registers later but at a lower priority,
+    // so it is asked first. The pattern filters on the tool name, as `cru.on`'s
+    // does.
+    let hooks = registry.for_hook(PERMISSION_REQUEST_HOOK, Some(&request.tool_name));
     if hooks.is_empty() {
         return Ok(PermissionHookResult::Prompt);
     }
 
     let request_table = build_request_table(lua, request)?;
-
-    // Lower priority first, registration order breaking ties (`sort_by_key` is
-    // stable). First non-nil answer wins, so this ordering is what decides
-    // whether a user hook can override a shipped default — it registers later
-    // but at a lower priority, so it is asked first.
-    let mut ordered: Vec<&PermissionHook> = hooks
-        .iter()
-        .filter(|h| match &h.pattern {
-            Some(p) => crucible_core::utils::glob_match(p, &request.tool_name),
-            None => true,
-        })
-        .collect();
-    ordered.sort_by_key(|h| h.priority);
 
     let _budget = crate::handler_budget::enter(
         lua,
@@ -235,40 +206,36 @@ pub fn execute_permission_hooks(
         "the permission hook",
     );
 
-    for hook in ordered {
-        let key = match functions.get(&hook.name) {
-            Some(k) => k,
-            None => {
-                warn!("Permission hook '{}' not found in registry", hook.name);
-                continue;
-            }
-        };
+    for hook in hooks {
+        // The owner the registration recorded, re-entered around the call: a
+        // hook reaching `cru.storage` must find its own plugin's namespace.
+        let handler: Function = lua.registry_value(hook.body())?;
+        let previous = crate::plugin_context::set_owner(lua, hook.owner.clone());
+        let result = handler.call::<Value>(request_table.clone());
+        crate::plugin_context::set_owner(lua, previous);
 
-        let handler: Function = lua.registry_value(key)?;
-        let result: Value = handler.call(request_table.clone())?;
-
-        match result {
+        match result? {
             Value::Nil => {
-                debug!("Permission hook '{}' returned nil, continuing", hook.name);
+                debug!("Permission hook {} returned nil, continuing", hook.id);
             }
             Value::Table(t) => {
                 if t.get::<bool>("allow").unwrap_or(false) {
-                    debug!("Permission hook '{}' returned allow=true", hook.name);
+                    debug!("Permission hook {} returned allow=true", hook.id);
                     return Ok(PermissionHookResult::Allow);
                 }
                 if t.get::<bool>("deny").unwrap_or(false) {
-                    debug!("Permission hook '{}' returned deny=true", hook.name);
+                    debug!("Permission hook {} returned deny=true", hook.id);
                     return Ok(PermissionHookResult::Deny);
                 }
                 debug!(
-                    "Permission hook '{}' returned table without allow/deny",
-                    hook.name
+                    "Permission hook {} returned table without allow/deny",
+                    hook.id
                 );
             }
             _ => {
                 debug!(
-                    "Permission hook '{}' returned unexpected type, treating as prompt",
-                    hook.name
+                    "Permission hook {} returned unexpected type, treating as prompt",
+                    hook.id
                 );
             }
         }

@@ -1,10 +1,20 @@
+//! `cru.on_provider_auth` — headers a plugin supplies for a provider call.
+//!
+//! The hooks used to live in two Lua globals, `__crucible_hooks__` and
+//! `__crucible_auth_hooks__`, as a hook-name list, a parallel owner list, a
+//! name→function map and a counter. The counter was a Lua global, so any
+//! plugin could assign it and make the next registration collide with a live
+//! hook's slot. They register into the shared store now, under `provider:auth`.
+
 use crucible_core::traits::auth::AuthHeaders;
-use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::{Function, Lua, Result as LuaResult, Table, Value};
 use tracing::{debug, warn};
 
-pub struct AuthHook {
-    pub name: String,
-}
+use crate::handlers::{HookName, StageId};
+use crate::handlers::{Registration, RegistrationSpec};
+
+/// The name a provider auth hook registers under.
+pub const PROVIDER_AUTH_HOOK: HookName = HookName::Stage(StageId::ProviderAuth);
 
 pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     let mut ns = crate::host_registry::Ns::over(lua, "cru", crucible.clone());
@@ -22,58 +32,11 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         "on_provider_auth",
         "(handler: (context: { provider: string, model: string }) -> ...any) -> ()",
         |lua, func: Function| {
-            let key = lua.create_registry_value(func)?;
-
-            let globals = lua.globals();
-
-            let hooks_table: Table = globals
-                .get("__crucible_hooks__")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            let provider_auth_hooks: Table = hooks_table
-                .get("on_provider_auth")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            // Parallel to the hook list by index, same contract as the session
-            // hooks in `hooks.rs`: `false` marks an unowned registration (user
-            // init.lua), which no plugin's clear ever removes.
-            let owners: Table = hooks_table
-                .get("on_provider_auth_owners")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-            // The VM's plugin context, not a Lua global: a plugin must not be
-            // able to register an auth hook under another plugin's name.
-            let owner = crate::plugin_context::current_plugin_name(lua);
-
-            let auth_hook_functions: Table = globals
-                .get("__crucible_auth_hooks__")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-
-            // Monotonic, never derived from the list length: clearing shrinks
-            // the list, and a length-derived name would then collide with one a
-            // surviving hook still holds in `__crucible_auth_hooks__` — dispatch
-            // is by name, so the collision rebinds the survivor to the new
-            // function (the same defect `cru_on.rs` documents at length).
-            let seq: u64 = globals
-                .get::<Option<u64>>("__crucible_auth_hook_seq__")
-                .ok()
-                .flatten()
-                .unwrap_or(0);
-            globals.set("__crucible_auth_hook_seq__", seq + 1)?;
-            let hook_name = format!("provider_auth_hook_{seq}");
-
-            let len = provider_auth_hooks.raw_len();
-            provider_auth_hooks.raw_set(len + 1, hook_name.as_str())?;
-            match owner {
-                Some(ref o) => owners.raw_set(len + 1, o.as_str())?,
-                None => owners.raw_set(len + 1, false)?,
-            }
-            auth_hook_functions.set(hook_name.as_str(), key)?;
-
-            hooks_table.set("on_provider_auth", provider_auth_hooks)?;
-            hooks_table.set("on_provider_auth_owners", owners)?;
-            globals.set("__crucible_hooks__", hooks_table)?;
-            globals.set("__crucible_auth_hooks__", auth_hook_functions)?;
-
+            crate::handlers::registry_of(lua)?.register(
+                lua,
+                RegistrationSpec::new(PROVIDER_AUTH_HOOK),
+                func,
+            )?;
             Ok(())
         },
     )
@@ -81,76 +44,19 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-/// Drop the auth hooks `plugin` registered, rebuilding the hook and owner
-/// lists in lockstep and deleting the cleared names from
-/// `__crucible_auth_hooks__` so the function references are released.
-/// Called from [`crate::hooks::clear_plugin_hooks`], the single entry point
-/// the daemon uses when a plugin re-executes or is made inert.
-pub(crate) fn clear_plugin_auth_hooks(lua: &Lua, plugin: &str) -> LuaResult<()> {
-    let globals = lua.globals();
-    let Ok(hooks_table) = globals.get::<Table>("__crucible_hooks__") else {
-        return Ok(());
-    };
-    let Ok(hooks) = hooks_table.get::<Table>("on_provider_auth") else {
-        return Ok(());
-    };
-    let Ok(owners) = hooks_table.get::<Table>("on_provider_auth_owners") else {
-        return Ok(());
-    };
-    let auth_hook_functions: Table = globals
-        .get("__crucible_auth_hooks__")
-        .unwrap_or_else(|_| lua.create_table().unwrap());
-
-    let kept_hooks = lua.create_table()?;
-    let kept_owners = lua.create_table()?;
-    for i in 1..=hooks.raw_len() {
-        // A missing owner entry means unowned — always kept.
-        let owned_by_plugin = owners
-            .raw_get::<Option<mlua::LuaString>>(i)
-            .ok()
-            .flatten()
-            .is_some_and(|o| o.to_string_lossy() == plugin);
-        let name: String = hooks.raw_get(i)?;
-        if owned_by_plugin {
-            auth_hook_functions.set(name, mlua::Value::Nil)?;
-        } else {
-            let idx = kept_hooks.raw_len() + 1;
-            kept_hooks.raw_set(idx, name)?;
-            kept_owners.raw_set(idx, owners.raw_get::<mlua::Value>(i)?)?;
-        }
-    }
-
-    hooks_table.set("on_provider_auth", kept_hooks)?;
-    hooks_table.set("on_provider_auth_owners", kept_owners)?;
-    globals.set("__crucible_auth_hooks__", auth_hook_functions)?;
-    Ok(())
+/// Every `provider:auth` hook on this VM, priority first.
+pub fn get_provider_auth_hooks(lua: &Lua) -> LuaResult<Vec<Registration>> {
+    Ok(crate::handlers::registry_of(lua)?.for_hook(PROVIDER_AUTH_HOOK, None))
 }
 
-pub fn get_provider_auth_hooks(lua: &Lua) -> LuaResult<Vec<AuthHook>> {
-    let globals = lua.globals();
-    let hooks_table: Table = match globals.get("__crucible_hooks__") {
-        Ok(table) => table,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let provider_auth_hooks: Table = match hooks_table.get("on_provider_auth") {
-        Ok(table) => table,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let mut hooks = Vec::new();
-    for i in 1..=provider_auth_hooks.raw_len() {
-        if let Ok(name) = provider_auth_hooks.raw_get::<String>(i) {
-            hooks.push(AuthHook { name });
-        }
-    }
-
-    Ok(hooks)
-}
-
+/// Ask each hook in turn for headers; the first that answers wins.
+///
+/// Synchronous, like the permission gate: the provider factory holds no
+/// runtime handle here. The VM deadline is armed all the same, so one hook
+/// spinning cannot hold the factory forever.
 pub fn fire_provider_auth_hooks(
     lua: &Lua,
-    hooks: &[AuthHook],
+    hooks: &[Registration],
     provider_name: &str,
     model: &str,
 ) -> LuaResult<Option<AuthHeaders>> {
@@ -158,40 +64,32 @@ pub fn fire_provider_auth_hooks(
         return Ok(None);
     }
 
-    let globals = lua.globals();
-    let auth_hook_functions: Table = match globals.get("__crucible_auth_hooks__") {
-        Ok(table) => table,
-        Err(_) => return Ok(None),
-    };
-
     let context = lua.create_table()?;
     context.set("provider", provider_name)?;
     context.set("model", model)?;
 
-    for hook in hooks {
-        let key: RegistryKey = match auth_hook_functions.get(hook.name.as_str()) {
-            Ok(key) => key,
-            Err(_) => {
-                warn!("Provider auth hook '{}' not found in registry", hook.name);
-                continue;
-            }
-        };
+    let _budget =
+        crate::handler_budget::enter(lua, PROVIDER_AUTH_HOOK.budget(), "the provider auth hook");
 
-        let handler: Function = match lua.registry_value(&key) {
+    for hook in hooks {
+        let handler: Function = match lua.registry_value(hook.body()) {
             Ok(handler) => handler,
             Err(e) => {
-                warn!(
-                    "Failed to load provider auth hook '{}' from registry: {}",
-                    hook.name, e
-                );
+                warn!("Failed to load provider auth hook {}: {e}", hook.id);
                 continue;
             }
         };
 
-        let result: Value = match handler.call(context.clone()) {
+        // The owner the registration recorded, so a hook reaching
+        // `cru.storage` for a stored token finds its own namespace.
+        let previous = crate::plugin_context::set_owner(lua, hook.owner.clone());
+        let result = handler.call::<Value>(context.clone());
+        crate::plugin_context::set_owner(lua, previous);
+
+        let result = match result {
             Ok(result) => result,
             Err(e) => {
-                warn!("Provider auth hook '{}' failed: {}", hook.name, e);
+                warn!("Provider auth hook {} failed: {e}", hook.id);
                 continue;
             }
         };
@@ -201,8 +99,8 @@ pub fn fire_provider_auth_hooks(
             Value::Table(table) => table_to_auth_headers(table)?,
             _ => {
                 debug!(
-                    "Provider auth hook '{}' returned non-table result; ignoring",
-                    hook.name
+                    "Provider auth hook {} returned non-table result; ignoring",
+                    hook.id
                 );
                 None
             }
@@ -245,6 +143,7 @@ fn table_to_auth_headers(result_table: Table) -> LuaResult<Option<AuthHeaders>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin_context::Owner;
 
     fn setup() -> Lua {
         let lua = Lua::new();
@@ -254,15 +153,8 @@ mod tests {
         lua
     }
 
-    fn register(lua: &Lua, owner: Option<&str>, header: &str) {
-        match owner {
-            Some(o) => {
-                crate::plugin_context::enter_plugin(lua, o, false);
-            }
-            None => {
-                crate::plugin_context::set_plugin_context(lua, None);
-            }
-        }
+    fn register(lua: &Lua, owner: Owner, header: &str) {
+        crate::plugin_context::set_owner(lua, owner);
         lua.load(format!(
             r#"cru.on_provider_auth(function(ctx) return {{ headers = {{ ["X-Who"] = "{header}" }} }} end)"#
         ))
@@ -270,36 +162,37 @@ mod tests {
         .unwrap();
     }
 
-    /// Auth hooks follow the same owner-tag contract as session hooks: a
-    /// plugin's reload clears exactly its own registrations, unowned ones
-    /// survive, and a name freed by clearing is never reissued — reuse would
-    /// silently rebind a surviving hook's slot to the new function.
+    /// Auth hooks follow the same owner contract as every other registration:
+    /// a plugin's reload clears exactly its own, the user's own survive, and
+    /// an id freed by clearing is never reissued — reuse would silently
+    /// rebind a surviving hook's slot to the new function.
     #[test]
-    fn clearing_a_plugins_auth_hooks_keeps_others_and_never_reissues_names() {
+    fn clearing_an_owners_auth_hooks_keeps_others_and_never_reissues_an_id() {
         let lua = setup();
-        register(&lua, Some("alpha"), "alpha");
-        register(&lua, Some("beta"), "beta");
-        register(&lua, None, "user");
+        let registry = crate::handlers::registry_of(&lua).unwrap();
+        register(&lua, Owner::Plugin("alpha".into()), "alpha");
+        register(&lua, Owner::Plugin("beta".into()), "beta");
+        register(&lua, Owner::UserLua, "user");
 
-        crate::hooks::clear_plugin_hooks(&lua, "alpha").unwrap();
+        registry.clear_owner(&Owner::Plugin("alpha".into()));
 
         let hooks = get_provider_auth_hooks(&lua).unwrap();
-        assert_eq!(hooks.len(), 2, "beta's and the unowned hook survive");
+        assert_eq!(hooks.len(), 2, "beta's and the user's hook survive");
         // First surviving hook is beta's — fire proves the binding survived.
         let headers = fire_provider_auth_hooks(&lua, &hooks, "prov", "model")
             .unwrap()
             .expect("beta answers");
         assert_eq!(headers.get("X-Who"), Some(&"beta".to_string()));
 
-        // A fresh registration must not reuse a name any live hook holds.
-        let live: Vec<String> = hooks.iter().map(|h| h.name.clone()).collect();
-        register(&lua, Some("gamma"), "gamma");
+        // A fresh registration must not reuse an id any live hook holds.
+        let live: Vec<u64> = hooks.iter().map(|h| h.id).collect();
+        register(&lua, Owner::Plugin("gamma".into()), "gamma");
         let after = get_provider_auth_hooks(&lua).unwrap();
         assert_eq!(after.len(), 3);
-        let fresh = &after.last().unwrap().name;
+        let fresh = after.last().unwrap().id;
         assert!(
-            !live.contains(fresh),
-            "name '{fresh}' was reissued while {live:?} still hold it"
+            !live.contains(&fresh),
+            "id {fresh} was reissued while {live:?} still hold it"
         );
         // And beta still fires its own function, not gamma's.
         let headers = fire_provider_auth_hooks(&lua, &after, "prov", "model")
@@ -307,15 +200,13 @@ mod tests {
             .expect("first answer wins");
         assert_eq!(headers.get("X-Who"), Some(&"beta".to_string()));
 
-        // A SECOND clear exercises the rebuilt tables — the one path where a
-        // skew introduced by the first rebuild would surface.
-        crate::hooks::clear_plugin_hooks(&lua, "beta").unwrap();
-        crate::hooks::clear_plugin_hooks(&lua, "gamma").unwrap();
+        registry.clear_owner(&Owner::Plugin("beta".into()));
+        registry.clear_owner(&Owner::Plugin("gamma".into()));
         let last = get_provider_auth_hooks(&lua).unwrap();
-        assert_eq!(last.len(), 1, "only the unowned hook survives every clear");
+        assert_eq!(last.len(), 1, "only the user's hook survives every clear");
         let headers = fire_provider_auth_hooks(&lua, &last, "prov", "model")
             .unwrap()
-            .expect("the unowned hook still fires its own function");
+            .expect("the user's hook still fires its own function");
         assert_eq!(headers.get("X-Who"), Some(&"user".to_string()));
     }
 }

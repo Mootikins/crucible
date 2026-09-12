@@ -378,12 +378,7 @@ mod tests {
     async fn as_the_handler_sees_it(hooked: &HookedEvent) -> (Arc<mlua::Lua>, mlua::Table) {
         let lua = Arc::new(mlua::Lua::new());
         let registry = LuaScriptHandlerRegistry::new();
-        crucible_lua::register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register cru.on");
+        crucible_lua::register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
         lua.load(format!(
             "seen = nil\ncru.on(\"{}\", function(ctx, event) seen = event end)",
             hooked.hook
@@ -400,7 +395,7 @@ mod tests {
             hooked.hook.as_str()
         );
         registry
-            .execute_runtime_handler(&lua, &handlers[0].name, &hooked.event, None)
+            .execute_runtime_handler(&lua, handlers[0].id, &hooked.event, None)
             .await
             .expect("handler runs");
         let seen = lua.globals().get("seen").expect("the handler ran");
@@ -593,12 +588,7 @@ mod tests {
 
         let lua = Arc::new(mlua::Lua::new());
         let registry = LuaScriptHandlerRegistry::new();
-        crucible_lua::register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register cru.on");
+        crucible_lua::register_cru_on_api(&lua, registry.clone()).expect("register cru.on");
         lua.load(
             r#"
             cru.on("note:modified", { pattern = "Daily/*" }, function() end)

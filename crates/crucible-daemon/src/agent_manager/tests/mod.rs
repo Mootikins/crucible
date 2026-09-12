@@ -642,12 +642,7 @@ impl HandlerVm {
 pub(crate) fn handler_vm() -> HandlerVm {
     let lua = Arc::new(mlua::Lua::new());
     let registry = Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
-    crucible_lua::register_cru_on_api(
-        &lua,
-        registry.runtime_handlers(),
-        registry.handler_functions(),
-    )
-    .expect("register cru.on");
+    crucible_lua::register_cru_on_api(&lua, (*registry).clone()).expect("register cru.on");
     HandlerVm { lua, registry }
 }
 

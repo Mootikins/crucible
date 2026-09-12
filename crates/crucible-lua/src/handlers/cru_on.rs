@@ -1,24 +1,32 @@
-use mlua::{Lua, RegistryKey, Result as LuaResult, Value};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use mlua::{Lua, Result as LuaResult, Value};
 use tracing::debug;
 
 use super::hook_name::{hook_names, HookName};
-use super::registry::RuntimeHandler;
+use super::registry::{LuaScriptHandlerRegistry, RegistrationSpec, DEFAULT_PRIORITY};
 
 use crucible_core::fuzzy::levenshtein;
 
-/// Reject a hook name nothing dispatches.
+/// Reject a hook name `cru.on` cannot register for.
 ///
-/// An **error**, not a warning. `crucible.on` runs at plugin load, and a plugin
+/// An **error**, not a warning. `cru.on` runs at plugin load, and a plugin
 /// whose hook can never fire is broken — the pre-existing `debug!` at
 /// registration time told nobody, so a typo registered silently and the handler
 /// simply never ran. This is a breaking change for a plugin with a typo, which is
 /// the point.
-fn validate_hook_name(event_type: &str) -> Result<(), mlua::Error> {
-    if HookName::parse(event_type).is_some() {
-        return Ok(());
+///
+/// A name that exists but has its OWN registration API is refused too, and the
+/// message names that API. The four merged names share one store with `cru.on`
+/// and nothing else: each carries a different payload, so a handler registered
+/// here would read the wrong argument and fail at fire time.
+fn resolve_hook_name(event_type: &str) -> Result<HookName, mlua::Error> {
+    if let Some(name) = HookName::parse(event_type) {
+        return match name.own_api() {
+            None => Ok(name),
+            Some(api) => Err(mlua::Error::RuntimeError(format!(
+                "cru.on: `{event_type}` is registered with `{api}`, which passes it \
+                 the argument it expects"
+            ))),
+        };
     }
     let suggestion = hook_names()
         .min_by_key(|n| levenshtein(n, event_type))
@@ -43,33 +51,10 @@ fn validate_hook_name(event_type: &str) -> Result<(), mlua::Error> {
 /// -- With options (pattern + priority):
 /// cru.on("pre_tool_call", { pattern = "bash", priority = 50 }, function(ctx, event) ... end)
 /// ```
-pub fn register_cru_on_api(
-    lua: &Lua,
-    runtime_handlers: Arc<Mutex<Vec<RuntimeHandler>>>,
-    handler_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
-) -> LuaResult<()> {
-    let handlers = runtime_handlers.clone();
-    let functions = handler_functions.clone();
-
-    // Monotonic source of runtime-handler names, scoped to this
-    // `runtime_handlers`/`handler_functions` pair — every caller registers the
-    // API exactly once against a freshly built store, so per-closure is
-    // per-registry. A staging point: it belongs beside the Vec and the map, and
-    // moves there when those three collapse into one owning store. `AtomicU64`
-    // rather than `Cell` because the daemon enables the `send` feature, so this
-    // closure must be `Send + Sync`.
-    //
-    // NEVER derive a name from `guard.len()`. `clear_plugin_handlers` shrinks
-    // that Vec, so after a reload a length-derived name collides with one
-    // another registrant — another plugin, or the user's `init.lua`, which is
-    // evaluated into this same registry and holds the highest indices — still
-    // owns in `handler_functions`. Dispatch is by name, so the collision
-    // rebinds the survivor's handler to the reloaded plugin's body rather than
-    // merely duplicating an entry, and with `pre_tool_call` failing closed a
-    // body raising against the wrong event shape denies every matching tool
-    // call in every session.
-    let next_handler_id = AtomicU64::new(0);
-
+pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> LuaResult<()> {
+    // Every registration API on this VM writes the SAME store, so the one the
+    // host wires `cru.on` to is the one `cru.on_session_start` finds.
+    super::install_registry(lua, registry.clone());
     let on_fn = lua.create_function(move |lua, args: mlua::MultiValue| {
         let args_vec: Vec<Value> = args.into_vec();
         if args_vec.len() < 2 {
@@ -87,12 +72,12 @@ pub fn register_cru_on_api(
             }
         };
 
-        validate_hook_name(&event_type)?;
+        let name = resolve_hook_name(&event_type)?;
 
         let (pattern, priority, timeout_ms, handler) = match &args_vec[1] {
             Value::Function(f) => {
                 // cru.on(event_type, handler) — backward compatible
-                (None, 100i64, None, f.clone())
+                (None, DEFAULT_PRIORITY, None, f.clone())
             }
             Value::Table(opts) => {
                 // cru.on(event_type, opts, handler)
@@ -110,7 +95,7 @@ pub fn register_cru_on_api(
                     }
                 };
                 let pattern: Option<String> = opts.get("pattern").ok();
-                let priority: i64 = opts.get("priority").unwrap_or(100);
+                let priority: i64 = opts.get("priority").unwrap_or(DEFAULT_PRIORITY);
                 // A handler that legitimately runs long — a container build,
                 // a large model call — says so here. Absent, the name it
                 // registers for decides. See `handler_budget`.
@@ -124,69 +109,21 @@ pub fn register_cru_on_api(
             }
         };
 
-        let mut guard = handlers
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e)))?;
-
-        // Set by the loader around a plugin's execution so handlers can be
-        // attributed and later dropped on reload. Rust-side app data, not a
-        // Lua global: a plugin must not be able to name another plugin as the
-        // owner, nor grant itself the interception right read just below.
-        let context = crate::plugin_context::current_plugin_context(lua);
-        let plugin: Option<String> = context.as_ref().map(|c| c.name.clone());
-
-        // `Relaxed` suffices: the handlers mutex taken above brackets the whole
-        // allocate-push-insert sequence, so it supplies the ordering.
-        let name = format!(
-            "runtime_handler_{}",
-            next_handler_id.fetch_add(1, Ordering::Relaxed)
-        );
-        // Still inside the handlers lock, deliberately: handlers is the outer
-        // lock (`clear_plugin_handlers` orders them the same way) and is held
-        // across this mutation, so a dispatch racing a reload — the daemon
-        // reads the registry without the loader mutex — can never see a
-        // `RuntimeHandler` whose function is missing. Do not split these into
-        // two critical sections.
-        let mut func_guard = functions
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e)))?;
-
-        // Defense in depth: unreachable while names come from the monotonic
-        // allocator above. Were it reached, an overwrite would orphan the live
-        // body and silently point its owner's handler at this one for the
-        // daemon's lifetime — refuse instead. Checked before anything is
-        // mutated, so a refused registration leaves no handler without a
-        // function (which `pre_tool_call`, failing closed, would turn into a
-        // denied tool call).
-        if func_guard.contains_key(&name) {
-            return Err(mlua::Error::RuntimeError(format!(
-                "handler name collision: '{name}' was already registered \
-                 (registering plugin: {plugin:?})"
-            )));
-        }
-
-        // Stored before the push for the same reason: nothing lands in
-        // `runtime_handlers` until its function is in hand.
-        let key = lua.create_registry_value(handler)?;
-        guard.push(RuntimeHandler {
-            event_type: event_type.clone(),
-            name: name.clone(),
-            priority,
-            pattern: pattern.clone(),
-            plugin: plugin.clone(),
-            // Absent means "not loading a plugin" — a user's own init.lua,
-            // which carries the operator's own authority. A LOADING plugin
-            // holds what its installation declared: `intercept_tools` used to
-            // be read from a Lua global with `.unwrap_or(true)`, so it failed
-            // OPEN for every daemon-loaded plugin and was forgeable besides.
-            may_intercept_grant: context.map(|c| c.may_intercept),
-            timeout_ms,
-        });
-        func_guard.insert(name.clone(), key);
+        let id = registry.register(
+            lua,
+            RegistrationSpec {
+                name,
+                priority,
+                pattern: pattern.clone(),
+                timeout_ms,
+                required: false,
+            },
+            handler,
+        )?;
 
         debug!(
-            "Registered runtime handler '{}' for event '{}' (priority={}, pattern={:?})",
-            name, event_type, priority, pattern
+            "Registered runtime handler {} for event '{}' (priority={}, pattern={:?})",
+            id, event_type, priority, pattern
         );
         Ok(())
     })?;
@@ -209,7 +146,7 @@ mod tests {
     #[test]
     fn a_valid_hook_name_is_accepted() {
         for name in hook_names() {
-            validate_hook_name(name).expect("every listed name must validate");
+            resolve_hook_name(name).expect("every listed name must validate");
         }
     }
 
@@ -217,7 +154,7 @@ mod tests {
     /// logged at `debug`, and never fired.
     #[test]
     fn a_misspelt_hook_name_is_rejected_with_a_suggestion() {
-        let err = validate_hook_name("pre_toolcall").expect_err("a typo must not register");
+        let err = resolve_hook_name("pre_toolcall").expect_err("a typo must not register");
         let msg = err.to_string();
         assert!(msg.contains("pre_toolcall"), "{msg}");
         assert!(msg.contains("did you mean `pre_tool_call`"), "{msg}");
@@ -226,9 +163,44 @@ mod tests {
     /// Nothing close enough to suggest gets the whole valid set instead.
     #[test]
     fn an_unrecognisable_hook_name_lists_the_valid_set() {
-        let err = validate_hook_name("on_everything_please").expect_err("must not register");
+        let err = resolve_hook_name("on_everything_please").expect_err("must not register");
         let msg = err.to_string();
         assert!(msg.contains("pre_tool_call"), "{msg}");
         assert!(msg.contains("tool:display_complete"), "{msg}");
+    }
+
+    /// The four merged names share the store, not the calling convention. A
+    /// handler registered here would be called with a session handle or a
+    /// permission request, read the wrong argument, and fail at fire time.
+    #[test]
+    fn a_merged_name_is_refused_and_names_its_own_api() {
+        for (name, api) in [
+            ("permission:request", "cru.permissions.on_request"),
+            ("session:start", "cru.on_session_start"),
+            ("session:end", "cru.on_session_end"),
+            ("provider:auth", "cru.on_provider_auth"),
+        ] {
+            let err = resolve_hook_name(name).expect_err("cru.on must refuse a merged name");
+            let msg = err.to_string();
+            assert!(msg.contains(name), "{msg}");
+            assert!(msg.contains(api), "{msg}");
+        }
+    }
+
+    /// And the suggestion list must not advertise them either.
+    #[test]
+    fn the_valid_set_omits_every_merged_name() {
+        let listed: Vec<&str> = hook_names().collect();
+        for name in [
+            "permission:request",
+            "session:start",
+            "session:end",
+            "provider:auth",
+        ] {
+            assert!(
+                !listed.contains(&name),
+                "`{name}` is offered by `cru.on` but refused by it"
+            );
+        }
     }
 }

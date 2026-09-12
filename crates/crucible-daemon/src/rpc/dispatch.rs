@@ -1540,9 +1540,6 @@ impl RpcDispatcher {
                         "on_session_end hooks already fired; skipping"
                     );
                 } else {
-                    if let Err(e) = state.executor.sync_session_end_hooks() {
-                        tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
-                    }
                     if let Some(session) = state.executor.current_session().get_current() {
                         if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
                             tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
@@ -3660,7 +3657,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let session_id = session.id.clone();
 
         // Build a Lua session with a hook that increments a Lua global counter.
-        let mut executor = LuaExecutor::new().expect("lua executor");
+        let executor = LuaExecutor::new().expect("lua executor");
         executor
             .lua()
             .load(
@@ -3673,7 +3670,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             )
             .exec()
             .expect("install end hook");
-        executor.sync_session_end_hooks().expect("sync end hooks");
 
         // Bind a LuaSession into the executor's session manager so the
         // hook dispatcher has a target.

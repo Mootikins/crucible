@@ -139,10 +139,6 @@ pub struct DaemonPluginLoader {
     /// session reads, so one write at boot reaches every session.
     /// The mode registry, shared the same way and for the same reason.
     modes: crucible_lua::ModeRegistry,
-    /// `cru.permissions.on_request` hooks and their bodies. The tool gate
-    /// runs them against this VM's `Lua`.
-    permission_hooks: Arc<std::sync::Mutex<Vec<crucible_lua::PermissionHook>>>,
-    permission_functions: Arc<std::sync::Mutex<HashMap<String, mlua::RegistryKey>>>,
     /// Shared registry of Lua-defined output validators.
     ///
     /// Plugins call `cru.context.register_validator(name, fn)` which inserts
@@ -298,17 +294,17 @@ impl DaemonPluginLoader {
         let modes = crucible_lua::ModeRegistry::new();
         reg("modes", crucible_lua::register_modes(lua, modes.clone()))?;
 
+        // One store for every `cru.*` callback on this VM: `cru.on`,
+        // `cru.permissions.on_request`, the two session hooks and
+        // `cru.on_provider_auth`. Built here so both registration APIs below
+        // wire the same handle, and so `clear_owner` reaches all of them.
+        let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
+
         // `cru.permissions`. This VM runs every Lua file, so this is the only
         // registration; the tool gate dispatches these hooks.
-        let permission_hooks = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let permission_functions = Arc::new(std::sync::Mutex::new(HashMap::new()));
         reg(
             "permissions",
-            crucible_lua::register_permission_hook_api(
-                lua,
-                permission_hooks.clone(),
-                permission_functions.clone(),
-            ),
+            crucible_lua::register_permission_hook_api(lua, (*handler_registry).clone()),
         )?;
 
         // `cru.context` must exist from init, not only after
@@ -358,14 +354,9 @@ impl DaemonPluginLoader {
         // Bound per plugin at execute time for the same reason `publish` is.
         let options = OptionsRegistry::new();
 
-        let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "cru.on",
-            register_cru_on_api(
-                lua,
-                handler_registry.runtime_handlers(),
-                handler_registry.handler_functions(),
-            ),
+            register_cru_on_api(lua, (*handler_registry).clone()),
         )?;
 
         Ok(Self {
@@ -376,8 +367,6 @@ impl DaemonPluginLoader {
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
             modes,
-            permission_hooks,
-            permission_functions,
             handler_registry,
             plugin_config,
             plugin_registry: Arc::new(PluginRegistry::new()),
@@ -632,16 +621,12 @@ impl DaemonPluginLoader {
         session: &crucible_lua::Session,
     ) -> anyhow::Result<()> {
         self.executor
-            .sync_session_start_hooks()
-            .map_err(|e| anyhow::anyhow!("sync session_start hooks: {e}"))?;
-        self.executor
             .fire_session_start_hooks(session)
             .await
             .map_err(|e| anyhow::anyhow!("fire session_start hooks: {e}"))
     }
 
     /// Fire `cru.on_session_end` hooks registered by plugins.
-    /// See [`Self::fire_session_start`] for why this syncs first.
     ///
     /// Teardown failures are reported but must not block the session ending —
     /// refusing to end a session leaves the user stuck, which is the opposite
@@ -650,9 +635,6 @@ impl DaemonPluginLoader {
         &mut self,
         session: &crucible_lua::Session,
     ) -> anyhow::Result<()> {
-        self.executor
-            .sync_session_end_hooks()
-            .map_err(|e| anyhow::anyhow!("sync session_end hooks: {e}"))?;
         self.executor
             .fire_session_end_hooks(session)
             .await
@@ -679,11 +661,7 @@ impl DaemonPluginLoader {
 
     /// The permission hooks registered on this VM, for the tool gate.
     pub fn permission_registry(&self) -> crate::agent_manager::DaemonPermissions {
-        (
-            self.permission_hooks.clone(),
-            self.permission_functions.clone(),
-            self.plugin_lua(),
-        )
+        (self.handler_registry.clone(), self.plugin_lua())
     }
 
     /// Clone of the plugin runtime's `Lua` handle.
@@ -953,10 +931,11 @@ impl DaemonPluginLoader {
                 .get(&name)
                 .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled);
             if disabled {
-                self.handler_registry.clear_plugin_handlers(&name);
-                if let Err(e) = crucible_lua::clear_plugin_hooks(self.executor.lua(), &name) {
-                    warn!("clear boot-require hooks for disabled plugin '{name}': {e}");
-                }
+                crucible_lua::clear_owner(
+                    self.executor.lua(),
+                    &self.handler_registry,
+                    &crucible_lua::Owner::Plugin(name.clone()),
+                );
                 info!("Plugin '{name}' is disabled; its boot-require registrations were cleared");
             }
         }
@@ -1189,10 +1168,15 @@ impl DaemonPluginLoader {
     fn make_plugin_inert(&mut self, name: &str) {
         self.abort_services(name);
         self.plugin_registry.remove_plugin(name);
-        self.handler_registry.clear_plugin_handlers(name);
-        if let Err(e) = crucible_lua::clear_plugin_hooks(self.executor.lua(), name) {
-            warn!("clear session hooks for dead plugin '{name}': {e}");
-        }
+        // One call, every store this plugin can have written: `cru.on`
+        // handlers, permission hooks, both session hooks, provider auth hooks
+        // and its schedules. It used to clear five registries and miss the
+        // rest, so a plugin marked Not Active still held live registrations.
+        crucible_lua::clear_owner(
+            self.executor.lua(),
+            &self.handler_registry,
+            &crucible_lua::Owner::Plugin(name.to_string()),
+        );
         self.publications.release_plugin(name);
         self.options.release_plugin(name);
         // Dropped RegistryKeys only mark their slots; reclaim them so repeated
@@ -1313,9 +1297,11 @@ impl DaemonPluginLoader {
         // handlers keep firing against dead state (and `pre_tool_call` fails
         // closed, denying every tool call in every session), while a doubled
         // `on_session_start` runs oci's container setup twice per session.
-        self.handler_registry.clear_plugin_handlers(name);
-        crucible_lua::clear_plugin_hooks(lua, name)
-            .map_err(|e| anyhow::anyhow!("clear session hooks for '{name}': {e}"))?;
+        crucible_lua::clear_owner(
+            lua,
+            &self.handler_registry,
+            &crucible_lua::Owner::Plugin(name.to_string()),
+        );
         // The plugin context carries BOTH authority markers: the name every
         // `cru.storage` call is scoped to, and whether this plugin may replace
         // a tool call's execution. The grant comes from the manifest the
@@ -1353,7 +1339,7 @@ impl DaemonPluginLoader {
         // handlers). Anything registered after this point (e.g. from a
         // lifecycle hook at session start) is not attributable to a load, so
         // it is left unowned rather than mis-attributed.
-        crucible_lua::set_plugin_context(lua, previous);
+        crucible_lua::set_owner(lua, previous);
 
         let exports = executed?;
         info!("Executed plugin in daemon runtime: {}", init_path.display());
@@ -1681,12 +1667,21 @@ impl DaemonPluginLoader {
         };
 
         let lua = self.executor.lua();
-        let result: mlua::Value = lua
+        // An eval arrives over a socket, so it is its own owner. Without this
+        // bracket it ran as the user's own `init.lua`: its `cru.on` handler
+        // could intercept a tool call, no clear path could ever remove it, and
+        // its `cru.config.set` pinned a leaf no file holds.
+        let previous = crucible_lua::set_owner(lua, crucible_lua::Owner::Eval);
+        let result = lua
             .load(&code)
             .set_name("=lua.eval")
-            .eval_async()
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", crucible_lua::format_lua_error(None, &e)))?;
+            .eval_async::<mlua::Value>()
+            .await;
+        // Restored before the `?`: an owner left behind attributes whatever
+        // runs next to the socket.
+        crucible_lua::set_owner(lua, previous);
+        let result =
+            result.map_err(|e| anyhow::anyhow!("{}", crucible_lua::format_lua_error(None, &e)))?;
 
         match &result {
             mlua::Value::Nil => Ok("nil".to_string()),

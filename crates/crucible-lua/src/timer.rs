@@ -101,12 +101,12 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
         // reason `cru.schedule` gives: a detached task carries no context of
         // its own, so the task lost its plugin's name — and "no context" is
         // also how the host spells the operator's own authority.
-        let owner = crate::plugin_context::current_plugin_context(lua);
+        let owner = crate::plugin_context::current_owner(lua);
         let vm = lua.clone();
         tokio::spawn(async move {
-            let previous = crate::plugin_context::set_plugin_context(&vm, owner);
+            let previous = crate::plugin_context::set_owner(&vm, owner);
             let result = func.call_async::<()>(()).await;
-            crate::plugin_context::set_plugin_context(&vm, previous);
+            crate::plugin_context::set_owner(&vm, previous);
             if let Err(e) = result {
                 tracing::warn!("Spawned Lua task error: {}", e);
             }
@@ -213,7 +213,7 @@ mod tests {
             .await
             .unwrap();
         // The spawning call has returned; the plugin is no longer current.
-        crate::plugin_context::set_plugin_context(&lua, previous);
+        crate::plugin_context::set_owner(&lua, previous);
 
         for _ in 0..50 {
             if lua.globals().get::<bool>("ran").unwrap() {
