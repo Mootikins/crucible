@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn publication_changed_keeps_its_wire_name_and_fields() {
         let msg = publication_changed("kanban".to_string(), "kanban:board".to_string());
-        assert_eq!(msg.event, "publication_changed");
+        assert_eq!(msg.event, SystemPayload::PUBLICATION_CHANGED);
         assert_eq!(msg.session_id, SYSTEM_SESSION);
         assert_eq!(
             msg.data.get("plugin").and_then(|v| v.as_str()),

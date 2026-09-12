@@ -18,6 +18,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
 use futures::stream::Stream;
 use serde::Serialize;
@@ -47,7 +48,10 @@ pub struct SurfaceChangedEvent {
 
 impl SurfaceChangedEvent {
     /// The SSE `event:` name the browser listens for.
-    pub const EVENT_NAME: &'static str = "surface_changed";
+    ///
+    /// Read from the daemon's own payload, never written again here. See
+    /// `PublicationChangedEvent::EVENT_NAME` for what a second literal cost.
+    pub const EVENT_NAME: &'static str = SystemPayload::SURFACE_CHANGED;
 
     /// Project a daemon event into this shape, or `None` for anything else.
     ///

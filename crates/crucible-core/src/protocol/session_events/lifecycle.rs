@@ -428,3 +428,28 @@ pub enum SystemPayload {
         reason: String,
     },
 }
+
+impl SystemPayload {
+    /// The wire name of [`Self::SurfaceChanged`].
+    ///
+    /// A crate that must NAME the event rather than build one reads it here.
+    /// `crucible-web` filters the daemon's system channel on the name and then
+    /// labels its own SSE frame with it, and the browser registers a listener
+    /// for the same string.
+    ///
+    /// **Why a const beside the rename.** A `#[serde(rename = ...)]` takes a
+    /// literal and nothing else, so the attribute cannot read this value. The
+    /// pair is proved equal by `a_system_events_const_matches_its_serde_name`,
+    /// which SERIALIZES each variant rather than reading the source text — so
+    /// the const cannot drift from the wire.
+    pub const SURFACE_CHANGED: &'static str = "surface_changed";
+
+    /// The wire name of [`Self::PublicationChanged`]. See
+    /// [`Self::SURFACE_CHANGED`] for why the const sits beside the rename.
+    ///
+    /// This one is a repair. A merge deleted
+    /// `crucible_daemon::event_map::PUBLICATION_CHANGED_EVENT` and replaced its
+    /// one cross-crate use with a fresh literal in `crucible-web`, so the name
+    /// was written twice with nothing holding the two together.
+    pub const PUBLICATION_CHANGED: &'static str = "publication_changed";
+}

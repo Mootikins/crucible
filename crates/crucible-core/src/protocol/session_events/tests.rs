@@ -262,6 +262,47 @@ fn group_of_routes_each_name_to_the_enum_that_declares_it() {
     }
 }
 
+/// Each `SystemPayload` wire-name const must equal what serde writes.
+///
+/// `#[serde(rename = ...)]` takes a literal, so the name exists twice in
+/// `lifecycle.rs`: once in the attribute, once as the const another crate
+/// reads. This is the only tie available, and it is a behavioural one — it
+/// serializes the variant and reads the `event` field back, so no text scan
+/// can satisfy it and a changed rename fails here.
+#[test]
+fn a_system_events_const_matches_its_serde_name() {
+    let cases: [(&str, SystemPayload); 2] = [
+        (
+            SystemPayload::SURFACE_CHANGED,
+            SystemPayload::SurfaceChanged {
+                plugin: "kanban".to_string(),
+                name: "board".to_string(),
+                version: 1,
+                session: None,
+            },
+        ),
+        (
+            SystemPayload::PUBLICATION_CHANGED,
+            SystemPayload::PublicationChanged {
+                plugin: "kanban".to_string(),
+                key: "kanban:board".to_string(),
+            },
+        ),
+    ];
+
+    for (declared, payload) in cases {
+        let wire = serde_json::to_value(&payload).expect("a payload serializes");
+        let serde_name = wire["event"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no `event` field in {wire} — adjacent tagging changed"));
+        assert_eq!(
+            declared, serde_name,
+            "the const and the serde rename disagree; a crate reading the const \
+             would filter on a name the daemon never sends"
+        );
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // The fixture sweep — the plan's progress meter, now unconditional
 // ─────────────────────────────────────────────────────────────────────────

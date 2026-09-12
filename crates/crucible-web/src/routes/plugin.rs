@@ -7,6 +7,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use crucible_core::protocol::SystemPayload;
 use crucible_daemon::server::plugins::OptionAction;
 use crucible_daemon::SessionEvent;
 use futures::stream::Stream;
@@ -250,7 +251,11 @@ pub struct PublicationChangedEvent {
 
 impl PublicationChangedEvent {
     /// The SSE `event:` name the browser listens for.
-    pub const EVENT_NAME: &'static str = "publication_changed";
+    ///
+    /// Read from the daemon's own payload, never written again here: this file
+    /// once held a literal of its own, and the name it had to match lived two
+    /// crates away with nothing comparing them.
+    pub const EVENT_NAME: &'static str = SystemPayload::PUBLICATION_CHANGED;
 
     /// Project a daemon event into this shape, or `None` for anything else.
     ///
@@ -424,7 +429,7 @@ mod tests {
     fn a_publication_frame_keeps_the_name_and_the_fields() {
         let ev = SessionEvent::new(
             "system",
-            "publication_changed",
+            SystemPayload::PUBLICATION_CHANGED,
             serde_json::json!({ "plugin": "kanban", "key": "kanban:board" }),
         );
         let projected = PublicationChangedEvent::from_daemon_event(&ev).expect("projects");
@@ -455,7 +460,7 @@ mod tests {
     fn a_publication_frame_without_a_key_is_dropped() {
         let ev = SessionEvent::new(
             "system",
-            "publication_changed",
+            SystemPayload::PUBLICATION_CHANGED,
             serde_json::json!({ "plugin": "kanban" }),
         );
         assert!(PublicationChangedEvent::from_daemon_event(&ev).is_none());

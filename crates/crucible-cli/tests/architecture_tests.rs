@@ -1015,3 +1015,91 @@ fn agents_md_prints_the_real_hook_counts() {
         EventName::ALL.len()
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// A2h — a side-channel wire name is written once
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The only Rust files allowed to spell a `SystemPayload` wire name.
+///
+/// `lifecycle.rs` declares it twice by necessity — `#[serde(rename = ...)]`
+/// takes a literal and cannot read a const — and
+/// `a_system_events_const_matches_its_serde_name` proves the two agree by
+/// serializing the variant. `session_events/mod.rs` holds `Group::of`, whose
+/// coverage `group_of_knows_every_declared_event` derives from the enums.
+///
+/// Every other crate reads `SystemPayload::SURFACE_CHANGED` or
+/// `SystemPayload::PUBLICATION_CHANGED`.
+const WIRE_NAME_HOMES: &[&str] = &[
+    "crates/crucible-core/src/protocol/session_events/lifecycle.rs",
+    "crates/crucible-core/src/protocol/session_events/mod.rs",
+];
+
+/// A2h: neither side-channel event name appears as a literal outside its home.
+///
+/// A merge deleted `crucible_daemon::event_map::PUBLICATION_CHANGED_EVENT` and
+/// replaced its one cross-crate use with a fresh literal in `crucible-web`, so
+/// the name was written in two crates with nothing comparing them. Nothing
+/// noticed: the cross-language gate that exists
+/// (`crucible-web`'s `sse_event_names_match_the_frontend_listener_list`)
+/// compares `ChatEvent::event_name()` to `SSE_EVENT_TYPES`, and these two
+/// events travel their own SSE streams, so neither side of it names either one.
+///
+/// **This gate FORBIDS rather than REQUIRES.** A gate that requires an entry
+/// is satisfiable by not adding the entry — the failure `AGENTS.md` records
+/// four times. A gate that forbids an extra copy fails the moment somebody
+/// writes one, which is the event to catch. The names come from the compiled
+/// consts, and a run that scans no file fails.
+#[test]
+fn a_side_channel_wire_name_is_written_once() {
+    use crucible_core::protocol::SystemPayload;
+
+    let root = workspace_root();
+    let files = crate_source_files(&root);
+    assert!(
+        !files.is_empty(),
+        "A2h: scanned no crate sources — the walk root moved, fix this test"
+    );
+
+    let names = [
+        SystemPayload::SURFACE_CHANGED,
+        SystemPayload::PUBLICATION_CHANGED,
+    ];
+
+    // The homes must still hold the names, or the scan below proves nothing.
+    for home in WIRE_NAME_HOMES {
+        let (_, path) = files
+            .iter()
+            .find(|(rel, _)| rel == home)
+            .unwrap_or_else(|| panic!("A2h: `{home}` is gone — fix this test"));
+        let body = read(path);
+        for name in names {
+            assert!(
+                body.contains(&format!("\"{name}\"")),
+                "A2h: `{home}` no longer spells `{name}` — the declaration \
+                 moved, so update WIRE_NAME_HOMES"
+            );
+        }
+    }
+
+    let mut offenders = Vec::new();
+    for (rel, path) in &files {
+        if WIRE_NAME_HOMES.contains(&rel.as_str()) {
+            continue;
+        }
+        let body = without_line_comments(&read(path));
+        for name in names {
+            if body.contains(&format!("\"{name}\"")) {
+                offenders.push(format!("{rel}: \"{name}\""));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "A2h: a side-channel wire name is written outside its home. Read \
+         `crucible_core::protocol::SystemPayload::SURFACE_CHANGED` or \
+         `::PUBLICATION_CHANGED` instead of spelling the string:\n  {}",
+        offenders.join("\n  ")
+    );
+}

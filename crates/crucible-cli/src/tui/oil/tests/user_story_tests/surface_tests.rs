@@ -106,9 +106,10 @@ fn a_plugin_pushing_rows_never_takes_the_screen() {
     let mut story = StoryRuntime::new(80, 24);
     story.send(ChatAppMsg::UserMessage("mid-sentence".into()));
 
-    // The real event, through the real translation.
+    // The real event, under the daemon's own name, through the real
+    // translation.
     for msg in session_event_to_chat_msgs(
-        "surface_changed",
+        crucible_core::protocol::SystemPayload::SURFACE_CHANGED,
         &serde_json::json!({ "plugin": "p", "name": "sessions", "version": 2 }),
     ) {
         story.send(msg);

@@ -1100,4 +1100,39 @@ mod tests {
             offenders.join("\n  ")
         );
     }
+
+    // ── The side-channel SSE names ───────────────────────────────────
+
+    /// The publication and surface streams do not travel the chat channel, so
+    /// `sse_event_names_match_the_frontend_listener_list` never looked at
+    /// either: neither `ChatEvent::event_name()` nor `SSE_EVENT_TYPES`
+    /// mentions them, and a gate that compares two sets an event is absent
+    /// from cannot see it. That is why a fresh literal for one of these two
+    /// names passed review.
+    ///
+    /// Each name comes from the compiled const, which
+    /// `a_system_events_const_matches_its_serde_name` ties to the daemon's own
+    /// serde rename. So the chain is: rename → core const → route const →
+    /// browser listener, with a test on every link.
+    #[test]
+    fn every_side_channel_event_name_has_a_frontend_listener() {
+        let sources = frontend_sources();
+        assert!(
+            !sources.is_empty(),
+            "walked no frontend sources — the path moved, fix this test"
+        );
+
+        let declared = [
+            crate::routes::PublicationChangedEvent::EVENT_NAME,
+            crate::routes::SurfaceChangedEvent::EVENT_NAME,
+        ];
+
+        for name in declared {
+            let call = format!("addEventListener('{name}'");
+            assert!(
+                sources.iter().any(|(_, body)| body.contains(&call)),
+                "the daemon sends `{name}` and no frontend file listens for it"
+            );
+        }
+    }
 }
