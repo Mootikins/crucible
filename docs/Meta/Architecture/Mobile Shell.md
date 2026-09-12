@@ -687,6 +687,18 @@ rules follow, and both are tested:
 null on the desktop, and a section that would push a sub-page renders it
 inline there instead. Null is the ordinary case, not an error.
 
+**A control sits to the RIGHT of the text it labels**, not under it — the
+placement iOS, Android and Obsidian all use for a switch, a value and a
+picker alike. The settings form is a two-column table built for the desktop
+dialog, so one media block in `index.css` turns each row into a flex row: the
+label takes what is left and wraps inside it, the control keeps a fixed column
+and a thumb-sized height.
+
+The trap in that block is `:only-child`. A status, an error and a section
+header are ONE cell spanning both columns, and that cell is both the first and
+the last child — so a rule written as `td:last-child` right-aligns every
+message in the dialog. Both cases are selected explicitly.
+
 ## 11. An offline kiln, and the sync
 
 A phone loses the network. The shell must still open a kiln and edit a note.

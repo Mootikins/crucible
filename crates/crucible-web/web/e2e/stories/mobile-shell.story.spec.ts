@@ -132,8 +132,11 @@ test.describe('WS-317 the compact shell', () => {
     await expect(dialog.getByTestId('settings-back')).toHaveCount(0);
     await story.step(page, 'settings root');
 
-    await dialog.getByTestId('settings-nav-appearance').click();
-    await expect(dialog.getByRole('heading', { name: 'Appearance' })).toBeVisible();
+    // Editor, because it carries all three control shapes — checkboxes,
+    // number boxes and a select — so the captured frame shows where a
+    // control sits beside the text it labels.
+    await dialog.getByTestId('settings-nav-editor').click();
+    await expect(dialog.getByTestId('settings-editor-vim')).toBeVisible();
     // The list it came from is gone, not scrolled past.
     await expect(dialog.getByTestId('settings-nav-app-config')).toHaveCount(0);
     await story.step(page, 'a category');

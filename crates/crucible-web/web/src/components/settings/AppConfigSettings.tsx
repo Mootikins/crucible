@@ -319,7 +319,7 @@ const AppConfigGroup: Component<GroupProps> = (props) => {
               }
             >
               {(nav) => (
-                <tr class="border-b border-hairline">
+                <tr class="border-b border-hairline" data-row="plain">
                   <td colSpan={2} class="p-0">
                     <SettingsNavRow
                       label={child().name ?? child().key ?? 'Group'}

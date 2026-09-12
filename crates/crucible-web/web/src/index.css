@@ -1431,20 +1431,49 @@ details.callout[open] > summary.callout-title::after {
 
 /* ── Settings on a phone ───────────────────────────────────────────────
  * The settings form is a two-column table built for a desktop dialog. On a
- * phone the label and its control cannot share a row and still leave the
- * control a thumb-sized target, so the row stacks and the controls grow.
- * One block, because the alternative is a compact branch in every section. */
+ * phone it becomes a flex row: the label on the left, its control on the
+ * RIGHT of that label — the way iOS, Android and Obsidian all place a switch.
+ * The label wraps; the control keeps a fixed column and a thumb-sized height.
+ *
+ * One block, because the alternative is a compact branch in every section.
+ *
+ * `:only-child` is what separates the two cases. A status, an error and a
+ * section header are one `td` spanning both columns, and that cell is BOTH
+ * first and last child — so a rule written as `td:last-child` would right-
+ * align every message in the dialog. */
 @media (max-width: 767px) {
   [data-testid='settings-modal'] tr {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.75rem;
     padding-block: 0.5rem;
   }
   [data-testid='settings-modal'] td {
     display: block;
-    text-align: left;
     padding-block: 0;
+  }
+  /* A cell spanning both columns keeps the whole row, left-aligned. */
+  [data-testid='settings-modal'] td:only-child {
+    flex: 1 1 100%;
+    min-width: 0;
+    text-align: left;
+  }
+  /* The label takes what is left and wraps inside it. */
+  [data-testid='settings-modal'] td:first-child:not(:only-child) {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    padding-right: 0;
+  }
+  /* The control sits at the right-hand end of the row. */
+  [data-testid='settings-modal'] td:last-child:not(:only-child) {
+    flex: 0 0 auto;
+    text-align: right;
+  }
+  /* A row that draws its own full-width control — a navigation row. */
+  [data-testid='settings-modal'] tr[data-row='plain'] {
+    padding-block: 0;
+    gap: 0;
   }
   [data-testid='settings-modal'] input[type='checkbox'] {
     width: 1.5rem;
@@ -1452,8 +1481,10 @@ details.callout[open] > summary.callout-title::after {
   }
   [data-testid='settings-modal'] input[type='number'],
   [data-testid='settings-modal'] input[type='text'],
+  [data-testid='settings-modal'] input[type='password'],
   [data-testid='settings-modal'] select {
     min-height: 2.75rem;
-    width: 100%;
+    width: 10rem;
+    max-width: 100%;
   }
 }
