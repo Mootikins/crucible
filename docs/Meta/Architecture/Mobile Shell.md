@@ -19,10 +19,16 @@ of this note took that line at face value and re-derived decisions the log had
 already made, with weaker evidence. The line now points at the record. Section 2a lists where this draft now departs from
 the record, so none of the departures is silent.
 
-**Track A — the `P2` shell — is built as of 2026-09-11**: the shell switch, the
+**Built as of 2026-09-12.** Track A (the `P2` shell): the shell switch, the
 drawers, the tab stack and its host, the project switcher, the overflow menu,
-the plain editor and the three-step session flow. Sections 11 and 13 (offline,
-and the note-write primitive) are NOT built; they are the `P3` entries. See [[Web User Stories]] for
+the plain editor and the three-step session flow. Track B (section 13's write
+primitive): anchored edits in `crucible-core`, `PATCH /api/kiln/file`,
+`cru.fs.edit`, and the note index carrying its author's frontmatter. Track C
+(section 11): the offline store, a kiln kept whole, the outbox and its conflict
+copy, and the Offline settings group.
+
+What is NOT built: the kiln-wide checkbox index (open question 11), a
+cross-file atomic move (10), and the scope vocabulary (9). See [[Web User Stories]] for
 the story format that the work must add to, and [[State Stores]] for the store
 conventions.
 

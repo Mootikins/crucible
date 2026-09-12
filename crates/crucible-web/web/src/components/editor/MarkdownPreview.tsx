@@ -5,6 +5,7 @@
  * app-wide hover cards and click-to-open for free.
  */
 import { Component, createEffect, createResource, onCleanup } from 'solid-js';
+import { hydrateOfflineImages } from '@/lib/offline/images';
 import { mountPluginBlocks } from '@/components/blocks/mount';
 import { renderMarkdownDocAsync, proseClass } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
@@ -74,6 +75,17 @@ export const MarkdownPreview: Component<{
     disposeBlocks = mountPluginBlocks(proseHost);
   });
   onCleanup(() => disposeBlocks?.());
+
+  // Point images at the copies this device keeps, once the HTML lands. The
+  // markdown pipeline rewrites `<img src>` synchronously and cannot await a
+  // blob, so the swap happens here — and a kept kiln's attachment is stored on
+  // its first view, which is what "notes only" means by fetched when opened.
+  createEffect(() => {
+    const rendered = html();
+    if (rendered === undefined || !proseHost) return;
+    const host = proseHost;
+    void hydrateOfflineImages(host, () => props.kiln ?? null).catch(() => undefined);
+  });
 
   // After the async render lands, jump to the wikilink that points at the
   // requested note (rendered wikilinks carry data-note = raw target text).
