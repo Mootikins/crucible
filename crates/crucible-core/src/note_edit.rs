@@ -14,6 +14,17 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::parser::BlockHash;
+
+/// The hash of the bytes ON DISK, for conflict reporting.
+///
+/// NOT the hash the note index carries: that one is written asynchronously by
+/// the file watcher, so it lags a save and cannot answer "did this file change
+/// under me". This one is taken inside the read-modify-write that uses it.
+pub fn disk_hash(text: &str) -> String {
+    BlockHash::new(*blake3::hash(text.as_bytes()).as_bytes()).to_hex()
+}
+
 /// One change: the text expected, and what replaces it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnchoredEdit {

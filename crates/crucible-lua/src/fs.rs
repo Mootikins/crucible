@@ -58,6 +58,7 @@
 
 use crate::error::LuaError;
 use crate::error_ext::LuaResultExt;
+use crucible_core::note_edit::{apply_anchored_edits, AnchoredEdit, EditOutcome};
 use mlua::Lua;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -252,6 +253,54 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
         "Replaces the file's whole contents, creating its parent directory. \
          Raises when the path lies outside the roots this plugin may reach. \
          Last write wins: there is no compare-and-set.",
+    );
+
+    // The checked alternative to `write` for a file a plugin did not author
+    // alone. `write` is last-write-wins over the WHOLE file, so a plugin that
+    // changes one frontmatter line takes the body with it — and loses whatever
+    // a user or an agent wrote meanwhile. An anchored edit names the text it
+    // expects, so a stale change fails loudly instead.
+    fs.func(
+        "edit",
+        "(path: string, edits: { { expect: string, replace: string, occurrence: number? } }) -> boolean",
+        |lua, (path, edits): (String, mlua::Table)| {
+            let target = scoped(lua, &path, "edit")?;
+            let mut batch: Vec<AnchoredEdit> = Vec::new();
+            for pair in edits.sequence_values::<mlua::Table>() {
+                let entry = pair?;
+                batch.push(AnchoredEdit {
+                    expect: entry.get::<String>("expect")?,
+                    replace: entry.get::<String>("replace")?,
+                    occurrence: entry.get::<Option<usize>>("occurrence")?,
+                });
+            }
+            if batch.is_empty() {
+                return Err(mlua::Error::external("cru.fs.edit: no edits given"));
+            }
+            let original = fs::read_to_string(&target)
+                .lua_runtime()
+                .map_err(mlua::Error::external)?;
+            match apply_anchored_edits(&original, &batch) {
+                EditOutcome::Applied(updated) => {
+                    fs::write(&target, updated)
+                        .lua_runtime()
+                        .map_err(mlua::Error::external)?;
+                    Ok(true)
+                }
+                // False, not an error: a refused edit is an ordinary answer —
+                // the file moved on — and a plugin decides what to do about it.
+                EditOutcome::Refused(_) => Ok(false),
+            }
+        },
+    )?;
+    fs.doc(
+        "edit",
+        "Changes the lines an edit names, or changes nothing. Each edit gives \
+         the `expect` text and its `replace`; `expect` matches whole lines, \
+         never inside a code fence, and must match exactly once unless the edit \
+         gives an `occurrence`. Answers false when any edit does not apply, \
+         leaving the file untouched. Prefer it to `write` for a file a user or \
+         an agent also edits.",
     );
 
     fs.func(
@@ -495,6 +544,51 @@ mod tests {
 
     /// `remove_all` is the recursive delete, under a name that says so.
     #[test]
+    /// The feature crosses Rust and Luau, so one test crosses it: a plugin
+    /// calls `cru.fs.edit` and the bytes on disk change.
+    #[test]
+    fn edit_changes_the_anchored_line_and_leaves_the_body() {
+        let temp = TempDir::new().unwrap();
+        let note = temp.path().join("ticket.md");
+        fs::write(&note, "---\nstatus: todo\n---\n\n# Body\n\nkept\n").unwrap();
+
+        let lua = create_lua();
+        let applied: bool = lua
+            .load(format!(
+                r#"return cru.fs.edit("{}", {{ {{ expect = "status: todo", replace = "status: doing" }} }})"#,
+                note.to_string_lossy()
+            ))
+            .eval()
+            .expect("edit must run");
+
+        assert!(applied, "the anchor was present, so the edit applies");
+        assert_eq!(
+            fs::read_to_string(&note).unwrap(),
+            "---\nstatus: doing\n---\n\n# Body\n\nkept\n"
+        );
+    }
+
+    /// A refused edit is an ordinary answer, not a raise: the plugin decides.
+    #[test]
+    fn edit_answers_false_and_writes_nothing_when_the_anchor_moved_on() {
+        let temp = TempDir::new().unwrap();
+        let note = temp.path().join("ticket.md");
+        let before = "---\nstatus: doing\n---\n";
+        fs::write(&note, before).unwrap();
+
+        let lua = create_lua();
+        let applied: bool = lua
+            .load(format!(
+                r#"return cru.fs.edit("{}", {{ {{ expect = "status: blocked", replace = "status: done" }} }})"#,
+                note.to_string_lossy()
+            ))
+            .eval()
+            .expect("edit must run");
+
+        assert!(!applied, "the anchor is absent, so the edit is refused");
+        assert_eq!(fs::read_to_string(&note).unwrap(), before);
+    }
+
     fn remove_all_removes_a_directory_tree() {
         let temp = TempDir::new().unwrap();
         let dir = temp.path().join("tree");

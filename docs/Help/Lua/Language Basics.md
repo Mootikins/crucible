@@ -68,6 +68,14 @@ they may reach. `cru.fs.read` and `cru.fs.write` know which plugin is calling,
 and they confine it to the kilns, the workspace and that plugin's own state
 directory.
 
+**`cru.fs.write` is last-write-wins over the WHOLE file.** For a file a user or
+an agent also edits, use `cru.fs.edit`: each edit names the `expect` text and
+its `replace`, the text must match whole lines and cannot match inside a code
+fence, and it must match exactly once unless the edit gives an `occurrence`.
+The batch applies together or not at all, and `edit` answers `false` — leaving
+the file untouched — when any edit no longer applies, so a stale change fails
+loudly instead of overwriting someone else's work.
+
 ```lua
 -- Canonical access
 cru.http.get(url)
@@ -79,6 +87,12 @@ cru.json.decode(str)
 -- Whole-file read and write, scoped to the plugin's roots
 local body = cru.fs.read(path)
 cru.fs.write(path, body .. "\n")
+
+-- Change a few lines instead of the whole file. Prefer this for a note a
+-- user or an agent also edits: `write` is last-write-wins over everything.
+local ok = cru.fs.edit(path, {
+  { expect = "status: todo", replace = "status: doing" },
+})
 
 -- `io` is still there for streaming and for appending
 local f = assert(io.open(path, "a"))

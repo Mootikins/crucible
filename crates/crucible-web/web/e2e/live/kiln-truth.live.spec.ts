@@ -155,4 +155,91 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     expect(existsSync(path.join(path.dirname(kiln), 'escape.md'))).toBe(false);
     await api.dispose();
   });
+
+  // An anchored edit is what makes an offline outbox safe: it names the text it
+  // expects, so a stale edit fails loudly instead of overwriting a body someone
+  // else changed. This is the only tier where the bytes on disk can be checked.
+  test('WS-202: an anchored edit changes its lines and leaves the body byte-exact', async ({ page }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const before = '---\nstatus: todo\nupdated: 09-01\n---\n\n# Ticket\n\nA body a human wrote. café ☕\n';
+    const notePath = path.join(kilnDir, 'Ticket.md');
+
+    await page.goto(baseURL);
+    await page.evaluate(
+      async ({ kiln, body }) => {
+        await fetch(`/api/notes/${encodeURIComponent('Ticket')}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kiln, content: body }),
+        });
+      },
+      { kiln: kilnDir, body: before },
+    );
+    await expect.poll(() => existsSync(notePath)).toBe(true);
+
+    const patched = await page.evaluate(async (file) => {
+      const res = await fetch('/api/kiln/file', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: file,
+          edits: [
+            { expect: 'status: todo', replace: 'status: doing' },
+            { expect: 'updated: 09-01', replace: 'updated: 09-11' },
+          ],
+        }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, notePath);
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.content_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(readFileSync(notePath, 'utf-8')).toBe(
+      '---\nstatus: doing\nupdated: 09-11\n---\n\n# Ticket\n\nA body a human wrote. café ☕\n',
+    );
+  });
+
+  test('WS-202: a stale anchor is refused, whole, and the file is untouched', async ({ page }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const before = '---\nstatus: doing\n---\n\n# Stale\n\nuntouched\n';
+    const notePath = path.join(kilnDir, 'Stale.md');
+
+    await page.goto(baseURL);
+    await page.evaluate(
+      async ({ kiln, body }) => {
+        await fetch(`/api/notes/${encodeURIComponent('Stale')}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kiln, content: body }),
+        });
+      },
+      { kiln: kilnDir, body: before },
+    );
+    await expect.poll(() => existsSync(notePath)).toBe(true);
+
+    const refused = await page.evaluate(async (file) => {
+      const res = await fetch('/api/kiln/file', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: file,
+          base_hash: '0'.repeat(64),
+          edits: [
+            { expect: 'status: todo', replace: 'status: done' },
+            { expect: '# Stale', replace: '# Renamed' },
+          ],
+        }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, notePath);
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.failed).toEqual([{ reason: 'not_found', index: 0 }]);
+    expect(refused.body.stale_base).toBe(true);
+    expect(refused.body.current_hash).toMatch(/^[0-9a-f]{64}$/);
+    // All or nothing: the second edit was fine and must not have landed.
+    expect(readFileSync(notePath, 'utf-8')).toBe(before);
+  });
 });

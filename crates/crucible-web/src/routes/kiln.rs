@@ -7,11 +7,12 @@ use crate::{error::WebResultExt, WebError};
 use axum::response::{IntoResponse, Response};
 use axum::{
     extract::State,
-    http::{header, HeaderMap, HeaderValue},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     routing::get,
     Json, Router,
 };
 use crucible_core::config::{read_project_config, ProjectFileAccess};
+use crucible_core::note_edit::{apply_anchored_edits, disk_hash, AnchoredEdit, EditOutcome};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -21,7 +22,10 @@ pub fn kiln_routes() -> Router<AppState> {
         .route("/api/kiln/files", get(list_kiln_files))
         .route("/api/kiln/notes", get(list_kiln_notes))
         .route("/api/kiln/graph", get(kiln_graph))
-        .route("/api/kiln/file", get(get_kiln_file).put(put_kiln_file))
+        .route(
+            "/api/kiln/file",
+            get(get_kiln_file).put(put_kiln_file).patch(patch_kiln_file),
+        )
         .route("/api/file/raw", get(get_raw_file))
 }
 
@@ -43,6 +47,18 @@ struct FilePathQuery {
 struct PutFileRequest {
     path: String,
     content: String,
+}
+
+/// `PATCH /api/kiln/file` — change a few lines, not the whole file.
+#[derive(serde::Deserialize)]
+struct PatchFileRequest {
+    path: String,
+    edits: Vec<AnchoredEdit>,
+    /// The disk hash the caller last read. Optional, and it REPORTS rather
+    /// than gates: the anchors already decide whether an edit still applies,
+    /// so this only separates "the file moved on" from "your anchor moved on".
+    #[serde(default)]
+    base_hash: Option<String>,
 }
 
 // =========================================================================
@@ -123,7 +139,12 @@ async fn get_kiln_file(
     // footgun (it would have served stale DB text over the file bytes).
     let content = read_text_file(&canonical_file).await?;
 
-    Ok(Json(serde_json::json!({ "content": content })))
+    // The hash of the bytes just read, so a later PATCH can say whether the
+    // file moved on. Not the index's hash, which lags a save.
+    Ok(Json(serde_json::json!({
+        "content_hash": disk_hash(&content),
+        "content": content,
+    })))
 }
 
 /// Read a file this endpoint is able to represent, or say which way it failed.
@@ -354,7 +375,77 @@ async fn put_kiln_file(
         .await
         .map_err(WebError::Io)?;
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(serde_json::json!({ "ok": true, "content_hash": disk_hash(&req.content) })))
+}
+
+/// `PATCH /api/kiln/file` — apply a batch of anchored edits, or refuse it.
+///
+/// The read, the apply and the write happen here, in that order, so the hash
+/// this answers with is the hash of what was written. A refusal names the edit
+/// and why (`EditRefusal`), because a UI that can only say "failed" makes the
+/// user re-read the file to find out what happened.
+async fn patch_kiln_file(
+    State(state): State<AppState>,
+    Json(req): Json<PatchFileRequest>,
+) -> Result<axum::response::Response, WebError> {
+    reject_path_traversal(&req.path)?;
+    if req.edits.is_empty() {
+        return Err(WebError::Validation("No edits given".to_string()));
+    }
+
+    let file_path = PathBuf::from(&req.path);
+    let root = find_enclosing_root(&state, &file_path).await?;
+    if let EnclosingRoot::Project(_, policy) = &root {
+        if !policy.can_write() {
+            return Err(if policy.can_read() {
+                WebError::Forbidden("Project files are read-only".to_string())
+            } else {
+                WebError::NotFound("File not within any open kiln".to_string())
+            });
+        }
+    }
+    let canonical_file = validate_file_within_kiln(&file_path, root.path(), &req.path)?;
+    validate_write_target_within_kiln(&file_path, root.path())?;
+
+    let original = read_text_file(&canonical_file).await?;
+    let current_hash = disk_hash(&original);
+
+    match apply_anchored_edits(&original, &req.edits) {
+        EditOutcome::Applied(updated) => {
+            if updated.len() > MAX_CONTENT_SIZE {
+                return Err(WebError::Validation(format!(
+                    "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
+                    updated.len()
+                )));
+            }
+            let written_hash = disk_hash(&updated);
+            fs::write(&file_path, &updated).await.map_err(WebError::Io)?;
+            Ok(Json(serde_json::json!({
+                "ok": true,
+                "content_hash": written_hash,
+            }))
+            .into_response())
+        }
+        EditOutcome::Refused(refusals) => {
+            // The file is untouched. `stale_base` says the file moved on since
+            // the caller read it, which is the difference between "someone else
+            // edited this note" and "your anchor was never right".
+            let stale_base = req
+                .base_hash
+                .as_deref()
+                .is_some_and(|base| base != current_hash);
+            Ok((
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "failed": refusals,
+                    "current_hash": current_hash,
+                    "stale_base": stale_base,
+                })),
+            )
+                .into_response())
+        }
+    }
 }
 
 /// A root the file endpoints may serve `file_path` from. Kilns are the
