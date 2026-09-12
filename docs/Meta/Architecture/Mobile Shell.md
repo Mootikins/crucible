@@ -281,10 +281,11 @@ retarget path in `openDraftSession` aims at the wrong tab.
 drop targets. The compact shell has none of them. It owns a small
 `tabStackStore` over the same `Tab` type.
 
-### The tab host seam — the largest piece of Track A
+### The tab host seam — built 2026-09-11
 
 An earlier revision said three openers are welded to `windowStore`. A review
-against master found more than ten sites, and one of them guards unsaved work:
+against master found more than ten sites, and one of them guards unsaved work.
+All of them now go through `lib/tab-host.ts`:
 
 | Site | What breaks on the compact shell without the seam |
 |---|---|
@@ -298,7 +299,7 @@ against master found more than ten sites, and one of them guards unsaved work:
 | `panel-actions.ts:76`, `shellStore.ts:60,75` | `openPanelTab`, and the shell's go-to actions |
 | `files/file-tree-a11y.ts:16` | `currentOpenFilePath`, the tree's highlight |
 
-**The fix is one seam, not ten branches.** Add `src/lib/tab-host.ts`:
+**One seam, not ten branches** — `src/lib/tab-host.ts`:
 
 ```ts
 interface TabHost {
@@ -317,8 +318,14 @@ returns the one the shell chose at load. Both `activate` paths call
 keeps `currentSession` true. Every site in the table then calls `tabHost()`.
 
 This is runtime polymorphism with two real implementations, so an interface is
-right here. The migration touches desktop code; the existing desktop suite is its
-gate, and it must stay green with no test edited to fit.
+right here. The migration touched desktop code, and the desktop suite stayed
+green with no test edited to fit.
+
+Two things the migration found. `openFileAtLine` could not open anything on a
+phone — its new-tab branch addressed a window-store group directly. And closing
+a tab with unsaved work cannot use `confirmTabClose`, because it calls
+`window.confirm`, which an installed PWA may suppress; the tab card asks in
+place instead.
 
 **Persist the tab stack in `localStorage`** (`crucible:compactTabs`), per
 browser. Never call `saveLayout` or `loadLayout` from the compact shell — see
