@@ -1001,6 +1001,38 @@ impl Default for LuaScriptHandlerRegistry {
 /// [`crate::timer::abort_source`], each of which states its own half. What this
 /// call does guarantee is that no further body of `source` starts.
 ///
+/// # Why the three bodies stay three, and are not one helper
+///
+/// They look alike from here — reach a store, take a `std::sync::Mutex`,
+/// select by source equality, stop, count — and a reviewer reasonably reads
+/// that as a pattern one step from a fourth copy. It is not one shape. Four
+/// things differ, and each difference is the point of its own store:
+///
+/// - **What is stopped.** A registration needs no stop action: dropping the
+///   row IS the stop. A schedule needs `tx.send(())` on a oneshot. A task
+///   needs `JoinHandle::abort`.
+/// - **The container and the element.** A `Vec<Registration>`, a
+///   `HashMap<u64, (LuaSource, Sender)>` keyed by the handle
+///   `cru.schedule.cancel` takes, and a `Vec<(LuaSource, JoinHandle)>` with no
+///   key because `cru.timer.spawn` answers nothing a caller could name one
+///   with.
+/// - **Where the store lives.** This one is a field on the registry the host
+///   already holds. The other two are VM app data under two different types,
+///   so each has an "absent store" arm that this one cannot have.
+/// - **Pruning, which is the divergence a review flagged.** `abort_source`
+///   also drops OTHER sources' finished handles; the other two drop nothing
+///   they did not select. That asymmetry is load-bearing rather than drift:
+///   only the task store holds handles the RUNTIME may retire on its own, so
+///   only it accumulates dead entries that nothing else would ever remove. A
+///   schedule's canceller leaves its map when it is cancelled and by nothing
+///   else, and a registration leaves this list when it is cleared.
+///
+/// A shared helper would have to be generic over the container, the element,
+/// the owner projection, the stop action and the store lookup — five knobs
+/// for three call sites, which buys nothing and hides each store's own
+/// reason. So they stay three, and this comment is the thing that was
+/// missing: the record of why.
+///
 /// Answers how many registrations it removed.
 pub fn clear_source(lua: &Lua, registry: &LuaScriptHandlerRegistry, source: &LuaSource) -> usize {
     let dropped = registry.clear_source(source);
