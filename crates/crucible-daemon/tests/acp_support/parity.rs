@@ -153,7 +153,7 @@ impl ShapeProjector {
                 used: *used,
                 limit: *limit,
             },
-            TurnEvent::Done { stop_reason } => EventShape::Done(stop_reason.clone()),
+            TurnEvent::Done { stop_reason } => EventShape::Done(*stop_reason),
             TurnEvent::Error(e) => EventShape::Error(e.into()),
 
             // Inbound only (runtime → agent), so never part of an agent's

@@ -81,7 +81,13 @@ async fn text_events_survive_roundtrip() {
     let events = vec![
         SessionEventMessage::text_delta("record-session", "content1"),
         SessionEventMessage::text_delta("record-session", "content2"),
-        SessionEventMessage::message_complete("record-session", "msg-1", "content1content2", None),
+        SessionEventMessage::message_complete(
+            "record-session",
+            "msg-1",
+            "content1content2",
+            None,
+            None,
+        ),
     ];
 
     let replayed = roundtrip(events).await;
@@ -226,6 +232,7 @@ async fn mixed_event_stream_roundtrip() {
             "record-session",
             "msg-2",
             "Rust is a systems programming language. It emphasizes safety.",
+            None,
             None,
         ),
     ];

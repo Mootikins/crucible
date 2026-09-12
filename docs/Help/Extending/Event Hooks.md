@@ -509,7 +509,36 @@ The hook for "always add something", where `precognition_format` is the hook for
 
 Fires once when the whole turn has finished — after the final
 `message_complete`, not once per LLM call. The place for end-of-turn side
-effects (writing a note, updating a statusline value).
+effects (writing a note, updating a statusline value), and the only event whose
+`inject` return starts another turn.
+
+The event carries what the turn knows about itself:
+
+| Field | What it says |
+|---|---|
+| `event.response_length` | Length of the whole reply, in bytes |
+| `event.response_tail` | The END of the reply, up to `chat.response_tail_chars` characters |
+| `event.response_truncated` | `true` when the tail left text out |
+| `event.stop_reason` | `end_turn`, `cancelled`, `empty`, `max_tokens` or `refusal`; `nil` when the turn ended without one |
+| `event.is_continuation` | `true` on a turn an `inject` started |
+| `event.continuation_depth` | How many injects precede this turn. `0` is the user's own message |
+| `event.saw_tool_activity` | `true` when the turn ran a tool |
+
+The tail is the END of the reply because that is where a model says what it
+means to do next. `chat.response_tail_chars` sets the size (default 2000); `0`
+sends the whole reply.
+
+**Crucible ships no opinion about what these mean.** There is no phrase list,
+no pattern and no "the model means to continue" flag: a shipped pattern would
+become an API, and Crucible would then own the accuracy of a guess about a
+model vendor's prose. Whether a turn finished the work is your handler's
+decision, from whatever source it trusts — a plan file, a tool result, a
+second model asked through `cru.session.complete`, or the text itself.
+
+`continuation_depth` is a fact and not a limit. The host counts and does not
+cap: a long plan needs as many turns as it has steps. A handler that wants a
+bound reads the number and stops injecting. What stops a runaway loop either
+way is the user's cancel, which reaches every depth.
 
 ## Handler Return Values
 

@@ -436,3 +436,55 @@ fn translate_tool_call_args_update_with_empty_args_drops_msg() {
         );
     }
 }
+
+/// A reply the provider cut off draws a note in the transcript.
+///
+/// The daemon names the reason; the TUI is where a user meets it. Tested from
+/// the WIRE payload, because a front end fed unfamiliar data is where this
+/// breaks while the producing side's tests all still pass.
+#[test]
+fn a_truncated_reply_draws_a_note_after_the_bubble() {
+    use serde_json::json;
+    let data = json!({
+        "message_id": "msg-1",
+        "full_response": "Half an ans",
+        "stop_reason": "max_tokens",
+    });
+
+    let msgs = session_event_to_chat_msgs("message_complete", &data);
+
+    // The note comes AFTER the completion: the completion seals the assistant
+    // bubble only while that bubble is the last node.
+    let complete = msgs
+        .iter()
+        .position(|m| matches!(m, ChatAppMsg::StreamComplete))
+        .expect("the stream still completes");
+    let notice = msgs
+        .iter()
+        .position(|m| matches!(m, ChatAppMsg::SystemNotice(_)))
+        .expect("a truncated reply is announced");
+    assert!(notice > complete, "got {msgs:?}");
+    match &msgs[notice] {
+        ChatAppMsg::SystemNotice(text) => assert!(text.contains("output limit"), "{text}"),
+        other => panic!("expected SystemNotice, got {other:?}"),
+    }
+}
+
+/// A reply that finished, or one from a daemon too old to name a reason,
+/// mints no notice.
+#[test]
+fn a_finished_reply_mints_no_notice() {
+    use serde_json::json;
+    for data in [
+        json!({"message_id": "m", "full_response": "done", "stop_reason": "end_turn"}),
+        json!({"message_id": "m", "full_response": "done"}),
+    ] {
+        let msgs = session_event_to_chat_msgs("message_complete", &data);
+        assert!(
+            !msgs
+                .iter()
+                .any(|m| matches!(m, ChatAppMsg::SystemNotice(_))),
+            "got {msgs:?} for {data}"
+        );
+    }
+}

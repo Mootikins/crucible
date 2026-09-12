@@ -384,11 +384,14 @@ impl SessionEventMessage {
         )
     }
 
+    /// `stop_reason` is `None` when the turn ended without a terminal `Done`
+    /// event, and on every line an older daemon wrote to `session.jsonl`.
     pub fn message_complete(
         session_id: impl Into<String>,
         message_id: impl Into<String>,
         full_response: impl Into<String>,
         usage: Option<&crate::traits::llm::TokenUsage>,
+        stop_reason: Option<crate::turn::StopReason>,
     ) -> Self {
         Self::typed(
             session_id,
@@ -400,6 +403,7 @@ impl SessionEventMessage {
                 total_tokens: usage.map(|u| u.total_tokens),
                 cache_read_tokens: usage.and_then(|u| u.cache_read_tokens),
                 cache_creation_tokens: usage.and_then(|u| u.cache_creation_tokens),
+                stop_reason,
             },
         )
     }

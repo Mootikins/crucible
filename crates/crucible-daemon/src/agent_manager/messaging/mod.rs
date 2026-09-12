@@ -7,7 +7,7 @@ pub(in crate::agent_manager) mod permission;
 pub(crate) mod review_capture;
 mod review_gate;
 mod send;
-mod stream;
+pub(in crate::agent_manager) mod stream;
 mod tool_call;
 mod tool_hooks;
 

@@ -57,6 +57,17 @@ fn default_precognition_results() -> usize {
     5
 }
 
+/// How much of a reply the `turn:complete` payload carries.
+///
+/// Enough for the closing paragraphs of a long answer, and small beside the
+/// output cap of every current model, so the common case sends the whole
+/// reply and pays nothing.
+pub const DEFAULT_RESPONSE_TAIL_CHARS: usize = 2000;
+
+fn default_response_tail_chars() -> usize {
+    DEFAULT_RESPONSE_TAIL_CHARS
+}
+
 fn default_system_prompt() -> String {
     DEFAULT_SYSTEM_PROMPT.to_string()
 }
@@ -104,6 +115,14 @@ pub struct ChatConfig {
     /// is why it is here and not a session knob.
     #[serde(default = "default_autocompact_threshold")]
     pub autocompact_threshold: f32,
+    /// How many characters of the reply a `turn:complete` handler is given,
+    /// counted from the END of it.
+    ///
+    /// A plugin decides whether a turn finished the work, and what a model
+    /// says about what it will do next sits at the end of the answer. `0`
+    /// sends the whole reply.
+    #[serde(default = "default_response_tail_chars")]
+    pub response_tail_chars: usize,
     /// The system prompt a new session starts from.
     ///
     /// An agent card's own prompt wins; this fills a card that names none.
@@ -124,6 +143,7 @@ impl Default for ChatConfig {
             context_budget: None,
             precognition_results: default_precognition_results(),
             autocompact_threshold: default_autocompact_threshold(),
+            response_tail_chars: default_response_tail_chars(),
             system_prompt: default_system_prompt(),
         }
     }

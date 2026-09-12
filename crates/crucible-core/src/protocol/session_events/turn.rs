@@ -96,6 +96,12 @@ pub enum TurnPayload {
         cache_read_tokens: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_creation_tokens: Option<u32>,
+        /// Why the turn ended. Absent for the same reason the token fields
+        /// are: no data rather than a default. A turn whose stream closed
+        /// without a terminal `Done` has no reason to report, and every
+        /// `session.jsonl` line an older daemon wrote predates the field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stop_reason: Option<crate::turn::StopReason>,
     },
     /// Field order is load-bearing: `serde_json` is built with
     /// `preserve_order`, so the declaration order here is the key order on the

@@ -3,7 +3,30 @@ use crate::test_support::temp_session_manager;
 
 mod event_dispatch {
     use super::*;
+    use crate::agent_manager::messaging::stream::TurnFacts;
     use crucible_lua::ScriptHandlerResult;
+
+    /// A turn that ran no tool, ended naturally, and is not a re-prompt.
+    fn a_first_turn() -> TurnFacts {
+        TurnFacts {
+            stop_reason: Some(crucible_core::turn::StopReason::EndTurn),
+            continuation_depth: 0,
+            saw_tool_activity: false,
+        }
+    }
+
+    /// The same turn, reached by one re-prompt.
+    fn a_re_prompted_turn() -> TurnFacts {
+        TurnFacts {
+            continuation_depth: 1,
+            ..a_first_turn()
+        }
+    }
+
+    /// The shipped default, so a test reads the payload a session really gets.
+    fn tail_chars() -> usize {
+        crucible_core::config::components::chat::DEFAULT_RESPONSE_TAIL_CHARS
+    }
 
     #[tokio::test]
     async fn handler_executes_when_event_fires() {
@@ -217,7 +240,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&state.handlers()),
-            false, // is_continuation
+            a_first_turn(),
+            tail_chars(),
         )
         .await;
 
@@ -260,7 +284,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&plugin_pair),
-            false,
+            a_first_turn(),
+            tail_chars(),
         )
         .await;
 
@@ -318,7 +343,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&plugin_pair),
-            false,
+            a_first_turn(),
+            tail_chars(),
         )
         .await;
 
@@ -353,7 +379,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&state.handlers()),
-            false,
+            a_first_turn(),
+            tail_chars(),
         )
         .await;
 
@@ -393,7 +420,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&state.handlers()),
-            false,
+            a_first_turn(),
+            tail_chars(),
         )
         .await;
 
@@ -430,7 +458,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&state.handlers()),
-            true, // is_continuation
+            a_re_prompted_turn(),
+            tail_chars(),
         )
         .await;
 
@@ -450,6 +479,179 @@ mod event_dispatch {
             received,
             "Handler should have received is_continuation=true"
         );
+    }
+
+    /// A handler reads the END of the reply, and is told when text was cut.
+    ///
+    /// The payload used to carry `response_length` alone — a number the
+    /// scheduler computed from a string it was holding and then discarded. A
+    /// plugin that wanted the text had to read `session.jsonl`.
+    #[tokio::test]
+    async fn a_handler_reads_the_reply_tail() {
+        let state = handler_vm();
+
+        state
+            .lua
+            .load(
+                r#"
+                cru.on("turn:complete", function(ctx, event)
+                    return { inject = { content = event.response_tail
+                        .. "|truncated=" .. tostring(event.response_truncated) } }
+                end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+
+        let response = format!("{}the end", "x".repeat(50));
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            &response,
+            Some(&state.handlers()),
+            a_first_turn(),
+            10,
+        )
+        .await;
+
+        assert_eq!(injection.as_deref(), Some("xxxthe end|truncated=true"));
+    }
+
+    /// A reply shorter than the limit arrives whole, and says so.
+    #[tokio::test]
+    async fn a_short_reply_is_not_truncated() {
+        let state = handler_vm();
+
+        state
+            .lua
+            .load(
+                r#"
+                cru.on("turn:complete", function(ctx, event)
+                    return { inject = { content = event.response_tail
+                        .. "|truncated=" .. tostring(event.response_truncated) } }
+                end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            "short",
+            Some(&state.handlers()),
+            a_first_turn(),
+            tail_chars(),
+        )
+        .await;
+
+        assert_eq!(injection.as_deref(), Some("short|truncated=false"));
+    }
+
+    /// A handler counts its own re-prompts.
+    ///
+    /// `is_continuation` is a bare bool, so a handler could tell the first
+    /// turn from the rest and nothing more. The host counts and the plugin
+    /// decides: there is no cap here, and a plugin that wants one sets it.
+    #[tokio::test]
+    async fn a_handler_counts_its_own_re_prompts() {
+        let state = handler_vm();
+
+        state
+            .lua
+            .load(
+                r#"
+                cru.on("turn:complete", function(ctx, event)
+                    return { inject = { content = "depth=" .. tostring(event.continuation_depth) } }
+                end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            "Some response",
+            Some(&state.handlers()),
+            TurnFacts {
+                continuation_depth: 7,
+                ..a_first_turn()
+            },
+            tail_chars(),
+        )
+        .await;
+
+        assert_eq!(injection.as_deref(), Some("depth=7"));
+    }
+
+    /// A handler sees that the turn ran a tool.
+    ///
+    /// A turn that ends right after a tool result is a model still working,
+    /// which no amount of reply text can tell a plugin.
+    #[tokio::test]
+    async fn a_handler_sees_tool_activity() {
+        let state = handler_vm();
+
+        state
+            .lua
+            .load(
+                r#"
+                cru.on("turn:complete", function(ctx, event)
+                    return { inject = { content = "tools=" .. tostring(event.saw_tool_activity) } }
+                end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            "Some response",
+            Some(&state.handlers()),
+            TurnFacts {
+                saw_tool_activity: true,
+                ..a_first_turn()
+            },
+            tail_chars(),
+        )
+        .await;
+
+        assert_eq!(injection.as_deref(), Some("tools=true"));
+    }
+
+    /// A handler reads why the turn ended, in the wire spelling.
+    #[tokio::test]
+    async fn a_handler_reads_the_stop_reason() {
+        let state = handler_vm();
+
+        state
+            .lua
+            .load(
+                r#"
+                cru.on("turn:complete", function(ctx, event)
+                    return { inject = { content = "stop=" .. tostring(event.stop_reason) } }
+                end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            "Some response",
+            Some(&state.handlers()),
+            TurnFacts {
+                stop_reason: Some(crucible_core::turn::StopReason::MaxTokens),
+                ..a_first_turn()
+            },
+            tail_chars(),
+        )
+        .await;
+
+        assert_eq!(injection.as_deref(), Some("stop=max_tokens"));
     }
 
     #[tokio::test]
@@ -475,7 +677,8 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             Some(&state.handlers()),
-            false,
+            a_first_turn(),
+            tail_chars(),
         )
         .await;
 

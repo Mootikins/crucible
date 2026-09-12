@@ -66,6 +66,16 @@ pub(crate) fn autocompact_threshold() -> f32 {
         .unwrap_or_else(|| ChatConfig::default().autocompact_threshold)
 }
 
+/// `chat.response_tail_chars` — how much of the reply the `turn:complete`
+/// payload carries, counted from the END. `0` sends the whole reply.
+pub(crate) fn response_tail_chars() -> usize {
+    leaf("chat.response_tail_chars")
+        .as_ref()
+        .and_then(serde_json::Value::as_u64)
+        .map(|n| n as usize)
+        .unwrap_or_else(|| ChatConfig::default().response_tail_chars)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

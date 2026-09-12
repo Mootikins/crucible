@@ -321,12 +321,21 @@ pub const APP_CONTROLS: &[AppControl] = &[
     )
     .bounded(0.0, 1.0, 0.05),
     AppControl::new(
+        "chat.response_tail_chars",
+        Control::Range,
+        "Reply tail for handlers",
+        "How much of a reply a turn:complete handler reads, counted from the \
+         end of it. 0 sends the whole reply.",
+        9,
+    )
+    .bounded(0.0, 20_000.0, 100.0),
+    AppControl::new(
         "chat.system_prompt",
         Control::Text,
         "System prompt",
         "What a new session tells the model about itself. An agent card's own \
          prompt wins, and an on_session_start hook can extend this one.",
-        9,
+        10,
     ),
     // ---- cli ----
     AppControl::group(

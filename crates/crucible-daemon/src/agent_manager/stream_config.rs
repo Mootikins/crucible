@@ -22,6 +22,9 @@ pub(crate) struct AgentStreamConfig {
     /// The session's resolved context budget, for auto-compaction.
     /// `None` disables auto-compaction (no budget to compare against).
     pub(crate) context_budget: usize,
+    /// How many characters of the reply the `turn:complete` payload carries,
+    /// counted from the END. `0` sends the whole reply.
+    pub(crate) response_tail_chars: usize,
     /// Fraction of `context_budget` that triggers auto-compaction.
     /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
     /// [`crate::agent_manager::autocompact`].
@@ -116,6 +119,7 @@ impl AgentStreamConfig {
             model: session_agent.model.clone(),
             context_budget: super::configured::context_budget(session_agent.context_budget),
             autocompact_threshold: super::configured::autocompact_threshold(),
+            response_tail_chars: super::configured::response_tail_chars(),
             delegation_timeout_secs: session_agent
                 .delegation_config
                 .as_ref()

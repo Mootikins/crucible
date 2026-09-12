@@ -205,6 +205,7 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
             total_tokens,
             cache_read_tokens,
             cache_creation_tokens,
+            stop_reason,
             ..
         } => {
             let mut events = Vec::new();
@@ -217,8 +218,11 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
             ) {
                 events.push(TurnEvent::Usage(usage));
             }
+            // The daemon's own reason, when it sent one. This path used to
+            // fabricate `EndTurn`, so a proxied turn reported a natural
+            // completion for a truncation the daemon had already named.
             events.push(TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
+                stop_reason: stop_reason.unwrap_or(StopReason::EndTurn),
             });
             events
         }
