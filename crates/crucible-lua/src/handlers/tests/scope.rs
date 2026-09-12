@@ -284,6 +284,40 @@ fn a_session_that_is_not_a_string_is_refused() {
     );
 }
 
+/// A scope on `session:created` is refused, because it could NEVER fire.
+///
+/// `session:created` for session X is broadcast once, at X's creation, before
+/// any Lua runs inside X — and `scope_from_opts` resolves `{ session = … }`
+/// against the session the caller is running in, so the only id a caller may
+/// write is one whose creation event is already over. The registration API's
+/// contract is that a handler which can never fire is refused loudly, and
+/// `EventName::carries_session` is the gate that keeps it.
+///
+/// `session:ended` is the opposite and stays accepted: code inside X
+/// registers for X's end while X is still running.
+#[test]
+fn a_scope_on_session_created_is_refused_and_on_session_ended_is_not() {
+    let (lua, registry) = vm();
+
+    let err = load_in_session(
+        &lua,
+        "s1",
+        r#"cru.on("session:created", { session = "s1" }, function() end)"#,
+    )
+    .expect_err("a scope that can never fire must not register");
+    let msg = err.to_string();
+    assert!(msg.contains("could never fire"), "{msg}");
+    assert!(registry.all().is_empty(), "nothing may be stored");
+
+    load_in_session(
+        &lua,
+        "s1",
+        r#"cru.on("session:ended", { session = "s1" }, function() end)"#,
+    )
+    .expect("a teardown hook for the running session is the point of the scope");
+    assert_eq!(registry.all().len(), 1);
+}
+
 /// And with no session in scope there is nothing to resolve against. A plugin
 /// body runs at load, outside every session, so this is the message an author
 /// sees when they scope a handler in the wrong place.

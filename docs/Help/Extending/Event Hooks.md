@@ -197,6 +197,14 @@ plugin reload clears those.
 | `webhook:received` | a signed delivery from outside |
 | `index:blocks` | the note pipeline again |
 | `provider:auth` | the agent factory builds a chat client and holds no session |
+| `session:created` | it fires at the session's creation, so the only id you could name belongs to a session whose event is already over |
+
+`session:created` is the one worth spelling out. It is *about* a session, and
+the handler reads that session as `event.session_id` — but a scope on it could
+never fire, so it is refused rather than accepted and left quiet. For the same
+reason `ctx.session_id` is absent there: the dispatch belongs to the daemon.
+`session:ended` takes a scope normally, because code inside a session registers
+for that session's end while it is still running.
 
 Every other event carries one. `session:created` and `session:ended` name the
 session they are about, and `search:rerank` names one when the search came

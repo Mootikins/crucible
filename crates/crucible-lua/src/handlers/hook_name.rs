@@ -134,15 +134,39 @@ impl EventName {
         }
     }
 
-    /// Whether a dispatch of this event names a session.
+    /// Whether a dispatch of this event BELONGS to a session a handler could
+    /// have been scoped to.
     ///
     /// **No wildcard arm, ever** — same reason as [`Self::as_str`]. A new
     /// event must answer for itself.
     ///
     /// The file, note and webhook events belong to the daemon, not to a
-    /// session: the watcher fires them with nobody's turn running. The two
-    /// session events are ABOUT a session, and the dispatcher reads its id
-    /// from the payload.
+    /// session: the watcher fires them with nobody's turn running.
+    ///
+    /// # `session:created` answers `false`, and it is ABOUT a session
+    ///
+    /// The distinction is not "does a session id appear in the payload" — it
+    /// does, and a handler reads it as `event.session_id`. It is "could a
+    /// [`SessionScope::Session`](crate::SessionScope::Session) registration on
+    /// this name ever fire".
+    ///
+    /// For `session:created` it could not, and the registration API's stated
+    /// contract is that a handler which can never fire is refused loudly.
+    /// `session:created` for session X is broadcast once, at X's creation
+    /// (`rpc/dispatch.rs`, on create and on fork), which is before any Lua
+    /// runs inside X. And `scope_from_opts` resolves `{ session = … }`
+    /// against the session the CALLER is running in and refuses any other —
+    /// so the only id a caller may name is one whose `session:created` is
+    /// already over. The scope was accepted and could not match.
+    ///
+    /// `session:ended` is the opposite: code inside X registers for X's end
+    /// while X is still running, which is the whole point of a teardown hook.
+    ///
+    /// The consequence for `session:created` is that the dispatch is
+    /// [`Firing::Sessionless`](crate::Firing::Sessionless), so `ctx.session_id`
+    /// is absent there. That is right rather than a loss: `ctx.session_id` is
+    /// the session a dispatch belongs to, and this one belongs to the daemon.
+    /// The session it is ABOUT is `event.session_id`.
     #[must_use]
     pub const fn carries_session(self) -> bool {
         match self {
@@ -153,8 +177,9 @@ impl EventName {
             | Self::NoteModified
             | Self::NoteDeleted
             | Self::NoteRenamed
-            | Self::WebhookReceived => false,
-            Self::SessionCreated | Self::SessionEnded => true,
+            | Self::WebhookReceived
+            | Self::SessionCreated => false,
+            Self::SessionEnded => true,
         }
     }
 

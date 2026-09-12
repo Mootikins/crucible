@@ -552,13 +552,42 @@ mod tests {
 
     /// And the session it delivers is the session the event is about, not the
     /// `system` envelope it was addressed to.
+    ///
+    /// `session:ended` alone. `session:created` answers
+    /// `carries_session() == false`, because a scope on it could never fire —
+    /// the only id a caller may name is one whose creation event is already
+    /// over. See `EventName::carries_session`.
     #[test]
     fn a_session_event_names_the_session_it_is_about() {
-        for msg in [session_created("sess-1"), session_ended("sess-1", "done")] {
-            let hooked = decode(&msg).expect("decodes");
-            assert_eq!(hooked.session.as_deref(), Some("sess-1"));
-            assert_eq!(msg.session_id, SYSTEM_SESSION, "the envelope is the bus");
-        }
+        let msg = session_ended("sess-1", "done");
+        let hooked = decode(&msg).expect("decodes");
+        assert_eq!(hooked.session.as_deref(), Some("sess-1"));
+        assert_eq!(msg.session_id, SYSTEM_SESSION, "the envelope is the bus");
+    }
+
+    /// `session:created` dispatches SESSIONLESS, and still carries the new id
+    /// in its payload.
+    ///
+    /// The handler's route to the session is `event.session_id`, never
+    /// `ctx.session_id`: a scope on this name can never fire, so the dispatch
+    /// belongs to the daemon rather than to the session it announces.
+    #[tokio::test]
+    async fn session_created_dispatches_sessionless_and_carries_the_id() {
+        let msg = session_created("sess-1");
+        let hooked = decode(&msg).expect("decodes");
+        assert_eq!(
+            hooked.session, None,
+            "a scope on `session:created` can never fire, so the dispatch \
+             names no session"
+        );
+
+        let (_lua, seen) = as_the_handler_sees_it(&hooked).await;
+        assert_eq!(
+            seen.get::<String>("session_id").as_deref().ok(),
+            Some("sess-1"),
+            "the new session's id must still reach the handler as \
+             `event.session_id`"
+        );
     }
 
     /// Every broadcast message resolves back to its hook.
