@@ -18,7 +18,7 @@
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
 
-use crate::handlers::{scope_from_opts, Firing, HookName, StageId};
+use crate::handlers::{bool_option, scope_from_opts, Firing, HookName, StageId};
 use crate::handlers::{Registration, RegistrationSpec};
 
 /// The name a session start hook registers under.
@@ -72,12 +72,13 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         |lua, (func, opts): (Function, Option<Table>)| {
             let mut spec = RegistrationSpec::new(SESSION_START_HOOK);
             if let Some(opts) = &opts {
-                spec.required = opts.get::<Option<bool>>("required").ok().flatten() == Some(true);
+                spec.required =
+                    bool_option("cru.on_session_start", opts, "required")? == Some(true);
                 let (scope, key) =
                     scope_from_opts(lua, "cru.on_session_start", SESSION_START_HOOK, opts)?;
                 spec.scope = scope;
                 spec.key = key;
-                spec.once = opts.get::<Option<bool>>("once").ok().flatten() == Some(true);
+                spec.once = bool_option("cru.on_session_start", opts, "once")? == Some(true);
             }
             crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())
@@ -102,7 +103,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
                     scope_from_opts(lua, "cru.on_session_end", SESSION_END_HOOK, opts)?;
                 spec.scope = scope;
                 spec.key = key;
-                spec.once = opts.get::<Option<bool>>("once").ok().flatten() == Some(true);
+                spec.once = bool_option("cru.on_session_end", opts, "once")? == Some(true);
             }
             crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())
@@ -307,6 +308,31 @@ mod tests {
                 .len(),
             1,
             "the user's own hook is never cleared by a plugin"
+        );
+    }
+
+    /// `required` on a session-start hook decides whether a failure REFUSES
+    /// the session, and it opts in. Read with `.ok().flatten()` a wrong type
+    /// became `false`, so an isolation boundary that meant to be fatal
+    /// registered as advisory and the author saw a success.
+    #[test]
+    fn a_required_that_is_not_a_boolean_is_refused() {
+        let (lua, _) = TestLuaBuilder::new().build_with_hooks();
+
+        let err = lua
+            .load(r#"cru.on_session_start(function(s) end, { required = "yes" })"#)
+            .exec()
+            .expect_err("a non-boolean required must not register");
+        assert!(
+            err.to_string().contains("`required` must be a boolean"),
+            "{err}"
+        );
+        assert_eq!(
+            session_start_hooks(&lua, crate::handlers::Firing::Sessionless)
+                .unwrap()
+                .len(),
+            0,
+            "and it must not register as an advisory hook"
         );
     }
 

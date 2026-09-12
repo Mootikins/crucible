@@ -74,7 +74,7 @@ pub use permission::{
 };
 /// Crate-internal: the registration APIs share one option parse, and no
 /// caller outside this crate registers a handler.
-pub(crate) use registry::scope_from_opts;
+pub(crate) use registry::{bool_option, scope_from_opts};
 pub use registry::{
     clear_source, ClearFilter, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec,
     SessionScope,

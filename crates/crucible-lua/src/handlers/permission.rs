@@ -4,7 +4,8 @@ use tracing::debug;
 
 use super::hook_name::{HookName, StageId};
 use super::registry::{
-    scope_from_opts, Firing, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope,
+    bool_option, scope_from_opts, string_option, Firing, LuaScriptHandlerRegistry,
+    RegistrationSpec, SessionScope,
 };
 
 /// The name a permission hook registers under in the shared store.
@@ -88,10 +89,10 @@ pub fn register_permission_hook_api(
                         o,
                     )?;
                     (
-                        o.get::<Option<String>>("pattern").ok().flatten(),
+                        string_option("cru.permissions.on_request", o, "pattern")?,
                         scope,
                         key,
-                        o.get::<Option<bool>>("once").ok().flatten() == Some(true),
+                        bool_option("cru.permissions.on_request", o, "once")? == Some(true),
                     )
                 }
                 None => (None, SessionScope::Global, None, false),

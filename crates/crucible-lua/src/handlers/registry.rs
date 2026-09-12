@@ -339,12 +339,72 @@ pub fn session_from_opts(lua: &Lua, api: &str, opts: &mlua::Table) -> LuaResult<
 /// swallowing `{ session = session }` — the handle instead of its id, which
 /// is the mistake an author will make — would silently widen a handler from
 /// one session to all of them.
-fn string_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<String>> {
+///
+/// `pattern` is the same harm on the other axis. An absent pattern matches
+/// every dispatch identifier, so `cru.on("pre_tool_call", { pattern = tool },
+/// h)` where `tool` is a table would swallow to `None` and put the handler
+/// against EVERY tool call in every session — on the one hook that fails
+/// closed.
+///
+/// **Every option on every registration table is read through this function
+/// or one of its two siblings**, [`integer_option`] and [`bool_option`].
+/// Three readers, not one per option, and none of them is `.ok()`: a wrong
+/// type is an author's mistake and it is reported where it was made.
+pub(crate) fn string_option(
+    api: &str,
+    opts: &mlua::Table,
+    field: &str,
+) -> LuaResult<Option<String>> {
     match opts.get::<Value>(field) {
         Ok(Value::Nil) => Ok(None),
         Ok(Value::String(s)) => Ok(Some(s.to_str()?.to_string())),
         Ok(other) => Err(mlua::Error::RuntimeError(format!(
             "{api}: `{field}` must be a string, not a {}",
+            other.type_name()
+        ))),
+        Err(e) => Err(e),
+    }
+}
+
+/// One non-negative integer option, or `None` when it is absent.
+///
+/// See [`string_option`] for why the wrong type raises. Here the swallowed
+/// value would drop a handler back to its hook's default time budget, so a
+/// handler that asked for a long one would be cancelled mid-call with nothing
+/// naming the reason.
+pub(crate) fn integer_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<u64>> {
+    let wrong = |found: &str| {
+        Err(mlua::Error::RuntimeError(format!(
+            "{api}: `{field}` must be a non-negative integer, not {found}"
+        )))
+    };
+    match opts.get::<Value>(field) {
+        Ok(Value::Nil) => Ok(None),
+        Ok(Value::Integer(n)) => match u64::try_from(n) {
+            Ok(n) => Ok(Some(n)),
+            Err(_) => wrong(&format!("{n}")),
+        },
+        // Luau numbers are doubles, so `{ timeout_ms = 5000 }` can arrive as
+        // one. An integral value is the same option; a fractional one is not.
+        Ok(Value::Number(n)) if n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64 => {
+            Ok(Some(n as u64))
+        }
+        Ok(other) => wrong(&format!("a {}", other.type_name())),
+        Err(e) => Err(e),
+    }
+}
+
+/// One boolean option, or `None` when it is absent.
+///
+/// See [`string_option`] for why the wrong type raises. `required` and `once`
+/// are both "opt in to something unusual", so a swallowed value reads as the
+/// ordinary case and the author sees a registration that succeeded.
+pub(crate) fn bool_option(api: &str, opts: &mlua::Table, field: &str) -> LuaResult<Option<bool>> {
+    match opts.get::<Value>(field) {
+        Ok(Value::Nil) => Ok(None),
+        Ok(Value::Boolean(b)) => Ok(Some(b)),
+        Ok(other) => Err(mlua::Error::RuntimeError(format!(
+            "{api}: `{field}` must be a boolean, not a {}",
             other.type_name()
         ))),
         Err(e) => Err(e),

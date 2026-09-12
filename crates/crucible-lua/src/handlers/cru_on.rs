@@ -3,7 +3,8 @@ use tracing::debug;
 
 use super::hook_name::{hook_names, HookName};
 use super::registry::{
-    scope_from_opts, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope,
+    bool_option, integer_option, scope_from_opts, string_option, LuaScriptHandlerRegistry,
+    RegistrationSpec, SessionScope,
 };
 
 /// Reject a hook name `cru.on` cannot register for.
@@ -95,15 +96,15 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                         ))
                     }
                 };
-                let pattern: Option<String> = opts.get("pattern").ok();
+                let pattern = string_option("cru.on", opts, "pattern")?;
                 // A handler that legitimately runs long — a container build,
                 // a large model call — says so here. Absent, the name it
                 // registers for decides. See `handler_budget`.
-                let timeout_ms: Option<u64> = opts.get("timeout_ms").ok();
+                let timeout_ms = integer_option("cru.on", opts, "timeout_ms")?;
                 // A handler that retires itself after one call. The host
                 // removes the row before it runs the body; see
                 // `LuaScriptHandlerRegistry::retire_if_once`.
-                let once: bool = opts.get("once").unwrap_or(false);
+                let once = bool_option("cru.on", opts, "once")? == Some(true);
                 // Which sessions, and what this registration calls itself.
                 // The host resolves the session id; see `scope_from_opts`.
                 let (scope, key) = scope_from_opts(lua, "cru.on", name, opts)?;
