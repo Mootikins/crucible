@@ -41,7 +41,7 @@ pub async fn first_usable_transform<T>(
     for (registry, lua) in vms {
         for handler in registry.runtime_handlers_for(stage.as_str(), None) {
             match registry
-                .execute_runtime_handler(lua, &handler.name, event, session_id)
+                .execute_runtime_handler(lua, handler.id, event, session_id)
                 .await
             {
                 Ok(ScriptHandlerResult::Transform(value)) => {
@@ -50,7 +50,7 @@ pub async fn first_usable_transform<T>(
                     }
                     warn!(
                         stage = stage.as_str(),
-                        handler = %handler.name,
+                        handler = handler.id,
                         "handler returned a value the stage cannot read; ignoring"
                     );
                 }
@@ -61,7 +61,7 @@ pub async fn first_usable_transform<T>(
                 Err(error) => {
                     warn!(
                         stage = stage.as_str(),
-                        handler = %handler.name,
+                        handler = handler.id,
                         error = %error,
                         "handler error (fail-open)"
                     );

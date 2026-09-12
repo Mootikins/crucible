@@ -145,7 +145,7 @@ pub(super) async fn apply_tool_result_handlers(
                 }),
             };
             match registry
-                .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
+                .execute_runtime_handler(lua, handler.id, &event, Some(&stream_ctx.session_id))
                 .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
@@ -165,7 +165,7 @@ pub(super) async fn apply_tool_result_handlers(
                     warn!(
                         session_id = %stream_ctx.session_id,
                         tool = %tool_name,
-                        handler = %handler.name,
+                        handler = handler.id,
                         error = %err,
                         "tool_result handler error (fail-open)"
                     );

@@ -10,12 +10,7 @@ async fn lua_display_start_hook_returns_label_and_detail() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     lua.load(
         r#"
@@ -55,12 +50,7 @@ async fn lua_display_complete_hook_returns_summary() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     lua.load(
         r#"

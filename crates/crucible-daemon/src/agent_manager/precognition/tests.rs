@@ -213,12 +213,8 @@ mod precognition_format_hook_tests {
         let lua = std::sync::Arc::new(mlua::Lua::new());
         let registry = std::sync::Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
 
-        crucible_lua::register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register_cru_on_api should succeed");
+        crucible_lua::register_cru_on_api(&lua, (*registry).clone())
+            .expect("register_cru_on_api should succeed");
 
         (registry, lua)
     }
@@ -434,12 +430,8 @@ mod precognition_select_hook_tests {
         let lua = std::sync::Arc::new(mlua::Lua::new());
         let registry = std::sync::Arc::new(crucible_lua::LuaScriptHandlerRegistry::new());
 
-        crucible_lua::register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register_cru_on_api should succeed");
+        crucible_lua::register_cru_on_api(&lua, (*registry).clone())
+            .expect("register_cru_on_api should succeed");
 
         (registry, lua)
     }

@@ -998,7 +998,7 @@ impl AgentManager {
     ) {
         for handler in registry.runtime_handlers_for(StageId::PostLlmCall.as_str(), None) {
             if let Err(error) = registry
-                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
+                .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await
             {
                 warn!(
@@ -1075,13 +1075,13 @@ impl AgentManager {
         let mut pending_injection: Option<(String, String)> = None;
         for handler in handlers {
             match registry
-                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
+                .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await
             {
                 Ok(result) => {
                     debug!(
                         session_id = %session_id,
-                        handler = %handler.name,
+                        handler = handler.id,
                         result = ?result,
                         "Handler executed"
                     );
@@ -1089,7 +1089,7 @@ impl AgentManager {
                     if let ScriptHandlerResult::Inject { content, position } = result {
                         debug!(
                             session_id = %session_id,
-                            handler = %handler.name,
+                            handler = handler.id,
                             content_len = content.len(),
                             position = %position,
                             "Handler returned inject"
@@ -1100,7 +1100,7 @@ impl AgentManager {
                 Err(e) => {
                     error!(
                         session_id = %session_id,
-                        handler = %handler.name,
+                        handler = handler.id,
                         error = %e,
                         "Handler failed"
                     );

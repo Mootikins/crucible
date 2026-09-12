@@ -976,7 +976,7 @@ fn agents_md_prints_the_real_hook_counts() {
     let doc = read(&root.join("AGENTS.md"));
 
     let re = Regex::new(
-        r"\*\*`StageId`\*\* \((\d+) synchronous turn-loop stages\) or an \*\*`EventName`\*\* \((\d+) daemon broadcast events\)",
+        r"\*\*`StageId`\*\* \((\d+) synchronous stages\) or an \*\*`EventName`\*\* \((\d+) daemon broadcast events\)",
     )
     .unwrap();
 
@@ -986,7 +986,7 @@ fn agents_md_prints_the_real_hook_counts() {
             "A2g: no sentence in AGENTS.md matched the hook-count pattern, so \
              this scan broke rather than the counts agreeing. The sentence \
              lives under `### Hooks and ACP` and reads \"takes a **`StageId`** \
-             (N synchronous turn-loop stages) or an **`EventName`** (M daemon \
+             (N synchronous stages) or an **`EventName`** (M daemon \
              broadcast events)\". Restore that wording, or change this regex \
              together with it."
         )
@@ -998,7 +998,7 @@ fn agents_md_prints_the_real_hook_counts() {
     assert_eq!(
         stated_stages,
         StageId::ALL.len(),
-        "A2g: AGENTS.md says {stated_stages} turn-loop stages; `StageId::ALL` \
+        "A2g: AGENTS.md says {stated_stages} stages; `StageId::ALL` \
          holds {}. Every agent reads that document first. Update the sentence \
          under `### Hooks and ACP`, and the module doc of \
          crates/crucible-lua/src/handlers/hook_name.rs, which repeats it.",

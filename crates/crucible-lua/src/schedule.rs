@@ -74,15 +74,62 @@ mod inner {
 
     pub(super) const MAX_ACTIVE_SCHEDULES: usize = 256;
 
+    /// One live schedule: who created it, and how to stop it.
+    pub(super) type LiveSchedule = (
+        crate::plugin_context::Owner,
+        tokio::sync::oneshot::Sender<()>,
+    );
+
     /// Shared state tracking active scheduled tasks so they can be cancelled.
     ///
     /// Uses `std::sync::Mutex` (not tokio) since the lock is held only for
     /// brief insert/remove operations and must be usable from sync contexts.
     #[derive(Clone, Default)]
     pub(super) struct ScheduleRegistry {
-        pub(super) cancellers:
-            Arc<Mutex<HashMap<ScheduleHandle, tokio::sync::oneshot::Sender<()>>>>,
+        /// Each live schedule: who created it, and how to stop it.
+        ///
+        /// The owner is recorded so `clear_owner` can stop a plugin's timers
+        /// when the plugin goes inert. Without it a reload left the previous
+        /// generation's task running, calling a body from a dead load.
+        pub(super) cancellers: Arc<Mutex<HashMap<ScheduleHandle, LiveSchedule>>>,
     }
+
+    /// The VM's schedule registry, in its app data, so `cancel_owner` reaches
+    /// it without the host threading a handle through every caller.
+    pub(super) struct InstalledSchedules(pub(super) ScheduleRegistry);
+}
+
+/// Stop every schedule `owner` created. Answers how many it stopped.
+///
+/// `cru.schedule` stays its own store — it owns a tokio task and must not sit
+/// behind the per-tool-call lock the handler registry takes — so this is the
+/// one thing `clear_owner` needs from it.
+#[cfg(feature = "send")]
+pub fn cancel_owner(lua: &Lua, owner: &crate::plugin_context::Owner) -> usize {
+    let Some(installed) = lua.app_data_ref::<inner::InstalledSchedules>() else {
+        return 0;
+    };
+    let Ok(mut cancellers) = installed.0.cancellers.lock() else {
+        return 0;
+    };
+    let doomed: Vec<u64> = cancellers
+        .iter()
+        .filter(|(_, (created_by, _))| created_by == owner)
+        .map(|(handle, _)| *handle)
+        .collect();
+    for handle in &doomed {
+        if let Some((_, tx)) = cancellers.remove(handle) {
+            let _ = tx.send(());
+        }
+    }
+    doomed.len()
+}
+
+/// Without the `send` feature no schedule can be created, so none can be
+/// stopped.
+#[cfg(not(feature = "send"))]
+pub fn cancel_owner(_lua: &Lua, _owner: &crate::plugin_context::Owner) -> usize {
+    0
 }
 
 /// Register `cru.schedule(spec, handler)` and `cru.schedule.cancel(handle)`.
@@ -98,6 +145,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
     use std::time::Duration;
 
     let registry = ScheduleRegistry::default();
+    lua.set_app_data(inner::InstalledSchedules(registry.clone()));
 
     // The table exists before its members do, so `cancel` can be registered
     // through `Ns` — declared and CHECKED against its closure — while the
@@ -112,7 +160,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
             .cancellers
             .lock()
             .map_err(|e| mlua::Error::external(format!("schedule lock poisoned: {e}")))?;
-        if let Some(tx) = cancellers.remove(&(handle as u64)) {
+        if let Some((_owner, tx)) = cancellers.remove(&(handle as u64)) {
             let _ = tx.send(());
             Ok(true)
         } else {
@@ -187,22 +235,22 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
             }
         }
 
+        // The owner that scheduled this, captured HERE and re-entered around
+        // every tick. A detached task carries no owner of its own, so the
+        // callback used to run as if no plugin were running. That is why
+        // `cru.storage` refused a scheduled write — the namespace is read
+        // from the owner at call time, and consolidation's cursor writes have
+        // been failing under `pcall` ever since.
+        let owner = crate::plugin_context::current_owner(lua);
+
         // Insert the cancel sender before spawning so cancel() works immediately
         reg_schedule
             .cancellers
             .lock()
             .map_err(|e| mlua::Error::external(format!("schedule lock poisoned: {e}")))?
-            .insert(handle, cancel_tx);
+            .insert(handle, (owner.clone(), cancel_tx));
 
         let reg_cleanup = reg_schedule.clone();
-        // The plugin that scheduled this, captured HERE and re-entered around
-        // every tick. A detached task carries no context of its own, so the
-        // callback used to run as if no plugin were running. That is why
-        // `cru.storage` refused a scheduled write — the namespace is read
-        // from this same context at call time, and consolidation's cursor
-        // writes have been failing under `pcall` ever since. An absent
-        // context is also how the host spells the operator's own authority.
-        let owner = crate::plugin_context::current_plugin_context(lua);
         let vm = lua.clone();
         tokio::spawn(async move {
             let dur = Duration::from_secs_f64(interval_secs);
@@ -215,11 +263,11 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
                 tokio::select! {
                     _ = interval.tick() => {
                         let previous =
-                            crate::plugin_context::set_plugin_context(&vm, owner.clone());
+                            crate::plugin_context::set_owner(&vm, owner.clone());
                         let result = func.call_async::<()>(()).await;
-                        // Restored on both paths: a context left behind
+                        // Restored on both paths: an owner left behind
                         // attributes whatever runs next to this plugin.
-                        crate::plugin_context::set_plugin_context(&vm, previous);
+                        crate::plugin_context::set_owner(&vm, previous);
                         if let Err(e) = result {
                             tracing::warn!(handle, "scheduled callback error: {e}");
                         }
@@ -442,7 +490,7 @@ mod tests {
             .await
             .unwrap();
         // The scheduling call has returned; the plugin is no longer current.
-        crate::plugin_context::set_plugin_context(&lua, previous);
+        crate::plugin_context::set_owner(&lua, previous);
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert_eq!(

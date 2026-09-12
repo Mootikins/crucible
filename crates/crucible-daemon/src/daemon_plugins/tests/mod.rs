@@ -403,7 +403,7 @@ async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_fu
         payload: serde_json::json!({ "tool": "bash", "args": {} }),
     };
     let result = registry
-        .execute_runtime_handler(&loader.plugin_lua(), &handlers[0].name, &event, Some("s1"))
+        .execute_runtime_handler(&loader.plugin_lua(), handlers[0].id, &event, Some("s1"))
         .await
         .expect("dispatch beta's handler");
 
@@ -472,9 +472,11 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
         1,
         "the user handler is the only bash handler, and nothing clears it"
     );
-    assert_eq!(
-        handlers[0].plugin, None,
-        "a user init.lua handler is unattributed — that is why nothing clears it"
+    assert_ne!(
+        handlers[0].owner,
+        crucible_lua::Owner::Plugin("alpha".to_string()),
+        "the handler belongs to the evaluated source, not to alpha — that is \
+         why alpha's reload does not clear it"
     );
 
     let event = crucible_core::events::SessionEvent::Custom {
@@ -482,7 +484,7 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
         payload: serde_json::json!({ "tool": "bash", "args": {} }),
     };
     let result = registry
-        .execute_runtime_handler(&loader.plugin_lua(), &handlers[0].name, &event, Some("s1"))
+        .execute_runtime_handler(&loader.plugin_lua(), handlers[0].id, &event, Some("s1"))
         .await
         .expect("dispatch the user handler");
 
@@ -1090,4 +1092,112 @@ async fn binding_the_kiln_resolver_also_scopes_a_plugins_file_access() {
         !check(&dir.path().join("elsewhere.md")),
         "a path outside every root must be refused"
     );
+}
+
+/// `make_plugin_inert` states the invariant this proves: "Not Active" must
+/// imply "nothing of this plugin's is registered or running."
+///
+/// It cleared five registries and missed four more — the permission hooks,
+/// both session-hook maps, the provider auth hooks and the schedules. None of
+/// those four had an owner-keyed clear at all, so a plugin leaked one more
+/// copy of each on every reload and kept them after it was marked Error.
+#[tokio::test]
+async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("leaky");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+        cru.on("pre_tool_call", function(ctx, event) end)
+        cru.permissions.on_request(function(request) return nil end)
+        cru.on_session_start(function(session) end)
+        cru.on_session_end(function(session) end)
+        cru.on_provider_auth(function(context) return nil end)
+        return { name = "leaky", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let init = dir.join("init.lua");
+
+    // Every name the plugin registered for, and how to count it.
+    let counts = |loader: &DaemonPluginLoader| {
+        let registry = loader.plugin_handlers();
+        [
+            registry.runtime_handlers_for("pre_tool_call", None).len(),
+            registry
+                .runtime_handlers_for("permission:request", Some("bash"))
+                .len(),
+            registry.runtime_handlers_for("session:start", None).len(),
+            registry.runtime_handlers_for("session:end", None).len(),
+            registry.runtime_handlers_for("provider:auth", None).len(),
+        ]
+    };
+
+    for load in 1..=3 {
+        loader
+            .execute_plugin("leaky", &init)
+            .await
+            .unwrap_or_else(|e| panic!("load {load}: {e}"));
+        assert_eq!(
+            counts(&loader),
+            [1, 1, 1, 1, 1],
+            "load {load} left more than one copy of a registration"
+        );
+    }
+
+    loader.make_plugin_inert("leaky");
+    assert_eq!(
+        counts(&loader),
+        [0, 0, 0, 0, 0],
+        "a plugin marked Not Active still holds live registrations"
+    );
+    assert_eq!(
+        loader.plugin_handlers().plugin_handler_count("leaky"),
+        0,
+        "clear_owner must reach every store, not five of nine"
+    );
+}
+
+/// A `lua.eval` is its own owner, so its registrations are clearable and hold
+/// no interception right.
+///
+/// Before this, an eval ran with no owner at all, which read as the user's own
+/// `init.lua`: the interception grant answered `true`, and no clear path could
+/// ever remove what it registered.
+#[tokio::test]
+async fn an_eval_owns_what_it_registers_and_may_not_intercept() {
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .eval(r#"cru.on("pre_tool_call", function(ctx, event) end)"#)
+        .await
+        .expect("the eval registers");
+
+    let registry = loader.plugin_handlers();
+    let handlers = registry.runtime_handlers_for("pre_tool_call", None);
+    assert_eq!(handlers.len(), 1);
+    assert_eq!(
+        handlers[0].owner,
+        crucible_lua::Owner::Eval,
+        "an eval must not be attributed to the user's own configuration"
+    );
+    assert!(
+        !handlers[0].may_intercept(),
+        "an eval must not take a tool call over"
+    );
+
+    // And the clear path reaches it, which it could not while the owner was
+    // absent.
+    crucible_lua::clear_owner(
+        loader.executor().lua(),
+        &registry,
+        &crucible_lua::Owner::Eval,
+    );
+    assert!(registry
+        .runtime_handlers_for("pre_tool_call", None)
+        .is_empty());
 }

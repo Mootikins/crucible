@@ -205,7 +205,7 @@ impl AgentManager {
 
         for handler in registry.runtime_handlers_for(StageId::PrecognitionFormat.as_str(), None) {
             match registry
-                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
+                .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await
             {
                 Ok(ScriptHandlerResult::Transform(value)) => {
@@ -294,7 +294,7 @@ impl AgentManager {
 
         for handler in registry.runtime_handlers_for(StageId::PrecognitionSelect.as_str(), None) {
             match registry
-                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
+                .execute_runtime_handler(lua, handler.id, event, Some(session_id))
                 .await
             {
                 Ok(ScriptHandlerResult::Transform(value)) => {
@@ -303,7 +303,7 @@ impl AgentManager {
                     }
                     warn!(
                         session_id = %session_id,
-                        handler = %handler.name,
+                        handler = handler.id,
                         "precognition_select handler returned neither a list of \
                          entries nor an empty table; ignoring"
                     );

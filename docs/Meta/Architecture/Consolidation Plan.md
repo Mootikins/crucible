@@ -87,7 +87,7 @@ The nine entries with no commit:
 | B23 | The plan said keep; `InputNode` versus `LayoutContent::Input` is documented design |
 | C11 | Deferred by design: each TUI pair changes visible output and needs a snapshot review |
 | C15, C18 | Covered by T3-B7 |
-| C17 | Deferred by design: `PermissionHook` and `RuntimeHandler` differ in first-match semantics |
+| C17 | Done: six registries merged into `LuaScriptHandlerRegistry`; the fire paths stay separate |
 | C19 | Deferred by design: under `crucible-web/src/routes/` or on the SSE wire; a web session owns it |
 | C25 | Covered by T3-B17 |
 | C26 | Covered by T1-B4 |
@@ -807,7 +807,11 @@ Recommend: one `run_git(args, index_file: Option)` in `scm.rs`; leave the rest u
 Recommend: one `crucible_core::fs::write_private(path, bytes)` that always sets `0o600`. Payoff: security fix. Risk: none. Cost: S.
 
 **C17. `PermissionHook` vs `RuntimeHandler`; `retain_other_owners` vs `clear_plugin_auth_hooks`.**
-Recommend: defer; first-match-wins semantics differ. Cost: M.
+Done. Six registries merged into `LuaScriptHandlerRegistry`, keyed by four new
+`StageId` names. A store is not a dispatcher: the fire paths keep their own
+argument shape, budget and first-match rule, and `execute_permission_hooks`
+stays synchronous. `clear_owner` replaces all four partial clear paths and the
+two that did not exist.
 
 **C18. `SessionEvent::SessionEnded` vs `TurnPayload::Ended`, `PostLlmCall` x2, `Interaction*` x2.** Covered by B7.
 

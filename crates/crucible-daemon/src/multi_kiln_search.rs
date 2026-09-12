@@ -950,12 +950,7 @@ mod rerank_tests {
     fn plugin_vm(handler: &str) -> StageVm {
         let lua = mlua::Lua::new();
         let registry = crucible_lua::LuaScriptHandlerRegistry::new();
-        register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register_cru_on_api should succeed");
+        register_cru_on_api(&lua, registry.clone()).expect("register_cru_on_api should succeed");
         lua.load(handler).exec().expect("the handler loads");
         (registry, lua)
     }

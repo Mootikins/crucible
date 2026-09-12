@@ -20,7 +20,7 @@ pub(crate) async fn handle_lua_init_session(
         .map(PathBuf::from)
         .unwrap_or_else(crucible_core::config::crucible_home);
 
-    let mut executor = match LuaExecutor::new() {
+    let executor = match LuaExecutor::new() {
         Ok(executor) => executor,
         Err(e) => return internal_error(req.id, e),
     };
@@ -61,19 +61,12 @@ pub(crate) async fn handle_lua_init_session(
     drop(plugin_guard);
     executor.current_session().set_current(session.clone());
 
-    if let Err(e) = executor.sync_session_start_hooks() {
-        warn!(session_id = %session_id, error = %e, "Failed to sync session_start hooks");
-    }
     if let Err(e) = executor.fire_session_start_hooks(&session).await {
         warn!(session_id = %session_id, error = %e, "Failed to fire session_start hooks");
     }
 
     let registry = LuaScriptHandlerRegistry::new();
-    if let Err(e) = register_cru_on_api(
-        executor.lua(),
-        registry.runtime_handlers(),
-        registry.handler_functions(),
-    ) {
+    if let Err(e) = register_cru_on_api(executor.lua(), registry.clone()) {
         warn!(session_id = %session_id, error = %e, "Failed to register cru.on API");
     }
 
@@ -137,9 +130,6 @@ pub(crate) async fn handle_lua_shutdown_session(
                 "on_session_end hooks already fired; skipping"
             );
         } else {
-            if let Err(e) = state.executor.sync_session_end_hooks() {
-                warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
-            }
             if let Some(session) = state.executor.current_session().get_current() {
                 if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
                     warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");

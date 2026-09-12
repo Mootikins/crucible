@@ -81,15 +81,15 @@ fn run_permission_hooks(
     loader: &crate::daemon_plugins::DaemonPluginLoader,
     request: &PermissionRequest,
 ) -> PermissionHookResult {
-    let (hooks, functions, lua) = loader.permission_registry();
-    let hooks = hooks.lock().unwrap();
-    let functions = functions.lock().unwrap();
+    let (hooks, lua) = loader.permission_registry();
     assert!(
-        !hooks.is_empty(),
+        !hooks
+            .runtime_handlers_for("permission:request", Some(&request.tool_name))
+            .is_empty(),
         "defaults/init.lua must register a permission hook on the daemon VM; \
          an empty list means cru.permissions.on_request was missing there"
     );
-    execute_permission_hooks(&lua, &hooks, &functions, request).unwrap()
+    execute_permission_hooks(&lua, &hooks, request).unwrap()
 }
 
 fn tool_request(mode: &str) -> PermissionRequest {
@@ -385,11 +385,11 @@ async fn a_user_hook_overrides_the_shipped_auto_approve() {
 #[tokio::test]
 async fn the_shipped_permission_hook_registers_behind_user_hooks() {
     let (vm, _am, _sm, _session_id) = session_with_lua("").await;
-    let (hooks, _functions, _lua) = vm.permission_registry();
-    let hooks = hooks.lock().unwrap();
+    let (registry, _lua) = vm.permission_registry();
+    let hooks = registry.runtime_handlers_for("permission:request", Some("bash"));
 
     assert!(!hooks.is_empty(), "the shipped defaults register hooks");
-    for hook in hooks.iter() {
+    for hook in &hooks {
         assert_eq!(
             hook.priority,
             crucible_lua::SHIPPED_DEFAULT_PRIORITY,
@@ -611,13 +611,9 @@ async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: Permis
     // for conditional policy, which is why "Prompt" (no hook had an opinion) is
     // the right answer here; the stance is applied later, in the gate.
     let (vm, _am, _sm, _session_id) = session_with_lua("").await;
-    let (hooks, functions, lua) = vm.permission_registry();
-    let hooks = hooks.lock().unwrap();
-    let functions = functions.lock().unwrap();
+    let (hooks, lua) = vm.permission_registry();
 
-    let result =
-        crucible_lua::execute_permission_hooks(&lua, &hooks, &functions, &tool_request(mode))
-            .unwrap();
+    let result = crucible_lua::execute_permission_hooks(&lua, &hooks, &tool_request(mode)).unwrap();
     assert_eq!(result, expected);
 }
 

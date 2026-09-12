@@ -54,7 +54,7 @@ its own. Two reasons, and the second is the one that does not go away:
 1. A plugin directory that auto-loaded on `cd` would turn `git clone` into
    arbitrary code execution inside a long-lived daemon shared by every session.
 2. A plugin registers daemon-global handlers, tools and services into a VM no
-   session owns. `RuntimeHandler` has no session, workspace or kiln dimension,
+   session owns. A `Registration` has no session, workspace or kiln dimension,
    so a plugin loaded "for" one workspace fires its `pre_tool_call` in every
    other workspace's sessions — and `pre_tool_call` can cancel or replace a
    tool call. There is also no unload-on-leave. A trust prompt answers "should

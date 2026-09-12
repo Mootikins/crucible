@@ -830,11 +830,12 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `PluginManager` | `crucible-lua/src/lifecycle/mod.rs:31` | Discovers, loads, reloads, enables plugins |
 | `PluginSpec` | `crucible-lua/src/lifecycle/spec.rs:16` | Parsed spec table an `init.lua` returns |
 | `PluginManifest`, `Capability`, `PluginState`, `PluginSource` | `crucible-lua/src/manifest.rs:48,80,325,295` | `plugin.yaml` model |
-| `LuaScriptHandlerRegistry`, `RuntimeHandler` | `crucible-lua/src/handlers/registry.rs:32,48` | `cru.on` registrations |
-| `StageId`, `EventName`, `HookName` | `crucible-lua/src/handlers/hook_name.rs:119,44,193` | 11 stages, 8 events, union for validation |
+| `LuaScriptHandlerRegistry`, `Registration`, `RegistrationSpec` | `crucible-lua/src/handlers/registry.rs` | ONE store for every `cru.*` callback: `cru.on`, `cru.permissions.on_request`, both session hooks, `cru.on_provider_auth` |
+| `StageId`, `EventName`, `HookName` | `crucible-lua/src/handlers/hook_name.rs` | 17 stages, 10 events, union for validation. `cru.on` registers 13 stages; `HookName::own_api` names the four it refuses |
 | `ScriptHandlerResult` | `crucible-lua/src/handlers/script_handler.rs:15` | Transform, PassThrough, Cancel, Inject, Handled |
 | `EventOutcome` | `crucible-lua/src/handlers/script_handler.rs:110` | Observed or StopChain for broadcast events |
-| `PermissionHook`, `PermissionRequest`, `PermissionHookResult` | `crucible-lua/src/handlers/permission.rs:48,25,14` | `cru.permissions.on_request` |
+| `PermissionRequest`, `PermissionHookResult` | `crucible-lua/src/handlers/permission.rs` | `cru.permissions.on_request` payload and answer |
+| `Owner` | `crucible-lua/src/plugin_context.rs` | Who a registration belongs to: `Plugin(name)`, `UserLua`, `Builtin`, `Eval`. Total, so no registration sits outside every group |
 | `ToolBeforeExecuteEvent`, `ToolDisplayStartHints`, `ToolDisplayCompleteHints` | `handlers/before_execute.rs:12`, `display_hooks.rs:18,42` | Tool hook payloads |
 | `DaemonSessionApi` | `crucible-lua/src/sessions/mod.rs:103` | `cru.session.*` contract; the daemon implements it |
 | `DaemonSessionBridge` | `crucible-daemon/src/session_bridge.rs:23` | The one production `DaemonSessionApi` |

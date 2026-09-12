@@ -67,14 +67,8 @@ pub async fn execute_tool_display_start_hooks(
     });
 
     for handler in handlers {
-        match execute_runtime_json_handler(
-            lua,
-            registry,
-            &handler.name,
-            payload.clone(),
-            session_id,
-        )
-        .await?
+        match execute_runtime_json_handler(lua, registry, handler.id, payload.clone(), session_id)
+            .await?
         {
             ScriptHandlerResult::Transform(payload) => {
                 let hints = parse_display_start_hints(&payload);
@@ -110,14 +104,8 @@ pub async fn execute_tool_display_complete_hooks(
     });
 
     for handler in handlers {
-        match execute_runtime_json_handler(
-            lua,
-            registry,
-            &handler.name,
-            payload.clone(),
-            session_id,
-        )
-        .await?
+        match execute_runtime_json_handler(lua, registry, handler.id, payload.clone(), session_id)
+            .await?
         {
             ScriptHandlerResult::Transform(payload) => {
                 let hints = parse_display_complete_hints(&payload);

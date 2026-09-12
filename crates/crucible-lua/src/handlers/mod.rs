@@ -36,6 +36,8 @@
 //! (a tool name), not the event name, so a site with no identifier passes
 //! `None` and pattern-bearing handlers correctly do not match.
 
+use mlua::Lua;
+
 mod before_execute;
 mod conversion;
 mod cru_on;
@@ -60,8 +62,41 @@ pub use display_hooks::{
 };
 pub use hook_name::{hook_names, EventName, HookName, StageId};
 pub use permission::{
-    execute_permission_hooks, register_permission_hook_api, PermissionHook, PermissionHookResult,
-    PermissionRequest, SHIPPED_DEFAULT_PRIORITY,
+    execute_permission_hooks, register_permission_hook_api, PermissionHookResult,
+    PermissionRequest, PERMISSION_REQUEST_HOOK, SHIPPED_DEFAULT_PRIORITY,
 };
-pub use registry::{LuaScriptHandlerRegistry, RuntimeHandler};
+pub use registry::{
+    clear_owner, LuaScriptHandlerRegistry, Registration, RegistrationSpec, DEFAULT_PRIORITY,
+};
 pub use script_handler::{interpret_handler_result, EventOutcome, ScriptHandlerResult};
+
+/// The VM's registration store, in its app data.
+///
+/// A newtype so the slot holds exactly one registry and nothing else can be
+/// mistaken for it.
+struct InstalledRegistry(LuaScriptHandlerRegistry);
+
+/// Install `registry` as the store every registration API on this VM writes.
+///
+/// The host calls this once, while it builds the VM. Answers the same handle,
+/// so a caller can install and keep it in one expression.
+pub fn install_registry(lua: &Lua, registry: LuaScriptHandlerRegistry) -> LuaScriptHandlerRegistry {
+    lua.set_app_data(InstalledRegistry(registry.clone()));
+    registry
+}
+
+/// The store this VM's registration APIs write to.
+///
+/// A VM whose host installed none gets one on demand. Three VMs are built
+/// without a handler dispatcher — the config VM, the throwaway
+/// `lua.init_session` executor, and a bare `Lua` in a test — and a Lua file
+/// running there may still call `cru.on_session_start`. Refusing that would
+/// turn a harmless registration nobody reads into a load error. An
+/// on-demand store keeps the previous behaviour exactly: the registration
+/// lands, and no dispatcher on that VM ever selects it.
+pub fn registry_of(lua: &Lua) -> mlua::Result<LuaScriptHandlerRegistry> {
+    if let Some(installed) = lua.app_data_ref::<InstalledRegistry>() {
+        return Ok(installed.0.clone());
+    }
+    Ok(install_registry(lua, LuaScriptHandlerRegistry::new()))
+}

@@ -82,7 +82,7 @@ pub fn spawn_file_event_hooks(
 
             for handler in matched {
                 match handlers
-                    .execute_runtime_handler(&lua, &handler.name, &event, None)
+                    .execute_runtime_handler(&lua, handler.id, &event, None)
                     .await
                 {
                     Ok(result) => {
@@ -94,7 +94,7 @@ pub fn spawn_file_event_hooks(
                         // reports anything a handler asked for that cannot.
                         let outcome = result.into_event_outcome(&mut |dropped| {
                             debug!(
-                                handler = %handler.name,
+                                handler = handler.id,
                                 hook = %hook,
                                 dropped = dropped,
                                 "daemon event handler returned something an event cannot act on"
@@ -104,7 +104,7 @@ pub fn spawn_file_event_hooks(
                             EventOutcome::Observed => {}
                             EventOutcome::StopChain { reason } => {
                                 debug!(
-                                    handler = %handler.name,
+                                    handler = handler.id,
                                     reason = %reason,
                                     "daemon event handler stopped the chain"
                                 );
@@ -113,7 +113,7 @@ pub fn spawn_file_event_hooks(
                         }
                     }
                     Err(e) => warn!(
-                        handler = %handler.name,
+                        handler = handler.id,
                         error = %e,
                         "daemon event handler failed (continuing)"
                     ),
@@ -207,12 +207,7 @@ mod tests {
     ) -> (Arc<mlua::Lua>, broadcast::Sender<SessionEventMessage>) {
         let lua = Arc::new(mlua::Lua::new());
         let registry = Arc::new(LuaScriptHandlerRegistry::new());
-        crucible_lua::register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register cru.on");
+        crucible_lua::register_cru_on_api(&lua, (*registry).clone()).expect("register cru.on");
 
         lua.load(format!("fired = nil\ncru.on(\"{hook}\", {body})"))
             .exec()

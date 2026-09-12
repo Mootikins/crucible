@@ -1,4 +1,4 @@
-//! Which plugin is running, and what authority it holds.
+//! Who a Lua registration belongs to, and what authority that owner holds.
 //!
 //! Three integrity-bearing markers used to live as ordinary Lua globals:
 //! `cru._current_plugin` (the namespace every `cru.storage` call is scoped to),
@@ -8,78 +8,153 @@
 //! storage namespace, or grant itself interception rights, with one assignment
 //! at the top of its own `init.lua`.
 //!
-//! The context lives in the VM's Rust-side app data instead. Lua cannot reach
+//! The owner lives in the VM's Rust-side app data instead. Lua cannot reach
 //! it. The Lua registry is not an alternative either: it is a VM-internal
 //! implementation detail, not a capability boundary.
 //!
-//! Six writers bracket the context, and every one of them is a place a
-//! plugin's code runs after its body has returned:
+//! # One value carried three meanings, and nobody decided that
+//!
+//! The owner used to be an `Option<PluginContext>`, and `None` meant three
+//! different things at three different readers. The interception grant read
+//! it as "trusted". The clear path skipped it, so an unowned registration
+//! could never be removed. The config layer ranked it above `settings.json`
+//! and pinned the leaf. That is correct for the user's own `init.lua`. It was
+//! wrong for a `lua.eval` call that arrives over a socket.
+//!
+//! [`Owner`] is total, so a registration outside every group cannot exist. The
+//! three meanings are now three separate readers of one value:
+//!
+//! - **Lifecycle** — `clear_owner` removes exactly one owner's registrations.
+//! - **Authority** — [`Owner::may_intercept`] is a total function.
+//! - **Provenance** — the config store classifies a write by the FILE that
+//!   holds the call (`crate::authorship`), and the `lua.eval` bracket gives
+//!   that call the `Rpc` layer.
+//!
+//! # The bracket sites
+//!
+//! The host assigns the owner; a plugin cannot name its own. Every bracket is
+//! a place a plugin's code runs after its body has returned:
 //!
 //! 1. The plugin loader, around a plugin's execution, so the plugin's own body
 //!    runs under its identity.
-//! 2. The handler dispatcher, around each `cru.on` handler call, from the
-//!    owner the handler registry recorded at registration. A
-//!    per-plugin rebind of the shared `cru.storage` table cannot do this work:
-//!    all plugins share one `cru` table, so the last rebind would win for every
-//!    late caller.
-//! 3. The session-lifecycle fire paths, around each `on_session_start` and
-//!    `on_session_end` hook, from the owner the hook table records.
+//! 2. The handler dispatcher, around each registered handler call, from the
+//!    owner the registry recorded at registration. A per-plugin rebind of the
+//!    shared `cru.storage` table cannot do this work: all plugins share one
+//!    `cru` table, so the last rebind would win for every late caller.
+//! 3. The session-lifecycle fire paths, around each `session:start` and
+//!    `session:end` hook.
 //! 4. Plugin command dispatch, and 5. plugin tool dispatch.
 //! 6. `cru.schedule` and `cru.timer.spawn`, around each deferred callback.
+//! 7. The user config loader ([`Owner::UserLua`]), the shipped defaults loader
+//!    ([`Owner::Builtin`]) and the `lua.eval` RPC ([`Owner::Eval`]).
 //!
-//! Missing any of them is not a cosmetic gap. An ABSENT context means no
-//! plugin is running — the user's own `init.lua`, or the host itself — and
-//! that code carries the OPERATOR's authority: it may intercept. So a seam
-//! that forgot to re-enter its plugin ATTRIBUTED that plugin's work to the
-//! operator, and handed it more authority than it declared. Three of the six
-//! above were added for exactly that reason.
+//! Missing one of them is not a cosmetic gap. It attributes that code to
+//! whatever owner the VM last held, and hands it that owner's authority.
 //!
-//! An absent context still has no storage namespace, and `cru.storage`
-//! refuses it, as it always has.
+//! Only [`Owner::Plugin`] has a storage namespace, and `cru.storage` refuses
+//! every other owner, as it always has.
 
 use mlua::Lua;
 
-/// The plugin a Lua call runs under.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginContext {
-    /// The plugin's name. Scopes `cru.storage` and attributes registrations.
-    pub name: String,
-    /// Whether this plugin may take a tool call over — return
-    /// `{ handled = true, … }` or a transform from `pre_tool_call`.
-    ///
-    /// Decided by the operator's installation (the `intercept_tools`
-    /// declaration), never by the plugin: the bit is stamped here at load, so
-    /// a plugin has no assignment that widens it. `cancel` needs no grant:
-    /// refusing a call can only narrow.
-    pub may_intercept: bool,
+/// Who a Lua registration belongs to.
+///
+/// Total by construction. Each variant names what it IS, not what it is not:
+/// the whole defect this type removes is a value that carried more than one
+/// meaning.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Owner {
+    /// A plugin load. The name scopes `cru.storage` and attributes every
+    /// registration the load makes.
+    Plugin(String),
+    /// The user's own `init.lua`, and what it includes.
+    UserLua,
+    /// `runtime/defaults/init.luau`, which ships with the daemon.
+    Builtin,
+    /// One `lua.eval` RPC call.
+    Eval,
 }
 
-/// The app-data slot. A newtype so the `Option` is the whole stored value:
-/// `remove_app_data` cannot express "present but empty", and the loader must
-/// be able to restore an absent context.
-struct CurrentPlugin(Option<PluginContext>);
+impl Owner {
+    /// The plugin this owner names, or `None` for every other owner.
+    ///
+    /// `cru.storage` keys on this, so a non-plugin owner has no namespace and
+    /// the call is refused.
+    #[must_use]
+    pub fn plugin_name(&self) -> Option<&str> {
+        match self {
+            Self::Plugin(name) => Some(name.as_str()),
+            Self::UserLua | Self::Builtin | Self::Eval => None,
+        }
+    }
 
-/// Install `context` as the current plugin context; return what it replaced.
+    /// Whether code running under this owner may take a tool call over —
+    /// return `{ handled = true, … }` or a transform from `pre_tool_call`.
+    ///
+    /// Total, with no wildcard arm: a new owner must name its own answer.
+    ///
+    /// - [`Self::Plugin`] reads what the operator installed, which the loader
+    ///   recorded by name. An unrecorded name answers `false`: a plugin the
+    ///   loader never admitted must not gain authority by being unknown.
+    /// - [`Self::UserLua`] and [`Self::Builtin`] are the operator's own code
+    ///   and hold the operator's authority.
+    /// - [`Self::Eval`] is `false` for CONSISTENCY, not for security. An eval
+    ///   already runs arbitrary code on this VM, so the answer protects
+    ///   nothing; it keeps one rule — authority belongs to an installation —
+    ///   true of every owner.
+    ///
+    /// `cancel` needs no grant from any owner: refusing a call can only
+    /// narrow.
+    #[must_use]
+    pub fn may_intercept(&self, lua: &Lua) -> bool {
+        match self {
+            Self::Plugin(name) => intercept_for(lua, name),
+            Self::UserLua | Self::Builtin => true,
+            Self::Eval => false,
+        }
+    }
+}
+
+impl std::fmt::Display for Owner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plugin(name) => f.write_str(name),
+            Self::UserLua => f.write_str("init.lua"),
+            Self::Builtin => f.write_str("builtin"),
+            Self::Eval => f.write_str("lua.eval"),
+        }
+    }
+}
+
+/// The app-data slot. A newtype so the stored value is exactly one [`Owner`].
+struct CurrentOwner(Owner);
+
+/// Install `owner` as the current owner; return what it replaced.
 ///
 /// Callers MUST restore the previous value on every exit path, error paths
-/// included — a context left behind attributes whatever runs next to the wrong
-/// plugin, up to and including the user's `init.lua`.
-pub fn set_plugin_context(lua: &Lua, context: Option<PluginContext>) -> Option<PluginContext> {
-    lua.set_app_data(CurrentPlugin(context))
-        .and_then(|previous| previous.0)
+/// included — an owner left behind attributes whatever runs next to the wrong
+/// author, up to and including the user's `init.lua`.
+///
+/// A VM that has entered no bracket answers [`Owner::UserLua`]. Every other
+/// owner reaches the VM through a bracket the host installs, so the code
+/// running outside all of them is the host's own or the user's own.
+pub fn set_owner(lua: &Lua, owner: Owner) -> Owner {
+    lua.set_app_data(CurrentOwner(owner))
+        .map_or(Owner::UserLua, |previous| previous.0)
+}
+
+/// The owner a Lua call runs under.
+pub fn current_owner(lua: &Lua) -> Owner {
+    lua.app_data_ref::<CurrentOwner>()
+        .map_or(Owner::UserLua, |current| current.0.clone())
 }
 
 /// What each loaded plugin's installation granted it, by name.
 ///
-/// Several seams hold a plugin NAME and nothing else — a session-lifecycle
-/// hook's owner, a runtime handler's owner, the plugin a command belongs to —
-/// and each must re-enter that plugin's authority when it runs. Threading the
-/// grant set through all three would have put four copies of one fact in the
-/// process. The loader records it once, here, and the seams read it by name.
-///
-/// An unrecorded name answers with NO interception right, not with every
-/// right: a plugin the loader never admitted must not gain authority by being
-/// unknown.
+/// Several seams hold a plugin NAME and nothing else — a registration's owner,
+/// the plugin a command belongs to — and each must re-enter that plugin's
+/// authority when it runs. Threading the grant set through all of them would
+/// have put four copies of one fact in the process. The loader records it
+/// once, here, and the seams read it by name.
 #[derive(Default)]
 struct PluginIntercepts(std::collections::HashMap<String, bool>);
 
@@ -103,71 +178,33 @@ pub fn intercept_for(lua: &Lua, name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Enter `name`'s context; return what it replaced, for the caller to restore.
+/// Enter `name`'s ownership; return what it replaced, for the caller to
+/// restore.
 ///
-/// Shorthand for [`set_plugin_context`] with a fresh [`PluginContext`]. It
-/// also RECORDS the interception bit, so a later seam holding only the name
-/// can re-enter the same authority.
-pub fn enter_plugin(lua: &Lua, name: &str, may_intercept: bool) -> Option<PluginContext> {
+/// It also RECORDS the interception bit, so a later seam holding only the name
+/// re-enters the same authority.
+pub fn enter_plugin(lua: &Lua, name: &str, may_intercept: bool) -> Owner {
     record_plugin_intercept(lua, name, may_intercept);
-    set_plugin_context(
-        lua,
-        Some(PluginContext {
-            name: name.to_string(),
-            may_intercept,
-        }),
-    )
+    set_owner(lua, Owner::Plugin(name.to_string()))
 }
 
-/// Enter `name`'s context with the interception bit the loader recorded.
+/// Enter `name`'s ownership with the interception bit the loader recorded.
 ///
 /// For the seams that hold a name and nothing else: a lifecycle hook's owner,
-/// a plugin command's owner.
-pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> Option<PluginContext> {
-    let may_intercept = intercept_for(lua, name);
-    set_plugin_context(
-        lua,
-        Some(PluginContext {
-            name: name.to_string(),
-            may_intercept,
-        }),
-    )
+/// a plugin command's owner, a plugin tool's owner.
+pub fn enter_recorded_plugin(lua: &Lua, name: &str) -> Owner {
+    set_owner(lua, Owner::Plugin(name.to_string()))
 }
 
-/// Enter `name`'s recorded context with the interception right dropped.
-///
-/// Two callers, and the narrowing is the point: a plugin COMMAND and a plugin
-/// TOOL run under their plugin's name without interception, because neither is
-/// a tool-call hook and neither has interception to do. It does not re-record,
-/// so the narrowing applies to this call and not to the plugin.
-pub fn enter_recorded_plugin_without_intercept(lua: &Lua, name: &str) -> Option<PluginContext> {
-    set_plugin_context(
-        lua,
-        Some(PluginContext {
-            name: name.to_string(),
-            may_intercept: false,
-        }),
-    )
-}
-
-/// The plugin a call runs under, or `None` outside every plugin.
-pub fn current_plugin_context(lua: &Lua) -> Option<PluginContext> {
-    lua.app_data_ref::<CurrentPlugin>()
-        .and_then(|current| current.0.clone())
-}
-
-/// The name of the plugin a call runs under, or `None` outside every plugin.
+/// The name of the plugin a call runs under, or `None` under every other
+/// owner.
 pub fn current_plugin_name(lua: &Lua) -> Option<String> {
-    current_plugin_context(lua).map(|context| context.name)
+    current_owner(lua).plugin_name().map(str::to_string)
 }
 
 /// Whether the code that runs now may replace a tool call's execution.
-///
-/// No context means no plugin: the user's own configuration, which holds the
-/// operator's authority. A LOADING plugin holds only what its installation
-/// granted.
 pub fn current_may_intercept(lua: &Lua) -> bool {
-    current_plugin_context(lua).is_none_or(|context| context.may_intercept)
+    current_owner(lua).may_intercept(lua)
 }
 
 #[cfg(test)]
@@ -175,53 +212,74 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_absent_context_is_trusted_and_has_no_namespace() {
+    fn a_vm_outside_every_bracket_is_the_users_own_lua() {
         let lua = Lua::new();
+        assert_eq!(current_owner(&lua), Owner::UserLua);
         assert_eq!(current_plugin_name(&lua), None);
         assert!(current_may_intercept(&lua));
     }
 
     #[test]
-    fn setting_a_context_returns_the_previous_one() {
+    fn setting_an_owner_returns_the_previous_one() {
         let lua = Lua::new();
-        let alpha = PluginContext {
-            name: "alpha".to_string(),
-            may_intercept: false,
-        };
-        assert_eq!(set_plugin_context(&lua, Some(alpha.clone())), None);
-        let beta = PluginContext {
-            name: "beta".to_string(),
-            may_intercept: true,
-        };
-        assert_eq!(set_plugin_context(&lua, Some(beta)), Some(alpha));
+        assert_eq!(
+            set_owner(&lua, Owner::Plugin("alpha".into())),
+            Owner::UserLua
+        );
+        assert_eq!(
+            set_owner(&lua, Owner::Plugin("beta".into())),
+            Owner::Plugin("alpha".into())
+        );
         assert_eq!(current_plugin_name(&lua), Some("beta".to_string()));
+    }
+
+    /// The defect this type removes: an eval used to be indistinguishable
+    /// from the user's own `init.lua`, so it read as the operator.
+    #[test]
+    fn an_eval_may_not_intercept_and_names_no_plugin() {
+        let lua = Lua::new();
+        set_owner(&lua, Owner::Eval);
+        assert!(!current_may_intercept(&lua));
+        assert_eq!(current_plugin_name(&lua), None);
+    }
+
+    #[test]
+    fn a_plugin_reads_the_grant_the_loader_recorded() {
+        let lua = Lua::new();
+        enter_plugin(&lua, "quiet", false);
+        assert!(!current_may_intercept(&lua));
+        enter_plugin(&lua, "loud", true);
         assert!(current_may_intercept(&lua));
+        // A name the loader never admitted holds no authority.
+        assert!(!Owner::Plugin("stranger".into()).may_intercept(&lua));
+    }
+
+    #[test]
+    fn the_shipped_defaults_hold_the_operators_authority() {
+        let lua = Lua::new();
+        set_owner(&lua, Owner::Builtin);
+        assert!(current_may_intercept(&lua));
+        assert_eq!(current_plugin_name(&lua), None);
     }
 
     /// The whole point of the app-data slot: Lua has no path to it. The plugin
     /// VM runs with the DEBUG library, so `debug.getregistry` would expose a
-    /// registry-backed context.
+    /// registry-backed owner.
     #[test]
-    fn lua_cannot_reach_the_context_through_the_registry() {
+    fn lua_cannot_reach_the_owner_through_the_registry() {
         let lua = unsafe {
             Lua::unsafe_new_with(
                 mlua::StdLib::ALL_SAFE | mlua::StdLib::DEBUG,
                 mlua::LuaOptions::default(),
             )
         };
-        set_plugin_context(
-            &lua,
-            Some(PluginContext {
-                name: "grabby".to_string(),
-                may_intercept: false,
-            }),
-        );
+        enter_plugin(&lua, "grabby", false);
 
         let found = lua
             .load(
                 r#"
                 for _, value in pairs(debug.getregistry()) do
-                    if type(value) == "table" and value.may_intercept ~= nil then
+                    if type(value) == "string" and value == "grabby" then
                         return true
                     end
                 end
@@ -231,7 +289,7 @@ mod tests {
             .eval::<bool>();
         assert!(
             found.is_err() || !found.expect("a successful registry walk returns a boolean"),
-            "the plugin context must not be reachable from Lua"
+            "the owner must not be reachable from Lua"
         );
         assert!(!current_may_intercept(&lua));
     }

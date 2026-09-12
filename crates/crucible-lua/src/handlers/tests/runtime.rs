@@ -1,20 +1,64 @@
 use crate::handlers::{
-    register_cru_on_api, LuaScriptHandlerRegistry, RuntimeHandler, ScriptHandlerResult,
+    register_cru_on_api, LuaScriptHandlerRegistry, RegistrationSpec, ScriptHandlerResult, StageId,
 };
+use crate::plugin_context::Owner;
 use crucible_core::events::SessionEvent;
-use mlua::{Function, Lua};
+use mlua::Lua;
+
+/// Register `handler` for `name` and answer its dispatch id.
+///
+/// Tests used to push a row straight into the registry's `Vec` and insert the
+/// body into a second map by hand. The row and the body live together now, so
+/// a test registers the way production does.
+fn register<F>(lua: &Lua, registry: &LuaScriptHandlerRegistry, name: StageId, handler: F) -> u64
+where
+    F: Fn(&Lua, (mlua::Table, mlua::Table)) -> mlua::Result<mlua::Value>
+        + mlua::MaybeSend
+        + 'static,
+{
+    let func = lua.create_function(handler).unwrap();
+    registry
+        .register(lua, RegistrationSpec::new(name.into()), func)
+        .unwrap()
+}
+
+/// Register a no-op handler for `name` with `priority` and `pattern`.
+fn register_stub(
+    lua: &Lua,
+    registry: &LuaScriptHandlerRegistry,
+    name: StageId,
+    priority: i64,
+    pattern: Option<&str>,
+) -> u64 {
+    let func = lua.create_function(|_, ()| Ok(())).unwrap();
+    registry
+        .register(
+            lua,
+            RegistrationSpec {
+                name: name.into(),
+                priority,
+                pattern: pattern.map(str::to_string),
+                timeout_ms: None,
+                required: false,
+            },
+            func,
+        )
+        .unwrap()
+}
+
+fn custom_event(name: &str) -> SessionEvent {
+    SessionEvent::Custom {
+        name: name.to_string(),
+        payload: serde_json::json!({}),
+    }
+}
 
 #[test]
 fn runtime_handler_stores_function_reference() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     let handler_code = r#"
         function test_handler(event)
@@ -24,15 +68,11 @@ fn runtime_handler_stores_function_reference() {
     "#;
     lua.load(handler_code).eval::<()>().unwrap();
 
-    let runtime_handlers = registry.runtime_handlers.lock().unwrap();
-    assert_eq!(runtime_handlers.len(), 1);
-    assert_eq!(runtime_handlers[0].event_type, "pre_tool_call");
-    assert_eq!(runtime_handlers[0].name, "runtime_handler_0");
-
-    let functions = registry.handler_functions.lock().unwrap();
-    assert!(functions.contains_key("runtime_handler_0"));
-    let key = functions.get("runtime_handler_0").unwrap();
-    let _func: Function = lua.registry_value(key).unwrap();
+    let handlers = registry.runtime_handlers_for("pre_tool_call", None);
+    assert_eq!(handlers.len(), 1);
+    assert_eq!(handlers[0].name, StageId::PreToolCall.into());
+    assert_eq!(handlers[0].id, 0, "the first id the allocator hands out");
+    let _func: mlua::Function = lua.registry_value(handlers[0].body()).unwrap();
 }
 
 #[tokio::test]
@@ -40,32 +80,22 @@ async fn execute_runtime_handler_receives_event() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    // Register a handler that captures the event
-    let handler_fn = lua
-        .create_function(|_, (ctx, event): (mlua::Table, mlua::Table)| {
+    let id = register(
+        &lua,
+        &registry,
+        StageId::PreToolCall,
+        |_, (ctx, event): (mlua::Table, mlua::Table)| {
             // Verify ctx is a table (may be empty)
             let _ctx_type = ctx.raw_len();
             // Verify event has expected fields
             let event_type: String = event.get("event_type").unwrap();
             assert_eq!(event_type, "custom");
             Ok(mlua::Value::Nil)
-        })
-        .unwrap();
-
-    let key = lua.create_registry_value(handler_fn).unwrap();
-    registry
-        .handler_functions
-        .lock()
-        .unwrap()
-        .insert("test_handler".to_string(), key);
-
-    let event = SessionEvent::Custom {
-        name: "test".to_string(),
-        payload: serde_json::json!({}),
-    };
+        },
+    );
 
     let result = registry
-        .execute_runtime_handler(&lua, "test_handler", &event, None)
+        .execute_runtime_handler(&lua, id, &custom_event("test"), None)
         .await;
     assert!(result.is_ok());
 }
@@ -79,27 +109,20 @@ async fn execute_runtime_handler_delivers_session_id_in_ctx() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    let handler_fn = lua
-        .create_function(|_, (ctx, _event): (mlua::Table, mlua::Table)| {
+    let with_session = register(
+        &lua,
+        &registry,
+        StageId::PreToolCall,
+        |_, (ctx, _event): (mlua::Table, mlua::Table)| {
             let session_id: String = ctx.get("session_id")?;
             assert_eq!(session_id, "s-ctx");
             Ok(mlua::Value::Nil)
-        })
-        .unwrap();
-    let key = lua.create_registry_value(handler_fn).unwrap();
-    registry
-        .handler_functions
-        .lock()
-        .unwrap()
-        .insert("ctx_handler".to_string(), key);
+        },
+    );
 
-    let event = SessionEvent::Custom {
-        name: "pre_tool_call".to_string(),
-        payload: serde_json::json!({}),
-    };
-
+    let event = custom_event("pre_tool_call");
     let result = registry
-        .execute_runtime_handler(&lua, "ctx_handler", &event, Some("s-ctx"))
+        .execute_runtime_handler(&lua, with_session, &event, Some("s-ctx"))
         .await;
     assert!(
         result.is_ok(),
@@ -108,21 +131,18 @@ async fn execute_runtime_handler_delivers_session_id_in_ctx() {
 
     // Without a session id the field is absent, not empty — a handler can
     // distinguish "no session context" from a session named "".
-    let handler_fn = lua
-        .create_function(|_, (ctx, _event): (mlua::Table, mlua::Table)| {
+    let without_session = register(
+        &lua,
+        &registry,
+        StageId::PreToolCall,
+        |_, (ctx, _event): (mlua::Table, mlua::Table)| {
             let session_id: Option<String> = ctx.get("session_id")?;
             assert!(session_id.is_none());
             Ok(mlua::Value::Nil)
-        })
-        .unwrap();
-    let key = lua.create_registry_value(handler_fn).unwrap();
-    registry
-        .handler_functions
-        .lock()
-        .unwrap()
-        .insert("no_ctx_handler".to_string(), key);
+        },
+    );
     let result = registry
-        .execute_runtime_handler(&lua, "no_ctx_handler", &event, None)
+        .execute_runtime_handler(&lua, without_session, &event, None)
         .await;
     assert!(result.is_ok(), "{result:?}");
 }
@@ -132,37 +152,22 @@ async fn execute_runtime_handler_returns_cancel() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    // Register a handler that returns cancel
-    let handler_fn = lua
-        .create_function(|lua, _: (mlua::Table, mlua::Table)| {
-            let result = lua.create_table().unwrap();
-            result.set("cancel", true).unwrap();
-            result.set("reason", "test cancel").unwrap();
-            Ok(mlua::Value::Table(result))
-        })
-        .unwrap();
-
-    let key = lua.create_registry_value(handler_fn).unwrap();
-    registry
-        .handler_functions
-        .lock()
-        .unwrap()
-        .insert("cancel_handler".to_string(), key);
-
-    let event = SessionEvent::Custom {
-        name: "test".to_string(),
-        payload: serde_json::json!({}),
-    };
+    let id = register(&lua, &registry, StageId::PreToolCall, |lua, _| {
+        let result = lua.create_table().unwrap();
+        result.set("cancel", true).unwrap();
+        result.set("reason", "test cancel").unwrap();
+        Ok(mlua::Value::Table(result))
+    });
 
     let result = registry
-        .execute_runtime_handler(&lua, "cancel_handler", &event, None)
+        .execute_runtime_handler(&lua, id, &custom_event("test"), None)
         .await;
     assert!(result.is_ok());
     match result.unwrap() {
         ScriptHandlerResult::Cancel { reason } => {
             assert_eq!(reason, "test cancel");
         }
-        _ => panic!("Expected Cancel result"),
+        other => panic!("Expected Cancel result, got {other:?}"),
     }
 }
 
@@ -171,104 +176,59 @@ async fn execute_runtime_handler_returns_handled() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    let handler_fn = lua
-        .create_function(|lua, _: (mlua::Table, mlua::Table)| {
-            let result = lua.create_table().unwrap();
-            result.set("handled", true).unwrap();
-            let inner = lua.create_table().unwrap();
-            inner.set("output", "from plugin").unwrap();
-            result.set("result", inner).unwrap();
-            Ok(mlua::Value::Table(result))
-        })
-        .unwrap();
-
-    let key = lua.create_registry_value(handler_fn).unwrap();
-    registry
-        .handler_functions
-        .lock()
-        .unwrap()
-        .insert("handled_handler".to_string(), key);
-
-    let event = SessionEvent::Custom {
-        name: "test".to_string(),
-        payload: serde_json::json!({}),
-    };
+    let id = register(&lua, &registry, StageId::PreToolCall, |lua, _| {
+        let result = lua.create_table().unwrap();
+        result.set("handled", true).unwrap();
+        let inner = lua.create_table().unwrap();
+        inner.set("output", "from plugin").unwrap();
+        result.set("result", inner).unwrap();
+        Ok(mlua::Value::Table(result))
+    });
 
     let result = registry
-        .execute_runtime_handler(&lua, "handled_handler", &event, None)
+        .execute_runtime_handler(&lua, id, &custom_event("test"), None)
         .await;
     assert!(result.is_ok());
     match result.unwrap() {
         ScriptHandlerResult::Handled { result, .. } => {
             assert_eq!(result["output"], "from plugin");
         }
-        other => panic!("Expected Handled, got: {:?}", other),
+        other => panic!("Expected Handled, got: {other:?}"),
     }
 }
 
 #[tokio::test]
-async fn execute_runtime_handler_passes_through_on_an_unknown_name() {
+async fn execute_runtime_handler_passes_through_on_an_unknown_id() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    let event = SessionEvent::Custom {
-        name: "test".to_string(),
-        payload: serde_json::json!({}),
-    };
-
-    // An unknown name means the handler is gone (reload cleared it) or never
+    // An unknown id means the handler is gone (reload cleared it) or never
     // existed; either way it has no opinion. Erroring here used to land in
     // `pre_tool_call`'s fail-closed arm and deny the tool call.
     let result = registry
-        .execute_runtime_handler(&lua, "nonexistent", &event, None)
+        .execute_runtime_handler(&lua, 9999, &custom_event("test"), None)
         .await
-        .expect("an unknown handler name is not an error");
+        .expect("an unknown handler id is not an error");
     assert!(matches!(result, ScriptHandlerResult::PassThrough));
 }
 
 #[test]
 fn runtime_handlers_for_returns_matching_handlers() {
+    let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    {
-        let mut handlers = registry.runtime_handlers.lock().unwrap();
-        handlers.push(RuntimeHandler {
-            event_type: "turn:complete".to_string(),
-            name: "handler_a".to_string(),
-            priority: 100,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-        handlers.push(RuntimeHandler {
-            event_type: "pre_tool_call".to_string(),
-            name: "handler_b".to_string(),
-            priority: 50,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-        handlers.push(RuntimeHandler {
-            event_type: "turn:complete".to_string(),
-            name: "handler_c".to_string(),
-            priority: 200,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-    }
+    let a = register_stub(&lua, &registry, StageId::TurnComplete, 100, None);
+    let b = register_stub(&lua, &registry, StageId::PreToolCall, 50, None);
+    let c = register_stub(&lua, &registry, StageId::TurnComplete, 200, None);
 
     let matching = registry.runtime_handlers_for("turn:complete", None);
     assert_eq!(matching.len(), 2);
-    assert_eq!(matching[0].name, "handler_a");
-    assert_eq!(matching[1].name, "handler_c");
+    assert_eq!(matching[0].id, a);
+    assert_eq!(matching[1].id, c);
 
     let other = registry.runtime_handlers_for("pre_tool_call", None);
     assert_eq!(other.len(), 1);
-    assert_eq!(other[0].name, "handler_b");
+    assert_eq!(other[0].id, b);
 
     let none = registry.runtime_handlers_for("nonexistent", None);
     assert!(none.is_empty());
@@ -276,106 +236,52 @@ fn runtime_handlers_for_returns_matching_handlers() {
 
 #[test]
 fn runtime_handlers_for_returns_sorted_by_priority() {
+    let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    {
-        let mut handlers = registry.runtime_handlers.lock().unwrap();
-        handlers.push(RuntimeHandler {
-            event_type: "turn:complete".to_string(),
-            name: "low_priority".to_string(),
-            priority: 200,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-        handlers.push(RuntimeHandler {
-            event_type: "turn:complete".to_string(),
-            name: "high_priority".to_string(),
-            priority: 10,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-        handlers.push(RuntimeHandler {
-            event_type: "turn:complete".to_string(),
-            name: "medium_priority".to_string(),
-            priority: 100,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-    }
+    let low = register_stub(&lua, &registry, StageId::TurnComplete, 200, None);
+    let high = register_stub(&lua, &registry, StageId::TurnComplete, 10, None);
+    let medium = register_stub(&lua, &registry, StageId::TurnComplete, 100, None);
 
     let handlers = registry.runtime_handlers_for("turn:complete", None);
     assert_eq!(handlers.len(), 3);
-    assert_eq!(handlers[0].name, "high_priority");
+    assert_eq!(handlers[0].id, high);
     assert_eq!(handlers[0].priority, 10);
-    assert_eq!(handlers[1].name, "medium_priority");
+    assert_eq!(handlers[1].id, medium);
     assert_eq!(handlers[1].priority, 100);
-    assert_eq!(handlers[2].name, "low_priority");
+    assert_eq!(handlers[2].id, low);
     assert_eq!(handlers[2].priority, 200);
 }
 
 #[test]
 fn pattern_filtering_matches_exact_tool_name() {
+    let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    {
-        let mut handlers = registry.runtime_handlers.lock().unwrap();
-        handlers.push(RuntimeHandler {
-            event_type: "pre_tool_call".to_string(),
-            name: "bash_handler".to_string(),
-            priority: 10,
-            pattern: Some("bash".to_string()),
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-        handlers.push(RuntimeHandler {
-            event_type: "pre_tool_call".to_string(),
-            name: "all_handler".to_string(),
-            priority: 100,
-            pattern: None,
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-    }
+    let bash = register_stub(&lua, &registry, StageId::PreToolCall, 10, Some("bash"));
+    let all = register_stub(&lua, &registry, StageId::PreToolCall, 100, None);
 
     // With identifier "bash" — both match
     let matching = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
     assert_eq!(matching.len(), 2);
-    assert_eq!(matching[0].name, "bash_handler"); // priority 10
-    assert_eq!(matching[1].name, "all_handler"); // priority 100
+    assert_eq!(matching[0].id, bash); // priority 10
+    assert_eq!(matching[1].id, all); // priority 100
 
     // With identifier "read_file" — only the no-pattern handler matches
     let matching = registry.runtime_handlers_for("pre_tool_call", Some("read_file"));
     assert_eq!(matching.len(), 1);
-    assert_eq!(matching[0].name, "all_handler");
+    assert_eq!(matching[0].id, all);
 
     // With no identifier — only no-pattern handler matches (pattern handlers require identifier)
     let matching = registry.runtime_handlers_for("pre_tool_call", None);
     assert_eq!(matching.len(), 1);
-    assert_eq!(matching[0].name, "all_handler");
+    assert_eq!(matching[0].id, all);
 }
 
 #[test]
 fn pattern_filtering_supports_glob() {
+    let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    {
-        let mut handlers = registry.runtime_handlers.lock().unwrap();
-        handlers.push(RuntimeHandler {
-            event_type: "pre_tool_call".to_string(),
-            name: "read_handler".to_string(),
-            priority: 10,
-            pattern: Some("read_*".to_string()),
-            plugin: None,
-            may_intercept_grant: Some(true),
-            timeout_ms: None,
-        });
-    }
+    register_stub(&lua, &registry, StageId::PreToolCall, 10, Some("read_*"));
 
     let matching = registry.runtime_handlers_for("pre_tool_call", Some("read_file"));
     assert_eq!(matching.len(), 1);
@@ -396,12 +302,7 @@ async fn todo_enforcer_pattern_integration() {
     let registry = LuaScriptHandlerRegistry::new();
 
     // Step 1: Register the cru.on API
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     // Step 2: Register todo enforcer handler via cru.on
     lua.load(
@@ -424,6 +325,8 @@ async fn todo_enforcer_pattern_integration() {
     .exec()
     .unwrap();
 
+    let id = registry.runtime_handlers_for("turn:complete", None)[0].id;
+
     // Step 3: Test with incomplete todo - should trigger injection
     let event_with_todo = SessionEvent::Custom {
         name: "turn:complete".to_string(),
@@ -433,7 +336,7 @@ async fn todo_enforcer_pattern_integration() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event_with_todo, None)
+        .execute_runtime_handler(&lua, id, &event_with_todo, None)
         .await
         .unwrap();
 
@@ -449,7 +352,7 @@ async fn todo_enforcer_pattern_integration() {
                 "Position should be user_prefix by default"
             );
         }
-        _ => panic!("Expected ScriptHandlerResult::Inject, got {:?}", result),
+        other => panic!("Expected ScriptHandlerResult::Inject, got {other:?}"),
     }
 
     // Step 4: Test without incomplete todo - should pass through
@@ -461,34 +364,27 @@ async fn todo_enforcer_pattern_integration() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event_complete, None)
+        .execute_runtime_handler(&lua, id, &event_complete, None)
         .await
         .unwrap();
 
     // Verify result is PassThrough (no injection)
     assert!(
         matches!(result, ScriptHandlerResult::PassThrough),
-        "Expected PassThrough for complete todos, got {:?}",
-        result
+        "Expected PassThrough for complete todos, got {result:?}"
     );
 }
 
-/// A handler name must never be reused. `clear_plugin_handlers` shrinks the
-/// `runtime_handlers` Vec, so a name derived from that Vec's length lands on a
-/// name another registrant still holds in `handler_functions` — and dispatch is
-/// by name, so the survivor's entry silently starts running the reloaded
-/// plugin's function.
+/// A dispatch id must never be reused. `clear_owner` shrinks the list, so an
+/// id derived from that list's length would land on one another registrant
+/// still holds — and dispatch is by id, so the survivor's row would silently
+/// start running the reloaded plugin's function.
 #[test]
-fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
+fn a_cleared_owners_ids_are_not_reused_by_the_next_registration() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers(),
-        registry.handler_functions(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     // Two plugins, loaded in order, exactly as the loader does it.
     crate::plugin_context::enter_plugin(&lua, "alpha", false);
@@ -506,15 +402,14 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
         .exec()
         .unwrap();
 
-    let beta_name = registry
+    let beta_id = registry
         .runtime_handlers_for("pre_tool_call", None)
         .first()
         .expect("beta registered one handler")
-        .name
-        .clone();
+        .id;
 
     // Reload alpha: drop its handlers, then let it register again.
-    registry.clear_plugin_handlers("alpha");
+    registry.clear_owner(&Owner::Plugin("alpha".into()));
     crate::plugin_context::enter_plugin(&lua, "alpha", false);
     lua.load(
         r#"
@@ -526,17 +421,12 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
     .unwrap();
 
     let after_reload = registry.runtime_handlers_for("turn:complete", None);
-    let reused: Vec<&String> = after_reload
-        .iter()
-        .map(|h| &h.name)
-        .filter(|n| **n == beta_name)
-        .collect();
     assert!(
-        reused.is_empty(),
-        "reload reused '{beta_name}', which beta still holds in handler_functions"
+        !after_reload.iter().any(|h| h.id == beta_id),
+        "reload reused id {beta_id}, which beta still holds"
     );
 
-    // Attribution is orthogonal to name allocation and must still hold: the
+    // Attribution is orthogonal to id allocation and must still hold: the
     // reload replaced alpha's two handlers rather than appending to them.
     assert_eq!(
         after_reload.len(),
@@ -545,49 +435,6 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
     );
     assert_eq!(registry.plugin_handler_count("alpha"), 2);
     assert_eq!(registry.plugin_handler_count("beta"), 1);
-}
-
-/// The name allocator makes this unreachable; assert it is nonetheless loud,
-/// because the silent version of this was a live misbinding bug — an overwrite
-/// orphans the live body and leaves its owner's handler pointing at the new one.
-#[test]
-fn registering_over_a_live_handler_name_is_an_error_not_an_overwrite() {
-    let lua = Lua::new();
-    let registry = LuaScriptHandlerRegistry::new();
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers(),
-        registry.handler_functions(),
-    )
-    .unwrap();
-
-    // Occupy the first name the allocator will hand out.
-    let squatter = lua.create_function(|_, (): ()| Ok(())).unwrap();
-    let key = lua.create_registry_value(squatter).unwrap();
-    registry
-        .handler_functions()
-        .lock()
-        .unwrap()
-        .insert("runtime_handler_0".to_string(), key);
-
-    let err = lua
-        .load(r#"cru.on("turn:complete", function() end)"#)
-        .exec()
-        .expect_err("a name collision must fail the registration");
-    assert!(
-        err.to_string().contains("handler name collision"),
-        "got: {err}"
-    );
-
-    // A refused registration must leave nothing behind: a `RuntimeHandler`
-    // whose function is missing dispatches to "Handler not found", which
-    // `pre_tool_call` turns into a denied tool call.
-    assert!(
-        registry
-            .runtime_handlers_for("turn:complete", None)
-            .is_empty(),
-        "the refused registration left a handler with no function behind"
-    );
 }
 
 /// A handler returning the (flat) event table is a TRANSFORM, even when the
@@ -599,22 +446,19 @@ async fn returning_the_event_with_a_cancel_payload_key_is_not_a_cancellation() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    let handler_fn = lua
-        .create_function(|_, (_ctx, event): (mlua::Table, mlua::Table)| Ok(event))
-        .unwrap();
-    let key = lua.create_registry_value(handler_fn).unwrap();
-    registry
-        .handler_functions
-        .lock()
-        .unwrap()
-        .insert("echo_handler".to_string(), key);
+    let id = register(
+        &lua,
+        &registry,
+        StageId::PreToolCall,
+        |_, (_ctx, event): (mlua::Table, mlua::Table)| Ok(mlua::Value::Table(event)),
+    );
 
     let event = SessionEvent::Custom {
         name: "weird_event".to_string(),
         payload: serde_json::json!({ "cancel": true, "handled": true, "tool": "bash" }),
     };
     let result = registry
-        .execute_runtime_handler(&lua, "echo_handler", &event, None)
+        .execute_runtime_handler(&lua, id, &event, None)
         .await
         .unwrap();
     assert!(
@@ -624,7 +468,7 @@ async fn returning_the_event_with_a_cancel_payload_key_is_not_a_cancellation() {
 }
 
 /// A handler can be unregistered between the dispatch snapshot and execution
-/// — a plugin reload (file watcher, no human in the loop) clears its names
+/// — a plugin reload (file watcher, no human in the loop) clears its rows
 /// while a tool call is in flight. An absent handler has no opinion about
 /// the event: erroring here landed in `pre_tool_call`'s fail-closed arm and
 /// denied the tool call on behalf of a handler that no longer exists.
@@ -632,30 +476,23 @@ async fn returning_the_event_with_a_cancel_payload_key_is_not_a_cancellation() {
 async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     crate::plugin_context::enter_plugin(&lua, "alpha", false);
     lua.load(r#"cru.on("pre_tool_call", function() return { cancel = true } end)"#)
         .exec()
         .unwrap();
-    let stale_name = registry.runtime_handlers_for("pre_tool_call", None)[0]
-        .name
-        .clone();
+    let stale_id = registry.runtime_handlers_for("pre_tool_call", None)[0].id;
 
     // The reload's clear lands between snapshot and execution.
-    registry.clear_plugin_handlers("alpha");
+    registry.clear_owner(&Owner::Plugin("alpha".into()));
 
     let event = SessionEvent::Custom {
         name: "pre_tool_call".to_string(),
         payload: serde_json::json!({ "tool": "bash" }),
     };
     let result = registry
-        .execute_runtime_handler(&lua, &stale_name, &event, None)
+        .execute_runtime_handler(&lua, stale_id, &event, None)
         .await
         .expect("an unregistered handler must not surface as an error");
     assert!(
@@ -670,17 +507,12 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
 async fn an_unregistered_json_handler_has_no_opinion_instead_of_failing_closed() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     let result = crate::handlers::before_execute::execute_runtime_json_handler(
         &lua,
         &registry,
-        "runtime_handler_999",
+        999,
         serde_json::json!({}),
         None,
     )
@@ -698,12 +530,7 @@ async fn an_unregistered_json_handler_has_no_opinion_instead_of_failing_closed()
 async fn a_search_rerank_handler_returns_the_hits_it_reordered() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_cru_on_api(
-        &lua,
-        registry.runtime_handlers.clone(),
-        registry.handler_functions.clone(),
-    )
-    .unwrap();
+    register_cru_on_api(&lua, registry.clone()).unwrap();
 
     lua.load(
         r#"
@@ -736,7 +563,7 @@ async fn a_search_rerank_handler_returns_the_hits_it_reordered() {
         }),
     };
     let result = registry
-        .execute_runtime_handler(&lua, &handlers[0].name, &event, None)
+        .execute_runtime_handler(&lua, handlers[0].id, &event, None)
         .await
         .unwrap();
 

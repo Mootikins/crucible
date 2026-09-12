@@ -1351,12 +1351,8 @@ mod tests {
     ) -> (NotePipeline, Arc<dyn crucible_core::storage::BlockStore>) {
         let lua = mlua::Lua::new();
         let registry = crucible_lua::LuaScriptHandlerRegistry::new();
-        crucible_lua::register_cru_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        )
-        .expect("register_cru_on_api should succeed");
+        crucible_lua::register_cru_on_api(&lua, registry.clone())
+            .expect("register_cru_on_api should succeed");
         lua.load(handler).exec().expect("the handler loads");
         let stage: crate::retrieval_stage::SharedStageVm = Arc::default();
         assert!(stage.set((registry, lua)).is_ok(), "bound once");

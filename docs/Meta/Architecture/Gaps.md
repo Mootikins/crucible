@@ -821,7 +821,7 @@ does not name are unchanged.
 | G169 | T3-B3, T3-B4 | `fbe49077c`, `0e194bb53` | closed: none of the five is a trait now |
 | G180 | T3-C2 | `3011f8e02` | closed: one `expand_tilde` in `crucible_core::config` |
 
-Not touched by design: C11, C17, C19 and C29 were deferred, so G125's
-`ThemeLayout` twin, the web policy rows (G17) and the `PermissionHook` versus
-`RuntimeHandler` pair are unchanged. The follow-ups the Tier 3 agents noted
-are in [[Consolidation Plan]] section "Tier 5".
+Not touched by design: C11, C19 and C29 were deferred, so G125's
+`ThemeLayout` twin and the web policy rows (G17) are unchanged. C17 is now
+done: the nine Lua registries are one store keyed by `Owner`. The follow-ups
+the Tier 3 agents noted are in [[Consolidation Plan]] section "Tier 5".

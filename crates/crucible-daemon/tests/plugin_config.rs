@@ -418,13 +418,7 @@ return { name = "fancy-name" }
         "the file package.loaded already holds must not execute again"
     );
     let handlers = loader.plugin_handlers();
-    let count = handlers
-        .runtime_handlers()
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|h| h.event_type == "turn:complete")
-        .count();
+    let count = handlers.runtime_handlers_for("turn:complete", None).len();
     assert_eq!(count, 1, "a re-execution would register the hook twice");
 }
 

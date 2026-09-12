@@ -373,7 +373,7 @@ impl AgentManager {
                 }),
             };
             match registry
-                .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
+                .execute_runtime_handler(lua, handler.id, &event, Some(&stream_ctx.session_id))
                 .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
@@ -475,7 +475,7 @@ impl AgentManager {
                 }),
             };
             match registry
-                .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
+                .execute_runtime_handler(lua, handler.id, &event, Some(&stream_ctx.session_id))
                 .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
@@ -486,7 +486,7 @@ impl AgentManager {
                             Ok(new_messages) => current = new_messages,
                             Err(e) => warn!(
                                 session_id = %stream_ctx.session_id,
-                                handler = %handler.name,
+                                handler = handler.id,
                                 error = %e,
                                 "transform_context handler returned invalid messages, keeping previous"
                             ),
@@ -517,7 +517,7 @@ impl AgentManager {
                 Err(error) => {
                     warn!(
                         session_id = %stream_ctx.session_id,
-                        handler = %handler.name,
+                        handler = handler.id,
                         error = %error,
                         "transform_context handler error (fail-open)"
                     );
@@ -1195,7 +1195,7 @@ impl AgentManager {
         session_mode: &str,
         mcp_read_only: &std::collections::HashSet<String>,
     ) -> PermissionHookResult {
-        let Some((hooks, functions, lua)) = registry else {
+        let Some((hooks, lua)) = registry else {
             return PermissionHookResult::Prompt;
         };
 
@@ -1213,18 +1213,7 @@ impl AgentManager {
             is_safe: crate::agent_manager::believed_read_only(tool_name, mcp_read_only),
         };
 
-        let hooks_guard = hooks
-            .lock()
-            .expect("permission_hooks: poisoned while executing Lua permission hook");
-        let functions_guard = functions
-            .lock()
-            .expect("permission_functions: poisoned while executing Lua permission hook");
-
-        if hooks_guard.is_empty() {
-            return PermissionHookResult::Prompt;
-        }
-
-        match execute_permission_hooks(lua, &hooks_guard, &functions_guard, &request) {
+        match execute_permission_hooks(lua, hooks, &request) {
             Ok(hook_result) => hook_result,
             Err(e) => {
                 warn!(session_id = %session_id, tool = %tool_name, error = %e, "Permission hook failed");

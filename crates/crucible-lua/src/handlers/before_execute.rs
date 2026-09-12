@@ -45,14 +45,8 @@ pub async fn execute_tool_before_execute_hooks(
     let mut accumulated_env = std::collections::HashMap::new();
 
     for handler in handlers {
-        match execute_runtime_json_handler(
-            lua,
-            registry,
-            &handler.name,
-            payload.clone(),
-            session_id,
-        )
-        .await?
+        match execute_runtime_json_handler(lua, registry, handler.id, payload.clone(), session_id)
+            .await?
         {
             ScriptHandlerResult::Transform(result) => {
                 if let Some(env_obj) = result.get("env").and_then(|v| v.as_object()) {
@@ -82,12 +76,12 @@ pub async fn execute_tool_before_execute_hooks(
 pub(super) async fn execute_runtime_json_handler(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
-    name: &str,
+    id: u64,
     payload: JsonValue,
     session_id: Option<&str>,
 ) -> LuaResult<ScriptHandlerResult> {
     let payload_val = lua.to_value(&payload)?;
     registry
-        .execute_handler_with_payload(lua, name, payload_val, session_id)
+        .execute_handler_with_payload(lua, id, payload_val, session_id)
         .await
 }

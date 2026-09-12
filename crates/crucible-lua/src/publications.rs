@@ -206,7 +206,7 @@ mod tests {
         lua.load(r#"cru.plugin.publish("kanban:board", { tickets = {} })"#)
             .exec()
             .unwrap();
-        crate::plugin_context::set_plugin_context(&lua, restore);
+        crate::plugin_context::set_owner(&lua, restore);
 
         let answers = registry.get("kanban:board");
         assert_eq!(answers.len(), 1);
