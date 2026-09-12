@@ -426,12 +426,28 @@ impl Default for LuaScriptHandlerRegistry {
 /// and both session-hook maps, so a plugin marked Not Active still held live
 /// registrations and leaked one more copy on every reload.
 ///
+/// **"Registered" it makes true at once; "running" it makes true at the next
+/// yield.** A schedule and a spawned task are the two things of an owner's
+/// that RUN, and neither can be interrupted mid-call: a tick already in its
+/// callback finishes it, and a stretch of Luau that awaits nothing runs to its
+/// end. See [`crate::schedule::cancel_owner`] and
+/// [`crate::timer::abort_owner`], each of which states its own half. What this
+/// call does guarantee is that no further body of `owner` starts.
+///
 /// Answers how many registrations it removed.
 pub fn clear_owner(lua: &Lua, registry: &LuaScriptHandlerRegistry, owner: &Owner) -> usize {
     let dropped = registry.clear_owner(owner);
     let schedules = crate::schedule::cancel_owner(lua, owner);
-    if dropped + schedules > 0 {
-        tracing::debug!(%owner, dropped, schedules, "cleared owner registrations");
+    let tasks = crate::timer::abort_owner(lua, owner);
+    let total = dropped + schedules + tasks;
+    if total > 0 {
+        tracing::debug!(
+            %owner,
+            dropped,
+            schedules,
+            tasks,
+            "cleared owner registrations"
+        );
     }
-    dropped + schedules
+    total
 }

@@ -13,6 +13,14 @@
 //! calls its own `setup` from a handler runs with one. The FILE that holds
 //! the call is the honest signal, and the chunk name carries it.
 //!
+//! **One caller has no file, and the owner answers for it.** A `lua.eval`
+//! arrives over a socket and its chunk name is `=lua.eval`, which matches no
+//! root here, so [`AuthorRoots::classify`] would fall back to the human layer
+//! and pin a leaf that no file holds. That case is decided BEFORE this module
+//! is reached, by `crate::plugin_context::Owner::config_layer`. Nothing in
+//! this module changes for it: the rule above still holds wherever a file
+//! exists.
+//!
 //! The chunk name must come from `DebugSource::source`, never `short_src`.
 //! `short_src` is the printable form: Luau truncates it to fit an error
 //! message, so a real path under a long directory stops matching its own

@@ -26,9 +26,11 @@
 //!
 //! - **Lifecycle** — `clear_owner` removes exactly one owner's registrations.
 //! - **Authority** — [`Owner::may_intercept`] is a total function.
-//! - **Provenance** — the config store classifies a write by the FILE that
-//!   holds the call (`crate::authorship`), and the `lua.eval` bracket gives
-//!   that call the `Rpc` layer.
+//! - **Provenance** — [`Owner::config_layer`] is a total function. It answers
+//!   `None` for every owner that has a file, and the config store then
+//!   classifies the write by the FILE that holds the call
+//!   (`crate::authorship`). [`Owner::Eval`] has no file, so it answers the
+//!   `Rpc` layer, which ranks highest and pins nothing.
 //!
 //! # The bracket sites
 //!
@@ -110,6 +112,40 @@ impl Owner {
             Self::Plugin(name) => intercept_for(lua, name),
             Self::UserLua | Self::Builtin => true,
             Self::Eval => false,
+        }
+    }
+
+    /// The config layer a `cru.config.set` under this owner lands in, when the
+    /// owner decides it — and `None` when the FILE decides it.
+    ///
+    /// Total, with no wildcard arm, and `None` is the common answer on
+    /// purpose. `crate::authorship` argues the general rule correctly: the file
+    /// that holds the call is the honest signal, because
+    /// `require("alpha").setup{}` written by the user runs alpha's file with no
+    /// plugin context installed, and a plugin that calls its own `setup` from a
+    /// handler runs with one. So [`Self::Plugin`], [`Self::UserLua`] and
+    /// [`Self::Builtin`] all answer `None` and let the path classification
+    /// speak.
+    ///
+    /// [`Self::Eval`] is the one owner with NO file. Its chunk name is
+    /// `=lua.eval`, which matches no config root and no plugin root, so the
+    /// path classification fell back to
+    /// [`crucible_core::config::SourceTag::Lua`] — a layer that PINS. One
+    /// `cru lua 'cru.config.set{…}'` then made `config.save` refuse that leaf
+    /// for the rest of the daemon's life, and the settings UI reported the
+    /// value as a line a human wrote in a file that does not exist.
+    ///
+    /// The answer is [`crucible_core::config::SourceTag::Rpc`], and no new
+    /// layer is needed, because `Rpc` already means exactly "set at run time,
+    /// not written in a file": it ranks highest, so an eval may override
+    /// anything for this run; it pins nothing; and a `config.save` drops it. An
+    /// eval is a socket call, which is what the `config.set` RPC is, so the two
+    /// land on one layer.
+    #[must_use]
+    pub fn config_layer(&self) -> Option<crucible_core::config::SourceTag> {
+        match self {
+            Self::Plugin(_) | Self::UserLua | Self::Builtin => None,
+            Self::Eval => Some(crucible_core::config::SourceTag::Rpc),
         }
     }
 }
@@ -241,6 +277,55 @@ mod tests {
         set_owner(&lua, Owner::Eval);
         assert!(!current_may_intercept(&lua));
         assert_eq!(current_plugin_name(&lua), None);
+    }
+
+    /// Exactly one owner answers the provenance question, and the layer it
+    /// names is the one a `config.save` can overwrite.
+    ///
+    /// The properties are DERIVED from the layer rather than restated: a
+    /// reordering of the layers in `crucible-core` fails this test instead of
+    /// silently giving an eval the power to lock a key.
+    #[test]
+    fn only_the_owner_with_no_file_names_its_own_config_layer() {
+        use crucible_core::config::SourceTag;
+
+        let deciders: Vec<Owner> = [
+            Owner::Plugin("alpha".into()),
+            Owner::UserLua,
+            Owner::Builtin,
+            Owner::Eval,
+        ]
+        .into_iter()
+        .filter(|owner| owner.config_layer().is_some())
+        .collect();
+        assert_eq!(
+            deciders,
+            vec![Owner::Eval],
+            "an owner with a file must let the file decide, or a plugin's \
+             `setup()` called from the user's own `init.lua` is misfiled"
+        );
+
+        let layer = Owner::Eval.config_layer().expect("an eval names its layer");
+        assert_eq!(layer, SourceTag::Rpc);
+        assert_eq!(
+            layer.pin(),
+            None,
+            "an eval holds no file, so its write must not refuse a later \
+             `config.save`"
+        );
+        assert!(
+            layer.reset_drops(),
+            "a save drops the layer it can overwrite, and this is that layer"
+        );
+        assert!(
+            layer.rank() > SourceTag::Settings.rank(),
+            "an eval sets a value for this run, so it must outrank what is saved"
+        );
+        assert_eq!(
+            layer.origin().file,
+            None,
+            "the settings UI must not report an eval as a line in a file"
+        );
     }
 
     #[test]

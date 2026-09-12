@@ -512,9 +512,23 @@ pub fn add_plugin_author_root(root: std::path::PathBuf) -> bool {
 
 /// The layer a write from this call site lands in.
 ///
+/// The OWNER answers first, and only for an owner with no file of its own —
+/// see [`crate::plugin_context::Owner::config_layer`], which answers `None`
+/// for every other one. An eval's chunk name (`=lua.eval`) names no path, so
+/// without this the path classification fell back to the human layer and
+/// pinned a leaf that no file holds.
+///
+/// For every owner that HAS a file, the file decides, which is the rule
+/// `crate::authorship` argues: a plugin's `setup()` called from the user's own
+/// `init.lua` runs with no plugin context, so the running owner is the wrong
+/// signal there.
+///
 /// A poisoned lock falls back to empty roots rather than to a hand-made tag,
 /// so the "no root matches" rule is written once and both paths obey it.
-fn classify_call_site(site: &CallSite) -> SourceTag {
+fn classify_call_site(lua: &Lua, site: &CallSite) -> SourceTag {
+    if let Some(layer) = crate::plugin_context::current_owner(lua).config_layer() {
+        return layer;
+    }
     match author_roots_slot().read() {
         Ok(roots) => roots.classify(&site.chunk, site.line),
         Err(_) => crate::authorship::AuthorRoots::default().classify(&site.chunk, site.line),
@@ -530,7 +544,7 @@ fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
         .as_object()
         .is_some_and(|map| map.contains_key("runtimepath"));
 
-    let withheld = merge_app_config_tagged(overlay, classify_call_site(&site));
+    let withheld = merge_app_config_tagged(overlay, classify_call_site(lua, &site));
     for key in &withheld {
         warn!(
             key = %key,
@@ -1044,6 +1058,114 @@ mod tests {
         assert!(
             written.reset_drops(),
             "config.reset must drop the layer config.set writes, and {written:?} survives it"
+        );
+    }
+
+    /// An eval's write must not pin a leaf that no file holds.
+    ///
+    /// `=lua.eval` matches no config root and no plugin root, so the path
+    /// classification fell back to [`SourceTag::Lua`] — a layer that outranks
+    /// `Settings` and PINS. One `cru lua 'cru.config.set{…}'` then made
+    /// `config.save` refuse that leaf for the rest of the daemon's life, and
+    /// the settings UI reported the value as a line a human wrote in a file
+    /// that does not exist.
+    ///
+    /// Both halves are asserted in one test on purpose. The eval's leaf must
+    /// be saveable AND a line in a real `init.lua` must still refuse a save: a
+    /// fix that replaced the path classification with the owner would pass the
+    /// first half alone, and it would demote the human's own file.
+    ///
+    /// The refusal is read through the real `save_app_config` door rather than
+    /// from `pin()`, so the test cannot pass while the store ignores the pin.
+    #[test]
+    fn an_eval_write_is_the_runtime_layer_and_a_file_write_still_pins() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let dir = TempDir::new().unwrap();
+        let config_root = dir.path().join("config");
+        std::fs::create_dir_all(&config_root).unwrap();
+        let init_file = config_root.join("init.lua");
+        set_author_roots(crate::authorship::AuthorRoots::new(
+            vec![config_root.clone()],
+            Vec::new(),
+        ));
+        begin_boot_store();
+
+        let lua = create_test_lua();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_app_config_api(&lua, &cru).unwrap();
+
+        // The eval bracket, with the chunk name `DaemonPluginLoader::eval`
+        // gives the code it loads.
+        let previous = crate::plugin_context::set_owner(&lua, crate::plugin_context::Owner::Eval);
+        lua.load(r#"cru.config.set({ probe = { from_eval = "socket" } })"#)
+            .set_name("=lua.eval")
+            .exec()
+            .unwrap();
+        crate::plugin_context::set_owner(&lua, previous);
+
+        // And a line in a file the human owns, under no bracket at all.
+        lua.load(r#"cru.config.set({ probe = { from_file = "human" } })"#)
+            .set_name(format!("@{}", init_file.display()))
+            .exec()
+            .unwrap();
+
+        // Restore before asserting: a failed assertion must not leave the
+        // roots installed for the next test.
+        set_author_roots(crate::authorship::AuthorRoots::default());
+
+        let provenance = get_app_config_provenance().expect("the store is live");
+        let from_eval = provenance
+            .get("probe.from_eval")
+            .cloned()
+            .expect("the eval recorded a leaf");
+        let from_file = provenance
+            .get("probe.from_file")
+            .cloned()
+            .expect("the file recorded a leaf");
+
+        assert_eq!(
+            from_eval,
+            SourceTag::Rpc,
+            "an eval writes over a socket, so it lands on the layer the \
+             `config.set` RPC lands on"
+        );
+        assert_eq!(
+            from_eval.pin(),
+            None,
+            "an eval names no file, so it must pin nothing"
+        );
+        assert_eq!(
+            from_file,
+            SourceTag::Lua {
+                file: init_file.display().to_string(),
+                line: Some(1),
+            },
+            "a line in the human's own file keeps the human's layer"
+        );
+
+        let saved = save_app_config(
+            serde_json::json!({ "probe": { "from_eval": "saved", "from_file": "saved" } }),
+            &|_| None,
+        );
+        let refused: Vec<&str> = saved.refused.iter().map(|leaf| leaf.key.as_str()).collect();
+        assert_eq!(
+            refused,
+            vec!["probe.from_file"],
+            "a save must overwrite the eval's leaf and refuse the file's"
+        );
+
+        let value = get_app_config().expect("the store is live");
+        assert_eq!(
+            value.pointer("/probe/from_eval"),
+            Some(&serde_json::json!("saved")),
+            "the save must reach the value the eval set"
+        );
+        assert_eq!(
+            value.pointer("/probe/from_file"),
+            Some(&serde_json::json!("human")),
+            "a refused save must leave the human's line in place"
         );
     }
 

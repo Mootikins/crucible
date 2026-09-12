@@ -1163,6 +1163,85 @@ async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() 
     );
 }
 
+/// `make_plugin_inert` promises "nothing of this plugin's is registered or
+/// RUNNING". The two things an owner has that RUN are a `cru.timer.spawn` task
+/// and a `cru.schedule` tick.
+///
+/// Not the declared-service path, which `services.rs` covers: this is the
+/// ad-hoc one a plugin reaches for directly, and `runtime/plugins/discord`
+/// uses it. `cru.timer.spawn` dropped its `JoinHandle` on the floor, so a
+/// plugin marked Not Active kept ticking for the life of the daemon.
+///
+/// The counters are read twice with a gap, not once at the clear: the clear is
+/// not immediate — a tick already in its callback finishes, and a task stops
+/// at its next await — so the test settles first, then holds the count still.
+#[tokio::test]
+async fn a_plugin_marked_inert_stops_its_spawned_task_and_its_schedule() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("ticker");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+        cru.timer.spawn(function()
+            while true do
+                _G.spawn_ticks = (_G.spawn_ticks or 0) + 1
+                cru.timer.sleep(0.005)
+            end
+        end)
+        cru.schedule(0.005, function()
+            _G.schedule_ticks = (_G.schedule_ticks or 0) + 1
+        end)
+        return { name = "ticker", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .execute_plugin("ticker", &dir.join("init.lua"))
+        .await
+        .expect("load");
+
+    let count = |loader: &DaemonPluginLoader, global: &str| -> i64 {
+        loader
+            .executor
+            .lua()
+            .globals()
+            .get::<Option<i64>>(global)
+            .unwrap()
+            .unwrap_or(0)
+    };
+
+    // Both must be RUNNING, or a clear that did nothing would pass.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while count(&loader, "spawn_ticks") < 1 || count(&loader, "schedule_ticks") < 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the task and the schedule must both run before the clear");
+
+    loader.make_plugin_inert("ticker");
+
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    let spawn_stopped_at = count(&loader, "spawn_ticks");
+    let schedule_stopped_at = count(&loader, "schedule_ticks");
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(
+        count(&loader, "spawn_ticks"),
+        spawn_stopped_at,
+        "a plugin marked Not Active still runs the task it spawned"
+    );
+    assert_eq!(
+        count(&loader, "schedule_ticks"),
+        schedule_stopped_at,
+        "a plugin marked Not Active still runs its schedule"
+    );
+}
+
 /// A `lua.eval` is its own owner, so its registrations are clearable and hold
 /// no interception right.
 ///
