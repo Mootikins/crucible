@@ -6,8 +6,6 @@ use super::registry::{
     scope_from_opts, LuaScriptHandlerRegistry, RegistrationSpec, SessionScope, DEFAULT_PRIORITY,
 };
 
-use crucible_core::fuzzy::levenshtein;
-
 /// Reject a hook name `cru.on` cannot register for.
 ///
 /// An **error**, not a warning. `cru.on` runs at plugin load, and a plugin
@@ -21,25 +19,14 @@ use crucible_core::fuzzy::levenshtein;
 /// and nothing else: each carries a different payload, so a handler registered
 /// here would read the wrong argument and fail at fire time.
 fn resolve_hook_name(event_type: &str) -> Result<HookName, mlua::Error> {
-    if let Some(name) = HookName::parse(event_type) {
-        return match name.own_api() {
-            None => Ok(name),
-            Some(api) => Err(mlua::Error::RuntimeError(format!(
-                "cru.on: `{event_type}` is registered with `{api}`, which passes it \
-                 the argument it expects"
-            ))),
-        };
+    let name = super::hook_name::parse_or_suggest("cru.on", event_type, hook_names())?;
+    match name.own_api() {
+        None => Ok(name),
+        Some(api) => Err(mlua::Error::RuntimeError(format!(
+            "cru.on: `{event_type}` is registered with `{api}`, which passes it \
+             the argument it expects"
+        ))),
     }
-    let suggestion = hook_names()
-        .min_by_key(|n| levenshtein(n, event_type))
-        .filter(|n| levenshtein(n, event_type) <= 3);
-    Err(mlua::Error::RuntimeError(match suggestion {
-        Some(s) => format!("cru.on: unknown event `{event_type}` — did you mean `{s}`?"),
-        None => format!(
-            "cru.on: unknown event `{event_type}`. Valid: {}",
-            hook_names().collect::<Vec<_>>().join(", ")
-        ),
-    }))
 }
 
 /// Register the cru.on() API for runtime handler registration
@@ -56,11 +43,18 @@ fn resolve_hook_name(event_type: &str) -> Result<HookName, mlua::Error> {
 /// -- For one session, from inside that session. Registering it again
 /// -- replaces it, so a resume leaves one handler and not two:
 /// cru.on("pre_tool_call", { session = ctx.session_id, key = "ralph" }, handler)
+///
+/// -- Once, then gone. The host removes the row before it runs the body:
+/// cru.on("turn:complete", { once = true }, handler)
 /// ```
 pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> LuaResult<()> {
     // Every registration API on this VM writes the SAME store, so the one the
     // host wires `cru.on` to is the one `cru.on_session_start` finds.
     super::install_registry(lua, registry.clone());
+    // One wiring point for the pair. `cru.clear` unwrites the store `cru.on`
+    // writes, so a VM that has one must have the other; ten hosts each
+    // remembering a second call is the fault this avoids.
+    super::register_cru_clear_api(lua, registry.clone())?;
     let on_fn = lua.create_function(move |lua, args: mlua::MultiValue| {
         let args_vec: Vec<Value> = args.into_vec();
         if args_vec.len() < 2 {
@@ -80,7 +74,7 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
 
         let name = resolve_hook_name(&event_type)?;
 
-        let (pattern, priority, timeout_ms, scope, key, handler) = match &args_vec[1] {
+        let (pattern, priority, timeout_ms, scope, key, once, handler) = match &args_vec[1] {
             Value::Function(f) => {
                 // cru.on(event_type, handler) — backward compatible
                 (
@@ -89,6 +83,7 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                     None,
                     SessionScope::Global,
                     None,
+                    false,
                     f.clone(),
                 )
             }
@@ -113,10 +108,14 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                 // a large model call — says so here. Absent, the name it
                 // registers for decides. See `handler_budget`.
                 let timeout_ms: Option<u64> = opts.get("timeout_ms").ok();
+                // A handler that retires itself after one call. The host
+                // removes the row before it runs the body; see
+                // `LuaScriptHandlerRegistry::retire_if_once`.
+                let once: bool = opts.get("once").unwrap_or(false);
                 // Which sessions, and what this registration calls itself.
                 // The host resolves the session id; see `scope_from_opts`.
                 let (scope, key) = scope_from_opts(lua, "cru.on", name, opts)?;
-                (pattern, priority, timeout_ms, scope, key, handler)
+                (pattern, priority, timeout_ms, scope, key, once, handler)
             }
             _ => {
                 return Err(mlua::Error::RuntimeError(
@@ -133,6 +132,7 @@ pub fn register_cru_on_api(lua: &Lua, registry: LuaScriptHandlerRegistry) -> Lua
                 pattern: pattern.clone(),
                 scope: scope.clone(),
                 key,
+                once,
                 timeout_ms,
                 required: false,
             },

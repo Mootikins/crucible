@@ -93,6 +93,52 @@ fn two_keys_are_two_registrations_for_one_session() {
     );
 }
 
+/// `priority` is NOT in the replacement key, so two scoped rows that differ
+/// only by it collapse — and the LATER registration is the one that stands.
+///
+/// This is why `key` cannot go while `replaces` stays. An author separating a
+/// guard from a logger by priority alone writes two `cru.on` calls, reads two
+/// successes, and holds one handler. The narrower axes do not cover it:
+/// `pattern` is the same for both, and neither is a one-shot.
+///
+/// Pinned, not endorsed. The fix is a host-derived identity for the
+/// definition site (Neovim's `AutoCmd.script_ctx`); until then an author
+/// separates the two rows with `key`.
+#[tokio::test]
+async fn two_scoped_registrations_differing_only_by_priority_collapse() {
+    let (lua, registry) = vm();
+    enter_plugin(&lua, "ralph", false);
+
+    load_in_session(
+        &lua,
+        "s1",
+        r#"
+        cru.on("pre_tool_call", { session = "s1", priority = 10 }, function() fired = "guard" end)
+        cru.on("pre_tool_call", { session = "s1", priority = 90 }, function() fired = "logger" end)
+        "#,
+    )
+    .expect("both register without complaint");
+
+    let handlers =
+        registry.runtime_handlers_for(StageId::PreToolCall.as_str(), None, Firing::InSession("s1"));
+    assert_eq!(handlers.len(), 1, "priority does not separate two rows");
+
+    // WHICH one survived, read by running it rather than assumed.
+    let event = crucible_core::events::SessionEvent::Custom {
+        name: "pre_tool_call".to_string(),
+        payload: serde_json::json!({}),
+    };
+    registry
+        .execute_runtime_handler(&lua, handlers[0].id, &event, Some("s1"))
+        .await
+        .expect("the survivor runs");
+    assert_eq!(
+        lua.globals().get::<String>("fired").expect("fired"),
+        "logger",
+        "the registration made LAST is the one that stands"
+    );
+}
+
 /// The harm this whole section exists to stop: a loop that re-prompts a model
 /// must not take over a turn in a session nobody enabled it for.
 #[tokio::test]

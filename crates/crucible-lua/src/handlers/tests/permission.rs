@@ -26,7 +26,7 @@ fn test_permission_hook_registration() {
         crate::handlers::Firing::Sessionless,
     );
     assert_eq!(hooks.len(), 1);
-    let _body: mlua::Function = lua.registry_value(hooks[0].body()).unwrap();
+    let _body: mlua::Function = hooks[0].take_body(&lua).unwrap();
 }
 
 #[test]

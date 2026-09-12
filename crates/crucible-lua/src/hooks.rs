@@ -67,7 +67,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         "on_session_start",
         &format!(
             "(handler: {SESSION_HOOK}, options: {{ required: boolean?, \
-             session: string?, key: string? }}?) -> ()"
+             session: string?, key: string?, once: boolean? }}?) -> ()"
         ),
         |lua, (func, opts): (Function, Option<Table>)| {
             let mut spec = RegistrationSpec::new(SESSION_START_HOOK);
@@ -77,6 +77,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
                     scope_from_opts(lua, "cru.on_session_start", SESSION_START_HOOK, opts)?;
                 spec.scope = scope;
                 spec.key = key;
+                spec.once = opts.get::<Option<bool>>("once").ok().flatten() == Some(true);
             }
             crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())
@@ -90,7 +91,10 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     // can tear down for that session alone. The sweep runs after these fire.
     ns.func(
         "on_session_end",
-        &format!("(handler: {SESSION_HOOK}, options: {{ session: string?, key: string? }}?) -> ()"),
+        &format!(
+            "(handler: {SESSION_HOOK}, options: {{ session: string?, key: string?, \
+             once: boolean? }}?) -> ()"
+        ),
         |lua, (func, opts): (Function, Option<Table>)| {
             let mut spec = RegistrationSpec::new(SESSION_END_HOOK);
             if let Some(opts) = &opts {
@@ -98,6 +102,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
                     scope_from_opts(lua, "cru.on_session_end", SESSION_END_HOOK, opts)?;
                 spec.scope = scope;
                 spec.key = key;
+                spec.once = opts.get::<Option<bool>>("once").ok().flatten() == Some(true);
             }
             crate::handlers::registry_of(lua)?.register(lua, spec, func)?;
             Ok(())

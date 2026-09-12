@@ -156,7 +156,21 @@ pub struct Registration {
     /// plugin could not register two scoped handlers on one hook for one
     /// session, which is a legal thing to want. Lua spells it `key` rather
     /// than `name` because `name` above is already the hook.
+    ///
+    /// Neovim names no row and keys its coarse delete on three parts
+    /// (`autocmd.c:952`), so this axis has no prior art — but Neovim also
+    /// ALWAYS appends, and Crucible replaces a scoped row. Under replacement
+    /// this is the only thing that tells two such rows apart, because
+    /// `priority` is not in the key either.
     pub key: Option<String>,
+    /// Whether this registration retires itself after it runs once.
+    ///
+    /// Neovim's `AutoCmd.once`, and the only one of its three retirement
+    /// paths that asks the author for no state. The row leaves the store
+    /// BEFORE its body runs; see [`Registration::take_body`](Self::take_body)
+    /// for why the order matters, and for why that is the only way to obtain
+    /// a body.
+    pub once: bool,
     /// What the registration asked for with `{ timeout_ms = … }`, in
     /// milliseconds. `None` takes the budget of the name it registered for.
     pub timeout_ms: Option<u64>,
@@ -202,6 +216,9 @@ pub struct RegistrationSpec {
     pub scope: SessionScope,
     /// What the registration calls itself. See [`Registration::key`].
     pub key: Option<String>,
+    /// Whether to retire the registration after it runs once. See
+    /// [`Registration::once`].
+    pub once: bool,
     /// An explicit time budget, in milliseconds.
     pub timeout_ms: Option<u64>,
     /// Whether a failure refuses the session; `session:start` only.
@@ -218,6 +235,7 @@ impl RegistrationSpec {
             pattern: None,
             scope: SessionScope::Global,
             key: None,
+            once: false,
             timeout_ms: None,
             required: false,
         }
@@ -226,6 +244,45 @@ impl RegistrationSpec {
 
 /// The priority a registration takes when it names none.
 pub const DEFAULT_PRIORITY: i64 = 100;
+
+/// Which of one source's registrations [`LuaScriptHandlerRegistry::clear_matching`]
+/// removes.
+///
+/// Every field NARROWS, and `None` is no constraint — so every field absent
+/// clears everything the calling source registered, which is what
+/// `nvim_del_augroup_by_name` does for a group. The source itself is not a
+/// field: it is the caller.
+#[derive(Debug, Clone, Default)]
+pub struct ClearFilter {
+    /// The hook to clear, or every hook the source registered for.
+    pub name: Option<HookName>,
+    /// The pattern to clear, compared as EXACT TEXT and never evaluated as a
+    /// glob.
+    ///
+    /// `cru.clear{ pattern = "bash" }` removes a row registered with
+    /// `pattern = "bash"` and leaves one registered with `pattern = "b*"`,
+    /// even though that row fires for `bash`. Neovim states the same rule for
+    /// `nvim_clear_autocmds` (`api/autocmd.c:538`), and the reason is that a
+    /// glob evaluated here would remove rows the caller never named.
+    pub pattern: Option<String>,
+    /// The scope to clear. `None` removes a row whatever its scope.
+    pub scope: Option<SessionScope>,
+}
+
+impl ClearFilter {
+    /// Whether `row` passes every filter this names.
+    ///
+    /// The source is checked by the caller, which is the only place that
+    /// knows it.
+    fn selects(&self, row: &Registration) -> bool {
+        self.name.is_none_or(|name| row.name == name)
+            && self
+                .pattern
+                .as_deref()
+                .is_none_or(|pattern| row.pattern.as_deref() == Some(pattern))
+            && self.scope.as_ref().is_none_or(|scope| &row.scope == scope)
+    }
+}
 
 /// Read `{ session = …, key = … }` from a registration's options table.
 ///
@@ -248,15 +305,37 @@ pub fn scope_from_opts(
     opts: &mlua::Table,
 ) -> LuaResult<(SessionScope, Option<String>)> {
     let key = string_option(api, opts, "key")?;
-    let Some(asked) = string_option(api, opts, "session")? else {
-        return Ok((SessionScope::Global, key));
-    };
-    if !name.carries_session() {
+    // Read the option first, so `{ session = <a table> }` raises here rather
+    // than passing the `carries_session` gate as an absent scope.
+    let asked = string_option(api, opts, "session")?;
+    if asked.is_some() && !name.carries_session() {
         return Err(mlua::Error::RuntimeError(format!(
             "{api}: `{name}` is dispatched without a session, so a \
              `session` scope on it could never fire"
         )));
     }
+    match session_from_opts(lua, api, opts)? {
+        Some(session) => Ok((SessionScope::Session(session), key)),
+        None => Ok((SessionScope::Global, key)),
+    }
+}
+
+/// Resolve `{ session = … }` to the session the caller is running in.
+///
+/// `None` when the option is absent. The two refusals here are the ones that
+/// hold for every caller, so `cru.clear` reads the option through this
+/// function and `scope_from_opts` adds only the registration-time gate that
+/// needs a [`HookName`].
+///
+/// 1. `session` where the host is in no session. There is nothing to resolve
+///    the id against.
+/// 2. `session` naming a session other than the one the host is in. The host
+///    resolves the id; a caller never writes one it chose. See
+///    [`crate::plugin_context::current_session`] for the reason.
+pub fn session_from_opts(lua: &Lua, api: &str, opts: &mlua::Table) -> LuaResult<Option<String>> {
+    let Some(asked) = string_option(api, opts, "session")? else {
+        return Ok(None);
+    };
     let Some(current) = crate::plugin_context::current_session(lua) else {
         return Err(mlua::Error::RuntimeError(format!(
             "{api}: a `session` scope names the session this code is running \
@@ -268,10 +347,10 @@ pub fn scope_from_opts(
     if asked != current {
         return Err(mlua::Error::RuntimeError(format!(
             "{api}: this code runs in session `{current}`, so it may not \
-             register a handler for session `{asked}`"
+             name session `{asked}`"
         )));
     }
-    Ok((SessionScope::Session(current), key))
+    Ok(Some(current))
 }
 
 /// One string option off a registration's table, or `None` when it is absent.
@@ -343,6 +422,22 @@ impl LuaScriptHandlerRegistry {
     /// silently overwrite each other. Without the `key`, one plugin could not
     /// register two handlers on one hook for one session.
     ///
+    /// The `key` is the part with no Neovim counterpart, and it is the part a
+    /// later step should retire. Neovim names no row: it keys its coarse
+    /// delete on group, event and pattern (`autocmd.c:952`) and tells two
+    /// otherwise identical rows apart by ALWAYS appending. Crucible cannot
+    /// simply copy that, because a scoped row is registered from
+    /// `on_session_start`, which fires again on every resume and on every
+    /// `resume_from_storage` — so appending accumulates.
+    ///
+    /// What would retire `key` is a host-derived identity for the definition
+    /// SITE, which is Neovim's third axis (`AutoCmd.script_ctx`) and the one
+    /// Crucible does not yet record. Two activations of one line are the same
+    /// registration; two different lines are two. Until something supplies
+    /// that, `key` is the only axis separating two scoped rows on one hook
+    /// and one pattern — `priority` is not in the key, so two rows that
+    /// differ only in priority collapse as well.
+    ///
     /// A [`SessionScope::Global`] registration still APPENDS. Two identical unscoped
     /// registrations are two handlers, as they have always been: an unscoped
     /// registration is made once at load, so nothing accumulates, and
@@ -365,6 +460,7 @@ impl LuaScriptHandlerRegistry {
             pattern: spec.pattern,
             scope: spec.scope,
             key: spec.key,
+            once: spec.once,
             timeout_ms: spec.timeout_ms,
             required: spec.required,
             may_intercept,
@@ -488,6 +584,63 @@ impl LuaScriptHandlerRegistry {
         before - rows.len()
     }
 
+    /// Drop every registration of `source` that `filter` names.
+    ///
+    /// Answers how many it removed, which is what `cru.clear` returns.
+    ///
+    /// The filtered middle ground between [`Self::clear_source`], which takes
+    /// all of one source's rows, and [`Self::clear_session`], which takes
+    /// every source's rows for one session. `nvim_clear_autocmds` is the most
+    /// used retirement call in Neovim's shipped runtime, and its dominant
+    /// form — `{ group = g, buf = b }` — is exactly "my own rows, for this
+    /// container".
+    ///
+    /// `source` is the CALLER, not a filter: a plugin clears its own rows and
+    /// reaches no other plugin's. `clear_source` already matched on exactly
+    /// this, so the gate is the one that was already here.
+    pub fn clear_matching(&self, source: &LuaSource, filter: &ClearFilter) -> usize {
+        let Ok(mut rows) = self.registrations.lock() else {
+            return 0;
+        };
+        let before = rows.len();
+        rows.retain(|row| !(&row.source == source && filter.selects(row)));
+        before - rows.len()
+    }
+
+    /// Retire `registration` when it asked to run once. Answers whether it
+    /// removed a row.
+    ///
+    /// # The row leaves the store BEFORE the body runs, not after
+    ///
+    /// Neovim retires a one-shot "in anticipation of its execution"
+    /// (`autocmd.c:2240`) and marks the row dead before it invokes the body.
+    /// Upstream #25526 records that order as a FIX, not a nicety: a nested
+    /// dispatch of the same hook re-enters a one-shot that is still visible.
+    /// A Crucible turn loop re-enters the same way — a `pre_tool_call`
+    /// handler can run a tool — so the same order applies here.
+    ///
+    /// Neovim then has to restore the pattern pointer, because its row owns a
+    /// refcounted `AutoPat`. Crucible needs no such dance: the body is an
+    /// `Arc<RegistryKey>` the caller already holds, so the row can simply go
+    /// while the clone in hand stays callable.
+    ///
+    /// A body that RAISES still retires the row. `once` says how many times
+    /// the host CALLS a handler, not how many times the handler succeeds.
+    fn retire_if_once(&self, registration: &Registration) -> bool {
+        if !registration.once {
+            return false;
+        }
+        let Ok(mut rows) = self.registrations.lock() else {
+            return false;
+        };
+        // By id, never by a held index: `register` may have replaced or
+        // pushed rows since the dispatch snapshot, so an index would name
+        // some other registration.
+        let before = rows.len();
+        rows.retain(|row| row.id != registration.id);
+        before != rows.len()
+    }
+
     /// Execute a registration by id.
     ///
     /// The handler receives `(ctx, event)`; `ctx.session_id` carries the
@@ -541,7 +694,7 @@ impl LuaScriptHandlerRegistry {
             return Ok(ScriptHandlerResult::PassThrough);
         };
         let budget = registration.budget();
-        let handler: Function = lua.registry_value(registration.body())?;
+        let handler: Function = registration.take_body(lua)?;
 
         let ctx_table = lua.create_table()?;
         if let Some(session) = session_id {
@@ -664,10 +817,43 @@ impl Registration {
         }
     }
 
-    /// The Lua registry slot holding the body.
-    #[must_use]
-    pub fn body(&self) -> &RegistryKey {
-        &self.body
+    /// The callable to run, and the retirement of a one-shot row.
+    ///
+    /// # This is the ONE choke point, and it is why there is no `body()`
+    ///
+    /// Four fire paths run a registration's body, and three of them do not go
+    /// through `execute_handler_with_payload`: the
+    /// synchronous permission gate
+    /// ([`execute_permission_hooks`](super::permission::execute_permission_hooks)),
+    /// the two session-lifecycle paths (`executor.rs`) and the provider-auth
+    /// gate (`auth_plugin.rs`). Each selected a `Vec<Registration>` and
+    /// loaded `body()` itself.
+    ///
+    /// So `once` gets no per-path retire call. The accessor that handed out
+    /// the slot is GONE, and `body` is private, so the only way to obtain the
+    /// callable is this method — a path cannot run a body without passing the
+    /// retirement. That is the same fault, and the same fix, as the four
+    /// partial clear paths that became one `clear_source`: a rule four callers
+    /// must remember is a rule one of them will not.
+    ///
+    /// Two properties follow from loading the body HERE rather than at
+    /// selection:
+    ///
+    /// - The permission gate and the auth gate answer on the FIRST hook that
+    ///   decides, so a `once` row further down the list is selected and never
+    ///   reached. It keeps its registration, because a row retires when its
+    ///   body RUNS and not when it is selected.
+    /// - `retrieval_stage::has_handlers` asks only whether a handler exists.
+    ///   It loads no body, so it retires nothing.
+    ///
+    /// A row that fails to load retires nothing either: `once` counts the
+    /// calls the host makes, and a callable it could not produce is no call.
+    pub fn take_body(&self, lua: &Lua) -> LuaResult<Function> {
+        let handler: Function = lua.registry_value(&self.body)?;
+        if self.once {
+            super::registry_of(lua)?.retire_if_once(self);
+        }
+        Ok(handler)
     }
 }
 

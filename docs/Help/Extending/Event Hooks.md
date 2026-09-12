@@ -38,6 +38,9 @@ cru.on(event_type, { pattern = "...", priority = 50 }, handler)
 
 -- For one session, from inside that session:
 cru.on(event_type, { session = ctx.session_id, key = "ralph" }, handler)
+
+-- Once, and then it retires itself:
+cru.on(event_type, { once = true }, handler)
 ```
 
 | Argument | Type | Description |
@@ -47,6 +50,7 @@ cru.on(event_type, { session = ctx.session_id, key = "ralph" }, handler)
 | `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
 | `opts.session` | string, optional | Fire for this session alone. Must be the session the code is running in. Default: every session. See [Scoping a handler to one session](#scoping-a-handler-to-one-session). |
 | `opts.key` | string, optional | What this registration calls itself, so one plugin can hold two scoped handlers on one event. |
+| `opts.once` | boolean, optional | Run the handler once, then retire the registration. Default: `false`. See [Retiring a handler](#retiring-a-handler). |
 | `handler` | `function(ctx, event)` | Called when the event fires and matches |
 
 `event_type` is validated at registration. A name outside the closed set below
@@ -190,6 +194,77 @@ To let an activation outlive a daemon restart, record it with
 `session:set_variable(key, value)` and register again on the next
 `session:start`. That is the plugin's decision — the host keeps no activation
 list.
+
+## Retiring a Handler
+
+Two ways, and both retire the registration rather than skip it. A handler that
+is skipped but still registered keeps costing a pattern match and a dispatch
+for the life of the daemon.
+
+### `{ once = true }`
+
+The handler runs one time, and the host removes the registration. Nothing has
+to be tracked on your side.
+
+```lua
+-- Warm a cache on the first tool call of the session, and never again.
+cru.on("pre_tool_call", { session = session.id, once = true }, function(ctx, event)
+  warm_cache()
+end)
+```
+
+Three properties worth knowing:
+
+- **The row leaves the store before the body runs.** A hook that dispatches
+  the same event again from inside the handler does not re-enter it.
+- **A handler that raises is still retired.** `once` counts the calls the host
+  makes, not the calls that succeed.
+- **A handler that never runs keeps its registration.** The permission gate
+  and the provider-auth gate stop at the first hook that answers, so a `once`
+  hook behind one that answered is untouched and still fires later.
+
+`once` works on every hook, `cru.on_session_start` and
+`cru.on_session_end` included.
+
+### `cru.clear(opts?)`
+
+Retires registrations early, and answers how many it removed.
+
+```lua
+cru.clear{ name = "pre_tool_call", session = session.id }  -- one event, one session
+cru.clear{ name = "turn:complete" }                        -- one event, every scope
+cru.clear{ pattern = "bash" }                              -- every row on that pattern
+cru.clear()                                                -- everything this plugin registered
+```
+
+| Argument | Type | Description |
+|---|---|---|
+| `opts.name` | string, optional | The event to clear. A name outside the closed set raises, naming the closest match. Default: every event. |
+| `opts.pattern` | string, optional | The pattern to clear, compared as **exact text**. Default: every pattern. |
+| `opts.session` | string, optional | The session scope to clear. Must be the session the code is running in. Default: every scope, the unscoped rows included. |
+
+Each option NARROWS. All of them absent clears everything the calling plugin
+registered.
+
+**A plugin clears its own registrations and cannot reach another plugin's.**
+There is no owner argument, and that is deliberate: the host takes the caller
+from the running plugin, so there is nothing for a caller to spell. Your own
+`init.lua` is a caller like any other — it clears what it registered, and a
+plugin's rows are out of its reach too.
+
+**`opts.pattern` is exact text and is never evaluated as a glob.**
+`cru.clear{ pattern = "bash" }` removes a handler registered with
+`pattern = "bash"`, and leaves one registered with `pattern = "b*"` — even
+though that handler fires for `bash`. Evaluating the glob here would remove
+handlers you never named.
+
+**`cru.clear` reaches the events that have their own registration function.**
+`cru.on` refuses `session:start`, `session:end`, `permission:request` and
+`provider:auth`, because each takes a different argument; `cru.clear` accepts
+all four, so a plugin can retire what it registered through
+`cru.on_session_start` and its neighbours.
+
+Clearing is idempotent: a second call removes nothing and does not raise.
 
 ### Note lifecycle
 
@@ -689,6 +764,11 @@ end)
 The `session` argument exposes:
 - `session.id` — session id (string, read-only)
 - `session.workspace` — the session's working directory, or nil (string, read-only)
+
+Both lifecycle hooks take the same `session`, `key` and `once` options
+`cru.on` does. `{ once = true }` is worth knowing here in particular, because
+`on_session_start` fires again on every resume and on every resume from
+storage.
 
 By default a hook that raises is logged and the session continues. Pass
 `{ required = true }` to escalate: a raising required hook **refuses the

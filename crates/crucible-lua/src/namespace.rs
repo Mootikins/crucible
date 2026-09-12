@@ -26,6 +26,13 @@ use strum::IntoEnumIterator;
 #[strum(serialize_all = "snake_case")]
 pub enum CruNamespace {
     Check,
+    /// Retires registrations the calling plugin made: `cru.clear{ … }`.
+    ///
+    /// Registered beside [`CruNamespace::On`], so it lands wherever that
+    /// does. The pair write and unwrite one store, and a VM carrying
+    /// `cru.on` without `cru.clear` could register a handler that nothing
+    /// could retire.
+    Clear,
     Colorscheme,
     Config,
     Context,
@@ -110,6 +117,7 @@ impl CruNamespace {
         match self {
             Self::Include | Self::Mcp => false,
             Self::Check
+            | Self::Clear
             | Self::Colorscheme
             | Self::Config
             | Self::Context

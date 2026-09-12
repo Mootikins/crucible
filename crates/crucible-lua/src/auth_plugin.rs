@@ -80,7 +80,7 @@ pub fn fire_provider_auth_hooks(
         crate::handler_budget::enter(lua, PROVIDER_AUTH_HOOK.budget(), "the provider auth hook");
 
     for hook in hooks {
-        let handler: Function = match lua.registry_value(hook.body()) {
+        let handler: Function = match hook.take_body(lua) {
             Ok(handler) => handler,
             Err(e) => {
                 warn!("Failed to load provider auth hook {}: {e}", hook.id);

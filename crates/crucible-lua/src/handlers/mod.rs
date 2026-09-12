@@ -45,6 +45,7 @@ use mlua::Lua;
 
 mod before_execute;
 mod conversion;
+mod cru_clear;
 mod cru_on;
 mod display_hooks;
 mod hook_name;
@@ -59,6 +60,7 @@ pub use before_execute::{
     execute_tool_before_execute_hooks, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
     TOOL_BEFORE_EXECUTE_EVENT,
 };
+pub use cru_clear::register_cru_clear_api;
 pub use cru_on::register_cru_on_api;
 pub use display_hooks::{
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
@@ -70,12 +72,12 @@ pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHookResult,
     PermissionRequest, PERMISSION_REQUEST_HOOK, SHIPPED_DEFAULT_PRIORITY,
 };
-/// Crate-internal: the four registration APIs share one option parse, and no
+/// Crate-internal: the registration APIs share one option parse, and no
 /// caller outside this crate registers a handler.
 pub(crate) use registry::scope_from_opts;
 pub use registry::{
-    clear_source, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec, SessionScope,
-    DEFAULT_PRIORITY,
+    clear_source, ClearFilter, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec,
+    SessionScope, DEFAULT_PRIORITY,
 };
 pub use script_handler::{interpret_handler_result, EventOutcome, ScriptHandlerResult};
 
