@@ -8,13 +8,24 @@ const getFileContent = vi.fn(async (_path: string) => '');
 const saveFileContent = vi.fn(async (_path: string, _content: string) => {});
 const getNote = vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' }));
 
+const KILN = '/home/user/kiln';
+
 vi.mock('@/lib/api', () => ({
+  // The editor reads through the offline layer now, which asks for the hash
+  // the buffer was read at; the transport underneath is the same endpoint.
+  getFileWithHash: async (p: string) => ({
+    content: await getFileContent(p),
+    content_hash: 'base-hash',
+  }),
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: (p: string, c: string) => saveFileContent(p, c),
   getNote: () => getNote(),
+  listKilns: async () => [{ path: KILN }],
+  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
+  getConfig: async () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
+  listNotes: async () => [],
 }));
 
-const KILN = '/home/user/kiln';
 
 const { EditorProvider, useEditor } = await import('../EditorContext');
 
@@ -40,7 +51,7 @@ describe('EditorContext — content load path (bug 8)', () => {
     getNote.mockClear();
   });
 
-  it('openFile loads via getFileContent (GET /api/kiln/file), not getNote', async () => {
+  it('openFile loads the file bytes (GET /api/kiln/file), not getNote', async () => {
     const path = `${KILN}/notes/from-tui.md`;
     getFileContent.mockResolvedValueOnce('terminal was here\n');
 
@@ -58,7 +69,7 @@ describe('EditorContext — content load path (bug 8)', () => {
     });
   });
 
-  it('edit marks dirty; saveFile writes via saveFileContent and clears dirty', async () => {
+  it('edit marks dirty; saveFile writes the file and clears dirty', async () => {
     const path = `${KILN}/notes/from-tui.md`;
     getFileContent.mockResolvedValueOnce('start\n');
 

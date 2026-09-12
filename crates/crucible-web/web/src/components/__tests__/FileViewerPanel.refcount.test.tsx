@@ -13,7 +13,13 @@ import { createSignal, Show } from 'solid-js';
 
 const getFileContent = vi.fn(async (_p: string) => 'content\n');
 vi.mock('@/lib/api', () => ({
+  // The editor reads through the offline layer, which asks for the hash the
+  // buffer was read at; the endpoint underneath is unchanged.
+  getFileWithHash: async (p: string) => ({ content: await getFileContent(p), content_hash: 'h' }),
   getFileContent: (p: string) => getFileContent(p),
+  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
+  getConfig: async () => ({ kiln_path: '/kiln', config_root: '/etc/crucible' }),
+  listNotes: async () => [],
   saveFileContent: vi.fn(async () => {}),
   getNote: vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' })),
   // The panel asks which kiln owns the open file, so links resolve there.

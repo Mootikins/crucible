@@ -3,6 +3,7 @@ import {
   Cog,
   Cpu,
   Key,
+  Database,
   LayoutDashboard,
   Mic,
   Package,
@@ -25,6 +26,7 @@ import { AdvancedSessionSettingsSection } from './AdvancedSessionSettings';
 import { AppConfigSettingsSection } from './AppConfigSettings';
 import { PluginSettings } from '@/components/PluginSettings';
 import type { PluginOptionNode } from '@/lib/api';
+import { OfflineSettingsSection } from './OfflineSettings';
 import { WorkspaceSettingsSection } from './WorkspaceSettings';
 
 /** A plugin's declared settings tree, as the daemon describes it. */
@@ -95,6 +97,9 @@ function builtins(): SettingsSection[] {
     { id: 'mcp', label: 'MCP', icon: Plug, group: 'Connections', render: McpStatusSection },
 
     { id: 'workspace', label: 'Workspace', icon: LayoutDashboard, group: 'Workspace', render: WorkspaceSettingsSection },
+    // Per device, like the fonts and the editor above it: which kilns THIS
+    // browser keeps on disk is not a thing the daemon can answer.
+    { id: 'offline', label: 'Offline', icon: Database, group: 'Workspace', render: OfflineSettingsSection },
 
     // The DAEMON's config, beside the browser-local sections above rather than
     // replacing any of them: fonts, terminal size, vim mode and the microphone

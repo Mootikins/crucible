@@ -7,7 +7,9 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
-import { getFileContent, saveFileContent } from '@/lib/api';
+import { listKilns } from '@/lib/api';
+import { kilnForPath } from '@/lib/note-actions';
+import { readNote, writeNote } from '@/lib/offline/sync';
 
 
 const EditorContext = createContext<EditorContextValue>();
@@ -40,6 +42,14 @@ export const EditorProvider: ParentComponent = (props) => {
   // `background` opens the buffer WITHOUT making it the active file —
   // transient surfaces (wikilink hover windows) must not steal focus, or
   // everything keyed on activeFile (backlinks panel) flickers per hover.
+  /** Which kiln owns a path, for the offline layer. Cached: the roster is
+   * small and this runs on every open and save. */
+  let kilnRoster: { path: string }[] | null = null;
+  const kilnOf = async (path: string): Promise<string | null> => {
+    if (!kilnRoster) kilnRoster = await listKilns().catch(() => []);
+    return kilnForPath(path, kilnRoster) ?? null;
+  };
+
   const openFile = async (path: string, opts?: { background?: boolean }) => {
     const existing = openFilesStore.find((f) => f.path === path);
     if (existing) {
@@ -58,11 +68,15 @@ export const EditorProvider: ParentComponent = (props) => {
       // Load the raw file bytes from disk. get_note_by_name returns metadata
       // only (no content), so the note endpoint can't hydrate the editor —
       // GET /api/kiln/file reads the file itself and is the source of truth.
-      const content = await getFileContent(path);
+      //
+      // Through the offline layer: the network when it answers, and the copy
+      // this device keeps when it does not. It also carries the hash the file
+      // was read at, which is what an offline save is anchored on.
+      const { content, content_hash } = await readNote(path, await kilnOf(path));
 
       setOpenFiles(
         produce((files) => {
-          files.push({ path, content, dirty: false });
+          files.push({ path, content, dirty: false, baseHash: content_hash });
         })
       );
       openCounts.set(path, 1);
@@ -134,7 +148,17 @@ export const EditorProvider: ParentComponent = (props) => {
     try {
       // Save by absolute path (symmetric with the load) — the editor addresses
       // files by path, and PUT /api/kiln/file writes within the open kiln.
-      await saveFileContent(path, file.content);
+      //
+      // A save the daemon cannot take is QUEUED, not lost: the buffer goes
+      // clean because the writing is safe in the outbox, and the app bar says
+      // how much is still owed.
+      const { queued } = await writeNote({
+        path,
+        body: file.content,
+        base: file.baseHash ?? '',
+        kiln: await kilnOf(path),
+      });
+      void queued;
 
       setOpenFiles(
         produce((files) => {

@@ -10,6 +10,7 @@ import { DrawerTabs } from '@/components/mobile/DrawerTabs';
 import { FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
 import { TabOverview } from '@/components/mobile/TabOverview';
 import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
+import { OfflineBadge } from '@/components/mobile/OfflineBadge';
 import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
 import { openPanelTab } from '@/lib/panel-actions';
 import { getGlobalRegistry } from '@/lib/panel-registry';
@@ -158,6 +159,7 @@ export const MobileShell: Component = () => {
         <h1 class="text-reading flex-1 truncate font-medium text-shell-ink px-1">
           {activeTab()?.title ?? 'Crucible'}
         </h1>
+        <OfflineBadge />
         <Show when={activeTab()?.contentType === 'file' && !overviewOpen()}>
           <MobileEditorBar filePath={String(activeTab()!.metadata?.filePath ?? '')} />
         </Show>

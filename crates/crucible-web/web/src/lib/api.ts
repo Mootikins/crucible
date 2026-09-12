@@ -2026,6 +2026,25 @@ export async function getFileContent(path: string): Promise<string> {
 }
 
 /** Save file content by path. */
+/**
+ * A file's text AND the hash of the bytes just read.
+ *
+ * The hash is what an offline write anchors on: `PATCH`/`PUT` compare it to
+ * the bytes on disk, so a note that changed meanwhile is a conflict rather
+ * than an overwrite. `getFileContent` stays the plain-text call every editor
+ * surface already uses.
+ */
+export async function getFileWithHash(
+  path: string,
+): Promise<{ content: string; content_hash: string }> {
+  const params = new URLSearchParams({ path });
+  return await request<{ content: string; content_hash: string }>(
+    'GET',
+    `/api/kiln/file?${params.toString()}`,
+    { errorMessage: 'Failed to read file' },
+  );
+}
+
 export async function saveFileContent(path: string, content: string): Promise<void> {
   await request<void>('PUT', '/api/kiln/file', {
     errorMessage: 'Failed to save file',

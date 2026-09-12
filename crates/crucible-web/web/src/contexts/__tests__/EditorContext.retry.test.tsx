@@ -14,9 +14,19 @@ const getNote = vi.fn(async () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
+  // The editor reads through the offline layer, which wants the hash the
+  // buffer was read at; the endpoint underneath is the same.
+  getFileWithHash: async (p: string) => ({
+    content: await getFileContent(p),
+    content_hash: 'base-hash',
+  }),
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: (p: string, c: string) => saveFileContent(p, c),
   getNote: () => getNote(),
+  listKilns: async () => [{ path: '/home/user/kiln' }],
+  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
+  getConfig: async () => ({ kiln_path: '/home/user/kiln', config_root: '/etc/crucible' }),
+  listNotes: async () => [],
 }));
 
 const KILN = '/home/user/kiln';
