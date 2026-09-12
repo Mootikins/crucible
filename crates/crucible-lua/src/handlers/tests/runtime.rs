@@ -40,6 +40,7 @@ fn register_stub(
                 pattern: pattern.map(str::to_string),
                 scope: crate::handlers::SessionScope::Global,
                 key: None,
+                once: false,
                 timeout_ms: None,
                 required: false,
             },
@@ -75,7 +76,7 @@ fn runtime_handler_stores_function_reference() {
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].name, StageId::PreToolCall.into());
     assert_eq!(handlers[0].id, 0, "the first id the allocator hands out");
-    let _func: mlua::Function = lua.registry_value(handlers[0].body()).unwrap();
+    let _func: mlua::Function = handlers[0].take_body(&lua).unwrap();
 }
 
 #[tokio::test]

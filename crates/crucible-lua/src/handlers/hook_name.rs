@@ -504,6 +504,45 @@ pub fn hook_names() -> impl Iterator<Item = &'static str> {
         .map(HookName::as_str)
 }
 
+/// Every name a registration can carry, the four with their own registration
+/// API included.
+///
+/// [`hook_names`] omits those four because `cru.on` refuses them. `cru.clear`
+/// must accept them: a `session:start` row lives in the same store as every
+/// other row, and the plugin that registered it has to be able to retire it.
+pub fn every_hook_name() -> impl Iterator<Item = &'static str> {
+    HookName::all().map(HookName::as_str)
+}
+
+/// Parse `event_type`, or refuse it and name the nearest `candidates` entry.
+///
+/// One reader of the refusal, because the two callers accept different sets:
+/// `cru.on` offers [`hook_names`] and refuses the four with their own API
+/// separately, with a message that names the API to use instead; `cru.clear`
+/// offers [`every_hook_name`].
+pub fn parse_or_suggest(
+    api: &str,
+    event_type: &str,
+    candidates: impl Iterator<Item = &'static str>,
+) -> Result<HookName, mlua::Error> {
+    if let Some(name) = HookName::parse(event_type) {
+        return Ok(name);
+    }
+    let names: Vec<&'static str> = candidates.collect();
+    let suggestion = names
+        .iter()
+        .copied()
+        .min_by_key(|n| crucible_core::fuzzy::levenshtein(n, event_type))
+        .filter(|n| crucible_core::fuzzy::levenshtein(n, event_type) <= 3);
+    Err(mlua::Error::RuntimeError(match suggestion {
+        Some(s) => format!("{api}: unknown event `{event_type}` — did you mean `{s}`?"),
+        None => format!(
+            "{api}: unknown event `{event_type}`. Valid: {}",
+            names.join(", ")
+        ),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

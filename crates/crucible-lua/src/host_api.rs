@@ -95,8 +95,18 @@ fn on_declaration() -> LuaType {
                 param("event", string()),
                 param(
                     "opts",
-                    LuaType::parse("{ pattern: string?, priority: number?, timeout_ms: number? }")
-                        .expect("well formed"),
+                    // `session` and `once` are read by `handlers/cru_on.rs`
+                    // too. They were missing here, which made
+                    // `cru.on(name, { session = id }, h)` — the form A3 added
+                    // and the one `on_session_start` asks an author to write
+                    // — an error under `cru plugin check`, against correct
+                    // code. No shipped plugin used the form yet, so nothing
+                    // reported it.
+                    LuaType::parse(
+                        "{ pattern: string?, priority: number?, timeout_ms: number?, \
+                         session: string?, key: string?, once: boolean? }",
+                    )
+                    .expect("well formed"),
                 ),
                 param("handler", handler_type()),
             ],

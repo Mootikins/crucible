@@ -91,7 +91,7 @@ impl LuaExecutor {
         // `cru.on` dispatch path.
         let _session = crate::plugin_context::enter_session(&self.lua, Some(&id));
         for hook in crate::hooks::session_start_hooks(&self.lua, Firing::InSession(&id))? {
-            match self.lua.registry_value::<Function>(hook.body()) {
+            match hook.take_body(&self.lua) {
                 Ok(func) => {
                     // Under the source that registered it, exactly as the end
                     // path runs. Without this the hook ran with no source, so
@@ -175,7 +175,7 @@ impl LuaExecutor {
         let id = session.id();
         let _session = crate::plugin_context::enter_session(&self.lua, Some(&id));
         for hook in crate::hooks::session_end_hooks(&self.lua, Firing::InSession(&id))? {
-            match self.lua.registry_value::<Function>(hook.body()) {
+            match hook.take_body(&self.lua) {
                 Ok(func) => {
                     let previous =
                         crate::plugin_context::set_source(&self.lua, hook.source.clone());

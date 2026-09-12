@@ -88,7 +88,7 @@ pub fn register_permission_hook_api(
 
     let on_request_fn =
         lua.create_function(move |lua, (handler, opts): (Function, Option<Table>)| {
-            let (pattern, priority, scope, key) = match &opts {
+            let (pattern, priority, scope, key, once) = match &opts {
                 Some(o) => {
                     let (scope, key) = scope_from_opts(
                         lua,
@@ -104,9 +104,10 @@ pub fn register_permission_hook_api(
                             .unwrap_or(DEFAULT_PRIORITY),
                         scope,
                         key,
+                        o.get::<Option<bool>>("once").ok().flatten() == Some(true),
                     )
                 }
-                None => (None, DEFAULT_PRIORITY, SessionScope::Global, None),
+                None => (None, DEFAULT_PRIORITY, SessionScope::Global, None, false),
             };
 
             let id = registry.register(
@@ -117,6 +118,7 @@ pub fn register_permission_hook_api(
                     pattern,
                     scope,
                     key,
+                    once,
                     timeout_ms: None,
                     required: false,
                 },
@@ -136,7 +138,8 @@ pub fn register_permission_hook_api(
         lua,
         "cru.permissions.on_request",
         "(handler: (request: PermissionRequest) -> PermissionDecision, \
-          opts: { pattern: string?, priority: number?, session: string?, key: string? }?) -> ()",
+          opts: { pattern: string?, priority: number?, session: string?, \
+          key: string?, once: boolean? }?) -> ()",
     )
     .map_err(|e| mlua::Error::external(e.to_string()))?;
     Ok(())
@@ -234,7 +237,7 @@ pub fn execute_permission_hooks(
     for hook in hooks {
         // The source the registration recorded, re-entered around the call: a
         // hook reaching `cru.storage` must find its own plugin's namespace.
-        let handler: Function = lua.registry_value(hook.body())?;
+        let handler: Function = hook.take_body(lua)?;
         let previous = crate::plugin_context::set_source(lua, hook.source.clone());
         let result = handler.call::<Value>(request_table.clone());
         crate::plugin_context::set_source(lua, previous);
