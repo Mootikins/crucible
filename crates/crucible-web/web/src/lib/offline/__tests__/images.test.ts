@@ -8,7 +8,7 @@ vi.mock('@/lib/offline/sync', () => ({
   },
 }));
 
-import { hydrateOfflineImages, pathOfRawUrl } from '@/lib/offline/images';
+import { hydrateOfflineImages, pathOfRawUrl, revokeOfflineImages } from '@/lib/offline/images';
 
 const KILN = '/kilns/notes';
 const kilnOf = () => KILN;
@@ -41,14 +41,14 @@ describe('hydrateOfflineImages', () => {
     cache.urls.set(`${KILN}/a.png`, 'blob:kept');
     const root = docWith(`<img src="/api/file/raw?path=${encodeURIComponent(`${KILN}/a.png`)}">`);
 
-    expect(await hydrateOfflineImages(root, kilnOf)).toBe(1);
+    expect(await hydrateOfflineImages(root, kilnOf)).toEqual(['blob:kept']);
     expect(root.querySelector('img')!.getAttribute('src')).toBe('blob:kept');
   });
 
   it('leaves an image alone when nothing is kept for it', async () => {
     const src = `/api/file/raw?path=${encodeURIComponent(`${KILN}/b.png`)}`;
     const root = docWith(`<img src="${src}">`);
-    expect(await hydrateOfflineImages(root, kilnOf)).toBe(0);
+    expect(await hydrateOfflineImages(root, kilnOf)).toEqual([]);
     expect(root.querySelector('img')!.getAttribute('src')).toBe(src);
   });
 
@@ -70,5 +70,25 @@ describe('hydrateOfflineImages', () => {
     expect(root.querySelector('object')!.getAttribute('data')).toBe(src);
     expect(root.querySelector('iframe')!.getAttribute('src')).toBe(src);
     expect(cache.asked).toEqual([]);
+  });
+});
+
+describe('revokeOfflineImages', () => {
+  it('releases every url it is given', () => {
+    const revoke = vi.fn();
+    vi.stubGlobal('URL', { ...URL, revokeObjectURL: revoke });
+    revokeOfflineImages(['blob:a', 'blob:b']);
+    expect(revoke.mock.calls.flat()).toEqual(['blob:a', 'blob:b']);
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps going when one url is already gone', () => {
+    const revoke = vi.fn((u: string) => {
+      if (u === 'blob:a') throw new Error('already revoked');
+    });
+    vi.stubGlobal('URL', { ...URL, revokeObjectURL: revoke });
+    expect(() => revokeOfflineImages(['blob:a', 'blob:b'])).not.toThrow();
+    expect(revoke.mock.calls.flat()).toEqual(['blob:a', 'blob:b']);
+    vi.unstubAllGlobals();
   });
 });

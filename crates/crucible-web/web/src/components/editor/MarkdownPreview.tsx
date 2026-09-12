@@ -5,7 +5,7 @@
  * app-wide hover cards and click-to-open for free.
  */
 import { Component, createEffect, createResource, onCleanup } from 'solid-js';
-import { hydrateOfflineImages } from '@/lib/offline/images';
+import { hydrateOfflineImages, revokeOfflineImages } from '@/lib/offline/images';
 import { mountPluginBlocks } from '@/components/blocks/mount';
 import { renderMarkdownDocAsync, proseClass } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
@@ -80,12 +80,32 @@ export const MarkdownPreview: Component<{
   // markdown pipeline rewrites `<img src>` synchronously and cannot await a
   // blob, so the swap happens here — and a kept kiln's attachment is stored on
   // its first view, which is what "notes only" means by fetched when opened.
+  //
+  // Each run releases the previous run's URLs: an object URL pins its whole
+  // Blob until it is revoked, and this effect re-runs on every edit.
+  // A run that a newer render overtook revokes its own URLs instead of
+  // storing them, so an overlapping hydration cannot strand a Blob.
+  let mintedUrls: string[] = [];
+  let renderGeneration = 0;
+  const releaseImages = () => {
+    renderGeneration += 1;
+    revokeOfflineImages(mintedUrls);
+    mintedUrls = [];
+  };
   createEffect(() => {
     const rendered = html();
     if (rendered === undefined || !proseHost) return;
     const host = proseHost;
-    void hydrateOfflineImages(host, () => props.kiln ?? null).catch(() => undefined);
+    releaseImages();
+    const generation = renderGeneration;
+    void hydrateOfflineImages(host, () => props.kiln ?? null)
+      .then((urls) => {
+        if (generation === renderGeneration) mintedUrls = urls;
+        else revokeOfflineImages(urls);
+      })
+      .catch(() => undefined);
   });
+  onCleanup(releaseImages);
 
   // After the async render lands, jump to the wikilink that points at the
   // requested note (rendered wikilinks carry data-note = raw target text).

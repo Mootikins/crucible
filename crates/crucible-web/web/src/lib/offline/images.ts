@@ -13,13 +13,18 @@ import { attachmentUrl } from '@/lib/offline/sync';
  * sets — no `nosniff`, no `Content-Disposition`, no sandbox CSP for an SVG —
  * and inherits this origin. An `<img>` cannot run script even for an SVG;
  * an `<iframe>` or `<object>` can, so those keep the network URL.
+ *
+ * The caller MUST revoke the returned URLs when the render they belong to
+ * goes away. An object URL pins its whole Blob in memory until someone
+ * revokes it, and a preview re-renders on every edit — so a note with one
+ * large image would otherwise pin a new copy of it per keystroke.
  */
 export async function hydrateOfflineImages(
   root: ParentNode,
   kilnOf: (path: string) => string | null,
-): Promise<number> {
+): Promise<string[]> {
   const images = [...root.querySelectorAll('img[src*="/api/file/raw"]')];
-  let swapped = 0;
+  const minted: string[] = [];
   for (const image of images) {
     const path = pathOfRawUrl(image.getAttribute('src'));
     if (!path) continue;
@@ -27,14 +32,25 @@ export async function hydrateOfflineImages(
       const url = await attachmentUrl(path, kilnOf(path));
       if (url.startsWith('blob:')) {
         image.setAttribute('src', url);
-        swapped += 1;
+        minted.push(url);
       }
     } catch {
       // Leave the network URL. An image that cannot be fetched shows as a
       // broken image, which is the truth.
     }
   }
-  return swapped;
+  return minted;
+}
+
+/** Release object URLs a previous hydration minted. Never throws. */
+export function revokeOfflineImages(urls: string[]): void {
+  for (const url of urls) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* a test double, or a document already torn down */
+    }
+  }
 }
 
 /** The absolute path a raw-file URL points at, or null. */
