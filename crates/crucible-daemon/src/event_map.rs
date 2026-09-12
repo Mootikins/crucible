@@ -147,17 +147,30 @@ pub const ROWS: &[EventRow] = &[
         hook: EventName::WebhookReceived,
         identifier: Some("name"),
     },
-    // The session id is the identifier, so a handler may glob one session or a
-    // prefix. A plugin watching every session leaves `pattern` unset.
+    // NO identifier, and the session id in particular is not one.
+    //
+    // These two carry a session, and `SessionScope` is the ONE mechanism for
+    // "which sessions does this handler serve" — its own design note says so:
+    // "no second mechanism for 'which sessions' beside this one". Naming the
+    // id here made it a second, because
+    // `cru.on("session:ended", { pattern = id }, h)` and
+    // `cru.on("session:ended", { session = id }, h)` then meant the same
+    // thing by two routes. They were not equal routes: the scope is resolved
+    // by the host against the session the caller is running in, and the
+    // pattern took any string the caller wrote and validated none of it.
+    //
+    // So `session` is the only filter, and `pattern` on these names filters
+    // on something that does not exist — the same already-documented answer
+    // the three file events give.
     EventRow {
         wire: SESSION_CREATED_EVENT,
         hook: EventName::SessionCreated,
-        identifier: Some("session_id"),
+        identifier: None,
     },
     EventRow {
         wire: SESSION_ENDED_EVENT,
         hook: EventName::SessionEnded,
-        identifier: Some("session_id"),
+        identifier: None,
     },
 ];
 
@@ -611,7 +624,21 @@ mod tests {
             // The destination path, so a rename INTO a watched folder matches.
             Some("Daily/b.md"),
             Some("ci"),
+            // The two session events have NO identifier. The session id was
+            // one, which made it a second mechanism for "which sessions"
+            // beside `SessionScope` — the thing that scope's own design note
+            // forbids. `{ session = … }` is the only filter now.
+            //
+            // These two entries were absent, and `zip` truncated to the
+            // shorter side, so both rows escaped this assertion entirely.
+            None,
+            None,
         ];
+        assert_eq!(
+            expected.len(),
+            ROWS.len(),
+            "a row with no expectation escapes this test: `zip` truncates"
+        );
         for (msg, want) in sample_messages().iter().zip(expected) {
             let hooked = decode(msg).expect("decodes");
             assert_eq!(

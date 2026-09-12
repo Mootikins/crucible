@@ -129,6 +129,19 @@ Their identifiers, for `opts.pattern`:
 | `note:created`, `note:modified`, `note:deleted` | the kiln-relative note path |
 | `note:renamed` | the **destination** path |
 | `webhook:received` | the webhook name |
+| `session:created`, `session:ended` | *none* — see below |
+
+**`session:created` and `session:ended` take no `pattern`.** The session id
+was their identifier, which made `{ pattern = id }` a second way to say
+`{ session = id }` — and the two were not equal: the scope is resolved by the
+host against the session your code is running in, while the pattern accepted
+any string and validated none of it. `opts.session` is the one filter, and it
+is the one described under
+[Scoping a handler to one session](#scoping-a-handler-to-one-session).
+
+`session:created` takes neither. The only session id you could name is one
+whose `session:created` has already fired, so `opts.session` is refused there
+too — read `event.session_id` in the handler body instead.
 
 Naming: the three file events are spelled in the Rust `type_name()` style
 because they shipped that way and every config that registers one names them so.
