@@ -369,16 +369,19 @@ impl Server {
         if let Ok(guard) = plugin_loader.try_lock() {
             if let Some(loader) = guard.as_ref() {
                 let hook_tx = event_tx.clone();
-                loader.publications().set_change_hook(std::sync::Arc::new(
+                if !loader.publications().set_change_hook(std::sync::Arc::new(
                     move |plugin: &str, key: &str| {
-                        let event = crucible_core::protocol::SessionEventMessage::new(
-                            crate::event_map::SYSTEM_SESSION,
-                            crate::event_map::PUBLICATION_CHANGED_EVENT,
-                            serde_json::json!({ "plugin": plugin, "key": key }),
+                        crate::event_emitter::emit_event(
+                            &hook_tx,
+                            crate::event_map::publication_changed(
+                                plugin.to_string(),
+                                key.to_string(),
+                            ),
                         );
-                        crate::event_emitter::emit_event(&hook_tx, event);
                     },
-                ));
+                )) {
+                    warn!("publication change hook was already installed");
+                }
             }
         }
 

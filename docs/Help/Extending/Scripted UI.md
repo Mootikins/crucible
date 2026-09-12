@@ -221,6 +221,10 @@ session — which is what lets a panel a user has open survive a reload. Surface
 are keyed by `(plugin, name)`, never by a generated id, so the same declaration
 lands on the same surface every time.
 
+A plugin that goes **inert** loses its surfaces instead: an uninstall, or a
+reload that failed. The daemon withdraws each one and announces the withdrawal,
+so an open panel closes rather than keeping rows nothing can refresh.
+
 ### Staying current
 
 `set_rows` broadcasts `surface_changed`, and both clients refetch. The event

@@ -32,9 +32,10 @@
 //! strings, so an unsanitised row is an injection path into the terminal. This
 //! is the same reason the statusline sanitises on the way in.
 
+use crate::host_hook::HostHook;
 use mlua::{Lua, Table};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 /// What the registry calls when a surface changes.
 ///
@@ -180,25 +181,26 @@ pub struct Surface {
 
 /// Declared surfaces, keyed by `(plugin, name)`.
 ///
-/// **Keyed on the plugin's own name, never on a generated id.** A reload calls
-/// `make_plugin_inert`, which releases the publication and option registries; a
-/// generated id would therefore change on every reload and every persisted
-/// window naming it would dangle — the failure the web's
+/// **Keyed on the plugin's own name, never on a generated id.** A reload
+/// releases the publication and option registries before it re-runs the
+/// plugin's body; a generated id would therefore change on every reload and
+/// every persisted window naming it would dangle — the failure the web's
 /// `layoutRestore.dangling.test.ts` exists to cover. Re-declaration after a
 /// reload lands on the same key, so a client's window still resolves.
 ///
-/// Like `StatusRegistry`, and unlike publications, there is no release on the
-/// inert path: a reload is meant to be invisible. Removing a plugin for good is
-/// [`Self::release_plugin`], called from an uninstall rather than from a reload.
+/// Unlike `StatusRegistry`, which is session-keyed and has no plugin-scoped
+/// release, this one is dropped whenever a plugin goes inert — see
+/// [`Self::release_plugin`]. A successful reload never goes through that path,
+/// so a reload stays invisible.
 #[derive(Clone, Default)]
 pub struct SurfaceRegistry {
     entries: Arc<Mutex<HashMap<(String, String), Surface>>>,
     /// Installed once by the daemon, after the Lua module is registered.
     ///
-    /// Shared through the `Arc` rather than held per clone: the closure Lua
-    /// captured holds its own clone of this registry, so an emitter stored on
-    /// one clone would never be seen by the writer that matters.
-    emitter: Arc<OnceLock<SurfaceEmitter>>,
+    /// [`HostHook`] shares the slot rather than holding it per clone: the
+    /// closure Lua captured holds its own clone of this registry, so an emitter
+    /// stored on one clone would never be seen by the writer that matters.
+    emitter: HostHook<SurfaceEmitter>,
 }
 
 impl std::fmt::Debug for SurfaceRegistry {
@@ -211,7 +213,7 @@ impl std::fmt::Debug for SurfaceRegistry {
                 "surfaces",
                 &self.entries.lock().map(|e| e.len()).unwrap_or(0),
             )
-            .field("emits", &self.emitter.get().is_some())
+            .field("emits", &self.emitter.is_installed())
             .finish()
     }
 }
@@ -227,8 +229,9 @@ impl SurfaceRegistry {
     ///
     /// Takes `&self` because every clone shares the slot. See
     /// [`SurfaceEmitter`] for why it is a closure.
+    #[must_use]
     pub fn set_emitter(&self, emitter: SurfaceEmitter) -> bool {
-        self.emitter.set(emitter).is_ok()
+        self.emitter.install(emitter)
     }
 
     /// Report a change, if anything is listening.
@@ -350,8 +353,10 @@ impl SurfaceRegistry {
 
     /// Drop every surface a plugin declared.
     ///
-    /// For an uninstall, **not** for a reload. A reload that called this would
-    /// orphan every window pointing at the surfaces it is about to re-declare.
+    /// For a plugin that goes inert — an uninstall, or a reload that failed —
+    /// **not** for a reload that succeeds. A successful reload re-declares the
+    /// same keys and must keep the rows, so calling this on that path would
+    /// orphan every window pointing at them.
     pub fn release_plugin(&self, plugin: &str) {
         // Collected under the lock, announced after it. Every dropped surface
         // has a client drawing it, and each one needs telling.
@@ -840,7 +845,7 @@ mod tests {
         let sink = Arc::clone(&hits);
         let reg = SurfaceRegistry::new();
         reg.declare("p", "s", "S", Shape::List, None);
-        reg.set_emitter(Arc::new(move |_| *sink.lock().unwrap() += 1));
+        assert!(reg.set_emitter(Arc::new(move |_| *sink.lock().unwrap() += 1)));
 
         let clone = reg.clone();
         clone.set_rows("p", "s", vec![row("a")]);

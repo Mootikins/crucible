@@ -7,10 +7,10 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use crucible_daemon::event_map::PUBLICATION_CHANGED_EVENT;
 use crucible_daemon::server::plugins::OptionAction;
+use crucible_daemon::SessionEvent;
 use futures::stream::Stream;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
 
@@ -232,6 +232,41 @@ async fn option_call(
     }
 }
 
+/// A plugin's published data changed, delivered to the browser.
+///
+/// Carries who published and under which key, never the value — the same
+/// contract the daemon event has, and for the same reason: a publication is
+/// opaque JSON of the plugin's own choosing. The browser refetches through
+/// `GET /api/plugins/publications`.
+///
+/// Projected through a named type rather than passed through as raw `data`,
+/// which is the treatment `SurfaceChangedEvent` already gets: a field the
+/// daemon renames then breaks the browser with nothing on this side to notice.
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicationChangedEvent {
+    pub plugin: String,
+    pub key: String,
+}
+
+impl PublicationChangedEvent {
+    /// The SSE `event:` name the browser listens for.
+    pub const EVENT_NAME: &'static str = "publication_changed";
+
+    /// Project a daemon event into this shape, or `None` for anything else.
+    ///
+    /// `key` is required: an event that cannot say which key changed would make
+    /// every block refetch every publication, which is worse than missing it.
+    pub fn from_daemon_event(ev: &SessionEvent) -> Option<Self> {
+        if ev.event != Self::EVENT_NAME {
+            return None;
+        }
+        Some(Self {
+            plugin: ev.data["plugin"].as_str().unwrap_or_default().to_string(),
+            key: ev.data["key"].as_str()?.to_string(),
+        })
+    }
+}
+
 /// `GET /api/plugins/events` — a push when a plugin's published data changes.
 ///
 /// The counterpart to `GET /api/plugins/publications`: that answers "what is
@@ -254,9 +289,11 @@ async fn publication_event_stream(
         .filter_map(|event| {
             // The system channel carries the file watcher and the
             // classification prompt too; this stream is only about plugin data.
-            (event.event == PUBLICATION_CHANGED_EVENT).then(|| {
-                let data = serde_json::to_string(&event.data).unwrap_or_default();
-                Ok(Event::default().event(PUBLICATION_CHANGED_EVENT).data(data))
+            PublicationChangedEvent::from_daemon_event(&event).map(|pe| {
+                let data = serde_json::to_string(&pe).unwrap_or_default();
+                Ok(Event::default()
+                    .event(PublicationChangedEvent::EVENT_NAME)
+                    .data(data))
             })
         });
 
@@ -377,5 +414,50 @@ mod tests {
     #[test]
     fn test_plugin_routes_builds() {
         let _router = plugin_routes();
+    }
+
+    /// The browser listens for `publication_changed` and reads `plugin` and
+    /// `key` off the frame (`web/src/components/blocks/usePublication.ts`).
+    /// This is the whole contract, and it crosses a language boundary, so it
+    /// gets a test on this side of it.
+    #[test]
+    fn a_publication_frame_keeps_the_name_and_the_fields() {
+        let ev = SessionEvent::new(
+            "system",
+            "publication_changed",
+            serde_json::json!({ "plugin": "kanban", "key": "kanban:board" }),
+        );
+        let projected = PublicationChangedEvent::from_daemon_event(&ev).expect("projects");
+        assert_eq!(projected.plugin, "kanban");
+        assert_eq!(projected.key, "kanban:board");
+        assert_eq!(
+            serde_json::to_value(&projected).unwrap(),
+            serde_json::json!({ "plugin": "kanban", "key": "kanban:board" }),
+            "the browser reads these two names and no others"
+        );
+    }
+
+    /// The system channel also carries the file watcher and the classification
+    /// prompt. A stream that forwarded those would wake every plugin block.
+    #[test]
+    fn another_system_event_is_not_a_publication() {
+        let ev = SessionEvent::new(
+            "system",
+            "file_changed",
+            serde_json::json!({ "path": "/w/a.md" }),
+        );
+        assert!(PublicationChangedEvent::from_daemon_event(&ev).is_none());
+    }
+
+    /// A frame that cannot say WHICH key changed would make every block refetch
+    /// every publication, which is worse than dropping it.
+    #[test]
+    fn a_publication_frame_without_a_key_is_dropped() {
+        let ev = SessionEvent::new(
+            "system",
+            "publication_changed",
+            serde_json::json!({ "plugin": "kanban" }),
+        );
+        assert!(PublicationChangedEvent::from_daemon_event(&ev).is_none());
     }
 }

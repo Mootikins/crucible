@@ -15,6 +15,7 @@
 //! Session-scoped, matching `cru.context.attach`. Rust owns the caps.
 
 use crate::error::LuaError;
+use crate::host_hook::HostHook;
 use mlua::{Lua, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -67,12 +68,14 @@ pub type ChangeNotifier = Arc<dyn Fn(&str) + Send + Sync>;
 #[derive(Default)]
 pub struct StatuslineExprRegistry {
     sessions: Mutex<HashMap<String, HashMap<String, String>>>,
-    on_change: Mutex<Option<ChangeNotifier>>,
+    /// Installed once by the daemon at boot. See [`HostHook`].
+    on_change: HostHook<ChangeNotifier>,
 }
 
 impl std::fmt::Debug for StatuslineExprRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StatuslineExprRegistry")
+            .field("notifies", &self.on_change.is_installed())
             .finish_non_exhaustive()
     }
 }
@@ -101,22 +104,22 @@ impl StatuslineExprRegistry {
         Self::default()
     }
 
-    /// Install the change notifier.
+    /// Install the change notifier, once. Answers `false` when one is already
+    /// installed, which is a double boot rather than something to paper over.
     ///
     /// Writing a value and *telling a client about it* are different events —
     /// over a socket, with the TUI idle-blocked on input, a changed value does
     /// not repaint anything by itself. Every comparable statusline
     /// implementation needs an explicit "now redraw" signal for the same reason.
-    pub fn set_change_notifier(&self, notifier: ChangeNotifier) {
-        if let Ok(mut guard) = self.on_change.lock() {
-            *guard = Some(notifier);
-        }
+    #[must_use]
+    pub fn set_change_notifier(&self, notifier: ChangeNotifier) -> bool {
+        self.on_change.install(notifier)
     }
 
     fn notify(&self, session_id: &str) {
-        // Cloned out before calling so the lock is not held across host code.
-        let notifier = self.on_change.lock().ok().and_then(|g| g.clone());
-        if let Some(notify) = notifier {
+        // The sessions lock is already released here: host code must never run
+        // under it, because the notifier reaches the daemon's event bus.
+        if let Some(notify) = self.on_change.get() {
             notify(session_id);
         }
     }
@@ -354,6 +357,32 @@ mod tests {
         );
     }
 
+    /// The notifier is installed once at boot. A second install used to replace
+    /// the first in silence, which is how a double boot looked exactly like a
+    /// working one.
+    #[test]
+    fn the_notifier_installs_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let r = StatuslineExprRegistry::new();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&hits);
+        assert!(r.set_change_notifier(Arc::new(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })));
+        assert!(
+            !r.set_change_notifier(Arc::new(|_| panic!("the second notifier must never fire"))),
+            "the second install is refused"
+        );
+
+        r.set("s1", "git", "main").unwrap();
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "the first notifier survives"
+        );
+    }
+
     /// The dirty check is what makes the notifier cheap: an unchanged value
     /// must not fire it, or every turn would repaint every client.
     #[test]
@@ -363,9 +392,9 @@ mod tests {
         let r = StatuslineExprRegistry::new();
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&hits);
-        r.set_change_notifier(Arc::new(move |_| {
+        assert!(r.set_change_notifier(Arc::new(move |_| {
             counter.fetch_add(1, Ordering::SeqCst);
-        }));
+        })));
 
         r.set("s1", "git", "main").unwrap();
         assert_eq!(hits.load(Ordering::SeqCst), 1);

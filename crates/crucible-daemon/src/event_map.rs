@@ -54,14 +54,6 @@ use crucible_lua::EventName;
 /// it, and the reprocess task in `server/mod.rs` filters on it.
 pub const SYSTEM_SESSION: &str = "system";
 
-/// A plugin's published data changed, so a client should re-read it.
-///
-/// Not an [`EventName`]: those are the daemon events a Lua plugin can
-/// SUBSCRIBE to, and this travels the other way — plugin to client. Adding it
-/// there would offer plugins a hook on their own writes, which is a loop
-/// waiting to happen.
-pub const PUBLICATION_CHANGED_EVENT: &str = "publication_changed";
-
 /// The session id the webhook ingress addresses its deliveries to.
 pub const WEBHOOK_SESSION: &str = "__webhook__";
 
@@ -285,15 +277,35 @@ pub fn session_ended(session_id: &str, reason: &str) -> SessionEventMessage {
 /// Addressed to [`SYSTEM_SESSION`] even when the surface is about one session,
 /// because the audience is every attached client. The session it concerns is in
 /// the payload.
-pub fn surface_changed(change: &crucible_lua::SurfaceChange) -> SessionEventMessage {
+///
+/// Takes the change BY VALUE and moves its strings. The registry already
+/// allocated them to build the change, so a borrow here made every surface
+/// change allocate its plugin name, its surface name and its session id twice.
+pub fn surface_changed(change: crucible_lua::SurfaceChange) -> SessionEventMessage {
     SessionEventMessage::typed(
         SYSTEM_SESSION,
         SystemPayload::SurfaceChanged {
-            plugin: change.plugin.clone(),
-            name: change.name.clone(),
+            plugin: change.plugin,
+            name: change.name,
             version: change.version,
-            session: change.session.clone(),
+            session: change.session,
         },
+    )
+}
+
+/// Build the `publication_changed` message.
+///
+/// Typed for the same reason its neighbour above is: the payload's serde
+/// representation IS the `{event, data}` pair, so the name and the shape cannot
+/// drift apart. The untyped form built the object by hand, and every consumer
+/// matched the name as a bare string.
+///
+/// Addressed to [`SYSTEM_SESSION`]: a publication describes the plugin, not a
+/// conversation, so the audience is every attached client.
+pub fn publication_changed(plugin: String, key: String) -> SessionEventMessage {
+    SessionEventMessage::typed(
+        SYSTEM_SESSION,
+        SystemPayload::PublicationChanged { plugin, key },
     )
 }
 
@@ -672,6 +684,35 @@ mod tests {
         })
         .expect("file_moved has a wire form");
         assert!(decode(&moved).is_some());
+    }
+
+    /// `publication_changed` is typed, like `surface_changed` beside it.
+    ///
+    /// The web reads `event` as a bare string and digs `plugin` and `key` out
+    /// of `data`, so the name and the two field names are the whole contract.
+    /// Typing the payload is what stops the name and the shape from drifting
+    /// apart; this proves the wire form the browser already listens for.
+    #[test]
+    fn publication_changed_keeps_its_wire_name_and_fields() {
+        let msg = publication_changed("kanban".to_string(), "kanban:board".to_string());
+        assert_eq!(msg.event, "publication_changed");
+        assert_eq!(msg.session_id, SYSTEM_SESSION);
+        assert_eq!(
+            msg.data.get("plugin").and_then(|v| v.as_str()),
+            Some("kanban")
+        );
+        assert_eq!(
+            msg.data.get("key").and_then(|v| v.as_str()),
+            Some("kanban:board")
+        );
+    }
+
+    /// No handler subscribes to a publication: those events travel the other
+    /// way, and a hook here would give a plugin a handler on its own writes.
+    #[test]
+    fn publication_changed_reaches_no_lua_handler() {
+        let msg = publication_changed("kanban".to_string(), "kanban:board".to_string());
+        assert!(decode(&msg).is_none());
     }
 
     /// The internal events with no wire form stay internal.

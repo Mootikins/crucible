@@ -66,13 +66,17 @@ impl Server {
             {
                 let event_tx = self.rpc_context.event_tx.clone();
                 let agents = self.agent_manager.clone();
-                self.agent_manager
+                if !self
+                    .agent_manager
                     .statusline_exprs()
                     .set_change_notifier(std::sync::Arc::new(move |session_id: &str| {
                         crate::server::ui_broadcast::broadcast_exprs_changed(
                             &event_tx, &agents, session_id,
                         );
-                    }));
+                    }))
+                {
+                    tracing::warn!("statusline change notifier was already installed");
+                }
             }
             if let Err(e) = loader.register_context_attach(self.agent_manager.context_attach()) {
                 tracing::warn!(error = %e, "failed to register cru.context.attach on the plugin VM");
@@ -96,7 +100,7 @@ impl Server {
                 .set_emitter(std::sync::Arc::new(move |change| {
                     crate::event_emitter::emit_event(
                         &surface_tx,
-                        crate::event_map::surface_changed(&change),
+                        crate::event_map::surface_changed(change),
                     );
                 }))
             {

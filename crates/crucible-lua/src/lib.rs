@@ -59,6 +59,7 @@ pub mod handler_budget;
 mod handlers;
 mod hooks;
 pub mod host_api;
+pub mod host_hook;
 pub mod host_registry;
 mod http;
 pub mod isolation;
@@ -146,6 +147,7 @@ pub use hooks::{
     clear_plugin_hooks, get_session_end_hooks, get_session_start_hooks,
     get_session_start_required_flags, register_hooks_module,
 };
+pub use host_hook::HostHook;
 pub use http::register_http_module;
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,

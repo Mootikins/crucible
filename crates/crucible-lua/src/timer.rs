@@ -95,6 +95,16 @@ pub fn register_timer_module(lua: &Lua) -> Result<(), LuaError> {
     //
     // The task is called with no arguments and anything it answers is
     // dropped, so it is declared `() -> ()`.
+    //
+    // NOTE(handle): the `JoinHandle` is dropped, so nothing can cancel a
+    // spawned task, and a plugin that goes inert leaves its task running. The
+    // store that would hold the handle does not exist yet: this function
+    // receives only `&Lua`, `cru.schedule` keeps its cancellers in VM app data
+    // under an opaque numeric handle with no owner, and the daemon holds no
+    // reference to either — so `make_plugin_inert` could not abort them today.
+    // Give both one owner-keyed store, and clear it where the other
+    // registrations are cleared. See section A4 of
+    // `docs/Meta/Analysis/Plugin Seams Alignment.md`.
     #[cfg(feature = "send")]
     timer.func("spawn", "(task: () -> ()) -> ()", |lua, func: Function| {
         // The plugin that spawned this, re-entered around the task, for the
