@@ -266,7 +266,8 @@ export const EditorProvider: ParentComponent = (props) => {
    * A clean buffer also takes the text the daemon holds now, so a landed
    * tick shows. The read answers a text and a hash that belong together, so
    * both are taken from it. A buffer the user typed into during the read
-   * keeps its text: their bytes exist nowhere else.
+   * keeps its text: their bytes exist nowhere else. A buffer whose base
+   * moved during the read was saved by a later write, and keeps that base.
    */
   const onLanded = (row: Landed) => {
     const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
@@ -279,7 +280,8 @@ export const EditorProvider: ParentComponent = (props) => {
         setOpenFiles(
           produce((files) => {
             const f = files.find((x) => x.path === row.path);
-            if (!f || f.dirty) return;
+            // A base that moved during the read belongs to a later write.
+            if (!f || f.dirty || f.baseHash !== row.hash) return;
             f.content = content;
             f.baseHash = content_hash;
           }),

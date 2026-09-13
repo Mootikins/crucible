@@ -362,6 +362,32 @@ describe('onNoteLanded', () => {
     expect(kept).toHaveBeenCalledTimes(1);
   });
 
+  it('a listener that throws does not stop the others or the sync', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const throws = vi.fn(() => {
+      throw new Error('listener broke');
+    });
+    const after = vi.fn();
+    const stopThrows = onNoteLanded(throws);
+    const stopAfter = onNoteLanded(after);
+    const result = await syncNow();
+    stopThrows();
+    stopAfter();
+    quiet.mockRestore();
+
+    expect(result.sent).toBe(1);
+    expect(throws).toHaveBeenCalledTimes(1);
+    expect(after).toHaveBeenCalledWith({ path: PATH, base: 'h0', hash: 'h1' });
+  });
+
   it('calls no listener when nothing landed', async () => {
     net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
     await warmIdentity();

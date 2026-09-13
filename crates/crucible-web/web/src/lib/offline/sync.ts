@@ -421,7 +421,14 @@ export function onNoteLanded(listener: (row: Landed) => void): () => void {
 export async function syncNow() {
   const result = await drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
   for (const row of result.landed) {
-    for (const listener of landedListeners) listener(row);
+    for (const listener of landedListeners) {
+      // One listener's throw must not stop the others, or reject the sync.
+      try {
+        listener(row);
+      } catch (error) {
+        console.error('a landed-write listener threw', error);
+      }
+    }
   }
   // A conflict copy is the one outcome a user MUST be told about: their text
   // did not land on the note they wrote it in, and nothing else on screen

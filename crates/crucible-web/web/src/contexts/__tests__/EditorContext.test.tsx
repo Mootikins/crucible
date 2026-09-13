@@ -458,6 +458,31 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     expect(fileState(editor).baseHash).toBe('h2');
   });
 
+  it('a drained write does not reset a base that moved during the read', async () => {
+    const editor = await openAndQueue();
+
+    getFileContent.mockClear();
+    let answer: (text: string) => void = () => {};
+    getFileContent.mockImplementationOnce(() => new Promise<string>((r) => (answer = r)));
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    readHash = 'h2';
+    await syncNow();
+    await waitFor(() => expect(getFileContent).toHaveBeenCalledWith(PATH));
+
+    // The read is out. The user edits, and saves online before it returns.
+    editor.updateFileContent(PATH, 'saved during the read\n');
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h5' });
+    await editor.saveFile(PATH);
+    expect(fileState(editor).baseHash).toBe('h5');
+    answer('queued text\n');
+    // Let the read's whole chain settle before looking.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(fileState(editor).content).toBe('saved during the read\n');
+    expect(fileState(editor).baseHash, 'the read answered an older hash').toBe('h5');
+    expect(fileState(editor).dirty).toBe(false);
+  });
+
   it('a provider that unmounted hears no landed write', async () => {
     const editor = await openAndQueue();
     const { cleanup } = await import('@solidjs/testing-library');
