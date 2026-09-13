@@ -280,21 +280,29 @@ end
 -- Plugin Spec
 -- ============================================================================
 
--- The interval is read once, at load. A later `setup{ interval = ... }`
--- changes nothing until the daemon restarts; `enabled` is read at each tick.
-cru.schedule({ every = config.get("interval", 21600) }, function()
-    if not config.get("enabled", false) then return end
-    -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
-    -- what the function returns. The inner function drops the path list and
-    -- returns nil, which gives `err` a slot the error message fits.
-    local ok, err = pcall(function()
-        M.run(nil)
-        return nil
+-- The schedule starts from setup(), once. The host calls setup() at
+-- activation, after `config.init(cfg)`, so `interval` reads the configured
+-- value. A second setup() call changes the config and starts no second
+-- timer. `enabled` is read at each tick. The module body registers nothing,
+-- so `cru plugin check` reports no top-level effect.
+local scheduled = false
+local function start_schedule()
+    if scheduled then return end
+    scheduled = true
+    cru.schedule({ every = config.get("interval", 21600) }, function()
+        if not config.get("enabled", false) then return end
+        -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
+        -- what the function returns. The inner function drops the path list
+        -- and returns nil, which gives `err` a slot the error message fits.
+        local ok, err = pcall(function()
+            M.run(nil)
+            return nil
+        end)
+        if not ok then
+            cru.log("error", "consolidation: pass error: " .. tostring(err))
+        end
     end)
-    if not ok then
-        cru.log("error", "consolidation: pass error: " .. tostring(err))
-    end
-end)
+end
 
 local plugin = {
   author = "Crucible Team",
@@ -315,15 +323,16 @@ local plugin = {
         if cfg then
             config.init(cfg)
         end
+        start_schedule()
     end,
 }
 
 -- The daemon executes this file BY PATH, not through `require`, so nothing
 -- would otherwise fill `package.loaded`. A `require("consolidation").setup{...}`
 -- from a user's init.lua would then load a SECOND copy of this file, with its
--- own upvalues, and the `cru.schedule` call above would register a second
--- timer. Registering the spec here makes that `require` answer with this
--- table instead. Same guard and same reason as `reflection`.
+-- own `scheduled` flag, and its setup() would start a second timer.
+-- Registering the spec here makes that `require` answer with this table
+-- instead. Same guard and same reason as `reflection`.
 package.loaded["consolidation"] = plugin
 
 return plugin

@@ -9,6 +9,9 @@ end
 describe("reflection", function()
   local plugin = require("reflection")
   local config = require("config")
+  -- The module body registers nothing. setup() registers the handlers the
+  -- tests below fire, once; the later setup() calls only change the config.
+  plugin.setup()
 
   describe("count_user_turns", function()
     it("counts only user messages", function()

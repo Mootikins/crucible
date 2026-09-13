@@ -528,16 +528,7 @@ end
 -- Session lifecycle + tool registration
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Handlers register ONCE, at load — not inside on_session_start.
---
--- The registry is append-only with no unregister, so registering per session
--- left one stale copy per session firing against a dead container for the
--- daemon's lifetime. Each handler resolves its own session via ctx.session_id
--- and no-ops when that session has no container.
-for tool_name, handler_fn in pairs(TOOL_HANDLERS) do
-  cru.on("pre_tool_call", { pattern = tool_name }, handler_fn)
-end
-
+--- The session-start hook. `register_handlers` below registers it with
 --- `required = true`: a failure here refuses the session.
 ---
 --- This is the whole contract. Previously a build or start failure logged one
@@ -545,7 +536,7 @@ end
 --- tool on the host — so "sandbox broken" and "sandbox working" were
 --- indistinguishable from the outside. Refusing makes "session exists" imply
 --- "session is sandboxed".
-cru.on_session_start(function(session)
+local function on_session_start(session: any)
   local cfg = resolve_config(session)
   -- Not configured is not a failure: no [plugins.oci] image means the user
   -- never asked for isolation, and every session would otherwise be refused.
@@ -748,9 +739,10 @@ cru.on_session_start(function(session)
     session = session.id, key = "oci", plugin = "oci", text = text, level = level,
   }
   cru.log("info", "oci: container started " .. name .. " (" .. cfg.image .. ")")
-end, { required = true })
+end
 
-cru.on_session_end(function(session)
+--- The session-end hook: release the session's container.
+local function on_session_end(session: any)
   local workspace = sessions[session.id]
   if not workspace then return end
   sessions[session.id] = nil
@@ -773,7 +765,28 @@ cru.on_session_end(function(session)
   container.stop(active.runtime, active.name)
   container.rm(active.runtime, active.name)
   cru.log("info", "oci: container removed " .. active.name)
-end)
+end
+
+-- The handlers register from setup(), once, not inside on_session_start.
+--
+-- The host calls setup() at activation, under this plugin's source, so a
+-- reload clears the handlers. The registry has no unregister, so a
+-- registration per session left one stale copy per session, and each copy
+-- fired against a dead container for the daemon's lifetime. Each handler
+-- resolves its own session from ctx.session_id and does nothing when that
+-- session has no container. A second setup() call, from the user's init.lua,
+-- registers nothing again. The module body registers nothing, so
+-- `cru plugin check` reports no top-level effect.
+local registered = false
+local function register_handlers()
+  if registered then return end
+  registered = true
+  for tool_name, handler_fn in pairs(TOOL_HANDLERS) do
+    cru.on("pre_tool_call", { pattern = tool_name }, handler_fn)
+  end
+  cru.on_session_start(on_session_start, { required = true })
+  cru.on_session_end(on_session_end)
+end
 
 local plugin = {
   author = "Crucible Team",
@@ -833,9 +846,10 @@ local plugin = {
     },
   },
 
-  --- Receives the `[plugins.oci]` section at load.
+  --- Receives the `[plugins.oci]` section at activation.
   setup = function(cfg)
     config = cfg or {}
+    register_handlers()
 
     -- Declared once; the TUI and the web settings pane render it in their own
     -- idiom. `values` and `desc` are functions where the answer depends on
@@ -920,10 +934,10 @@ local plugin = {
 -- The daemon executes this file BY PATH, not through `require`, so nothing
 -- would otherwise fill `package.loaded`. The documented
 -- `require("oci").setup{...}` from a user's init.lua would then load a
--- SECOND copy of this file: with its own upvalues, and re-running every
--- body-level `cru.on_*` call in it — so the `on_session_start` and `on_session_end` handlers at :496 and :701 would be
--- registered twice and fire twice per event. Registering the spec here makes
--- that `require` answer with this table instead.
+-- SECOND copy of this file, with its own `registered` flag, and its setup()
+-- would register every handler a second time, so each would fire twice per
+-- event. Registering the spec here makes that `require` answer with this
+-- table instead.
 --
 -- Same guard and same reason as `auto-title` and `web-search`. Enumerated
 -- across every bundled plugin on 2026-08-19 after the auto-title fix stopped

@@ -68,9 +68,17 @@ describe("consolidation", function()
   local plugin = require("consolidation")
 
   describe("load", function()
-    it("registers one timer with the configured interval", function()
+    it("registers no timer until setup() runs", function()
+      expect.equal(0, #scheduled)
+    end)
+
+    it("registers one timer with the configured interval, from setup(), once", function()
+      plugin.setup()
       expect.equal(1, #scheduled)
       expect.equal(21600, scheduled[1].spec.every)
+
+      plugin.setup({ interval = 60 })
+      expect.equal(1, #scheduled)
     end)
   end)
 

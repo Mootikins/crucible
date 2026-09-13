@@ -8,8 +8,8 @@
 -- or stops claiming isolation — the three ways it has actually broken.
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Recorders, installed before require("init") because init.lua registers its
--- tool handlers at load time.
+-- Recorders, installed before require("oci") and its setup(), because setup()
+-- registers the tool handlers.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 --- pattern -> { fn, opts }. Open maps throughout: these record whatever the
@@ -118,6 +118,10 @@ install_shell()
 -- resolution the daemon's plugin loader performs, so a require that only
 -- works in tests cannot slip through again.
 local spec = require("oci")
+-- The module body registers nothing. setup() registers the handlers the
+-- recorders above capture, once; the later setup() calls only change the
+-- config.
+spec.setup(nil)
 
 --- The logged call whose argv starts with `verb`, or nil.
 local function exec_call(verb: string): { [string]: any }?
@@ -159,7 +163,7 @@ describe("oci plugin load", function()
     expect.is_function(spec.setup)
   end)
 
-  it("registers every workspace tool handler at load, not per session", function()
+  it("registers every workspace tool handler from setup(), not per session", function()
     for _, tool in ipairs({ "bash", "read_file", "write_file", "edit_file", "glob", "grep" }) do
       expect.is_not_nil(hooks[tool], "no pre_tool_call handler for " .. tool)
       expect.equals(tool, hooks[tool].opts.pattern)
