@@ -244,6 +244,15 @@ export const EditorProvider: ParentComponent = (props) => {
     );
   };
 
+  const setBaseHash = (path: string, hash: string) => {
+    setOpenFiles(
+      produce((files) => {
+        const f = files.find((x) => x.path === path);
+        if (f) f.baseHash = hash;
+      })
+    );
+  };
+
   const value: EditorContextValue = {
     openFiles: () => openFilesStore,
     activeFile,
@@ -252,6 +261,7 @@ export const EditorProvider: ParentComponent = (props) => {
     saveFile,
     setActiveFile,
     updateFileContent,
+    setBaseHash,
     isLoading,
     error,
     retryFailedOperation,
@@ -282,6 +292,7 @@ const fallbackEditorContext: EditorContextValue = {
   saveFile: noopAsync,
   setActiveFile: () => {},
   updateFileContent: () => {},
+  setBaseHash: () => {},
   isLoading: () => false,
   error: () => null,
   retryFailedOperation: () => null,

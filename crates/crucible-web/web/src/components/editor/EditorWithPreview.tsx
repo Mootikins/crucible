@@ -14,7 +14,7 @@ import { Component, Show, createSignal, createEffect } from 'solid-js';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { Eye, Pencil, Code } from '@/lib/icons';
-import { patchKilnFile } from '@/lib/api';
+import { editNote } from '@/lib/offline/sync';
 import { applyTaskToggle, taskEditForLine } from '@/lib/task-toggle';
 import { notificationActions } from '@/stores/notificationStore';
 import { isMarkdownPath } from '@/lib/markdown-path';
@@ -34,6 +34,13 @@ export const EditorWithPreview: Component<{
    * another. Absent for files that belong to no kiln.
    */
   kiln?: string;
+  /** The disk hash the buffer was read at. A task tick carries it, so a tick
+   * on a note that changed elsewhere is refused instead of landing on text
+   * the user did not see. */
+  baseHash?: string;
+  /** A tick that landed changed the note on disk. The answered hash is the
+   * buffer's new base, or the next whole save is stale by construction. */
+  onBaseChange?: (hash: string) => void;
   vimMode?: boolean;
   /** Mode a markdown file opens in (hover popovers pass the configured
    * hover mode; default live). Non-markdown is always source. */
@@ -66,14 +73,14 @@ export const EditorWithPreview: Component<{
   /**
    * Tick a task box from the reading view, as ONE anchored line edit.
    *
-   * Not a whole-file save. `saveFileContent` sends the entire note, so ticking
-   * a box would overwrite an agent's edit to a different paragraph of the same
-   * file — the exact case section 13 of the mobile design note was written
-   * for, and the first caller of `patchKilnFile`.
+   * Not a whole write. A whole write sends the entire note, so a tick would
+   * overwrite an agent's edit to a different paragraph of the same file. This
+   * is the case section 13 of the mobile design note describes.
    *
-   * The box is flipped locally first so the tap feels immediate, and the
-   * daemon's answer is what stands: a refusal names which edit failed, and the
-   * buffer goes back to what it was.
+   * The box flips locally first, so the tap feels immediate. The answer from
+   * `editNote` decides what stands. A refusal names the edit that failed, and
+   * the buffer goes back to what it was. A queued tick stays: the outbox
+   * holds it, and the app bar already shows the pending count.
    */
   const toggleTask = (sourceLine: number) => {
     const before = props.content;
@@ -82,9 +89,18 @@ export const EditorWithPreview: Component<{
     if (!edit || optimistic === null) return;
 
     props.onChange(optimistic);
-    void patchKilnFile(props.path, [edit])
+    void editNote({
+      path: props.path,
+      edits: [edit],
+      base: props.baseHash ?? '',
+      kiln: props.kiln ?? null,
+    })
       .then((answer) => {
-        if (answer.ok) return;
+        if (answer.queued) return;
+        if (answer.ok) {
+          props.onBaseChange?.(answer.hash);
+          return;
+        }
         props.onChange(before);
         notificationActions.addNotification(
           'warning',

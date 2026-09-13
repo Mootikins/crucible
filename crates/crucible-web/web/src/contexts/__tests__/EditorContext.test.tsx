@@ -338,4 +338,18 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     expect(fileState(editor).baseHash).toBe('base-hash');
     expect(editor.error()).toBeNull();
   });
+
+  it('setBaseHash moves the base, and the next save is made from it', async () => {
+    // An anchored edit that landed changed the note on disk. The component
+    // that sent it reports the answered hash here, so the whole save that
+    // follows carries the hash the daemon holds now.
+    const editor = await openEdited();
+
+    editor.setBaseHash(PATH, 'h2');
+
+    expect(fileState(editor).baseHash).toBe('h2');
+    expect(fileState(editor).dirty).toBe(true);
+    await editor.saveFile(PATH);
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text', 'h2');
+  });
 });

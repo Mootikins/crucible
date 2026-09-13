@@ -49,7 +49,7 @@ const Tab: Component<{
 };
 
 export const EditorPanel: Component = () => {
-  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error, openFile, retryFailedOperation } = useEditorSafe();
+  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, setBaseHash, isLoading, error, openFile, retryFailedOperation } = useEditorSafe();
   const { settings } = useSettingsSafe();
 
   const activeFileData = () => {
@@ -146,6 +146,8 @@ export const EditorPanel: Component = () => {
                 // document-level hover controller. Without it this panel's
                 // wikilinks were inert: no popover, no Ctrl+Click.
                 kiln={owningKiln(file().path)}
+                baseHash={file().baseHash}
+                onBaseChange={(hash) => setBaseHash(file().path, hash)}
                 onChange={(content) => updateFileContent(file().path, content)}
                 onSave={() => void saveFile(file().path)}
                 onFollowLink={(target) => void followLink(target)}

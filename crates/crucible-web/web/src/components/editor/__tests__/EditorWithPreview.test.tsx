@@ -3,10 +3,20 @@ import { render, waitFor, fireEvent } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 
 const openNoteInEditorMock = vi.fn();
+const editNoteMock = vi.fn();
+const addNotificationMock = vi.fn();
 
 vi.mock('@/lib/note-actions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   openNoteInEditor: (...args: unknown[]) => openNoteInEditorMock(...args),
+}));
+// The one note write door. The component must not reach `api` for a tick.
+vi.mock('@/lib/offline/sync', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  editNote: (...args: unknown[]) => editNoteMock(...args),
+}));
+vi.mock('@/stores/notificationStore', () => ({
+  notificationActions: { addNotification: (...args: unknown[]) => addNotificationMock(...args) },
 }));
 
 import { EditorWithPreview } from '../EditorWithPreview';
@@ -232,5 +242,98 @@ describe('vim mode', () => {
     fireEvent.keyDown(content, { key: 'x' });
     expect(content.textContent).toContain('hello');
     expect(onChange).not.toHaveBeenCalledWith('ello');
+  });
+});
+
+/**
+ * A tick in the reading view is one anchored edit through the one note write
+ * door. The box flips at once. The answer decides whether the flip stays.
+ */
+describe('task tick', () => {
+  const TASKS = '- [ ] first\n- [ ] second\n';
+  const TICKED = '- [x] first\n- [ ] second\n';
+  const PATH = '/kiln/tasks.md';
+
+  const tick = async (extra: { onBaseChange?: (hash: string) => void } = {}) => {
+    const onChange = vi.fn();
+    const { container } = render(() => (
+      <EditorWithPreview
+        content={TASKS}
+        path={PATH}
+        kiln="/kiln"
+        baseHash="h1"
+        onChange={onChange}
+        initialMode="reading"
+        {...extra}
+      />
+    ));
+    let box: HTMLInputElement | null = null;
+    await waitFor(() => {
+      box = container.querySelector<HTMLInputElement>('input.task-checkbox[data-task-line="0"]');
+      expect(box).not.toBeNull();
+    });
+    fireEvent.click(box!);
+    await waitFor(() => expect(editNoteMock).toHaveBeenCalled());
+    return onChange;
+  };
+
+  it('ticks a task through editNote and keeps the flip when it is queued offline', async () => {
+    editNoteMock.mockResolvedValueOnce({ queued: true });
+
+    const onChange = await tick();
+
+    expect(editNoteMock).toHaveBeenCalledWith({
+      path: PATH,
+      edits: [{ expect: '- [ ] first', replace: '- [x] first' }],
+      base: 'h1',
+      kiln: '/kiln',
+    });
+    // Let the answer land. A queued tick is kept, and the app bar already
+    // shows the pending count, so nothing else is said.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(TICKED);
+    expect(addNotificationMock).not.toHaveBeenCalled();
+  });
+
+  it('reverts the flip and names the reason when the daemon refuses', async () => {
+    editNoteMock.mockResolvedValueOnce({
+      queued: false,
+      ok: false,
+      failed: [{ index: 0, reason: 'stale' }],
+      current_hash: 'h9',
+      stale_base: true,
+    });
+
+    const onChange = await tick();
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+    expect(onChange).toHaveBeenLastCalledWith(TASKS);
+    expect(addNotificationMock).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('changed elsewhere'),
+    );
+  });
+
+  it('a successful tick moves the base to the answered hash', async () => {
+    editNoteMock.mockResolvedValueOnce({ queued: false, ok: true, hash: 'h2' });
+    const onBaseChange = vi.fn();
+
+    const onChange = await tick({ onBaseChange });
+
+    await waitFor(() => expect(onBaseChange).toHaveBeenCalledWith('h2'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(addNotificationMock).not.toHaveBeenCalled();
+  });
+
+  it('reverts the flip and reports an error when the write throws', async () => {
+    editNoteMock.mockRejectedValueOnce(new Error('boom'));
+
+    const onChange = await tick();
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+    expect(onChange).toHaveBeenLastCalledWith(TASKS);
+    expect(addNotificationMock).toHaveBeenCalledWith('error', expect.stringContaining('boom'));
   });
 });
