@@ -223,3 +223,92 @@ async fn shipped_plugin_trees_declare_only_known_controls() {
         "walked no option nodes — the gate proved nothing"
     );
 }
+
+/// Run the shipped defaults on `lua` as the boot does: under
+/// `LuaSource::Builtin`, so every `cru.plugin.setup` entry in the file lands
+/// at rank Builtin. `BUILTIN_INIT_LUA` is the same bytes the runtimepath
+/// copy holds, and it reads no environment.
+fn run_shipped_defaults(lua: &mlua::Lua) {
+    let previous = crucible_lua::set_source(lua, crucible_lua::LuaSource::Builtin);
+    lua.load(crucible_lua::BUILTIN_INIT_LUA)
+        .set_name("shipped defaults")
+        .exec()
+        .expect("the shipped defaults must load");
+    crucible_lua::set_source(lua, previous);
+}
+
+/// The shipped set is a Builtin fragment in `runtime/defaults/init.luau`.
+///
+/// The expectation comes from the filesystem and the running VM, not from
+/// the text of the defaults file: the set of names the fragment wrote must
+/// equal the set of directories under `runtime/plugins/`, and every entry
+/// must sit at rank Builtin so an operator entry for the same name wins.
+#[test]
+fn the_builtin_fragment_names_every_shipped_plugin_directory() {
+    use crucible_core::config::SpecRank;
+
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let lua = loader.executor().lua();
+    run_shipped_defaults(lua);
+
+    let spec = crucible_lua::spec_of(lua);
+    let mut named: Vec<String> = spec.iter().map(|e| e.name.clone()).collect();
+    named.sort();
+    assert_eq!(
+        named,
+        shipped_plugin_names(),
+        "the Builtin fragment and runtime/plugins/ disagree"
+    );
+    for name in &named {
+        assert_eq!(
+            spec.rank_of(name),
+            Some(SpecRank::Builtin),
+            "'{name}' must come from the shipped defaults at rank Builtin"
+        );
+    }
+}
+
+/// A loader booted on an empty config home: the shipped defaults ran, the
+/// operator wrote nothing, and the shipped runtimepath is the only one.
+///
+/// Child-scoped values only, see AGENTS.md "Hermeticity": the import root is
+/// a value under `home`, and no environment variable is read or set.
+async fn boot_loader_with_home(home: &std::path::Path) -> DaemonPluginLoader {
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    crucible_lua::set_import_root(loader.executor().lua(), home.join("lua"));
+    run_shipped_defaults(loader.executor().lua());
+    // Task 7 replaces this call with the spec-driven activation. Until then
+    // `load_plugins` activates every discovered directory and reads no spec.
+    loader
+        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .await
+        .expect("load shipped plugins");
+    loader
+}
+
+/// Boot with an empty config home and the shipped runtimepath. Every
+/// directory under `runtime/plugins/` must come out Active, because the
+/// Builtin fragment names it and nothing disables it.
+///
+/// Today `load_plugins` reads no spec, so this holds by the old rule. Once
+/// activation is spec-driven, the Builtin fragment is the only thing that
+/// keeps the shipped set active, and this test is what proves the fragment
+/// is complete. It stays enabled: the ignore-reason gate admits only a
+/// prerequisite token, and a pending task is not one.
+#[tokio::test]
+async fn a_fresh_boot_activates_every_shipped_plugin() {
+    let home = tempfile::TempDir::new().unwrap();
+    let loader = boot_loader_with_home(home.path()).await;
+    let info = loader.loaded_plugin_info();
+    for name in shipped_plugin_names() {
+        let entry = info
+            .iter()
+            .find(|p| p["name"].as_str() == Some(name.as_str()))
+            .unwrap_or_else(|| panic!("shipped plugin '{name}' missing from plugin info"));
+        assert_eq!(
+            entry["state"].as_str(),
+            Some("Active"),
+            "shipped plugin '{name}' did not reach Active: {entry:#}"
+        );
+    }
+}

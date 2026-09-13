@@ -174,3 +174,12 @@ end)
 --       session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
 --     end
 --   end)
+
+-- The shipped set. This is a fragment: the operator's entry for the same
+-- name wins, so `{ "reflection", enabled = false }` in init.lua turns one
+-- off. A name here is a directory under runtime/plugins/.
+cru.plugin.setup({
+  "auto-title", "consolidation", "crucible-help", "daily-notes", "discord",
+  "graph", "kanban", "oci", "reflection", "retrieval-lab", "review",
+  "session-board", "todo-list", "web-search", "worktree",
+})
