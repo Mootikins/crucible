@@ -1,3 +1,4 @@
+import type { AnchoredEdit } from '@/lib/api';
 import type { OfflineStore } from '@/lib/offline/store';
 import { sameDaemon } from '@/lib/offline/identity';
 import type { MirroredNote } from '@/lib/offline/mirror';
@@ -18,17 +19,49 @@ import type { MirroredNote } from '@/lib/offline/mirror';
  * - An entry clears only after its write lands — including a conflict copy.
  */
 
-export interface OutboxEntry {
+/**
+ * A note write as a caller queues it. The kind says what the text is:
+ * a whole write carries the note's full body, and an anchored edit carries
+ * the lines to change. The queue stamps the time and the order.
+ */
+export type OutboxWrite = {
   path: string;
-  /** The whole note as this device last had it. */
-  body: string;
   /** The disk hash it was edited FROM. Never updated once queued. */
   base: string;
   kiln: string;
   daemon: string;
+} & (
+  | { kind: 'whole'; /** The whole note as this device last had it. */ body: string }
+  | { kind: 'anchored'; edits: AnchoredEdit[] }
+);
+
+/** `Omit` that keeps a union a union, so a kind's own fields survive. */
+export type EachOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+export type OutboxEntry = OutboxWrite & {
   queuedAt: number;
   /** Ordering, so two writes to one note replay as they were made. */
   sequence: number;
+};
+
+/**
+ * What a device's IndexedDB can hold: an entry queued before entries had a
+ * kind has none. The store is the one place that reads it, so this type
+ * stays here.
+ */
+type StoredEntry =
+  | OutboxEntry
+  | (Omit<Extract<OutboxEntry, { kind: 'whole' }>, 'kind'> & { kind?: undefined });
+
+/**
+ * Read a stored entry as a current one.
+ *
+ * An entry with no kind was queued before an anchored edit could be, so it
+ * is a whole write. This is the ONE place that rule lives: every reader
+ * goes through it, so no reader repeats the default.
+ */
+function withKind(stored: StoredEntry): OutboxEntry {
+  return stored.kind === undefined ? { ...stored, kind: 'whole' } : stored;
 }
 
 /** What a drain needs from the network. Injected, so a test supplies it. */
@@ -61,12 +94,9 @@ async function nextSequence(store: OfflineStore): Promise<number> {
   return held.reduce((top, e) => Math.max(top, e.value.sequence ?? 0), 0) + 1;
 }
 
-/** Queue a note's new text. Replaces an earlier queued write to the same note. */
-export async function queueWrite(
-  store: OfflineStore,
-  entry: Omit<OutboxEntry, 'queuedAt' | 'sequence'>,
-): Promise<void> {
-  const existing = await store.get<OutboxEntry>('outbox', entry.path);
+/** Queue a note write. Replaces an earlier queued write to the same note. */
+export async function queueWrite(store: OfflineStore, entry: OutboxWrite): Promise<void> {
+  const existing = await store.get<StoredEntry>('outbox', entry.path);
   const sequence = await nextSequence(store);
   await store.put<OutboxEntry>('outbox', entry.path, {
     ...entry,
@@ -86,8 +116,9 @@ export async function isQueued(store: OfflineStore, path: string): Promise<boole
 }
 
 /** The writing queued for a path, or null. What a read must prefer. */
-export function readQueued(store: OfflineStore, path: string): Promise<OutboxEntry | null> {
-  return store.get<OutboxEntry>('outbox', path);
+export async function readQueued(store: OfflineStore, path: string): Promise<OutboxEntry | null> {
+  const held = await store.get<StoredEntry>('outbox', path);
+  return held && withKind(held);
 }
 
 export async function queuedCount(store: OfflineStore): Promise<number> {
@@ -107,7 +138,7 @@ export async function drainOutbox(
   sink: OutboxSink,
   daemon: string,
 ): Promise<DrainResult> {
-  const entries = (await store.list<OutboxEntry>('outbox')).map((e) => e.value);
+  const entries = (await store.list<StoredEntry>('outbox')).map((e) => withKind(e.value));
   entries.sort((a, b) => a.sequence - b.sequence);
 
   const result: DrainResult = { sent: 0, conflicted: [], foreign: 0, failed: 0, superseded: 0 };
@@ -120,12 +151,16 @@ export async function drainOutbox(
     try {
       const answer = await sink.write(entry);
       if (answer.ok) {
-        await store.put<MirroredNote>('mirror', entry.path, {
-          body: entry.body,
-          hash: answer.hash,
-          kiln: entry.kiln,
-          mirroredAt: Date.now(),
-        });
+        // Only a whole write knows the note's text. An anchored entry does
+        // not, so the mirror keeps what it has until the next read refreshes it.
+        if (entry.kind === 'whole') {
+          await store.put<MirroredNote>('mirror', entry.path, {
+            body: entry.body,
+            hash: answer.hash,
+            kiln: entry.kiln,
+            mirroredAt: Date.now(),
+          });
+        }
         if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
         else result.sent += 1;
       } else {

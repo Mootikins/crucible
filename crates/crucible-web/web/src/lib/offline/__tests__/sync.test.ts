@@ -4,6 +4,7 @@ const net = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
   guardedSave: vi.fn(),
+  patch: vi.fn(),
   list: vi.fn(async (_kiln: string) => [] as unknown[]),
   online: true,
 }));
@@ -11,6 +12,7 @@ vi.mock('@/lib/api', () => ({
   getFileWithHash: (p: string) => net.read(p),
   saveFileContent: (p: string, c: string) => net.save(p, c),
   saveFileIfUnchanged: (p: string, c: string, b: string) => net.guardedSave(p, c, b),
+  patchKilnFile: (p: string, e: unknown, b?: string) => net.patch(p, e, b),
   getFileContent: async () => '',
   listNotes: (k: string) => net.list(k),
   rawFileUrl: (p: string) => `/raw?${p}`,
@@ -24,8 +26,9 @@ vi.mock('@/lib/api', () => ({
 
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
-import { queuedCount } from '@/lib/offline/outbox';
+import { queuedCount, type OutboxEntry } from '@/lib/offline/outbox';
 import {
+  editNote,
   networkSink,
   networkSource,
   offlineStore,
@@ -44,6 +47,7 @@ beforeEach(() => {
   net.read.mockReset();
   net.save.mockReset();
   net.guardedSave.mockReset();
+  net.patch.mockReset();
   setOfflineStore(memoryStore());
   keptActions.keep(KILN, 'notes');
 });
@@ -141,6 +145,49 @@ describe('writeNote', () => {
   });
 });
 
+/** One tick: the line the user ticked, as the editor had it. */
+const TICK = { expect: '- [ ] milk', replace: '- [x] milk' };
+
+describe('editNote', () => {
+  it('applies an anchored edit through the daemon when it answers', async () => {
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'h2' });
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
+    expect(net.patch).toHaveBeenCalledWith(PATH, [TICK], 'h1');
+    expect(out).toEqual({ queued: false, ok: true, hash: 'h2' });
+  });
+
+  // A refusal is an answer. The caller reverts the tick and names the
+  // reason; queueing it would replay a refusal forever.
+  it('returns the daemon refusal of an anchored edit and queues nothing', async () => {
+    net.patch.mockResolvedValue({
+      ok: false,
+      failed: [{ reason: 'no such line', index: 0 }],
+      current_hash: 'h9',
+      stale_base: true,
+    });
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
+    expect(out).toMatchObject({ queued: false, ok: false, stale_base: true, current_hash: 'h9' });
+    expect(await queuedCount(offlineStore())).toBe(0);
+  });
+
+  it('queues an anchored edit when the daemon never answered', async () => {
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
+    expect(out).toEqual({ queued: true });
+    const [entry] = await offlineStore().list<OutboxEntry>('outbox');
+    expect(entry.value).toMatchObject({ kind: 'anchored', edits: [TICK], base: 'h1', path: PATH });
+  });
+
+  // The same rule as a whole write: a status means the daemon answered.
+  it('raises a refusal the daemon answered with, and queues nothing', async () => {
+    net.patch.mockRejectedValue(Object.assign(new Error('read-only'), { status: 403 }));
+    await expect(editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN })).rejects.toThrow(
+      'read-only',
+    );
+    expect(await queuedCount(offlineStore())).toBe(0);
+  });
+});
+
 /**
  * The wire shape, not a convenient one.
  *
@@ -219,7 +266,8 @@ const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), 
  * note forbids. The compare now lives inside the route's write.
  */
 describe('networkSink lets the daemon refuse a stale write', () => {
-  const entry = {
+  const entry: OutboxEntry = {
+    kind: 'whole',
     path: PATH,
     body: 'mine',
     base: 'h0',

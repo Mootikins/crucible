@@ -6,6 +6,7 @@ import {
   isQueued,
   queueWrite,
   queuedCount,
+  readQueued,
   type OutboxEntry,
   type OutboxSink,
 } from '@/lib/offline/outbox';
@@ -25,8 +26,9 @@ beforeEach(() => {
   store = memoryStore();
 });
 
-const queue = (over: Partial<OutboxEntry> = {}) =>
+const queue = (over: Partial<Extract<OutboxEntry, { kind: 'whole' }>> = {}) =>
   queueWrite(store, {
+    kind: 'whole',
     path: PATH,
     body: 'edited on the phone',
     base: 'base-hash',
@@ -58,7 +60,34 @@ describe('queueWrite', () => {
     await queue({ base: 'second-base', body: 'edited again' });
     const entry = await store.get<OutboxEntry>('outbox', PATH);
     expect(entry?.base).toBe('first-base');
-    expect(entry?.body).toBe('edited again');
+    expect(entry?.kind === 'whole' && entry.body).toBe('edited again');
+  });
+
+  it('a queued anchored entry keeps its kind and edits', async () => {
+    const edits = [{ expect: '- [ ] milk', replace: '- [x] milk' }];
+    await queueWrite(store, { kind: 'anchored', path: PATH, edits, base: 'h0', kiln: KILN, daemon: DAEMON });
+    const held = await readQueued(store, PATH);
+    expect(held).toMatchObject({ kind: 'anchored', edits, base: 'h0' });
+  });
+
+  // An entry a device queued before entries had a kind is still in its
+  // IndexedDB. It was a whole write, because that was the only kind.
+  it('an entry with no kind reads as a whole write', async () => {
+    await store.put('outbox', PATH, {
+      path: PATH,
+      body: 'from before',
+      base: 'h0',
+      kiln: KILN,
+      daemon: DAEMON,
+      queuedAt: 1,
+      sequence: 1,
+    });
+    const held = await readQueued(store, PATH);
+    expect(held).toMatchObject({ kind: 'whole', body: 'from before' });
+
+    const seen: OutboxEntry[] = [];
+    await drainOutbox(store, sink({ write: async (e) => { seen.push(e); return { ok: true, hash: 'h1' }; } }), DAEMON);
+    expect(seen[0]?.kind, 'the drain reads the same rule').toBe('whole');
   });
 });
 
@@ -161,7 +190,7 @@ describe('conflictCopyPath', () => {
    */
   it('does not delete a write that arrived while the send was in flight', async () => {
     const store = memoryStore();
-    await queueWrite(store, { path: PATH, body: 'first', base: 'h0', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: PATH, body: 'first', base: 'h0', kiln: KILN, daemon: DAEMON });
 
     let release: () => void = () => {};
     const inFlight = new Promise<void>((r) => (release = r));
@@ -175,6 +204,7 @@ describe('conflictCopyPath', () => {
 
     const draining = drainOutbox(store, sink, DAEMON);
     await queueWrite(store, {
+      kind: 'whole',
       path: PATH,
       body: 'SECOND EDIT',
       base: 'h0',
@@ -185,14 +215,16 @@ describe('conflictCopyPath', () => {
     const result = await draining;
 
     const held = await store.get<OutboxEntry>('outbox', PATH);
-    expect(held?.body, 'the newer writing must survive the older send').toBe('SECOND EDIT');
+    expect(held?.kind === 'whole' && held.body, 'the newer writing must survive the older send').toBe(
+      'SECOND EDIT',
+    );
     expect(result.superseded).toBe(1);
     expect(result.sent).toBe(0);
   });
 
   it('still clears an entry nothing replaced', async () => {
     const store = memoryStore();
-    await queueWrite(store, { path: PATH, body: 'only', base: 'h0', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: PATH, body: 'only', base: 'h0', kiln: KILN, daemon: DAEMON });
     const result = await drainOutbox(store, okSink(), DAEMON);
 
     expect(await store.get('outbox', PATH)).toBeNull();
@@ -203,11 +235,11 @@ describe('conflictCopyPath', () => {
   // after one sorted before writes queued before it.
   it('orders by what is stored, not by a counter that a reload resets', async () => {
     const store = memoryStore();
-    await queueWrite(store, { path: `${KILN}/a.md`, body: 'a', base: '', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: `${KILN}/a.md`, body: 'a', base: '', kiln: KILN, daemon: DAEMON });
     const first = await store.get<OutboxEntry>('outbox', `${KILN}/a.md`);
 
     // A fresh page load cannot lower the next sequence below what is held.
-    await queueWrite(store, { path: `${KILN}/b.md`, body: 'b', base: '', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: `${KILN}/b.md`, body: 'b', base: '', kiln: KILN, daemon: DAEMON });
     const second = await store.get<OutboxEntry>('outbox', `${KILN}/b.md`);
 
     expect(second!.sequence).toBeGreaterThan(first!.sequence);

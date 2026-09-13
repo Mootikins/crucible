@@ -2,8 +2,11 @@ import {
   getFileWithHash,
   saveFileIfUnchanged,
   listNotes,
+  patchKilnFile,
   rawFileUrl,
   saveFileContent,
+  type AnchoredEdit,
+  type PatchRefused,
 } from '@/lib/api';
 import { daemonIdentity } from '@/lib/offline/identity';
 import { keptMode } from '@/lib/offline/kept';
@@ -15,7 +18,9 @@ import {
   isQueued,
   queueWrite,
   readQueued,
+  type EachOmit,
   type OutboxSink,
+  type OutboxWrite,
 } from '@/lib/offline/outbox';
 import { idbStore, type OfflineStore } from '@/lib/offline/store';
 
@@ -82,6 +87,7 @@ export const networkSink: OutboxSink = {
     // An empty `current` means the note is gone. Its writing still belongs to
     // the user, so it goes to a conflict copy rather than resurrecting a note
     // that was deleted.
+    if (entry.kind === 'anchored') throw notReplayedYet();
     const answer = await saveFileIfUnchanged(entry.path, entry.body, entry.base);
     if (!answer.ok) return { ok: false, current: answer.current_hash };
     // The route answers with the hash of what it wrote. The old code issued a
@@ -89,8 +95,20 @@ export const networkSink: OutboxSink = {
     // a hash that described someone else's bytes beside this body.
     return { ok: true, hash: answer.content_hash };
   },
-  writeConflictCopy: (entry) => writeConflictCopy(entry.path, entry.body, new Date(entry.queuedAt)),
+  writeConflictCopy: (entry) => {
+    if (entry.kind === 'anchored') throw notReplayedYet();
+    return writeConflictCopy(entry.path, entry.body, new Date(entry.queuedAt));
+  },
 };
+
+/**
+ * The drain does not replay an anchored entry yet. A throw keeps the entry
+ * queued, where the drain counts it as failed; an answer would clear it or
+ * write a conflict copy with no body. The replay lands with the next change.
+ */
+function notReplayedYet(): Error {
+  return new Error('anchored replay lands in Task 4');
+}
 
 /**
  * Keep a stale write's text beside the note. Answers the path it took.
@@ -208,8 +226,10 @@ export async function readNote(
     // nowhere else. Reading past it showed the stale body after an offline
     // save — and because the buffer had already gone clean, editing from
     // there replaced the queued writing with an edit of the older text.
+    // An anchored entry holds no body, so the mirror is the best text there
+    // is until the drain lands the edit and the next online read refreshes it.
     const queued = await readQueued(db, path);
-    if (queued) {
+    if (queued && queued.kind === 'whole') {
       return { content: queued.body, content_hash: queued.base, fromMirror: true };
     }
     const mirrored = await readMirrored(db, path);
@@ -252,33 +272,81 @@ export async function writeNote(opts: {
   base: string;
   kiln: string | null;
 }): Promise<WriteOutcome> {
-  let failure: unknown = null;
-  if (isOnline()) {
-    try {
+  return sendOrQueue(
+    async () => {
       const answer = await saveFileIfUnchanged(opts.path, opts.body, opts.base);
       if (!answer.ok) return { queued: false, stale: true, current: answer.current_hash };
       return { queued: false, stale: false, hash: answer.content_hash };
+    },
+    { kind: 'whole', path: opts.path, body: opts.body, base: opts.base, kiln: opts.kiln ?? '' },
+  );
+}
+
+/**
+ * What became of an anchored edit.
+ *
+ * A refusal is the daemon's answer, with the edit it could not place and the
+ * hash the note has now. `queued` means the daemon never answered.
+ */
+export type EditOutcome =
+  | { queued: false; ok: true; hash: string }
+  | ({ queued: false } & PatchRefused)
+  | { queued: true };
+
+/**
+ * Change a note's lines: through the daemon when it answers, through the
+ * outbox when it does not.
+ *
+ * The edit carries the base it was made from, so a moved note is refused
+ * whole. A refusal is returned, not queued, for the same reason a stale
+ * whole write is: the daemon answered, and the user is present to decide.
+ */
+export async function editNote(opts: {
+  path: string;
+  edits: AnchoredEdit[];
+  base: string;
+  kiln: string | null;
+}): Promise<EditOutcome> {
+  return sendOrQueue(
+    async () => {
+      const answer = await patchKilnFile(opts.path, opts.edits, opts.base);
+      if (!answer.ok) return { queued: false, ...answer };
+      return { queued: false, ok: true, hash: answer.content_hash };
+    },
+    { kind: 'anchored', path: opts.path, edits: opts.edits, base: opts.base, kiln: opts.kiln ?? '' },
+  );
+}
+
+/**
+ * The one rule for a note write that may not reach the daemon.
+ *
+ * Online, `send` runs and its answer is the outcome. A throw the daemon never
+ * answered queues `write` instead. A throw the daemon answered with is
+ * raised: that is not offline writing, and queueing it would report a save
+ * that can never land. Both `writeNote` and `editNote` go through here, so
+ * the two kinds cannot drift apart on when they queue.
+ */
+async function sendOrQueue<T>(
+  send: () => Promise<T>,
+  write: EachOmit<OutboxWrite, 'daemon'>,
+): Promise<T | { queued: true }> {
+  let failure: unknown = null;
+  if (isOnline()) {
+    try {
+      return await send();
     } catch (error) {
-      // The daemon answered and refused. That is not offline writing, and
-      // queueing it would report a save that can never land.
       if (!neverAnswered(error)) throw error;
       failure = error;
     }
   }
   try {
-    await queueWrite(offlineStore(), {
-      path: opts.path,
-      body: opts.body,
-      base: opts.base,
-      kiln: opts.kiln ?? '',
-      daemon: await daemonIdentity(offlineStore()),
-    });
+    await queueWrite(offlineStore(), { ...write, daemon: await daemonIdentity(offlineStore()) });
     return { queued: true };
   } catch (queueError) {
-    // No store on this browser — private mode, or no IndexedDB. The save
-    // failed and nothing can hold the writing, so the caller must see the
-    // SAVE's failure and keep the buffer dirty. Swallowing it here would tell
-    // a user their note was safe when it is in neither place.
+    // No store on this browser — private mode, or no IndexedDB. The write
+    // failed and nothing can hold it, so the caller must see the SEND's
+    // failure and keep the buffer dirty. Swallowing it here would tell a user
+    // their note was safe when it is in neither place.
     throw failure ?? queueError;
   }
 }
