@@ -53,6 +53,25 @@ struct PluginExports {
     commands: HashMap<String, mlua::Function>,
 }
 
+/// `setup` raised after the declarations were read.
+///
+/// The caller keeps the declarations, so `plugin.list` shows what a broken
+/// plugin declares beside `state: Error`. Losing that is what let a dead
+/// reference plugin look healthy for months.
+#[derive(Debug)]
+struct SetupFailed {
+    spec: PluginSpec,
+    error: anyhow::Error,
+}
+
+impl std::fmt::Display for SetupFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl std::error::Error for SetupFailed {}
+
 /// A service function extracted from a plugin, tagged with its owner.
 ///
 /// The owner tag is what lets the spawn site record the task's `JoinHandle`
@@ -122,7 +141,11 @@ pub fn split_plugins_config(
 pub struct DaemonPluginLoader {
     executor: LuaExecutor,
     plugin_manager: PluginManager,
-    loaded_specs: Vec<PluginSpec>,
+    /// Each active plugin's declarations, by the plugin's name.
+    ///
+    /// The key is the plugin's identity, the directory name, so a plugin
+    /// whose fragment declares another name still finds its own entry.
+    loaded_specs: HashMap<String, PluginSpec>,
     /// The daemon-backed session API `upgrade_with_sessions` registered with,
     /// so late-created Lua runtimes (`lua.init_session`) can register the
     /// same module against the same bridge instead of a second instance.
@@ -384,7 +407,7 @@ impl DaemonPluginLoader {
         Ok(Self {
             executor,
             plugin_manager,
-            loaded_specs: Vec::new(),
+            loaded_specs: HashMap::new(),
             session_api: crucible_lua::HostHook::new(),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
@@ -1026,6 +1049,7 @@ impl DaemonPluginLoader {
                             spec.handlers.len(),
                         );
                     }
+                    self.remember_spec(name, spec.clone());
                     specs.push(spec);
                 }
                 Err(e) => {
@@ -1037,27 +1061,16 @@ impl DaemonPluginLoader {
             }
         }
 
-        self.remember_specs(&specs);
         Ok(specs)
     }
 
-    /// Upsert by name. Assignment (`self.loaded_specs = specs`) here would drop
+    /// Upsert by plugin name. A replacement of the whole map here would drop
     /// every previously loaded plugin's entry the moment `load_plugins` runs a
     /// second time — which it does once `plugin.install` loads at runtime: an
     /// Active plugin is skipped by `load_all` (`AlreadyLoaded`), so its spec is
-    /// absent from any later call's result. A spec with `name: None` never
-    /// matches an existing entry; it is pushed.
-    fn remember_specs(&mut self, specs: &[PluginSpec]) {
-        for spec in specs {
-            match self
-                .loaded_specs
-                .iter_mut()
-                .find(|s| s.name.is_some() && s.name == spec.name)
-            {
-                Some(existing) => *existing = spec.clone(),
-                None => self.loaded_specs.push(spec.clone()),
-            }
-        }
+    /// absent from any later call's result.
+    fn remember_spec(&mut self, name: &str, spec: PluginSpec) {
+        self.loaded_specs.insert(name.to_string(), spec);
     }
 
     /// Plugin directories that failed discovery, as `{path, error}` objects.
@@ -1139,18 +1152,13 @@ impl DaemonPluginLoader {
 
         let main_path = plugin.main_path();
 
-        // Extract spec from sandbox (for metadata)
-        let spec = crucible_lua::load_plugin_spec(&main_path)
-            .map_err(|e| anyhow::anyhow!("spec load for '{}': {e}", name))?
-            .ok_or_else(|| anyhow::anyhow!("plugin '{}' returned no spec", name))?;
-
         // Execute the plugin in the daemon's real Lua runtime using eval_async
-        // so that async Lua functions (gateway.connect, etc.) can yield.
-        // Also extract service/tool/command Function refs from the returned
-        // spec table — the sandbox pass above only yields metadata. `name` is
-        // needed to hand the plugin its `[plugins.<name>]` section in setup().
+        // so that async Lua functions (gateway.connect, etc.) can yield. The
+        // declarations and the service/tool/command Function refs both come
+        // from the one table the run returns. `name` is needed to hand the
+        // plugin its `[plugins.<name>]` section in setup().
         match self.execute_plugin(name, &main_path).await {
-            Ok(exports) => {
+            Ok((exports, spec)) => {
                 for (svc_name, func) in exports.services {
                     debug!(
                         "Extracted service function '{}' from plugin '{}'",
@@ -1177,12 +1185,14 @@ impl DaemonPluginLoader {
                     "Failed to execute plugin '{}' in daemon runtime: {}",
                     name, e
                 );
-                // The spec still describes the plugin — record it so
-                // `plugin.list` shows what a broken plugin DECLARES alongside
-                // `state: Error`. (Losing this is what let a dead reference
-                // plugin look healthy for months.)
-                self.remember_specs(std::slice::from_ref(&spec));
-                Err(e)
+                // A `setup` that raised still leaves the declarations.
+                match e.downcast::<SetupFailed>() {
+                    Ok(failed) => {
+                        self.remember_spec(name, failed.spec);
+                        Err(failed.error)
+                    }
+                    Err(e) => Err(e),
+                }
             }
         }
     }
@@ -1239,12 +1249,14 @@ impl DaemonPluginLoader {
     /// Calls the returned spec's `setup(cfg)` with this plugin's
     /// `[plugins.<name>]` section — the documented configuration mechanism.
     ///
-    /// Returns the callables the plugin exported: services, tools and commands.
+    /// Returns the callables the plugin exported (services, tools and
+    /// commands) and the declarations read from the same table. An
+    /// unreadable declaration refuses the load before `setup` runs.
     async fn execute_plugin(
         &self,
         name: &str,
         init_path: &std::path::Path,
-    ) -> anyhow::Result<PluginExports> {
+    ) -> anyhow::Result<(PluginExports, PluginSpec)> {
         let lua = self.executor.lua();
         let plugin_dir = init_path
             .parent()
@@ -1274,6 +1286,8 @@ impl DaemonPluginLoader {
         // time — and a plugin whose `setup` the user called owns its setup:
         // the default `setup(cfg)` call is skipped for it.
         if let Some((spec, module_name)) = self.boot_required_instance(init_path)? {
+            let declarations = crucible_lua::spec_from_table(&spec, init_path)
+                .map_err(|e| anyhow::anyhow!("spec of '{name}': {e}"))?;
             // Rebind the attribution modules WITHOUT releasing: the boot
             // require already ran this plugin's body under its own binding,
             // and releasing here would wipe what the body published.
@@ -1311,11 +1325,15 @@ impl DaemonPluginLoader {
                         notices.push(notice);
                     }
                 }
-            } else {
-                self.call_plugin_setup(name, &spec).await?;
+            } else if let Err(error) = self.call_plugin_setup(name, &spec).await {
+                return Err(SetupFailed {
+                    spec: declarations,
+                    error,
+                }
+                .into());
             }
             info!("Activated plugin '{name}' from the module instance init.lua required");
-            return Ok(extract_exports(&spec));
+            return Ok((extract_exports(&spec), declarations));
         }
 
         // Rebind `cru.plugin.publish` to THIS plugin before its body runs.
@@ -1365,16 +1383,27 @@ impl DaemonPluginLoader {
             .eval_async()
             .await;
 
-        // Extract the callables from the returned spec table. The sandbox pass
-        // in `load_plugin_spec` sees the same table but in a throwaway VM, so
-        // its functions are useless — only these handles can be invoked.
-        let executed: anyhow::Result<PluginExports> = match eval_result {
+        // Read the declarations and the callables from the one returned
+        // table. Only this VM's function handles can be invoked, so there is
+        // no second read anywhere. A plugin that returns no table declares
+        // nothing the daemon can use, and is refused as it was before.
+        let executed: anyhow::Result<(PluginExports, PluginSpec)> = match eval_result {
             Err(e) => Err(anyhow::anyhow!("exec {}: {e}", init_path.display())),
-            Ok(mlua::Value::Table(spec)) => match self.call_plugin_setup(name, &spec).await {
-                Err(e) => Err(e),
-                Ok(()) => Ok(extract_exports(&spec)),
+            Ok(mlua::Value::Table(spec)) => match crucible_lua::spec_from_table(&spec, init_path) {
+                Err(e) => Err(anyhow::anyhow!("spec of '{name}': {e}")),
+                Ok(declarations) => match self.call_plugin_setup(name, &spec).await {
+                    Err(error) => Err(SetupFailed {
+                        spec: declarations,
+                        error,
+                    }
+                    .into()),
+                    Ok(()) => Ok((extract_exports(&spec), declarations)),
+                },
             },
-            Ok(_) => Ok(PluginExports::default()),
+            Ok(other) => Err(anyhow::anyhow!(
+                "plugin '{name}' returned {}, not a table",
+                other.type_name()
+            )),
         };
 
         // The context is restored UNCONDITIONALLY, after setup: setup-registered
@@ -1387,9 +1416,9 @@ impl DaemonPluginLoader {
         // it is left unowned rather than mis-attributed.
         crucible_lua::set_source(lua, previous);
 
-        let exports = executed?;
+        let executed = executed?;
         info!("Executed plugin in daemon runtime: {}", init_path.display());
-        Ok(exports)
+        Ok(executed)
     }
 
     /// The `package.loaded` instance the user's boot `require` created for
@@ -1554,7 +1583,7 @@ impl DaemonPluginLoader {
         // were just dropped by re-registration.
         self.executor.lua().expire_registry_values();
 
-        self.remember_specs(std::slice::from_ref(&spec));
+        self.remember_spec(name, spec.clone());
 
         // Re-executing init.lua re-ran `setup(cfg)` against the ORIGINAL TOML,
         // so every value the user changed in the settings pane just reverted.
@@ -1607,8 +1636,7 @@ impl DaemonPluginLoader {
             Err(e) => return Err(e.into()),
         }
         self.make_plugin_inert(name);
-        self.loaded_specs
-            .retain(|s| s.name.as_deref() != Some(name));
+        self.loaded_specs.remove(name);
         // Without forget, the entry stays in the manager map (state
         // Discovered): plugin.list still shows it, and — because discover()
         // skips known names — a reinstall loads nothing and reports success.
@@ -1616,11 +1644,11 @@ impl DaemonPluginLoader {
         Ok(())
     }
 
+    /// The names of the plugins with a remembered spec, sorted.
     pub fn loaded_plugin_names(&self) -> Vec<String> {
-        self.loaded_specs
-            .iter()
-            .filter_map(|s| s.name.clone())
-            .collect()
+        let mut names: Vec<String> = self.loaded_specs.keys().cloned().collect();
+        names.sort();
+        names
     }
 
     /// Return plugin info including provenance source for every discovered
@@ -1637,10 +1665,7 @@ impl DaemonPluginLoader {
         self.plugin_manager
             .list()
             .map(|p| {
-                let spec = self
-                    .loaded_specs
-                    .iter()
-                    .find(|s| s.name.as_deref() == Some(p.manifest.name.as_str()));
+                let spec = self.loaded_specs.get(&p.manifest.name);
                 serde_json::json!({
                     "name": p.manifest.name,
                     "version": p.manifest.version,

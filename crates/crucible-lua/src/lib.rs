@@ -217,7 +217,7 @@ pub use handlers::{
 pub use host_api::render_declarations;
 pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};
 pub use lifecycle::{
-    load_plugin_spec, read_fragment, Fragment, LifecycleError, LifecycleResult, PluginManager,
+    read_fragment, spec_from_table, Fragment, LifecycleError, LifecycleResult, PluginManager,
     PluginSpec, FRAGMENT_FILE,
 };
 pub use luau_compat::register_stdlib_compat;

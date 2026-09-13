@@ -18,7 +18,7 @@
 //! installed. A gate that quietly succeeds because its checker is missing is
 //! worse than no gate: it reports the absence of evidence as evidence.
 
-use crate::lifecycle::load_plugin_spec;
+use crate::lifecycle::{fragment::read_only_env, spec_from_table};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -180,13 +180,7 @@ pub fn check_plugin_using(
     // pair. Reporting it here too printed one mistake twice.
     let init = crate::source_files::init_file(plugin_dir).ok().flatten();
     if let Some(init) = init {
-        if let Err(e) = load_plugin_spec(&init) {
-            let message = e.to_string();
-            findings.push(match e {
-                crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
-                _ => Finding::Load { message },
-            });
-        }
+        findings.extend(declaration_findings(&lua, &init));
     }
 
     findings.extend(checker.finding());
@@ -220,6 +214,42 @@ pub fn check_plugin_using(
         typecheck,
         findings,
     })
+}
+
+/// Evaluate `init` in the read-only environment and read its declarations.
+///
+/// The environment is the one a fragment runs in: no `cru`, no `require`,
+/// no `io`. A plugin whose `init.luau` acts at the top level raises there
+/// before it returns its table. This step reports nothing for that raise
+/// yet, and reads no declarations from such a plugin: the shipped plugins
+/// `require` their own modules at the top level, and the wording of that
+/// finding is a later change. A table that comes back is read with
+/// `spec_from_table`, so an unreadable declaration is reported.
+fn declaration_findings(lua: &mlua::Lua, init: &Path) -> Vec<Finding> {
+    let Ok(source) = std::fs::read_to_string(init) else {
+        return Vec::new();
+    };
+    let Ok(env) = read_only_env(lua) else {
+        return Vec::new();
+    };
+    let Ok(mlua::Value::Table(table)) = lua
+        .load(&source)
+        .set_name(format!("@{}", init.display()))
+        .set_environment(env)
+        .eval::<mlua::Value>()
+    else {
+        return Vec::new();
+    };
+    match spec_from_table(&table, init) {
+        Ok(_) => Vec::new(),
+        Err(e) => {
+            let message = e.to_string();
+            vec![match e {
+                crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
+                _ => Finding::Load { message },
+            }]
+        }
+    }
 }
 
 /// Check ONE Lua file that is not part of a plugin directory.

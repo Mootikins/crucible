@@ -115,13 +115,9 @@ impl PluginManager {
 
         self.call_on_unload_hook(name);
 
-        // Clean up global emitter listeners registered by this plugin
-        if let Err(e) = self.lua.load(format!(
-            r#"local _e = cru.emitter.global(); if _e.unregister_owner then _e:unregister_owner({name:?}) end"#
-        )).exec() {
-            warn!("Failed to clean up global emitter for {}: {}", name, e);
-            self.capture_plugin_error(name, &e, "unload:emitter_cleanup");
-        }
+        // No emitter cleanup here. The manager VM runs no plugin code, so
+        // no plugin registered a listener in it. The daemon VM's
+        // registrations belong to `clear_source`.
 
         let plugin = self
             .plugins

@@ -99,7 +99,7 @@ pub fn read_fragment(lua: &Lua, plugin_dir: &Path) -> LifecycleResult<Option<Fra
 /// `("x"):upper()`, still resolves in the VM's real `string` table. That is
 /// safe: a fragment can call such a function, but the metatable gives it no
 /// way to reassign one.
-fn read_only_env(lua: &Lua) -> mlua::Result<Table> {
+pub(crate) fn read_only_env(lua: &Lua) -> mlua::Result<Table> {
     let globals = lua.globals();
     let names = lua.create_table()?;
     for name in PURE_FUNCTIONS {

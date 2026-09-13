@@ -32,7 +32,7 @@ use common::{RpcConn, TestDaemon};
 ///
 /// Verifies error-swallowing in:
 /// - `DaemonPluginLoader::load_plugins()` → warns on bad plugin, continues
-/// - `load_plugin_spec()` → warns on extraction failure, skips plugin
+/// - `DaemonPluginLoader::load_plugin_spec()` → warns when a plugin's run fails, skips plugin
 #[tokio::test]
 async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     let plugin_dir = tempfile::tempdir().expect("Failed to create temp dir");

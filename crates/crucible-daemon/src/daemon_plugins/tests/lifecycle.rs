@@ -59,23 +59,18 @@ async fn a_second_load_plugins_call_keeps_previously_loaded_specs() {
     assert_eq!(counts("beta"), ("Active".into(), 1.into()));
 }
 
-/// Two `name: None` specs must not merge with each other — `None == None`
-/// would make the first anonymous spec swallow every later one.
+/// A remembered spec upserts by plugin name: the second load of one plugin
+/// replaces its entry, and a second plugin gets its own.
 #[test]
-fn remember_specs_never_merges_anonymous_specs() {
+fn remember_spec_upserts_by_plugin_name() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
-    let anon = PluginSpec::default();
-    loader.remember_specs(std::slice::from_ref(&anon));
-    loader.remember_specs(std::slice::from_ref(&anon));
-    assert_eq!(loader.loaded_specs.len(), 2);
+    loader.remember_spec("gamma", PluginSpec::default());
+    loader.remember_spec("gamma", PluginSpec::default());
+    assert_eq!(loader.loaded_specs.len(), 1, "one plugin, one entry");
 
-    let named = PluginSpec {
-        name: Some("gamma".to_string()),
-        ..Default::default()
-    };
-    loader.remember_specs(std::slice::from_ref(&named));
-    loader.remember_specs(std::slice::from_ref(&named));
-    assert_eq!(loader.loaded_specs.len(), 3, "named specs upsert in place");
+    loader.remember_spec("delta", PluginSpec::default());
+    assert_eq!(loader.loaded_specs.len(), 2);
+    assert_eq!(loader.loaded_plugin_names(), ["delta", "gamma"]);
 }
 
 /// A plugin that fails in the daemon VM must end up fully inert, not

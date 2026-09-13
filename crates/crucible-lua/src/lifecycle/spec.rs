@@ -3,25 +3,17 @@ use crate::command_effect::CommandEffect;
 use crate::discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };
-use crate::error::format_lua_error;
-use mlua::{Lua, Value};
+use mlua::{Table, Value};
 use std::path::Path;
 
-/// Spec extracted from a plugin's returned Lua table.
+/// The declarations in the table a plugin's `init.luau` returns.
 ///
-/// When a plugin's `init.lua` returns a table, this struct captures the
-/// declared metadata and exports. Fields that aren't present in the table
-/// are left as `None`/empty.
+/// Tools, commands, handlers, services and `setup`. A field the table does
+/// not hold is empty. The plugin's metadata (name, version, description,
+/// author, license, the intercept grant) is not here: the fragment carries
+/// it, see [`super::Fragment`].
 #[derive(Debug, Clone, Default)]
 pub struct PluginSpec {
-    pub name: Option<String>,
-    pub version: Option<String>,
-    pub description: Option<String>,
-    /// The plugin declaring that it takes tool calls over. See
-    /// `PluginManifest::intercepts_tools`.
-    pub intercepts_tools: bool,
-    pub author: Option<String>,
-    pub license: Option<String>,
     pub tools: Vec<DiscoveredTool>,
     pub commands: Vec<DiscoveredCommand>,
     pub handlers: Vec<DiscoveredHandler>,
@@ -29,63 +21,6 @@ pub struct PluginSpec {
     pub has_setup: bool,
     /// Where the plugin was discovered from (user, runtime, kiln, etc.)
     pub source: Option<String>,
-}
-
-/// Set up a permissive sandbox for spec extraction.
-///
-/// Stubs `require()`, `crucible`, `cru`, and `io` so that plugin init files
-/// can be evaluated for their return table without crashing on missing runtime
-/// dependencies. The stubs are no-ops — we only care about the spec table structure.
-///
-/// The `package` table comes from the resolver rather than from the language:
-/// Luau ships no package library, and a shipped plugin's last line is
-/// `package.loaded[NAME] = plugin`. Without it, spec extraction dies on the
-/// line that makes the plugin requirable.
-pub(super) fn setup_spec_sandbox(lua: &Lua) -> Result<(), mlua::Error> {
-    if matches!(lua.globals().get::<Value>("package")?, Value::Nil) {
-        crate::modules::ModuleRegistry::install(lua)?;
-    }
-    crate::luau_compat::register_stdlib_compat(lua)?;
-    lua.load(
-        r#"
--- Stub require: return an empty table that tolerates any method call.
--- Indexing returns another callable stub, so nested names like
--- cru.plugin.options{...} survive to any depth; the old stub returned a
--- plain function, which broke on the second index.
-local stub_mt = {}
-stub_mt.__index = function() return setmetatable({}, stub_mt) end
-stub_mt.__call = function() return setmetatable({}, stub_mt) end
-
-local _real_require = require
-require = function(name)
-    local ok, mod = pcall(_real_require, name)
-    if ok then return mod end
-    return setmetatable({}, stub_mt)
-end
-
--- Stub crucible namespace
-crucible = setmetatable({}, stub_mt)
-
--- Stub cru namespace
-cru = setmetatable({}, stub_mt)
-
--- Stub io (some plugins use io.open at load time)
-if not io then io = setmetatable({}, stub_mt) end
-"#,
-    )
-    .exec()?;
-    Ok(())
-}
-
-/// Execute a plugin's init.lua and extract a PluginSpec from the returned table.
-///
-/// Returns `Ok(Some(spec))` if the script returns a table with recognized fields,
-/// `Ok(None)` if it returns nil or a non-table value,
-/// or `Err` if there's a Lua execution error.
-pub fn load_plugin_spec(init_path: &Path) -> LifecycleResult<Option<PluginSpec>> {
-    let source = std::fs::read_to_string(init_path).map_err(LifecycleError::Io)?;
-
-    load_plugin_spec_from_source(&source, init_path)
 }
 
 /// Refuse a parameter whose declared type the host cannot read.
@@ -170,76 +105,18 @@ fn extract_params_from_table(def: &mlua::Table) -> Vec<DiscoveredParam> {
     params
 }
 
-/// Extract a PluginSpec from Lua source code.
-pub(crate) fn load_plugin_spec_from_source(
-    source: &str,
-    source_path: &Path,
-) -> LifecycleResult<Option<PluginSpec>> {
-    let lua = Lua::new();
+/// Read the declarations out of the table `init.luau` returned.
+///
+/// The table is the one the daemon VM holds after the plugin ran, so the
+/// `fn` values in it are live. This function reads only the declarations
+/// and refuses one the host cannot read (`validate_declared_types`,
+/// `command_effect`). `source_path` names the file in each declaration.
+///
+/// Every table is read. A table with none of the declaration keys is an
+/// empty spec: a module that declares nothing is a plugin all the same.
+pub fn spec_from_table(table: &Table, source_path: &Path) -> LifecycleResult<PluginSpec> {
     let source_path_str = source_path.to_string_lossy().to_string();
-
-    // Set up a permissive environment so plugins that use require(), crucible.*,
-    // cru.*, io.*, etc. don't crash before we can read their spec table.
-    setup_spec_sandbox(&lua)
-        .map_err(|e| LifecycleError::LoadError(format!("Failed to set up spec sandbox: {}", e)))?;
-
-    // Execute the source and capture the return value
-    let result: Value = lua
-        .load(source)
-        .set_name(source_path_str.as_str())
-        .eval()
-        .map_err(|e| LifecycleError::LoadError(format_lua_error(None, &e)))?;
-
-    let table = match result {
-        Value::Table(t) => t,
-        Value::Nil => return Ok(None),
-        _ => return Ok(None),
-    };
-
-    // Determine if this is a spec table vs a plain module table.
-    // A spec table has at least one recognized declarative field.
-    let spec_fields = [
-        "name",
-        "version",
-        "tools",
-        "commands",
-        "handlers",
-        "views",
-        "setup",
-        "intercepts_tools",
-        "author",
-        "license",
-    ];
-    let has_spec_field = spec_fields
-        .iter()
-        .any(|&field| !matches!(table.get::<Value>(field), Ok(Value::Nil) | Err(_)));
-
-    if !has_spec_field {
-        // Plain module table (e.g., `local M = {}; return M`) — not a spec
-        return Ok(None);
-    }
-
-    let mut spec = PluginSpec {
-        name: table.get::<String>("name").ok(),
-        version: table.get::<String>("version").ok(),
-        description: table.get::<String>("description").ok(),
-        ..Default::default()
-    };
-
-    for (field, slot) in [("author", 0usize), ("license", 1usize)] {
-        if let Ok(Value::String(text)) = table.get::<Value>(field) {
-            let text = text.to_string_lossy().to_string();
-            match slot {
-                0 => spec.author = Some(text),
-                _ => spec.license = Some(text),
-            }
-        }
-    }
-
-    // The one declaration the host checks.
-    if let Ok(Value::Boolean(flag)) = table.get::<Value>("intercepts_tools") {
-        spec.intercepts_tools = flag;
-    }
+    let mut spec = PluginSpec::default();
 
     // Extract tools
     if let Ok(Value::Table(tools_table)) = table.get::<Value>("tools") {
@@ -339,5 +216,5 @@ pub(crate) fn load_plugin_spec_from_source(
     // Check for setup function
     spec.has_setup = matches!(table.get::<Value>("setup"), Ok(Value::Function(_)));
 
-    Ok(Some(spec))
+    Ok(spec)
 }

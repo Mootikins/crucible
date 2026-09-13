@@ -1081,9 +1081,9 @@ mod plugin_health_visibility_tests {
         );
     }
 
-    /// `setup()` runs only in the daemon's real VM — the spec sandbox never
-    /// calls it — so a raising `setup()` was downgraded to `warn!` while
-    /// `load_plugin_spec` still returned `Ok`, leaving the plugin `Active`.
+    /// `setup()` runs in the daemon's VM after the declarations are read, so
+    /// a raising `setup()` was once downgraded to `warn!` while the load
+    /// still returned `Ok`, leaving the plugin `Active`.
     #[tokio::test]
     async fn a_plugin_whose_setup_raises_is_not_active() {
         let tmp = TempDir::new().unwrap();
