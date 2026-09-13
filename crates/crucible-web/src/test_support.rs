@@ -21,6 +21,8 @@ use serde_json::{json, Value};
 #[cfg(any(test, feature = "test-utils"))]
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-utils"))]
+use std::path::PathBuf;
+#[cfg(any(test, feature = "test-utils"))]
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-utils"))]
 use tempfile::TempDir;
@@ -203,6 +205,22 @@ pub async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
 /// Like [`start_mock_daemon`], but methods listed in `errors` respond with a
 /// JSON-RPC error envelope instead of their canned result.
 pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, DaemonClient) {
+    start_mock_daemon_scripted(errors, Vec::new()).await
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Like [`start_mock_daemon`], but `kiln.list` answers these directories as
+/// open kilns. The file routes serve only a path inside an open kiln, so a
+/// test that writes a real file through them needs a kiln that holds it.
+pub async fn start_mock_daemon_with_kilns(kilns: Vec<PathBuf>) -> (MockDaemon, DaemonClient) {
+    start_mock_daemon_scripted(MockErrors::new(), kilns).await
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+async fn start_mock_daemon_scripted(
+    errors: MockErrors,
+    kilns: Vec<PathBuf>,
+) -> (MockDaemon, DaemonClient) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let socket_path = tmp.path().join("mock-daemon.sock");
 
@@ -210,11 +228,13 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
     // Spawn mock daemon server
     let errors = Arc::new(errors);
+    let kilns = Arc::new(kilns);
     let calls: Arc<std::sync::Mutex<Vec<Value>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let calls_srv = calls.clone();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             let errors = errors.clone();
+            let kilns = kilns.clone();
             let calls = calls_srv.clone();
             tokio::spawn(async move {
                 let (read, mut write) = stream.into_split();
@@ -247,10 +267,18 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
                                     "error": { "code": code, "message": message }
                                 })
                             } else {
+                                let result = if method == "kiln.list" && !kilns.is_empty() {
+                                    json!(kilns
+                                        .iter()
+                                        .map(|k| json!({ "path": k }))
+                                        .collect::<Vec<_>>())
+                                } else {
+                                    mock_rpc_response(method, &msg)
+                                };
                                 json!({
                                     "jsonrpc": "2.0",
                                     "id": id,
-                                    "result": mock_rpc_response(method, &msg)
+                                    "result": result
                                 })
                             };
 

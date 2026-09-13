@@ -2123,9 +2123,11 @@ export interface EditRefusal {
 
 export interface PatchRefused {
   ok: false;
+  /** Empty when the base alone refused the batch: no anchor was read. */
   failed: EditRefusal[];
   current_hash: string;
-  /** The file moved on since `base_hash` was read, so the anchors are stale. */
+  /** The file moved on since `base_hash` was read. The daemon refuses the
+   * batch before it reads an anchor, even one that still applies. */
   stale_base: boolean;
 }
 

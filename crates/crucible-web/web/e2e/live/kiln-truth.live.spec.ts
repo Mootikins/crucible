@@ -219,13 +219,17 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     );
     await expect.poll(() => existsSync(notePath)).toBe(true);
 
+    // The base is the hash on disk now, so the anchor alone refuses the batch.
+    // A stale base is refused before any anchor is read (the leg below).
     const refused = await page.evaluate(async (file) => {
+      const read = await fetch(`/api/kiln/file?path=${encodeURIComponent(file)}`);
+      const { content_hash } = (await read.json()) as { content_hash: string };
       const res = await fetch('/api/kiln/file', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           path: file,
-          base_hash: '0'.repeat(64),
+          base_hash: content_hash,
           edits: [
             { expect: 'status: todo', replace: 'status: done' },
             { expect: '# Stale', replace: '# Renamed' },
@@ -237,9 +241,52 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
 
     expect(refused.status).toBe(409);
     expect(refused.body.failed).toEqual([{ reason: 'not_found', index: 0 }]);
-    expect(refused.body.stale_base).toBe(true);
+    expect(refused.body.stale_base).toBe(false);
     expect(refused.body.current_hash).toMatch(/^[0-9a-f]{64}$/);
     // All or nothing: the second edit was fine and must not have landed.
+    expect(readFileSync(notePath, 'utf-8')).toBe(before);
+  });
+
+  // WS-320: a tick carries the buffer's base. A stale base whose anchor still
+  // applies used to write through; the browser then took the answered hash
+  // as its base over text that lacked the other writer's paragraph, and its
+  // next whole save removed that paragraph with no refusal.
+  test('WS-320: a stale base is refused even when its anchors apply', async ({ page }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const before = '- [ ] task\n\nagent paragraph\n';
+    const notePath = path.join(kilnDir, 'StaleBase.md');
+
+    await page.goto(baseURL);
+    await page.evaluate(
+      async ({ kiln, body }) => {
+        await fetch(`/api/notes/${encodeURIComponent('StaleBase')}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kiln, content: body }),
+        });
+      },
+      { kiln: kilnDir, body: before },
+    );
+    await expect.poll(() => existsSync(notePath)).toBe(true);
+
+    const refused = await page.evaluate(async (file) => {
+      const res = await fetch('/api/kiln/file', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: file,
+          base_hash: '0'.repeat(64),
+          edits: [{ expect: '- [ ] task', replace: '- [x] task' }],
+        }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, notePath);
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.stale_base).toBe(true);
+    expect(refused.body.failed).toEqual([]);
+    expect(refused.body.current_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(readFileSync(notePath, 'utf-8')).toBe(before);
   });
 

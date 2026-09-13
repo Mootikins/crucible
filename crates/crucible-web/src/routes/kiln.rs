@@ -12,7 +12,9 @@ use axum::{
     Json, Router,
 };
 use crucible_core::config::{read_project_config, ProjectFileAccess};
-use crucible_core::note_edit::{apply_anchored_edits, disk_hash, AnchoredEdit, EditOutcome};
+use crucible_core::note_edit::{
+    apply_anchored_edits, disk_hash, AnchoredEdit, EditOutcome, EditRefusal,
+};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -58,9 +60,10 @@ struct PutFileRequest {
 struct PatchFileRequest {
     path: String,
     edits: Vec<AnchoredEdit>,
-    /// The disk hash the caller last read. Optional, and it REPORTS rather
-    /// than gates: the anchors already decide whether an edit still applies,
-    /// so this only separates "the file moved on" from "your anchor moved on".
+    /// The disk hash the caller last read. Present, it gates: the batch is
+    /// refused with 409 and `stale_base: true` when the file moved on, even
+    /// when every anchor applies. Absent, the anchors alone decide; the outbox
+    /// replay sends no base, because it edits the note's current text.
     #[serde(default)]
     base_hash: Option<String>,
 }
@@ -420,6 +423,20 @@ async fn patch_kiln_file(
     let original = read_text_file(&canonical_file).await?;
     let current_hash = disk_hash(&original);
 
+    // Before the apply, and against the bytes just read: a base the caller
+    // names must still be the text on disk. Anchors that apply are no proof
+    // that the caller saw this text. A stale base written through gives the
+    // caller a hash for a buffer that lacks another writer's change, and the
+    // buffer's next whole save removes that change with no refusal. The
+    // outbox replay names no base, by design, and anchors on the current text.
+    if req
+        .base_hash
+        .as_deref()
+        .is_some_and(|base| base != current_hash)
+    {
+        return Ok(patch_refused(Vec::new(), current_hash, true));
+    }
+
     match apply_anchored_edits(&original, &req.edits) {
         EditOutcome::Applied(updated) => {
             if updated.len() > MAX_CONTENT_SIZE {
@@ -438,26 +455,30 @@ async fn patch_kiln_file(
             }))
             .into_response())
         }
-        EditOutcome::Refused(refusals) => {
-            // The file is untouched. `stale_base` says the file moved on since
-            // the caller read it, which is the difference between "someone else
-            // edited this note" and "your anchor was never right".
-            let stale_base = req
-                .base_hash
-                .as_deref()
-                .is_some_and(|base| base != current_hash);
-            Ok((
-                StatusCode::CONFLICT,
-                Json(serde_json::json!({
-                    "ok": false,
-                    "failed": refusals,
-                    "current_hash": current_hash,
-                    "stale_base": stale_base,
-                })),
-            )
-                .into_response())
-        }
+        // The base, when named, matched above, so the anchor was never right.
+        EditOutcome::Refused(refusals) => Ok(patch_refused(refusals, current_hash, false)),
     }
+}
+
+/// The one 409 body a PATCH answers with. The file is untouched. `stale_base`
+/// says the file moved on since the caller read it, which is the difference
+/// between "someone else edited this note" and "your anchor was never right";
+/// `failed` is empty when the base alone refused the batch.
+fn patch_refused(
+    failed: Vec<EditRefusal>,
+    current_hash: String,
+    stale_base: bool,
+) -> axum::response::Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({
+            "ok": false,
+            "failed": failed,
+            "current_hash": current_hash,
+            "stale_base": stale_base,
+        })),
+    )
+        .into_response()
 }
 
 /// A root the file endpoints may serve `file_path` from. Kilns are the
