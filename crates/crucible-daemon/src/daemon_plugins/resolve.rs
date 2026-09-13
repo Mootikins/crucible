@@ -1,9 +1,9 @@
 //! Where a plugin's `enabled` flag and its `opts` come from.
 //!
 //! Two pure functions, and the only readers of the two resolution rules the
-//! activation plan states. Both take the merged [`Spec`], the plugin's
-//! fragment (through its manifest) and the config store's `plugins.<name>`
-//! section. `docs/Meta/CONTEXT.md` defines the words.
+//! activation plan states. Both take the merged [`Spec`] and the config
+//! store's `plugins.<name>` section; `resolve_opts` also takes the plugin's
+//! fragment, through its manifest. `docs/Meta/CONTEXT.md` defines the words.
 //!
 //! The Builtin fragment must not write `enabled` through the config store: a
 //! `cru.config.set` under `LuaSource::Builtin` lands at rank Lua, which
@@ -22,7 +22,7 @@ use serde_json::{Map, Value};
 /// 3. the merged entry below the operator: the Builtin fragment, then the
 ///    plugin's own fragment, which `Spec::merge` already ordered;
 /// 4. `true`.
-pub fn resolve_enabled(spec: &Spec, name: &str, config_leaf: Option<bool>) -> bool {
+pub(crate) fn resolve_enabled(spec: &Spec, name: &str, config_leaf: Option<bool>) -> bool {
     let operator = spec.at(name, SpecRank::Operator).and_then(|e| e.enabled);
     let fragments = spec.get(name).and_then(|e| e.enabled);
     operator.or(config_leaf).or(fragments).unwrap_or(true)
@@ -35,9 +35,14 @@ pub fn resolve_enabled(spec: &Spec, name: &str, config_leaf: Option<bool>) -> bo
 /// config leaves under `plugins.<name>`, then the operator's entry, so the
 /// operator's own line beats a saved setting.
 ///
+/// The fragment reaches this function through the manifest only. Discovery
+/// reads `spec.luau` into `PluginManifest::opts` and writes nothing to the
+/// spec store, so a `SpecRank::PluginFragment` layer would read the same
+/// table a second time, or read nothing.
+///
 /// `enabled` is not an opt: it is stripped from the config section before
 /// the merge. The result is always an object, so a plugin can index it.
-pub fn resolve_opts(
+pub(crate) fn resolve_opts(
     spec: &Spec,
     name: &str,
     manifest_opts: &Value,
@@ -45,7 +50,6 @@ pub fn resolve_opts(
 ) -> Value {
     let mut out = Map::new();
     lay(&mut out, manifest_opts);
-    lay_rank(&mut out, spec, name, SpecRank::PluginFragment);
     lay_rank(&mut out, spec, name, SpecRank::Builtin);
     let mut section = config_section.as_object().cloned().unwrap_or_default();
     section.remove("enabled");

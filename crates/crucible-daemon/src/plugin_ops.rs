@@ -14,7 +14,7 @@
 //! (idempotently), and the boot warns while the leftover file exists.
 
 use anyhow::{anyhow, Context, Result};
-use crucible_core::config::{plugin_name_from_url, PluginEntry, PluginsConfig};
+use crucible_core::config::{plugin_name_from_url, PluginEntry, PluginsConfig, PLUGIN_NAME_RULE};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -147,8 +147,7 @@ pub async fn install_at(
 ) -> Result<InstallOutcome> {
     let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
         anyhow!(
-            "cannot derive a plugin name from URL '{}': a plugin name is lowercase, \
-             holds only a-z, 0-9, '-' and '_', and does not end with '-' or '_'",
+            "cannot derive a plugin name from URL '{}': {PLUGIN_NAME_RULE}",
             entry.url
         )
     })?;

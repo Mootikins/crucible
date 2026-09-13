@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::config::plugin_name_from_url;
+use super::config::{plugin_name_from_url, PLUGIN_NAME_RULE};
 
 /// Where a plugin comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,12 +91,7 @@ impl SpecEntry {
         // pass as `x`. A relative path segment is neither a name nor a remote.
         let name = plugin_name_from_url(text)
             .filter(|_| !text.split('/').any(|seg| seg == "." || seg == ".."))
-            .ok_or_else(|| {
-                format!(
-                    "'{text}' does not name a plugin: a name starts with a lowercase letter, \
-                     holds only a-z, 0-9, '-' and '_', and does not end with '-' or '_'"
-                )
-            })?;
+            .ok_or_else(|| format!("'{text}' does not name a plugin: {PLUGIN_NAME_RULE}"))?;
         let source = if text.contains('/') || text.contains(':') {
             SpecSource::Git {
                 url: text.to_string(),

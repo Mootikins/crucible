@@ -157,9 +157,9 @@ pub async fn bootstrap_plugin_entry(
 
     let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
         anyhow::anyhow!(
-            "Plugin URL '{}' has no usable name segment: a plugin name is lowercase, \
-             holds only a-z, 0-9, '-' and '_', and does not end with '-' or '_'",
-            entry.url
+            "Plugin URL '{}' has no usable name segment: {}",
+            entry.url,
+            crucible_core::config::PLUGIN_NAME_RULE
         )
     })?;
     let dest = plugins_dir.join(&name);

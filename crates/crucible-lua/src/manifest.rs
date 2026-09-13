@@ -20,6 +20,7 @@
 //! }
 //! ```
 
+use crucible_core::config::{is_valid_plugin_name, PLUGIN_NAME_RULE};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -118,8 +119,7 @@ impl PluginManifest {
 
         if !is_valid_plugin_name(&name) {
             return Err(ManifestError::Validation(format!(
-                "Directory name '{}' is not a valid plugin name",
-                name
+                "Directory name '{name}' is not a valid plugin name: {PLUGIN_NAME_RULE}"
             )));
         }
 
@@ -142,7 +142,7 @@ impl PluginManifest {
 
         if !is_valid_plugin_name(&self.name) {
             return Err(ManifestError::Validation(format!(
-                "Invalid plugin name '{}': must be lowercase alphanumeric with hyphens",
+                "Invalid plugin name '{}': {PLUGIN_NAME_RULE}",
                 self.name
             )));
         }
@@ -161,26 +161,6 @@ impl PluginManifest {
 
         Ok(())
     }
-}
-
-fn is_valid_plugin_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 64 {
-        return false;
-    }
-
-    let mut chars = name.chars().peekable();
-
-    if !chars.peek().is_some_and(|c| c.is_ascii_lowercase()) {
-        return false;
-    }
-
-    for c in chars {
-        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
-            return false;
-        }
-    }
-
-    !name.ends_with('-') && !name.ends_with('_')
 }
 
 fn is_valid_version(version: &str) -> bool {

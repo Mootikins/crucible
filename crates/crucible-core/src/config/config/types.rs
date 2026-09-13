@@ -251,9 +251,15 @@ pub fn plugin_name_from_url(url: &str) -> Option<String> {
     is_valid_plugin_name(name).then(|| name.to_string())
 }
 
-/// The plugin name rule. `PluginManifest::validate` in crucible-lua applies
-/// the same one to a fragment's declared name.
-fn is_valid_plugin_name(name: &str) -> bool {
+/// The plugin name rule, in words. Every refusal of a name quotes this
+/// text, so the rule is stated once and read from one place.
+pub const PLUGIN_NAME_RULE: &str = "a plugin name starts with a lowercase letter, holds only \
+     a-z, 0-9, '-' and '_', is at most 64 bytes, and does not end with '-' or '_'";
+
+/// The plugin name rule. One function for the URL-derived name, the
+/// directory name and a fragment's declared name (`PluginManifest::validate`
+/// in crucible-lua calls this one).
+pub fn is_valid_plugin_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 64 {
         return false;
     }
