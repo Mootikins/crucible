@@ -122,6 +122,10 @@ export interface EditorContextValue {
   saveFile: (path: string) => Promise<void>;
   setActiveFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;
+  /** Move a buffer's base to the hash the daemon answered with. An anchored
+   * edit that landed changed the note on disk without a whole save, so the
+   * next save would be stale without this. */
+  setBaseHash: (path: string, hash: string) => void;
   isLoading: Accessor<boolean>;
   error: Accessor<string | null>;
   /** Re-issue the call that produced `error()`, or null when nothing failed.

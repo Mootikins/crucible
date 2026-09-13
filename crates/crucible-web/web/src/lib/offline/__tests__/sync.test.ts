@@ -4,6 +4,7 @@ const net = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
   guardedSave: vi.fn(),
+  patch: vi.fn(),
   list: vi.fn(async (_kiln: string) => [] as unknown[]),
   online: true,
 }));
@@ -11,6 +12,7 @@ vi.mock('@/lib/api', () => ({
   getFileWithHash: (p: string) => net.read(p),
   saveFileContent: (p: string, c: string) => net.save(p, c),
   saveFileIfUnchanged: (p: string, c: string, b: string) => net.guardedSave(p, c, b),
+  patchKilnFile: (p: string, e: unknown, b?: string) => net.patch(p, e, b),
   getFileContent: async () => '',
   listNotes: (k: string) => net.list(k),
   rawFileUrl: (p: string) => `/raw?${p}`,
@@ -24,9 +26,14 @@ vi.mock('@/lib/api', () => ({
 
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
+import { type OutboxEntry } from '@/lib/offline/outbox';
 import {
+  editNote,
   networkSink,
   networkSource,
+  onNoteConflicted,
+  onNoteLanded,
+  pendingCount,
   readNote,
   setOfflineStore,
   syncNow,
@@ -34,6 +41,8 @@ import {
   writeNote,
 } from '@/lib/offline/sync';
 
+// The store the facade holds during a test. `setOfflineStore` is the seam.
+let store = memoryStore();
 const KILN = '/kilns/notes';
 const PATH = `${KILN}/Note.md`;
 
@@ -42,7 +51,9 @@ beforeEach(() => {
   net.read.mockReset();
   net.save.mockReset();
   net.guardedSave.mockReset();
-  setOfflineStore(memoryStore());
+  net.patch.mockReset();
+  store = memoryStore();
+  setOfflineStore(store);
   keptActions.keep(KILN, 'notes');
 });
 
@@ -68,7 +79,7 @@ describe('readNote', () => {
   it('leaves a queued note alone when the network answers differently', async () => {
     net.read.mockResolvedValue({ content: 'mine', content_hash: 'base' });
     await readNote(PATH, KILN);
-    net.save.mockRejectedValue(new Error('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new Error('Failed to fetch'));
     await writeNote({ path: PATH, body: 'mine, edited', base: 'base', kiln: KILN });
 
     net.read.mockResolvedValue({ content: 'theirs', content_hash: 'other' });
@@ -81,14 +92,37 @@ describe('readNote', () => {
 
 describe('writeNote', () => {
   it('saves through the daemon when it answers', async () => {
-    net.save.mockResolvedValue(undefined);
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
     expect(await writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).toEqual({
       queued: false,
+      stale: false,
+      hash: 'h2',
     });
   });
 
+  // The daemon compares the base. A whole write that dropped it wrote blind,
+  // and the drain was the only path that let the daemon refuse a stale one.
+  it('sends the base it was edited from when the daemon answers', async () => {
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
+    const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'new', 'h1');
+    expect(net.save, 'the guarded route is the only save').not.toHaveBeenCalled();
+    expect(out).toEqual({ queued: false, stale: false, hash: 'h2' });
+  });
+
+  // The daemon answered, so this is not offline writing. The user is present
+  // to decide, so nothing is written and nothing is queued.
+  it('refuses a stale save online and queues nothing', async () => {
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
+    expect(out).toEqual({ queued: false, stale: true, current: 'h9' });
+    expect(await pendingCount()).toBe(0);
+    // A blind write after the refusal would pass the two lines above.
+    expect(net.save).not.toHaveBeenCalled();
+  });
+
   it('queues the writing when the daemon never answered', async () => {
-    net.save.mockRejectedValue(new Error('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new Error('Failed to fetch'));
     expect(await writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).toEqual({
       queued: true,
     });
@@ -98,20 +132,84 @@ describe('writeNote', () => {
   // would report a save that can never land and hide the reason.
   it('raises a refusal the daemon answered with, and queues nothing', async () => {
     const refused = Object.assign(new Error('Project files are read-only'), { status: 403 });
-    net.save.mockRejectedValue(refused);
+    net.guardedSave.mockRejectedValue(refused);
     await expect(writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).rejects.toThrow(
       'read-only',
     );
+    expect(await pendingCount()).toBe(0);
   });
 
   // Private mode: the save failed AND nothing can hold the writing. Telling a
   // user it is safe would be a lie; the buffer must stay dirty.
   it('raises the save failure when there is nowhere to queue it', async () => {
     setOfflineStore(null); // no store: idbStore() will reach for indexedDB
-    net.save.mockRejectedValue(new Error('disk is full')); // no status: never answered
+    net.guardedSave.mockRejectedValue(new Error('disk is full')); // no status: never answered
     await expect(writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).rejects.toThrow(
       'disk is full',
     );
+  });
+});
+
+/** One tick: the line the user ticked, as the editor had it. */
+const TICK = { expect: '- [ ] milk', replace: '- [x] milk' };
+
+describe('editNote', () => {
+  it('applies an anchored edit through the daemon when it answers', async () => {
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'h2' });
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
+    expect(net.patch).toHaveBeenCalledWith(PATH, [TICK], 'h1');
+    expect(out).toEqual({ queued: false, ok: true, hash: 'h2' });
+  });
+
+  // A refusal is an answer. The caller reverts the tick and names the
+  // reason; queueing it would replay a refusal forever.
+  it('returns the daemon refusal of an anchored edit and queues nothing', async () => {
+    net.patch.mockResolvedValue({
+      ok: false,
+      failed: [{ reason: 'no such line', index: 0 }],
+      current_hash: 'h9',
+      stale_base: true,
+    });
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
+    expect(out).toMatchObject({ queued: false, ok: false, stale_base: true, current_hash: 'h9' });
+    expect(await pendingCount()).toBe(0);
+  });
+
+  it('queues an anchored edit when the daemon never answered', async () => {
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
+    expect(out).toEqual({ queued: true });
+    const [entry] = await store.list<OutboxEntry>('outbox');
+    expect(entry.value).toMatchObject({ kind: 'anchored', edits: [TICK], base: 'h1', path: PATH });
+  });
+
+  // A whole write is queued for the note, and the ticked line is not in its
+  // body. Queueing the tick would send the daemon an edit this device already
+  // knows cannot apply. The answer has the refusal's shape, so the caller's
+  // revert path runs unchanged.
+  it('refuses an edit whose line is not in the queued whole write', async () => {
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: '- [ ] eggs\n', base: 'h0', kiln: KILN });
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN });
+    expect(out).toEqual({
+      queued: false,
+      ok: false,
+      failed: [{ reason: 'the line is not in the queued text', index: 0 }],
+      current_hash: '',
+      stale_base: false,
+    });
+    expect(net.patch, 'never sent: the daemon is not answering').toHaveBeenCalledTimes(1);
+    expect(await pendingCount()).toBe(1);
+  });
+
+  // The same rule as a whole write: a status means the daemon answered.
+  it('raises a refusal the daemon answered with, and queues nothing', async () => {
+    net.patch.mockRejectedValue(Object.assign(new Error('read-only'), { status: 403 }));
+    await expect(editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN })).rejects.toThrow(
+      'read-only',
+    );
+    expect(await pendingCount()).toBe(0);
   });
 });
 
@@ -161,7 +259,7 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     await warmIdentity();
 
     net.online = false;
-    net.save.mockRejectedValue(new TypeError('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
     expect(await writeNote({ path: PATH, body: 'OFFLINE EDIT', base: 'h0', kiln: KILN })).toEqual({
       queued: true,
     });
@@ -174,10 +272,196 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     expect(result.sent).toBe(1);
     expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT', 'h0');
   });
+
+  /** Queue one tick while the daemon is away. */
+  async function queueTickOffline() {
+    net.read.mockResolvedValue({ content: '- [ ] milk\n', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    expect(await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN })).toEqual({
+      queued: true,
+    });
+    net.online = true;
+  }
+
+  // The daemon places the anchor in the current text, and counts an edit
+  // already there as applied. A base would refuse every replay after any
+  // other change to the note.
+  it('replays a queued anchored entry against the current note with no base', async () => {
+    await queueTickOffline();
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'h1' });
+
+    const result = await syncNow();
+    expect(net.patch).toHaveBeenLastCalledWith(PATH, [TICK], undefined);
+    expect(result.sent).toBe(1);
+    expect(await pendingCount()).toBe(0);
+  });
+
+  it('reports an anchored refusal without writing a conflict copy', async () => {
+    await queueTickOffline();
+    net.patch.mockResolvedValue({
+      ok: false,
+      failed: [{ reason: 'no such line', index: 0 }],
+      current_hash: 'h9',
+      stale_base: false,
+    });
+
+    const result = await syncNow();
+    expect(result.refusedEdits).toEqual([PATH]);
+    expect(result.conflicted).toEqual([]);
+    expect(net.save, 'there is no body to copy').not.toHaveBeenCalled();
+    expect(await pendingCount(), 'the daemon answered; a replay would be refused again').toBe(0);
+  });
+});
+
+/**
+ * A landed write moves the daemon's hash. The editor holds the open buffers
+ * and this layer holds the drain, so the drain names each landed write to
+ * whoever listens. The editor moves the buffer's base from that.
+ */
+describe('onNoteLanded', () => {
+  it('calls a listener once per landed row with the base and the answered hash', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await editNote({ path: `${KILN}/B.md`, edits: [TICK], base: 'hb', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'hb2' });
+
+    const listener = vi.fn();
+    const stop = onNoteLanded(listener);
+    await syncNow();
+    stop();
+
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledWith({ path: PATH, base: 'h0', hash: 'h1' });
+    expect(listener).toHaveBeenCalledWith({ path: `${KILN}/B.md`, base: 'hb', hash: 'hb2' });
+  });
+
+  it('never calls a listener that unsubscribed', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+
+    const gone = vi.fn();
+    const kept = vi.fn();
+    onNoteLanded(gone)();
+    const stop = onNoteLanded(kept);
+    await syncNow();
+    stop();
+
+    expect(gone).not.toHaveBeenCalled();
+    expect(kept).toHaveBeenCalledTimes(1);
+  });
+
+  it('a listener that throws does not stop the others or the sync', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const throws = vi.fn(() => {
+      throw new Error('listener broke');
+    });
+    const after = vi.fn();
+    const stopThrows = onNoteLanded(throws);
+    const stopAfter = onNoteLanded(after);
+    const result = await syncNow();
+    stopThrows();
+    stopAfter();
+    quiet.mockRestore();
+
+    expect(result.sent).toBe(1);
+    expect(throws).toHaveBeenCalledTimes(1);
+    expect(after).toHaveBeenCalledWith({ path: PATH, base: 'h0', hash: 'h1' });
+  });
+
+  it('calls no listener when nothing landed', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockRejectedValue(answered(404));
+    net.save.mockResolvedValue(undefined);
+
+    const listener = vi.fn();
+    const stop = onNoteLanded(listener);
+    await syncNow();
+    stop();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
 });
 
 /** An error shaped like the API client's: a status means the daemon answered. */
 const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+
+/**
+ * A drained conflict clears the entry and writes a copy, and nothing else on
+ * screen says so. The editor holds the open buffers, so the drain names each
+ * conflicted write to whoever listens, with the base the entry was made from.
+ */
+describe('onNoteConflicted', () => {
+  it('calls a listener once per conflicted row with the base and the copy', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'mine', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockRejectedValue(answered(404)); // the copy's name is free
+    net.save.mockResolvedValue(undefined);
+
+    const listener = vi.fn();
+    const stop = onNoteConflicted(listener);
+    const result = await syncNow();
+    stop();
+
+    expect(result.conflicted).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      path: PATH,
+      base: 'h0',
+      copy: expect.stringMatching(/\/Note \(conflict, phone, \d{4}-\d{2}-\d{2}\)\.md$/),
+    });
+    expect(net.save).toHaveBeenCalledWith(listener.mock.calls[0][0].copy, 'mine');
+  });
+
+  it('never calls a listener that unsubscribed', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'mine', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockRejectedValue(answered(404));
+    net.save.mockResolvedValue(undefined);
+
+    const gone = vi.fn();
+    onNoteConflicted(gone)();
+    await syncNow();
+
+    expect(gone).not.toHaveBeenCalled();
+  });
+});
 
 /**
  * `networkSink.write` had no test at all, and it is the whole of the drain.
@@ -193,7 +477,8 @@ const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), 
  * note forbids. The compare now lives inside the route's write.
  */
 describe('networkSink lets the daemon refuse a stale write', () => {
-  const entry = {
+  const entry: OutboxEntry = {
+    kind: 'whole',
     path: PATH,
     body: 'mine',
     base: 'h0',
@@ -237,6 +522,25 @@ describe('networkSink lets the daemon refuse a stale write', () => {
     await expect(networkSink.write(entry)).rejects.toThrow();
   });
 
+  const anchored: OutboxEntry = { ...entry, kind: 'anchored', edits: [TICK] };
+
+  it('replays an anchored entry through the patch route, with no base', async () => {
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    expect(await networkSink.write(anchored)).toEqual({ ok: true, hash: 'h1' });
+    expect(net.patch).toHaveBeenCalledWith(PATH, [TICK], undefined);
+    expect(net.guardedSave, 'an anchored entry has no body to PUT').not.toHaveBeenCalled();
+  });
+
+  it('answers a refusal when the daemon cannot place the anchored edit', async () => {
+    net.patch.mockResolvedValue({
+      ok: false,
+      failed: [{ reason: 'no such line', index: 0 }],
+      current_hash: 'h9',
+      stale_base: false,
+    });
+    expect(await networkSink.write(anchored)).toEqual({ ok: false, refused: true, current: 'h9' });
+  });
+
   it('takes a free name when a conflict copy already exists for today', async () => {
     net.read
       .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // dated name taken
@@ -255,11 +559,39 @@ describe('a read prefers writing the daemon has not received', () => {
     await warmIdentity();
     await readNote(PATH, KILN); // the mirror now holds "original"
 
-    net.save.mockRejectedValue(new TypeError('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
     await writeNote({ path: PATH, body: 'MY OFFLINE EDIT', base: 'h0', kiln: KILN });
 
     net.read.mockRejectedValue(new TypeError('Failed to fetch'));
     const back = await readNote(PATH, KILN);
     expect(back.content, 'the queued edit outranks the mirror').toBe('MY OFFLINE EDIT');
+  });
+
+  // An anchored entry holds no body. The best text there is, is the mirror
+  // with the queued edit folded in: that is what the user will see once the
+  // drain lands it.
+  it('folds a queued anchored edit into the mirror text', async () => {
+    net.read.mockResolvedValue({ content: '- [ ] milk\n- [ ] eggs\n', content_hash: 'h0' });
+    await warmIdentity();
+    await readNote(PATH, KILN);
+
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN });
+
+    net.read.mockRejectedValue(new TypeError('Failed to fetch'));
+    const back = await readNote(PATH, KILN);
+    expect(back).toEqual({ content: '- [x] milk\n- [ ] eggs\n', content_hash: 'h0', fromMirror: true });
+  });
+
+  it('answers the mirror text when a queued edit no longer applies to it', async () => {
+    net.read.mockResolvedValue({ content: '- [ ] eggs\n', content_hash: 'h0' });
+    await warmIdentity();
+    await readNote(PATH, KILN);
+
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN });
+
+    net.read.mockRejectedValue(new TypeError('Failed to fetch'));
+    expect((await readNote(PATH, KILN)).content).toBe('- [ ] eggs\n');
   });
 });

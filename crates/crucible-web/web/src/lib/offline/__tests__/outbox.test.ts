@@ -6,6 +6,7 @@ import {
   isQueued,
   queueWrite,
   queuedCount,
+  readQueued,
   type OutboxEntry,
   type OutboxSink,
 } from '@/lib/offline/outbox';
@@ -25,8 +26,9 @@ beforeEach(() => {
   store = memoryStore();
 });
 
-const queue = (over: Partial<OutboxEntry> = {}) =>
+const queue = (over: Partial<Extract<OutboxEntry, { kind: 'whole' }>> = {}) =>
   queueWrite(store, {
+    kind: 'whole',
     path: PATH,
     body: 'edited on the phone',
     base: 'base-hash',
@@ -58,7 +60,134 @@ describe('queueWrite', () => {
     await queue({ base: 'second-base', body: 'edited again' });
     const entry = await store.get<OutboxEntry>('outbox', PATH);
     expect(entry?.base).toBe('first-base');
-    expect(entry?.body).toBe('edited again');
+    expect(entry?.kind === 'whole' && entry.body).toBe('edited again');
+  });
+
+  it('a queued anchored entry keeps its kind and edits', async () => {
+    const edits = [{ expect: '- [ ] milk', replace: '- [x] milk' }];
+    await queueWrite(store, { kind: 'anchored', path: PATH, edits, base: 'h0', kiln: KILN, daemon: DAEMON });
+    const held = await readQueued(store, PATH);
+    expect(held).toMatchObject({ kind: 'anchored', edits, base: 'h0' });
+  });
+
+  /**
+   * One entry per note. The first base detects a remote change on drain, so a
+   * second write to the same note FOLDS into the queued one instead of taking
+   * a second key with a base of its own.
+   */
+  describe('folds a second write to the same note', () => {
+    const tick = { expect: '- [ ] milk', replace: '- [x] milk' };
+    const anchored = (edits = [tick], base = 'h1') =>
+      queueWrite(store, { kind: 'anchored', path: PATH, edits, base, kiln: KILN, daemon: DAEMON });
+
+    it('folds an anchored edit into a queued whole write and keeps the base', async () => {
+      await queue({ body: '- [ ] milk\n- [ ] eggs\n', base: 'h0' });
+      const out = await anchored();
+      expect(out).toEqual({ ok: true, folded: true });
+      expect(await readQueued(store, PATH)).toMatchObject({
+        kind: 'whole',
+        body: '- [x] milk\n- [ ] eggs\n',
+        base: 'h0',
+      });
+      expect(await queuedCount(store)).toBe(1);
+    });
+
+    // The line is not in the queued text, so no fold is honest. The caller
+    // gets the index and reverts; nothing is queued for a daemon to refuse.
+    it('refuses an anchored edit whose line is not in the queued text', async () => {
+      await queue({ body: '- [ ] eggs\n', base: 'h0' });
+      const out = await anchored([tick]);
+      expect(out).toEqual({ ok: false, index: 0 });
+      expect(await readQueued(store, PATH)).toMatchObject({ kind: 'whole', body: '- [ ] eggs\n' });
+    });
+
+    // The daemon anchors every edit of a batch on the ORIGINAL text, and it
+    // counts an edit whose `replace` is already there as applied. A queued
+    // [tick, untick] replays as a tick. So the second edit composes into the
+    // first, and a round trip to the original text leaves nothing to send.
+    it('a tick then an untick queues no edit', async () => {
+      const untick = { expect: '- [x] milk', replace: '- [ ] milk' };
+      await anchored([tick], 'h0');
+      const out = await anchored([untick], 'h1');
+      expect(out).toEqual({ ok: true, folded: true });
+      expect(await readQueued(store, PATH)).toBeNull();
+      expect(await queuedCount(store)).toBe(0);
+    });
+
+    it('a tick then a different edit queues two', async () => {
+      const eggs = { expect: '- [ ] eggs', replace: '- [x] eggs' };
+      await anchored([tick], 'h0');
+      const out = await anchored([eggs], 'h1');
+      expect(out).toEqual({ ok: true, folded: true });
+      expect(await readQueued(store, PATH)).toMatchObject({
+        kind: 'anchored',
+        edits: [tick, eggs],
+        base: 'h0',
+      });
+    });
+
+    // The second edit expects the line the first one wrote. The daemon never
+    // sees that line, so the queue holds one edit from the original line to
+    // the last text.
+    it('a tick then a retick of the same line composes to one', async () => {
+      const retick = { expect: '- [x] milk', replace: '- [x] oat milk' };
+      await anchored([tick], 'h0');
+      const out = await anchored([retick], 'h1');
+      expect(out).toEqual({ ok: true, folded: true });
+      expect(await readQueued(store, PATH)).toMatchObject({
+        kind: 'anchored',
+        edits: [{ expect: '- [ ] milk', replace: '- [x] oat milk' }],
+        base: 'h0',
+      });
+    });
+
+    // An arriving edit with no occurrence names a line that is unique in the
+    // buffer. When exactly one held edit wrote that line, the held edit is the
+    // one it continues, whatever occurrence the held edit named.
+    it('an untick of a unique line composes with the held edit that wrote it', async () => {
+      const second = { expect: '- [ ] milk', replace: '- [x] milk', occurrence: 1 };
+      const untick = { expect: '- [x] milk', replace: '- [ ] milk' };
+      await anchored([second], 'h0');
+      await anchored([untick], 'h1');
+      expect(await readQueued(store, PATH)).toBeNull();
+    });
+
+    // The buffer the whole write came from already holds the tick.
+    it('a whole write replaces a queued anchored entry and keeps the base', async () => {
+      await anchored([tick], 'h0');
+      const out = await queue({ body: '- [x] milk\n', base: 'h1' });
+      expect(out).toEqual({ ok: true, folded: false });
+      expect(await readQueued(store, PATH)).toMatchObject({
+        kind: 'whole',
+        body: '- [x] milk\n',
+        base: 'h0',
+      });
+    });
+
+    it('a first write is queued, not folded', async () => {
+      expect(await anchored()).toEqual({ ok: true, folded: false });
+      expect(await queuedCount(store)).toBe(1);
+    });
+  });
+
+  // An entry a device queued before entries had a kind is still in its
+  // IndexedDB. It was a whole write, because that was the only kind.
+  it('an entry with no kind reads as a whole write', async () => {
+    await store.put('outbox', PATH, {
+      path: PATH,
+      body: 'from before',
+      base: 'h0',
+      kiln: KILN,
+      daemon: DAEMON,
+      queuedAt: 1,
+      sequence: 1,
+    });
+    const held = await readQueued(store, PATH);
+    expect(held).toMatchObject({ kind: 'whole', body: 'from before' });
+
+    const seen: OutboxEntry[] = [];
+    await drainOutbox(store, sink({ write: async (e) => { seen.push(e); return { ok: true, hash: 'h1' }; } }), DAEMON);
+    expect(seen[0]?.kind, 'the drain reads the same rule').toBe('whole');
   });
 });
 
@@ -72,6 +201,99 @@ describe('drainOutbox', () => {
     expect(await store.get<{ body: string; hash: string }>('mirror', PATH)).toMatchObject({
       body: 'edited on the phone',
       hash: 'new-hash',
+    });
+  });
+
+  // An anchored entry carries no body, so the drain has no text to mirror.
+  // The mirror keeps what it has until the next online read refreshes it.
+  it('leaves the mirror alone after an anchored entry is sent', async () => {
+    await store.put('mirror', PATH, { body: '- [ ] milk\n', hash: 'h0', kiln: KILN, mirroredAt: 1 });
+    await queueWrite(store, {
+      kind: 'anchored',
+      path: PATH,
+      edits: [{ expect: '- [ ] milk', replace: '- [x] milk' }],
+      base: 'h0',
+      kiln: KILN,
+      daemon: DAEMON,
+    });
+    const result = await drainOutbox(store, sink(), DAEMON);
+    expect(result.sent).toBe(1);
+    expect(await isQueued(store, PATH)).toBe(false);
+    expect(await store.get('mirror', PATH)).toMatchObject({ body: '- [ ] milk\n', hash: 'h0' });
+  });
+
+  // A refused anchored entry has no body to keep, so no conflict copy is
+  // written. The refusal is reported on its own, and the entry clears: the
+  // daemon answered, and a replay would be refused again.
+  it('reports a refused anchored entry and writes no conflict copy', async () => {
+    await queueWrite(store, {
+      kind: 'anchored',
+      path: PATH,
+      edits: [{ expect: '- [ ] milk', replace: '- [x] milk' }],
+      base: 'h0',
+      kiln: KILN,
+      daemon: DAEMON,
+    });
+    const writeConflictCopy = vi.fn(async () => 'copy');
+    const result = await drainOutbox(
+      store,
+      sink({ write: async () => ({ ok: false, refused: true, current: 'h9' }), writeConflictCopy }),
+      DAEMON,
+    );
+    expect(result.refusedEdits).toEqual([PATH]);
+    expect(result.conflicted).toEqual([]);
+    expect(writeConflictCopy).not.toHaveBeenCalled();
+    expect(await isQueued(store, PATH)).toBe(false);
+  });
+
+  /**
+   * A write that lands changes the daemon's hash. An open buffer whose base
+   * is the entry's base must learn the new hash, or its next save is refused
+   * as stale for the user's own tick. The drain names each landed write.
+   */
+  describe('names each write the daemon accepted', () => {
+    it('reports a landed whole write with its base and the answered hash', async () => {
+      await queue({ base: 'h0' });
+      const result = await drainOutbox(store, sink({ write: async () => ({ ok: true, hash: 'h1' }) }), DAEMON);
+      expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'h1' }]);
+    });
+
+    it('reports a landed anchored entry the same way', async () => {
+      await queueWrite(store, {
+        kind: 'anchored',
+        path: PATH,
+        edits: [{ expect: '- [ ] milk', replace: '- [x] milk' }],
+        base: 'h0',
+        kiln: KILN,
+        daemon: DAEMON,
+      });
+      const result = await drainOutbox(store, sink({ write: async () => ({ ok: true, hash: 'h1' }) }), DAEMON);
+      expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'h1' }]);
+    });
+
+    it('reports nothing for a refused, conflicted or failed entry', async () => {
+      await queue({ path: `${KILN}/A.md` });
+      await queue({ path: `${KILN}/B.md` });
+      await queueWrite(store, {
+        kind: 'anchored',
+        path: `${KILN}/C.md`,
+        edits: [{ expect: '- [ ] milk', replace: '- [x] milk' }],
+        base: 'h0',
+        kiln: KILN,
+        daemon: DAEMON,
+      });
+      const result = await drainOutbox(
+        store,
+        sink({
+          write: async (e) => {
+            if (e.path.endsWith('A.md')) return { ok: false, current: 'other' };
+            if (e.path.endsWith('B.md')) throw new Error('offline');
+            return { ok: false, refused: true, current: 'h9' };
+          },
+        }),
+        DAEMON,
+      );
+      expect(result.landed).toEqual([]);
     });
   });
 
@@ -90,7 +312,7 @@ describe('drainOutbox', () => {
       sink({ write: async () => ({ ok: false, current: 'other-hash' }) }),
       DAEMON,
     );
-    expect(result.conflicted).toEqual([`${PATH} (conflict)`]);
+    expect(result.conflicted).toEqual([{ path: PATH, base: 'base-hash', copy: `${PATH} (conflict)` }]);
     expect(await isQueued(store, PATH)).toBe(false);
   });
 
@@ -161,7 +383,7 @@ describe('conflictCopyPath', () => {
    */
   it('does not delete a write that arrived while the send was in flight', async () => {
     const store = memoryStore();
-    await queueWrite(store, { path: PATH, body: 'first', base: 'h0', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: PATH, body: 'first', base: 'h0', kiln: KILN, daemon: DAEMON });
 
     let release: () => void = () => {};
     const inFlight = new Promise<void>((r) => (release = r));
@@ -175,6 +397,7 @@ describe('conflictCopyPath', () => {
 
     const draining = drainOutbox(store, sink, DAEMON);
     await queueWrite(store, {
+      kind: 'whole',
       path: PATH,
       body: 'SECOND EDIT',
       base: 'h0',
@@ -185,14 +408,16 @@ describe('conflictCopyPath', () => {
     const result = await draining;
 
     const held = await store.get<OutboxEntry>('outbox', PATH);
-    expect(held?.body, 'the newer writing must survive the older send').toBe('SECOND EDIT');
+    expect(held?.kind === 'whole' && held.body, 'the newer writing must survive the older send').toBe(
+      'SECOND EDIT',
+    );
     expect(result.superseded).toBe(1);
     expect(result.sent).toBe(0);
   });
 
   it('still clears an entry nothing replaced', async () => {
     const store = memoryStore();
-    await queueWrite(store, { path: PATH, body: 'only', base: 'h0', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: PATH, body: 'only', base: 'h0', kiln: KILN, daemon: DAEMON });
     const result = await drainOutbox(store, okSink(), DAEMON);
 
     expect(await store.get('outbox', PATH)).toBeNull();
@@ -203,11 +428,11 @@ describe('conflictCopyPath', () => {
   // after one sorted before writes queued before it.
   it('orders by what is stored, not by a counter that a reload resets', async () => {
     const store = memoryStore();
-    await queueWrite(store, { path: `${KILN}/a.md`, body: 'a', base: '', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: `${KILN}/a.md`, body: 'a', base: '', kiln: KILN, daemon: DAEMON });
     const first = await store.get<OutboxEntry>('outbox', `${KILN}/a.md`);
 
     // A fresh page load cannot lower the next sequence below what is held.
-    await queueWrite(store, { path: `${KILN}/b.md`, body: 'b', base: '', kiln: KILN, daemon: DAEMON });
+    await queueWrite(store, { kind: 'whole', path: `${KILN}/b.md`, body: 'b', base: '', kiln: KILN, daemon: DAEMON });
     const second = await store.get<OutboxEntry>('outbox', `${KILN}/b.md`);
 
     expect(second!.sequence).toBeGreaterThan(first!.sequence);

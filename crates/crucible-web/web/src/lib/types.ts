@@ -872,11 +872,11 @@ export interface EditorFile {
   dirty: boolean;
   /** The disk hash this buffer was read at.
    *
-   * What an offline save is anchored on: the daemon compares it to the bytes
-   * on disk, so a note someone else changed meanwhile becomes a conflict copy
-   * rather than an overwrite. Absent for a buffer opened before the hash
-   * existed, which saves as it always did. */
-  baseHash?: string;
+   * What every save is anchored on: the daemon compares it to the bytes on
+   * disk, so a note someone else changed meanwhile is refused or becomes a
+   * conflict copy rather than an overwrite. Every open sets it from the
+   * read, and a landed write moves it. */
+  baseHash: string;
 }
 
 // =============================================================================

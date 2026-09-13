@@ -1,3 +1,5 @@
+import type { AnchoredEdit } from '@/lib/api';
+import { applyAnchoredEdits } from '@/lib/offline/fold';
 import type { OfflineStore } from '@/lib/offline/store';
 import { sameDaemon } from '@/lib/offline/identity';
 import type { MirroredNote } from '@/lib/offline/mirror';
@@ -18,30 +20,93 @@ import type { MirroredNote } from '@/lib/offline/mirror';
  * - An entry clears only after its write lands — including a conflict copy.
  */
 
-export interface OutboxEntry {
+/** What every queued write names: which note, from which text, for which daemon. */
+export type NoteWrite = {
   path: string;
-  /** The whole note as this device last had it. */
-  body: string;
   /** The disk hash it was edited FROM. Never updated once queued. */
   base: string;
   kiln: string;
   daemon: string;
+};
+
+/**
+ * What the text of a write is: a whole write carries the note's full body,
+ * and an anchored edit carries the lines to change.
+ */
+export type WriteKind =
+  | { kind: 'whole'; /** The whole note as this device last had it. */ body: string }
+  | { kind: 'anchored'; edits: AnchoredEdit[] };
+
+/** A note write as a caller queues it. The queue stamps the time and the order. */
+export type OutboxWrite = NoteWrite & WriteKind;
+
+export type OutboxEntry = OutboxWrite & {
   queuedAt: number;
   /** Ordering, so two writes to one note replay as they were made. */
   sequence: number;
+};
+
+/**
+ * What a device's IndexedDB can hold: an entry queued before entries had a
+ * kind has none. The store is the one place that reads it, so this type
+ * stays here.
+ */
+type StoredEntry = NoteWrite & { queuedAt: number; sequence: number } & (
+    | WriteKind
+    | { kind?: undefined; body: string }
+  );
+
+/**
+ * Read a stored entry as a current one.
+ *
+ * An entry with no kind was queued before an anchored edit could be, so it
+ * is a whole write. This is the ONE place that rule lives: every reader
+ * goes through it, so no reader repeats the default.
+ */
+function withKind(stored: StoredEntry): OutboxEntry {
+  return stored.kind === undefined ? { ...stored, kind: 'whole' } : stored;
 }
 
 /** What a drain needs from the network. Injected, so a test supplies it. */
 export interface OutboxSink {
-  /** Answers the note's hash on success, or null when the note moved on. */
-  write(entry: OutboxEntry): Promise<{ ok: true; hash: string } | { ok: false; current: string }>;
+  /**
+   * Answers the note's hash on success. `ok: false` with `current` says the
+   * note moved on under a whole write; with `refused` it says the daemon
+   * could not place an anchored edit.
+   */
+  write(entry: OutboxEntry): Promise<SinkAnswer>;
   /** Write the losing copy beside the note. Answers its path. */
   writeConflictCopy(entry: OutboxEntry): Promise<string>;
 }
 
+export type SinkAnswer =
+  | { ok: true; hash: string }
+  | { ok: false; current: string; refused?: true };
+
+/** A write the daemon accepted: which note, from which base, to which hash. */
+export type Landed = { path: string; base: string; hash: string };
+
+/**
+ * A whole write the daemon refused as stale: which note, from which base,
+ * and the conflict copy that now holds the text. The base names the buffer
+ * the write came from, so the editor can mark that buffer and no other.
+ */
+export type Conflicted = { path: string; base: string; copy: string };
+
 export interface DrainResult {
   sent: number;
-  conflicted: string[];
+  /**
+   * One row per entry the daemon accepted, whole or anchored, in the order
+   * they landed. A landed write moves the daemon's hash, so an open buffer
+   * whose base is the entry's base must move to the answered hash. Without
+   * this, the next save from that buffer is refused as stale for the user's
+   * own queued write. `sent` counts only what cleared; a superseded entry
+   * landed too, and its buffer moved the same way.
+   */
+  landed: Landed[];
+  conflicted: Conflicted[];
+  /** Anchored entries the daemon refused. There is no body to copy. */
+  refusedEdits: string[];
   /** Entries left alone because they belong to a different daemon. */
   foreign: number;
   failed: number;
@@ -61,23 +126,121 @@ async function nextSequence(store: OfflineStore): Promise<number> {
   return held.reduce((top, e) => Math.max(top, e.value.sequence ?? 0), 0) + 1;
 }
 
-/** Queue a note's new text. Replaces an earlier queued write to the same note. */
-export async function queueWrite(
-  store: OfflineStore,
-  entry: Omit<OutboxEntry, 'queuedAt' | 'sequence'>,
-): Promise<void> {
-  const existing = await store.get<OutboxEntry>('outbox', entry.path);
+/**
+ * What became of a queue. `folded` says the write joined a queued one instead
+ * of taking the key alone. A refusal names the edit whose line is not in the
+ * queued text; nothing is queued for it.
+ */
+export type QueueOutcome = { ok: true; folded: boolean } | { ok: false; index: number };
+
+/**
+ * Queue a note write. ONE entry per note.
+ *
+ * The first queued base is what lets the drain detect a remote change: a
+ * whole write with base `h0` is refused when the daemon holds `h1`. A second
+ * entry per note would break that. An anchored replay changes the daemon's
+ * hash, so a later whole write for the same note with base `h0` would then
+ * always be refused, or, if rebased, would overwrite the remote change. So a
+ * write that arrives for a queued note FOLDS into the queued entry:
+ *
+ * | queued   | arriving | result                                        |
+ * |----------|----------|-----------------------------------------------|
+ * | nothing  | any      | queue it                                      |
+ * | whole    | whole    | replace the body, keep the first base         |
+ * | whole    | anchored | apply the edits to the queued body, stay whole|
+ * | anchored | anchored | compose the edits, keep the base              |
+ * | anchored | whole    | the whole write replaces it, keep the base    |
+ *
+ * The last row is safe because the buffer the whole write came from already
+ * holds the anchored change.
+ *
+ * The anchored row COMPOSES, because the daemon resolves every edit of a
+ * batch against the ORIGINAL text, and counts an edit whose `replace` is
+ * already present as applied. An appended [tick, untick] replayed as a tick:
+ * the untick's `expect` was absent, its `replace` was present, and the daemon
+ * reported success with the user's last action lost. See `composeEdits`.
+ * A composition that leaves no edit clears the entry.
+ */
+export async function queueWrite(store: OfflineStore, entry: OutboxWrite): Promise<QueueOutcome> {
+  const existing = await store.get<StoredEntry>('outbox', entry.path);
+  const held = existing && withKind(existing);
+  const folded: Fold = held ? fold(held, entry) : { ok: true, write: entry, folded: false };
+  if (!folded.ok) return folded;
+  if (folded.write.kind === 'anchored' && folded.write.edits.length === 0) {
+    // The edits returned the note to the queued base. Nothing is owed.
+    await store.remove('outbox', entry.path);
+    return { ok: true, folded: folded.folded };
+  }
+
   const sequence = await nextSequence(store);
   await store.put<OutboxEntry>('outbox', entry.path, {
-    ...entry,
+    ...folded.write,
     // The base is what the user edited FROM, so the FIRST queue wins it.
-    base: existing?.base ?? entry.base,
+    base: held?.base ?? entry.base,
     queuedAt: Date.now(),
     // A REPLACEMENT takes a new sequence. A drain that is mid-flight over the
     // old one compares this before it deletes, and leaves the newer writing
     // alone. Reusing the sequence made the two indistinguishable.
     sequence,
   });
+  return { ok: true, folded: folded.folded };
+}
+
+type Fold = { ok: true; write: OutboxWrite; folded: boolean } | { ok: false; index: number };
+
+/** The fold table above, for a note that already has a queued entry. */
+function fold(held: OutboxEntry, arriving: OutboxWrite): Fold {
+  if (arriving.kind === 'whole') return { ok: true, write: arriving, folded: false };
+  if (held.kind === 'anchored') {
+    return { ok: true, write: { ...arriving, edits: composeEdits(held.edits, arriving.edits) }, folded: true };
+  }
+  const applied = applyAnchoredEdits(held.body, arriving.edits);
+  if (!applied.ok) return applied;
+  return { ok: true, write: { ...arriving, kind: 'whole', body: applied.text }, folded: true };
+}
+
+/**
+ * Compose arriving edits into held ones, so the daemon can anchor every edit
+ * of the batch on the original text.
+ *
+ * An arriving edit whose `expect` is a held edit's `replace` continues that
+ * edit: the held edit keeps its anchor and takes the arriving `replace`. When
+ * that makes `expect` equal `replace`, the line is back where the daemon has
+ * it, and the edit is dropped. An arriving edit that continues no held edit
+ * is appended.
+ *
+ * Which held edit an arriving one continues: the one with the same
+ * `occurrence`. An arriving edit with NO `occurrence` names a line that is
+ * unique in the buffer, so when exactly one held edit wrote that line, it is
+ * the one, whatever occurrence it named against the original.
+ */
+function composeEdits(held: AnchoredEdit[], arriving: AnchoredEdit[]): AnchoredEdit[] {
+  const out = [...held];
+  for (const edit of arriving) {
+    const at = continuedBy(out, edit);
+    if (at === -1) {
+      out.push(edit);
+      continue;
+    }
+    const first = out[at];
+    if (first.expect === edit.replace) {
+      out.splice(at, 1);
+      continue;
+    }
+    out[at] = {
+      expect: first.expect,
+      replace: edit.replace,
+      ...(first.occurrence === undefined ? {} : { occurrence: first.occurrence }),
+    };
+  }
+  return out;
+}
+
+/** The index of the held edit that `arriving` continues, or -1. */
+function continuedBy(held: AnchoredEdit[], arriving: AnchoredEdit): number {
+  const wrote = held.map((e, i) => (e.replace === arriving.expect ? i : -1)).filter((i) => i !== -1);
+  if (arriving.occurrence === undefined && wrote.length === 1) return wrote[0];
+  return wrote.find((i) => held[i].occurrence === arriving.occurrence) ?? -1;
 }
 
 /** Whether a path has writing the daemon has not received. */
@@ -86,8 +249,9 @@ export async function isQueued(store: OfflineStore, path: string): Promise<boole
 }
 
 /** The writing queued for a path, or null. What a read must prefer. */
-export function readQueued(store: OfflineStore, path: string): Promise<OutboxEntry | null> {
-  return store.get<OutboxEntry>('outbox', path);
+export async function readQueued(store: OfflineStore, path: string): Promise<OutboxEntry | null> {
+  const held = await store.get<StoredEntry>('outbox', path);
+  return held && withKind(held);
 }
 
 export async function queuedCount(store: OfflineStore): Promise<number> {
@@ -107,10 +271,18 @@ export async function drainOutbox(
   sink: OutboxSink,
   daemon: string,
 ): Promise<DrainResult> {
-  const entries = (await store.list<OutboxEntry>('outbox')).map((e) => e.value);
+  const entries = (await store.list<StoredEntry>('outbox')).map((e) => withKind(e.value));
   entries.sort((a, b) => a.sequence - b.sequence);
 
-  const result: DrainResult = { sent: 0, conflicted: [], foreign: 0, failed: 0, superseded: 0 };
+  const result: DrainResult = {
+    sent: 0,
+    landed: [],
+    conflicted: [],
+    refusedEdits: [],
+    foreign: 0,
+    failed: 0,
+    superseded: 0,
+  };
 
   for (const entry of entries) {
     if (!sameDaemon(entry.daemon, daemon)) {
@@ -120,19 +292,30 @@ export async function drainOutbox(
     try {
       const answer = await sink.write(entry);
       if (answer.ok) {
-        await store.put<MirroredNote>('mirror', entry.path, {
-          body: entry.body,
-          hash: answer.hash,
-          kiln: entry.kiln,
-          mirroredAt: Date.now(),
-        });
+        result.landed.push({ path: entry.path, base: entry.base, hash: answer.hash });
+        // Only a whole write knows the note's text. An anchored entry does
+        // not, so the mirror keeps what it has until the next read refreshes it.
+        if (entry.kind === 'whole') {
+          await store.put<MirroredNote>('mirror', entry.path, {
+            body: entry.body,
+            hash: answer.hash,
+            kiln: entry.kiln,
+            mirroredAt: Date.now(),
+          });
+        }
         if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
         else result.sent += 1;
+      } else if (entry.kind === 'anchored') {
+        // The daemon could not place the edit. There is no body to keep, so
+        // no conflict copy; and the daemon answered, so a replay would be
+        // refused again. The entry clears and the refusal is reported.
+        if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
+        result.refusedEdits.push(entry.path);
       } else {
         const copy = await sink.writeConflictCopy(entry);
         // Only now: if the copy failed, the writing is still queued.
         if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
-        result.conflicted.push(copy);
+        result.conflicted.push({ path: entry.path, base: entry.base, copy });
       }
     } catch {
       // Still offline, or the write failed. It stays queued.

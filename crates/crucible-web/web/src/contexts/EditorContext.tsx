@@ -3,13 +3,23 @@ import {
   useContext,
   ParentComponent,
   createSignal,
+  onCleanup,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
 import { listKilns } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
-import { readNote, writeNote } from '@/lib/offline/sync';
+import {
+  onNoteConflicted,
+  onNoteLanded,
+  readNote,
+  writeConflictCopy,
+  writeNote,
+  type Conflicted,
+  type Landed,
+} from '@/lib/offline/sync';
+import { notificationActions } from '@/stores/notificationStore';
 
 
 const EditorContext = createContext<EditorContextValue>();
@@ -137,6 +147,32 @@ export const EditorProvider: ParentComponent = (props) => {
     });
   };
 
+  /**
+   * Keep the text the daemon refused beside the note it refused to overwrite.
+   *
+   * The caller captures `refused` at the moment of the refusal, not at the
+   * moment the user chooses. Between the two, the user may close the note
+   * and open it again: the buffer then holds the server text, and a copy of
+   * that text is not "your version". Text typed after the refusal stays in
+   * the dirty buffer on screen, so the snapshot loses nothing, and the
+   * snapshot is what the refusal was about.
+   */
+  const keepAsConflictCopy = (path: string, refused: string) => {
+    writeConflictCopy(path, refused, new Date())
+      .then((copy) =>
+        notificationActions.addNotification(
+          'success',
+          `Your version was saved as ${copy.split('/').pop()}. Reload the note to continue from the current text.`,
+        ),
+      )
+      .catch((err: unknown) =>
+        notificationActions.addNotification(
+          'error',
+          err instanceof Error ? err.message : 'Failed to save the conflict copy',
+        ),
+      );
+  };
+
   const saveFile = async (path: string) => {
     const file = openFilesStore.find((f) => f.path === path);
     if (!file) return;
@@ -148,22 +184,42 @@ export const EditorProvider: ParentComponent = (props) => {
     try {
       // Save by absolute path (symmetric with the load) — the editor addresses
       // files by path, and PUT /api/kiln/file writes within the open kiln.
-      //
-      // A save the daemon cannot take is QUEUED, not lost: the buffer goes
-      // clean because the writing is safe in the outbox, and the app bar says
-      // how much is still owed.
-      const { queued } = await writeNote({
+      const outcome = await writeNote({
         path,
         body: file.content,
-        base: file.baseHash ?? '',
+        base: file.baseHash,
         kiln: await kilnOf(path),
       });
-      void queued;
+
+      if (!outcome.queued && outcome.stale) {
+        // The daemon answered: the note moved on since this buffer was read.
+        // The buffer keeps its text and stays dirty, and nothing is written.
+        // The user is present, so the copy is a choice and not an automatic
+        // write: they may prefer to reload and re-apply their change. The
+        // choice copies the text the daemon refused, whatever the buffer
+        // holds when the user clicks.
+        const refused = file.content;
+        notificationActions.addNotification(
+          'warning',
+          'The note changed elsewhere. Reload it to see the current text, or keep yours as a copy.',
+          { label: 'Save as conflict copy', run: () => keepAsConflictCopy(path, refused) },
+        );
+        return;
+      }
 
       setOpenFiles(
         produce((files) => {
           const f = files.find((x) => x.path === path);
-          if (f) f.dirty = false;
+          if (!f) return;
+          // A save the daemon cannot take is QUEUED, not lost: the buffer
+          // goes clean because the writing is safe in the outbox, and the
+          // app bar says how much is still owed. It keeps its base, which is
+          // the base the queued write carries.
+          f.dirty = false;
+          // The daemon now holds this text under the hash it answered with.
+          // Without this, the next save would carry the base of the FIRST
+          // read and the daemon would refuse it as stale, by construction.
+          if (!outcome.queued) f.baseHash = outcome.hash;
         })
       );
     } catch (err) {
@@ -197,6 +253,81 @@ export const EditorProvider: ParentComponent = (props) => {
     );
   };
 
+  const setBaseHash = (path: string, hash: string) => {
+    setOpenFiles(
+      produce((files) => {
+        const f = files.find((x) => x.path === path);
+        if (f) f.baseHash = hash;
+      })
+    );
+  };
+
+  /**
+   * A queued write landed while its note stays open.
+   *
+   * The daemon's hash moved, and the buffer's base did not, so the next save
+   * would be refused as stale for the user's own queued write. The buffer
+   * whose base the write was made from takes the answered hash. A buffer with
+   * another base was moved by something else, and the queued write did not
+   * come from it, so it is left alone.
+   *
+   * A clean buffer also takes the text the daemon holds now, so a landed
+   * tick shows. The read answers a text and a hash that belong together, so
+   * both are taken from it. A buffer the user typed into during the read
+   * keeps its text: their bytes exist nowhere else. A buffer whose base
+   * moved during the read was saved by a later write, and keeps that base.
+   */
+  const onLanded = (row: Landed) => {
+    const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
+    if (!file) return;
+    setBaseHash(row.path, row.hash);
+    if (file.dirty) return;
+    void kilnOf(row.path)
+      .then((kiln) => readNote(row.path, kiln))
+      .then(({ content, content_hash }) => {
+        setOpenFiles(
+          produce((files) => {
+            const f = files.find((x) => x.path === row.path);
+            // A base that moved during the read belongs to a later write.
+            if (!f || f.dirty || f.baseHash !== row.hash) return;
+            f.content = content;
+            f.baseHash = content_hash;
+          }),
+        );
+      })
+      .catch(() => {
+        // The base already moved. The text refreshes on the next open.
+      });
+  };
+  onCleanup(onNoteLanded(onLanded));
+
+  /**
+   * A queued whole write the drain turned into a conflict copy. The buffer
+   * whose base the write was made from went clean when the write queued, and
+   * its text now lives only in the copy: the note holds someone else's. The
+   * buffer goes dirty, keeps its text, and the notice names the copy. A
+   * buffer with another base was moved by a later write and is left alone;
+   * the drain's own notice covers it.
+   */
+  const onConflicted = (row: Conflicted): boolean => {
+    const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
+    if (!file) return false;
+    setOpenFiles(
+      produce((files) => {
+        const f = files.find((x) => x.path === row.path);
+        if (f) f.dirty = true;
+      }),
+    );
+    notificationActions.addNotification(
+      'warning',
+      `The note changed elsewhere while you were offline. Your version was saved as ${row.copy
+        .split('/')
+        .pop()}. Reload the note to continue from the current text.`,
+    );
+    return true;
+  };
+  onCleanup(onNoteConflicted(onConflicted));
+
   const value: EditorContextValue = {
     openFiles: () => openFilesStore,
     activeFile,
@@ -205,6 +336,7 @@ export const EditorProvider: ParentComponent = (props) => {
     saveFile,
     setActiveFile,
     updateFileContent,
+    setBaseHash,
     isLoading,
     error,
     retryFailedOperation,
@@ -235,6 +367,7 @@ const fallbackEditorContext: EditorContextValue = {
   saveFile: noopAsync,
   setActiveFile: () => {},
   updateFileContent: () => {},
+  setBaseHash: () => {},
   isLoading: () => false,
   error: () => null,
   retryFailedOperation: () => null,

@@ -1,7 +1,6 @@
 import { Component, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { Cloud } from '@/lib/icons';
-import { queuedCount } from '@/lib/offline/outbox';
-import { isOnline, offlineStore, syncNow, warmIdentity } from '@/lib/offline/sync';
+import { isOnline, pendingCount, syncNow, warmIdentity } from '@/lib/offline/sync';
 
 /**
  * Whether this device can reach the daemon, and how much writing it owes it.
@@ -16,7 +15,7 @@ export const OfflineBadge: Component = () => {
 
   const refresh = async () => {
     try {
-      setQueued(await queuedCount(offlineStore()));
+      setQueued(await pendingCount());
     } catch {
       /* no store yet: nothing is queued */
     }

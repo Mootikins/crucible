@@ -5,7 +5,9 @@ use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{
+    build_mock_state, build_test_app, start_mock_daemon, start_mock_daemon_with_kilns,
+};
 
 #[tokio::test]
 async fn list_kilns_returns_200_with_array() {
@@ -419,4 +421,99 @@ async fn backlinks_missing_note_file_degrades_to_empty_unlinked() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["linked"].as_array().unwrap().len(), 1);
     assert_eq!(json["unlinked"].as_array().unwrap().len(), 0);
+}
+
+/// `PATCH /api/kiln/file` against a real file inside a kiln the mock daemon
+/// lists. Answers the status and the JSON body.
+async fn patch_file(app: axum::Router, body: Value) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/kiln/file")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+/// A kiln directory that holds one note. Answers the directory, the note's
+/// path, and the hash of the text on disk.
+async fn kiln_with_note(text: &str) -> (tempfile::TempDir, std::path::PathBuf, String) {
+    let kiln = tempfile::tempdir().unwrap();
+    let note = kiln.path().join("Note.md");
+    tokio::fs::write(&note, text).await.unwrap();
+    let hash = crucible_core::note_edit::disk_hash(text);
+    (kiln, note, hash)
+}
+
+/// The base a caller names must still be the text on disk, even when every
+/// anchor applies. Otherwise the caller adopts the answered hash over a
+/// buffer that lacks another writer's change, and its next whole save
+/// removes that change without a refusal.
+#[tokio::test]
+async fn a_patch_with_a_stale_base_is_refused_even_when_its_anchors_apply() {
+    let before = "- [ ] task\n\nagent paragraph\n";
+    let (kiln, note, current_hash) = kiln_with_note(before).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = patch_file(
+        app,
+        json!({
+            "path": note,
+            "base_hash": "0".repeat(64),
+            "edits": [{ "expect": "- [ ] task", "replace": "- [x] task" }],
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["ok"], false);
+    assert_eq!(body["stale_base"], true);
+    assert_eq!(body["failed"], json!([]));
+    assert_eq!(body["current_hash"], current_hash);
+    assert_eq!(
+        tokio::fs::read_to_string(&note).await.unwrap(),
+        before,
+        "the file is untouched"
+    );
+}
+
+/// The outbox replay sends no base, by design: the edit anchors on the
+/// note's current text, whatever it is now.
+#[tokio::test]
+async fn a_patch_with_no_base_applies_against_the_current_text() {
+    let before = "- [ ] task\n\nagent paragraph\n";
+    let after = "- [x] task\n\nagent paragraph\n";
+    let (kiln, note, _) = kiln_with_note(before).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = patch_file(
+        app,
+        json!({
+            "path": note,
+            "edits": [{ "expect": "- [ ] task", "replace": "- [x] task" }],
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ok"], true);
+    assert_eq!(
+        body["content_hash"],
+        crucible_core::note_edit::disk_hash(after)
+    );
+    assert_eq!(tokio::fs::read_to_string(&note).await.unwrap(), after);
 }

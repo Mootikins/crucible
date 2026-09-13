@@ -53,7 +53,7 @@ interface FileViewerPanelProps {
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
-  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, saveFile } = useEditorSafe();
+  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, setBaseHash, saveFile } = useEditorSafe();
   const { settings } = useSettingsSafe();
 
   // Live CodeMirror view (source/live modes; undefined in reading mode) for
@@ -485,6 +485,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   onChange={(content) => updateFileContent(file().path, content)}
                   onSave={handleSave}
                   kiln={owningKiln(file().path)}
+                  baseHash={file().baseHash}
+                  onBaseChange={(hash) => setBaseHash(file().path, hash)}
                   onFollowLink={(target) =>
                     // The file's own kiln, or none. Falling back to the active
                     // kiln let a project file — which belongs to no kiln —

@@ -2,9 +2,13 @@ import {
   getFileWithHash,
   saveFileIfUnchanged,
   listNotes,
+  patchKilnFile,
   rawFileUrl,
   saveFileContent,
+  type AnchoredEdit,
+  type PatchRefused,
 } from '@/lib/api';
+import { applyAnchoredEdits } from '@/lib/offline/fold';
 import { daemonIdentity } from '@/lib/offline/identity';
 import { keptMode } from '@/lib/offline/kept';
 import { notificationActions } from '@/stores/notificationStore';
@@ -14,8 +18,14 @@ import {
   drainOutbox,
   isQueued,
   queueWrite,
+  queuedCount,
   readQueued,
+  type Conflicted,
+  type Landed,
+  type NoteWrite,
   type OutboxSink,
+  type QueueOutcome,
+  type WriteKind,
 } from '@/lib/offline/outbox';
 import { idbStore, type OfflineStore } from '@/lib/offline/store';
 
@@ -28,8 +38,13 @@ import { idbStore, type OfflineStore } from '@/lib/offline/store';
  */
 
 let store: OfflineStore | null = null;
-/** The shipped store. Created on first use, so importing costs nothing. */
-export function offlineStore(): OfflineStore {
+/**
+ * The shipped store. Created on first use, so importing costs nothing.
+ *
+ * Private to this layer. A component that held the store assembled the
+ * outbox on its own, and the facade below is the one door to it.
+ */
+function offlineStore(): OfflineStore {
   return (store ??= idbStore());
 }
 
@@ -73,6 +88,16 @@ function isMissing(error: unknown): boolean {
 
 export const networkSink: OutboxSink = {
   write: async (entry) => {
+    if (entry.kind === 'anchored') {
+      // No base on replay. The daemon applies the anchors to the current
+      // text, and an edit already there counts as applied (WS-202,
+      // `note_edit.rs`). A base would refuse every replay after any other
+      // change to the note, and an anchored edit that finds its line is
+      // safe by construction: it changes that line and nothing else.
+      const answer = await patchKilnFile(entry.path, entry.edits, undefined);
+      if (!answer.ok) return { ok: false, refused: true, current: answer.current_hash };
+      return { ok: true, hash: answer.content_hash };
+    }
     // The DAEMON compares the hash, inside its own write. This used to read
     // the note, compare in the browser and then PUT — three round trips with
     // a window in the middle, on the machine with the stale view of the disk.
@@ -89,15 +114,30 @@ export const networkSink: OutboxSink = {
     // a hash that described someone else's bytes beside this body.
     return { ok: true, hash: answer.content_hash };
   },
-  writeConflictCopy: async (entry) => {
-    // A free name, not merely a dated one. The stamp is a DATE, so a second
-    // conflict on the same note on the same day produced the same path and
-    // the PUT destroyed the first copy — the only place that writing existed.
-    const copy = await freeConflictPath(entry.path, new Date(entry.queuedAt));
-    await saveFileContent(copy, entry.body);
-    return copy;
+  writeConflictCopy: (entry) => {
+    // The drain reports a refused anchored entry instead of calling this: an
+    // edit has no body to keep. A throw here keeps the entry queued.
+    if (entry.kind === 'anchored') throw new Error(`${entry.path}: an anchored edit has no body to copy`);
+    return writeConflictCopy(entry.path, entry.body, new Date(entry.queuedAt));
   },
 };
+
+/**
+ * Keep a stale write's text beside the note. Answers the path it took.
+ *
+ * The drain calls this for a queued write the daemon refused. The editor
+ * calls it when the user chooses to keep a refused save. One function, so
+ * the editor does not reach for the API to write a copy on its own.
+ *
+ * A free name, not merely a dated one. The stamp is a DATE, so a second
+ * conflict on the same note on the same day produced the same path and the
+ * PUT destroyed the first copy — the only place that writing existed.
+ */
+export async function writeConflictCopy(path: string, body: string, when: Date): Promise<string> {
+  const copy = await freeConflictPath(path, when);
+  await saveFileContent(copy, body);
+  return copy;
+}
 
 /** The first conflict-copy path nothing occupies. */
 async function freeConflictPath(path: string, when: Date): Promise<string> {
@@ -198,12 +238,23 @@ export async function readNote(
     // nowhere else. Reading past it showed the stale body after an offline
     // save — and because the buffer had already gone clean, editing from
     // there replaced the queued writing with an edit of the older text.
+    // An anchored entry holds no body. The best text there is, is the mirror
+    // with the queued edits folded in: what the user will see once the drain
+    // lands them. When they no longer apply, the mirror stands as it is.
+    // The preview's hash is the queued base, and its body is the frozen
+    // mirror, so the two can differ by one hash when the mirror predates the
+    // base.
     const queued = await readQueued(db, path);
-    if (queued) {
+    if (queued && queued.kind === 'whole') {
       return { content: queued.body, content_hash: queued.base, fromMirror: true };
     }
     const mirrored = await readMirrored(db, path);
     if (mirrored) {
+      if (queued) {
+        const folded = applyAnchoredEdits(mirrored.body, queued.edits);
+        const content = folded.ok ? folded.text : mirrored.body;
+        return { content, content_hash: queued.base, fromMirror: true };
+      }
       return { content: mirrored.body, content_hash: mirrored.hash, fromMirror: true };
     }
   } catch {
@@ -215,53 +266,214 @@ export async function readNote(
   throw failure ?? new Error(`${path} is not available offline`);
 }
 
-/** Save a note: to the daemon when it answers, to the outbox when it does not. */
+/**
+ * What became of a whole write.
+ *
+ * `stale` is an answer, not a failure: the daemon compared the base and the
+ * note moved on. `queued` means the daemon never answered, so the outbox holds
+ * the writing until it does.
+ */
+export type WriteOutcome =
+  | { queued: false; stale: false; hash: string }
+  | { queued: false; stale: true; current: string }
+  | { queued: true };
+
+/**
+ * Write a note: to the daemon when it answers, to the outbox when it does not.
+ *
+ * The write carries the base it was edited from, and the daemon compares it.
+ * A stale base is REFUSED, not queued: the daemon answered, so this is not
+ * offline writing, and the user is present to decide what happens to their
+ * text. The drain queues nothing either; it writes a conflict copy, because
+ * there is nobody at the keyboard to ask.
+ */
 export async function writeNote(opts: {
   path: string;
   body: string;
   base: string;
   kiln: string | null;
-}): Promise<{ queued: boolean }> {
+}): Promise<WriteOutcome> {
+  return sendOrQueue(
+    async () => {
+      const answer = await saveFileIfUnchanged(opts.path, opts.body, opts.base);
+      if (!answer.ok) return { queued: false, stale: true, current: answer.current_hash };
+      return { queued: false, stale: false, hash: answer.content_hash };
+    },
+    { kind: 'whole', path: opts.path, body: opts.body, base: opts.base, kiln: opts.kiln ?? '' },
+    () => {
+      throw new Error('a whole write replaces a queued write; it is never refused');
+    },
+  );
+}
+
+/**
+ * What became of an anchored edit.
+ *
+ * A refusal is the daemon's answer, with the edit it could not place and the
+ * hash the note has now. `queued` means the daemon never answered.
+ */
+export type EditOutcome =
+  | { queued: false; ok: true; hash: string }
+  | ({ queued: false } & PatchRefused)
+  | { queued: true };
+
+/**
+ * Change a note's lines: through the daemon when it answers, through the
+ * outbox when it does not.
+ *
+ * The edit carries the base it was made from, so a moved note is refused
+ * whole. A refusal is returned, not queued, for the same reason a stale
+ * whole write is: the daemon answered, and the user is present to decide.
+ *
+ * Offline, the edit folds into the write queued for the note. When the line
+ * is not in the queued text, the fold is refused and the answer takes the
+ * daemon refusal's shape with an empty `current_hash`, so the caller's one
+ * revert path runs. Nothing is queued for it.
+ */
+export async function editNote(opts: {
+  path: string;
+  edits: AnchoredEdit[];
+  base: string;
+  kiln: string | null;
+}): Promise<EditOutcome> {
+  return sendOrQueue(
+    async () => {
+      const answer = await patchKilnFile(opts.path, opts.edits, opts.base);
+      if (!answer.ok) return { queued: false, ...answer };
+      return { queued: false, ok: true, hash: answer.content_hash };
+    },
+    { kind: 'anchored', path: opts.path, edits: opts.edits, base: opts.base, kiln: opts.kiln ?? '' },
+    (index) => ({
+      queued: false,
+      ok: false,
+      failed: [{ reason: 'the line is not in the queued text', index }],
+      current_hash: '',
+      stale_base: false,
+    }),
+  );
+}
+
+/**
+ * The one rule for a note write that may not reach the daemon.
+ *
+ * Online, `send` runs and its answer is the outcome. A throw the daemon never
+ * answered queues `write` instead. A throw the daemon answered with is
+ * raised: that is not offline writing, and queueing it would report a save
+ * that can never land. Both `writeNote` and `editNote` go through here, so
+ * the two kinds cannot drift apart on when they queue.
+ *
+ * The outbox holds one entry per note and folds a second write into it. A
+ * fold it refuses is an answer, and `refusedFold` gives it the caller's shape.
+ */
+async function sendOrQueue<T>(
+  send: () => Promise<T>,
+  write: Omit<NoteWrite, 'daemon'> & WriteKind,
+  refusedFold: (index: number) => T,
+): Promise<T | { queued: true }> {
   let failure: unknown = null;
   if (isOnline()) {
     try {
-      await saveFileContent(opts.path, opts.body);
-      return { queued: false };
+      return await send();
     } catch (error) {
-      // The daemon answered and refused. That is not offline writing, and
-      // queueing it would report a save that can never land.
       if (!neverAnswered(error)) throw error;
       failure = error;
     }
   }
+  let queued: QueueOutcome;
   try {
-    await queueWrite(offlineStore(), {
-      path: opts.path,
-      body: opts.body,
-      base: opts.base,
-      kiln: opts.kiln ?? '',
-      daemon: await daemonIdentity(offlineStore()),
-    });
-    return { queued: true };
+    queued = await queueWrite(offlineStore(), { ...write, daemon: await daemonIdentity(offlineStore()) });
   } catch (queueError) {
-    // No store on this browser — private mode, or no IndexedDB. The save
-    // failed and nothing can hold the writing, so the caller must see the
-    // SAVE's failure and keep the buffer dirty. Swallowing it here would tell
-    // a user their note was safe when it is in neither place.
+    // No store on this browser — private mode, or no IndexedDB. The write
+    // failed and nothing can hold it, so the caller must see the SEND's
+    // failure and keep the buffer dirty. Swallowing it here would tell a user
+    // their note was safe when it is in neither place.
     throw failure ?? queueError;
   }
+  return queued.ok ? { queued: true } : refusedFold(queued.index);
+}
+
+/** How many writes this device still owes the daemon. */
+export async function pendingCount(): Promise<number> {
+  return queuedCount(offlineStore());
+}
+
+export type { Conflicted, Landed };
+
+/**
+ * Who wants to know that a queued write landed.
+ *
+ * The editor holds the open buffers, and this layer holds the drain. A
+ * landed write moves the daemon's hash, so a buffer that was edited from the
+ * entry's base must move to the answered hash. Otherwise its next save is
+ * refused as stale for the user's own queued write. The set lives here, in
+ * the layer that drains, so the editor never learns the outbox's shape.
+ */
+const landedListeners = new Set<(row: Landed) => void>();
+
+/** Hear each write the drain lands. Answers the function that stops it. */
+export function onNoteLanded(listener: (row: Landed) => void): () => void {
+  landedListeners.add(listener);
+  return () => {
+    landedListeners.delete(listener);
+  };
+}
+
+/**
+ * Who wants to know that a queued whole write was refused, and where its
+ * text went.
+ *
+ * The write went clean at queue time. The drain wrote a conflict copy and
+ * cleared the entry, so an open buffer made from the entry's base shows text
+ * the note does not hold, and looks clean. A listener that answers `true`
+ * told the user itself, with the buffer in view; the drain then says nothing
+ * more about that row.
+ */
+const conflictedListeners = new Set<(row: Conflicted) => boolean | void>();
+
+/** Hear each whole write the drain turned into a conflict copy. */
+export function onNoteConflicted(listener: (row: Conflicted) => boolean | void): () => void {
+  conflictedListeners.add(listener);
+  return () => {
+    conflictedListeners.delete(listener);
+  };
 }
 
 /** Send everything queued for the daemon now answering. */
 export async function syncNow() {
   const result = await drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
+  for (const row of result.landed) {
+    for (const listener of landedListeners) {
+      // One listener's throw must not stop the others, or reject the sync.
+      try {
+        listener(row);
+      } catch (error) {
+        console.error('a landed-write listener threw', error);
+      }
+    }
+  }
   // A conflict copy is the one outcome a user MUST be told about: their text
   // did not land on the note they wrote it in, and nothing else on screen
   // says so — the queue count drops either way. Every caller discarded this.
-  for (const copy of result.conflicted) {
+  for (const row of result.conflicted) {
+    let told = false;
+    for (const listener of conflictedListeners) {
+      try {
+        if (listener(row) === true) told = true;
+      } catch (error) {
+        console.error('a conflicted-write listener threw', error);
+      }
+    }
+    if (told) continue;
     notificationActions.addNotification(
       'warning',
-      `The note changed elsewhere. Your version was saved as ${copy.split('/').pop()}`,
+      `The note changed elsewhere. Your version was saved as ${row.copy.split('/').pop()}`,
+    );
+  }
+  // A refused anchored edit leaves no copy behind, so this is the only trace.
+  for (const path of result.refusedEdits) {
+    notificationActions.addNotification(
+      'warning',
+      `A queued edit to ${path.split('/').pop()} was not applied. The line it changed has moved.`,
     );
   }
   if (result.foreign > 0) {

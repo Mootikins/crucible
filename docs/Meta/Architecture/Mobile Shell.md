@@ -924,6 +924,14 @@ one machine with a stale view of the disk.
 > Closing it properly means `base_hash` on all three routes, with the compare
 > inside the daemon's read-modify-write. `PATCH /api/kiln/file` already does
 > this correctly for anchored edits and is the model to copy.
+>
+> **Closed, 2026-09-13.** The routes take `base_hash`, the browser compare is
+> gone, and every note write from the browser goes through one door,
+> `lib/offline/sync.ts`: `writeNote` for a whole write and `editNote` for an
+> anchored edit. Both send the base, and both routes gate on it: a PUT or a
+> PATCH with a base is refused when the note moved on, even when every anchor
+> applies; the outbox replay sends no base. Both queue in the outbox only when
+> the daemon never answered.
 
 ### The stores
 
@@ -942,7 +950,19 @@ index    kiln → { NoteEntry[], indexedAt, kept }      every kiln's note list
 
 ### The conflict rule
 
-On a 409 the app writes a **conflict copy** beside the note:
+The daemon refuses a stale base with a 409. Who answers the refusal depends on
+who is present:
+
+- **Online, the user is at the keyboard.** The save is refused, nothing is
+  written, and the buffer stays dirty with the user's text. The toast offers
+  one action, **Save as conflict copy**. The user chooses it, or reloads the
+  note and applies the change again.
+- **From the outbox, nobody is.** The drain writes the **conflict copy** on
+  its own, and says so. The buffer the write was made from went clean when
+  the write queued, and now shows text only the copy holds; the drain names
+  the row to the editor (`onNoteConflicted`), which marks that buffer dirty
+  and tells the user to reload. An anchored edit has no body to copy, so a
+  refused replay is reported and leaves nothing behind.
 
 ```
 Release Notes.md
@@ -950,6 +970,14 @@ Release Notes (conflict, phone, 2026-09-09).md
 ```
 
 The user then merges by hand. Obsidian resolves a sync conflict the same way.
+
+**One queued write per note.** The first queued base is what lets the drain
+see a remote change, so a second write to a queued note folds into the entry
+instead of taking a second one: a tick folds into a queued whole write's text,
+two ticks compose into one edit set, and a whole write replaces a queued tick.
+The daemon anchors a replayed edit on the note's current text, with no base.
+A write that lands from the outbox moves the open buffer's base, so the
+user's next save is not refused for their own queued write.
 
 **Clear the outbox entry only after the conflict copy lands.** The copy is a
 second network write, and if it fails after the entry is cleared, the user's
@@ -968,7 +996,7 @@ An offline kiln is a note store. It is not a Crucible.
 | Offline | Reason |
 |---------|--------|
 | Read a note of a kept kiln | The mirror holds its body. |
-| Edit a note of a kept kiln | The outbox holds the write. |
+| Edit a note of a kept kiln | The outbox holds the write, one entry per note. A later write folds into it. |
 | Browse the WHOLE kiln tree | The index holds every note, body or not. |
 | **No note of a kiln that is not kept** | Its body was never fetched. The tree says so. |
 | **No agent turn** | The model call, the tools and the turn loop are daemon-side. |

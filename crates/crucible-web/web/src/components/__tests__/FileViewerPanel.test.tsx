@@ -10,9 +10,10 @@ import { registerPanels } from '@/lib/register-panels';
 // each describe's beforeEach stages the value its tests need.
 const saveFile = vi.fn(async () => {});
 const openFileSpy = vi.fn(async () => {});
+const setBaseHash = vi.fn();
 const FILE_PATH = '/kiln/notes/from-tui.md';
 
-let openFilesValue: { path: string; content: string; dirty: boolean }[] = [];
+let openFilesValue: { path: string; content: string; dirty: boolean; baseHash: string }[] = [];
 let activeFileValue: string | null = null;
 let autosaveSeconds = 0;
 let vimMode = true;
@@ -48,6 +49,7 @@ vi.mock('@/contexts/EditorContext', () => ({
     saveFile,
     setActiveFile: vi.fn(),
     updateFileContent: vi.fn(),
+    setBaseHash,
     isLoading: () => false,
     error: () => null,
   }),
@@ -228,7 +230,7 @@ describe('FileViewerPanel — rendering', () => {
 
 describe('FileViewerPanel — save UX', () => {
   beforeEach(() => {
-    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: true }];
+    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: true, baseHash: 'h1' }];
     activeFileValue = FILE_PATH;
     // Each test sets its own value, but pinning the default keeps test ordering robust.
     autosaveSeconds = 0;
@@ -259,7 +261,7 @@ describe('FileViewerPanel — save UX', () => {
   it('does not autosave a file outside every kiln', () => {
     autosaveSeconds = 2;
     const projectFile = '/work/app/src/main.rs';
-    openFilesValue = [{ path: projectFile, content: 'fn main() {}', dirty: true }];
+    openFilesValue = [{ path: projectFile, content: 'fn main() {}', dirty: true, baseHash: 'h1' }];
     activeFileValue = projectFile;
     render(() => <FileViewerPanel filePath={projectFile} />);
     vi.advanceTimersByTime(10_000);
@@ -277,7 +279,7 @@ describe('FileViewerPanel — save UX', () => {
 // Vim is the desktop default and wrong on a phone: no Escape, no modifier row.
 describe('FileViewerPanel — vim mode per shell', () => {
   beforeEach(() => {
-    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false }];
+    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false, baseHash: 'h1' }];
     activeFileValue = FILE_PATH;
     vimMode = true;
     vimModeCompact = false;
@@ -302,5 +304,23 @@ describe('FileViewerPanel — vim mode per shell', () => {
     device.compact = false;
     render(() => <FileViewerPanel filePath={FILE_PATH} />);
     expect(editorProps.last?.mode).toBeUndefined();
+  });
+});
+
+// The editor compares a save against the base it was opened from. The panel
+// gives it that base, and carries a moved base back to the context, so a
+// second save after a conflict copy is not refused as stale.
+describe('FileViewerPanel — the base hash reaches the editor and comes back', () => {
+  beforeEach(() => {
+    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false, baseHash: 'h1' }];
+    activeFileValue = FILE_PATH;
+    setBaseHash.mockClear();
+  });
+
+  it('hands the editor the open file base, and stores the base it reports', () => {
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+    expect(editorProps.last?.baseHash).toBe('h1');
+    (editorProps.last?.onBaseChange as (hash: string) => void)('h2');
+    expect(setBaseHash).toHaveBeenCalledWith(FILE_PATH, 'h2');
   });
 });
