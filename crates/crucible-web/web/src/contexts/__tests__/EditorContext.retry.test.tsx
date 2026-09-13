@@ -22,6 +22,13 @@ vi.mock('@/lib/api', () => ({
   }),
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: (p: string, c: string) => saveFileContent(p, c),
+  // The whole write now sends its base through the guarded route. The spy
+  // still records the body that reached the daemon, so the assertions below
+  // read one place; the base is not what these tests are about.
+  saveFileIfUnchanged: async (p: string, c: string, _base: string) => {
+    await saveFileContent(p, c);
+    return { ok: true, content_hash: 'written' };
+  },
   getNote: () => getNote(),
   listKilns: async () => [{ path: '/home/user/kiln' }],
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,

@@ -24,9 +24,11 @@ vi.mock('@/lib/api', () => ({
 
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
+import { queuedCount } from '@/lib/offline/outbox';
 import {
   networkSink,
   networkSource,
+  offlineStore,
   readNote,
   setOfflineStore,
   syncNow,
@@ -68,7 +70,7 @@ describe('readNote', () => {
   it('leaves a queued note alone when the network answers differently', async () => {
     net.read.mockResolvedValue({ content: 'mine', content_hash: 'base' });
     await readNote(PATH, KILN);
-    net.save.mockRejectedValue(new Error('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new Error('Failed to fetch'));
     await writeNote({ path: PATH, body: 'mine, edited', base: 'base', kiln: KILN });
 
     net.read.mockResolvedValue({ content: 'theirs', content_hash: 'other' });
@@ -81,14 +83,35 @@ describe('readNote', () => {
 
 describe('writeNote', () => {
   it('saves through the daemon when it answers', async () => {
-    net.save.mockResolvedValue(undefined);
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
     expect(await writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).toEqual({
       queued: false,
+      stale: false,
+      hash: 'h2',
     });
   });
 
+  // The daemon compares the base. A whole write that dropped it wrote blind,
+  // and the drain was the only path that let the daemon refuse a stale one.
+  it('sends the base it was edited from when the daemon answers', async () => {
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
+    const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'new', 'h1');
+    expect(net.save, 'the guarded route is the only save').not.toHaveBeenCalled();
+    expect(out).toEqual({ queued: false, stale: false, hash: 'h2' });
+  });
+
+  // The daemon answered, so this is not offline writing. The user is present
+  // to decide, so nothing is written and nothing is queued.
+  it('refuses a stale save online and queues nothing', async () => {
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
+    expect(out).toEqual({ queued: false, stale: true, current: 'h9' });
+    expect(await queuedCount(offlineStore())).toBe(0);
+  });
+
   it('queues the writing when the daemon never answered', async () => {
-    net.save.mockRejectedValue(new Error('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new Error('Failed to fetch'));
     expect(await writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).toEqual({
       queued: true,
     });
@@ -98,17 +121,18 @@ describe('writeNote', () => {
   // would report a save that can never land and hide the reason.
   it('raises a refusal the daemon answered with, and queues nothing', async () => {
     const refused = Object.assign(new Error('Project files are read-only'), { status: 403 });
-    net.save.mockRejectedValue(refused);
+    net.guardedSave.mockRejectedValue(refused);
     await expect(writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).rejects.toThrow(
       'read-only',
     );
+    expect(await queuedCount(offlineStore())).toBe(0);
   });
 
   // Private mode: the save failed AND nothing can hold the writing. Telling a
   // user it is safe would be a lie; the buffer must stay dirty.
   it('raises the save failure when there is nowhere to queue it', async () => {
     setOfflineStore(null); // no store: idbStore() will reach for indexedDB
-    net.save.mockRejectedValue(new Error('disk is full')); // no status: never answered
+    net.guardedSave.mockRejectedValue(new Error('disk is full')); // no status: never answered
     await expect(writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).rejects.toThrow(
       'disk is full',
     );
@@ -161,7 +185,7 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     await warmIdentity();
 
     net.online = false;
-    net.save.mockRejectedValue(new TypeError('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
     expect(await writeNote({ path: PATH, body: 'OFFLINE EDIT', base: 'h0', kiln: KILN })).toEqual({
       queued: true,
     });
@@ -255,7 +279,7 @@ describe('a read prefers writing the daemon has not received', () => {
     await warmIdentity();
     await readNote(PATH, KILN); // the mirror now holds "original"
 
-    net.save.mockRejectedValue(new TypeError('Failed to fetch'));
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
     await writeNote({ path: PATH, body: 'MY OFFLINE EDIT', base: 'h0', kiln: KILN });
 
     net.read.mockRejectedValue(new TypeError('Failed to fetch'));

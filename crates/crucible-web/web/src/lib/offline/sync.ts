@@ -215,18 +215,39 @@ export async function readNote(
   throw failure ?? new Error(`${path} is not available offline`);
 }
 
-/** Save a note: to the daemon when it answers, to the outbox when it does not. */
+/**
+ * What became of a whole write.
+ *
+ * `stale` is an answer, not a failure: the daemon compared the base and the
+ * note moved on. `queued` means the daemon never answered, so the outbox holds
+ * the writing until it does.
+ */
+export type WriteOutcome =
+  | { queued: false; stale: false; hash: string }
+  | { queued: false; stale: true; current: string }
+  | { queued: true };
+
+/**
+ * Write a note: to the daemon when it answers, to the outbox when it does not.
+ *
+ * The write carries the base it was edited from, and the daemon compares it.
+ * A stale base is REFUSED, not queued: the daemon answered, so this is not
+ * offline writing, and the user is present to decide what happens to their
+ * text. The drain queues nothing either; it writes a conflict copy, because
+ * there is nobody at the keyboard to ask.
+ */
 export async function writeNote(opts: {
   path: string;
   body: string;
   base: string;
   kiln: string | null;
-}): Promise<{ queued: boolean }> {
+}): Promise<WriteOutcome> {
   let failure: unknown = null;
   if (isOnline()) {
     try {
-      await saveFileContent(opts.path, opts.body);
-      return { queued: false };
+      const answer = await saveFileIfUnchanged(opts.path, opts.body, opts.base);
+      if (!answer.ok) return { queued: false, stale: true, current: answer.current_hash };
+      return { queued: false, stale: false, hash: answer.content_hash };
     } catch (error) {
       // The daemon answered and refused. That is not offline writing, and
       // queueing it would report a save that can never land.
