@@ -2,9 +2,7 @@ import { Component, For, Show, createSignal, onMount } from 'solid-js';
 import { listKilns } from '@/lib/api';
 import { kilnLabel } from '@/lib/kiln-label';
 import { kept, keptActions, keptMode, type OfflineMode } from '@/lib/offline/kept';
-import { cacheKiln, dropKiln, kilnSize, syncNow } from '@/lib/offline/sync';
-import { offlineStore } from '@/lib/offline/sync';
-import { queuedCount } from '@/lib/offline/outbox';
+import { cacheKiln, dropKiln, kilnSize, pendingCount, syncNow } from '@/lib/offline/sync';
 import { SectionHeader, SettingRow } from '@/components/settings/primitives';
 import { notificationActions } from '@/stores/notificationStore';
 import { Database } from '@/lib/icons';
@@ -35,7 +33,7 @@ export const OfflineSettingsSection: Component = () => {
     const next: Record<string, { notes: number; attachments: number }> = {};
     for (const path of Object.keys(kept())) next[path] = await kilnSize(path);
     setSizes(next);
-    setQueued(await queuedCount(offlineStore()));
+    setQueued(await pendingCount());
   };
 
   onMount(() => {

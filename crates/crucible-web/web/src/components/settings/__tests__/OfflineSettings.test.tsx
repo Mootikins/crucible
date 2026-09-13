@@ -18,9 +18,8 @@ vi.mock('@/lib/offline/sync', () => ({
   },
   kilnSize: async () => ({ notes: 2048, attachments: 0 }),
   syncNow: async () => ({ sent: 0, conflicted: [], foreign: 0, failed: 0 }),
-  offlineStore: () => ({}),
+  pendingCount: async () => 3,
 }));
-vi.mock('@/lib/offline/outbox', () => ({ queuedCount: async () => 3 }));
 
 import { OfflineSettingsSection } from '@/components/settings/OfflineSettings';
 import { KEPT_KILNS_KEY, keptMode } from '@/lib/offline/kept';

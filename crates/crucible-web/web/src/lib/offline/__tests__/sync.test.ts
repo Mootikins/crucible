@@ -26,12 +26,12 @@ vi.mock('@/lib/api', () => ({
 
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
-import { queuedCount, type OutboxEntry } from '@/lib/offline/outbox';
+import { type OutboxEntry } from '@/lib/offline/outbox';
 import {
   editNote,
   networkSink,
   networkSource,
-  offlineStore,
+  pendingCount,
   readNote,
   setOfflineStore,
   syncNow,
@@ -39,6 +39,8 @@ import {
   writeNote,
 } from '@/lib/offline/sync';
 
+// The store the facade holds during a test. `setOfflineStore` is the seam.
+let store = memoryStore();
 const KILN = '/kilns/notes';
 const PATH = `${KILN}/Note.md`;
 
@@ -48,7 +50,8 @@ beforeEach(() => {
   net.save.mockReset();
   net.guardedSave.mockReset();
   net.patch.mockReset();
-  setOfflineStore(memoryStore());
+  store = memoryStore();
+  setOfflineStore(store);
   keptActions.keep(KILN, 'notes');
 });
 
@@ -111,7 +114,7 @@ describe('writeNote', () => {
     net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
     const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
     expect(out).toEqual({ queued: false, stale: true, current: 'h9' });
-    expect(await queuedCount(offlineStore())).toBe(0);
+    expect(await pendingCount()).toBe(0);
     // A blind write after the refusal would pass the two lines above.
     expect(net.save).not.toHaveBeenCalled();
   });
@@ -131,7 +134,7 @@ describe('writeNote', () => {
     await expect(writeNote({ path: PATH, body: 'x', base: 'h', kiln: KILN })).rejects.toThrow(
       'read-only',
     );
-    expect(await queuedCount(offlineStore())).toBe(0);
+    expect(await pendingCount()).toBe(0);
   });
 
   // Private mode: the save failed AND nothing can hold the writing. Telling a
@@ -167,14 +170,14 @@ describe('editNote', () => {
     });
     const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
     expect(out).toMatchObject({ queued: false, ok: false, stale_base: true, current_hash: 'h9' });
-    expect(await queuedCount(offlineStore())).toBe(0);
+    expect(await pendingCount()).toBe(0);
   });
 
   it('queues an anchored edit when the daemon never answered', async () => {
     net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
     const out = await editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN });
     expect(out).toEqual({ queued: true });
-    const [entry] = await offlineStore().list<OutboxEntry>('outbox');
+    const [entry] = await store.list<OutboxEntry>('outbox');
     expect(entry.value).toMatchObject({ kind: 'anchored', edits: [TICK], base: 'h1', path: PATH });
   });
 
@@ -195,7 +198,7 @@ describe('editNote', () => {
       stale_base: false,
     });
     expect(net.patch, 'never sent: the daemon is not answering').toHaveBeenCalledTimes(1);
-    expect(await queuedCount(offlineStore())).toBe(1);
+    expect(await pendingCount()).toBe(1);
   });
 
   // The same rule as a whole write: a status means the daemon answered.
@@ -204,7 +207,7 @@ describe('editNote', () => {
     await expect(editNote({ path: PATH, edits: [TICK], base: 'h1', kiln: KILN })).rejects.toThrow(
       'read-only',
     );
-    expect(await queuedCount(offlineStore())).toBe(0);
+    expect(await pendingCount()).toBe(0);
   });
 });
 
@@ -290,7 +293,7 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     const result = await syncNow();
     expect(net.patch).toHaveBeenLastCalledWith(PATH, [TICK], undefined);
     expect(result.sent).toBe(1);
-    expect(await queuedCount(offlineStore())).toBe(0);
+    expect(await pendingCount()).toBe(0);
   });
 
   it('reports an anchored refusal without writing a conflict copy', async () => {
@@ -306,7 +309,7 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     expect(result.refusedEdits).toEqual([PATH]);
     expect(result.conflicted).toEqual([]);
     expect(net.save, 'there is no body to copy').not.toHaveBeenCalled();
-    expect(await queuedCount(offlineStore()), 'the daemon answered; a replay would be refused again').toBe(0);
+    expect(await pendingCount(), 'the daemon answered; a replay would be refused again').toBe(0);
   });
 });
 

@@ -18,6 +18,7 @@ import {
   drainOutbox,
   isQueued,
   queueWrite,
+  queuedCount,
   readQueued,
   type NoteWrite,
   type OutboxSink,
@@ -35,8 +36,13 @@ import { idbStore, type OfflineStore } from '@/lib/offline/store';
  */
 
 let store: OfflineStore | null = null;
-/** The shipped store. Created on first use, so importing costs nothing. */
-export function offlineStore(): OfflineStore {
+/**
+ * The shipped store. Created on first use, so importing costs nothing.
+ *
+ * Private to this layer. A component that held the store assembled the
+ * outbox on its own, and the facade below is the one door to it.
+ */
+function offlineStore(): OfflineStore {
   return (store ??= idbStore());
 }
 
@@ -382,6 +388,11 @@ async function sendOrQueue<T>(
     throw failure ?? queueError;
   }
   return queued.ok ? { queued: true } : refusedFold(queued.index);
+}
+
+/** How many writes this device still owes the daemon. */
+export async function pendingCount(): Promise<number> {
+  return queuedCount(offlineStore());
 }
 
 /** Send everything queued for the daemon now answering. */

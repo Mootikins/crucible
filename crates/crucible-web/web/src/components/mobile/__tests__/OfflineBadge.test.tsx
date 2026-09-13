@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@solidjs/testing-library';
 const state = vi.hoisted(() => ({ online: true, queued: 0, synced: 0, warmed: 0 }));
 vi.mock('@/lib/offline/sync', () => ({
   isOnline: () => state.online,
-  offlineStore: () => ({}),
+  pendingCount: async () => state.queued,
   syncNow: async () => {
     state.synced += 1;
     return { sent: 0, conflicted: [], foreign: 0, failed: 0 };
@@ -13,7 +13,6 @@ vi.mock('@/lib/offline/sync', () => ({
     state.warmed += 1;
   },
 }));
-vi.mock('@/lib/offline/outbox', () => ({ queuedCount: async () => state.queued }));
 
 import { OfflineBadge } from '@/components/mobile/OfflineBadge';
 
