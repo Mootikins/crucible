@@ -93,7 +93,7 @@ pub mod source_files;
 mod storage_api;
 pub mod stubs;
 pub mod surfaces;
-mod timer;
+pub mod timer;
 mod tools_api;
 mod types;
 pub mod ui;

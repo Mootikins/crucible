@@ -10,6 +10,7 @@ use super::*;
 
 mod activate;
 mod active_kiln;
+mod check;
 mod install;
 mod lifecycle;
 mod plugin_context;

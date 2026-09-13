@@ -32,8 +32,9 @@ pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
     // module, so it both generates the declarations AND runs the plugin's
     // `init.luau` for the top-level-effect check — a plugin's top-level
     // `require` of its own modules is correct code the read-only fragment
-    // environment cannot run. The check enters and clears the plugin's
-    // source itself, so this VM is safe to reuse.
+    // environment cannot run. The check restores the source and clears the
+    // plugin's registrations, so the VM is clean of them when it returns.
+    // The module roots it set stay in force.
     let loader =
         crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())?;
 

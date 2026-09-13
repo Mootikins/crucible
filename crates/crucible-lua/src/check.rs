@@ -295,9 +295,8 @@ fn check_plugin_inner(
 /// no `io`. A plugin whose `init.luau` acts at the top level raises there
 /// before it returns its table. This step reports nothing for that raise
 /// yet, and reads no declarations from such a plugin: the shipped plugins
-/// `require` their own modules at the top level, and the wording of that
-/// finding is a later change. A table that comes back is read with
-/// `spec_from_table`, so an unreadable declaration is reported.
+/// `require` their own modules at the top level. A table that comes back is
+/// read with `spec_from_table`, so an unreadable declaration is reported.
 fn declaration_findings(lua: &mlua::Lua, init: &Path) -> Vec<Finding> {
     let Ok(source) = std::fs::read_to_string(init) else {
         return Vec::new();
@@ -315,13 +314,17 @@ fn declaration_findings(lua: &mlua::Lua, init: &Path) -> Vec<Finding> {
     };
     match spec_from_table(&table, init) {
         Ok(_) => Vec::new(),
-        Err(e) => {
-            let message = e.to_string();
-            vec![match e {
-                crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
-                _ => Finding::Load { message },
-            }]
-        }
+        Err(e) => vec![finding_for(e)],
+    }
+}
+
+/// The finding for a spec the host cannot read. An unreadable declaration is
+/// [`Finding::Declaration`]; every other spec failure is [`Finding::Load`].
+fn finding_for(error: crate::LifecycleError) -> Finding {
+    let message = error.to_string();
+    match error {
+        crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
+        _ => Finding::Load { message },
     }
 }
 
@@ -338,8 +341,9 @@ fn declaration_findings(lua: &mlua::Lua, init: &Path) -> Vec<Finding> {
 /// finding names each hook, so an author sees what to move.
 ///
 /// The source is restored and the plugin's registrations are cleared on
-/// every path, so one VM serves a whole directory of plugins and leaves none
-/// of them behind. The registration count is read BEFORE the clear.
+/// every path, so one VM serves a whole directory of plugins and keeps no
+/// registration of any of them. The module roots are not restored. The
+/// registration count is read BEFORE the clear.
 fn effect_findings(vm: &LuaExecutor, plugin_dir: &Path, init: &Path) -> Vec<Finding> {
     let lua = vm.lua();
     let name = plugin_dir
@@ -404,20 +408,16 @@ fn effect_findings(vm: &LuaExecutor, plugin_dir: &Path, init: &Path) -> Vec<Find
         });
     }
 
-    // Leave the VM as clean as this check found it.
+    // Leave the VM clean of the plugin's registrations. The module roots set
+    // above stay in force: `configure_module_roots` replaces them and this
+    // check does not restore them.
     crate::clear_source(lua, &registry, &plugin_source);
 
     // The declarations, from the table the body returned.
     match evaluated {
         Ok(mlua::Value::Table(table)) => {
             if let Err(e) = spec_from_table(&table, init) {
-                let message = e.to_string();
-                findings.push(match e {
-                    crate::LifecycleError::InvalidDeclaration(_) => {
-                        Finding::Declaration { message }
-                    }
-                    _ => Finding::Load { message },
-                });
+                findings.push(finding_for(e));
             }
         }
         Ok(other) => findings.push(Finding::Load {
@@ -1368,9 +1368,8 @@ mod tests {
         );
     }
 
-    /// A body that raises is a finding, and the VM is left as the check
-    /// found it: no source in force, no registrations under the plugin's
-    /// name.
+    /// A body that raises is a finding, and the VM keeps nothing of the
+    /// plugin: no source in force, no registrations under the plugin's name.
     #[test]
     fn check_leaves_the_vm_clean() {
         let (_root, dir) = plugin_dir(
