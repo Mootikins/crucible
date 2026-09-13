@@ -195,7 +195,7 @@ local id_calls = test_mocks.get_calls("sessions", "create")
 
 ## Testing Tool Functions
 
-Call tool functions directly from the spec table:
+Call tool functions directly from the module table:
 
 ```lua
 local plugin = require("my-plugin")

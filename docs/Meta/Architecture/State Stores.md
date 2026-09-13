@@ -64,21 +64,29 @@ rules this preserves:
 The last mixed file, `~/.config/crucible/plugins.toml`, is split and no
 longer read:
 
-- **Declared** — `plugins.declare.<name>` in `init.lua`, parsed by
-  `declared_plugins` (`crucible-core/src/config/config/types.rs`). User
-  authorship; the daemon never writes it. The key is reserved: discovery
-  refuses a plugin named `declare`, and `split_plugins_config` never hands
-  the declaration table to a `setup(cfg)`. One constant
-  (`PLUGINS_DECLARE_KEY`) serves all three consumers.
+- **Declared** — a spec entry with a `Git` source, written by
+  `cru.plugin.setup({ "user/greeter" })` in `init.lua`
+  (`crucible-lua/src/plugin_spec_store.rs`; the data type is `SpecEntry` in
+  `crucible-core/src/config/plugin_spec.rs`). User authorship; the daemon
+  never writes it. The entry is not configuration: `enabled` and `opts`
+  live on the entry, and the config store's `plugins.<name>` section is a
+  separate layer that `resolve_opts` merges beneath the entry's `opts`.
 - **Installed** — `<data_home>/plugins.installed.json`
   (`crucible-daemon/src/plugin_ops.rs`), a versioned `RegistryStore` file
   written by `cru plugin add/remove`, the `plugin.install`/`plugin.remove`
-  RPCs and the web plugin routes.
+  RPCs and the web plugin routes. `boot_plugins` merges each installed
+  entry into the spec store at `SpecRank::Builtin` before the spec-driven
+  activation pass: an install is the operator's act through a tool, so it
+  sits below their own `init.lua` and above a plugin's fragment.
 
-The bootstrap loads the union, declaration winning by name with each
-shadowed manifest entry named at boot. Removing a declared plugin is a
-refusal that names the declaration's `file:line` from store provenance. A
-leftover `plugins.toml` is imported into the manifest idempotently and
+The two meet in one spec. The operator's entry lays over the installed one
+for a shared name, and the boot says so by name; `{ "greeter", enabled =
+false }` in `init.lua` disables an installed plugin too. The bootstrap clones
+the spec's enabled `Git` entries whose directory is missing
+(`bootstrap_entries`), deciding with the same `resolve_enabled` activation
+uses, so a plugin the web disabled in `settings.json` is not fetched.
+Removing a declared plugin is a refusal that names the `cru.plugin.setup`
+entry to edit. A leftover `plugins.toml` is imported into the manifest idempotently and
 warned about each boot (`sweep_legacy_plugins_toml`); the file is inert.
 
 See also [[Config Boot]] for how the config side is produced, and

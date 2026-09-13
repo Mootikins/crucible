@@ -16,7 +16,7 @@ Crucible uses Luau for plugins, tools, and hooks.
 ## Overview
 
 Luau plugins can:
-- Define tools in a plugin's spec table, served to agents and `cru mcp` alike
+- Define tools in the module table a plugin's `init.luau` returns, served to agents and `cru mcp` alike
 - Register event hooks
 - Access the Crucible API (search, notes, graph)
 - Execute shell commands (with policy controls)

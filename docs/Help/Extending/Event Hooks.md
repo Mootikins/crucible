@@ -25,7 +25,7 @@ cru.on("pre_tool_call", function(ctx, event)
 end)
 ```
 
-Place this in your plugin's `init.lua` or in a `.lua` file in a loaded plugins directory. Crucible registers the handler on plugin load.
+Place this inside your plugin's `setup()` in `init.luau`, or in the `setup()` of a single `.lua` file in a loaded plugins directory. The host calls `setup` once, at activation. A `cru.on` at the top level of the file is a finding in `cru plugin check`.
 
 ## The `cru.on()` API
 
@@ -937,7 +937,7 @@ A handler that cancels or handles the call stops the chain.
 
 ## Reference Plugin
 
-The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern`), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `ctx.session_id`, since the one registration serves every session.
+The `runtime/plugins/oci/init.luau` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool from its `setup()`, once (with `pattern`), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `ctx.session_id`, since the one registration serves every session.
 
 ## Best Practices
 
@@ -945,7 +945,7 @@ The `runtime/plugins/oci/init.lua` plugin is the canonical reference for product
 2. **Use specific patterns.** A `pattern = "*"` handler runs for every tool call; narrow it if possible.
 3. **Return explicitly.** If you want pass-through, `return` with no value. If you transform, return the modified event. Don't accidentally return a truthy value that Crucible interprets as a transform.
 4. **Handle errors gracefully.** Check fields with `event.tool and event.tool:find(...)` rather than assuming shape.
-5. **Register once.** Calls to `cru.on()` accumulate; register at plugin load, not inside another handler.
+5. **Register once.** Calls to `cru.on()` accumulate; register in `setup()`, guarded against a second call, not inside another handler.
 
 ## See Also
 

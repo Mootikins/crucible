@@ -529,7 +529,7 @@ Files: `commands/plugin/list.rs`, `commands/plugin/update.rs`, `commands/plugin/
 
 | Item | Location | Action |
 |---|---|---|
-| `plugins.toml` path x2 | resolved: `plugins.toml` is no longer read (M6 split); list and update read the declared set and the installed manifest through `plugin_ops` | done |
+| `plugins.toml` path x2 | resolved: `plugins.toml` is no longer read (M6 split); the declared set is the spec's `Git` entries (`cru.plugin.setup` in `init.lua`), and the installed manifest joins the spec at `SpecRank::Builtin`; `plugins.declare` is gone | done |
 | `agents.rs::resolve_path(path, _config_dir)` | `agents.rs:91-101` | call `kiln_validate::expand_tilde` (`:66`); drop the unused parameter at four call sites |
 | `is_temp_directory` x2, `is_temp_root` | `kiln_discover.rs:105`, `kiln_validate.rs:216`, `:237` | keep one `pub(crate) fn is_temp_root` in `kiln_validate.rs` |
 | `parse_log_level` | `main.rs:15-25` | call `LogLevel::from_str` then `LevelFilter::from(LogLevel)` (`cli/mod.rs:31-58`) |
@@ -548,7 +548,7 @@ Files: `theme_wire.rs`, `hl_lua.rs`, `theme.rs`, `fs.rs`, `http.rs`, `handlers/b
 | ensure-parent block x4 | `fs.rs:58-68`, `:75-85`, `:127-137`, `:145-155` | call one `fn ensure_parent(path) -> Result<()>` |
 | `get`/`post`/`put`/`delete`/`patch` closures | `http.rs:50-116` | loop over `[("get", HttpMethod::Get), ...]` and register one closure per row |
 | `execute_runtime_json_handler` | `handlers/before_execute.rs:83-118` | call `execute_runtime_handler` (`registry.rs:192`) |
-| `parse_capability` | `lifecycle/spec.rs:31-44` | call `serde_json::from_value::<Capability>` (`manifest.rs:78` derives it with the same aliases) |
+| `parse_capability` | `lifecycle/spec.rs:31-44` | resolved: metadata left `PluginSpec`; the grant is read from the fragment (`lifecycle/fragment.rs`) |
 | `exec_command` vs `spawn_command` setup | `shell.rs:159-185`, `:289-312` | call one `fn prepare_command(policy, cmd, args, opts) -> Result<Command>` |
 
 ### T1-B24 — crucible-oil and crucible-web (non-route)
@@ -862,14 +862,14 @@ Items the pass kept, with the reason:
 - [keep] PluginManager::error_log (lifecycle/error_log.rs:67) — Already narrowed to test/test-utils. The underlying capture_plugin_error and the log field are production. Nothing to delete unless the tests go.
 - [keep] PluginManager::active_plugins (lifecycle/queries.rs:14) — Already gated to tests. Deleting requires rewriting loading.rs:189 to filter PluginManager::list() by state; low value.
 - [narrow-to-cfg(test)] PluginErrorLog::clear, is_empty (lifecycle/error_log.rs:55) — clear is test-only; narrow it to #[cfg(test)]. Keep is_empty: pub len() without is_empty trips clippy::len_without_is_empty, which just ci lints.
-- [keep] load_plugin_spec_from_source (lifecycle/spec.rs:136) — The claim is wrong. Only the pub(crate) re-export in lifecycle/mod.rs:30 is test-only; it could become #[cfg(test)] but that is trivial.
+- [deleted] load_plugin_spec_from_source (lifecycle/spec.rs:136) — Gone with the spec sandbox. `spec_from_table` reads the table the daemon VM already holds.
 - [keep] PluginSpec.handlers, DiscoveredHandler (lifecycle/spec.rs:23) — Handlers are parsed but never dispatched; the daemon warns about this on purpose. The count appears in an RPC response (server/plugins.rs:55), so removal changes a wire payload.
 - [keep] cru.tbl_get, cru.tbl_deep_extend, cru.on_error (prelude/qol.rs:123) — These are documented public Lua API for user plugins, not internal code. No bundled runtime plugin uses them. cru.on_error is documented as a reserved slot that nothing invokes; deleting it means remo
 - [done] compile_fennel (fennel.rs:105) — Removed with Fennel on 2026-08-30.
 - [keep] McpGatewayManager::upstream_status tools/mcp_gateway.rs:454 (weak: own tests only) — The item is already gone. Nothing to remove. Strike the claim from the plan.
 - [keep-protected-path] RpcMethod::SessionReindex rpc/dispatch.rs:175 (weak; protected path; retired name in METHODS) — Referenced by a handler arm, a CLI test and the changelog. Protected path rpc/dispatch.rs. Removal is a wire change (METHODS list).
-- [keep] PluginManager::eval_runtime (crates/crucible-lua/src/lifecycle/lua_integration.rs:54) — Already test-gated; nothing further to narrow. Tests that use it verify reload and load/unload hooks, not only eval_runtime itself.
-- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/loading.rs:181) — Already test-gated; no change needed.
+- [deleted] PluginManager::eval_runtime — Gone with the manager's VM. `PluginManager` is a registry of discovered plugins and holds no VM; the reload and hook tests moved to `crates/crucible-daemon/src/daemon_plugins/tests/activate.rs`.
+- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/mod.rs:195) — Already test-gated; no change needed.
 - [keep] PluginManager::initialize (crates/crucible-lua/src/lifecycle/mod.rs:136) — Method no longer exists; it was replaced by discover_only (lifecycle/mod.rs:128) and load_all (loading.rs:93). Nothing to remove. Optionally reword the four stale doc comments that still reference ini
 - [keep-protected-path] KeepAlive.shell Some path (crucible-web routes/terminal.rs:56) — The field is the test injection seam the doc comment at terminal.rs:49-51 describes; the production const sets None on purpose. Under routes/. Keep.
 - [delete] NodeSpec, spec_to_node, NodeSpecError, NodeAttrs, parse_* (crucible-oil template/node_spec.rs) — Partial. NodeSpec, NodeAttrs, spec_to_node and every parse_* except parse_color/parse_hex_color/parse_rgb_color are dead. NodeSpecError and NodeSpecResult stay because parse_color returns them. Move p
@@ -916,7 +916,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - [ ] `PluginManager::error_log` `lifecycle/error_log.rs:67`
 - [ ] `PluginManager::active_plugins` `lifecycle/queries.rs:14` (weak)
 - [ ] `PluginErrorLog::clear`, `is_empty` `lifecycle/error_log.rs:55`
-- [ ] `load_plugin_spec_from_source` `lifecycle/spec.rs:136`
+- [x] `load_plugin_spec_from_source` `lifecycle/spec.rs:136` — deleted with the spec sandbox
 - [ ] `PluginSpec.handlers`, `DiscoveredHandler` `lifecycle/spec.rs:23`
 - [ ] `cru.tbl_get`, `cru.tbl_deep_extend`, `cru.on_error` `prelude/qol.rs:123` (grep `runtime/` Lua)
 - [ ] `get_pending_notifications`, `get_messages_action` `notify.rs:241`, `:262`

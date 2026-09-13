@@ -40,13 +40,13 @@ the [`oq`](https://crates.io/crates/oq) crate, which wraps
 
 **Lua tool results served over `cru mcp`.** The MCP server (`cru mcp`, and the
 daemon-managed server it mirrors) discovers Luau tools from the plugin
-directories by their spec-table declarations, and encodes their object or array
+directories by the `tools` declarations in each module table, and encodes their object or array
 results as TOON before returning them to the connected client
 (`crates/crucible-daemon/src/tools/toon_response.rs`, called from
 `tools/extended_mcp_server.rs`). Scalar results (strings, numbers, booleans) pass through
 as plain text.
 
-That is the only path that encodes TOON. A tool declared in a plugin's `tools` spec table
+That is the only path that encodes TOON. A tool declared in a plugin's `tools` table
 and called from a Crucible chat session is dispatched by `PluginToolExecutor`
 (`crates/crucible-daemon/src/plugin_tools.rs`), which returns the Lua value converted
 straight to JSON. Built-in Rust tools return JSON too.

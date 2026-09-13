@@ -128,9 +128,14 @@ The `consolidation` plugin is the periodic half of the loop. Where reflection re
 Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model: `model` has no default, and without one the plugin bails with a warning (`reflection: no aux model configured`) at every session end. Consolidation is off until `enabled` is set, and it also needs `kiln`. Configure both in `init.lua`:
 
 ```lua
-require("reflection").setup({ model = "claude-haiku-4-5-20251001" })
-require("consolidation").setup({ enabled = true, kiln = "notes", model = "claude-haiku-4-5-20251001" })
+cru.plugin.setup({
+  { "reflection", opts = { model = "claude-haiku-4-5-20251001" } },
+  { "consolidation", opts = { enabled = true, kiln = "notes", model = "claude-haiku-4-5-20251001" } },
+})
 ```
+
+The host passes each `opts` table to that plugin's `setup(opts)` once, after
+`init.lua` finishes.
 
 Every other key, with its default, is documented once in [[Help/Lua/Configuration#Configuring Plugins]].
 

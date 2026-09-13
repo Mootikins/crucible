@@ -536,6 +536,13 @@ end
 --- tool on the host — so "sandbox broken" and "sandbox working" were
 --- indistinguishable from the outside. Refusing makes "session exists" imply
 --- "session is sandboxed".
+---
+--- That implication holds only once `setup()` ran, because `register_handlers`
+--- runs from `setup()`. The host calls `setup(opts)` at activation unless the
+--- operator's spec entry for `oci` carries a `config` function, which replaces
+--- that call. A `config` that never calls `m.setup(opts)` leaves `oci` active
+--- with no session hook: every session then exists and none is sandboxed. An
+--- operator who writes `config` for `oci` calls `m.setup(opts)` inside it.
 local function on_session_start(session: any)
   local cfg = resolve_config(session)
   -- Not configured is not a failure: no [plugins.oci] image means the user

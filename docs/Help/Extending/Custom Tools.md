@@ -24,8 +24,8 @@ Tools are functions that agents can call to interact with the world:
 
 ## Lua Tools
 
-A tool is declared in a plugin's spec table. There is one declaration form and
-one loader — see [[Help/Extending/Creating Plugins]].
+A tool is declared in the module table a plugin's `init.luau` returns. There
+is one declaration form and one loader — see [[Help/Extending/Creating Plugins]].
 
 ```lua
 -- ~/.config/crucible/plugins/search-web/init.lua
@@ -36,7 +36,6 @@ local function search_web(args)
 end
 
 return {
-    name = "search-web",
     tools = {
         search_web = {
             desc = "Search the web for information",
@@ -52,7 +51,7 @@ alike, because both serve the same plugin registry.
 
 > [!NOTE] `-- @tool` doc comments no longer declare anything
 > Earlier revisions showed an annotation form. Nothing parses it: a plugin that
-> returns a spec table has its exports read from that table and nothing else,
+> returns a module table has its exports read from that table and nothing else,
 > and the separate annotation loader that once fed `cru mcp` has been removed.
 > A tool declared only by a comment never reaches an agent.
 

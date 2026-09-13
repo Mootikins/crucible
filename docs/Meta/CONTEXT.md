@@ -58,7 +58,7 @@ One table in the spec that names a plugin and says where it comes from, whether 
 _Avoid_: declaration, plugin config
 
 **Fragment**:
-A partial spec entry that a plugin ships beside its own code, or that the shipped defaults provide. The operator's entry for the same name wins.
+A partial spec entry that a plugin ships beside its own code, that the shipped defaults provide, or that the installed manifest records. The operator's entry for the same name wins.
 _Avoid_: metadata file, manifest, spec table
 
 **Discovery**:

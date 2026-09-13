@@ -28,7 +28,7 @@ Simple, accessible syntax that LLMs write exceptionally well:
 Create reusable extensions:
 
 - [[Help/Extending/Creating Plugins]] - Build and run Lua plugins
-- the plugin spec table - the name, version and tools an `init.lua` returns
+- [[Help/Configuration#The spec — which plugins run|The spec]] - the `cru.plugin.setup` entries in `init.lua` that name plugins
 - [[Help/Extending/Event Hooks]] - React to tool calls, sessions, and file events
 - [[Help/Extending/Custom Handlers]] - Advanced handler design notes
 - [[Help/Extending/Custom Tools]] - Add tools via MCP or Lua

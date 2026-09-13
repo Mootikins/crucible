@@ -155,7 +155,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G117 | lua | A trait requires its contract (AGENTS.md) | `SessionConfigRpc` requires 0 of 22; five impls are `impl SessionConfigRpc for X {}` (`session_api.rs:67`) | code-wrong | S |
 | G118 | lua | `PluginSource` has four variants `EnvPath`, `User`, `RuntimePath`, `Runtime` (8.15, D7) | Three: `EnvPath`, `User`, `Runtime`; `runtimepath` entries and `$CRUCIBLE_RUNTIME` share `Runtime` (`crucible-lua/src/manifest.rs:295`) | expectation-wrong | - |
 | G119 | lua | `spec.handlers` registers hooks (F172) | `PluginSpec.handlers` is parsed and never dispatched (`daemon_plugins/mod.rs:741`) | not-built | - |
-| G120 | lua | `Capability` is one closed set with one decoder (8) | `parse_capability` hand-duplicates serde and omits `intercept_tools`, so a spec-table grant is dropped (`lifecycle/spec.rs:31`, `discovery.rs:267`) | code-wrong | S |
+| G120 | lua | ~~`Capability` is one closed set with one decoder (8)~~ | RESOLVED 2026-09-13: `parse_capability` and the `Capability` enum are gone. The one grant, `intercepts_tools`, is read from the fragment (`lifecycle/fragment.rs`) by one decoder | resolved | — |
 | G121 | lua | Modes exist in Lua only; no Rust copy of the names (8.6) | `BuiltinMode` (`crucible-core/src/types/mode.rs:85`), `BUILTIN_MODE_NAMES` (`tools/tool_modes.rs:37`), `default_internal_modes` (`mode.rs:273`) restate the three names | code-wrong | S |
 | G122 | lua | `cru.log.notify` reaches a client (F134) | `cru.log.notify` is a live Lua surface (`crates/crucible-lua/src/notify.rs:30`, registered at `crates/crucible-lua/src/executor.rs:260`); the queue reaches no client (`notify.rs:78`); Expected 2a lists it | expectation-incomplete | - |
 | G123 | lua | `cru.oil` nodes render somewhere (open 15) | `LuaNode` is built and nothing in the CLI consumes it (`crucible-lua/src/oil.rs:138`) | not-built | - |
@@ -168,7 +168,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G130 | lua | Hooks are named by the name table, not by position (9.3) | `register_permission_hook_api` names hooks from `guard.len()` (`handlers/permission.rs:132`) | code-wrong | S |
 | G131 | lua | ~~`cru.defaults` exposes every default (F183)~~ | RESOLVED 2026-09-10: `cru.defaults` is gone. `system_prompt` is the config key `chat.system_prompt`; `mode` and `model` are per-session by design, set by an `on_session_start` hook | resolved | — |
 | G132 | lua | One plugin path computation (8.15) | `daemon_plugin_paths` and `PluginManager::with_standard_paths` both compute it (`bootstrap.rs:33`, `lifecycle/mod.rs:112`) | code-wrong | S |
-| G133 | lua | A plugin spec loads once (3.20) | `load_plugin_spec` runs the file in a throwaway VM, then the daemon runs it again in the real VM (`spec.rs:140`, `discovery.rs:295`) | code-wrong | S |
+| G133 | lua | ~~A plugin spec loads once (3.20)~~ | RESOLVED 2026-09-13: discovery reads `spec.luau` in the daemon VM and runs no plugin code; `activate` (`daemon_plugins/activate.rs`) runs `init.luau` once. The throwaway VM is gone | resolved | — |
 | G134 | lua | No dead cross-crate path (4.17) | `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command` form a dead path; `with_session_command_receiver` has no caller | code-wrong | S |
 | G135 | lua | One Lua tool shape (9.2) | `LuaTool`/`DiscoveredTool` and `ToolParam`/`DiscoveredParam` duplicate; `execute_tool`, `execute_file`, `execute_source` have no caller | code-wrong | S |
 | G136 | lua | Plugin commands reach the web palette (9.13) | The web shows plugin commands as a count only | not-built | - |
@@ -481,8 +481,8 @@ rmcp::Tool`. First step: write the two `From` impls in `tools/helpers.rs`.
 `SessionConfigRpc` with 22 required. First step: remove the defaults and let
 the six test doubles fail to compile; give them one shared mock.
 
-**G120.** Target: `Capability` is decoded by serde only. First step: delete
-`parse_capability` and deserialize the spec-table list with `serde_json`.
+**G120.** Resolved: `parse_capability` is deleted with the spec sandbox, and
+the fragment reader is the one decoder of `intercepts_tools`.
 
 **G121.** Target: no Rust list of mode names. First step: delete
 `BUILTIN_MODE_NAMES` and `default_internal_modes`; read `session.list_modes`.

@@ -100,9 +100,9 @@ export const PluginPanel: Component = () => {
     try {
       const result = await installPlugin({ url });
       if (result.loaded === false) {
-        // The install itself succeeded (clone + plugins.toml), but the plugin
-        // failed to activate — a green "Installed" here would report a broken
-        // plugin as working.
+        // The install itself succeeded (clone + installed manifest), but the
+        // plugin failed to activate — a green "Installed" here would report a
+        // broken plugin as working.
         notificationActions.addNotification(
           'error',
           `Installed ${result.name} but it failed to load: ${result.error ?? 'see plugin list'}`,
@@ -111,7 +111,7 @@ export const PluginPanel: Component = () => {
         const status =
           result.outcome.kind === 'cloned'
             ? `Installed ${result.name}: ${result.tools}T ${result.commands}C ${result.services}S`
-            : `${result.name} already present; declared in plugins.toml`;
+            : `${result.name} already present; recorded in the installed manifest`;
         notificationActions.addNotification('success', status);
       }
       setInstallUrl('');
@@ -378,8 +378,9 @@ export const PluginPanel: Component = () => {
               Uninstall {target().name}?
             </h3>
             <p class="text-xs text-muted-dark mb-3">
-              This removes the entry from <code>plugins.toml</code>. Optionally also
-              delete the cloned plugin directory.
+              This removes the entry <code>cru plugin add</code> recorded in the installed
+              manifest. A plugin named in <code>init.lua</code> is not removable here.
+              Optionally also delete the cloned plugin directory.
             </p>
             <label class="flex items-center gap-2 text-xs text-shell-body mb-3">
               <input

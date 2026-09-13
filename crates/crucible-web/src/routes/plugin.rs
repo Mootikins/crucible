@@ -375,8 +375,10 @@ async fn reload_plugin(
     Ok(Json(result))
 }
 
-/// `POST /api/plugins` — clone a plugin from a git URL and declare it
-/// in plugins.toml. Synchronous; can take 10+ seconds.
+/// `POST /api/plugins` — clone a plugin from a git URL and record it in
+/// the installed manifest (`plugins.installed.json`), the same record
+/// `cru plugin add` writes. The operator's own spec entries live in
+/// `init.lua`, which nothing here edits. Synchronous; can take 10+ seconds.
 async fn install_plugin(
     State(state): State<AppState>,
     caller: PluginCaller,
