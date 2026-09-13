@@ -303,8 +303,8 @@ return {
 ```
 
 A fragment takes these seven keys and no other. `tools`, `commands`,
-`services`, `setup` and `handlers` belong in `init.luau`; a fragment that
-holds one of them is refused, with the file named. The fragment runs in a
+`services`, `setup` and `handlers` belong in `init.luau`. Discovery refuses
+a fragment that holds one of them, and names the file. The fragment runs in a
 read-only environment: `string`, `table` and `math` as sealed copies, and
 `tostring`, `tonumber`, `ipairs`, `pairs`, `select` and `type`. There is no
 `cru`, no `require`, no `os` and no `io`. A fragment can describe; it cannot
@@ -405,8 +405,8 @@ return {
 A `cru.on` at the top level of `init.luau` runs before the host calls
 `setup`, so a `config` function in the user's spec entry cannot turn it off.
 `cru plugin check` reports it as a finding and names the hook. A user may
-call `setup` a second time, so guard the registration with a flag when a
-double registration would matter.
+call `setup` a second time. When a double registration would matter, guard
+the registration with a flag.
 
 (`@handler` doc-comment annotations and the module table's `handlers` field
 appear in older material; neither is dispatched for plugins — `cru.on`

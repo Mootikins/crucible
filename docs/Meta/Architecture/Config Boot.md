@@ -59,11 +59,12 @@ one body: `activate` (`crucible-daemon/src/daemon_plugins/activate.rs`). The
 spec-driven pass at boot (`load_plugins_from_spec`, `daemon_plugins/mod.rs`),
 a `require` from `init.lua`, a runtime install and a reload all end there.
 `activate` refuses a plugin whose resolved `enabled` is `false`
-(`daemon_plugins/resolve.rs`), runs `init.luau` once in the daemon VM, reads
-the returned module table with `spec_from_table`, registers its tools,
-commands and services, seeds the module cache so a later `require` answers
-the same table, then runs the entry's `config`, else the module's
-`setup(opts)`. `on_load` follows. `docs/Meta/CONTEXT.md` defines the words.
+(`daemon_plugins/resolve.rs`). It runs `init.luau` once in the daemon VM and
+reads the returned module table with `spec_from_table`. It registers the
+tools, the commands and the services. It seeds the module cache, so a later
+`require` answers the same table. Then it runs the entry's `config`, else
+the module's `setup(opts)`. `on_load` follows. `docs/Meta/CONTEXT.md`
+defines the words.
 
 A `require` of a plugin entry module during the evaluation cannot await
 `activate`: `require` is a sync Rust function and the module hook is a sync

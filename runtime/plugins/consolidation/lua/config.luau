@@ -1,10 +1,10 @@
 --!strict
 --- consolidation configuration
 ---
---- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention — the daemon seeds setup() with the plugin's config section at
---- load, and a user's later `setup{}` call, e.g. from
---- ~/.config/crucible/init.lua which runs after plugins load, overrides it):
+--- Resolution order, highest priority first. Lua beats TOML, as in Neovim.
+--- The host calls `setup(opts)` once, after ~/.config/crucible/init.lua
+--- finishes, with the merged `opts`. A `require("consolidation").setup{}`
+--- call in init.lua runs first, and the host's call then lays over it.
 ---   1. values passed to `setup({...})` — last call wins per key.
 ---   2. the `plugins.consolidation` config key, read through
 ---      `cru.plugin.config.get("consolidation.<key>")` — covers keys read
@@ -52,9 +52,9 @@ function M.init(cfg)
 end
 
 --- Read `[plugins.consolidation].<key>`. Returns nil when unset, and also
---- when `cru.plugin.config` is absent — the plugin test runner has no daemon
---- behind it, and the spec-extraction sandbox stubs `crucible` with a
---- metatable (hence rawget, which sees through neither).
+--- when `cru.plugin.config` is absent: the plugin test runner has no daemon
+--- behind it. The rawget calls read the globals as they are, with no
+--- metatable in the way.
 local function from_toml(key)
     local crucible = rawget(_G, "crucible")
     if type(crucible) ~= "table" then return nil end

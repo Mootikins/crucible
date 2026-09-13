@@ -647,7 +647,7 @@ Recommend: make all required. Payoff: a new storage backend must answer the link
 Options: (a) delete the whole channel path (TUI side is dead; Lua side has no consumer); (b) wire `with_session_command_receiver` at the one call site; (c) keep.
 Recommend (a). Payoff: one fewer session RPC binding; the Lua session API then has one transport. Risk: `SessionCommand` is live Lua surface in `session_api.rs`; check `runtime/` scripts for `session.*` calls that route through it. Cost: M.
 
-**A6. Test-support gating.** `crucible-core/src/lib.rs:32 pub mod test_support` unconditional; `crucible-daemon/src/test_support.rs` always compiled; `parser/test_utils.rs` ungated; `ComponentHarness`, `AppHarness` re-exported from `tui/mod.rs`; `PluginManager` test-only API (`active_plugins`, `eval_runtime`, `reload`, `enable`, `initialize`, `error_log`, `with_search_paths`, `load_plugin_spec_from_source`).
+**A6. Test-support gating.** `crucible-core/src/lib.rs:32 pub mod test_support` unconditional; `crucible-daemon/src/test_support.rs` always compiled; `parser/test_utils.rs` ungated; `ComponentHarness`, `AppHarness` re-exported from `tui/mod.rs`; `PluginManager` test-only API (`active_plugins`, `eval_runtime`, `reload`, `enable`, `initialize`, `error_log`, `with_search_paths`; `load_plugin_spec_from_source` is deleted, see 5.0 below).
 Options: (a) gate all under `#[cfg(any(test, feature = "test-utils"))]` and enable the feature from dev-dependencies; (b) leave.
 Recommend (a). Payoff: `EnvVarGuard` and `set_var` leave the `cru` binary; `#[allow(dead_code)]` on 20 test-only production methods goes away because the compiler sees the real callers. Risk: integration tests in `crucible-daemon/tests/*` must enable the feature; one Cargo edit per crate. Cost: M.
 

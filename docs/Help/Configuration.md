@@ -371,9 +371,9 @@ There is no `storage` key and no `discovery` key; both were removed.
 ### The spec — which plugins run
 
 The spec is your list of plugins. You write it in `init.lua` with
-`cru.plugin.setup`. One entry names one plugin. The shape follows lazy.nvim
-in feel, not key for key: a string is a bare entry, and a table carries
-options. `docs/Meta/CONTEXT.md` defines the words *spec*, *spec entry*,
+`cru.plugin.setup`. One entry names one plugin. The list takes its shape
+from lazy.nvim, not key for key: a string is a bare entry, and a table
+carries options. `docs/Meta/CONTEXT.md` defines the words *spec*, *spec entry*,
 *fragment*, *discovery* and *activation*.
 
 ```lua
@@ -409,28 +409,31 @@ An entry has these fields:
 
 | Field | What it says |
 |---|---|
-| `[1]` | The plugin. A bare name is a directory on the runtimepath. A `user/repo` or a URL is a git source, and the name is the last path segment without `.git`. A name starts with a lowercase letter and holds only `a-z`, `0-9`, `-` and `_`. |
+| `[1]` | The plugin. A bare name is a directory on the runtimepath. A `user/repo` or a URL is a git source, and the name is the last path segment without `.git`. The name rule, as the daemon states it: "a plugin name starts with a lowercase letter, holds only a-z, 0-9, '-' and '_', is at most 64 bytes, and does not end with '-' or '_'". |
 | `enabled` | `false` turns the plugin off. `nil` says nothing. |
 | `branch`, `pin` | For a git source: the branch to check out, and a commit or tag to pin to. A bare name refuses both. |
 | `opts` | A table the daemon merges into the `opts` that `setup(opts)` receives. |
 | `config` | `function(module, opts)`. Replaces the default `module.setup(opts)` call. |
-| `init` | `function()`. The store holds it, and nothing runs it yet. |
 | `import` | A directory under `~/.config/crucible/lua/`. Each file there returns a list of entries. An imported file returns its entries; it does not call `cru.plugin.setup` itself. |
 
 The rules, each stated once:
 
-- **Your entry wins.** Three sources merge by name into one spec: the
-  plugin's own `spec.luau` (its fragment), the shipped defaults in
-  `runtime/defaults/init.luau` (the Builtin fragment, which lists every
-  shipped plugin), and your `init.lua`. Your entry outranks both fragments,
-  so `{ "reflection", enabled = false }` turns a shipped plugin off.
+- **Your entry wins.** Two sources merge by name into one spec: the shipped
+  defaults in `runtime/defaults/init.luau` (the Builtin fragment, which
+  lists every shipped plugin) and your `init.lua`. Your entry outranks the
+  shipped fragment, so `{ "reflection", enabled = false }` turns a shipped
+  plugin off. A plugin's own `spec.luau` (its fragment) feeds the manifest
+  and its default `opts`, not the spec.
 - **`enabled` resolves in this order, first answer wins:** your entry; the
   config leaf `plugins.<name>.enabled` at any layer, so the web toggle in
-  `settings.json` still works; the shipped fragment; the plugin's own
-  fragment; then `true`.
+  `settings.json` still works; the shipped fragment; then `true`. A
+  plugin's own fragment has no `enabled` field.
 - **`opts` merge, lowest first:** the plugin fragment's `opts`, the shipped
   fragment's `opts`, the config leaves under `plugins.<name>`, then your
-  entry's `opts`. `enabled` is not an opt and never reaches `setup`.
+  entry's `opts`. The config leaf `plugins.<name>.enabled` is not an opt.
+  The daemon strips it before the merge, so that leaf never reaches
+  `setup`. An `enabled` key inside your entry's `opts` is an ordinary opt
+  and does reach `setup`.
 - **A `require` activates.** `require("reflection")` in `init.lua` runs the
   module body at once and marks the plugin for activation. A spec entry
   that says `enabled = false` for a plugin `init.lua` also requires loses

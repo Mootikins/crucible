@@ -1,8 +1,8 @@
 //! The spec: the operator's list of plugins, one entry per plugin.
 //!
-//! Data only. The two functions an entry may carry, `config` and `init`,
-//! stay in the Lua VM that defined them. This type is what `plugin.list`,
-//! the bootstrap and the loader read.
+//! Data only. The one function an entry may carry, `config`, stays in the
+//! Lua VM that defined it. This type is what `plugin.list`, the bootstrap
+//! and the loader read.
 
 use std::collections::BTreeMap;
 
@@ -35,8 +35,10 @@ pub struct SpecEntry {
     pub source: SpecSource,
     /// `None` means "this entry does not say". `enabled` resolves in this
     /// order, first answer wins: the operator's entry, the config leaf
-    /// `plugins.<name>.enabled`, the Builtin fragment, the plugin's fragment,
-    /// then `true`. `docs/Meta/CONTEXT.md` defines the terms.
+    /// `plugins.<name>.enabled`, the Builtin fragment (the installed manifest
+    /// merges at the same rank), then `true`. A plugin's own `spec.luau`
+    /// has no `enabled` field, so it never answers. `docs/Meta/CONTEXT.md`
+    /// defines the terms.
     pub enabled: Option<bool>,
     /// The table passed to `setup(opts)`. Object or `Null`.
     #[serde(default)]
@@ -46,11 +48,6 @@ pub struct SpecEntry {
     /// store keyed by name says which.
     #[serde(default)]
     pub has_config: bool,
-    /// Whether the defining VM holds an `init` function for this name.
-    /// OR-merged across ranks, so `true` means some rank holds one; the
-    /// store keyed by name says which.
-    #[serde(default)]
-    pub has_init: bool,
 }
 
 /// Extract a safe plugin directory name from a git URL.
@@ -98,9 +95,10 @@ pub fn is_valid_plugin_name(name: &str) -> bool {
 
 /// Who wrote an entry. Higher wins. `enabled` resolves in this order, first
 /// answer wins: the operator's entry, the config leaf
-/// `plugins.<name>.enabled`, the Builtin fragment, the plugin's fragment,
-/// then `true`. `Spec::merge` is the only reader of the order, and
-/// `docs/Meta/CONTEXT.md` defines the terms.
+/// `plugins.<name>.enabled`, the Builtin fragment (the installed manifest
+/// merges at the same rank), then `true`. A plugin's own `spec.luau` has no
+/// `enabled` field, so it never answers. `Spec::merge` is the only reader of
+/// the order, and `docs/Meta/CONTEXT.md` defines the terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpecRank {
@@ -153,7 +151,6 @@ impl SpecEntry {
             enabled: None,
             opts: Value::Null,
             has_config: false,
-            has_init: false,
         }
     }
 
@@ -172,7 +169,6 @@ impl SpecEntry {
         }
         merge_opts(&mut self.opts, over.opts);
         self.has_config |= over.has_config;
-        self.has_init |= over.has_init;
     }
 }
 

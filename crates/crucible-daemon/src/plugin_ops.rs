@@ -91,7 +91,6 @@ impl InstalledEntry {
             enabled: Some(self.enabled),
             opts: serde_json::Value::Null,
             has_config: false,
-            has_init: false,
         }
     }
 }

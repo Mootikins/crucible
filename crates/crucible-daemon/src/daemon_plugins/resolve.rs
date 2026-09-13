@@ -19,9 +19,11 @@ use serde_json::{Map, Value};
 /// 1. the operator's own entry (`SpecRank::Operator`);
 /// 2. the config leaf `plugins.<name>.enabled`, at any layer, so the web's
 ///    toggle in `settings.json` still works;
-/// 3. the merged entry below the operator: the Builtin fragment, then the
-///    plugin's own fragment, which `Spec::merge` already ordered;
+/// 3. the merged entry below the operator: the Builtin fragment, and the
+///    installed manifest that merges at the same rank;
 /// 4. `true`.
+///
+/// A plugin's own `spec.luau` has no `enabled` field, so it never answers.
 pub(crate) fn resolve_enabled(spec: &Spec, name: &str, config_leaf: Option<bool>) -> bool {
     let operator = spec.at(name, SpecRank::Operator).and_then(|e| e.enabled);
     let fragments = spec.get(name).and_then(|e| e.enabled);

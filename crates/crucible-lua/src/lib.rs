@@ -164,7 +164,7 @@ pub use plugin_context::{
     intercept_for, record_plugin_intercept, set_source, LuaSource, SessionGuard,
 };
 pub use plugin_spec_store::{
-    config_of, init_of, merge_spec_entry, register_plugin_spec_api, set_import_root, spec_of,
+    config_of, merge_spec_entry, register_plugin_spec_api, set_import_root, spec_of,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;

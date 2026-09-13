@@ -5,9 +5,9 @@
 //! entry that a plugin ships, or that the shipped defaults provide.
 //!
 //! The store is VM app data. It holds one [`Spec`] plus, per plugin name, the
-//! `config` and `init` functions an entry gave. The functions stay in the VM
-//! that defined them, as [`RegistryKey`]s. [`Spec`] is data only, so the
-//! bootstrap and `plugin.list` can read it without a VM.
+//! `config` function an entry gave. The function stays in the VM that
+//! defined it, as a [`RegistryKey`]. [`Spec`] is data only, so the bootstrap
+//! and `plugin.list` can read it without a VM.
 //!
 //! The rank of a write comes from the [`LuaSource`] in force when `setup`
 //! ran, never from an argument. A plugin's own fragment runs under
@@ -39,7 +39,6 @@ struct Held {
 struct Inner {
     spec: Spec,
     config: HashMap<String, Held>,
-    init: HashMap<String, Held>,
 }
 
 /// The store, shared by handle so a lock is held for one read or one write.
@@ -91,7 +90,7 @@ pub fn spec_of(lua: &Lua) -> Spec {
 /// (`plugins.installed.json`) here at `SpecRank::Builtin`: an install is the
 /// operator's act through a tool, so it sits below the operator's own
 /// `init.lua` and above a plugin's fragment. An entry from Rust carries no
-/// `config` or `init` function, so the held-function maps stay as they are.
+/// `config` function, so the held-function map stays as it is.
 pub fn merge_spec_entry(lua: &Lua, entry: SpecEntry, rank: SpecRank) {
     SpecStore::of(lua).lock().spec.merge(entry, rank);
 }
@@ -106,21 +105,10 @@ pub fn config_of(lua: &Lua, name: &str) -> Option<Function> {
     lua.registry_value::<Function>(&held.key).ok()
 }
 
-/// The `init` function from the highest-ranked entry for `name` that gave
-/// one, if any. As with [`config_of`], the rank that gave it can sit below
-/// `Spec::rank_of(name)`.
-pub fn init_of(lua: &Lua, name: &str) -> Option<Function> {
-    let store = SpecStore::of(lua);
-    let inner = store.lock();
-    let held = inner.init.get(name)?;
-    lua.registry_value::<Function>(&held.key).ok()
-}
-
 /// One parsed element of the `setup` argument, before it reaches the store.
 struct Parsed {
     entry: SpecEntry,
     config: Option<Function>,
-    init: Option<Function>,
 }
 
 /// Register `cru.plugin.setup(entries)`.
@@ -184,7 +172,6 @@ fn setup(lua: &Lua, entries: Table) -> mlua::Result<()> {
         let name = item.entry.name.clone();
         inner.spec.merge(item.entry, rank);
         hold(lua, &mut inner.config, &name, rank, item.config)?;
-        hold(lua, &mut inner.init, &name, rank, item.init)?;
     }
     Ok(())
 }
@@ -230,7 +217,6 @@ fn parse_entries(
                 out.push(Parsed {
                     entry: positional(index, &text.to_str()?)?,
                     config: None,
-                    init: None,
                 });
             }
             Value::Table(table) => parse_table(lua, index, table, depth, out)?,
@@ -305,14 +291,15 @@ fn parse_entry(lua: &Lua, index: i64, text: &str, table: &Table) -> mlua::Result
         entry.opts = crate::json_query::lua_to_json(lua, Value::Table(opts))?;
     }
     let config: Option<Function> = field(lua, index, table, "config")?;
-    let init: Option<Function> = field(lua, index, table, "init")?;
     entry.has_config = config.is_some();
-    entry.has_init = init.is_some();
-    Ok(Parsed {
-        entry,
-        config,
-        init,
-    })
+    // Nothing runs an `init` function. Refuse the key, so an author learns
+    // now that the field is not there, rather than after a silent no-op.
+    if !matches!(table.get::<Value>("init")?, Value::Nil) {
+        return Err(mlua::Error::runtime(format!(
+            "cru.plugin.setup: entry {index}: `init` is not a spec entry field yet; use `config`"
+        )));
+    }
+    Ok(Parsed { entry, config })
 }
 
 /// Read one named field. `nil` is "unsaid". A value of the wrong type is an
@@ -492,7 +479,25 @@ mod tests {
         f.call::<()>((Value::Nil, lua.create_table_from([("a", 1)]).unwrap()))
             .unwrap();
         assert_eq!(lua.globals().get::<i64>("saw").unwrap(), 1);
-        assert!(init_of(&lua, "x").is_none());
+    }
+
+    /// Nothing runs an `init` function, so the store refuses the key rather
+    /// than holding a function no reader asks for.
+    #[test]
+    fn an_entry_with_init_is_refused_and_named() {
+        let lua = test_vm();
+        let err = with_source(&lua, LuaSource::UserLua, || {
+            lua.load(r#"cru.plugin.setup({ "ok", { "x", init = function() end } })"#)
+                .exec()
+                .unwrap_err()
+        });
+        let text = err.to_string();
+        assert!(text.contains("entry 2"), "{text}");
+        assert!(
+            text.contains("`init` is not a spec entry field yet; use `config`"),
+            "{text}"
+        );
+        assert_eq!(spec_of(&lua).iter().count(), 0);
     }
 
     #[test]

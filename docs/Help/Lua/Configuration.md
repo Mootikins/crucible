@@ -150,7 +150,7 @@ The `opts` a plugin receives merge from four places, lowest first:
 The config leaf `plugins.<name>.enabled` is the host's switch, not an opt.
 The daemon strips it from the config section before the merge, and resolves
 it on its own: your entry's `enabled` first, then that leaf, then the
-fragments, then `true`. To turn a bundled plugin off, write
+shipped fragment, then `true`. To turn a bundled plugin off, write
 `{ "reflection", enabled = false }` in the spec, or
 `plugins = { reflection = { enabled = false } }` in the config. A plugin's
 own `enabled` key, as `consolidation` declares above, reaches its `setup`
