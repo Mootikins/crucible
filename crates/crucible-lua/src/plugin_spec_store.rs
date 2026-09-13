@@ -25,8 +25,8 @@ use mlua::{Function, Lua, RegistryKey, Table, Value};
 use crate::error::LuaError;
 use crate::plugin_context::{current_source, LuaSource};
 
-/// How deep `import` may nest before the store refuses the entry. A directory
-/// that imports itself would otherwise recurse until the stack ends.
+/// How deep `import` may nest before the store refuses the entry. An imported
+/// file that imports again would otherwise recurse until the stack ends.
 const MAX_IMPORT_DEPTH: usize = 8;
 
 /// One function an entry gave, and the rank that gave it.
@@ -85,7 +85,9 @@ pub fn spec_of(lua: &Lua) -> Spec {
     SpecStore::of(lua).lock().spec.clone()
 }
 
-/// The `config` function the highest-ranked entry for `name` gave, if any.
+/// The `config` function from the highest-ranked entry for `name` that gave
+/// one, if any. This rank can differ from `Spec::rank_of(name)`: an operator
+/// entry with no `config` leaves a Builtin `config` in place.
 pub fn config_of(lua: &Lua, name: &str) -> Option<Function> {
     let store = SpecStore::of(lua);
     let inner = store.lock();
@@ -93,7 +95,9 @@ pub fn config_of(lua: &Lua, name: &str) -> Option<Function> {
     lua.registry_value::<Function>(&held.key).ok()
 }
 
-/// The `init` function the highest-ranked entry for `name` gave, if any.
+/// The `init` function from the highest-ranked entry for `name` that gave
+/// one, if any. As with [`config_of`], the rank that gave it can sit below
+/// `Spec::rank_of(name)`.
 pub fn init_of(lua: &Lua, name: &str) -> Option<Function> {
     let store = SpecStore::of(lua);
     let inner = store.lock();
@@ -118,6 +122,15 @@ struct Parsed {
 ///   { import = "plugins" },
 /// })
 /// ```
+///
+/// `import` is for `init.lua` and the shipped defaults. A plugin describes
+/// itself, so under `LuaSource::Plugin` the call refuses `import`.
+///
+/// Nesting order: `setup` parses every entry, then writes. An imported file
+/// that calls `cru.plugin.setup` itself writes during the parse, so its
+/// entries land BEFORE every entry of the outer call. At equal rank the outer
+/// call's entries then win over the nested call's for a shared name. An
+/// imported file should RETURN its entries and not call `setup`.
 pub fn register_plugin_spec_api(lua: &Lua) -> Result<(), LuaError> {
     // `cru.plugin` already carries members other modules registered, so the
     // namespace opens OVER the existing table and never publishes a fresh one.
@@ -233,6 +246,14 @@ fn parse_table(
         return Ok(());
     }
     if let Value::String(dir) = table.get::<Value>("import")? {
+        // A plugin describes itself. It never reads the operator's spec
+        // directory, and an import there would run files with full globals.
+        if matches!(current_source(lua), LuaSource::Plugin(_)) {
+            return Err(mlua::Error::runtime(
+                "cru.plugin.setup: `import` is for init.lua and the shipped defaults; \
+                 a plugin adds entries by name",
+            ));
+        }
         return import(lua, index, &dir.to_str()?, depth, out);
     }
     Err(mlua::Error::runtime(format!(
@@ -306,6 +327,15 @@ fn field<T: mlua::FromLua>(
 
 /// Read every `*.lua` and `*.luau` file under `<root>/<dir>`, in file-name
 /// order. Each file returns a list of entries, which is parsed the same way.
+/// A later file's entry for a name is applied after an earlier file's.
+///
+/// `dir` stays under the root: a `..` segment or an absolute path is refused,
+/// as `SpecEntry::from_positional` refuses them in a name.
+///
+/// An imported file that calls `cru.plugin.setup` itself writes at once,
+/// during this parse. Its entries then land before every entry of the outer
+/// call, so at equal rank the outer call's entries win for a shared name. A
+/// file should RETURN its entries instead.
 fn import(
     lua: &Lua,
     index: i64,
@@ -316,7 +346,14 @@ fn import(
     if depth >= MAX_IMPORT_DEPTH {
         return Err(mlua::Error::runtime(format!(
             "cru.plugin.setup: entry {index}: `import = \"{dir}\"` nests deeper than \
-             {MAX_IMPORT_DEPTH} levels; a directory imports itself"
+             {MAX_IMPORT_DEPTH} levels"
+        )));
+    }
+    let leaves_root = Path::new(dir).is_absolute() || dir.split(['/', '\\']).any(|seg| seg == "..");
+    if leaves_root {
+        return Err(mlua::Error::runtime(format!(
+            "cru.plugin.setup: entry {index}: `import = \"{dir}\"` stays under the import root; \
+             it takes no `..` segment and no absolute path"
         )));
     }
     let Some(root) = import_root(lua) else {
@@ -462,10 +499,16 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let plugins = dir.path().join("plugins");
         std::fs::create_dir(&plugins).unwrap();
-        std::fs::write(plugins.join("b.lua"), r#"return { "beta" }"#).unwrap();
+        // `shared` appears in both files. `b.lua` is applied after `a.lua`, so
+        // its `enabled = false` is the value the store keeps.
+        std::fs::write(
+            plugins.join("b.lua"),
+            r#"return { "beta", { "shared", enabled = false } }"#,
+        )
+        .unwrap();
         std::fs::write(
             plugins.join("a.lua"),
-            r#"return { { "alpha", opts = { n = 1 } } }"#,
+            r#"return { { "alpha", opts = { n = 1 } }, { "shared", enabled = true } }"#,
         )
         .unwrap();
         std::fs::write(plugins.join("notes.md"), "not lua").unwrap();
@@ -477,8 +520,48 @@ mod tests {
         });
         let spec = spec_of(&lua);
         let names: Vec<_> = spec.iter().map(|e| e.name.clone()).collect();
-        assert_eq!(names, ["alpha", "beta"]);
+        assert_eq!(names, ["alpha", "beta", "shared"]);
         assert_eq!(spec.get("alpha").unwrap().opts, json!({ "n": 1 }));
+        assert_eq!(spec.get("shared").unwrap().enabled, Some(false));
+    }
+
+    #[test]
+    fn a_plugin_cannot_import() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let plugins = dir.path().join("plugins");
+        std::fs::create_dir(&plugins).unwrap();
+        std::fs::write(plugins.join("a.lua"), r#"return { "alpha" }"#).unwrap();
+        let lua = test_vm_with_import_root(dir.path());
+        let err = with_source(&lua, LuaSource::Plugin("p".into()), || {
+            lua.load(r#"cru.plugin.setup({ { import = "plugins" } })"#)
+                .exec()
+                .unwrap_err()
+        });
+        assert!(
+            err.to_string().contains(
+                "cru.plugin.setup: `import` is for init.lua and the shipped defaults; \
+                 a plugin adds entries by name"
+            ),
+            "{err}"
+        );
+        assert_eq!(spec_of(&lua).iter().count(), 0);
+    }
+
+    #[test]
+    fn an_import_cannot_leave_the_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let lua = test_vm_with_import_root(dir.path());
+        for dir in ["../x", "/etc"] {
+            let err = with_source(&lua, LuaSource::UserLua, || {
+                lua.load(format!(r#"cru.plugin.setup({{ {{ import = "{dir}" }} }})"#))
+                    .exec()
+                    .unwrap_err()
+            });
+            let text = err.to_string();
+            assert!(text.contains(dir), "{text}");
+            assert!(text.contains("stays under the import root"), "{text}");
+        }
+        assert_eq!(spec_of(&lua).iter().count(), 0);
     }
 
     #[test]
