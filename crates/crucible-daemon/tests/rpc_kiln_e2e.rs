@@ -241,10 +241,7 @@ async fn test_list_notes_returns_seeded_notes() {
 
     assert_eq!(notes.len(), 3, "Should return all 3 seeded notes");
 
-    let names: Vec<&str> = notes
-        .iter()
-        .map(|row| row.name.as_str())
-        .collect();
+    let names: Vec<&str> = notes.iter().map(|row| row.name.as_str()).collect();
     assert!(names.contains(&"daily"), "Should contain 'daily' note");
     assert!(
         names.contains(&"rust-project"),

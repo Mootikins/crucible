@@ -1,6 +1,5 @@
 use super::helpers::{
-    refuse_if_base_is_stale,
-    note_to_file_json, reject_path_traversal, validate_file_within_kiln,
+    note_to_file_json, refuse_if_base_is_stale, reject_path_traversal, validate_file_within_kiln,
     validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
 use crate::services::daemon::AppState;
@@ -384,7 +383,9 @@ async fn put_kiln_file(
         .await
         .map_err(WebError::Io)?;
 
-    Ok(Json(serde_json::json!({ "ok": true, "content_hash": disk_hash(&req.content) })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "content_hash": disk_hash(&req.content) }),
+    ))
 }
 
 /// `PATCH /api/kiln/file` — apply a batch of anchored edits, or refuse it.
@@ -428,7 +429,9 @@ async fn patch_kiln_file(
                 )));
             }
             let written_hash = disk_hash(&updated);
-            fs::write(&file_path, &updated).await.map_err(WebError::Io)?;
+            fs::write(&file_path, &updated)
+                .await
+                .map_err(WebError::Io)?;
             Ok(Json(serde_json::json!({
                 "ok": true,
                 "content_hash": written_hash,
