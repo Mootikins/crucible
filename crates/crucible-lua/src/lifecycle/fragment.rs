@@ -2,9 +2,11 @@
 //!
 //! A fragment describes a plugin. It does not act. `read_fragment` evaluates
 //! the file in the daemon VM, so no second VM exists, with an environment
-//! that holds nine pure names and nothing else. A name outside that list
-//! reads as `nil`, so a call to `cru.on` or `require` raises before it can
-//! reach the host. See `docs/Meta/CONTEXT.md`, "Fragment".
+//! that holds six pure functions and a copy each of `string`, `table` and
+//! `math`. The environment and the three copies refuse a write, so a
+//! fragment cannot change a table the daemon VM reads. A name outside the
+//! environment reads as `nil`, so a call to `cru.on` or `require` raises
+//! before it can reach the host. See `docs/Meta/CONTEXT.md`, "Fragment".
 
 use super::error::{LifecycleError, LifecycleResult};
 use mlua::{Lua, Table, Value};
@@ -13,11 +15,31 @@ use std::path::Path;
 /// The one file name of a fragment. There is no `spec.lua` fallback.
 pub const FRAGMENT_FILE: &str = "spec.luau";
 
-/// The names a fragment can read. Each is pure: none reaches a file, a
-/// process, the registry or the host.
-const READ_ONLY_NAMES: [&str; 9] = [
-    "string", "table", "math", "tostring", "tonumber", "ipairs", "pairs", "select", "type",
+/// The functions a fragment can call by name. Each is pure: none reaches a
+/// file, a process, the registry or the host.
+const PURE_FUNCTIONS: [&str; 6] = ["tostring", "tonumber", "ipairs", "pairs", "select", "type"];
+
+/// The libraries a fragment reads through a copy, never through the VM's own
+/// table. A write to the VM's `string` table would reach every later chunk.
+const COPIED_LIBRARIES: [&str; 3] = ["string", "table", "math"];
+
+/// The `math` entries the copy omits. Each one mutates VM state.
+const OMITTED_FROM_MATH: [&str; 2] = ["random", "randomseed"];
+
+/// The keys a fragment table can hold.
+const FRAGMENT_FIELDS: [&str; 7] = [
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "intercepts_tools",
+    "opts",
 ];
+
+/// The keys of the plugin table that `init.luau` returns. A fragment that
+/// holds one of these is a plugin table in the wrong file.
+const INIT_FIELDS: [&str; 5] = ["tools", "commands", "services", "setup", "handlers"];
 
 /// What a plugin says about itself without running. See CONTEXT.md, "Fragment".
 #[derive(Debug, Clone, Default)]
@@ -69,28 +91,98 @@ pub fn read_fragment(lua: &Lua, plugin_dir: &Path) -> LifecycleResult<Option<Fra
     fragment_from_table(lua, &table, &path).map(Some)
 }
 
-/// The `_ENV` a fragment runs in. No `__index`, so a name outside
-/// [`READ_ONLY_NAMES`] is `nil`, and a write lands in this table and not in
-/// the VM's globals.
+/// The `_ENV` a fragment runs in. It holds [`PURE_FUNCTIONS`] and a sealed
+/// copy of each of [`COPIED_LIBRARIES`]. A name outside that set is `nil`.
+/// A write to the environment, or to a copy, raises: see [`sealed`].
+///
+/// A string method reached through the string metatable, as in
+/// `("x"):upper()`, still resolves in the VM's real `string` table. That is
+/// safe: a fragment can call such a function, but the metatable gives it no
+/// way to reassign one.
 fn read_only_env(lua: &Lua) -> mlua::Result<Table> {
-    let env = lua.create_table()?;
     let globals = lua.globals();
-    for name in READ_ONLY_NAMES {
-        env.set(name, globals.get::<Value>(name)?)?;
+    let names = lua.create_table()?;
+    for name in PURE_FUNCTIONS {
+        names.set(name, globals.get::<Value>(name)?)?;
     }
-    Ok(env)
+    for library in COPIED_LIBRARIES {
+        let real: Table = globals.get(library)?;
+        let copy = lua.create_table()?;
+        for pair in real.pairs::<Value, Value>() {
+            let (key, value) = pair?;
+            if library == "math" && OMITTED_FROM_MATH.contains(&key_name(&key).as_str()) {
+                continue;
+            }
+            copy.set(key, value)?;
+        }
+        names.set(library, sealed(lua, copy, Some(library))?)?;
+    }
+    sealed(lua, names, None)
+}
+
+/// A proxy over `content`. A read resolves in `content`. A write raises,
+/// with the key's name and, for a library copy, the library's name.
+///
+/// The proxy itself stays empty, so every write reaches `__newindex`, also
+/// a write to a key that `content` holds. A plain `__newindex` on `content`
+/// would let `string.upper = f` land silently, because Lua only consults
+/// `__newindex` for a key the table does not hold.
+fn sealed(lua: &Lua, content: Table, library: Option<&str>) -> mlua::Result<Table> {
+    let prefix = library.map(|l| format!("{l}.")).unwrap_or_default();
+    let refuse = lua.create_function(move |_, (_, key, _): (Table, Value, Value)| {
+        Err::<(), _>(mlua::Error::runtime(format!(
+            "a fragment cannot assign to `{prefix}{}`",
+            key_name(&key)
+        )))
+    })?;
+    let meta = lua.create_table()?;
+    meta.set("__index", content)?;
+    meta.set("__newindex", refuse)?;
+    let proxy = lua.create_table()?;
+    proxy.set_metatable(Some(meta))?;
+    Ok(proxy)
+}
+
+/// The name of a table key, for a message. A key that is not a string reads
+/// as Lua's `tostring` renders it.
+fn key_name(key: &Value) -> String {
+    key.to_string()
+        .unwrap_or_else(|_| key.type_name().to_owned())
 }
 
 /// Read the fields of a fragment table. Each field is optional. A present
 /// field with the wrong type is an error that names the file and the field.
+/// A key outside [`FRAGMENT_FIELDS`] is an error that names the key.
 fn fragment_from_table(lua: &Lua, table: &Table, path: &Path) -> LifecycleResult<Fragment> {
+    for pair in table.pairs::<Value, Value>() {
+        let (key, _) = pair.map_err(|e| load_error(path, &e))?;
+        let key = key_name(&key);
+        if FRAGMENT_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+        let hint = if INIT_FIELDS.contains(&key.as_str()) {
+            "; it belongs in init.luau"
+        } else {
+            ""
+        };
+        return Err(LifecycleError::LoadError(format!(
+            "{}: `{key}` is not a fragment field{hint}",
+            path.display()
+        )));
+    }
     let opts = match table
         .get::<Value>("opts")
         .map_err(|e| load_error(path, &e))?
     {
         Value::Nil => serde_json::json!({}),
-        Value::Table(opts) => crate::json_query::lua_to_json(lua, Value::Table(opts))
-            .map_err(|e| load_error(path, &e))?,
+        Value::Table(opts) => {
+            crate::json_query::lua_to_json(lua, Value::Table(opts)).map_err(|e| {
+                load_error(
+                    path,
+                    &format!("`opts` holds a value JSON cannot carry: {e}"),
+                )
+            })?
+        }
         other => return Err(wrong_type(path, "opts", "a table", &other)),
     };
     Ok(Fragment {
@@ -194,6 +286,14 @@ mod tests {
     fn a_fragment_that_registers_a_handler_is_refused() {
         let (lua, dir) =
             vm_and_plugin_dir(r#"cru.on("turn:complete", function() end); return { name = "x" }"#);
+        // The VM has a `cru.on` that accepts the call, so only the
+        // environment can refuse the fragment.
+        let cru = lua.create_table().unwrap();
+        let accept = lua
+            .create_function(|_, _: mlua::MultiValue| Ok(()))
+            .unwrap();
+        cru.set("on", accept).unwrap();
+        lua.globals().set("cru", cru).unwrap();
         let err = read_fragment(&lua, dir.path()).unwrap_err();
         assert!(err.to_string().contains("spec.luau"), "{err}");
         // Luau words the raise as "attempt to index nil", which is the
@@ -209,7 +309,15 @@ mod tests {
 
     #[test]
     fn a_fragment_sees_no_os_io_or_globals_table() {
-        for name in ["os", "io", "_G", "print", "getfenv", "setfenv", "load"] {
+        for name in [
+            "os",
+            "io",
+            "_G",
+            "print",
+            "getfenv",
+            "setfenv",
+            "loadstring",
+        ] {
             let (lua, dir) = vm_and_plugin_dir(&format!("return {{ name = type({name}) }}"));
             let f = read_fragment(&lua, dir.path()).unwrap().unwrap();
             assert_eq!(
@@ -221,13 +329,71 @@ mod tests {
     }
 
     #[test]
-    fn a_fragment_does_not_write_the_vm_globals() {
+    fn a_fragment_cannot_assign_a_global() {
         let (lua, dir) = vm_and_plugin_dir(r#"leaked = 1; return { name = "x" }"#);
-        read_fragment(&lua, dir.path()).unwrap().unwrap();
+        let err = read_fragment(&lua, dir.path()).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("spec.luau"), "{text}");
+        assert!(text.contains("cannot assign to `leaked`"), "{text}");
         let leaked: mlua::Value = lua.globals().get("leaked").unwrap();
         assert!(
             leaked.is_nil(),
             "a fragment wrote a global into the daemon VM"
+        );
+    }
+
+    #[test]
+    fn a_fragment_cannot_poison_the_vm_string_table() {
+        let (lua, dir) =
+            vm_and_plugin_dir(r#"string.upper = function() return "POISON" end; return {}"#);
+        let err = read_fragment(&lua, dir.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot assign to `string.upper`"),
+            "{err}"
+        );
+        let upper: String = lua.load("return string.upper('a')").eval().unwrap();
+        assert_eq!(upper, "A", "the fragment poisoned the VM's string table");
+        for probe in ["string.upper", "table.insert", "math.floor"] {
+            let kind: String = lua.load(format!("return type({probe})")).eval().unwrap();
+            assert_eq!(kind, "function", "{probe} is no longer a function");
+        }
+    }
+
+    #[test]
+    fn a_fragment_has_no_math_random() {
+        let (lua, dir) = vm_and_plugin_dir(
+            "return { name = type(math.random) .. type(math.randomseed) .. type(math.floor) }",
+        );
+        let f = read_fragment(&lua, dir.path()).unwrap().unwrap();
+        assert_eq!(f.name.as_deref(), Some("nilnilfunction"));
+    }
+
+    #[test]
+    fn an_unknown_key_is_refused_and_says_where_it_belongs() {
+        let (lua, dir) = vm_and_plugin_dir(r#"return { name = "x", tools = {} }"#);
+        let text = read_fragment(&lua, dir.path()).unwrap_err().to_string();
+        assert!(
+            text.contains("spec.luau: `tools` is not a fragment field; it belongs in init.luau"),
+            "{text}"
+        );
+
+        let (lua, dir) = vm_and_plugin_dir(r#"return { intercepts_tool = true }"#);
+        let text = read_fragment(&lua, dir.path()).unwrap_err().to_string();
+        assert!(
+            text.contains("spec.luau: `intercepts_tool` is not a fragment field"),
+            "{text}"
+        );
+        assert!(!text.contains("init.luau"), "{text}");
+    }
+
+    #[test]
+    fn an_opts_value_json_cannot_carry_is_named() {
+        let (lua, dir) = vm_and_plugin_dir(r#"return { opts = { f = function() end } }"#);
+        let text = read_fragment(&lua, dir.path()).unwrap_err().to_string();
+        assert!(text.contains("spec.luau"), "{text}");
+        assert!(
+            text.contains("`opts` holds a value JSON cannot carry"),
+            "{text}"
         );
     }
 
