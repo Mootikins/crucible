@@ -29,12 +29,13 @@ impl InstallLoadReport {
 }
 
 /// Judge the install by the loader's post-load state (`loaded_plugin_info`),
-/// never by the activation pass's return value: a plugin that was ALREADY
-/// Active — manually cloned into the user plugins dir and loaded at boot,
-/// now being declared — is skipped by `load_all` as `AlreadyLoaded` and is
-/// absent from that pass's specs, but it is loaded, not broken. Judging by
-/// the pass result reported `loaded: false` with a fabricated error for a
-/// healthy plugin (and failed `cru plugin add`'s exit code).
+/// never by `activate_plugin`'s return value. That value is `Ok(())` or an
+/// error: it carries no counts, and `Ok` says nothing about a plugin that
+/// was already Active — cloned into the user plugins dir by hand and loaded
+/// at boot, now installed through the manifest — because activation is
+/// idempotent and answers the existing module. A report built from the
+/// activation result once said `loaded: false` with a fabricated error for
+/// such a healthy plugin (and failed `cru plugin add`'s exit code).
 pub(crate) fn install_load_report(
     loader: &DaemonPluginLoader,
     name: &str,
@@ -252,8 +253,8 @@ pub(crate) async fn handle_plugin_remove(
                 INVALID_PARAMS,
                 format!(
                     "plugin '{name}' is not in the installed manifest, so there is nothing to \
-                     remove; to turn off a bundled plugin, set \
-                     `plugins = {{ {name} = {{ enabled = false }} }}` in init.lua"
+                     remove; to turn off a bundled plugin, write \
+                     `cru.plugin.setup({{ {{ \"{name}\", enabled = false }} }})` in init.lua"
                 ),
             )
         }

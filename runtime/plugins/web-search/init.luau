@@ -467,9 +467,10 @@ function M.web_search(options: { [string]: any }?): ToolResult
     return { error = failure_text(query, attempts), tried = tried }
 end
 
--- Registered at load, not in setup(): setup() is called once per plugin with
--- the TOML section and again from the user's init.lua, and a hook registered
--- there would be installed twice.
+-- Registered at load, not in setup(): the host calls setup() once at
+-- activation with the resolved opts (the entry's `opts` merged with the
+-- `plugins.web-search` config leaves), the user's init.lua may call it again,
+-- and a hook registered there would be installed twice.
 --
 -- Activation seeds `package.loaded` with this table, so the documented
 -- `require("web-search").setup{}` from a user's init.lua answers this

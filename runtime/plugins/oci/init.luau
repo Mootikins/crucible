@@ -343,8 +343,9 @@ export type Config = {
   devcontainer_host_access: boolean?,
 }
 
--- Empty, not nil: setup() is not called when there is no [plugins.oci] section
--- at all, and resolution reads sub-keys unconditionally.
+-- Empty, not nil: the host always calls setup() with the resolved opts, an
+-- object that is empty when nothing configures oci, and resolution reads
+-- sub-keys unconditionally.
 local config: Config = {}
 
 --- Normalise one environment definition — the bare `[plugins.oci]` section, a

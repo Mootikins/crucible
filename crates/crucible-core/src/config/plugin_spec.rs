@@ -102,7 +102,9 @@ pub fn is_valid_plugin_name(name: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpecRank {
-    /// The plugin's own `spec.luau`.
+    /// A plugin's own `init.luau` calling `cru.plugin.setup` during
+    /// activation. A fragment file (`spec.luau`) has no `cru` and never
+    /// writes the spec: discovery reads it into the manifest instead.
     PluginFragment,
     /// The shipped defaults in `runtime/defaults/init.luau`.
     Builtin,
