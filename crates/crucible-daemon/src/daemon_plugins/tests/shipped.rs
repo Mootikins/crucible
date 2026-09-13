@@ -155,6 +155,8 @@ fn every_shipped_plugin_with_an_intercept_grant_declares_it_in_its_fragment() {
 /// real `discover` over `runtime/plugins/`, not from the text of a file.
 /// This replaced a gate that read each `init.luau` for `name = ` and four
 /// more substrings, which `author = "agent"` in a tool body satisfied.
+/// `author` and `license` are optional by decision 6, so this gate does not
+/// require them.
 #[test]
 fn every_shipped_plugin_has_a_fragment_with_a_name() {
     let mut manager = PluginManager::new();

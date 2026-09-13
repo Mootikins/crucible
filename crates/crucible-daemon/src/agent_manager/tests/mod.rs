@@ -527,7 +527,9 @@ impl ReactorTestHarness {
         loader
     }
 
-    /// Give a loader to the daemon's session lifecycle, as `RpcContext` does.
+    /// Give a loader to a `SessionLifecycle` over this manager's sessions.
+    /// The helper does not call `bind_agent_manager`, so the lifecycle has
+    /// no route back to the manager.
     ///
     /// After this call, [`Self::new_session`] fires `on_session_start` and
     /// [`Self::end_session`] fires `on_session_end` through the code the RPC
@@ -552,7 +554,7 @@ impl ReactorTestHarness {
             .expect("call attach_lifecycle before a lifecycle helper")
     }
 
-    /// Create a second live session on this manager, with an agent that
+    /// Create another live session on this manager, with an agent that
     /// answers "ok". The daemon's start path runs, so `on_session_start`
     /// hooks fire for the new id.
     async fn new_session(&self) -> String {
@@ -598,7 +600,8 @@ impl ReactorTestHarness {
     }
 
     /// End a session the way `session.end` does: plugin end hooks first,
-    /// then the manager drops the session.
+    /// then the manager drops the session. The RPC path also runs
+    /// `context_attach().release`; this helper does not.
     async fn end_session(&self, session_id: &str) {
         self.lifecycle()
             .lifecycle

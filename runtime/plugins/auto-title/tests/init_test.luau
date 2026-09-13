@@ -77,15 +77,6 @@ describe("declaration", function()
     expect.truthy(plugin.commands["auto-title.generate"])
     expect.equals("function", type(plugin.commands["auto-title.generate"].fn))
   end)
-
-  -- The user's init.lua reaches this plugin by `require("auto-title")`. The
-  -- daemon loads it by path instead, so without the module registering itself
-  -- that require would build a second, unrelated copy.
-  it("registers itself in package.loaded so require() finds this copy", function()
-    fresh()
-    expect.equals(plugin, package.loaded["auto-title"])
-    expect.equals(plugin, require("auto-title"))
-  end)
 end)
 
 describe("auto-title.generate", function()

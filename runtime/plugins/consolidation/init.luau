@@ -32,9 +32,9 @@ M.CURSOR_ENTITY = "consolidation"
 M.CURSOR_KEY = "last_run"
 
 --- The reflection plugin's exported table, or nil when the daemon did not
---- activate it. Read from `package.loaded` and never through `require`: a
---- `require` before reflection's own activation would run its file a
---- second time and register its hooks twice.
+--- activate it. Reflection is a soft dependency. The read goes through
+--- `package.loaded` and never through `require`, because a `require` would
+--- activate reflection when the operator disabled it.
 local function reflection(): any?
     local loaded = package.loaded["reflection"]
     if type(loaded) == "table" then return loaded end

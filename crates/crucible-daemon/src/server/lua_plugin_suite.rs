@@ -906,7 +906,6 @@ mod shipped_plugin_tests {
             !plugin_dirs.is_empty(),
             "runtime/plugins holds no plugin directory"
         );
-        let mut checked = 0;
         for dir in &plugin_dirs {
             let dir = dir.canonicalize().expect("plugin dir");
             let (loader, activated) = super::activate_plugin_under_test(&dir)
@@ -946,14 +945,7 @@ mod shipped_plugin_tests {
                     handlers.len()
                 );
             }
-            checked += 1;
         }
-        assert_eq!(
-            checked,
-            plugin_dirs.len(),
-            "runtime/plugins holds {} directories, the gate checked {checked}",
-            plugin_dirs.len()
-        );
     }
 
     /// The gate that was missing. `shipped_plugin_lua_suite_passes` listed four

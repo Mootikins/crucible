@@ -11,9 +11,10 @@
 //! **Public roots** are the plugin directories and the user's `lua/`
 //! directory. A module found under one of them is cached by NAME, in the
 //! `package.loaded` compatibility table, exactly as Lua caches it. Names
-//! there are directory names, so they are already unique, and a plugin that
-//! writes `package.loaded["auto-title"] = plugin` (five shipped plugins do)
-//! makes the copy the daemon executed the copy a later `require` answers with.
+//! there are directory names, so they are already unique. The host seeds
+//! `package.loaded[name]` when it activates a plugin, so a later `require`
+//! answers with the instance the daemon runs. A plugin need not publish
+//! itself.
 //!
 //! **Private roots** are one plugin's own `lua/` directory, pushed for the
 //! duration of that plugin's load and popped after. A module found under one
