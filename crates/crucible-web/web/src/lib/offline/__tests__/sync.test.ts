@@ -178,6 +178,26 @@ describe('editNote', () => {
     expect(entry.value).toMatchObject({ kind: 'anchored', edits: [TICK], base: 'h1', path: PATH });
   });
 
+  // A whole write is queued for the note, and the ticked line is not in its
+  // body. Queueing the tick would send the daemon an edit this device already
+  // knows cannot apply. The answer has the refusal's shape, so the caller's
+  // revert path runs unchanged.
+  it('refuses an edit whose line is not in the queued whole write', async () => {
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: '- [ ] eggs\n', base: 'h0', kiln: KILN });
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const out = await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN });
+    expect(out).toEqual({
+      queued: false,
+      ok: false,
+      failed: [{ reason: 'the line is not in the queued text', index: 0 }],
+      current_hash: '',
+      stale_base: false,
+    });
+    expect(net.patch, 'never sent: the daemon is not answering').toHaveBeenCalledTimes(1);
+    expect(await queuedCount(offlineStore())).toBe(1);
+  });
+
   // The same rule as a whole write: a status means the daemon answered.
   it('raises a refusal the daemon answered with, and queues nothing', async () => {
     net.patch.mockRejectedValue(Object.assign(new Error('read-only'), { status: 403 }));
@@ -247,6 +267,47 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     expect(result.sent).toBe(1);
     expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT', 'h0');
   });
+
+  /** Queue one tick while the daemon is away. */
+  async function queueTickOffline() {
+    net.read.mockResolvedValue({ content: '- [ ] milk\n', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    expect(await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN })).toEqual({
+      queued: true,
+    });
+    net.online = true;
+  }
+
+  // The daemon places the anchor in the current text, and counts an edit
+  // already there as applied. A base would refuse every replay after any
+  // other change to the note.
+  it('replays a queued anchored entry against the current note with no base', async () => {
+    await queueTickOffline();
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'h1' });
+
+    const result = await syncNow();
+    expect(net.patch).toHaveBeenLastCalledWith(PATH, [TICK], undefined);
+    expect(result.sent).toBe(1);
+    expect(await queuedCount(offlineStore())).toBe(0);
+  });
+
+  it('reports an anchored refusal without writing a conflict copy', async () => {
+    await queueTickOffline();
+    net.patch.mockResolvedValue({
+      ok: false,
+      failed: [{ reason: 'no such line', index: 0 }],
+      current_hash: 'h9',
+      stale_base: false,
+    });
+
+    const result = await syncNow();
+    expect(result.refusedEdits).toEqual([PATH]);
+    expect(result.conflicted).toEqual([]);
+    expect(net.save, 'there is no body to copy').not.toHaveBeenCalled();
+    expect(await queuedCount(offlineStore()), 'the daemon answered; a replay would be refused again').toBe(0);
+  });
 });
 
 /** An error shaped like the API client's: a status means the daemon answered. */
@@ -311,6 +372,25 @@ describe('networkSink lets the daemon refuse a stale write', () => {
     await expect(networkSink.write(entry)).rejects.toThrow();
   });
 
+  const anchored: OutboxEntry = { ...entry, kind: 'anchored', edits: [TICK] };
+
+  it('replays an anchored entry through the patch route, with no base', async () => {
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    expect(await networkSink.write(anchored)).toEqual({ ok: true, hash: 'h1' });
+    expect(net.patch).toHaveBeenCalledWith(PATH, [TICK], undefined);
+    expect(net.guardedSave, 'an anchored entry has no body to PUT').not.toHaveBeenCalled();
+  });
+
+  it('answers a refusal when the daemon cannot place the anchored edit', async () => {
+    net.patch.mockResolvedValue({
+      ok: false,
+      failed: [{ reason: 'no such line', index: 0 }],
+      current_hash: 'h9',
+      stale_base: false,
+    });
+    expect(await networkSink.write(anchored)).toEqual({ ok: false, refused: true, current: 'h9' });
+  });
+
   it('takes a free name when a conflict copy already exists for today', async () => {
     net.read
       .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // dated name taken
@@ -335,5 +415,33 @@ describe('a read prefers writing the daemon has not received', () => {
     net.read.mockRejectedValue(new TypeError('Failed to fetch'));
     const back = await readNote(PATH, KILN);
     expect(back.content, 'the queued edit outranks the mirror').toBe('MY OFFLINE EDIT');
+  });
+
+  // An anchored entry holds no body. The best text there is, is the mirror
+  // with the queued edit folded in: that is what the user will see once the
+  // drain lands it.
+  it('folds a queued anchored edit into the mirror text', async () => {
+    net.read.mockResolvedValue({ content: '- [ ] milk\n- [ ] eggs\n', content_hash: 'h0' });
+    await warmIdentity();
+    await readNote(PATH, KILN);
+
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN });
+
+    net.read.mockRejectedValue(new TypeError('Failed to fetch'));
+    const back = await readNote(PATH, KILN);
+    expect(back).toEqual({ content: '- [x] milk\n- [ ] eggs\n', content_hash: 'h0', fromMirror: true });
+  });
+
+  it('answers the mirror text when a queued edit no longer applies to it', async () => {
+    net.read.mockResolvedValue({ content: '- [ ] eggs\n', content_hash: 'h0' });
+    await warmIdentity();
+    await readNote(PATH, KILN);
+
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await editNote({ path: PATH, edits: [TICK], base: 'h0', kiln: KILN });
+
+    net.read.mockRejectedValue(new TypeError('Failed to fetch'));
+    expect((await readNote(PATH, KILN)).content).toBe('- [ ] eggs\n');
   });
 });
