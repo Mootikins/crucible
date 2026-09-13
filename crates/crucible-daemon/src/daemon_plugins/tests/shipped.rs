@@ -277,8 +277,9 @@ async fn boot_loader_with_home(home: &std::path::Path) -> DaemonPluginLoader {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     crucible_lua::set_import_root(loader.executor().lua(), home.join("lua"));
     run_shipped_defaults(loader.executor().lua());
-    // Task 7 replaces this call with the spec-driven activation. Until then
-    // `load_plugins` activates every discovered directory and reads no spec.
+    // Task 7 replaces this call with the spec-driven `load_plugins_from_spec`.
+    // Until then `load_plugins` activates every discovered directory and
+    // reads no spec.
     loader
         .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
@@ -295,6 +296,10 @@ async fn boot_loader_with_home(home: &std::path::Path) -> DaemonPluginLoader {
 /// keeps the shipped set active, and this test is what proves the fragment
 /// is complete. It stays enabled: the ignore-reason gate admits only a
 /// prerequisite token, and a pending task is not one.
+///
+/// Task 7: replace `load_plugins` in `boot_loader_with_home` with the
+/// spec-driven call `load_plugins_from_spec`, then remove one name from the
+/// fragment and watch this test fail before you commit.
 #[tokio::test]
 async fn a_fresh_boot_activates_every_shipped_plugin() {
     let home = tempfile::TempDir::new().unwrap();
@@ -309,6 +314,11 @@ async fn a_fresh_boot_activates_every_shipped_plugin() {
             entry["state"].as_str(),
             Some("Active"),
             "shipped plugin '{name}' did not reach Active: {entry:#}"
+        );
+        let last_error = entry["last_error"].as_str().unwrap_or("");
+        assert!(
+            last_error.is_empty(),
+            "shipped plugin '{name}' recorded an error: {last_error}"
         );
     }
 }
