@@ -217,3 +217,116 @@ async fn a_declared_git_plugin_is_activated_at_boot() {
         "boot-declared-probe"
     ));
 }
+
+/// A server for `plugin.install`, over one fixture plugin `<name>/init.luau`
+/// in the directory `plugin_ops::plugins_dir()` resolves. The handler reads
+/// that directory from `dirs::config_dir()`, which reads `XDG_CONFIG_HOME`,
+/// so this is a genuine env read and `EnvVarGuard` is the right tool.
+/// nextest runs each test in its own process, so the guard races with
+/// nothing. The manifest starts empty.
+async fn server_for_install(
+    tmp: &TempDir,
+    name: &str,
+) -> (Server, crucible_core::test_support::EnvVarGuard) {
+    let config_home = tmp.path().join("xdg");
+    let plugin_dir = config_home.join("crucible").join("plugins").join(name);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(
+        plugin_dir.join("init.luau"),
+        format!("_G.{}_ran = true\nreturn {{}}\n", name.replace('-', "_")),
+    )
+    .unwrap();
+    let guard = crucible_core::test_support::EnvVarGuard::set(
+        "XDG_CONFIG_HOME",
+        config_home.to_string_lossy().to_string(),
+    );
+    assert_eq!(
+        crate::plugin_ops::plugins_dir().unwrap(),
+        config_home.join("crucible").join("plugins"),
+        "the handler must resolve the fixture's plugins directory"
+    );
+
+    let data_home = tmp.path().join("data");
+    let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
+        path: tmp.path().join("d.sock"),
+        config_home: Some(data_home.join("config")),
+        data_home: Some(data_home),
+        ..Default::default()
+    })
+    .await
+    .expect("bind");
+    (server, guard)
+}
+
+/// `plugin.install` for `name`, through the handler. The URL's scheme is
+/// one `normalize_git_url` refuses, and the directory already exists, so
+/// the bootstrap reports `AlreadyPresent` and no network is touched.
+async fn install_through_the_handler(server: &Server, name: &str) -> Response {
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(RequestId::Number(1)),
+        method: "plugin.install".to_string(),
+        params: json!({ "url": format!("file:///nowhere/{name}") }),
+    };
+    crate::server::plugin_install::handle_plugin_install(req, &server.rpc_context).await
+}
+
+/// The handler merges the installed record at Builtin rank, then activates
+/// the plugin through the one activation body.
+#[tokio::test(flavor = "multi_thread")]
+async fn plugin_install_merges_the_record_at_builtin_and_activates() {
+    let tmp = TempDir::new().unwrap();
+    let (server, _guard) = server_for_install(&tmp, "install-handler-probe").await;
+
+    let resp = install_through_the_handler(&server, "install-handler-probe").await;
+    assert!(resp.error.is_none(), "handler errored: {:?}", resp.error);
+    let result = resp.result.expect("result present");
+    assert_eq!(result["loaded"], true, "got: {result}");
+
+    let loader = server.plugin_loader.lock().await;
+    let loader = loader.as_ref().expect("loader present");
+    let spec = crucible_lua::spec_of(loader.lua());
+    assert_eq!(
+        spec.rank_of("install-handler-probe"),
+        Some(crucible_core::config::SpecRank::Builtin)
+    );
+    assert_eq!(
+        loader.plugin_state("install-handler-probe"),
+        Some(crucible_lua::manifest::PluginState::Active)
+    );
+    assert!(plugin_ran(loader, "install-handler-probe"));
+}
+
+/// The operator's `{ "<name>", enabled = false }` outranks the record the
+/// install merges. The plugin installs, and stays Disabled.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_operator_disable_entry_leaves_an_installed_now_plugin_disabled() {
+    let tmp = TempDir::new().unwrap();
+    let (server, _guard) = server_for_install(&tmp, "install-quiet-probe").await;
+    {
+        let loader = server.plugin_loader.lock().await;
+        loader
+            .as_ref()
+            .expect("loader present")
+            .eval_user_init(r#"cru.plugin.setup({ { "install-quiet-probe", enabled = false } })"#)
+            .await
+            .expect("the operator's init.lua");
+    }
+
+    let resp = install_through_the_handler(&server, "install-quiet-probe").await;
+    assert!(resp.error.is_none(), "handler errored: {:?}", resp.error);
+    let result = resp.result.expect("result present");
+    assert_eq!(result["installed"], true, "got: {result}");
+    assert_eq!(result["loaded"], false, "got: {result}");
+
+    let loader = server.plugin_loader.lock().await;
+    let loader = loader.as_ref().expect("loader present");
+    assert_eq!(
+        loader.plugin_state("install-quiet-probe"),
+        Some(crucible_lua::manifest::PluginState::Disabled)
+    );
+    assert!(
+        !plugin_ran(loader, "install-quiet-probe"),
+        "a disabled plugin's body must not run"
+    );
+}

@@ -40,9 +40,11 @@ pub struct BindWithPluginConfigParams {
     /// fixture's.
     pub config_home: Option<std::path::PathBuf>,
     /// The config FILE this daemon's config came from, when the spawning
-    /// client knew it. Refusals name it: a user told "that name is declared in
-    /// your config" cannot act on it without knowing which file to open.
-    /// `None` leaves the refusal naming the layer but not the file.
+    /// client knew it. Its parent directory is the config root: `config.save`
+    /// writes `settings.json` beside it, and `config.effective` reports it.
+    /// The kiln handlers name it when they refuse a name the config declares.
+    /// `None` makes `config.save` apply to this run only, and leaves a kiln
+    /// refusal naming the layer but not the file.
     pub config_path: Option<std::path::PathBuf>,
     /// [`crate::daemon_plugins::boot_input_hash`] over what the boot
     /// evaluation read, when this daemon booted through one. Returned by

@@ -116,10 +116,7 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
     // activates, and the log names both sites.
     let spec = crucible_lua::spec_of(&lua);
     let section = loader.config_section(name, declared_name.as_deref());
-    let leaf = section
-        .as_ref()
-        .and_then(|s| s.get("enabled"))
-        .and_then(serde_json::Value::as_bool);
+    let leaf = crate::daemon_plugins::enabled_leaf_of(section.as_ref());
     if !resolve_enabled(&spec, name, leaf) {
         match boot_instance {
             Some(_) => warn!(

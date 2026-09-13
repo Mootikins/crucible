@@ -102,13 +102,25 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
     daemon_plugin_paths(&[])
 }
 
-/// The spec's `Git` entries: what the bootstrap clones when the directory
-/// is missing. The operator's `init.lua` and the installed manifest both
-/// land in the spec, so this is the whole set, with the operator's entry
-/// already laid over the installed one for a shared name.
-pub fn bootstrap_entries(spec: &Spec) -> Vec<SpecEntry> {
+/// The spec's enabled `Git` entries: what the bootstrap clones when the
+/// directory is missing. The operator's `init.lua` and the installed
+/// manifest both land in the spec, so this is the whole set, with the
+/// operator's entry already laid over the installed one for a shared name.
+///
+/// `config_leaf` answers `plugins.<name>.enabled` from the config store,
+/// the same value activation reads. The bootstrap decides with
+/// [`super::resolve::resolve_enabled`], so a plugin the web disabled in
+/// `settings.json` is not cloned: a clone of a plugin activation refuses
+/// is a directory nothing runs.
+pub fn bootstrap_entries(
+    spec: &Spec,
+    config_leaf: impl Fn(&str) -> Option<bool>,
+) -> Vec<SpecEntry> {
     spec.iter()
         .filter(|entry| matches!(entry.source, SpecSource::Git { .. }))
+        .filter(|entry| {
+            super::resolve::resolve_enabled(spec, &entry.name, config_leaf(&entry.name))
+        })
         .cloned()
         .collect()
 }
@@ -143,8 +155,9 @@ pub enum BootstrapOutcome {
 /// instead of touching the real `~/.config/crucible/plugins`.
 ///
 /// An entry whose `enabled` is `Some(false)` is skipped. The config leaf
-/// `plugins.<name>.enabled` is not read here: a plugin a setting disables
-/// is still cloned, and activation is what reads the leaf.
+/// `plugins.<name>.enabled` is not read here: [`bootstrap_entries`] resolves
+/// it before the boot reaches this function, and a direct caller
+/// (`install_at`) holds a record with no leaf against it yet.
 ///
 /// Pin handling: when a pin is set we drop `--depth 1` because a shallow
 /// clone often won't contain the target SHA on the tip. Tags and branch

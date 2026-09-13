@@ -981,6 +981,13 @@ impl DaemonPluginLoader {
             .cloned()
     }
 
+    /// The config leaf `plugins.<name>.enabled` for the bootstrap, which
+    /// knows the manifest name alone: no fragment is discovered before the
+    /// clone, so there is no declared name to fall back to.
+    pub(crate) fn config_enabled_leaf(&self, name: &str) -> Option<bool> {
+        enabled_leaf_of(self.config_section(name, None).as_ref())
+    }
+
     /// The manager's state for `name`, or `None` for a name discovery never
     /// saw.
     pub fn plugin_state(&self, name: &str) -> Option<crucible_lua::manifest::PluginState> {
@@ -1346,6 +1353,16 @@ impl DaemonPluginLoader {
             other => Ok(format!("<{}>", other.type_name())),
         }
     }
+}
+
+/// The `enabled` leaf of a `plugins.<name>` config section, or `None` when
+/// no layer wrote it. The one reader of the leaf: activation and the
+/// bootstrap both pass its answer to `resolve::resolve_enabled`, so the two
+/// answer one question.
+pub(crate) fn enabled_leaf_of(section: Option<&serde_json::Value>) -> Option<bool> {
+    section
+        .and_then(|section| section.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
 }
 
 #[cfg(test)]

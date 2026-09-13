@@ -295,7 +295,7 @@ fn the_installed_manifest_loses_to_the_declaration() {
         SpecEntry::from_positional("user/greeter").unwrap(),
         SpecRank::Operator,
     );
-    let entries = crate::daemon_plugins::bootstrap_entries(&spec);
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
     assert_eq!(entries.len(), 1);
     assert!(crate::daemon_plugins::declared_git_entry(&spec, "greeter"));
 
@@ -306,7 +306,7 @@ fn the_installed_manifest_loses_to_the_declaration() {
         installed("other/tool", None).spec_entry("tool"),
         SpecRank::Builtin,
     );
-    let entries = crate::daemon_plugins::bootstrap_entries(&spec);
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
     assert_eq!(entries.len(), 1);
     assert!(!crate::daemon_plugins::declared_git_entry(&spec, "tool"));
 
@@ -336,7 +336,7 @@ fn the_installed_manifest_loses_to_the_declaration() {
         },
         SpecRank::Operator,
     );
-    let entries = crate::daemon_plugins::bootstrap_entries(&spec);
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
     assert_eq!(entries.len(), 2, "{entries:?}");
     let greeter = entries.iter().find(|e| e.name == "greeter").unwrap();
     assert_eq!(
@@ -346,6 +346,41 @@ fn the_installed_manifest_loses_to_the_declaration() {
     );
     assert!(crate::daemon_plugins::declared_git_entry(&spec, "greeter"));
     assert!(!crate::daemon_plugins::declared_git_entry(&spec, "tool"));
+}
+
+/// The bootstrap asks the question activation asks. A config leaf
+/// `plugins.<name>.enabled = false` (the web's toggle in `settings.json`)
+/// outranks the installed record's own `enabled`, so the plugin is not
+/// cloned. A clone of a plugin activation refuses is a directory nothing
+/// runs.
+#[tokio::test]
+async fn a_settings_disabled_git_plugin_is_not_cloned() {
+    use crucible_core::config::{Spec, SpecRank};
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mut spec = Spec::default();
+    spec.merge(
+        plugin_ops::InstalledEntry::new("file:///nowhere/tool".into(), None, None)
+            .spec_entry("tool"),
+        SpecRank::Builtin,
+    );
+    let leaf = |name: &str| (name == "tool").then_some(false);
+
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, leaf);
+    for entry in &entries {
+        // The URL's scheme is refused, so a wrongly listed entry errors
+        // here instead of reaching the network.
+        let _ = crate::daemon_plugins::bootstrap_plugin_entry(entry, tmp.path()).await;
+    }
+
+    assert!(
+        entries.iter().all(|entry| entry.name != "tool"),
+        "a plugin the settings disable is not a bootstrap entry: {entries:?}"
+    );
+    assert!(!tmp.path().join("tool").exists(), "no clone was attempted");
+
+    // The same entry with no leaf against it is cloned.
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
+    assert_eq!(entries.len(), 1, "{entries:?}");
 }
 
 /// A runtimepath entry has nothing to clone. The bootstrap refuses it with

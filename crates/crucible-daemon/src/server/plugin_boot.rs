@@ -177,7 +177,13 @@ impl Server {
                     crucible_core::config::SpecRank::Builtin,
                 );
             }
-            let entries = crate::daemon_plugins::bootstrap_entries(&crucible_lua::spec_of(&lua));
+            // The bootstrap decides `enabled` as activation does: the
+            // operator's entry, then the config leaf, then the fragments.
+            // The manifest name is the only name known before the clone.
+            let entries =
+                crate::daemon_plugins::bootstrap_entries(&crucible_lua::spec_of(&lua), |name| {
+                    loader.config_enabled_leaf(name)
+                });
             if !entries.is_empty() {
                 if let Err(e) = crate::daemon_plugins::bootstrap_plugins(&entries).await {
                     warn!("Plugin bootstrap error: {}", e);
