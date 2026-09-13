@@ -189,11 +189,11 @@ fn discovery_reads_one_search_path_in_name_order() {
 /// roots in the order it receives them, so a plugin from a higher root is
 /// DISCOVERED first even when its name sorts last.
 ///
-/// It does not ACTIVATE first, and an earlier version of this test asserted
-/// that it did. The daemon's activation pass sorts every discovered name,
-/// so `alpha` from the lower root activates before `zulu` from the higher
-/// one. The rank decides which plugin a name resolves to, not when that
-/// plugin runs.
+/// It also ACTIVATES first. The daemon's activation pass keeps discovery
+/// order: the search-path rank first, then the file name inside one path.
+/// An earlier version of this comment said that the pass sorted every name
+/// again, and it does not. The daemon test
+/// `activation_follows_discovery_order_rank_then_file_name` pins that order.
 #[test]
 fn a_higher_search_path_is_discovered_before_a_lower_one() {
     let high = TempDir::new().unwrap();

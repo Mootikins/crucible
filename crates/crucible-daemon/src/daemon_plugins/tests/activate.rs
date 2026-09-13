@@ -267,3 +267,45 @@ async fn a_module_without_hooks_activates() {
     loader.load_plugins_from_spec().await.unwrap();
     assert_eq!(loader.plugin_state("plain"), Some(PluginState::Active));
 }
+
+/// Activation follows discovery order: the search-path rank first, then
+/// the file name inside one path. `zeta` sits in the higher root and
+/// `alpha` in the lower one, so `zeta` runs first although its name sorts
+/// last. A pass that sorted every discovered name would run `alpha` first.
+#[tokio::test]
+async fn activation_follows_discovery_order_rank_then_file_name() {
+    let high = tempfile::TempDir::new().unwrap();
+    let low = tempfile::TempDir::new().unwrap();
+    for (root, name) in [(&high, "zeta"), (&low, "alpha")] {
+        let dir = root.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("init.luau"),
+            format!(
+                r#"_G.order = _G.order or {{}}; table.insert(_G.order, "{name}"); return {{}}"#
+            ),
+        )
+        .unwrap();
+    }
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .add_plugin_paths(&[
+            (high.path().to_path_buf(), PluginSource::Runtime),
+            (low.path().to_path_buf(), PluginSource::Runtime),
+        ])
+        .expect("paths");
+    boot::install_boot_require_hook(&loader);
+    loader
+        .eval_user_init(r#"cru.plugin.setup({ "zeta", "alpha" })"#)
+        .await
+        .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    let order: Vec<String> = loader.lua().load("return _G.order").eval().unwrap();
+    assert_eq!(
+        order,
+        ["zeta", "alpha"],
+        "the search-path rank must outrank the file name"
+    );
+    assert_eq!(loader.plugin_state("zeta"), Some(PluginState::Active));
+    assert_eq!(loader.plugin_state("alpha"), Some(PluginState::Active));
+}

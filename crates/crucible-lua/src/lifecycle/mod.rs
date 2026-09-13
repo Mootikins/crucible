@@ -95,11 +95,16 @@ impl PluginManager {
     pub fn discover_only(lua: &Lua) -> LifecycleResult<Self> {
         let mut paths = crucible_core::paths::env_plugin_paths();
         paths.extend(crucible_core::paths::user_plugins_dir());
-        let mut manager = Self::new().with_search_paths(paths);
+        let mut manager = Self::new();
+        manager.search_paths = paths;
         manager.discover(lua)?;
         Ok(manager)
     }
 
+    /// Replace the search paths. A test builder: production adds each path
+    /// with its source (`add_search_path_with_source`), or reads the
+    /// standard paths in `discover_only`.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_search_paths(mut self, paths: Vec<PathBuf>) -> Self {
         self.search_paths = paths;
         self

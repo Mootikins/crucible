@@ -21,16 +21,16 @@ pub struct PluginDiscoveryError {
 /// `std::fs::read_dir` returns entries in an order the platform does not
 /// specify, so DISCOVERY order was a property of the disk.
 ///
-/// **This does not decide the activation order, and an earlier version of
-/// this comment claimed it did.** The daemon's activation pass
-/// (`load_plugins_from_spec`) sorts every discovered name, so that order is
-/// one alphabetical sort across every directory, whatever `read_dir`
-/// answered. The handler tie-break reads that order, not this one.
+/// Activation follows discovery order. The daemon's activation pass
+/// (`load_plugins_from_spec`) records each name as `discover` answers it,
+/// then activates in that order: the search-path rank first, then this sort
+/// by file name inside one path. An earlier version of this comment said
+/// that the pass sorted every name again. It does not.
 ///
-/// What this sort decides is narrower: which plugin wins a duplicated name.
-/// Discovery walks the search paths in `Origin` order and the first name seen
-/// wins, so an unsorted read inside one directory made shadowing depend on the
-/// disk. It also makes a discovery log reproducible.
+/// This sort also decides which plugin wins a duplicated name. Discovery
+/// walks the search paths in `Origin` order and the first name seen wins, so
+/// an unsorted read inside one directory made shadowing depend on the disk.
+/// It also makes a discovery log reproducible.
 ///
 /// The file name is the key because the directory name IS a plugin's
 /// identity — the only name the host knows before it runs any Lua. File names
