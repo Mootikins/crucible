@@ -13,7 +13,7 @@ const openFileSpy = vi.fn(async () => {});
 const setBaseHash = vi.fn();
 const FILE_PATH = '/kiln/notes/from-tui.md';
 
-let openFilesValue: { path: string; content: string; dirty: boolean; baseHash?: string }[] = [];
+let openFilesValue: { path: string; content: string; dirty: boolean; baseHash: string }[] = [];
 let activeFileValue: string | null = null;
 let autosaveSeconds = 0;
 let vimMode = true;
@@ -230,7 +230,7 @@ describe('FileViewerPanel — rendering', () => {
 
 describe('FileViewerPanel — save UX', () => {
   beforeEach(() => {
-    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: true }];
+    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: true, baseHash: 'h1' }];
     activeFileValue = FILE_PATH;
     // Each test sets its own value, but pinning the default keeps test ordering robust.
     autosaveSeconds = 0;
@@ -261,7 +261,7 @@ describe('FileViewerPanel — save UX', () => {
   it('does not autosave a file outside every kiln', () => {
     autosaveSeconds = 2;
     const projectFile = '/work/app/src/main.rs';
-    openFilesValue = [{ path: projectFile, content: 'fn main() {}', dirty: true }];
+    openFilesValue = [{ path: projectFile, content: 'fn main() {}', dirty: true, baseHash: 'h1' }];
     activeFileValue = projectFile;
     render(() => <FileViewerPanel filePath={projectFile} />);
     vi.advanceTimersByTime(10_000);
@@ -279,7 +279,7 @@ describe('FileViewerPanel — save UX', () => {
 // Vim is the desktop default and wrong on a phone: no Escape, no modifier row.
 describe('FileViewerPanel — vim mode per shell', () => {
   beforeEach(() => {
-    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false }];
+    openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false, baseHash: 'h1' }];
     activeFileValue = FILE_PATH;
     vimMode = true;
     vimModeCompact = false;

@@ -246,6 +246,57 @@ describe('drainOutbox', () => {
     expect(await isQueued(store, PATH)).toBe(false);
   });
 
+  /**
+   * A write that lands changes the daemon's hash. An open buffer whose base
+   * is the entry's base must learn the new hash, or its next save is refused
+   * as stale for the user's own tick. The drain names each landed write.
+   */
+  describe('names each write the daemon accepted', () => {
+    it('reports a landed whole write with its base and the answered hash', async () => {
+      await queue({ base: 'h0' });
+      const result = await drainOutbox(store, sink({ write: async () => ({ ok: true, hash: 'h1' }) }), DAEMON);
+      expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'h1' }]);
+    });
+
+    it('reports a landed anchored entry the same way', async () => {
+      await queueWrite(store, {
+        kind: 'anchored',
+        path: PATH,
+        edits: [{ expect: '- [ ] milk', replace: '- [x] milk' }],
+        base: 'h0',
+        kiln: KILN,
+        daemon: DAEMON,
+      });
+      const result = await drainOutbox(store, sink({ write: async () => ({ ok: true, hash: 'h1' }) }), DAEMON);
+      expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'h1' }]);
+    });
+
+    it('reports nothing for a refused, conflicted or failed entry', async () => {
+      await queue({ path: `${KILN}/A.md` });
+      await queue({ path: `${KILN}/B.md` });
+      await queueWrite(store, {
+        kind: 'anchored',
+        path: `${KILN}/C.md`,
+        edits: [{ expect: '- [ ] milk', replace: '- [x] milk' }],
+        base: 'h0',
+        kiln: KILN,
+        daemon: DAEMON,
+      });
+      const result = await drainOutbox(
+        store,
+        sink({
+          write: async (e) => {
+            if (e.path.endsWith('A.md')) return { ok: false, current: 'other' };
+            if (e.path.endsWith('B.md')) throw new Error('offline');
+            return { ok: false, refused: true, current: 'h9' };
+          },
+        }),
+        DAEMON,
+      );
+      expect(result.landed).toEqual([]);
+    });
+  });
+
   it('sends in the order the writes were made', async () => {
     const seen: string[] = [];
     await queue({ path: `${KILN}/A.md` });

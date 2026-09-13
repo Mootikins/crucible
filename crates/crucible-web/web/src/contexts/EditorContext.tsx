@@ -3,13 +3,14 @@ import {
   useContext,
   ParentComponent,
   createSignal,
+  onCleanup,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
 import { listKilns } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
-import { readNote, writeConflictCopy, writeNote } from '@/lib/offline/sync';
+import { onNoteLanded, readNote, writeConflictCopy, writeNote, type Landed } from '@/lib/offline/sync';
 import { notificationActions } from '@/stores/notificationStore';
 
 
@@ -178,7 +179,7 @@ export const EditorProvider: ParentComponent = (props) => {
       const outcome = await writeNote({
         path,
         body: file.content,
-        base: file.baseHash ?? '',
+        base: file.baseHash,
         kiln: await kilnOf(path),
       });
 
@@ -252,6 +253,43 @@ export const EditorProvider: ParentComponent = (props) => {
       })
     );
   };
+
+  /**
+   * A queued write landed while its note stays open.
+   *
+   * The daemon's hash moved, and the buffer's base did not, so the next save
+   * would be refused as stale for the user's own queued write. The buffer
+   * whose base the write was made from takes the answered hash. A buffer with
+   * another base was moved by something else, and the queued write did not
+   * come from it, so it is left alone.
+   *
+   * A clean buffer also takes the text the daemon holds now, so a landed
+   * tick shows. The read answers a text and a hash that belong together, so
+   * both are taken from it. A buffer the user typed into during the read
+   * keeps its text: their bytes exist nowhere else.
+   */
+  const onLanded = (row: Landed) => {
+    const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
+    if (!file) return;
+    setBaseHash(row.path, row.hash);
+    if (file.dirty) return;
+    void kilnOf(row.path)
+      .then((kiln) => readNote(row.path, kiln))
+      .then(({ content, content_hash }) => {
+        setOpenFiles(
+          produce((files) => {
+            const f = files.find((x) => x.path === row.path);
+            if (!f || f.dirty) return;
+            f.content = content;
+            f.baseHash = content_hash;
+          }),
+        );
+      })
+      .catch(() => {
+        // The base already moved. The text refreshes on the next open.
+      });
+  };
+  onCleanup(onNoteLanded(onLanded));
 
   const value: EditorContextValue = {
     openFiles: () => openFilesStore,

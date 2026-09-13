@@ -31,6 +31,7 @@ import {
   editNote,
   networkSink,
   networkSource,
+  onNoteLanded,
   pendingCount,
   readNote,
   setOfflineStore,
@@ -310,6 +311,74 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     expect(result.conflicted).toEqual([]);
     expect(net.save, 'there is no body to copy').not.toHaveBeenCalled();
     expect(await pendingCount(), 'the daemon answered; a replay would be refused again').toBe(0);
+  });
+});
+
+/**
+ * A landed write moves the daemon's hash. The editor holds the open buffers
+ * and this layer holds the drain, so the drain names each landed write to
+ * whoever listens. The editor moves the buffer's base from that.
+ */
+describe('onNoteLanded', () => {
+  it('calls a listener once per landed row with the base and the answered hash', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.patch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await editNote({ path: `${KILN}/B.md`, edits: [TICK], base: 'hb', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+    net.patch.mockResolvedValue({ ok: true, content_hash: 'hb2' });
+
+    const listener = vi.fn();
+    const stop = onNoteLanded(listener);
+    await syncNow();
+    stop();
+
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledWith({ path: PATH, base: 'h0', hash: 'h1' });
+    expect(listener).toHaveBeenCalledWith({ path: `${KILN}/B.md`, base: 'hb', hash: 'hb2' });
+  });
+
+  it('never calls a listener that unsubscribed', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
+
+    const gone = vi.fn();
+    const kept = vi.fn();
+    onNoteLanded(gone)();
+    const stop = onNoteLanded(kept);
+    await syncNow();
+    stop();
+
+    expect(gone).not.toHaveBeenCalled();
+    expect(kept).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls no listener when nothing landed', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'a', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockRejectedValue(answered(404));
+    net.save.mockResolvedValue(undefined);
+
+    const listener = vi.fn();
+    const stop = onNoteLanded(listener);
+    await syncNow();
+    stop();
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

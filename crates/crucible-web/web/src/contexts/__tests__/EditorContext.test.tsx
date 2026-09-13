@@ -17,6 +17,8 @@ const guardedSave = vi.fn(async (p: string, c: string, _base: string) => {
     | { ok: false; current_hash: string };
 });
 const addNotification = vi.fn();
+/** The hash a read answers. A test that lands a write sets it to the landed hash. */
+let readHash = 'base-hash';
 
 const KILN = '/home/user/kiln';
 
@@ -25,7 +27,7 @@ vi.mock('@/lib/api', () => ({
   // the buffer was read at; the transport underneath is the same endpoint.
   getFileWithHash: async (p: string) => ({
     content: await getFileContent(p),
-    content_hash: 'base-hash',
+    content_hash: readHash,
   }),
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: (p: string, c: string) => saveFileContent(p, c),
@@ -43,7 +45,7 @@ vi.mock('@/stores/notificationStore', () => ({
 }));
 
 const { EditorProvider, useEditor } = await import('../EditorContext');
-const { setOfflineStore } = await import('@/lib/offline/sync');
+const { setOfflineStore, syncNow } = await import('@/lib/offline/sync');
 const { memoryStore } = await import('@/lib/offline/store');
 
 function withEditor(fn: (editor: ReturnType<typeof useEditor>) => void) {
@@ -351,5 +353,119 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     expect(fileState(editor).dirty).toBe(true);
     await editor.saveFile(PATH);
     expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text', 'h2');
+  });
+});
+
+/**
+ * A queued write drains while the note stays open. The daemon's hash moves,
+ * so the buffer's base must move with it, or the next save from that buffer
+ * is refused as stale for the user's own queued write. The drain names each
+ * landed write, and the editor moves the buffer whose base the write came from.
+ */
+describe('EditorContext — a drained write moves the open buffer', () => {
+  const PATH = `${KILN}/notes/queued.md`;
+  const fileState = (editor: ReturnType<typeof useEditor>) =>
+    editor.openFiles().find((f) => f.path === PATH)!;
+
+  beforeEach(() => {
+    getFileContent.mockClear();
+    saveFileContent.mockClear();
+    guardedSave.mockClear();
+    addNotification.mockClear();
+    readHash = 'base-hash';
+    setOfflineStore(memoryStore());
+  });
+
+  /** Open the note, edit it, and save while the daemon does not answer. */
+  const openAndQueue = async () => {
+    getFileContent.mockResolvedValueOnce('on disk\n');
+    const editor = withEditor(() => {});
+    await editor.openFile(PATH);
+    await waitFor(() => expect(editor.openFiles().length).toBe(1));
+    editor.updateFileContent(PATH, 'queued text\n');
+    guardedSave.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await editor.saveFile(PATH);
+    await waitFor(() => expect(fileState(editor).dirty).toBe(false));
+    expect(fileState(editor).baseHash, 'a queued save moves no base').toBe('base-hash');
+    return editor;
+  };
+
+  it('a drained write moves the open buffer\'s base when the bases match', async () => {
+    const editor = await openAndQueue();
+    // The user keeps typing: the buffer is dirty, and its text is theirs.
+    editor.updateFileContent(PATH, 'queued text, and more\n');
+
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    const result = await syncNow();
+
+    expect(result.sent).toBe(1);
+    expect(fileState(editor).baseHash).toBe('h2');
+    expect(fileState(editor).content, 'a dirty buffer keeps its text').toBe('queued text, and more\n');
+    expect(fileState(editor).dirty).toBe(true);
+    // The next save is made from the hash the daemon holds now.
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h3' });
+    await editor.saveFile(PATH);
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'queued text, and more\n', 'h2');
+  });
+
+  it('a drained write leaves a buffer with another base alone', async () => {
+    const editor = await openAndQueue();
+    // A tick landed online meanwhile and moved this buffer's base on its own.
+    editor.setBaseHash(PATH, 'h7');
+    editor.updateFileContent(PATH, 'typed after the tick\n');
+
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    await syncNow();
+
+    expect(fileState(editor).baseHash).toBe('h7');
+    expect(fileState(editor).content).toBe('typed after the tick\n');
+  });
+
+  it('a drained write refreshes a clean buffer\'s text', async () => {
+    const editor = await openAndQueue();
+
+    getFileContent.mockClear();
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    readHash = 'h2';
+    getFileContent.mockResolvedValueOnce('queued text\n');
+    await syncNow();
+
+    await waitFor(() => expect(getFileContent).toHaveBeenCalledWith(PATH));
+    await waitFor(() => expect(fileState(editor).content).toBe('queued text\n'));
+    expect(fileState(editor).baseHash).toBe('h2');
+    expect(fileState(editor).dirty).toBe(false);
+  });
+
+  it('a drained write refreshes no text the user typed during the read', async () => {
+    const editor = await openAndQueue();
+
+    getFileContent.mockClear();
+    let answer: (text: string) => void = () => {};
+    getFileContent.mockImplementationOnce(() => new Promise<string>((r) => (answer = r)));
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    readHash = 'h2';
+    await syncNow();
+    await waitFor(() => expect(getFileContent).toHaveBeenCalledWith(PATH));
+
+    // The read is out. The user types before it returns.
+    editor.updateFileContent(PATH, 'typed during the read\n');
+    answer('queued text\n');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fileState(editor).content).toBe('typed during the read\n');
+    expect(fileState(editor).dirty).toBe(true);
+    expect(fileState(editor).baseHash).toBe('h2');
+  });
+
+  it('a provider that unmounted hears no landed write', async () => {
+    const editor = await openAndQueue();
+    const { cleanup } = await import('@solidjs/testing-library');
+    cleanup();
+
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    await syncNow();
+
+    expect(fileState(editor).baseHash).toBe('base-hash');
   });
 });

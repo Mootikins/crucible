@@ -20,6 +20,7 @@ import {
   queueWrite,
   queuedCount,
   readQueued,
+  type Landed,
   type NoteWrite,
   type OutboxSink,
   type QueueOutcome,
@@ -395,9 +396,33 @@ export async function pendingCount(): Promise<number> {
   return queuedCount(offlineStore());
 }
 
+export type { Landed };
+
+/**
+ * Who wants to know that a queued write landed.
+ *
+ * The editor holds the open buffers, and this layer holds the drain. A
+ * landed write moves the daemon's hash, so a buffer that was edited from the
+ * entry's base must move to the answered hash. Otherwise its next save is
+ * refused as stale for the user's own queued write. The set lives here, in
+ * the layer that drains, so the editor never learns the outbox's shape.
+ */
+const landedListeners = new Set<(row: Landed) => void>();
+
+/** Hear each write the drain lands. Answers the function that stops it. */
+export function onNoteLanded(listener: (row: Landed) => void): () => void {
+  landedListeners.add(listener);
+  return () => {
+    landedListeners.delete(listener);
+  };
+}
+
 /** Send everything queued for the daemon now answering. */
 export async function syncNow() {
   const result = await drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
+  for (const row of result.landed) {
+    for (const listener of landedListeners) listener(row);
+  }
   // A conflict copy is the one outcome a user MUST be told about: their text
   // did not land on the note they wrote it in, and nothing else on screen
   // says so — the queue count drops either way. Every caller discarded this.

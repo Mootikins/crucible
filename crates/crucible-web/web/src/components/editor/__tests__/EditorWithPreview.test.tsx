@@ -34,6 +34,7 @@ describe('EditorWithPreview', () => {
       <EditorWithPreview
         content={'# Heading\n\nSee [[Other Note]].'}
         path="/kiln/note.md"
+        baseHash="h1"
         onChange={noop}
       />
     ));
@@ -65,6 +66,7 @@ describe('EditorWithPreview', () => {
       <EditorWithPreview
         content={'---\ntitle: X\n---\n\nBody only.'}
         path="/kiln/note.md"
+        baseHash="h1"
         onChange={noop}
       />
     ));
@@ -78,7 +80,7 @@ describe('EditorWithPreview', () => {
 
   it('clicking a wikilink in the preview opens the note', async () => {
     const { getByTestId } = render(() => (
-      <EditorWithPreview content="Go to [[Other Note]]." path="/kiln/note.md" onChange={noop} />
+      <EditorWithPreview content="Go to [[Other Note]]." path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
     fireEvent.click(getByTestId('preview-toggle'));
     await waitFor(() => {
@@ -91,7 +93,7 @@ describe('EditorWithPreview', () => {
 
   it('non-markdown files get no toggle', () => {
     const { queryByTestId } = render(() => (
-      <EditorWithPreview content="fn main() {}" path="/src/main.rs" onChange={noop} />
+      <EditorWithPreview content="fn main() {}" path="/src/main.rs" baseHash="h1" onChange={noop} />
     ));
     expect(queryByTestId('preview-toggle')).toBeNull();
     expect(queryByTestId('mode-toggle')).toBeNull();
@@ -99,7 +101,7 @@ describe('EditorWithPreview', () => {
 
   it('markdown defaults to live preview: styled prose, syntax marks hidden', () => {
     const { container } = render(() => (
-      <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" onChange={noop} />
+      <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
     expect(container.querySelector('.cm-lp-strong')).not.toBeNull();
     expect(container.querySelector('.cm-content')?.textContent).not.toContain('**');
@@ -107,7 +109,7 @@ describe('EditorWithPreview', () => {
 
   it('the mode toggle switches to raw source and back', async () => {
     const { getByTestId, container } = render(() => (
-      <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" onChange={noop} />
+      <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
 
     fireEvent.click(getByTestId('mode-toggle'));
@@ -124,7 +126,7 @@ describe('EditorWithPreview', () => {
 
   it('non-markdown files never get the live-preview extension', () => {
     const { container } = render(() => (
-      <EditorWithPreview content="let x = 1; // **not md**" path="/src/main.rs" onChange={noop} />
+      <EditorWithPreview content="let x = 1; // **not md**" path="/src/main.rs" baseHash="h1" onChange={noop} />
     ));
     expect(container.querySelector('.cm-lp-strong')).toBeNull();
     expect(container.querySelector('.cm-content')?.textContent).toContain('**not md**');
@@ -133,7 +135,7 @@ describe('EditorWithPreview', () => {
   it('switching files drops back to edit mode', async () => {
     const [path, setPath] = createSignal('/kiln/a.md');
     const { getByTestId, queryByTestId, container } = render(() => (
-      <EditorWithPreview content="text" path={path()} onChange={noop} />
+      <EditorWithPreview content="text" path={path()} baseHash="h1" onChange={noop} />
     ));
 
     fireEvent.click(getByTestId('preview-toggle'));
@@ -150,7 +152,7 @@ describe('EditorWithPreview', () => {
 describe('reading-view parity (live mode)', () => {
   it('live preview has no line-number gutter; source mode does', async () => {
     const { getByTestId, container } = render(() => (
-      <EditorWithPreview content="text" path="/kiln/note.md" onChange={noop} />
+      <EditorWithPreview content="text" path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
     expect(container.querySelector('.cm-lineNumbers')).toBeNull();
 
@@ -162,7 +164,7 @@ describe('reading-view parity (live mode)', () => {
 
   it('applies the readable line width to the live-preview content', () => {
     const { container } = render(() => (
-      <EditorWithPreview content="text" path="/kiln/note.md" onChange={noop} lineWidth={500} />
+      <EditorWithPreview content="text" path="/kiln/note.md" baseHash="h1" onChange={noop} lineWidth={500} />
     ));
     const content = container.querySelector('.cm-content') as HTMLElement;
     expect(content.style.maxWidth).toBe('500px');
@@ -173,6 +175,7 @@ describe('reading-view parity (live mode)', () => {
       <EditorWithPreview
         content={'# H\n\nBody.'}
         path="/kiln/note.md"
+        baseHash="h1"
         onChange={noop}
         initialMode="reading"
       />
@@ -188,6 +191,7 @@ describe('reading-view parity (live mode)', () => {
       <EditorWithPreview
         content="Body."
         path="/kiln/note.md"
+        baseHash="h1"
         onChange={noop}
         initialMode="reading"
         lineWidth={640}
@@ -204,7 +208,7 @@ describe('save keybinds', () => {
   it('Mod-Enter saves (off a wikilink)', async () => {
     const onSave = vi.fn();
     const { container } = render(() => (
-      <EditorWithPreview content="plain text" path="/kiln/note.md" onChange={noop} onSave={onSave} />
+      <EditorWithPreview content="plain text" path="/kiln/note.md" baseHash="h1" onChange={noop} onSave={onSave} />
     ));
     const content = container.querySelector('.cm-content') as HTMLElement;
     fireEvent.keyDown(content, { key: 'Enter', ctrlKey: true });
@@ -216,7 +220,7 @@ describe('vim mode', () => {
   it('vimMode starts in normal mode: x deletes the character under the cursor', async () => {
     const onChange = vi.fn();
     const { container } = render(() => (
-      <EditorWithPreview content="hello" path="/kiln/note.md" onChange={onChange} vimMode />
+      <EditorWithPreview content="hello" path="/kiln/note.md" baseHash="h1" onChange={onChange} vimMode />
     ));
     const content = container.querySelector('.cm-content') as HTMLElement;
     expect(content).not.toBeNull();
@@ -230,7 +234,7 @@ describe('vim mode', () => {
   it('without vimMode, x is not a command', async () => {
     const onChange = vi.fn();
     const { container } = render(() => (
-      <EditorWithPreview content="hello" path="/kiln/note.md" onChange={onChange} />
+      <EditorWithPreview content="hello" path="/kiln/note.md" baseHash="h1" onChange={onChange} />
     ));
     const content = container.querySelector('.cm-content') as HTMLElement;
 

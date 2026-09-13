@@ -37,7 +37,7 @@ export const EditorWithPreview: Component<{
   /** The disk hash the buffer was read at. A task tick carries it, so a tick
    * on a note that changed elsewhere is refused instead of landing on text
    * the user did not see. */
-  baseHash?: string;
+  baseHash: string;
   /** A tick that landed changed the note on disk. The answered hash is the
    * buffer's new base, or the next whole save is stale by construction. */
   onBaseChange?: (hash: string) => void;
@@ -92,7 +92,7 @@ export const EditorWithPreview: Component<{
     void editNote({
       path: props.path,
       edits: [edit],
-      base: props.baseHash ?? '',
+      base: props.baseHash,
       kiln: props.kiln ?? null,
     })
       .then((answer) => {

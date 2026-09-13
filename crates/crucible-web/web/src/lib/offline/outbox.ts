@@ -83,8 +83,20 @@ export type SinkAnswer =
   | { ok: true; hash: string }
   | { ok: false; current: string; refused?: true };
 
+/** A write the daemon accepted: which note, from which base, to which hash. */
+export type Landed = { path: string; base: string; hash: string };
+
 export interface DrainResult {
   sent: number;
+  /**
+   * One row per entry the daemon accepted, whole or anchored, in the order
+   * they landed. A landed write moves the daemon's hash, so an open buffer
+   * whose base is the entry's base must move to the answered hash. Without
+   * this, the next save from that buffer is refused as stale for the user's
+   * own queued write. `sent` counts only what cleared; a superseded entry
+   * landed too, and its buffer moved the same way.
+   */
+  landed: Landed[];
   conflicted: string[];
   /** Anchored entries the daemon refused. There is no body to copy. */
   refusedEdits: string[];
@@ -257,6 +269,7 @@ export async function drainOutbox(
 
   const result: DrainResult = {
     sent: 0,
+    landed: [],
     conflicted: [],
     refusedEdits: [],
     foreign: 0,
@@ -272,6 +285,7 @@ export async function drainOutbox(
     try {
       const answer = await sink.write(entry);
       if (answer.ok) {
+        result.landed.push({ path: entry.path, base: entry.base, hash: answer.hash });
         // Only a whole write knows the note's text. An anchored entry does
         // not, so the mirror keeps what it has until the next read refreshes it.
         if (entry.kind === 'whole') {
