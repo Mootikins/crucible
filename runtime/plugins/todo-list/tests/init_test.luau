@@ -337,14 +337,9 @@ describe("todo-list", function()
     end)
 
     describe("plugin metadata", function()
-        it("exports the correct name", function()
-            expect.equal(plugin.name, "todo-list")
-        end)
-
-        it("exports a version string", function()
-            expect.equal(type(plugin.version), "string")
-        end)
-
+        -- The name and the version are in `spec.luau`, which discovery
+        -- reads. The module table carries no metadata, and the Rust gate
+        -- `no_shipped_module_table_carries_fragment_metadata` says so.
         it("exports a setup function so its config is applied", function()
             expect.equal(type(plugin.setup), "function")
         end)

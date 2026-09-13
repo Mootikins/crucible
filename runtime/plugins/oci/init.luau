@@ -789,13 +789,6 @@ local function register_handlers()
 end
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-  -- Takes tool calls over: `handled = true` runs bash inside the
-  -- container instead of on the host. Here, intercepting IS the sandbox.
-  intercepts_tools = true,
-  name = "oci",
-
   commands = {
     --- The container environments this box offers, as menu rows.
     ---
@@ -927,21 +920,6 @@ local plugin = {
       })
     end
   end,
-  version = "0.2.0",
-  description = "Run agent tools inside OCI containers via generic hook interception",
 }
-
--- The daemon executes this file BY PATH, not through `require`, so nothing
--- would otherwise fill `package.loaded`. The documented
--- `require("oci").setup{...}` from a user's init.lua would then load a
--- SECOND copy of this file, with its own `registered` flag, and its setup()
--- would register every handler a second time, so each would fire twice per
--- event. Registering the spec here makes that `require` answer with this
--- table instead.
---
--- Same guard and same reason as `auto-title` and `web-search`. Enumerated
--- across every bundled plugin on 2026-08-19 after the auto-title fix stopped
--- at one plugin; `plugin_require_guard` pins the whole set.
-package.loaded["oci"] = plugin
 
 return plugin

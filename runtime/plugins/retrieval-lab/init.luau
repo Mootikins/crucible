@@ -825,12 +825,6 @@ end
 M.activate()
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-    name = "retrieval-lab",
-    version = "0.1.0",
-    description = "Retrieval strategies over block trajectories, for measurement",
-
     -- Exposed for unit tests.
     counters = M.counters,
     reset_counters = M.reset_counters,
@@ -844,10 +838,5 @@ local plugin = {
         M.activate()
     end,
 }
-
--- The daemon executes this file BY PATH, so a later `require("retrieval-lab")`
--- would evaluate a second copy with its own counters and handlers. Same
--- guard as `reflection`.
-package.loaded["retrieval-lab"] = plugin
 
 return plugin

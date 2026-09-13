@@ -771,12 +771,6 @@ local function register_handlers()
 end
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-    name = "reflection",
-    version = "0.1.0",
-    description = "Retrospective self-improvement: propose kiln notes after a session ends",
-
     -- Exposed for unit tests and manual invocation. The consolidation
     -- plugin calls `review` and `load_hunks`, so the two passes share one
     -- lifecycle.
@@ -808,18 +802,5 @@ local plugin = {
         register_handlers()
     end,
 }
-
--- The daemon executes this file BY PATH, not through `require`, so nothing
--- would otherwise fill `package.loaded`. The documented
--- `require("reflection").setup{...}` from a user's init.lua would then load a
--- SECOND copy of this file, with its own `registered` flag, and its setup()
--- would register the `on_session_end` handler a second time, so it would
--- fire twice per event. Registering the spec here makes that `require`
--- answer with this table instead.
---
--- Same guard and same reason as `auto-title` and `web-search`. Enumerated
--- across every bundled plugin on 2026-08-19 after the auto-title fix stopped
--- at one plugin; `plugin_require_guard` pins the whole set.
-package.loaded["reflection"] = plugin
 
 return plugin

@@ -305,12 +305,6 @@ local function start_schedule()
 end
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-    name = "consolidation",
-    version = "0.1.0",
-    description = "Periodic pass over recent sessions that proposes pattern notes",
-
     -- Exposed for unit tests and manual invocation.
     run = M.run,
     since_cursor = M.since_cursor,
@@ -326,13 +320,5 @@ local plugin = {
         start_schedule()
     end,
 }
-
--- The daemon executes this file BY PATH, not through `require`, so nothing
--- would otherwise fill `package.loaded`. A `require("consolidation").setup{...}`
--- from a user's init.lua would then load a SECOND copy of this file, with its
--- own `scheduled` flag, and its setup() would start a second timer.
--- Registering the spec here makes that `require` answer with this table
--- instead. Same guard and same reason as `reflection`.
-package.loaded["consolidation"] = plugin
 
 return plugin

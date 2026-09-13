@@ -31,9 +31,6 @@
 
 local title = require("auto_title")
 
---- The plugin's name, and the `package.loaded` key the user requires it by.
-local NAME = "auto-title"
-
 --- The publication channel a session-title provider declares itself on.
 --- The daemon reads this key; the plugin's own name is not part of the
 --- contract.
@@ -102,12 +99,6 @@ local function publish_provider()
 end
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-  name = NAME,
-  version = "0.1.0",
-  description = "Name a session after what it is about",
-
   commands = {
     [COMMAND] = {
       desc = "Generate a topic title for a session's opening exchange",
@@ -127,14 +118,5 @@ local plugin = {
     publish_provider()
   end,
 }
-
--- The daemon executes this file by path, not through `require`, so nothing
--- would otherwise fill `package.loaded`. The documented
--- `require("auto-title").setup{...}` from the user's init.lua would then load
--- a SECOND copy of this file with its own `config` upvalue, merge into that,
--- and leave the copy the daemon actually calls untouched — a config surface
--- that silently ignores you. Registering the spec here makes that `require`
--- answer with this table.
-package.loaded[NAME] = plugin
 
 return plugin

@@ -147,39 +147,101 @@ fn every_shipped_plugin_with_an_intercept_grant_declares_it_in_its_fragment() {
     );
 }
 
-/// Every shipped manifest carries the same block of identifying fields.
+/// Every shipped plugin describes itself in a fragment, `spec.luau`.
 ///
-/// `oci` was eight lines with no `author` and no `license` while the
-/// other six carried all three — an arbitrary difference nobody would notice
-/// until they were generating an index of what ships and half the rows were
-/// blank. One shape, asserted, so it stays one shape.
+/// Discovery reads the fragment and runs no plugin code, so a plugin with
+/// no fragment has no version and no declared name at any point, and
+/// `plugin.list` shows a blank row for it. The expectation comes from a
+/// real `discover` over `runtime/plugins/`, not from the text of a file.
+/// This replaced a gate that read each `init.luau` for `name = ` and four
+/// more substrings, which `author = "agent"` in a tool body satisfied.
 #[test]
-fn every_shipped_plugin_declares_the_same_identifying_fields() {
-    const REQUIRED: &[&str] = &["name", "version", "description", "author", "license"];
+fn every_shipped_plugin_has_a_fragment_with_a_name() {
+    let mut manager = PluginManager::new();
+    manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
+    manager.discover(&mlua::Lua::new()).expect("discovery");
 
     let mut missing: Vec<String> = Vec::new();
     for name in shipped_plugin_names() {
-        // The spec table in the entry file, which is where this metadata
-        // lives now that `plugin.yaml` is gone. Read as text rather than
-        // executed: this asserts the field is DECLARED, and executing a
-        // plugin to find out would be the defect `discover_only` exists to
-        // avoid.
-        let entry = crucible_lua::source_files::init_file(&shipped_plugins_dir().join(&name))
-            .unwrap_or_else(|e| panic!("{name}: {e}"))
-            .unwrap_or_else(|| panic!("{name} ships no entry file"));
-        let body = std::fs::read_to_string(&entry)
-            .unwrap_or_else(|e| panic!("read {}: {e}", entry.display()));
-
-        for field in REQUIRED {
-            if !body.contains(&format!("{field} = ")) {
-                missing.push(format!("{name}: {field}"));
-            }
+        let manifest = &manager
+            .get(&name)
+            .unwrap_or_else(|| panic!("shipped plugin '{name}' was not discovered"))
+            .manifest;
+        if manifest.declared_name.as_deref() != Some(name.as_str()) {
+            missing.push(format!(
+                "{name}: the fragment declares name {:?}",
+                manifest.declared_name
+            ));
+        }
+        if manifest.version.is_none() {
+            missing.push(format!("{name}: version"));
+        }
+        if manifest.description.is_empty() {
+            missing.push(format!("{name}: description"));
         }
     }
 
     assert!(
         missing.is_empty(),
-        "shipped plugins are missing identifying fields: {missing:#?}"
+        "shipped plugins whose fragment does not describe them: {missing:#?}"
+    );
+}
+
+/// The keys a fragment holds, and the module table a plugin returns from
+/// `init.luau` does not.
+const FRAGMENT_METADATA: [&str; 6] = [
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "intercepts_tools",
+];
+
+/// A plugin's metadata lives in its fragment and nowhere else.
+///
+/// The loader reads declarations only from the module table, so a metadata
+/// key there is a second source of truth that nothing checks. `oci` carried
+/// `intercepts_tools = true` in its module table for months after the
+/// fragment became the one place the grant counts, and the two could drift
+/// apart without a test noticing.
+///
+/// Each module table is the one activation seeded into `package.loaded` on
+/// the loader VM, so the check reads what a `require` would answer.
+#[tokio::test]
+async fn no_shipped_module_table_carries_fragment_metadata() {
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .await
+        .expect("load shipped plugins");
+
+    let loaded: mlua::Table = loader
+        .lua()
+        .globals()
+        .get::<mlua::Table>("package")
+        .and_then(|package| package.get("loaded"))
+        .expect("package.loaded");
+
+    let names = shipped_plugin_names();
+    let mut carried: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+    for name in &names {
+        let module: mlua::Table = loaded
+            .get(name.as_str())
+            .unwrap_or_else(|e| panic!("{name}: activation seeded no module table: {e}"));
+        for key in FRAGMENT_METADATA {
+            if module.contains_key(key).expect("key lookup") {
+                carried.push(format!("{name}: {key}"));
+            }
+        }
+        checked += 1;
+    }
+
+    assert_eq!(checked, names.len(), "the gate checked fewer plugins than ship");
+    assert!(
+        carried.is_empty(),
+        "module tables that carry fragment metadata: {carried:#?}"
     );
 }
 

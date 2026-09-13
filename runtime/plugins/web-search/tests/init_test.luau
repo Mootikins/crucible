@@ -367,11 +367,12 @@ describe("web-search plugin", function()
     end)
 
     describe("re-execution", function()
-        -- `activate` evaluates init.lua without populating
-        -- `package.loaded`, so the documented `require("web-search").setup{}`
-        -- from a user's init.lua used to re-run the whole module — registering
-        -- a SECOND display hook, outside any plugin's ownership, which
-        -- `clear_plugin_handlers` could never reap.
+        -- Activation seeds `package.loaded`, and the searcher caches the
+        -- instance the `require` above made. Without the cache, the
+        -- documented `require("web-search").setup{}` from a user's init.lua
+        -- ran the whole module again and registered a SECOND display hook,
+        -- outside any plugin's ownership, which `clear_plugin_handlers`
+        -- could never reap.
         it("returns the same module rather than re-running the file", function()
             local again = require("web-search")
             expect.equal(plugin, again, "require must hit package.loaded, not re-execute")
@@ -380,7 +381,7 @@ describe("web-search plugin", function()
         -- There is no global sentinel guarding the hook: one was tried and it
         -- outlived `clear_plugin_handlers`, so a plugin reload dropped the
         -- handler and then skipped re-registering it, losing the summary until
-        -- the daemon restarted. `package.loaded` above is the whole fix.
+        -- the daemon restarted. The module cache is the whole fix.
     end)
 
     describe("the display summary", function()

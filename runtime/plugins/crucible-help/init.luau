@@ -2,13 +2,7 @@
 --- crucible-help — Registers Crucible documentation as agent skill context.
 ---
 --- Skills are discovered automatically by FolderDiscovery from
---- skills/crucible-help/SKILL.md. This init.lua provides plugin
---- metadata for the lifecycle manager.
+--- skills/crucible-help/SKILL.md. The plugin declares no tool and no
+--- command; its metadata is in `spec.luau`.
 
-return {
-    author = "Crucible Team",
-    license = "MIT",
-    name = "crucible-help",
-    version = "0.1.0",
-    description = "Registers Crucible documentation as agent skill context",
-}
+return {}

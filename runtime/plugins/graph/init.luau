@@ -182,12 +182,6 @@ function M.neighborhood_command(args: any): Neighborhood
 end
 
 return {
-    name = "graph",
-    version = "0.1.0",
-    description = "The neighbourhood of one note, reduced on the daemon",
-    author = "Crucible Contributors",
-    license = "MIT",
-
     setup = M.setup,
 
     tools = {

@@ -162,8 +162,10 @@ local function start_isolated_session(id: string, isolation: any, workspace: str
 end
 
 describe("oci plugin load", function()
-  it("returns its spec", function()
-    expect.equals("oci", spec.name)
+  it("returns its plugin table", function()
+    -- The name is in `spec.luau`, which discovery reads. The module table
+    -- carries no metadata, and the Rust gate
+    -- `no_shipped_module_table_carries_fragment_metadata` says so.
     expect.is_function(spec.setup)
   end)
 

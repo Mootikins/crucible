@@ -250,12 +250,6 @@ function M.move_command(args): MoveResult
 end
 
 return {
-    name = "kanban",
-    version = "0.1.0",
-    description = "A board over a folder of markdown tickets",
-    author = "Crucible Contributors",
-    license = "MIT",
-
     setup = M.setup,
 
     tools = {

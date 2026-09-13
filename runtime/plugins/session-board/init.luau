@@ -98,12 +98,6 @@ function M.setup(_cfg)
 end
 
 return {
-    author = "Crucible Contributors",
-    license = "MIT",
-    name = "session-board",
-    version = "1.0.0",
-    description = "Every live session as a surface, in the TUI and the browser",
-
     setup = M.setup,
 
     commands = {

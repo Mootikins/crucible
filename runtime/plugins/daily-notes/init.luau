@@ -306,12 +306,6 @@ function M.daily_command(args: { [string]: any }, ctx: any): ()
 end
 
 return {
-    author = "Crucible Contributors",
-    license = "MIT",
-    name = "daily-notes",
-    version = "1.1.0",
-    description = "Create and manage daily journal notes",
-
     setup = M.setup,
 
     tools = {

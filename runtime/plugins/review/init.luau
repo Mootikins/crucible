@@ -157,11 +157,6 @@ function M.resolve_comment(args: { [string]: any }): ToolResult
 end
 
 return {
-    license = "MIT",
-    name = "review",
-    version = "0.1.0",
-    description = "Review the attributed diff of a session — including one you delegated to",
-
     tools = {
         review_list_hunks = {
             desc = "List a session's composed diff: every change between the session's base "
