@@ -139,19 +139,21 @@ export const EditorProvider: ParentComponent = (props) => {
   };
 
   /**
-   * Keep the buffer's text beside the note the daemon refused to overwrite.
+   * Keep the text the daemon refused beside the note it refused to overwrite.
    *
-   * Reads the buffer at the moment the user chooses, not at the moment the
-   * save was refused: the user may keep typing between the two.
+   * The caller captures `refused` at the moment of the refusal, not at the
+   * moment the user chooses. Between the two, the user may close the note
+   * and open it again: the buffer then holds the server text, and a copy of
+   * that text is not "your version". Text typed after the refusal stays in
+   * the dirty buffer on screen, so the snapshot loses nothing, and the
+   * snapshot is what the refusal was about.
    */
-  const keepAsConflictCopy = (path: string) => {
-    const file = openFilesStore.find((f) => f.path === path);
-    if (!file) return;
-    writeConflictCopy(path, file.content, new Date())
+  const keepAsConflictCopy = (path: string, refused: string) => {
+    writeConflictCopy(path, refused, new Date())
       .then((copy) =>
         notificationActions.addNotification(
           'success',
-          `Your version was saved as ${copy.split('/').pop()}`,
+          `Your version was saved as ${copy.split('/').pop()}. Reload the note to continue from the current text.`,
         ),
       )
       .catch((err: unknown) =>
@@ -184,11 +186,14 @@ export const EditorProvider: ParentComponent = (props) => {
         // The daemon answered: the note moved on since this buffer was read.
         // The buffer keeps its text and stays dirty, and nothing is written.
         // The user is present, so the copy is a choice and not an automatic
-        // write: they may prefer to reload and re-apply their change.
+        // write: they may prefer to reload and re-apply their change. The
+        // choice copies the text the daemon refused, whatever the buffer
+        // holds when the user clicks.
+        const refused = file.content;
         notificationActions.addNotification(
           'warning',
           'The note changed elsewhere. Reload it to see the current text, or keep yours as a copy.',
-          { label: 'Save as conflict copy', run: () => keepAsConflictCopy(path) },
+          { label: 'Save as conflict copy', run: () => keepAsConflictCopy(path, refused) },
         );
         return;
       }

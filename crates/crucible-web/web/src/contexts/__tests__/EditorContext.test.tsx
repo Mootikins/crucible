@@ -279,6 +279,39 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     expect(guardedSave, 'a copy is a fresh note, not a guarded write').toHaveBeenCalledTimes(1);
   });
 
+  it('the conflict copy keeps the refused text even after the note was reopened', async () => {
+    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
+    const editor = await openEdited();
+    await editor.saveFile(PATH);
+    const action = addNotification.mock.calls[0][2] as { label: string; run: () => void };
+
+    // The user reloads: the only path is to close the note and to open it again.
+    editor.closeFile(PATH, { force: true });
+    await Promise.resolve(); // the eviction is deferred by one microtask
+    await waitFor(() => expect(editor.openFiles().length).toBe(0));
+    getFileContent.mockResolvedValueOnce('server text\n');
+    await editor.openFile(PATH);
+    await waitFor(() => expect(fileState(editor).content).toBe('server text\n'));
+
+    // The dated name is free.
+    getFileContent.mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404 }));
+    action.run();
+
+    // The copy holds the text the daemon refused, not the text the buffer shows now.
+    await waitFor(() =>
+      expect(saveFileContent).toHaveBeenCalledWith(
+        expect.stringMatching(/\/notes\/shared \(conflict, .*\)\.md$/),
+        'the unsaved text',
+      ),
+    );
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith(
+        'success',
+        expect.stringMatching(/^Your version was saved as .*\. Reload the note to continue from the current text\.$/),
+      ),
+    );
+  });
+
   it('marks the buffer clean and takes the answered hash on a clean save', async () => {
     guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
     const editor = await openEdited();
