@@ -1,7 +1,8 @@
-use super::{create_spec_plugin, create_test_plugin};
 use crate::command_effect::CommandEffect;
-use crate::lifecycle::{load_plugin_spec_from_source, LifecycleError, PluginManager};
-use crate::manifest::PluginState;
+use crate::lifecycle::{
+    load_plugin_spec_from_source, LifecycleError, PluginManager, FRAGMENT_FILE,
+};
+use mlua::Lua;
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -368,27 +369,25 @@ return {
 /// A plugin keeps its declared name in a differently-named directory.
 ///
 /// `plugin_name_for_dir` documents the hazard: a repo cloned as
-/// `crucible-discord` whose plugin declares `name = "discord"`. Identity is
-/// the declared name, so `[plugins.discord]` still reaches its `setup`.
-/// Moving a directory must not change what a plugin IS.
+/// `crucible-discord` whose fragment declares `name = "discord"`. Identity is
+/// the directory name, and the declared name is recorded so
+/// `[plugins.discord]` still reaches its `setup`. Moving a directory must not
+/// change what a plugin IS.
 #[test]
 fn a_declared_name_is_recorded_for_config_lookup() {
     let temp = TempDir::new().unwrap();
     let dir = temp.path().join("crucible-discord");
     std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
     std::fs::write(
-        dir.join("init.luau"),
+        dir.join(FRAGMENT_FILE),
         "return { name = 'discord', version = '1.0.0' }\n",
     )
     .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("crucible-discord").unwrap();
+    manager.discover(&Lua::new()).unwrap();
 
-    // Identity stays the directory name — the only name the runtimepath knows
-    // without running Lua. The declared name is recorded so `[plugins.discord]`
-    // still reaches this plugin's `setup`.
     let plugin = manager
         .get("crucible-discord")
         .expect("identity is the directory name");
@@ -399,26 +398,26 @@ fn a_declared_name_is_recorded_for_config_lookup() {
     );
 }
 
-/// A spec name that is not a usable plugin name is refused, not adopted.
+/// A fragment name that is not a usable plugin name is refused, not adopted.
 ///
-/// Deleting the YAML reader deleted the only `validate()` call site. The Lua
-/// spec is now the only place a name comes from, so it takes the same checks
-/// the manifest used to: a name with a path separator would otherwise reach
-/// `[plugins.<name>]` lookups and the module search path.
+/// Deleting the YAML reader deleted the only `validate()` call site. The
+/// fragment is now the only place a name comes from, so it takes the same
+/// checks the manifest used to: a name with a path separator would otherwise
+/// reach `[plugins.<name>]` lookups and the module search path.
 #[test]
-fn a_spec_name_that_is_not_a_valid_plugin_name_is_refused() {
+fn a_fragment_name_that_is_not_a_valid_plugin_name_is_refused() {
     let temp = TempDir::new().unwrap();
     let dir = temp.path().join("wellformed");
     std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
     std::fs::write(
-        dir.join("init.luau"),
+        dir.join(FRAGMENT_FILE),
         "return { name = '../escape', version = '1.0.0' }\n",
     )
     .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("wellformed").unwrap();
+    manager.discover(&Lua::new()).unwrap();
 
     assert!(
         manager.get("../escape").is_none(),
@@ -435,6 +434,10 @@ fn a_spec_name_that_is_not_a_valid_plugin_name_is_refused() {
             .and_then(|p| p.manifest.declared_name.clone()),
         None,
         "an unusable declared name is refused, not recorded for config lookup"
+    );
+    assert!(
+        manager.discovery_errors().is_empty(),
+        "an unusable name is a warning, not a discovery error"
     );
 }
 
@@ -464,100 +467,6 @@ fn test_spec_with_only_name() {
 
     assert_eq!(spec.name, Some("minimal".to_string()));
     assert!(spec.tools.is_empty());
-}
-
-#[test]
-fn test_spec_plugin_full_lifecycle() {
-    let temp = TempDir::new().unwrap();
-    create_spec_plugin(temp.path(), "spec-test");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("spec-test").unwrap();
-
-    let plugin = manager.get("spec-test").unwrap();
-    assert_eq!(plugin.state, PluginState::Active);
-    assert_eq!(plugin.manifest.name, "spec-test");
-    assert_eq!(plugin.version(), Some("1.0.0"));
-
-    assert_eq!(manager.tools().len(), 1);
-    assert_eq!(manager.tools()[0].name, "search");
-    assert_eq!(manager.tools()[0].params.len(), 2);
-
-    assert_eq!(manager.commands().len(), 1);
-    assert_eq!(manager.commands()[0].name, "search");
-    assert_eq!(
-        manager.commands()[0].input_hint,
-        Some("[query]".to_string())
-    );
-
-    // Unload and verify cleanup
-    manager.unload("spec-test").unwrap();
-    assert_eq!(manager.tools().len(), 0);
-    assert_eq!(manager.commands().len(), 0);
-}
-
-#[test]
-fn test_spec_plugin_without_manifest() {
-    let temp = TempDir::new().unwrap();
-    // Create a manifest-less plugin that returns a spec
-    create_spec_plugin(temp.path(), "no-manifest");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("no-manifest").unwrap();
-
-    let plugin = manager.get("no-manifest").unwrap();
-    assert_eq!(plugin.state, PluginState::Active);
-    // Name/version updated from spec
-    assert_eq!(plugin.manifest.name, "no-manifest");
-    assert_eq!(plugin.version(), Some("1.0.0"));
-
-    assert_eq!(manager.tools().len(), 1);
-    assert_eq!(manager.commands().len(), 1);
-}
-
-#[test]
-fn a_spec_intercept_declaration_reaches_the_manifest() {
-    let temp = TempDir::new().unwrap();
-    create_spec_plugin(temp.path(), "cap-merge");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("cap-merge").unwrap();
-
-    let plugin = manager.get("cap-merge").unwrap();
-    assert!(plugin.manifest.intercepts_tools);
-}
-
-#[test]
-fn test_multiple_spec_plugins_coexist() {
-    let temp = TempDir::new().unwrap();
-
-    // Manifest + spec plugin
-    create_test_plugin(temp.path(), "manifest-plugin", "1.0.0");
-
-    // Manifest-less spec plugin
-    create_spec_plugin(temp.path(), "spec-plugin");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load_all().unwrap();
-
-    // Both should be loaded
-    assert_eq!(
-        manager.get("manifest-plugin").unwrap().state,
-        PluginState::Active
-    );
-    assert_eq!(
-        manager.get("spec-plugin").unwrap().state,
-        PluginState::Active
-    );
-
-    // manifest-plugin has 1 tool (test_tool), spec-plugin has 1 tool (search)
-    let tool_names: Vec<_> = manager.tools().iter().map(|t| t.name.clone()).collect();
-    assert!(tool_names.contains(&"test_tool".to_string()));
-    assert!(tool_names.contains(&"search".to_string()));
 }
 
 #[test]

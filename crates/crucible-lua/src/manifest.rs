@@ -4,9 +4,11 @@
 //! file (`init.luau`, else `init.lua`), and `plugin.yaml` is gone. The host
 //! synthesizes this struct from the directory — the directory name is the
 //! identity, because it is the only name the host knows without running Lua
-//! — and the spec table the entry file returns declares the rest.
+//! — and the fragment beside the entry file (`spec.luau`, read by
+//! `lifecycle::fragment`) declares the rest. Discovery reads the fragment
+//! and runs no plugin code, so every field here is known before activation.
 //!
-//! ## Example entry file
+//! ## Example fragment
 //!
 //! ```lua
 //! return {
@@ -15,8 +17,6 @@
 //!     description = "A sample plugin",
 //!     author = "Your Name",
 //!     license = "MIT",
-//!
-//!     setup = function(opts) end,
 //! }
 //! ```
 
@@ -45,12 +45,13 @@ pub type ManifestResult<T> = Result<T, ManifestError>;
 pub struct PluginManifest {
     pub name: String,
 
-    /// The version the plugin's spec table declares, once one has been read.
+    /// The version the plugin's fragment declares.
     ///
-    /// `None` until then. Discovery walks directories and never runs Lua, so
-    /// between discovery and load the host knows no version at all. This
-    /// used to hold a synthesized `"0.0.0"`, which `plugin.list` and the
-    /// session-setup event both reported as if a release had said so.
+    /// `None` when the plugin has no fragment, or its fragment names none.
+    /// Discovery reads the fragment and runs no plugin code, so a plugin
+    /// with no fragment has no version at any point. This used to hold a
+    /// synthesized `"0.0.0"`, which `plugin.list` and the session-setup
+    /// event both reported as if a release had said so.
     #[serde(default)]
     pub version: Option<String>,
 
@@ -81,7 +82,7 @@ pub struct PluginManifest {
     #[serde(default, rename = "intercept_tools", alias = "intercept-tools")]
     pub intercepts_tools: bool,
 
-    /// The name the plugin's spec table declares, when it differs from the
+    /// The name the plugin's fragment declares, when it differs from the
     /// directory it lives in.
     ///
     /// Identity is the DIRECTORY name — the only name knowable without running
@@ -90,14 +91,24 @@ pub struct PluginManifest {
     /// its config section.
     #[serde(skip)]
     pub declared_name: Option<String>,
+
+    /// The default `opts` the plugin's fragment declares. An empty object
+    /// when the fragment says nothing, or when there is no fragment. The
+    /// spec's `opts` resolution reads it as the lowest rank.
+    #[serde(default = "empty_object")]
+    pub opts: serde_json::Value,
+}
+
+fn empty_object() -> serde_json::Value {
+    serde_json::json!({})
 }
 
 impl PluginManifest {
     /// Create a manifest from a directory path alone, with no Lua run.
     ///
     /// Uses the directory stem as the plugin name, and NO version: the
-    /// version is the plugin's own claim, and the spec table that carries it
-    /// is only read at load.
+    /// version is the plugin's own claim, and discovery fills it in from the
+    /// fragment when there is one.
     pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
         let name = dir
             .file_stem()
@@ -120,6 +131,7 @@ impl PluginManifest {
             license: None,
             intercepts_tools: false,
             declared_name: None,
+            opts: empty_object(),
         })
     }
 

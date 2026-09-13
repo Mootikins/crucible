@@ -8,16 +8,13 @@ mod hooks;
 mod loading;
 mod lua_integration;
 mod queries;
-mod registration;
 mod spec;
 
 #[cfg(test)]
 mod tests;
 
-use crate::discovered::{DiscoveredCommand, DiscoveredTool};
 use crate::manifest::{LoadedPlugin, PluginSource};
 use mlua::{Lua, RegistryKey};
-use registration::RegisteredItem;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -36,10 +33,7 @@ pub struct PluginManager {
     search_paths: Vec<PathBuf>,
     /// Maps search paths to their provenance category.
     path_sources: HashMap<PathBuf, PluginSource>,
-    tools: Vec<RegisteredItem<DiscoveredTool>>,
-    commands: Vec<RegisteredItem<DiscoveredCommand>>,
     lua: Lua,
-    modules: crate::modules::ModuleRegistry,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
     error_log: Arc<Mutex<PluginErrorLog>>,
@@ -62,8 +56,6 @@ impl std::fmt::Debug for PluginManager {
         f.debug_struct("PluginManager")
             .field("plugins", &self.plugins)
             .field("search_paths", &self.search_paths)
-            .field("tools_count", &self.tools.len())
-            .field("commands_count", &self.commands.len())
             .field("on_unload_hooks_count", &self.on_unload_hooks.len())
             .field("on_load_hooks_count", &self.on_load_hooks.len())
             .field(
@@ -93,17 +85,14 @@ impl PluginManager {
         if let Err(error) = spec::setup_spec_sandbox(&lua) {
             warn!("Failed to set up plugin runtime sandbox: {}", error);
         }
-        let modules = crate::modules::ModuleRegistry::install(&lua)
+        crate::modules::ModuleRegistry::install(&lua)
             .expect("the Luau module resolver must install before plugins run");
 
         Self {
             plugins: HashMap::new(),
             search_paths: Vec::new(),
             path_sources: HashMap::new(),
-            tools: Vec::new(),
-            commands: Vec::new(),
             lua,
-            modules,
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),
             error_log,
@@ -131,16 +120,17 @@ impl PluginManager {
         Self::new().with_search_paths(paths)
     }
 
-    /// Discover without executing anything.
+    /// Discover on the standard paths without executing anything.
     ///
     /// What an enumeration wants. `lua.discover_plugins` used to answer with
     /// `initialize`, so listing the plugins ran all of them — a read-shaped
     /// RPC, reachable from the web UI, with arbitrary Lua as a side effect.
-    /// The name comes from the directory, which needs no VM. The version is
-    /// the spec table's claim, so an unloaded plugin reports none.
-    pub fn discover_only() -> LifecycleResult<Self> {
+    /// The name comes from the directory. The version comes from the
+    /// fragment, which `lua` evaluates in an environment that can act on
+    /// nothing; a plugin without a fragment reports none.
+    pub fn discover_only(lua: &Lua) -> LifecycleResult<Self> {
         let mut manager = Self::with_standard_paths();
-        manager.discover()?;
+        manager.discover(lua)?;
         Ok(manager)
     }
 

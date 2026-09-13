@@ -110,7 +110,7 @@ fn every_shipped_plugin_is_discovered() {
     let mut manager = PluginManager::new();
     manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
 
-    let mut discovered = manager.discover().expect("discovery");
+    let mut discovered = manager.discover(&mlua::Lua::new()).expect("discovery");
     discovered.sort();
 
     assert_eq!(

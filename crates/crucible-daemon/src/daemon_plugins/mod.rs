@@ -912,9 +912,11 @@ impl DaemonPluginLoader {
                 .add_search_path_with_source(path.clone(), *source);
         }
 
+        // Discovery reads each plugin's fragment in the daemon VM and runs
+        // no plugin code.
         let discovered = self
             .plugin_manager
-            .discover()
+            .discover(self.executor.lua())
             .map_err(|e| anyhow::anyhow!("plugin discover: {e}"))?;
 
         if discovered.is_empty() {

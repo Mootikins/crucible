@@ -33,9 +33,9 @@ impl PluginManager {
             )));
         }
 
-        self.discover_exports_for_plugin(name)?;
-        self.load_plugin_runtime_state(name)?;
-
+        // The manager evaluates nothing. Discovery read the fragment, and
+        // the daemon's `execute_plugin` runs the entry file in the daemon VM.
+        // `load` records the state the daemon is about to act on.
         let plugin = self
             .plugins
             .get_mut(name)
@@ -54,9 +54,8 @@ impl PluginManager {
 
     /// Mark a plugin as failed after `load()` already succeeded.
     ///
-    /// `PluginManager::load` only covers its own stages. The daemon executes
-    /// each plugin a second time in the *real* Lua VM and calls its `setup()`
-    /// — neither of which the spec sandbox does — so a plugin can be `Active`
+    /// `PluginManager::load` records state. The daemon executes each plugin
+    /// in the daemon VM and calls its `setup()`, so a plugin can be `Active`
     /// here while having blown up there. Without this the daemon could only
     /// `warn!`, and `plugin.list` kept reporting `Active`.
     pub fn mark_error(&mut self, name: &str, error: impl Into<String>) {
@@ -104,13 +103,11 @@ impl PluginManager {
     }
 
     pub fn unload(&mut self, name: &str) -> LifecycleResult<()> {
-        let (current_state, plugin_dir) = {
-            let plugin = self
-                .plugins
-                .get(name)
-                .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
-            (plugin.state, plugin.dir.clone())
-        };
+        let current_state = self
+            .plugins
+            .get(name)
+            .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?
+            .state;
 
         if current_state != PluginState::Active {
             return Ok(());
@@ -126,12 +123,6 @@ impl PluginManager {
             self.capture_plugin_error(name, &e, "unload:emitter_cleanup");
         }
 
-        let dir_prefix = plugin_dir.to_string_lossy();
-        self.tools
-            .retain(|t| !t.item.source_path.starts_with(dir_prefix.as_ref()));
-        self.commands
-            .retain(|c| !c.item.source_path.starts_with(dir_prefix.as_ref()));
-
         let plugin = self
             .plugins
             .get_mut(name)
@@ -143,8 +134,8 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Drop a plugin from the manager entirely: its map entry, its
-    /// owner-tagged registrations, and its lifecycle hooks.
+    /// Drop a plugin from the manager entirely: its map entry and its
+    /// lifecycle hooks.
     ///
     /// `unload` deliberately leaves the entry in the map (state `Discovered`)
     /// so `plugin.list` keeps showing it — but removal wants it gone, and
@@ -154,10 +145,6 @@ impl PluginManager {
     /// dependent check and the Lua-side cleanup); `forget` does neither.
     pub fn forget(&mut self, name: &str) {
         self.plugins.remove(name);
-        // `unload` only cleans registrations for Active plugins; a plugin
-        // being forgotten from Error/Disabled may still have owner-tagged
-        // spec exports lying around.
-        self.unregister_by_source(name);
         self.on_load_hooks.remove(name);
         self.on_unload_hooks.remove(name);
     }
@@ -165,7 +152,6 @@ impl PluginManager {
     #[cfg(any(test, feature = "test-utils"))]
     pub fn reload_plugin(&mut self, name: &str) -> LifecycleResult<()> {
         self.unload(name)?;
-        self.clear_plugin_modules(name)?;
 
         match self.load(name) {
             Ok(()) => Ok(()),

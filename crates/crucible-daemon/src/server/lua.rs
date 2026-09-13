@@ -181,14 +181,19 @@ pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
 /// `PluginManager::initialize`, which loads what it finds, so answering "what
 /// plugins are there" ran every one of their `init.lua` files. Two callers made
 /// that reachable: this RPC (which the web UI calls, `daemon.rs:399`) and
-/// `session.create`'s setup task. Name and state come from the directory;
-/// neither needs a VM. The VERSION does — it is declared in the spec table —
-/// so a plugin that has not loaded reports `None`, not a placeholder.
+/// `session.create`'s setup task. Name and state come from the directory.
+/// The VERSION comes from the fragment (`spec.luau`), which discovery
+/// evaluates in an environment that can act on nothing, so a plugin without
+/// a fragment reports `None`, not a placeholder.
+///
+/// The VM here is a fresh one, not the daemon's: this runs on a blocking
+/// thread with no handle to the plugin loader, and a fragment is the only
+/// thing that runs in it. No plugin code runs in it.
 ///
 /// Shared by the RPC and `session.create` so the two cannot answer differently.
 pub(crate) fn discover_available_plugins(
 ) -> anyhow::Result<Vec<crucible_core::types::PluginStatusEntry>> {
-    let manager = PluginManager::discover_only()?;
+    let manager = PluginManager::discover_only(&mlua::Lua::new())?;
     Ok(manager
         .list()
         .map(|p| crucible_core::types::PluginStatusEntry {

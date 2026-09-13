@@ -1,5 +1,4 @@
 use super::PluginManager;
-use crate::discovered::{DiscoveredCommand, DiscoveredTool};
 use crate::manifest::LoadedPlugin;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::manifest::PluginState;
@@ -18,13 +17,5 @@ impl PluginManager {
         self.plugins
             .values()
             .filter(|p| p.state == PluginState::Active)
-    }
-
-    pub fn tools(&self) -> Vec<&DiscoveredTool> {
-        self.tools.iter().map(|t| &t.item).collect()
-    }
-
-    pub fn commands(&self) -> Vec<&DiscoveredCommand> {
-        self.commands.iter().map(|c| &c.item).collect()
     }
 }

@@ -1,48 +1,15 @@
-use super::{LifecycleError, LifecycleResult, PluginManager};
-use mlua::{Function, Value};
+//! The `on_load` and `on_unload` hooks a plugin's module may carry.
+//!
+//! Nothing fills `on_load_hooks` or `on_unload_hooks` today: the manager
+//! VM used to capture them when it evaluated `init.luau`, and it evaluates
+//! nothing now. The two calls stay so `load` and `unload` keep their shape
+//! until the daemon VM supplies the keys.
+
+use super::PluginManager;
+use mlua::Function;
 use tracing::warn;
 
 impl PluginManager {
-    pub(super) fn capture_on_unload_hook(
-        &mut self,
-        plugin_name: &str,
-        plugin_spec: &mlua::Table,
-    ) -> LifecycleResult<()> {
-        self.on_unload_hooks.remove(plugin_name);
-
-        if let Ok(Value::Function(on_unload)) = plugin_spec.get::<Value>("on_unload") {
-            let key = self.lua.create_registry_value(on_unload).map_err(|e| {
-                LifecycleError::LoadError(format!(
-                    "Failed to store on_unload hook for {}: {}",
-                    plugin_name, e
-                ))
-            })?;
-            self.on_unload_hooks.insert(plugin_name.to_string(), key);
-        }
-
-        Ok(())
-    }
-
-    pub(super) fn capture_on_load_hook(
-        &mut self,
-        plugin_name: &str,
-        plugin_spec: &mlua::Table,
-    ) -> LifecycleResult<()> {
-        self.on_load_hooks.remove(plugin_name);
-
-        if let Ok(Value::Function(on_load)) = plugin_spec.get::<Value>("on_load") {
-            let key = self.lua.create_registry_value(on_load).map_err(|e| {
-                LifecycleError::LoadError(format!(
-                    "Failed to store on_load hook for {}: {}",
-                    plugin_name, e
-                ))
-            })?;
-            self.on_load_hooks.insert(plugin_name.to_string(), key);
-        }
-
-        Ok(())
-    }
-
     pub(super) fn call_on_load_hook(&self, plugin_name: &str) {
         let Some(hook_key) = self.on_load_hooks.get(plugin_name) else {
             return;
