@@ -3,6 +3,7 @@
 mod discovery;
 mod error;
 mod error_log;
+pub mod fragment;
 mod hooks;
 mod loading;
 mod lua_integration;
@@ -25,6 +26,7 @@ use tracing::warn;
 pub use discovery::PluginDiscoveryError;
 pub use error::{LifecycleError, LifecycleResult};
 pub use error_log::{PluginErrorEntry, PluginErrorLog};
+pub use fragment::{read_fragment, Fragment, FRAGMENT_FILE};
 #[cfg(test)]
 pub(crate) use spec::load_plugin_spec_from_source;
 pub use spec::{load_plugin_spec, PluginSpec};
