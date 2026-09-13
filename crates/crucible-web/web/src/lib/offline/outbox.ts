@@ -86,6 +86,13 @@ export type SinkAnswer =
 /** A write the daemon accepted: which note, from which base, to which hash. */
 export type Landed = { path: string; base: string; hash: string };
 
+/**
+ * A whole write the daemon refused as stale: which note, from which base,
+ * and the conflict copy that now holds the text. The base names the buffer
+ * the write came from, so the editor can mark that buffer and no other.
+ */
+export type Conflicted = { path: string; base: string; copy: string };
+
 export interface DrainResult {
   sent: number;
   /**
@@ -97,7 +104,7 @@ export interface DrainResult {
    * landed too, and its buffer moved the same way.
    */
   landed: Landed[];
-  conflicted: string[];
+  conflicted: Conflicted[];
   /** Anchored entries the daemon refused. There is no body to copy. */
   refusedEdits: string[];
   /** Entries left alone because they belong to a different daemon. */
@@ -308,7 +315,7 @@ export async function drainOutbox(
         const copy = await sink.writeConflictCopy(entry);
         // Only now: if the copy failed, the writing is still queued.
         if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
-        result.conflicted.push(copy);
+        result.conflicted.push({ path: entry.path, base: entry.base, copy });
       }
     } catch {
       // Still offline, or the write failed. It stays queued.

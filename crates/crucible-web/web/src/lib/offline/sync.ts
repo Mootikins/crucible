@@ -20,6 +20,7 @@ import {
   queueWrite,
   queuedCount,
   readQueued,
+  type Conflicted,
   type Landed,
   type NoteWrite,
   type OutboxSink,
@@ -396,7 +397,7 @@ export async function pendingCount(): Promise<number> {
   return queuedCount(offlineStore());
 }
 
-export type { Landed };
+export type { Conflicted, Landed };
 
 /**
  * Who wants to know that a queued write landed.
@@ -417,6 +418,26 @@ export function onNoteLanded(listener: (row: Landed) => void): () => void {
   };
 }
 
+/**
+ * Who wants to know that a queued whole write was refused, and where its
+ * text went.
+ *
+ * The write went clean at queue time. The drain wrote a conflict copy and
+ * cleared the entry, so an open buffer made from the entry's base shows text
+ * the note does not hold, and looks clean. A listener that answers `true`
+ * told the user itself, with the buffer in view; the drain then says nothing
+ * more about that row.
+ */
+const conflictedListeners = new Set<(row: Conflicted) => boolean | void>();
+
+/** Hear each whole write the drain turned into a conflict copy. */
+export function onNoteConflicted(listener: (row: Conflicted) => boolean | void): () => void {
+  conflictedListeners.add(listener);
+  return () => {
+    conflictedListeners.delete(listener);
+  };
+}
+
 /** Send everything queued for the daemon now answering. */
 export async function syncNow() {
   const result = await drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
@@ -433,10 +454,19 @@ export async function syncNow() {
   // A conflict copy is the one outcome a user MUST be told about: their text
   // did not land on the note they wrote it in, and nothing else on screen
   // says so — the queue count drops either way. Every caller discarded this.
-  for (const copy of result.conflicted) {
+  for (const row of result.conflicted) {
+    let told = false;
+    for (const listener of conflictedListeners) {
+      try {
+        if (listener(row) === true) told = true;
+      } catch (error) {
+        console.error('a conflicted-write listener threw', error);
+      }
+    }
+    if (told) continue;
     notificationActions.addNotification(
       'warning',
-      `The note changed elsewhere. Your version was saved as ${copy.split('/').pop()}`,
+      `The note changed elsewhere. Your version was saved as ${row.copy.split('/').pop()}`,
     );
   }
   // A refused anchored edit leaves no copy behind, so this is the only trace.

@@ -928,8 +928,10 @@ one machine with a stale view of the disk.
 > **Closed, 2026-09-13.** The routes take `base_hash`, the browser compare is
 > gone, and every note write from the browser goes through one door,
 > `lib/offline/sync.ts`: `writeNote` for a whole write and `editNote` for an
-> anchored edit. Both send the base. Both queue in the outbox only when the
-> daemon never answered.
+> anchored edit. Both send the base, and both routes gate on it: a PUT or a
+> PATCH with a base is refused when the note moved on, even when every anchor
+> applies; the outbox replay sends no base. Both queue in the outbox only when
+> the daemon never answered.
 
 ### The stores
 
@@ -956,8 +958,11 @@ who is present:
   one action, **Save as conflict copy**. The user chooses it, or reloads the
   note and applies the change again.
 - **From the outbox, nobody is.** The drain writes the **conflict copy** on
-  its own, and says so. An anchored edit has no body to copy, so a refused
-  replay is reported and leaves nothing behind.
+  its own, and says so. The buffer the write was made from went clean when
+  the write queued, and now shows text only the copy holds; the drain names
+  the row to the editor (`onNoteConflicted`), which marks that buffer dirty
+  and tells the user to reload. An anchored edit has no body to copy, so a
+  refused replay is reported and leaves nothing behind.
 
 ```
 Release Notes.md

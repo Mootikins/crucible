@@ -10,7 +10,15 @@ import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
 import { listKilns } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
-import { onNoteLanded, readNote, writeConflictCopy, writeNote, type Landed } from '@/lib/offline/sync';
+import {
+  onNoteConflicted,
+  onNoteLanded,
+  readNote,
+  writeConflictCopy,
+  writeNote,
+  type Conflicted,
+  type Landed,
+} from '@/lib/offline/sync';
 import { notificationActions } from '@/stores/notificationStore';
 
 
@@ -292,6 +300,33 @@ export const EditorProvider: ParentComponent = (props) => {
       });
   };
   onCleanup(onNoteLanded(onLanded));
+
+  /**
+   * A queued whole write the drain turned into a conflict copy. The buffer
+   * whose base the write was made from went clean when the write queued, and
+   * its text now lives only in the copy: the note holds someone else's. The
+   * buffer goes dirty, keeps its text, and the notice names the copy. A
+   * buffer with another base was moved by a later write and is left alone;
+   * the drain's own notice covers it.
+   */
+  const onConflicted = (row: Conflicted): boolean => {
+    const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
+    if (!file) return false;
+    setOpenFiles(
+      produce((files) => {
+        const f = files.find((x) => x.path === row.path);
+        if (f) f.dirty = true;
+      }),
+    );
+    notificationActions.addNotification(
+      'warning',
+      `The note changed elsewhere while you were offline. Your version was saved as ${row.copy
+        .split('/')
+        .pop()}. Reload the note to continue from the current text.`,
+    );
+    return true;
+  };
+  onCleanup(onNoteConflicted(onConflicted));
 
   const value: EditorContextValue = {
     openFiles: () => openFilesStore,

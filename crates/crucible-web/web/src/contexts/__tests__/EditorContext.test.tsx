@@ -483,6 +483,54 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     expect(fileState(editor).dirty).toBe(false);
   });
 
+  /** The daemon refuses the queued write, and the copy's dated name is free. */
+  const conflictOnDrain = () => {
+    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
+    getFileContent.mockRejectedValueOnce(Object.assign(new Error('HTTP 404'), { status: 404 }));
+  };
+
+  // The queued write went clean at queue time. The drain wrote a copy and
+  // cleared the entry, so the buffer shows text that lives only in the copy.
+  // A clean buffer here is a lie the user acts on.
+  it('a drained conflict marks the open buffer dirty and names the copy', async () => {
+    const editor = await openAndQueue();
+    conflictOnDrain();
+
+    const result = await syncNow();
+
+    expect(result.conflicted).toHaveLength(1);
+    const copy = result.conflicted[0].copy;
+    expect(saveFileContent).toHaveBeenCalledWith(copy, 'queued text\n');
+    expect(fileState(editor).dirty).toBe(true);
+    expect(fileState(editor).content, 'the buffer keeps the user\'s text').toBe('queued text\n');
+    expect(fileState(editor).baseHash, 'a refused write moves no base').toBe('base-hash');
+    expect(addNotification).toHaveBeenCalledTimes(1);
+    expect(addNotification).toHaveBeenCalledWith(
+      'warning',
+      `The note changed elsewhere while you were offline. Your version was saved as ${copy
+        .split('/')
+        .pop()}. Reload the note to continue from the current text.`,
+    );
+  });
+
+  it('a buffer with another base is left alone', async () => {
+    const editor = await openAndQueue();
+    // A tick landed online meanwhile and moved this buffer's base on its own.
+    editor.setBaseHash(PATH, 'h7');
+    conflictOnDrain();
+
+    await syncNow();
+
+    expect(fileState(editor).dirty).toBe(false);
+    expect(fileState(editor).baseHash).toBe('h7');
+    // The drain's own notice still names the copy: nothing else on screen does.
+    expect(addNotification).toHaveBeenCalledTimes(1);
+    expect(addNotification).toHaveBeenCalledWith(
+      'warning',
+      expect.stringMatching(/^The note changed elsewhere\. Your version was saved as /),
+    );
+  });
+
   it('a provider that unmounted hears no landed write', async () => {
     const editor = await openAndQueue();
     const { cleanup } = await import('@solidjs/testing-library');

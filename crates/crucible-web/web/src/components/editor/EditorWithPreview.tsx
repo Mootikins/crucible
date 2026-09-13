@@ -34,9 +34,10 @@ export const EditorWithPreview: Component<{
    * another. Absent for files that belong to no kiln.
    */
   kiln?: string;
-  /** The disk hash the buffer was read at. A task tick carries it, so a tick
-   * on a note that changed elsewhere is refused instead of landing on text
-   * the user did not see. */
+  /** The disk hash the buffer was read at. A task tick carries it: a PATCH
+   * with a base is refused when the note moved on, even when the anchor still
+   * applies, so a tick never lands on text the user did not see. The outbox
+   * replay sends no base. */
   baseHash: string;
   /** A tick that landed changed the note on disk. The answered hash is the
    * buffer's new base, or the next whole save is stale by construction. */

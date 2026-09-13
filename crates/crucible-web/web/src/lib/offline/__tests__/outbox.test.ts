@@ -312,7 +312,7 @@ describe('drainOutbox', () => {
       sink({ write: async () => ({ ok: false, current: 'other-hash' }) }),
       DAEMON,
     );
-    expect(result.conflicted).toEqual([`${PATH} (conflict)`]);
+    expect(result.conflicted).toEqual([{ path: PATH, base: 'base-hash', copy: `${PATH} (conflict)` }]);
     expect(await isQueued(store, PATH)).toBe(false);
   });
 

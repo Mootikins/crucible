@@ -31,6 +31,7 @@ import {
   editNote,
   networkSink,
   networkSource,
+  onNoteConflicted,
   onNoteLanded,
   pendingCount,
   readNote,
@@ -410,6 +411,57 @@ describe('onNoteLanded', () => {
 
 /** An error shaped like the API client's: a status means the daemon answered. */
 const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+
+/**
+ * A drained conflict clears the entry and writes a copy, and nothing else on
+ * screen says so. The editor holds the open buffers, so the drain names each
+ * conflicted write to whoever listens, with the base the entry was made from.
+ */
+describe('onNoteConflicted', () => {
+  it('calls a listener once per conflicted row with the base and the copy', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'mine', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockRejectedValue(answered(404)); // the copy's name is free
+    net.save.mockResolvedValue(undefined);
+
+    const listener = vi.fn();
+    const stop = onNoteConflicted(listener);
+    const result = await syncNow();
+    stop();
+
+    expect(result.conflicted).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      path: PATH,
+      base: 'h0',
+      copy: expect.stringMatching(/\/Note \(conflict, phone, \d{4}-\d{2}-\d{2}\)\.md$/),
+    });
+    expect(net.save).toHaveBeenCalledWith(listener.mock.calls[0][0].copy, 'mine');
+  });
+
+  it('never calls a listener that unsubscribed', async () => {
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    await warmIdentity();
+    net.online = false;
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'mine', base: 'h0', kiln: KILN });
+    net.online = true;
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockRejectedValue(answered(404));
+    net.save.mockResolvedValue(undefined);
+
+    const gone = vi.fn();
+    onNoteConflicted(gone)();
+    await syncNow();
+
+    expect(gone).not.toHaveBeenCalled();
+  });
+});
 
 /**
  * `networkSink.write` had no test at all, and it is the whole of the drain.
