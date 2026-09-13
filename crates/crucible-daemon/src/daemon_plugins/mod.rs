@@ -9,6 +9,7 @@
 //! ([`DaemonPluginLoader::register_statusline_exprs`]) are still registered:
 //! plugins *build* UI descriptions daemon-side and clients render them.
 
+mod activate;
 pub mod boot;
 pub mod bootstrap;
 pub mod option_store;
@@ -30,48 +31,20 @@ use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_context_attach, register_context_module, register_cru_on_api,
-    register_isolation_module, register_oq_module, register_paths_module, register_publish_module,
-    register_schedule_module, register_sessions_module, register_shell_module,
-    register_status_module, register_storage_module, register_storage_module_with_store,
-    register_surface_module, register_tools_module, register_tools_module_with_api,
-    register_ui_module, register_ui_module_with_api, register_vault_module, register_ws_module,
-    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
-    LuaScriptHandlerRegistry, OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy,
-    PluginSource, PluginSpec, PublicationRegistry, StatusRegistry, SurfaceRegistry,
+    register_isolation_module, register_oq_module, register_paths_module, register_schedule_module,
+    register_sessions_module, register_shell_module, register_status_module,
+    register_storage_module, register_storage_module_with_store, register_surface_module,
+    register_tools_module, register_tools_module_with_api, register_ui_module,
+    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
+    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
+    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
+    PublicationRegistry, StatusRegistry, SurfaceRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-
-/// Callables extracted from a plugin's returned spec table, live in the
-/// daemon's Lua VM.
-#[derive(Default)]
-struct PluginExports {
-    services: Vec<(String, mlua::Function)>,
-    tools: HashMap<String, mlua::Function>,
-    commands: HashMap<String, mlua::Function>,
-}
-
-/// `setup` raised after the declarations were read.
-///
-/// The caller keeps the declarations, so `plugin.list` shows what a broken
-/// plugin declares beside `state: Error`. Losing that is what let a dead
-/// reference plugin look healthy for months.
-#[derive(Debug)]
-struct SetupFailed {
-    spec: PluginSpec,
-    error: anyhow::Error,
-}
-
-impl std::fmt::Display for SetupFailed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.error.fmt(f)
-    }
-}
-
-impl std::error::Error for SetupFailed {}
 
 /// A service function extracted from a plugin, tagged with its owner.
 ///
@@ -82,32 +55,6 @@ pub struct PluginServiceFn {
     pub plugin: String,
     pub service: String,
     pub func: mlua::Function,
-}
-
-/// Pull the service/tool/command `mlua::Function` handles out of a plugin's
-/// returned spec table.
-fn extract_exports(spec: &mlua::Table) -> PluginExports {
-    let mut exports = PluginExports::default();
-    if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
-        for (name, entry) in svc_table.pairs::<String, mlua::Table>().flatten() {
-            if let Ok(func) = entry.get::<mlua::Function>("fn") {
-                exports.services.push((name, func));
-            }
-        }
-    }
-    for (field, target) in [
-        ("tools", &mut exports.tools),
-        ("commands", &mut exports.commands),
-    ] {
-        if let Ok(table) = spec.get::<mlua::Table>(field) {
-            for (name, entry) in table.pairs::<String, mlua::Table>().flatten() {
-                if let Ok(func) = entry.get::<mlua::Function>("fn") {
-                    target.insert(name, func);
-                }
-            }
-        }
-    }
-    exports
 }
 
 /// Split the raw `[plugins]` TOML table into per-plugin sections and the
@@ -220,12 +167,14 @@ pub struct DaemonPluginLoader {
     /// rebind onto a second registry, which is how a release would quietly
     /// address the wrong store.
     statusline_exprs: std::sync::OnceLock<Arc<crucible_lua::StatuslineExprRegistry>>,
-    /// One notice per plugin configured BOTH ways: a `plugins.<name>` store
-    /// section AND a direct `setup` call in init.lua. The direct call owns
-    /// the plugin, so the section is ignored — and one layer superseding
-    /// another must never be silent. Warned at activation and kept here so
-    /// a surface (and a test) can read what was said.
-    supersession_notices: std::sync::Mutex<Vec<String>>,
+    /// Each active plugin's module table, by the plugin's name. What makes
+    /// `activate` idempotent: a second call answers the stored table. A
+    /// plugin made inert loses its entry, so a reload runs the file again.
+    active_modules: HashMap<String, mlua::RegistryKey>,
+    /// Every discovered plugin, in the order discovery found it. The
+    /// spec-driven pass activates in this order, and `discover` reports only
+    /// the names it found on that call, so the loader keeps the whole list.
+    discovery_order: Vec<String>,
     /// Data root under which [`option_store`] keeps values changed through the
     /// settings pane — the daemon's *resolved* `data_home`, never the global
     /// `crucible_home()`, so an injected root is honored.
@@ -422,7 +371,8 @@ impl DaemonPluginLoader {
             publications,
             options,
             statusline_exprs: std::sync::OnceLock::new(),
-            supersession_notices: std::sync::Mutex::new(Vec::new()),
+            active_modules: HashMap::new(),
+            discovery_order: Vec::new(),
             option_store_dir: None,
         })
     }
@@ -442,15 +392,6 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
         self.plugin_config = plugin_config;
         Ok(self)
-    }
-
-    /// The both-forms notices recorded at activation — see
-    /// `supersession_notices`.
-    pub fn supersession_notices(&self) -> Vec<String> {
-        self.supersession_notices
-            .lock()
-            .map(|notices| notices.clone())
-            .unwrap_or_default()
     }
 
     /// Bind the data root persisted plugin options live under.
@@ -901,15 +842,12 @@ impl DaemonPluginLoader {
         Ok(())
     }
 
-    /// Discover and load plugins from the given search paths.
-    ///
-    /// Returns the list of [`PluginSpec`]s extracted from successfully loaded
-    /// plugins. Service functions are stored internally and can be retrieved
-    /// via [`take_service_fns`].
-    /// Configure host-owned module roots so `require("plugin")` works from
-    /// user init, built-ins, and other plugins.
-    fn configure_runtime_path(
-        &self,
+    /// Put `plugin_paths` on the resolver and on the plugin manager, so
+    /// `require("plugin")` resolves from user init, built-ins and other
+    /// plugins, and discovery walks the same directories. Roots the boot
+    /// already seeded stay in place.
+    pub fn add_plugin_paths(
+        &mut self,
         plugin_paths: &[(PathBuf, PluginSource)],
     ) -> anyhow::Result<()> {
         let roots = plugin_paths
@@ -919,157 +857,159 @@ impl DaemonPluginLoader {
             .cloned()
             .collect();
         self.executor
-            .configure_module_roots(roots)
+            .add_module_roots(roots)
             .map_err(|e| anyhow::anyhow!("configure module roots: {e}"))?;
-        Ok(())
-    }
-
-    pub async fn load_plugins(
-        &mut self,
-        plugin_paths: &[(PathBuf, PluginSource)],
-    ) -> anyhow::Result<Vec<PluginSpec>> {
-        // Set up global runtime path BEFORE discovery so require() works everywhere
-        self.configure_runtime_path(plugin_paths)?;
-
         for (path, source) in plugin_paths {
             self.plugin_manager
                 .add_search_path_with_source(path.clone(), *source);
         }
+        Ok(())
+    }
 
-        // Discovery reads each plugin's fragment in the daemon VM and runs
-        // no plugin code.
+    /// Discover every plugin on the search paths. Discovery reads each
+    /// plugin's fragment in the daemon VM and runs no plugin code.
+    fn discover(&mut self) -> anyhow::Result<()> {
         let discovered = self
             .plugin_manager
             .discover(self.executor.lua())
             .map_err(|e| anyhow::anyhow!("plugin discover: {e}"))?;
-
-        if discovered.is_empty() {
-            info!("No daemon plugins discovered");
-            return Ok(Vec::new());
-        }
-
-        info!("Discovered {} daemon plugin(s)", discovered.len());
-
-        // The kill switch, applied between discovery and load. A bundled
-        // plugin is re-stamped inside the binary whenever
-        // `version + blake3(runtime tree)` changes, so an edit in the
-        // extracted tree does not survive an upgrade —
-        // `plugins.<name>.enabled = false` in `init.lua` is the only durable
-        // lever.
-        // `disable` unloads first, and `unload` returns early for anything not
-        // Active, so running it before `load_all` is just a state flip.
-        for name in &discovered {
-            let disabled = self
-                .plugin_config
-                .get(name)
-                .and_then(|c| c.get("enabled"))
-                .and_then(|v| v.as_bool())
-                == Some(false);
-            if disabled {
-                if let Err(e) = self.plugin_manager.disable(name) {
-                    warn!("Failed to disable plugin '{name}' from config: {e}");
-                } else {
-                    info!("Plugin '{name}' disabled by config");
-                }
+        for name in discovered {
+            if !self.discovery_order.contains(&name) {
+                self.discovery_order.push(name);
             }
         }
+        Ok(())
+    }
 
-        // A disabled plugin the user's init.lua `require`d still loaded its
-        // module (as in Neovim) — and its top-level `cru.on` calls registered
-        // under its name through the boot searcher's context stamp. Activation
-        // registers none of a disabled plugin's hooks or exports, so what the
-        // module load registered is cleared here.
-        for name in boot::BootRequireState::required_plugins(self.executor.lua()) {
-            let disabled = self
-                .plugin_manager
-                .get(&name)
-                .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled);
-            if disabled {
-                crucible_lua::clear_source(
-                    self.executor.lua(),
-                    &self.handler_registry,
-                    &crucible_lua::LuaSource::Plugin(name.clone()),
-                );
-                info!("Plugin '{name}' is disabled; its boot-require registrations were cleared");
+    /// The spec-driven pass: discover, then activate every plugin the merged
+    /// spec names with a resolved `enabled` of `true`, and every plugin a
+    /// boot `require` in `init.lua` loaded, in discovery order.
+    ///
+    /// A discovered plugin with no entry and no require stays `Discovered`
+    /// and inactive: that is the lazy.nvim rule, and the Builtin fragment in
+    /// `runtime/defaults/init.luau` is what keeps the shipped set active. A
+    /// spec entry with a `Git` source and no directory is the bootstrap's
+    /// job, which runs before this. One broken plugin does not stop the
+    /// pass: `activate` marks it `Error` and inert, and the pass goes on.
+    pub async fn load_plugins_from_spec(&mut self) -> anyhow::Result<()> {
+        self.discover()?;
+        let spec = crucible_lua::spec_of(self.executor.lua());
+        let mut activated = 0usize;
+        for name in self.discovery_order.clone() {
+            let Some(plugin) = self.plugin_manager.get(&name) else {
+                continue;
+            };
+            let init_path = plugin.main_path();
+            let wanted =
+                spec.get(&name).is_some() || self.boot_required_module(&init_path).is_some();
+            if !wanted {
+                debug!("plugin '{name}' has no spec entry; it stays discovered");
+                continue;
+            }
+            match activate::activate(self, &name).await {
+                Ok(_) => activated += 1,
+                Err(e) => warn!("plugin '{name}' did not activate: {e}"),
             }
         }
+        info!("Activated {activated} daemon plugin(s) from the spec");
+        Ok(())
+    }
 
-        let loaded = self
-            .plugin_manager
-            .load_all()
-            .map_err(|e| anyhow::anyhow!("plugin load_all: {e}"))?;
+    /// Activate one discovered plugin by name: a runtime install, or an
+    /// entry the bootstrap cloned. Idempotent.
+    pub async fn activate_plugin(&mut self, name: &str) -> anyhow::Result<()> {
+        if self.plugin_manager.get(name).is_none() {
+            self.discover()?;
+        }
+        activate::activate(self, name).await.map(|_| ())
+    }
 
-        // Second layer on the kill switch. `load_all` already filters these
-        // out; re-checking here means a future regression in that filter
-        // cannot silently re-enable execution of a plugin the operator has
-        // switched off. `enabled: false` is the documented remediation for a
-        // misbehaving plugin, so it is worth two cheap checks.
-        let loaded: Vec<String> = loaded
+    /// Add `plugin_paths`, discover, and activate EVERY discovered plugin
+    /// whose resolved `enabled` is `true`, entry or no entry.
+    ///
+    /// A test policy. Production activates the spec
+    /// (`load_plugins_from_spec`); a fixture plugin in a temporary directory
+    /// has no entry, and every such test wants it active.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub async fn activate_discovered(
+        &mut self,
+        plugin_paths: &[(PathBuf, PluginSource)],
+    ) -> anyhow::Result<()> {
+        self.add_plugin_paths(plugin_paths)?;
+        self.discover()?;
+        for name in self.discovery_order.clone() {
+            if let Err(e) = activate::activate(self, &name).await {
+                warn!("plugin '{name}' did not activate: {e}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Run `code` as the operator's own `init.lua` would run: under
+    /// `LuaSource::UserLua`, with the source restored afterwards.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub async fn eval_user_init(&self, code: &str) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+        let previous = crucible_lua::set_source(lua, crucible_lua::LuaSource::UserLua);
+        let outcome = lua.load(code).set_name("=init.lua").exec_async().await;
+        crucible_lua::set_source(lua, previous);
+        outcome.map_err(|e| anyhow::anyhow!("user init: {e}"))
+    }
+
+    /// The module name a boot `require` loaded `init_path` under, if any.
+    ///
+    /// The resolver records which file answered each public name, so this
+    /// matches by FILE: a plugin required as `x` or as `x.init` is found
+    /// either way, and a table a plugin put in `package.loaded` itself is
+    /// not.
+    fn boot_required_module(&self, init_path: &Path) -> Option<String> {
+        let canonical =
+            std::fs::canonicalize(init_path).unwrap_or_else(|_| init_path.to_path_buf());
+        self.executor
+            .modules()
+            .loaded_modules()
             .into_iter()
-            .filter(|name| {
-                let disabled = self
-                    .plugin_manager
-                    .get(name)
-                    .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled);
-                if disabled {
-                    warn!("Refusing to execute disabled plugin '{name}'");
-                }
-                !disabled
-            })
-            .collect();
+            .find(|(_, file)| *file == canonical)
+            .map(|(name, _)| name)
+    }
 
-        info!("Loaded {} daemon plugin(s)", loaded.len());
+    /// The `plugins.<name>` config section for a plugin: the directory name
+    /// first, then the name the plugin's fragment declares. A repo cloned as
+    /// `crucible-discord` whose fragment says `name = "discord"` still gets
+    /// its `plugins.discord` section.
+    fn config_section(&self, name: &str, declared: Option<&str>) -> Option<serde_json::Value> {
+        self.plugin_config
+            .get(name)
+            .or_else(|| declared.and_then(|d| self.plugin_config.get(d)))
+            .cloned()
+    }
 
-        let mut specs = Vec::new();
-        for name in &loaded {
-            match self.load_plugin_spec(name).await {
-                Ok(spec) => {
-                    info!(
-                        "Plugin '{}' spec extracted (tools={}, commands={}, handlers={}, services={})",
-                        name,
-                        spec.tools.len(),
-                        spec.commands.len(),
-                        spec.handlers.len(),
-                        spec.services.len(),
-                    );
-                    for svc in &spec.services {
-                        info!(
-                            "  service '{}' (fn={}) — {}",
-                            svc.name, svc.service_fn, svc.description
-                        );
-                    }
-                    // Spec-table handlers are parsed for discovery display but
-                    // NEVER dispatched — `cru.on` at load is the working
-                    // API. Say so loudly instead of letting the declaration
-                    // look registered.
-                    if !spec.handlers.is_empty() {
-                        warn!(
-                            "Plugin '{}' declares {} spec-table handler(s), which are not \
-                             dispatched; register them with cru.on(...) in init.lua instead",
-                            name,
-                            spec.handlers.len(),
-                        );
-                    }
-                    self.remember_spec(name, spec.clone());
-                    specs.push(spec);
-                }
-                Err(e) => {
-                    // Per-plugin fail-open at boot is load-bearing: one broken
-                    // plugin must not take the daemon down. `load_plugin_spec`
-                    // already marked it Error and made it inert.
-                    warn!("Failed to extract spec for plugin '{}': {}", name, e);
-                }
-            }
+    /// The manager's state for `name`, or `None` for a name discovery never
+    /// saw.
+    pub fn plugin_state(&self, name: &str) -> Option<crucible_lua::manifest::PluginState> {
+        self.plugin_manager.get(name).map(|p| p.state)
+    }
+
+    /// The daemon VM.
+    pub fn lua(&self) -> &mlua::Lua {
+        self.executor.lua()
+    }
+
+    /// The operator's runtime kill switch: `on_unload`, then inert, then
+    /// `Disabled`. `activate` refuses the plugin until something enables
+    /// it.
+    pub fn disable_plugin(&mut self, name: &str) {
+        self.make_plugin_inert(name);
+        if let Err(e) = self.plugin_manager.disable(name) {
+            warn!("plugin '{name}' could not be disabled: {e}");
         }
-
-        Ok(specs)
     }
 
     /// Upsert by plugin name. A replacement of the whole map here would drop
-    /// every previously loaded plugin's entry the moment `load_plugins` runs a
-    /// second time — which it does once `plugin.install` loads at runtime: an
-    /// Active plugin is skipped by `load_all` (`AlreadyLoaded`), so its spec is
-    /// absent from any later call's result.
+    /// every previously loaded plugin's entry the moment an activation pass
+    /// runs a second time — which it does once `plugin.install` activates at
+    /// runtime: `activate` answers an Active plugin's stored table, so its spec
+    /// is absent from any later pass.
     fn remember_spec(&mut self, name: &str, spec: PluginSpec) {
         self.loaded_specs.insert(name.to_string(), spec);
     }
@@ -1125,79 +1065,6 @@ impl DaemonPluginLoader {
         }
     }
 
-    /// Load one plugin's spec and execute it in the daemon VM.
-    ///
-    /// On ANY failure the plugin ends up marked `Error` and fully inert:
-    /// "not Active" must imply "nothing of this plugin's is registered or
-    /// running". Execute failures used to `mark_error` and still return
-    /// `Ok(spec)`, so `reload_plugin` reported success while the previous
-    /// generation's `cru.on` handlers stayed live — and `pre_tool_call`
-    /// fails closed, so one stale handler could deny every tool call in every
-    /// session.
-    async fn load_plugin_spec(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
-        let result = self.load_plugin_spec_inner(name).await;
-        if let Err(e) = &result {
-            // Adjacent, with no await between them: the loader mutex is what
-            // makes the Error-but-still-registered window unobservable.
-            self.make_plugin_inert(name);
-            self.plugin_manager.mark_error(name, e.to_string());
-        }
-        result
-    }
-
-    async fn load_plugin_spec_inner(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
-        let plugin = self
-            .plugin_manager
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("plugin '{}' not found after load", name))?;
-
-        let main_path = plugin.main_path();
-
-        // Execute the plugin in the daemon's real Lua runtime using eval_async
-        // so that async Lua functions (gateway.connect, etc.) can yield. The
-        // declarations and the service/tool/command Function refs both come
-        // from the one table the run returns. `name` is needed to hand the
-        // plugin its `[plugins.<name>]` section in setup().
-        match self.execute_plugin(name, &main_path).await {
-            Ok((exports, spec)) => {
-                for (svc_name, func) in exports.services {
-                    debug!(
-                        "Extracted service function '{}' from plugin '{}'",
-                        svc_name, name
-                    );
-                    self.service_fns.push(PluginServiceFn {
-                        plugin: name.to_string(),
-                        service: svc_name,
-                        func,
-                    });
-                }
-                self.plugin_registry.register_plugin(
-                    name,
-                    self.executor.lua(),
-                    &spec.tools,
-                    &spec.commands,
-                    exports.tools,
-                    exports.commands,
-                );
-                Ok(spec)
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to execute plugin '{}' in daemon runtime: {}",
-                    name, e
-                );
-                // A `setup` that raised still leaves the declarations.
-                match e.downcast::<SetupFailed>() {
-                    Ok(failed) => {
-                        self.remember_spec(name, failed.spec);
-                        Err(failed.error)
-                    }
-                    Err(e) => Err(e),
-                }
-            }
-        }
-    }
-
     /// Remove every registration attributed to `name`. "Not Active" must imply
     /// "nothing of this plugin's is registered or running." Keep this
     /// synchronous and call it adjacent to `mark_error` with no await between
@@ -1212,6 +1079,15 @@ impl DaemonPluginLoader {
     /// session is not by itself a reason a store needs no plugin-scoped
     /// release, and reading it as one is what let this hide.
     fn make_plugin_inert(&mut self, name: &str) {
+        // `on_unload` first, while the plugin's registrations still stand:
+        // the hook may flush through them. One generation, one call.
+        let lua = self.executor.lua().clone();
+        self.plugin_manager.call_on_unload_hook(&lua, name);
+        // Not active means no module table: the next `activate` runs the
+        // file again.
+        if let Some(key) = self.active_modules.remove(name) {
+            let _ = lua.remove_registry_value(key);
+        }
         self.abort_services(name);
         self.plugin_registry.remove_plugin(name);
         // One call, every store this plugin can have written: `cru.on`
@@ -1240,361 +1116,59 @@ impl DaemonPluginLoader {
         self.executor.lua().expire_registry_values();
     }
 
-    /// Execute a plugin's init.lua in the daemon's Lua executor (async).
+    /// Reload a plugin: `on_unload`, inert, forget its module, activate.
     ///
-    /// Makes this plugin's own `lua/` directory resolvable for the duration
-    /// of the load — `require("gateway")` finds the plugin's copy and no
-    /// other plugin's — then evaluates the init file with `eval_async`, so an
-    /// async Lua function may yield.
-    ///
-    /// Calls the returned spec's `setup(cfg)` with this plugin's
-    /// `[plugins.<name>]` section — the documented configuration mechanism.
-    ///
-    /// Returns the callables the plugin exported (services, tools and
-    /// commands) and the declarations read from the same table. An
-    /// unreadable declaration refuses the load before `setup` runs.
-    async fn execute_plugin(
-        &self,
-        name: &str,
-        init_path: &std::path::Path,
-    ) -> anyhow::Result<(PluginExports, PluginSpec)> {
-        let lua = self.executor.lua();
-        let plugin_dir = init_path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
-
-        // This plugin's own `lua/` directory is resolvable while the guard
-        // lives, and only while it lives. An unscoped root list made
-        // resolution depend on plugin load order, and let one plugin's
-        // private `config` module answer another plugin's `require`.
-        let _module_scope = self
-            .executor
-            .enter_plugin_root(plugin_dir)
-            .map_err(|e| anyhow::anyhow!("enter plugin module root: {e}"))?;
-
-        // A reload must re-read this plugin's private modules. Their cache is
-        // keyed by file, so forgetting the plugin's directory is enough — and
-        // only the private half is forgotten, because the entry instance in
-        // `package.loaded` is what a user's boot `require` created and what
-        // activation reuses instead of executing the file twice.
-        self.executor
-            .invalidate_private_modules_under(plugin_dir)
-            .map_err(|e| anyhow::anyhow!("invalidate plugin modules: {e}"))?;
-
-        // One module, one setup, per plugin: a plugin whose entry module the
-        // user's init.lua already `require`d is activated FROM that same
-        // `package.loaded` instance — the file is never evaluated a second
-        // time — and a plugin whose `setup` the user called owns its setup:
-        // the default `setup(cfg)` call is skipped for it.
-        if let Some((spec, module_name)) = self.boot_required_instance(init_path)? {
-            let declarations = crucible_lua::spec_from_table(&spec, init_path)
-                .map_err(|e| anyhow::anyhow!("spec of '{name}': {e}"))?;
-            // Rebind the attribution modules WITHOUT releasing: the boot
-            // require already ran this plugin's body under its own binding,
-            // and releasing here would wipe what the body published.
-            register_publish_module(lua, self.publications.clone(), name.to_string())?;
-            crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
-
-            // Ownership is keyed by the MODULE name the user required, which
-            // is not always the plugin's declared name.
-            //
-            // NOTE(finding): ownership is only DETECTED for loads the boot
-            // searcher claimed (entry-shaped `.lua` requires) — the setup
-            // wrapper is installed at claim time. A load the searcher did
-            // not claim (declared name differing from the directory, a
-            // dotted require of the entry file) whose setup the user called
-            // directly is reused WITHOUT ownership: the default `setup(cfg)`
-            // below runs AFTER the user's call. A setup that only merges
-            // config absorbs that; one with side effects — registering a
-            // hook, starting a timer, spawning anything — runs them twice.
-            // The known structural remedy is observing the call itself (a
-            // require-hook wrapping every plugin-root load, not only claimed
-            // shapes); it was deliberately not built in M5.
-            let owner_key = module_name.split('.').next().unwrap_or(&module_name);
-            if boot::BootRequireState::user_owns_setup(lua, owner_key) {
-                debug!("Plugin '{name}': init.lua called setup(); the default call is skipped");
-                // The direct call owns the plugin — but a store section for
-                // the same plugin is being ignored, and that must be said,
-                // once, at boot. Silence here is how a user concludes a
-                // setting never worked.
-                if self.plugin_config.contains_key(name) {
-                    let notice = format!(
-                        "init.lua calls {name}'s setup directly, so the plugins.{name} config                          section is ignored; move those keys into the setup call"
-                    );
-                    warn!("{notice}");
-                    if let Ok(mut notices) = self.supersession_notices.lock() {
-                        notices.push(notice);
-                    }
-                }
-            } else if let Err(error) = self.call_plugin_setup(name, &spec).await {
-                return Err(SetupFailed {
-                    spec: declarations,
-                    error,
-                }
-                .into());
-            }
-            info!("Activated plugin '{name}' from the module instance init.lua required");
-            return Ok((extract_exports(&spec), declarations));
-        }
-
-        // Rebind `cru.plugin.publish` to THIS plugin before its body runs.
-        //
-        // One Lua VM serves every plugin, so a single global binding would
-        // attribute whatever it stored to whichever plugin the closure happened
-        // to be built for. Taking the name from an argument instead would let a
-        // plugin publish under another's name — attribution nothing could
-        // trust. The loader knows who it is about to execute; it says so.
-        self.publications.release_plugin(name);
-        register_publish_module(lua, self.publications.clone(), name.to_string())?;
-        self.options.release_plugin(name);
-        crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
-
-        // Read source before entering plugin context so a read failure cannot
-        // leave it behind.
-        let source = std::fs::read_to_string(init_path)
-            .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
-
-        // Drop this plugin's previously-registered handlers and session hooks,
-        // and mark it as the loading plugin so anything it registers now is
-        // attributed to it. Without both halves a reload appends a second copy
-        // of every `cru.on` handler and every session hook — stale
-        // handlers keep firing against dead state (and `pre_tool_call` fails
-        // closed, denying every tool call in every session), while a doubled
-        // `on_session_start` runs oci's container setup twice per session.
-        crucible_lua::clear_source(
-            lua,
-            &self.handler_registry,
-            &crucible_lua::LuaSource::Plugin(name.to_string()),
-        );
-        // The declaration the operator installed, read from the manifest and
-        // admitted here. The interception gate used to read a Lua global with
-        // `.unwrap_or(true)`, so it failed OPEN for every plugin this VM ran.
-        crucible_lua::record_plugin_intercept(lua, name, self.plugin_may_intercept(name));
-
-        // The source: the name every `cru.storage` call is scoped to. This VM
-        // used to stamp none, so daemon-side `cru.storage` errored.
-        let previous = crucible_lua::enter_plugin(lua, name);
-
-        // Execute init.lua with eval_async — captures return value AND enables
-        // async Lua. Results are captured, not `?`-ed: the context restore
-        // below must run on every exit path.
-        let eval_result: mlua::Result<mlua::Value> = lua
-            .load(&source)
-            .set_name(init_path.to_string_lossy().as_ref())
-            .eval_async()
-            .await;
-
-        // Read the declarations and the callables from the one returned
-        // table. Only this VM's function handles can be invoked, so there is
-        // no second read anywhere. A plugin that returns no table declares
-        // nothing the daemon can use, and is refused as it was before.
-        let executed: anyhow::Result<(PluginExports, PluginSpec)> = match eval_result {
-            Err(e) => Err(anyhow::anyhow!("exec {}: {e}", init_path.display())),
-            Ok(mlua::Value::Table(spec)) => match crucible_lua::spec_from_table(&spec, init_path) {
-                Err(e) => Err(anyhow::anyhow!("spec of '{name}': {e}")),
-                Ok(declarations) => match self.call_plugin_setup(name, &spec).await {
-                    Err(error) => Err(SetupFailed {
-                        spec: declarations,
-                        error,
-                    }
-                    .into()),
-                    Ok(()) => Ok((extract_exports(&spec), declarations)),
-                },
-            },
-            Ok(other) => Err(anyhow::anyhow!(
-                "plugin '{name}' returned {}, not a table",
-                other.type_name()
-            )),
-        };
-
-        // The context is restored UNCONDITIONALLY, after setup: setup-registered
-        // handlers belong to the plugin — they must be cleared on its reload —
-        // and a context that survives a raise misattributes whatever loads next,
-        // up to and including the user's init.lua (which runs after all
-        // plugins; reloading the dead plugin would then delete the user's
-        // handlers). Anything registered after this point (e.g. from a
-        // lifecycle hook at session start) is not attributable to a load, so
-        // it is left unowned rather than mis-attributed.
-        crucible_lua::set_source(lua, previous);
-
-        let executed = executed?;
-        info!("Executed plugin in daemon runtime: {}", init_path.display());
-        Ok(executed)
-    }
-
-    /// The `package.loaded` instance the user's boot `require` created for
-    /// this plugin's entry module, when it exists and was loaded from THIS
-    /// plugin's own entry file (a user `lua/` module that shadows the name
-    /// does not count).
-    /// Matched by FILE identity, not by plugin name: activation must never
-    /// execute a file `package.loaded` already holds, whatever name the
-    /// user's `require` reached it under — re-executing doubles every
-    /// top-level hook and publish. Returns the instance and the module name
-    /// it was loaded as (whose first segment keys the setup-ownership
-    /// record).
-    ///
-    /// This closes double EXECUTION. Double SETUP is a separate residual,
-    /// recorded where it happens — at the activation reuse branch that calls
-    /// the default `setup(cfg)`.
-    fn boot_required_instance(
-        &self,
-        init_path: &std::path::Path,
-    ) -> anyhow::Result<Option<(mlua::Table, String)>> {
-        let lua = self.executor.lua();
-        let canonical_init =
-            std::fs::canonicalize(init_path).unwrap_or_else(|_| init_path.to_path_buf());
-        let Some(module_name) = boot::BootRequireState::module_for_file(lua, &canonical_init)
-        else {
-            return Ok(None);
-        };
-        let package: mlua::Table = lua
-            .globals()
-            .get("package")
-            .map_err(|e| anyhow::anyhow!("package table: {e}"))?;
-        let loaded: mlua::Table = package
-            .get("loaded")
-            .map_err(|e| anyhow::anyhow!("package.loaded: {e}"))?;
-        match loaded
-            .get::<mlua::Value>(module_name.as_str())
-            .map_err(|e| anyhow::anyhow!("package.loaded[{module_name}]: {e}"))?
-        {
-            mlua::Value::Table(table) => Ok(Some((table, module_name))),
-            _ => Ok(None),
-        }
-    }
-
-    /// Whether this plugin's installation granted it the right to take a tool
-    /// call over (`intercept_tools` in its manifest).
-    ///
-    /// An unknown plugin gets `false`. Interception fabricates a result the
-    /// model reads as the tool's own, and it returns BEFORE the permission
-    /// gate, so an unanswerable question must answer "no".
-    fn plugin_may_intercept(&self, name: &str) -> bool {
-        self.plugin_manager
-            .get(name)
-            .is_some_and(|plugin| plugin.manifest.intercepts_tools)
-    }
-
-    /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.
-    ///
-    /// Always passes a table — plugins treat `setup()` as their activation
-    /// point, so an absent config section must not mean "never configured".
-    async fn call_plugin_setup(&self, name: &str, spec: &mlua::Table) -> anyhow::Result<()> {
-        let Ok(setup) = spec.get::<mlua::Function>("setup") else {
-            return Ok(());
-        };
-
-        // The directory name first, then the name the plugin declares.
-        //
-        // Identity is the directory — the only name knowable without running
-        // Lua. But a repo cloned as `crucible-discord` whose plugin declares
-        // `name = "discord"` must still receive `[plugins.discord]`: the user
-        // wrote that section against the plugin, not against wherever their
-        // clone happens to sit.
-        let declared = self
-            .plugin_manager
-            .get(name)
-            .and_then(|p| p.manifest.declared_name.clone());
-        let cfg = self
-            .plugin_config
-            .get(name)
-            .or_else(|| declared.as_deref().and_then(|d| self.plugin_config.get(d)))
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({}));
-        let cfg = self
-            .executor
-            .lua()
-            .to_value(&cfg)
-            .map_err(|e| anyhow::anyhow!("setup config for '{name}': {e}"))?;
-
-        setup
-            .call_async::<()>(cfg)
-            .await
-            .map_err(|e| anyhow::anyhow!("setup() for '{name}': {e}"))?;
-
-        debug!("Called setup() for plugin '{}'", name);
-        Ok(())
-    }
-
-    /// Reload a plugin: unload registrations, re-execute `init.lua`, and
-    /// re-extract service functions. `execute_plugin` forgets the modules
-    /// cached from under the plugin's directory, so its `lua/` modules are
-    /// read again.
+    /// The old generation's services die before the new one's are
+    /// extracted, and `activate` forgets the modules cached from under the
+    /// plugin's directory, so its `lua/` modules are read again. A reload
+    /// that fails leaves the plugin `Error` and inert, never half-alive: the
+    /// everyday trigger is saving `init.lua` with a syntax error while the
+    /// watcher is on, and the previous generation's tools and handlers must
+    /// not stay live behind an `Error` label.
     pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
         if self.plugin_manager.get(name).is_none() {
             anyhow::bail!("plugin '{}' not found", name);
         }
 
-        // A failure in either manager step must leave the plugin inert AND
-        // marked Error. `unload` succeeds (state Discovered) before `load`
-        // evals the file, so bailing bare on a `load` failure — the everyday
-        // trigger is saving init.lua with a syntax error while the watcher
-        // is on — left the previous generation's tools, handlers, hooks and
-        // services fully live while plugin.list said `Discovered` with no
-        // error: broken looked exactly like installed-but-not-loaded.
-        if let Err(e) = self
-            .plugin_manager
-            .unload(name)
-            .and_then(|()| self.plugin_manager.load(name))
-        {
-            self.make_plugin_inert(name);
+        self.make_plugin_inert(name);
+        // A boot `require` instance in `package.loaded` would be reused
+        // rather than re-read; the reload forgets it with the rest.
+        let dir = self.plugin_manager.get(name).map(|p| p.dir.clone());
+        if let Some(dir) = dir {
+            if let Err(e) = self
+                .executor
+                .modules()
+                .invalidate_under(self.executor.lua(), &dir)
+            {
+                warn!("plugin '{name}': could not forget its cached modules: {e}");
+            }
+        }
+        if let Err(e) = self.plugin_manager.unload(name) {
             self.plugin_manager.mark_error(name, e.to_string());
             anyhow::bail!("reload plugin '{name}': {e}");
         }
 
-        // `load` returns Ok for a disabled plugin — skipping one is not an
-        // error — so reload must re-check before executing. Otherwise the kill
-        // switch only holds at boot: `plugin.reload`, the web UI's reload
-        // button, and (with no human in the loop) the file watcher would each
-        // re-run a disabled plugin's init.lua and setup(), re-register its
-        // tools, and re-spawn its services, while `plugin.list` still reported
-        // it Disabled.
-        //
-        // The realistic path is an operator disabling a misbehaving plugin,
-        // then opening its init.lua to investigate and saving the file.
-        if self
-            .plugin_manager
-            .get(name)
-            .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled)
-        {
-            self.make_plugin_inert(name);
-            anyhow::bail!("plugin '{name}' is disabled; enable it before reloading");
-        }
-
-        // The old generation's services must die before the new one's are
-        // extracted and spawned — without this, reloading discord left two
-        // gateway loops both consuming events.
-        self.abort_services(name);
-
-        let spec = match self.load_plugin_spec(name).await {
-            Ok(spec) => spec,
-            Err(e) => {
-                // A failed reload must leave the plugin fully inert, not
-                // half-alive: `register_plugin` only replaces entries on a
-                // SUCCESSFUL load, so without this the previous version's
-                // tools/commands/handlers stayed registered while state said
-                // Error — 'broken' looked exactly like 'working'.
-                // `load_plugin_spec` already made it inert; repeating the
-                // idempotent call keeps this arm correct on its own.
-                self.make_plugin_inert(name);
-                return Err(e);
-            }
-        };
-        // Same reclaim on the success path — the old version's handler keys
-        // were just dropped by re-registration.
+        activate::activate(self, name)
+            .await
+            .map_err(|e| anyhow::anyhow!("reload plugin '{name}': {e}"))?;
+        // The old version's handler keys were just dropped by
+        // re-registration; reclaim them so repeated reloads do not grow the
+        // Lua registry.
         self.executor.lua().expire_registry_values();
 
-        self.remember_spec(name, spec.clone());
-
-        // Re-executing init.lua re-ran `setup(cfg)` against the ORIGINAL TOML,
-        // so every value the user changed in the settings pane just reverted.
-        // Replayed here, on the loader, because both reload paths — the RPC
-        // handler and the file watcher — go through this function.
+        // Re-running `setup(opts)` replayed the ORIGINAL config, so every
+        // value the user changed in the settings pane just reverted. Replayed
+        // here, on the loader, because both reload paths — the RPC handler
+        // and the file watcher — go through this function.
         if let Some(dir) = &self.option_store_dir {
             option_store::restore_plugin(dir, &self.options, name);
         }
 
         info!("Reloaded plugin '{}' successfully", name);
+        let spec =
+            self.loaded_specs.get(name).cloned().ok_or_else(|| {
+                anyhow::anyhow!("reload plugin '{name}': no declarations were read")
+            })?;
         Ok(spec)
     }
 
@@ -1638,6 +1212,7 @@ impl DaemonPluginLoader {
         }
         self.make_plugin_inert(name);
         self.loaded_specs.remove(name);
+        self.discovery_order.retain(|n| n != name);
         // Without forget, the entry stays in the manager map (state
         // Discovered): plugin.list still shows it, and — because discover()
         // skips known names — a reinstall loads nothing and reports success.

@@ -6,7 +6,7 @@
 
 use super::plugins::spawn_plugin_services;
 use super::*;
-/// activation `load_plugins` pass.
+/// activation pass.
 #[derive(Debug)]
 pub(crate) struct InstallLoadReport {
     pub loaded: bool,
@@ -167,13 +167,12 @@ pub(crate) async fn handle_plugin_install(
         }
     };
 
-    // Activate on the running daemon: a second `load_plugins` pass over the
-    // user plugins dir is incremental — Active plugins are skipped
-    // (`AlreadyLoaded`) and `loaded_specs` merges. If activation fails, the
-    // install still happened on disk: the next boot loads it, and a broken
-    // plugin is visible in `plugin.list` as `state: Error` — so report
-    // `installed: true, loaded: false` with the reason, not an opaque
-    // failure. No TOML rollback.
+    // Activate on the running daemon: the user plugins dir joins the search
+    // paths, and the installed plugin is activated by name through the one
+    // activation body. If activation fails, the install still happened on
+    // disk: the next boot activates it, and a broken plugin is visible in
+    // `plugin.list` as `state: Error` — so report `installed: true,
+    // loaded: false` with the reason, not an opaque failure.
     let report = match crate::plugin_ops::plugins_dir() {
         Ok(plugins_dir) => {
             // BEFORE the load, because the load runs the plugin's `setup()`
@@ -186,16 +185,22 @@ pub(crate) async fn handle_plugin_install(
             match loader_guard.as_mut() {
                 Some(loader) => {
                     let clone_dir = plugins_dir.join(&result.name);
-                    match loader
-                        .load_plugins(&[(plugins_dir, crucible_lua::PluginSource::User)])
-                        .await
+                    let activated = match loader
+                        .add_plugin_paths(&[(plugins_dir, crucible_lua::PluginSource::User)])
                     {
-                        Ok(_) => {
+                        Ok(()) => loader.activate_plugin(&result.name).await,
+                        Err(e) => Err(e),
+                    };
+                    match activated {
+                        Ok(()) => {
                             let report = install_load_report(loader, &result.name, &clone_dir);
                             spawn_plugin_services(loader);
                             report
                         }
-                        Err(e) => InstallLoadReport::not_loaded(e.to_string()),
+                        // `activate` marked the plugin `Error`, so the report
+                        // reads its `last_error`; a name discovery never saw
+                        // reports the miss.
+                        Err(_) => install_load_report(loader, &result.name, &clone_dir),
                     }
                 }
                 None => InstallLoadReport::not_loaded("plugin loader not initialized".to_string()),

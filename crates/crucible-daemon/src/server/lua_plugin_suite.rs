@@ -823,7 +823,7 @@ mod shipped_plugin_tests {
     /// A plugin that registers a hook at body level must claim its own
     /// `package.loaded` entry.
     ///
-    /// The daemon executes `init.lua` BY PATH (`daemon_plugins::execute_plugin`
+    /// The daemon executes `init.lua` BY PATH (`daemon_plugins::activate`
     /// → `lua.load(source).eval_async()`), never through `require`. So a
     /// documented `require("<plugin>").setup{…}` in a user's `init.lua` loads a
     /// SECOND copy of the file: new upvalues, and every body-level

@@ -51,7 +51,7 @@ fn copy_dir(from: &Path, to: &Path) {
 async fn load_review(tmp: &Path) -> DaemonPluginLoader {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(review_search_path(tmp), PluginSource::EnvPath)])
+        .activate_discovered(&[(review_search_path(tmp), PluginSource::EnvPath)])
         .await
         .expect("load plugins");
     loader

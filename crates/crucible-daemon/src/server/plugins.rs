@@ -1032,7 +1032,7 @@ mod plugin_health_visibility_tests {
     async fn list_after_loading(root: &Path) -> serde_json::Value {
         let mut loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
         loader
-            .load_plugins(&[(root.to_path_buf(), PluginSource::Runtime)])
+            .activate_discovered(&[(root.to_path_buf(), PluginSource::Runtime)])
             .await
             .expect("load_plugins");
 

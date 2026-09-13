@@ -12,7 +12,7 @@
 //! - `DaemonPluginLoader::new()` failure → `plugin_loader = None`
 //! - `loader.upgrade_with_sessions()` failure → warn, Lua sessions stubs remain
 //! - `loader.upgrade_with_tools()` failure → warn, Lua tools stubs remain
-//! - `loader.load_plugins()` failure → warn, no plugins loaded
+//! - `loader.activate_discovered()` failure → warn, no plugins loaded
 //! - `loader.upgrade_with_storage()` failure → warn, graph/vault stubs remain
 //!
 //! These are all intentionally soft-fail: the daemon should run in degraded
@@ -31,8 +31,8 @@ use common::{RpcConn, TestDaemon};
 /// - Return empty plugin list (broken plugin was not loaded)
 ///
 /// Verifies error-swallowing in:
-/// - `DaemonPluginLoader::load_plugins()` → warns on bad plugin, continues
-/// - `DaemonPluginLoader::load_plugin_spec()` → warns when a plugin's run fails, skips plugin
+/// - `DaemonPluginLoader::load_plugins_from_spec()` → warns on bad plugin, continues
+/// - `daemon_plugins::activate` → warns when a plugin's run fails, marks it Error
 #[tokio::test]
 async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     let plugin_dir = tempfile::tempdir().expect("Failed to create temp dir");

@@ -367,6 +367,16 @@ impl LuaExecutor {
         )
     }
 
+    /// Add plugin roots to the search roots that are already there. The
+    /// boot seeds the user root and the plugin roots before `init.lua`
+    /// runs; the activation pass adds its roots without dropping those.
+    pub fn add_module_roots(&self, roots: Vec<PathBuf>) -> Result<(), LuaError> {
+        for root in roots {
+            self.modules.add_root(root, RootKind::Plugin)?;
+        }
+        Ok(())
+    }
+
     /// Set the search roots, user roots included.
     pub fn configure_roots(&self, roots: Vec<(PathBuf, RootKind)>) -> Result<(), LuaError> {
         self.modules.set_roots(roots)?;

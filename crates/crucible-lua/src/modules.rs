@@ -181,6 +181,17 @@ impl ModuleRegistry {
         Ok(())
     }
 
+    /// Append one public root, unless the same path is already a root. The
+    /// user root the boot seeded stays where it is, ahead of every plugin
+    /// root, so a user module keeps shadowing a same-named plugin module.
+    pub fn add_root(&self, root: PathBuf, kind: RootKind) -> mlua::Result<()> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        if !state.roots.iter().any(|(existing, _)| *existing == root) {
+            state.roots.push((root, kind));
+        }
+        Ok(())
+    }
+
     /// The public plugin roots, in search order.
     pub fn plugin_roots(&self) -> Vec<PathBuf> {
         self.state

@@ -223,7 +223,7 @@ async fn the_bundled_plugin_publishes_the_channel_the_daemon_reads() {
     let mut loader =
         crate::daemon_plugins::DaemonPluginLoader::new(HashMap::new()).expect("plugin loader");
     loader
-        .load_plugins(&[(shipped, crucible_lua::PluginSource::Runtime)])
+        .activate_discovered(&[(shipped, crucible_lua::PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 

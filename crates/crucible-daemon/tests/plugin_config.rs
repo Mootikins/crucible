@@ -203,7 +203,7 @@ async fn load_from(
 ) -> crucible_daemon::daemon_plugins::DaemonPluginLoader {
     let mut loader = crucible_daemon::daemon_plugins::DaemonPluginLoader::new(config).unwrap();
     loader
-        .load_plugins(&[(root.to_path_buf(), PluginSource::EnvPath)])
+        .activate_discovered(&[(root.to_path_buf(), PluginSource::EnvPath)])
         .await
         .unwrap();
     loader
@@ -212,8 +212,10 @@ async fn load_from(
 /// Run the one-VM boot against a fixture: `settings.json` and `init.lua`
 /// under `<tmp>/config/`, plugins under `root` — the plugin-path resolution
 /// is injected as a value, so nothing reaches outside the fixture. Returns
-/// the loader with `init.lua` already evaluated and plugins ACTIVATED
+/// the loader with `init.lua` already evaluated and the spec ACTIVATED
 /// against the extracted config (the deferred phase, as the daemon runs it).
+/// A fixture plugin activates when `init.lua` names it in
+/// `cru.plugin.setup` or requires it; nothing else on the path does.
 ///
 /// `settings` is the layer BELOW `init.lua`, which is the position the
 /// `config.toml` seed used to hold. `serde_json::Value::Null` writes no file.
@@ -262,32 +264,33 @@ async fn boot_and_activate(
 
     let mut loader = boot.loader;
     loader
-        .load_plugins(&paths(&boot.config.runtimepath))
-        .await
+        .add_plugin_paths(&paths(&boot.config.runtimepath))
         .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
     (boot.config, loader)
 }
 
 /// The idiom, end to end under the boot inversion: init.lua runs FIRST, its
-/// `require("prefs").setup{...}` works through the live search space, the
-/// deferred activation reuses that same module instance (the file is never
-/// evaluated twice), and the user's call OWNS the setup — the default
-/// `setup(cfg)` with the store section is skipped, so setup runs exactly once
-/// and the user's value stands.
+/// `require("prefs").setup{...}` works through the live search space, and
+/// the deferred activation reuses that same module instance (the file is
+/// never evaluated twice). Setup ownership moved to the spec entry's
+/// `config`: the host's `setup(opts)` runs after init.lua, so the user's
+/// direct call runs first and the host's runs second, and the host's opts
+/// carry the settings layer.
 #[tokio::test]
-async fn user_init_lua_setup_owns_the_plugin_and_runs_once() {
+async fn a_user_setup_call_in_init_lua_runs_before_the_hosts_call() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     write_plugin(
         &root,
         "prefs",
         r#"
-_G.__prefs_setups = 0
+_G.__prefs_execs = (_G.__prefs_execs or 0) + 1
+_G.__prefs_greetings = {}
 return {
     name = "prefs",
     setup = function(cfg)
-        _G.__prefs_setups = _G.__prefs_setups + 1
-        _G.__prefs_config = cfg
+        table.insert(_G.__prefs_greetings, cfg.greeting)
     end,
 }
 "#,
@@ -301,13 +304,19 @@ return {
     )
     .await;
 
-    let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
+    let execs = loader.eval("return __prefs_execs").await.unwrap();
     assert_eq!(
-        resolved, "from-lua",
-        "the user's direct setup() call owns this plugin's config"
+        execs, "1",
+        "the file runs once, whoever asks for the module"
     );
-    let count = loader.eval("return __prefs_setups").await.unwrap();
-    assert_eq!(count, "1", "setup must run exactly once — the user's call");
+    let order = loader
+        .eval("return table.concat(__prefs_greetings, ',')")
+        .await
+        .unwrap();
+    assert_eq!(
+        order, "from-lua,from-settings",
+        "the user's call runs during init.lua; the host's call follows with the settings"
+    );
 }
 
 /// The store form: `cru.config.set{ plugins = { prefs = {...} } }` in
@@ -336,7 +345,9 @@ return {
         tmp.path(),
         &root,
         serde_json::Value::Null,
-        r#"cru.config.set({ plugins = { prefs = { greeting = "from-store" } } })"#,
+        r#"
+cru.plugin.setup({ "prefs" })
+cru.config.set({ plugins = { prefs = { greeting = "from-store" } } })"#,
     )
     .await;
 
@@ -369,7 +380,9 @@ return {
     );
 
     let init = format!(
-        r#"cru.config.set({{ runtimepath = {{ [[{}]] }} }})"#,
+        r#"
+cru.config.set({{ runtimepath = {{ [[{}]] }} }})
+cru.plugin.setup({{ "fromrtp" }})"#,
         rtp.display()
     );
     let (config, loader) =
@@ -458,88 +471,6 @@ return { name = "dotmod" }
     );
 }
 
-#[tokio::test]
-async fn a_both_forms_plugin_gets_one_supersession_notice() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("plugins");
-    write_plugin(
-        &root,
-        "prefs",
-        r#"
-return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
-"#,
-    );
-
-    let (_config, loader) = boot_and_activate(
-        tmp.path(),
-        &root,
-        serde_json::json!({ "plugins": { "prefs": { "clip": 4 } } }),
-        r#"require("prefs").setup({ greeting = "from-lua" })"#,
-    )
-    .await;
-
-    let notices = loader.supersession_notices();
-    assert_eq!(notices.len(), 1, "one notice per plugin: {notices:?}");
-    assert!(notices[0].contains("prefs"), "{notices:?}");
-    assert!(
-        notices[0].contains("plugins.prefs"),
-        "the notice must name the ignored section: {notices:?}"
-    );
-    assert!(
-        notices[0].contains("move those keys into the setup call"),
-        "the notice must name the remedy: {notices:?}"
-    );
-}
-
-/// The notice fires ONLY for the both-forms combination.
-#[tokio::test]
-async fn a_single_form_plugin_gets_no_supersession_notice() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("plugins");
-    write_plugin(
-        &root,
-        "prefs",
-        r#"
-return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
-"#,
-    );
-
-    // Direct form only.
-    let (_config, loader) = boot_and_activate(
-        tmp.path(),
-        &root,
-        serde_json::Value::Null,
-        r#"require("prefs").setup({ greeting = "from-lua" })"#,
-    )
-    .await;
-    assert!(
-        loader.supersession_notices().is_empty(),
-        "a direct-only plugin is not superseding anything"
-    );
-
-    // Store form only.
-    let tmp2 = tempfile::tempdir().unwrap();
-    let root2 = tmp2.path().join("plugins");
-    write_plugin(
-        &root2,
-        "prefs",
-        r#"
-return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
-"#,
-    );
-    let (_config, loader) = boot_and_activate(
-        tmp2.path(),
-        &root2,
-        serde_json::json!({ "plugins": { "prefs": { "clip": 4 } } }),
-        "",
-    )
-    .await;
-    assert!(
-        loader.supersession_notices().is_empty(),
-        "a store-only plugin gets its default setup, nothing is ignored"
-    );
-}
-
 /// A plugin the user merely `require`d — no setup call — still receives the
 /// default `setup(cfg)` at activation. This is the arm that silently
 /// regresses into an unconfigured plugin if the recorder over-records.
@@ -582,11 +513,11 @@ return {
     );
 }
 
-/// The boot's setup recorder is a boot-phase device only: after boot, the
-/// module table in `package.loaded` holds the plugin's OWN function again.
-/// A plugin that stores `M.setup` and compares it later must see itself.
+/// A boot `require` answers the plugin's OWN table, unwrapped: a plugin that
+/// stores `M.setup` and compares it later sees itself, during the
+/// evaluation and after it.
 #[tokio::test]
-async fn a_wrapped_setup_is_restored_to_the_plugins_own_function_after_boot() {
+async fn a_boot_require_answers_the_plugins_own_setup_function() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     write_plugin(
@@ -605,36 +536,31 @@ return { name = "prefs", setup = my_setup }
         tmp.path(),
         &root,
         serde_json::Value::Null,
-        // During the evaluation the recorder is in place, so identity does
-        // not hold yet — the fixture records that too, as the contrast.
         r#"
 local m = require("prefs")
-cru.config.set({ probe = { wrapped_during_boot = not rawequal(m.setup, _G.__prefs_original_setup) } })
-m.setup({ marker = "user-owned" })
+cru.config.set({ probe = { own_during_boot = rawequal(m.setup, _G.__prefs_original_setup) } })
 "#,
     )
     .await;
 
     let store = crucible_lua::get_app_config().expect("store live");
     assert_eq!(
-        store["probe"]["wrapped_during_boot"],
+        store["probe"]["own_during_boot"],
         serde_json::json!(true),
-        "precondition: the recorder was in place during the evaluation"
+        "the required table must hold the plugin's own setup during the evaluation"
     );
-    let restored = loader
+    let after = loader
         .eval(r#"return tostring(rawequal(require("prefs").setup, _G.__prefs_original_setup))"#)
         .await
         .unwrap();
-    assert_eq!(
-        restored, "true",
-        "after boot the table must hold the plugin's own setup, not the recorder"
-    );
+    assert_eq!(after, "true", "and after the boot");
 }
 
-/// A DISABLED plugin: the user's `require` still loads its module (as in
-/// Neovim), but activation registers none of its hooks or exports.
+/// A boot-required plugin the settings DISABLE: the operator asked twice and
+/// said two things. The require was explicit, so the plugin activates, its
+/// setup runs and its commands register. The daemon log names both sites.
 #[tokio::test]
-async fn a_disabled_plugin_loads_as_a_module_but_activates_nothing() {
+async fn a_boot_required_plugin_the_settings_disable_still_activates() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     write_plugin(
@@ -665,31 +591,29 @@ return {
         .eval("return _G.__offplug_module_loaded")
         .await
         .unwrap();
-    assert_eq!(loaded, "true", "require must still load the module");
+    assert_eq!(loaded, "true", "require must load the module");
     let setup = loader
         .eval("return tostring(_G.__offplug_setup_ran)")
         .await
         .unwrap();
-    assert_eq!(setup, "nil", "a disabled plugin gets no setup call");
+    assert_eq!(setup, "true", "the require wins: the host runs setup");
     assert_eq!(
         loader.plugin_handlers().plugin_handler_count("offplug"),
-        0,
-        "a disabled plugin's boot-require hooks must be cleared"
+        1,
+        "the body's registration is the instance's and stays"
     );
     let command = loader
         .plugin_registry()
         .run_command("offplug.hello", serde_json::json!({}))
         .await
         .unwrap();
-    assert!(
-        command.is_none(),
-        "a disabled plugin's commands must not register"
-    );
+    assert!(command.is_some(), "the plugin's commands register");
 }
 
 /// A user init.lua that PARSES and then raises is user configuration, not a
-/// gate: the boot warns, rolls back to the seed, and activation still hands
-/// the plugin its store section. The daemon never goes down for it.
+/// gate: the boot warns and rolls back to the seed. The spec entries the
+/// file wrote roll back with it, so a plugin only that file named stays
+/// discovered and inactive. The daemon never goes down for it.
 ///
 /// A file that does not parse is the other half of the rule and is fatal —
 /// see `init_lua_failure_rule.rs`.
@@ -715,7 +639,7 @@ return {
             "default_kiln": "seeded",
             "plugins": { "prefs": { "greeting": "from-settings" } },
         }),
-        "cru.config.set({ default_kiln = \"from-init\" })\nerror(\"boom\")\n",
+        "cru.plugin.setup({ \"prefs\" })\ncru.config.set({ default_kiln = \"from-init\" })\nerror(\"boom\")\n",
     )
     .await;
 
@@ -724,8 +648,16 @@ return {
         Some("seeded"),
         "the extracted config must be the seed"
     );
-    let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
-    assert_eq!(resolved, "from-settings");
+    assert_eq!(
+        loader.plugin_state("prefs"),
+        Some(crucible_lua::manifest::PluginState::Discovered),
+        "the entry the failed file wrote rolled back with the file"
+    );
+    let resolved = loader
+        .eval("return tostring(__prefs_config)")
+        .await
+        .unwrap();
+    assert_eq!(resolved, "nil");
 }
 
 #[tokio::test]
@@ -959,13 +891,12 @@ async fn the_shipped_auto_title_defaults_stand_without_user_config() {
     );
 }
 
-/// A plugin configured BOTH ways takes the direct call: the user's
-/// `require("auto-title").setup{...}` owns this plugin's setup, so the
-/// `plugins.auto-title` store section is NOT applied — the docs say pick
-/// one form per plugin. (Before the boot inversion the two composed per
-/// key; the composition rule is now ownership, not layering.)
+/// A plugin configured BOTH ways: the entry's `config` owns the setup, so
+/// the `plugins.auto-title` store section is NOT applied. Setup ownership
+/// lives in the spec entry now; a direct `require(...).setup{}` call in
+/// init.lua runs before the host's call and does not own anything.
 #[tokio::test]
-async fn a_direct_setup_call_owns_the_plugin_over_the_store_section() {
+async fn an_entry_config_owns_the_plugin_over_the_store_section() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     std::fs::create_dir_all(&root).unwrap();
@@ -975,15 +906,15 @@ async fn a_direct_setup_call_owns_the_plugin_over_the_store_section() {
         tmp.path(),
         &root,
         serde_json::json!({ "plugins": { "auto-title": { "prompt": "From settings.", "clip": 4 } } }),
-        r#"require("auto-title").setup({ prompt = "From Lua." })"#,
+        r#"cru.plugin.setup({ { "auto-title", config = function(m, opts) m.setup({ prompt = "From Lua." }) end } })"#,
     )
     .await;
 
     let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
-    assert_eq!(system, "From Lua.", "the direct call owns the setup");
+    assert_eq!(system, "From Lua.", "the entry's config owns the setup");
     assert_eq!(
         prompt, "User: abcdefgh",
-        "the store clip is not applied — the direct call owns the whole setup"
+        "the store clip is not applied — config replaces the default call"
     );
 }
 

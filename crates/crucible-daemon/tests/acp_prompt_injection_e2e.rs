@@ -114,7 +114,7 @@ async fn load_plugin(root: &Path, init: &str) -> DaemonPluginLoader {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins, PluginSource::EnvPath)])
+        .activate_discovered(&[(plugins, PluginSource::EnvPath)])
         .await
         .expect("load plugins");
     loader

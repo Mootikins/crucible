@@ -701,7 +701,7 @@ mod interception_grant {
         let mut h = ReactorTestHarness::new().await;
         let mut loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
         loader
-            .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+            .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
             .await
             .expect("load");
         h.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());

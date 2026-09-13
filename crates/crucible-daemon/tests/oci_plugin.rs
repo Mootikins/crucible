@@ -55,7 +55,7 @@ async fn load_oci(tmp: &Path, config: serde_json::Value) -> DaemonPluginLoader {
     };
     let mut loader = DaemonPluginLoader::new(config).expect("loader");
     loader
-        .load_plugins(&[(oci_search_path(tmp), PluginSource::EnvPath)])
+        .activate_discovered(&[(oci_search_path(tmp), PluginSource::EnvPath)])
         .await
         .expect("load plugins");
     loader

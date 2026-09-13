@@ -28,7 +28,7 @@ fn shipped_plugin_names() -> Vec<String> {
 
 /// Discovery alone proves nothing about a plugin's health — `oci` was
 /// discovered `Active` for months while dying on its first `require`,
-/// because `execute_plugin` errors were downgraded to a `warn!` on a
+/// because activation errors were downgraded to a `warn!` on a
 /// stdout auto-spawn points at /dev/null. This is the Phase-6 smoke:
 /// every shipped plugin must load through the REAL loader and *execute* —
 /// state `Active`, no `last_error`, and a spec extracted (proof its
@@ -37,7 +37,7 @@ fn shipped_plugin_names() -> Vec<String> {
 async fn every_shipped_plugin_executes() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 
@@ -80,7 +80,7 @@ async fn a_plugin_disabled_in_config_never_executes() {
     )]);
     let mut loader = DaemonPluginLoader::new(plugin_config).expect("loader");
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 
@@ -203,7 +203,7 @@ async fn shipped_plugin_trees_declare_only_known_controls() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 
@@ -304,13 +304,13 @@ async fn boot_loader_with_home(home: &std::path::Path) -> DaemonPluginLoader {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     crucible_lua::set_import_root(loader.executor().lua(), home.join("lua"));
     run_shipped_defaults(loader.executor().lua());
-    // Task 7 replaces this call with the spec-driven `load_plugins_from_spec`.
-    // Until then `load_plugins` activates every discovered directory and
-    // reads no spec.
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .add_plugin_paths(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .expect("search path");
+    loader
+        .load_plugins_from_spec()
         .await
-        .expect("load shipped plugins");
+        .expect("activate the spec");
     loader
 }
 
@@ -318,15 +318,10 @@ async fn boot_loader_with_home(home: &std::path::Path) -> DaemonPluginLoader {
 /// directory under `runtime/plugins/` must come out Active, because the
 /// Builtin fragment names it and nothing disables it.
 ///
-/// Today `load_plugins` reads no spec, so this holds by the old rule. Once
-/// activation is spec-driven, the Builtin fragment is the only thing that
-/// keeps the shipped set active, and this test is what proves the fragment
-/// is complete. It stays enabled: the ignore-reason gate admits only a
-/// prerequisite token, and a pending task is not one.
-///
-/// Task 7: replace `load_plugins` in `boot_loader_with_home` with the
-/// spec-driven call `load_plugins_from_spec`, then remove one name from the
-/// fragment and watch this test fail before you commit.
+/// Activation is spec-driven, so the Builtin fragment is the only thing
+/// that keeps the shipped set active, and this test is what proves the
+/// fragment is complete: remove one name from
+/// `runtime/defaults/init.luau` and this fails.
 #[tokio::test]
 async fn a_fresh_boot_activates_every_shipped_plugin() {
     let home = tempfile::TempDir::new().unwrap();

@@ -22,7 +22,7 @@ fn write_plugin(plugins_dir: &std::path::Path, name: &str) {
 }
 
 /// The full install → activate → remove round trip that the RPC handlers
-/// perform: after install + a second `load_plugins` pass the plugin's tools
+/// perform: after install + a second activation pass the plugin's tools
 /// are registered and it is listed; after the remove flow nothing remains in
 /// the loader and the manifest record is gone.
 #[tokio::test]
@@ -57,7 +57,7 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
     // Step 2: activate on the running loader.
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .activate_discovered(&[(plugins_dir.clone(), PluginSource::User)])
         .await
         .expect("activation load");
     assert!(
@@ -125,11 +125,10 @@ async fn removing_a_declared_plugin_the_daemon_never_discovered_still_works() {
 
 /// `plugin.install` of a plugin that is ALREADY Active — manually cloned
 /// into the user plugins dir and loaded at boot, now being recorded in the
-/// manifest — must report loaded, not failure. `load_all` skips Active
-/// plugins (`AlreadyLoaded`), so the activation pass's return value does not
-/// contain them; judging by that value alone reported `loaded: false` with a
-/// fabricated error for a healthy plugin and failed `cru plugin add`'s exit
-/// code.
+/// manifest — must report loaded, not failure. `activate` answers an Active
+/// plugin's stored table, so a pass's return value says nothing about it;
+/// judging by that value alone reported `loaded: false` with a fabricated
+/// error for a healthy plugin and failed `cru plugin add`'s exit code.
 #[tokio::test]
 async fn installing_an_already_active_plugin_reports_loaded_not_failure() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -139,13 +138,13 @@ async fn installing_an_already_active_plugin_reports_loaded_not_failure() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     // Boot: the manually cloned plugin loads and is Active.
     loader
-        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .activate_discovered(&[(plugins_dir.clone(), PluginSource::User)])
         .await
         .expect("boot load");
 
     // The install flow's activation pass over the same dir.
     loader
-        .load_plugins(&[(plugins_dir, PluginSource::User)])
+        .activate_discovered(&[(plugins_dir, PluginSource::User)])
         .await
         .expect("activation load");
 
@@ -175,9 +174,9 @@ async fn install_load_report_surfaces_failure_and_absence() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::User)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::User)])
         .await
-        .expect("load_plugins is fail-open per plugin");
+        .expect("activation is fail-open per plugin");
 
     let report = crate::server::plugin_install::install_load_report(&loader, "brokentool", &dir);
     assert!(!report.loaded);
@@ -245,7 +244,7 @@ async fn a_declared_name_differing_from_the_repo_name_still_installs_and_removes
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .activate_discovered(&[(plugins_dir.clone(), PluginSource::User)])
         .await
         .expect("activation load");
 

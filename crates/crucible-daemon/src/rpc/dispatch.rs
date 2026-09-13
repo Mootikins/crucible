@@ -2872,7 +2872,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
                 .expect("loader");
         loader
-            .load_plugins(&[(root, crucible_lua::PluginSource::EnvPath)])
+            .activate_discovered(&[(root, crucible_lua::PluginSource::EnvPath)])
             .await
             .expect("load plugins");
         *ctx.plugin_loader.try_lock().expect("fresh mutex") = Some(loader);

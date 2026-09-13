@@ -85,7 +85,7 @@ async fn loader_with_fixture(root: &std::path::Path) -> DaemonPluginLoader {
     let plugins_dir = write_fixture_plugin(root);
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins_dir, PluginSource::User)])
+        .activate_discovered(&[(plugins_dir, PluginSource::User)])
         .await
         .expect("load plugins");
     loader

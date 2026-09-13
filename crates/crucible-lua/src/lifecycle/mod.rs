@@ -31,6 +31,10 @@ pub struct PluginManager {
     search_paths: Vec<PathBuf>,
     /// Maps search paths to their provenance category.
     path_sources: HashMap<PathBuf, PluginSource>,
+    /// The manager's own VM. It runs no plugin code; the lifecycle hooks
+    /// take the daemon VM. Only `eval_runtime` (tests) reads it, and the
+    /// next task deletes it.
+    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
     lua: Lua,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,

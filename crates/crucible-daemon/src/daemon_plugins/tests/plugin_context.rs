@@ -46,7 +46,7 @@ async fn a_daemon_loaded_plugin_can_use_storage() {
         .upgrade_with_property_store(Arc::clone(&store) as Arc<dyn PropertyStore>)
         .expect("storage upgrade");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
 
@@ -83,7 +83,7 @@ async fn a_daemon_loaded_plugin_cannot_forge_another_plugins_namespace() {
         .upgrade_with_property_store(Arc::clone(&store) as Arc<dyn PropertyStore>)
         .expect("storage upgrade");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
 

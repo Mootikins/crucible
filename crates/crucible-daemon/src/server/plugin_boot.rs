@@ -186,15 +186,27 @@ impl Server {
                 }
             }
 
+            // The spec-driven activation pass: every entry the merged spec
+            // names, and every plugin `init.lua` required. Then the
+            // bootstrapped set by name: a declared or installed plugin is
+            // one the operator asked for, whether or not the spec names it
+            // yet.
             let paths = crate::daemon_plugins::daemon_plugin_paths(&self.runtimepath);
-            match loader.load_plugins(&paths).await {
-                Ok(specs) => {
-                    if !specs.is_empty() {
-                        info!("Loaded {} daemon plugin(s)", specs.len());
-                    }
+            if let Err(e) = loader.add_plugin_paths(&paths) {
+                warn!("Failed to add the plugin search paths: {}", e);
+            }
+            if let Err(e) = loader.load_plugins_from_spec().await {
+                warn!("Failed to activate daemon plugins: {}", e);
+            }
+            for entry in entries.iter().filter(|entry| entry.enabled) {
+                let Some(name) = crucible_core::config::plugin_name_from_url(&entry.url) else {
+                    continue;
+                };
+                if loader.plugin_state(&name).is_none() {
+                    continue;
                 }
-                Err(e) => {
-                    warn!("Failed to load daemon plugins: {}", e);
+                if let Err(e) = loader.activate_plugin(&name).await {
+                    warn!("plugin '{name}' did not activate: {e}");
                 }
             }
 

@@ -34,22 +34,28 @@ impl PluginManager {
         }
 
         // The manager evaluates nothing. Discovery read the fragment, and
-        // the daemon's `execute_plugin` runs the entry file in the daemon VM.
-        // `load` records the state the daemon is about to act on.
-        let plugin = self
-            .plugins
-            .get_mut(name)
-            .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
-        plugin.state = PluginState::Active;
-        plugin.last_error = None;
-        match plugin.version() {
-            Some(version) => info!("Loaded plugin: {name} v{version}"),
-            None => info!("Loaded plugin: {name} (no version declared)"),
-        }
-
-        self.call_on_load_hook(name);
-
+        // the daemon's `activate` runs the entry file in the daemon VM.
+        // `load` records the state the daemon is about to act on. The
+        // lifecycle hooks are the daemon's to call: their keys belong to the
+        // daemon VM, which this manager does not hold.
+        self.mark_active(name);
         Ok(())
+    }
+
+    /// Record that the daemon activated `name`: state `Active`, no error.
+    ///
+    /// Activation is the daemon's act, in the daemon VM. This manager is the
+    /// registry of what was discovered and what state each plugin is in, so
+    /// the daemon tells it the outcome.
+    pub fn mark_active(&mut self, name: &str) {
+        if let Some(plugin) = self.plugins.get_mut(name) {
+            plugin.state = PluginState::Active;
+            plugin.last_error = None;
+            match plugin.version() {
+                Some(version) => info!("Activated plugin: {name} v{version}"),
+                None => info!("Activated plugin: {name} (no version declared)"),
+            }
+        }
     }
 
     /// Mark a plugin as failed after `load()` already succeeded.
@@ -113,11 +119,10 @@ impl PluginManager {
             return Ok(());
         }
 
-        self.call_on_unload_hook(name);
-
-        // No emitter cleanup here. The manager VM runs no plugin code, so
-        // no plugin registered a listener in it. The daemon VM's
-        // registrations belong to `clear_source`.
+        // No hook call and no emitter cleanup here. The manager VM runs no
+        // plugin code, and the `on_unload` key belongs to the daemon VM, so
+        // the daemon's `make_plugin_inert` calls the hook with that VM before
+        // it clears the plugin's registrations.
 
         let plugin = self
             .plugins
