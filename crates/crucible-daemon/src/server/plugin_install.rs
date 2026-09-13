@@ -6,7 +6,9 @@
 
 use super::plugins::spawn_plugin_services;
 use super::*;
-/// activation `load_plugins` pass.
+
+/// What one install's activation reported: whether the plugin came up, and
+/// the counts `plugin.install` answers.
 #[derive(Debug)]
 pub(crate) struct InstallLoadReport {
     pub loaded: bool,
@@ -29,12 +31,13 @@ impl InstallLoadReport {
 }
 
 /// Judge the install by the loader's post-load state (`loaded_plugin_info`),
-/// never by the activation pass's return value: a plugin that was ALREADY
-/// Active — manually cloned into the user plugins dir and loaded at boot,
-/// now being declared — is skipped by `load_all` as `AlreadyLoaded` and is
-/// absent from that pass's specs, but it is loaded, not broken. Judging by
-/// the pass result reported `loaded: false` with a fabricated error for a
-/// healthy plugin (and failed `cru plugin add`'s exit code).
+/// never by `activate_plugin`'s return value. That value is `Ok(())` or an
+/// error: it carries no counts, and `Ok` says nothing about a plugin that
+/// was already Active — cloned into the user plugins dir by hand and loaded
+/// at boot, now installed through the manifest — because activation is
+/// idempotent and answers the existing module. A report built from the
+/// activation result once said `loaded: false` with a fabricated error for
+/// such a healthy plugin (and failed `cru plugin add`'s exit code).
 pub(crate) fn install_load_report(
     loader: &DaemonPluginLoader,
     name: &str,
@@ -70,58 +73,24 @@ pub(crate) fn install_load_report(
     }
 }
 
-/// The config-declared plugin names, read from the live effective config.
-/// Empty when the daemon has no app config.
-fn declared_plugin_names(ctx: &crate::rpc::RpcContext) -> Vec<String> {
-    ctx.effective_config()
-        .as_ref()
-        .and_then(|cfg| cfg.get("plugins"))
-        .and_then(|v| {
-            serde_json::from_value::<std::collections::BTreeMap<String, serde_json::Value>>(
-                v.clone(),
-            )
-            .ok()
-        })
-        .map(|map| {
-            crucible_core::config::declared_plugins(&map)
-                .0
-                .into_iter()
-                .map(|(name, _)| name)
-                .collect()
-        })
-        .unwrap_or_default()
+/// Whether the operator's `init.lua` declares `name` with a git source.
+/// Read from the spec on the plugin VM; `false` when the daemon has no
+/// loader. The lock is taken for the read alone, and dropped before the
+/// handler takes it again for the load.
+async fn is_declared(ctx: &crate::rpc::RpcContext, name: &str) -> bool {
+    let guard = ctx.plugin_loader.lock().await;
+    guard.as_ref().is_some_and(|loader| {
+        crate::daemon_plugins::declared_git_entry(&crucible_lua::spec_of(loader.lua()), name)
+    })
 }
 
-/// Where the declaration was written — `lua (init.lua:12)` — from the boot
-/// store's provenance. The refusal that names this is what lets the user
-/// find the line to edit.
-fn declaration_site(name: &str) -> Option<String> {
-    let provenance = crucible_lua::get_app_config_provenance()?;
-    let leaf = format!(
-        "plugins.{}.{name}",
-        crucible_core::config::PLUGINS_DECLARE_KEY
-    );
-    let child_prefix = format!("{leaf}.");
-    provenance
-        .get(&leaf)
-        .cloned()
-        .or_else(|| {
-            provenance
-                .iter()
-                .find(|(path, _)| path.starts_with(&child_prefix))
-                .map(|(_, tag)| tag.clone())
-        })
-        .map(|tag| tag.detail())
-}
-
-/// The refusal both handlers give for a config-declared plugin: the machine
-/// must not edit the user's config file, so it names the declaration site
-/// and stops.
+/// The refusal both handlers give for a declared plugin: the machine must
+/// not edit the user's config file, so it names the entry to edit and
+/// stops.
 fn declared_refusal(name: &str, action: &str) -> String {
-    let site = declaration_site(name).unwrap_or_else(|| "your init.lua".to_string());
     format!(
-        "plugin '{name}' is declared in your config ({site}); {action}. Edit the          `plugins.{}.{name}` entry there — Crucible never edits your config file",
-        crucible_core::config::PLUGINS_DECLARE_KEY
+        "plugin '{name}' is declared in your init.lua (a `cru.plugin.setup` entry with a git \
+         source); {action}. Edit that entry there — Crucible never edits your config file"
     )
 }
 
@@ -136,17 +105,12 @@ pub(crate) async fn handle_plugin_install(
             Err(response) => return *response,
         };
 
-    let entry = crucible_core::config::PluginEntry {
-        url: params.url,
-        branch: params.branch,
-        pin: params.pin,
-        enabled: true,
-    };
+    let entry = crate::plugin_ops::InstalledEntry::new(params.url, params.branch, params.pin);
 
     // A declared plugin already bootstraps at every boot; recording it in
     // the manifest too would create a permanent shadow pair.
     if let Some(name) = entry.name() {
-        if declared_plugin_names(ctx).contains(&name) {
+        if is_declared(ctx, &name).await {
             return Response::error(
                 req.id,
                 INVALID_PARAMS,
@@ -161,19 +125,18 @@ pub(crate) async fn handle_plugin_install(
             Ok(d) => d,
             Err(e) => return internal_error(req.id, e),
         };
-        match crate::plugin_ops::install_at(entry, &manifest_path, &plugins_dir).await {
+        match crate::plugin_ops::install_at(entry.clone(), &manifest_path, &plugins_dir).await {
             Ok(r) => r,
             Err(e) => return internal_error(req.id, e),
         }
     };
 
-    // Activate on the running daemon: a second `load_plugins` pass over the
-    // user plugins dir is incremental — Active plugins are skipped
-    // (`AlreadyLoaded`) and `loaded_specs` merges. If activation fails, the
-    // install still happened on disk: the next boot loads it, and a broken
-    // plugin is visible in `plugin.list` as `state: Error` — so report
-    // `installed: true, loaded: false` with the reason, not an opaque
-    // failure. No TOML rollback.
+    // Activate on the running daemon: the user plugins dir joins the search
+    // paths, and the installed plugin is activated by name through the one
+    // activation body. If activation fails, the install still happened on
+    // disk: the next boot activates it, and a broken plugin is visible in
+    // `plugin.list` as `state: Error` — so report `installed: true,
+    // loaded: false` with the reason, not an opaque failure.
     let report = match crate::plugin_ops::plugins_dir() {
         Ok(plugins_dir) => {
             // BEFORE the load, because the load runs the plugin's `setup()`
@@ -185,17 +148,31 @@ pub(crate) async fn handle_plugin_install(
             let mut loader_guard = plugin_loader.lock().await;
             match loader_guard.as_mut() {
                 Some(loader) => {
+                    // The record joins the spec at Builtin rank now, as the
+                    // next boot's merge would place it, so `plugin.list` and
+                    // the `enabled` resolution see the same entry either way.
+                    crucible_lua::merge_spec_entry(
+                        loader.lua(),
+                        entry.spec_entry(&result.name),
+                        crucible_core::config::SpecRank::Builtin,
+                    );
                     let clone_dir = plugins_dir.join(&result.name);
-                    match loader
-                        .load_plugins(&[(plugins_dir, crucible_lua::PluginSource::User)])
-                        .await
+                    let activated = match loader
+                        .add_plugin_paths(&[(plugins_dir, crucible_lua::PluginSource::User)])
                     {
-                        Ok(_) => {
+                        Ok(()) => loader.activate_plugin(&result.name).await,
+                        Err(e) => Err(e),
+                    };
+                    match activated {
+                        Ok(()) => {
                             let report = install_load_report(loader, &result.name, &clone_dir);
                             spawn_plugin_services(loader);
                             report
                         }
-                        Err(e) => InstallLoadReport::not_loaded(e.to_string()),
+                        // `activate` marked the plugin `Error`, so the report
+                        // reads its `last_error`; a name discovery never saw
+                        // reports the miss.
+                        Err(_) => install_load_report(loader, &result.name, &clone_dir),
                     }
                 }
                 None => InstallLoadReport::not_loaded("plugin loader not initialized".to_string()),
@@ -254,9 +231,9 @@ pub(crate) async fn handle_plugin_remove(
     let name = params.name;
     let purge = params.purge;
 
-    // A config-declared plugin is refused with its declaration site: the
-    // user removes it by editing their own file, never the machine.
-    if declared_plugin_names(ctx).contains(&name) {
+    // A declared plugin is refused: the user removes it by editing their
+    // own file, never the machine.
+    if is_declared(ctx, &name).await {
         return Response::error(
             req.id,
             INVALID_PARAMS,
@@ -278,8 +255,8 @@ pub(crate) async fn handle_plugin_remove(
                 INVALID_PARAMS,
                 format!(
                     "plugin '{name}' is not in the installed manifest, so there is nothing to \
-                     remove; to turn off a bundled plugin, set \
-                     `plugins = {{ {name} = {{ enabled = false }} }}` in init.lua"
+                     remove; to turn off a bundled plugin, write \
+                     `cru.plugin.setup({{ {{ \"{name}\", enabled = false }} }})` in init.lua"
                 ),
             )
         }
@@ -287,9 +264,9 @@ pub(crate) async fn handle_plugin_remove(
     }
 
     // Deactivate + forget on the running daemon. A dependent-refusal here
-    // leaves plugins.toml untouched and reports why nothing happened.
+    // leaves the manifest untouched and reports why nothing happened.
     // The manager keys plugins by manifest name, which can differ from the
-    // URL-derived `name` the TOML uses; resolve through the clone directory
+    // URL-derived `name` the manifest uses; resolve through the clone directory
     // so remove reaches the actual plugin instead of no-oping on the URL
     // name (unload's NotFound tolerance would swallow the miss).
     {
@@ -363,39 +340,42 @@ pub(crate) async fn handle_plugin_remove(
 #[cfg(test)]
 mod declared_refusal_tests {
     use super::*;
-    use crucible_core::config::ConfigSource;
 
-    /// The refusal names the `file:line` of the declaration — that is the
-    /// whole value of the refusal: the user knows which line to edit.
+    /// The refusal names the entry to edit: a `cru.plugin.setup` entry in
+    /// `init.lua`. That is the whole value of the refusal.
     #[test]
-    fn the_declared_refusal_names_the_declaration_site() {
-        // Process-per-test (nextest): the global store starts empty here.
-        crucible_lua::begin_boot_store();
-        crucible_lua::merge_app_config_tagged(
-            serde_json::json!({
-                "plugins": { "declare": { "greeter": "user/greeter" } }
-            }),
-            ConfigSource::Lua {
-                last_set: crucible_core::config::LastSet::new(
-                    crucible_core::lua_source::LuaSource::UserLua,
-                    "init.lua",
-                    Some(12),
-                ),
-            },
-        );
-
-        let site = declaration_site("greeter").expect("a declared plugin has a site");
-        assert_eq!(site, "lua (init.lua:12)");
-
+    fn the_declared_refusal_names_the_setup_entry() {
         let refusal = declared_refusal("greeter", "cannot remove");
         assert!(
-            refusal.contains("init.lua:12") && refusal.contains("plugins.declare.greeter"),
-            "the refusal must name the line and the entry to edit: {refusal}"
+            refusal.contains("init.lua") && refusal.contains("cru.plugin.setup"),
+            "the refusal must name the file and the entry to edit: {refusal}"
         );
+        assert!(refusal.contains("cannot remove"), "{refusal}");
+    }
 
-        assert!(
-            declaration_site("ghost").is_none(),
-            "an undeclared plugin has no site"
+    /// Declared means: the operator's own entry has a git source. An
+    /// installed plugin (Builtin rank) is not declared, and neither is an
+    /// operator entry that only disables one.
+    #[tokio::test]
+    async fn only_an_operator_git_entry_is_declared() {
+        let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+        loader
+            .eval_user_init(r#"cru.plugin.setup({ "user/greeter", { "tool", enabled = false } })"#)
+            .await
+            .expect("spec");
+        crucible_lua::merge_spec_entry(
+            loader.lua(),
+            crate::plugin_ops::InstalledEntry::new("other/tool".into(), None, None)
+                .spec_entry("tool"),
+            crucible_core::config::SpecRank::Builtin,
         );
+        let spec = crucible_lua::spec_of(loader.lua());
+
+        assert!(crate::daemon_plugins::declared_git_entry(&spec, "greeter"));
+        assert!(
+            !crate::daemon_plugins::declared_git_entry(&spec, "tool"),
+            "an installed plugin the operator only disabled is removable"
+        );
+        assert!(!crate::daemon_plugins::declared_git_entry(&spec, "ghost"));
     }
 }

@@ -1,10 +1,10 @@
 //! Plugin-declared tools and commands, made reachable.
 //!
 //! A Lua plugin's returned spec table can declare `tools` and `commands`, each
-//! with a `fn`. The spec sandbox ([`crucible_lua::load_plugin_spec`]) reads the
-//! *metadata* (name, description, params) from a throwaway VM; the callable
-//! `fn` only exists in the daemon's plugin VM. [`PluginRegistry`] pairs the two
-//! and hands them to the two consumers that matter:
+//! with a `fn`. [`crucible_lua::spec_from_table`] reads the *metadata*
+//! (name, description, params) from that table in the daemon's plugin VM,
+//! and the callable `fn` is a live handle in the same VM. [`PluginRegistry`]
+//! pairs the two and hands them to the two consumers that matter:
 //!
 //! - [`PluginToolExecutor`] — a `ToolExecutor` provider so the agent's tool
 //!   dispatcher can actually invoke a plugin tool.
@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::warn;
 
-/// A callable declared by a plugin: the metadata the spec sandbox extracted
-/// plus the live `mlua::Function` from the daemon's plugin VM.
+/// A callable declared by a plugin: the metadata read from its returned
+/// table plus the live `mlua::Function` from the daemon's plugin VM.
 struct PluginCallable {
     plugin: String,
     definition: ToolDefinition,

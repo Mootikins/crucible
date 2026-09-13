@@ -1,5 +1,5 @@
-use crucible_lua::{manifest::PluginState, LuaExecutor};
-use crucible_lua::{stubs::StubGenerator, PluginManager};
+use crucible_lua::stubs::StubGenerator;
+use crucible_lua::LuaExecutor;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -50,35 +50,6 @@ fn configure_modules(executor: &LuaExecutor, plugin_dir: &Path) -> crucible_lua:
     executor
         .enter_plugin_root(plugin_dir)
         .expect("plugin module root")
-}
-
-fn create_reload_plugin_files(root: &Path, name: &str, module_value: &str) {
-    let plugin_dir = root.join(name);
-    fs::create_dir_all(&plugin_dir).unwrap();
-
-    let init_source = format!(
-        r#"
-local core = require("{name}.core")
-return {{
-    name = "{name}",
-    version = "1.0.0",
-    tools = {{
-        current_value = {{
-            desc = "Read current module value",
-            fn = function()
-                return core.value
-            end,
-        }},
-    }},
-}}
-"#
-    );
-    fs::write(plugin_dir.join("init.lua"), init_source).unwrap();
-    fs::write(
-        plugin_dir.join("core.lua"),
-        format!("return {{ value = '{module_value}' }}\n"),
-    )
-    .unwrap();
 }
 
 #[tokio::test]
@@ -227,38 +198,6 @@ return {
     assert!(healthy);
     assert_eq!(level, "ok");
     assert_eq!(msg, "loaded");
-}
-
-#[test]
-fn test_plugin_reload_picks_up_changes() {
-    let temp = TempDir::new().unwrap();
-    let plugin_name = "reload_pipeline";
-    create_reload_plugin_files(temp.path(), plugin_name, "v1");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load(plugin_name).unwrap();
-
-    let before: String = manager
-        .eval_runtime("local mod = require('reload_pipeline.core'); return mod.value")
-        .unwrap();
-    assert_eq!(before, "v1");
-
-    fs::write(
-        temp.path().join(plugin_name).join("core.lua"),
-        "return { value = 'v2' }\n",
-    )
-    .unwrap();
-
-    manager.reload_plugin(plugin_name).unwrap();
-
-    let after: String = manager
-        .eval_runtime("local mod = require('reload_pipeline.core'); return mod.value")
-        .unwrap();
-    let state = manager.get(plugin_name).unwrap().state;
-
-    assert_eq!(state, PluginState::Active);
-    assert_eq!(after, "v2");
 }
 
 #[test]

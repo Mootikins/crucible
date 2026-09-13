@@ -17,8 +17,21 @@
 //! Step 3 is reported as SKIPPED, never as passed, when no checker is
 //! installed. A gate that quietly succeeds because its checker is missing is
 //! worse than no gate: it reports the absence of evidence as evidence.
+//!
+//! A fourth check runs when the caller supplies a VM ([`check_plugin_on`]):
+//! **its module body has no effect.** `init.luau` runs on that VM under the
+//! plugin's source, and the check then reads the VM's handler registry, its
+//! schedules and its tasks for that source. A registration made there is a
+//! top-level effect, reported with the hook's name. Decision 5 of the plugin
+//! activation plan says activation runs the module once and then `setup`, so
+//! a registration in the body runs before the host calls `setup` and cannot
+//! be turned off by a `config` function.
 
-use crate::lifecycle::load_plugin_spec;
+use crate::lifecycle::{
+    fragment::{read_fragment, read_only_env, FRAGMENT_FILE},
+    spec_from_table,
+};
+use crate::{LuaExecutor, LuaSource};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -115,6 +128,43 @@ pub fn check_plugin_using(
     include_tests: bool,
     checker: &CheckerChoice,
 ) -> std::io::Result<CheckReport> {
+    check_plugin_inner(plugin_dir, definitions, include_tests, checker, None)
+}
+
+/// [`check_plugin_using`], with `init.luau` run on `vm`.
+///
+/// The read-only environment a fragment runs in cannot run `init.luau`: a
+/// plugin `require`s its own modules at the top level, and that is correct
+/// code. So the module runs on a VM the caller built with the real `cru.*`
+/// modules, under [`LuaSource::Plugin`] for the plugin's directory name,
+/// with the plugin's own `lua/` directory resolvable, as activation runs it.
+/// The caller owns the VM and throws it away: the CLI builds the daemon
+/// loader's VM in its own process. The check clears the source it entered
+/// before it returns, so one VM serves a whole directory of plugins.
+///
+/// Two findings come from the run. A body that raises, or that returns no
+/// table, is [`Finding::Load`]. A registration the body made is
+/// [`Finding::Load`] too, with each hook named: the VM's registry, its
+/// schedules and its tasks are read for the plugin's source after the body
+/// returns, so the finding is a fact the store states and not a reading of
+/// an error message. The declarations are read from the returned table.
+pub fn check_plugin_on(
+    plugin_dir: &Path,
+    definitions: Option<&Path>,
+    include_tests: bool,
+    checker: &CheckerChoice,
+    vm: &LuaExecutor,
+) -> std::io::Result<CheckReport> {
+    check_plugin_inner(plugin_dir, definitions, include_tests, checker, Some(vm))
+}
+
+fn check_plugin_inner(
+    plugin_dir: &Path,
+    definitions: Option<&Path>,
+    include_tests: bool,
+    checker: &CheckerChoice,
+    vm: Option<&LuaExecutor>,
+) -> std::io::Result<CheckReport> {
     // Absolute from here down: `analyze` runs the checker with the plugin
     // directory as its working directory, so a relative definitions path or a
     // relative plugin path would resolve against the wrong root.
@@ -163,6 +213,11 @@ pub fn check_plugin_using(
         .cloned()
         .collect();
     colliding.sort();
+    // `read_fragment` refuses `spec.luau` beside `spec.lua` with the same
+    // wording the sweep uses, so that pair is reported once, by the sweep.
+    let fragment_pair_reported = colliding
+        .iter()
+        .any(|luau| luau.file_name().is_some_and(|name| name == FRAGMENT_FILE));
     for luau in colliding {
         // The wording lives in `Ambiguous`, not here. A second copy of it is
         // a second thing to keep in step with the rule it describes.
@@ -172,19 +227,31 @@ pub fn check_plugin_using(
         });
     }
 
-    // Both extensions, and a directory holding both is refused rather than
-    // resolved — see `source_files`.
+    // The init file, both extensions. A directory holding both is refused
+    // rather than resolved — see `source_files`.
     //
     // The refusal is NOT reported here: `init.luau` beside `init.lua` is a
     // `.luau` with a `.lua` sibling, so the sweep above already named that
     // pair. Reporting it here too printed one mistake twice.
     let init = crate::source_files::init_file(plugin_dir).ok().flatten();
-    if let Some(init) = init {
-        if let Err(e) = load_plugin_spec(&init) {
-            let message = e.to_string();
-            findings.push(match e {
-                crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
-                _ => Finding::Load { message },
+    if let Some(init) = &init {
+        // Declarations, and — on a VM — the top-level effect. The read-only
+        // environment cannot run `init.luau` (a plugin `require`s its own
+        // modules at the top level), so a caller that supplied a VM runs the
+        // body there under the plugin's source and reads the registry for it.
+        match vm {
+            Some(vm) => findings.extend(effect_findings(vm, plugin_dir, init)),
+            None => findings.extend(declaration_findings(&lua, init)),
+        }
+    }
+
+    // The fragment's own fields. `read_fragment` refuses `spec.luau` beside
+    // `spec.lua` with the wording the sweep uses, so a pair the sweep already
+    // named is not read again — reporting it twice is one mistake twice.
+    if !fragment_pair_reported {
+        if let Err(e) = read_fragment(&lua, plugin_dir) {
+            findings.push(Finding::Load {
+                message: e.to_string(),
             });
         }
     }
@@ -220,6 +287,151 @@ pub fn check_plugin_using(
         typecheck,
         findings,
     })
+}
+
+/// Evaluate `init` in the read-only environment and read its declarations.
+///
+/// The environment is the one a fragment runs in: no `cru`, no `require`,
+/// no `io`. A plugin whose `init.luau` acts at the top level raises there
+/// before it returns its table. This step reports nothing for that raise
+/// yet, and reads no declarations from such a plugin: the shipped plugins
+/// `require` their own modules at the top level. A table that comes back is
+/// read with `spec_from_table`, so an unreadable declaration is reported.
+fn declaration_findings(lua: &mlua::Lua, init: &Path) -> Vec<Finding> {
+    let Ok(source) = std::fs::read_to_string(init) else {
+        return Vec::new();
+    };
+    let Ok(env) = read_only_env(lua) else {
+        return Vec::new();
+    };
+    let Ok(mlua::Value::Table(table)) = lua
+        .load(&source)
+        .set_name(format!("@{}", init.display()))
+        .set_environment(env)
+        .eval::<mlua::Value>()
+    else {
+        return Vec::new();
+    };
+    match spec_from_table(&table, init) {
+        Ok(_) => Vec::new(),
+        Err(e) => vec![finding_for(e)],
+    }
+}
+
+/// The finding for a spec the host cannot read. An unreadable declaration is
+/// [`Finding::Declaration`]; every other spec failure is [`Finding::Load`].
+fn finding_for(error: crate::LifecycleError) -> Finding {
+    let message = error.to_string();
+    match error {
+        crate::LifecycleError::InvalidDeclaration(_) => Finding::Declaration { message },
+        _ => Finding::Load { message },
+    }
+}
+
+/// Run `init` on `vm` and read what the module body did, and what it declared.
+///
+/// The body runs under [`LuaSource::Plugin`] for the plugin's directory name,
+/// with the plugin's own `lua/` directory resolvable — the same context
+/// activation runs it in — so a top-level `require` of the plugin's own
+/// module works and a top-level `cru.on` lands under the plugin's source.
+///
+/// After the run the VM's registry, schedules and tasks are read for that
+/// source. A registration there is a top-level effect: it ran before the
+/// host called `setup`, so a `config` function cannot turn it off. The
+/// finding names each hook, so an author sees what to move.
+///
+/// The source is restored and the plugin's registrations are cleared on
+/// every path, so one VM serves a whole directory of plugins and keeps no
+/// registration of any of them. The module roots are not restored. The
+/// registration count is read BEFORE the clear.
+fn effect_findings(vm: &LuaExecutor, plugin_dir: &Path, init: &Path) -> Vec<Finding> {
+    let lua = vm.lua();
+    let name = plugin_dir
+        .file_name()
+        .map(|part| part.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let source = match std::fs::read_to_string(init) {
+        Ok(source) => source,
+        Err(e) => {
+            return vec![Finding::Load {
+                message: format!("{}: {e}", init.display()),
+            }]
+        }
+    };
+    let registry = match crate::handlers::registry_of(lua) {
+        Ok(registry) => registry,
+        Err(e) => {
+            return vec![Finding::Load {
+                message: format!("{}: {e}", init.display()),
+            }]
+        }
+    };
+    let plugin_source = LuaSource::Plugin(name.clone());
+
+    // Start clean: a plugin checked earlier on this VM must not be counted
+    // against this one.
+    crate::clear_source(lua, &registry, &plugin_source);
+
+    // The plugin's own `lua/` directory, resolvable for the run and popped
+    // after, as activation resolves it. The parent is the public root a
+    // sibling `require` would use.
+    if let Some(parent) = plugin_dir.parent() {
+        let _ = vm.configure_module_roots(vec![parent.to_path_buf()]);
+    }
+    let module_scope = vm.enter_plugin_root(plugin_dir);
+
+    let previous = crate::enter_plugin(lua, &name);
+    let evaluated: mlua::Result<mlua::Value> = lua
+        .load(&source)
+        .set_name(format!("@{}", init.display()))
+        .eval();
+    crate::set_source(lua, previous);
+    drop(module_scope);
+
+    let mut findings = Vec::new();
+
+    // The effect, read before the clear.
+    let registrations = registry.for_source(&plugin_source);
+    let schedules = crate::schedule::count_source(lua, &plugin_source);
+    let tasks = crate::timer::count_source(lua, &plugin_source);
+    let total = registrations.len() + schedules + tasks;
+    if total > 0 {
+        let mut hooks: Vec<String> = registrations.iter().map(|r| r.name.to_string()).collect();
+        hooks.extend(std::iter::repeat_n("cru.schedule".to_string(), schedules));
+        hooks.extend(std::iter::repeat_n("cru.timer.spawn".to_string(), tasks));
+        findings.push(Finding::Load {
+            message: format!(
+                "{}: {total} registration(s) at top level ({}); move them into setup()",
+                init.display(),
+                hooks.join(", "),
+            ),
+        });
+    }
+
+    // Leave the VM clean of the plugin's registrations. The module roots set
+    // above stay in force: `configure_module_roots` replaces them and this
+    // check does not restore them.
+    crate::clear_source(lua, &registry, &plugin_source);
+
+    // The declarations, from the table the body returned.
+    match evaluated {
+        Ok(mlua::Value::Table(table)) => {
+            if let Err(e) = spec_from_table(&table, init) {
+                findings.push(finding_for(e));
+            }
+        }
+        Ok(other) => findings.push(Finding::Load {
+            message: format!(
+                "{}: init.luau returned {}, not a table",
+                init.display(),
+                other.type_name()
+            ),
+        }),
+        Err(e) => findings.push(Finding::Load {
+            message: format!("{}: {e}", init.display()),
+        }),
+    }
+    findings
 }
 
 /// Check ONE Lua file that is not part of a plugin directory.
@@ -643,6 +855,7 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handlers::LuaScriptHandlerRegistry;
     use tempfile::TempDir;
 
     /// `CRUCIBLE_LUAU_ANALYZE` is process-global, so a test that sets it
@@ -1021,5 +1234,169 @@ mod tests {
             Some(v) => unsafe { std::env::set_var("CRUCIBLE_LUAU_ANALYZE", v) },
             None => unsafe { std::env::remove_var("CRUCIBLE_LUAU_ANALYZE") },
         }
+    }
+
+    /// A VM with `require`, `cru.on` and the two session hooks, and no
+    /// daemon: what this crate alone builds. The CLI hands the check the
+    /// daemon loader's VM instead, which carries every `cru.*` module.
+    fn check_vm() -> crate::LuaExecutor {
+        let vm = crate::LuaExecutor::new().expect("a VM");
+        crate::handlers::register_cru_on_api(vm.lua(), LuaScriptHandlerRegistry::new())
+            .expect("cru.on");
+        vm
+    }
+
+    /// A plugin directory named `name`, under a fresh temporary root, with
+    /// `init.luau` and, when given, `spec.luau`. The name matters: the check
+    /// enters `LuaSource::Plugin(<directory name>)`, as activation does.
+    fn plugin_dir(name: &str, fragment: Option<&str>, init: &str) -> (TempDir, PathBuf) {
+        plugin_dir_with_module(name, None, fragment, init)
+    }
+
+    /// [`plugin_dir`], with one module under the plugin's own `lua/`.
+    fn plugin_dir_with_module(
+        name: &str,
+        module: Option<(&str, &str)>,
+        fragment: Option<&str>,
+        init: &str,
+    ) -> (TempDir, PathBuf) {
+        let root = TempDir::new().unwrap();
+        let dir = root.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("init.luau"), init).unwrap();
+        if let Some(fragment) = fragment {
+            std::fs::write(dir.join("spec.luau"), fragment).unwrap();
+        }
+        if let Some((module_name, source)) = module {
+            let lua_dir = dir.join("lua");
+            std::fs::create_dir_all(&lua_dir).unwrap();
+            std::fs::write(lua_dir.join(format!("{module_name}.luau")), source).unwrap();
+        }
+        (root, dir)
+    }
+
+    fn load_findings(report: &CheckReport) -> Vec<&str> {
+        report
+            .findings
+            .iter()
+            .filter_map(|f| match f {
+                Finding::Load { message } => Some(message.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A registration in the module body is a finding that names each hook,
+    /// and it fails the check.
+    #[test]
+    fn check_reports_a_top_level_effect() {
+        let (_root, dir) = plugin_dir(
+            "noisy",
+            None,
+            "cru.on(\"turn:complete\", function() end)\n\
+             cru.on_session_end(function() end)\n\
+             return {}\n",
+        );
+        let vm = check_vm();
+        let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
+        let loads = load_findings(&report);
+        assert!(
+            loads
+                .iter()
+                .any(|m| m.contains("2 registration(s) at top level")
+                    && m.contains("turn:complete")
+                    && m.contains("session:end")
+                    && m.contains("setup()")),
+            "{:?}",
+            report.findings
+        );
+        assert!(!report.passed(), "a top-level effect fails the check");
+    }
+
+    /// The same registration made from `setup()` is not an effect of the
+    /// module body, and a top-level `require` of the plugin's own module is
+    /// correct code.
+    #[test]
+    fn check_accepts_a_top_level_require_of_the_plugins_own_module() {
+        let (_root, dir) = plugin_dir_with_module(
+            "tidy",
+            Some(("helper", "return { n = 1 }\n")),
+            None,
+            "local h = require(\"helper\")\n\
+             assert(h.n == 1)\n\
+             return { setup = function() cru.on(\"turn:complete\", function() end) end }\n",
+        );
+        let vm = check_vm();
+        let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
+        assert!(load_findings(&report).is_empty(), "{:?}", report.findings);
+        assert!(report.passed(), "{:?}", report.findings);
+    }
+
+    /// The fragment is read, and the module's declarations are read from the
+    /// table the body returned on the VM.
+    #[test]
+    fn check_reads_the_fragment_and_the_module_declarations() {
+        let (_root, dir) = plugin_dir(
+            "typed",
+            Some("return { version = \"1.0.0\" }\n"),
+            "return { tools = { t = { desc = \"t\", \
+             params = { { name = \"p\", type = \"not a type\", desc = \"\" } }, \
+             fn = function() end } } }\n",
+        );
+        let vm = check_vm();
+        let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| matches!(f, Finding::Declaration { .. })),
+            "{:?}",
+            report.findings
+        );
+
+        // And a fragment the host cannot read is a finding that names it.
+        let (_root, dir) = plugin_dir("badspec", Some("return { version = 3 }\n"), "return {}\n");
+        let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
+        assert!(
+            load_findings(&report)
+                .iter()
+                .any(|m| m.contains("spec.luau")),
+            "{:?}",
+            report.findings
+        );
+    }
+
+    /// A body that raises is a finding, and the VM keeps nothing of the
+    /// plugin: no source in force, no registrations under the plugin's name.
+    #[test]
+    fn check_leaves_the_vm_clean() {
+        let (_root, dir) = plugin_dir(
+            "messy",
+            None,
+            "cru.on(\"turn:complete\", function() end)\n\
+             error(\"boom\")\n",
+        );
+        let vm = check_vm();
+        let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
+        assert!(
+            load_findings(&report).iter().any(|m| m.contains("boom")),
+            "{:?}",
+            report.findings
+        );
+        assert!(
+            load_findings(&report)
+                .iter()
+                .any(|m| m.contains("at top level")),
+            "the registration before the raise still counts: {:?}",
+            report.findings
+        );
+        assert_eq!(
+            crate::plugin_context::current_source(vm.lua()),
+            crate::LuaSource::UserLua
+        );
+        let registry = crate::handlers::registry_of(vm.lua()).unwrap();
+        assert!(registry
+            .for_source(&crate::LuaSource::Plugin("messy".into()))
+            .is_empty());
     }
 }

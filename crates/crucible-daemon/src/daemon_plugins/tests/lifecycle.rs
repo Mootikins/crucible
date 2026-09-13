@@ -1,14 +1,15 @@
 //! Load/reload lifecycle bookkeeping: `loaded_specs` merging, the inert
 //! contract for failed plugins, and plugin-context attribution across every
-//! exit path of `execute_plugin`.
+//! exit path of `activate`.
 use super::super::*;
 
-/// A second `load_plugins` call must merge into `loaded_specs`, not replace
+/// A second activation pass must merge into `loaded_specs`, not replace
 /// it. The assignment it used to do dropped every previously loaded plugin's
-/// entry: an Active plugin is skipped by `load_all` (`AlreadyLoaded`), so its
-/// spec is absent from the second call's result, and `plugin.list` reported
-/// its tool/command counts as 0 while the tools stayed registered and
-/// working. `plugin.install` loads at runtime via exactly this second call.
+/// entry: `activate` answers an Active plugin's stored table without reading
+/// its file again, so its spec is absent from the second pass, and
+/// `plugin.list` reported its tool/command counts as 0 while the tools stayed
+/// registered and working. `plugin.install` activates at runtime via exactly
+/// such a second pass.
 #[tokio::test]
 async fn a_second_load_plugins_call_keeps_previously_loaded_specs() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -31,15 +32,15 @@ async fn a_second_load_plugins_call_keeps_previously_loaded_specs() {
     write_plugin("alpha");
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("first load");
 
-    // A new plugin dir appears (the install flow), and load_plugins runs again
+    // A new plugin dir appears (the install flow), and the pass runs again
     // over the same search path.
     write_plugin("beta");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("second load");
 
@@ -54,28 +55,23 @@ async fn a_second_load_plugins_call_keeps_previously_loaded_specs() {
     assert_eq!(
         counts("alpha"),
         ("Active".into(), 1.into()),
-        "alpha's spec was dropped by the second load_plugins call"
+        "alpha's spec was dropped by the second activation pass"
     );
     assert_eq!(counts("beta"), ("Active".into(), 1.into()));
 }
 
-/// Two `name: None` specs must not merge with each other — `None == None`
-/// would make the first anonymous spec swallow every later one.
+/// A remembered spec upserts by plugin name: the second load of one plugin
+/// replaces its entry, and a second plugin gets its own.
 #[test]
-fn remember_specs_never_merges_anonymous_specs() {
+fn remember_spec_upserts_by_plugin_name() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
-    let anon = PluginSpec::default();
-    loader.remember_specs(std::slice::from_ref(&anon));
-    loader.remember_specs(std::slice::from_ref(&anon));
-    assert_eq!(loader.loaded_specs.len(), 2);
+    loader.remember_spec("gamma", PluginSpec::default());
+    loader.remember_spec("gamma", PluginSpec::default());
+    assert_eq!(loader.loaded_specs.len(), 1, "one plugin, one entry");
 
-    let named = PluginSpec {
-        name: Some("gamma".to_string()),
-        ..Default::default()
-    };
-    loader.remember_specs(std::slice::from_ref(&named));
-    loader.remember_specs(std::slice::from_ref(&named));
-    assert_eq!(loader.loaded_specs.len(), 3, "named specs upsert in place");
+    loader.remember_spec("delta", PluginSpec::default());
+    assert_eq!(loader.loaded_specs.len(), 2);
+    assert_eq!(loader.loaded_plugin_names(), ["delta", "gamma"]);
 }
 
 /// A plugin that fails in the daemon VM must end up fully inert, not
@@ -111,9 +107,9 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
-        .expect("load_plugins is fail-open per plugin");
+        .expect("activation is fail-open per plugin");
 
     let info = loader.loaded_plugin_info();
     let entry = info
@@ -149,7 +145,7 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
     assert!(loader.reload_plugin("halfdead").await.is_err());
 }
 
-/// The plugin context must be restored on EVERY exit from `execute_plugin`.
+/// The plugin context must be restored on EVERY exit from `activate`.
 /// A top-level raise used to leave it set, so everything
 /// registered next — including the user's init.lua, which runs after all
 /// plugins — was attributed to the dead plugin, and a later reload of that
@@ -161,7 +157,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
     std::fs::create_dir_all(&dir).unwrap();
     // `crucible.no_such_api` is a permissive stub in the discovery sandbox but
     // nil in the daemon VM, so the raise happens exactly where the bug lives:
-    // inside `execute_plugin`, after the plugin context is entered.
+    // inside `activate`, after the plugin context is entered.
     std::fs::write(
         dir.join("init.lua"),
         r#"
@@ -173,7 +169,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load_plugins is fail-open per plugin");
 
@@ -239,7 +235,7 @@ async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     loader.reload_plugin("hooker").await.expect("reload");
@@ -262,12 +258,12 @@ async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
     );
 }
 
-/// The install flow is "write the plugin dir, then call `load_plugins` again":
-/// the new plugin must come up without disturbing Active ones — `load_all`
-/// skips Active plugins (`AlreadyLoaded`), so an installed neighbour must not
-/// re-execute anyone's init.lua. NOTE: plugins in state Error ARE retried by
-/// every load_all pass — deliberate (installing a plugin retries your broken
-/// ones) — so this fixture contains no errored plugins.
+/// The install flow is "write the plugin dir, then run the pass again":
+/// the new plugin must come up without disturbing Active ones — `activate`
+/// answers an Active plugin's stored table, so an installed neighbour must
+/// not re-execute anyone's init.lua. NOTE: plugins in state Error ARE retried
+/// by every pass — deliberate (installing a plugin retries your broken ones)
+/// — so this fixture contains no errored plugins.
 #[tokio::test]
 async fn a_second_load_plugins_call_picks_up_a_new_plugin_without_disturbing_active_ones() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -292,14 +288,14 @@ async fn a_second_load_plugins_call_picks_up_a_new_plugin_without_disturbing_act
     write_plugin("alpha");
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("first load");
 
-    // The install flow: a new plugin dir appears, load_plugins runs again.
+    // The install flow: a new plugin dir appears, the pass runs again.
     write_plugin("beta");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("second load");
 
@@ -355,7 +351,7 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     assert!(loader
@@ -385,9 +381,9 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
     );
 
     // Reinstall: the dir is still there (removal of files is plugin_ops'
-    // business); a fresh load_plugins pass must bring the plugin back whole.
+    // business); a fresh activation pass must bring the plugin back whole.
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("reinstall");
     let info = loader.loaded_plugin_info();
@@ -430,7 +426,7 @@ async fn a_setup_registered_handler_is_owned_so_reload_does_not_duplicate_it() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     loader.reload_plugin("setupper").await.expect("reload");
@@ -474,7 +470,7 @@ async fn a_reload_that_fails_in_the_manager_leaves_the_plugin_inert_and_errored(
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("initial load");
     assert!(loader
@@ -534,7 +530,7 @@ async fn re_executing_a_plugin_does_not_duplicate_its_provider_auth_hooks() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     loader.reload_plugin("author").await.expect("reload");

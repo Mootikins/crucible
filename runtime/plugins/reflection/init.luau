@@ -735,36 +735,42 @@ end
 -- Plugin Spec
 -- ============================================================================
 
--- Observe only. A nil return leaves the selection to the next handler: the
--- precognition hooks take the first Transform and stop, and this is not one.
-cru.on("precognition_select", function(ctx, event)
-    local sid = type(ctx) == "table" and ctx.session_id or nil
-    if type(sid) == "string" then
-        M.record_injected(sid, event)
-    end
-    return nil
-end)
+-- The handlers register from setup(), once. The host calls setup() at
+-- activation, under this plugin's source, so a reload clears them. A second
+-- setup() call, from the user's init.lua, changes the config and registers
+-- nothing again. The module body registers nothing, so `cru plugin check`
+-- reports no top-level effect.
+local registered = false
+local function register_handlers()
+    if registered then return end
+    registered = true
 
-cru.on_session_end(function(session)
-    -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
-    -- what the function returns. The inner function drops the path list and
-    -- returns nil, which gives `err` a slot the error message fits.
-    local ok, err = pcall(function()
-        M.run(session)
+    -- Observe only. A nil return leaves the selection to the next handler:
+    -- the precognition hooks take the first Transform and stop, and this is
+    -- not one.
+    cru.on("precognition_select", function(ctx, event)
+        local sid = type(ctx) == "table" and ctx.session_id or nil
+        if type(sid) == "string" then
+            M.record_injected(sid, event)
+        end
         return nil
     end)
-    if not ok then
-        cru.log("error", "reflection: handler error: " .. tostring(err))
-    end
-end)
+
+    cru.on_session_end(function(session)
+        -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
+        -- what the function returns. The inner function drops the path list
+        -- and returns nil, which gives `err` a slot the error message fits.
+        local ok, err = pcall(function()
+            M.run(session)
+            return nil
+        end)
+        if not ok then
+            cru.log("error", "reflection: handler error: " .. tostring(err))
+        end
+    end)
+end
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-    name = "reflection",
-    version = "0.1.0",
-    description = "Retrospective self-improvement: propose kiln notes after a session ends",
-
     -- Exposed for unit tests and manual invocation. The consolidation
     -- plugin calls `review` and `load_hunks`, so the two passes share one
     -- lifecycle.
@@ -793,20 +799,8 @@ local plugin = {
         if cfg then
             config.init(cfg)
         end
+        register_handlers()
     end,
 }
-
--- The daemon executes this file BY PATH, not through `require`, so nothing
--- would otherwise fill `package.loaded`. The documented
--- `require("reflection").setup{...}` from a user's init.lua would then load a
--- SECOND copy of this file: with its own upvalues, and re-running every
--- body-level `cru.on_*` call in it — so the `on_session_end` handler at :326 would be
--- registered twice and fire twice per event. Registering the spec here makes
--- that `require` answer with this table instead.
---
--- Same guard and same reason as `auto-title` and `web-search`. Enumerated
--- across every bundled plugin on 2026-08-19 after the auto-title fix stopped
--- at one plugin; `plugin_require_guard` pins the whole set.
-package.loaded["reflection"] = plugin
 
 return plugin

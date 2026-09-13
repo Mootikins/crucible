@@ -8,7 +8,9 @@
 //! guarantee, loading-marker attribution).
 use super::*;
 
+mod activate;
 mod active_kiln;
+mod check;
 mod install;
 mod lifecycle;
 mod plugin_context;
@@ -310,10 +312,9 @@ async fn reloading_a_plugin_replaces_its_handlers() {
     )
     .unwrap();
 
-    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
-    let init = dir.join("init.lua");
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .execute_plugin("reloadable", &init)
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("first load");
     let after_first = loader
@@ -326,10 +327,7 @@ async fn reloading_a_plugin_replaces_its_handlers() {
         .len();
     assert_eq!(after_first, 1, "first load should register exactly one");
 
-    loader
-        .execute_plugin("reloadable", &init)
-        .await
-        .expect("reload");
+    loader.reload_plugin("reloadable").await.expect("reload");
     let after_reload = loader
         .plugin_handlers()
         .runtime_handlers_for(
@@ -384,19 +382,12 @@ async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_fu
     )
     .unwrap();
 
-    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .execute_plugin("alpha", &alpha.join("init.lua"))
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
-        .expect("load alpha");
-    loader
-        .execute_plugin("beta", &beta.join("init.lua"))
-        .await
-        .expect("load beta");
-    loader
-        .execute_plugin("alpha", &alpha.join("init.lua"))
-        .await
-        .expect("reload alpha");
+        .expect("load alpha and beta");
+    loader.reload_plugin("alpha").await.expect("reload alpha");
 
     let registry = loader.plugin_handlers();
     let handlers = registry.runtime_handlers_for(
@@ -452,7 +443,10 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
     )
     .unwrap();
 
-    let user_init = tmp.path().join("init.lua");
+    // Outside the search path: a file there would be discovered as a
+    // single-file plugin and run as one.
+    let user_dir = TempDir::new().unwrap();
+    let user_init = user_dir.path().join("init.lua");
     std::fs::write(
         &user_init,
         r#"
@@ -463,19 +457,16 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
     )
     .unwrap();
 
-    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .execute_plugin("alpha", &alpha.join("init.lua"))
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load alpha");
     // Evaluated with no plugin context, as the boot evaluation runs the
     // user's file, so the `plugin: None` attribution is genuine.
     let user_source = std::fs::read_to_string(&user_init).unwrap();
     loader.eval(&user_source).await.expect("user init");
-    loader
-        .execute_plugin("alpha", &alpha.join("init.lua"))
-        .await
-        .expect("reload alpha");
+    loader.reload_plugin("alpha").await.expect("reload alpha");
 
     let registry = loader.plugin_handlers();
     let handlers = registry.runtime_handlers_for(
@@ -913,11 +904,9 @@ async fn bootstrap_skips_disabled_entries() {
     let tmp = tempfile::TempDir::new().unwrap();
     // Override config dir isn't feasible, but we can verify the function
     // doesn't attempt to clone when entry is disabled
-    let entries = vec![crucible_core::config::PluginEntry {
-        url: "user/disabled-plugin".to_string(),
-        branch: None,
-        pin: None,
-        enabled: false,
+    let entries = vec![crucible_core::config::SpecEntry {
+        enabled: Some(false),
+        ..crucible_core::config::SpecEntry::from_positional("user/disabled-plugin").unwrap()
     }];
     // Should succeed without attempting any git operations
     let result = bootstrap_plugins(&entries).await;
@@ -1138,7 +1127,6 @@ async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() 
     .unwrap();
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
-    let init = dir.join("init.lua");
 
     // Every name the plugin registered for, and how to count it.
     let counts = |loader: &DaemonPluginLoader| {
@@ -1166,9 +1154,18 @@ async fn a_reload_leaves_one_copy_of_every_registration_and_inert_leaves_none() 
         ]
     };
 
-    for load in 1..=3 {
+    loader
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("load 1");
+    assert_eq!(
+        counts(&loader),
+        [1, 1, 1, 1, 1],
+        "load 1 left more than one copy"
+    );
+    for load in 2..=3 {
         loader
-            .execute_plugin("leaky", &init)
+            .reload_plugin("leaky")
             .await
             .unwrap_or_else(|e| panic!("load {load}: {e}"));
         assert_eq!(
@@ -1230,7 +1227,7 @@ async fn a_plugin_marked_inert_leaves_no_statusline_value_and_says_so() {
     })));
 
     loader
-        .execute_plugin("painter", &dir.join("init.lua"))
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     assert_eq!(
@@ -1295,7 +1292,7 @@ async fn a_plugin_marked_inert_stops_its_spawned_task_and_its_schedule() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .execute_plugin("ticker", &dir.join("init.lua"))
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
 

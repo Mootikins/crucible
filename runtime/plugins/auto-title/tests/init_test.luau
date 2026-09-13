@@ -51,15 +51,20 @@ end
 describe("declaration", function()
   it("publishes the session_title channel with its command", function()
     fresh()
+    plugin.setup()
     expect.truthy(publications["session_title"])
     expect.equals("auto-title.generate", publications["session_title"].command)
   end)
 
-  -- Publishing belongs to loading the plugin, not to configuring it: setup()
-  -- runs again from the user's init.lua, where `cru.plugin.publish` is bound to
-  -- another plugin's name.
-  it("publishes without setup() being called", function()
+  -- The module body publishes nothing: `cru plugin check` reports a
+  -- top-level effect. setup() publishes once. A second setup() call, from
+  -- the user's init.lua, runs where `cru.plugin.publish` can be bound to
+  -- another plugin's name, so it publishes nothing again.
+  it("publishes from setup(), once", function()
     fresh()
+    expect.is_nil(publications["session_title"])
+
+    plugin.setup()
     expect.truthy(publications["session_title"])
 
     publications = {}
@@ -71,15 +76,6 @@ describe("declaration", function()
     fresh()
     expect.truthy(plugin.commands["auto-title.generate"])
     expect.equals("function", type(plugin.commands["auto-title.generate"].fn))
-  end)
-
-  -- The user's init.lua reaches this plugin by `require("auto-title")`. The
-  -- daemon loads it by path instead, so without the module registering itself
-  -- that require would build a second, unrelated copy.
-  it("registers itself in package.loaded so require() finds this copy", function()
-    fresh()
-    expect.equals(plugin, package.loaded["auto-title"])
-    expect.equals(plugin, require("auto-title"))
   end)
 end)
 

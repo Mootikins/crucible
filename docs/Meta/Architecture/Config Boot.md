@@ -54,14 +54,45 @@ the VM that evaluated `init.lua` is the VM the plugins run in, handed to
    evaluation finishes; per-leaf provenance (`file:line` for Lua writes)
    travels with it as `source_map` (`boot.rs:351-364`).
 
-Plugin **activation** is a deferred phase after the file finishes. A user who
-calls `require("<plugin>").setup{...}` at the top of `init.lua` owns that
-plugin's setup: the activation phase reuses the same module instance and
-skips its default `setup(cfg)` call (`BootRequireState::user_owns_setup`,
-`boot.rs:102`; the skip at `daemon_plugins/mod.rs:1052`). A plugin configured
-both ways — a direct `setup` call AND a `plugins.<name>` store section — takes
-the direct call, and the loader records one notice per such plugin
-(`daemon_plugins/mod.rs:165`).
+Plugin **activation** is a deferred phase after the file finishes, and it has
+one body: `activate` (`crucible-daemon/src/daemon_plugins/activate.rs`). The
+spec-driven pass at boot (`load_plugins_from_spec`, `daemon_plugins/mod.rs`),
+a `require` from `init.lua`, a runtime install and a reload all end there.
+`activate` refuses a plugin whose resolved `enabled` is `false`
+(`daemon_plugins/resolve.rs`). It runs `init.luau` once in the daemon VM and
+reads the returned module table with `spec_from_table`. It registers the
+tools, the commands and the services. It seeds the module cache, so a later
+`require` answers the same table. Then it runs the entry's `config`, else
+the module's `setup(opts)`. `on_load` follows. `docs/Meta/CONTEXT.md`
+defines the words.
+
+A `require` of a plugin entry module during the evaluation cannot await
+`activate`: `require` is a sync Rust function and the module hook is a sync
+closure with no loader handle. So the boot hook (`install_boot_hook`,
+`boot.rs`) runs the module body sync under `LuaSource::Plugin(name)` and
+nothing else, and the resolver records which file answered the name.
+`activate` later matches that instance by file, skips the body eval and the
+source clear, and runs declarations, registration, hooks and `config`. The
+host's `config` therefore runs after `init.lua` has finished, so a
+`require("x").setup{}` line in `init.lua` runs `setup` twice, the user's call
+first. An operator who wants custom setup writes
+`config = function(m, opts) ... end` in the spec entry, which replaces the
+default call. A boot-required plugin whose entry says `enabled = false`
+activates anyway, with a warning that names both sites. The alternative, a
+sync `activate` behind a `try_lock`, was refused because it would stop a
+`setup` that awaits a `cru.*` API.
+
+The spec itself is Lua: `cru.plugin.setup` in `init.lua` writes the store
+(`crucible-lua/src/plugin_spec_store.rs`), ranked by the `LuaSource` in
+force. The shipped defaults' entry list in `runtime/defaults/init.luau` lands
+at `SpecRank::Builtin`, and so does the installed manifest; the operator's
+`init.lua` lands at `SpecRank::Operator` and wins. `enabled` resolves across
+the spec store and the config store in `resolve_enabled`: the operator's
+entry, then the config leaf `plugins.<name>.enabled` at any layer, then the
+fragments, then `true`. The Builtin fragment must not write `enabled`
+through the config store, because a `cru.config.set` under
+`LuaSource::Builtin` lands at rank `lua` and would outrank the web's
+`settings.json`.
 
 ## The layer decides the leaf, not the merge order
 

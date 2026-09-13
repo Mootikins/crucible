@@ -394,7 +394,7 @@ pub fn register_options_module(
 ) -> LuaResult<()> {
     let options = lua.create_function(move |lua, tree: Table| {
         // Refused here, which means refused at `setup()` — the call propagates
-        // out through `call_plugin_setup` and the plugin ends inert with its
+        // out through `activate` and the plugin ends inert with its
         // tree released, rather than registering a tree the frontends cannot
         // draw. (The `args` check this replaced used `matches!` rather than
         // `is_err()` for a reason worth keeping in mind: mlua answers a MISSING

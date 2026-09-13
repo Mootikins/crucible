@@ -77,6 +77,18 @@ pub struct PluginInstallRequest {
     pub pin: Option<String>,
 }
 
+/// One row of the `spec` array in `plugin.list`'s response: a merged spec
+/// entry, the highest rank that wrote it, and whether the operator's own
+/// entry names a git source (`declared`). `cru plugin list` reads the git
+/// rows; the daemon builds them from the spec store.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginSpecRow {
+    #[serde(flatten)]
+    pub entry: crucible_core::config::SpecEntry,
+    pub rank: crucible_core::config::SpecRank,
+    pub declared: bool,
+}
+
 /// Request for `plugin.remove`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PluginRemoveRequest {

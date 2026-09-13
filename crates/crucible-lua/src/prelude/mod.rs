@@ -14,7 +14,6 @@
 use crate::host_registry::Ns;
 use crate::lifecycle::{PluginErrorEntry, PluginErrorLog};
 use mlua::{Lua, Result};
-use std::sync::{Arc, Mutex};
 
 mod health;
 mod qol;
@@ -63,11 +62,7 @@ pub fn register_prelude(lua: &Lua) -> Result<()> {
             "_capture",
             "(plugin: string, error: string, context: string) -> ()",
             |lua, (plugin, error, context): (String, String, String)| -> Result<()> {
-                let error_log = lua
-                    .app_data_ref::<Arc<Mutex<PluginErrorLog>>>()
-                    .map(|shared| Arc::clone(&*shared));
-
-                if let Some(shared) = error_log {
+                if let Some(shared) = PluginErrorLog::of(lua) {
                     if let Ok(mut guard) = shared.lock() {
                         guard.push(PluginErrorEntry {
                             plugin,
@@ -92,11 +87,7 @@ pub fn register_prelude(lua: &Lua) -> Result<()> {
             |lua, n: Option<usize>| {
                 let limit = n.unwrap_or(10);
                 let result = lua.create_table()?;
-                let error_log = lua
-                    .app_data_ref::<Arc<Mutex<PluginErrorLog>>>()
-                    .map(|shared| Arc::clone(&*shared));
-
-                if let Some(shared) = error_log {
+                if let Some(shared) = PluginErrorLog::of(lua) {
                     if let Ok(guard) = shared.lock() {
                         let entries = guard.recent(limit);
                         for (idx, entry) in entries.into_iter().enumerate() {

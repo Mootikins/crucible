@@ -1,7 +1,7 @@
 //! `cru plugin check` — parse, declaration and type checks over one plugin.
 
 use anyhow::{Context, Result};
-use crucible_lua::{check_plugin_using, find_checker, CheckerChoice, TypecheckStatus};
+use crucible_lua::{check_plugin_on, find_checker, CheckerChoice, TypecheckStatus};
 
 use super::CheckArgs;
 use crate::config::CliConfig;
@@ -28,6 +28,16 @@ pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
         println!("checker: {}", found.path().display());
     }
 
+    // The daemon loader's VM, in this process. It carries every `cru.*`
+    // module, so it both generates the declarations AND runs the plugin's
+    // `init.luau` for the top-level-effect check — a plugin's top-level
+    // `require` of its own modules is correct code the read-only fragment
+    // environment cannot run. The check restores the source and clears the
+    // plugin's registrations, so the VM is clean of them when it returns.
+    // The module roots it set stay in force.
+    let loader =
+        crucible_daemon::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())?;
+
     // The generated declarations. A check WITHOUT them is not a weaker check,
     // it is a wrong one: every host global — `cru`, `io`, `require`, `it`,
     // `expect` — reads as undeclared, and every `os.tmpname` or `mock(...)`
@@ -38,9 +48,6 @@ pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
         Some(path) => Some(path),
         None => {
             let dir = tempfile::tempdir().context("a directory for the declarations")?;
-            let loader = crucible_daemon::daemon_plugins::DaemonPluginLoader::new(
-                std::collections::HashMap::new(),
-            )?;
             loader.generate_stubs(dir.path())?;
             let path = dir.path().join("cru.d.luau");
             generated = Some(dir);
@@ -49,11 +56,12 @@ pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
         }
     };
 
-    let report = check_plugin_using(
+    let report = check_plugin_on(
         &plugin_dir,
         definitions.as_deref(),
         !args.skip_tests,
         &checker,
+        loader.executor(),
     )
     .with_context(|| format!("checking {}", plugin_dir.display()))?;
     // The temporary directory outlives the check that reads it.

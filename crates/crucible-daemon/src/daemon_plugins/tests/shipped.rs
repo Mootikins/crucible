@@ -28,7 +28,7 @@ fn shipped_plugin_names() -> Vec<String> {
 
 /// Discovery alone proves nothing about a plugin's health — `oci` was
 /// discovered `Active` for months while dying on its first `require`,
-/// because `execute_plugin` errors were downgraded to a `warn!` on a
+/// because activation errors were downgraded to a `warn!` on a
 /// stdout auto-spawn points at /dev/null. This is the Phase-6 smoke:
 /// every shipped plugin must load through the REAL loader and *execute* —
 /// state `Active`, no `last_error`, and a spec extracted (proof its
@@ -37,7 +37,7 @@ fn shipped_plugin_names() -> Vec<String> {
 async fn every_shipped_plugin_executes() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 
@@ -80,7 +80,7 @@ async fn a_plugin_disabled_in_config_never_executes() {
     )]);
     let mut loader = DaemonPluginLoader::new(plugin_config).expect("loader");
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 
@@ -110,7 +110,7 @@ fn every_shipped_plugin_is_discovered() {
     let mut manager = PluginManager::new();
     manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
 
-    let mut discovered = manager.discover().expect("discovery");
+    let mut discovered = manager.discover(&mlua::Lua::new()).expect("discovery");
     discovered.sort();
 
     assert_eq!(
@@ -120,39 +120,134 @@ fn every_shipped_plugin_is_discovered() {
     );
 }
 
-/// Every shipped manifest carries the same block of identifying fields.
+/// Discovery reads the intercept grant from the fragment (`spec.luau`) and
+/// never from the entry file. `oci` declared `intercepts_tools = true` in
+/// its `init.luau` return table, which granted nothing: the host refused
+/// every `handled = true` it returned, and the container was a no-op.
 ///
-/// `oci` was eight lines with no `author` and no `license` while the
-/// other six carried all three — an arbitrary difference nobody would notice
-/// until they were generating an index of what ships and half the rows were
-/// blank. One shape, asserted, so it stays one shape.
+/// The expectation comes from a real `discover` over `runtime/plugins/`,
+/// not from a grep of the fragment text.
 #[test]
-fn every_shipped_plugin_declares_the_same_identifying_fields() {
-    const REQUIRED: &[&str] = &["name", "version", "description", "author", "license"];
+fn every_shipped_plugin_with_an_intercept_grant_declares_it_in_its_fragment() {
+    let mut manager = PluginManager::new();
+    manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
+    manager.discover(&mlua::Lua::new()).expect("discovery");
+
+    let mut granted: Vec<&str> = manager
+        .list()
+        .filter(|plugin| plugin.manifest.intercepts_tools)
+        .map(|plugin| plugin.manifest.name.as_str())
+        .collect();
+    granted.sort();
+
+    assert_eq!(
+        granted,
+        ["oci"],
+        "the plugins whose fragment grants interception must be exactly the ones that take tool calls over"
+    );
+}
+
+/// Every shipped plugin describes itself in a fragment, `spec.luau`.
+///
+/// Discovery reads the fragment and runs no plugin code, so a plugin with
+/// no fragment has no version and no declared name at any point, and
+/// `plugin.list` shows a blank row for it. The expectation comes from a
+/// real `discover` over `runtime/plugins/`, not from the text of a file.
+/// This replaced a gate that read each `init.luau` for `name = ` and four
+/// more substrings, which `author = "agent"` in a tool body satisfied.
+/// `author` and `license` are optional by decision 6, so this gate does not
+/// require them.
+#[test]
+fn every_shipped_plugin_has_a_fragment_with_a_name() {
+    let mut manager = PluginManager::new();
+    manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
+    manager.discover(&mlua::Lua::new()).expect("discovery");
 
     let mut missing: Vec<String> = Vec::new();
     for name in shipped_plugin_names() {
-        // The spec table in the entry file, which is where this metadata
-        // lives now that `plugin.yaml` is gone. Read as text rather than
-        // executed: this asserts the field is DECLARED, and executing a
-        // plugin to find out would be the defect `discover_only` exists to
-        // avoid.
-        let entry = crucible_lua::source_files::init_file(&shipped_plugins_dir().join(&name))
-            .unwrap_or_else(|e| panic!("{name}: {e}"))
-            .unwrap_or_else(|| panic!("{name} ships no entry file"));
-        let body = std::fs::read_to_string(&entry)
-            .unwrap_or_else(|e| panic!("read {}: {e}", entry.display()));
-
-        for field in REQUIRED {
-            if !body.contains(&format!("{field} = ")) {
-                missing.push(format!("{name}: {field}"));
-            }
+        let manifest = &manager
+            .get(&name)
+            .unwrap_or_else(|| panic!("shipped plugin '{name}' was not discovered"))
+            .manifest;
+        if manifest.declared_name.as_deref() != Some(name.as_str()) {
+            missing.push(format!(
+                "{name}: the fragment declares name {:?}",
+                manifest.declared_name
+            ));
+        }
+        if manifest.version.is_none() {
+            missing.push(format!("{name}: version"));
+        }
+        if manifest.description.is_empty() {
+            missing.push(format!("{name}: description"));
         }
     }
 
     assert!(
         missing.is_empty(),
-        "shipped plugins are missing identifying fields: {missing:#?}"
+        "shipped plugins whose fragment does not describe them: {missing:#?}"
+    );
+}
+
+/// The keys a fragment holds, and the module table a plugin returns from
+/// `init.luau` does not.
+const FRAGMENT_METADATA: [&str; 6] = [
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "intercepts_tools",
+];
+
+/// A plugin's metadata lives in its fragment and nowhere else.
+///
+/// The loader reads declarations only from the module table, so a metadata
+/// key there is a second source of truth that nothing checks. `oci` carried
+/// `intercepts_tools = true` in its module table for months after the
+/// fragment became the one place the grant counts, and the two could drift
+/// apart without a test noticing.
+///
+/// Each module table is the one activation seeded into `package.loaded` on
+/// the loader VM, so the check reads what a `require` would answer.
+#[tokio::test]
+async fn no_shipped_module_table_carries_fragment_metadata() {
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .await
+        .expect("load shipped plugins");
+
+    let loaded: mlua::Table = loader
+        .lua()
+        .globals()
+        .get::<mlua::Table>("package")
+        .and_then(|package| package.get("loaded"))
+        .expect("package.loaded");
+
+    let names = shipped_plugin_names();
+    let mut carried: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+    for name in &names {
+        let module: mlua::Table = loaded
+            .get(name.as_str())
+            .unwrap_or_else(|e| panic!("{name}: activation seeded no module table: {e}"));
+        for key in FRAGMENT_METADATA {
+            if module.contains_key(key).expect("key lookup") {
+                carried.push(format!("{name}: {key}"));
+            }
+        }
+        checked += 1;
+    }
+
+    assert_eq!(
+        checked,
+        names.len(),
+        "the gate checked fewer plugins than ship"
+    );
+    assert!(
+        carried.is_empty(),
+        "module tables that carry fragment metadata: {carried:#?}"
     );
 }
 
@@ -176,7 +271,7 @@ async fn shipped_plugin_trees_declare_only_known_controls() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .activate_discovered(&[(shipped_plugins_dir(), PluginSource::Runtime)])
         .await
         .expect("load shipped plugins");
 
@@ -222,4 +317,98 @@ async fn shipped_plugin_trees_declare_only_known_controls() {
         checked > 0,
         "walked no option nodes — the gate proved nothing"
     );
+}
+
+/// Run the shipped defaults on `lua` as the boot does: under
+/// `LuaSource::Builtin`, so every `cru.plugin.setup` entry in the file lands
+/// at rank Builtin. `BUILTIN_INIT_LUA` is the same bytes the runtimepath
+/// copy holds, and it reads no environment.
+fn run_shipped_defaults(lua: &mlua::Lua) {
+    let previous = crucible_lua::set_source(lua, crucible_lua::LuaSource::Builtin);
+    lua.load(crucible_lua::BUILTIN_INIT_LUA)
+        .set_name("shipped defaults")
+        .exec()
+        .expect("the shipped defaults must load");
+    crucible_lua::set_source(lua, previous);
+}
+
+/// The shipped set is a Builtin fragment in `runtime/defaults/init.luau`.
+///
+/// The expectation comes from the filesystem and the running VM, not from
+/// the text of the defaults file: the set of names the fragment wrote must
+/// equal the set of directories under `runtime/plugins/`, and every entry
+/// must sit at rank Builtin so an operator entry for the same name wins.
+#[test]
+fn the_builtin_fragment_names_every_shipped_plugin_directory() {
+    use crucible_core::config::SpecRank;
+
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let lua = loader.executor().lua();
+    run_shipped_defaults(lua);
+
+    let spec = crucible_lua::spec_of(lua);
+    let mut named: Vec<String> = spec.iter().map(|e| e.name.clone()).collect();
+    named.sort();
+    assert_eq!(
+        named,
+        shipped_plugin_names(),
+        "the Builtin fragment and runtime/plugins/ disagree"
+    );
+    for name in &named {
+        assert_eq!(
+            spec.rank_of(name),
+            Some(SpecRank::Builtin),
+            "'{name}' must come from the shipped defaults at rank Builtin"
+        );
+    }
+}
+
+/// A loader booted on an empty config home: the shipped defaults ran, the
+/// operator wrote nothing, and the shipped runtimepath is the only one.
+///
+/// Child-scoped values only, see AGENTS.md "Hermeticity": the import root is
+/// a value under `home`, and no environment variable is read or set.
+async fn boot_loader_with_home(home: &std::path::Path) -> DaemonPluginLoader {
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    crucible_lua::set_import_root(loader.executor().lua(), home.join("lua"));
+    run_shipped_defaults(loader.executor().lua());
+    loader
+        .add_plugin_paths(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .expect("search path");
+    loader
+        .load_plugins_from_spec()
+        .await
+        .expect("activate the spec");
+    loader
+}
+
+/// Boot with an empty config home and the shipped runtimepath. Every
+/// directory under `runtime/plugins/` must come out Active, because the
+/// Builtin fragment names it and nothing disables it.
+///
+/// Activation is spec-driven, so the Builtin fragment is the only thing
+/// that keeps the shipped set active, and this test is what proves the
+/// fragment is complete: remove one name from
+/// `runtime/defaults/init.luau` and this fails.
+#[tokio::test]
+async fn a_fresh_boot_activates_every_shipped_plugin() {
+    let home = tempfile::TempDir::new().unwrap();
+    let loader = boot_loader_with_home(home.path()).await;
+    let info = loader.loaded_plugin_info();
+    for name in shipped_plugin_names() {
+        let entry = info
+            .iter()
+            .find(|p| p["name"].as_str() == Some(name.as_str()))
+            .unwrap_or_else(|| panic!("shipped plugin '{name}' missing from plugin info"));
+        assert_eq!(
+            entry["state"].as_str(),
+            Some("Active"),
+            "shipped plugin '{name}' did not reach Active: {entry:#}"
+        );
+        let last_error = entry["last_error"].as_str().unwrap_or("");
+        assert!(
+            last_error.is_empty(),
+            "shipped plugin '{name}' recorded an error: {last_error}"
+        );
+    }
 }

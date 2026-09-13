@@ -4,9 +4,11 @@
 //! file (`init.luau`, else `init.lua`), and `plugin.yaml` is gone. The host
 //! synthesizes this struct from the directory — the directory name is the
 //! identity, because it is the only name the host knows without running Lua
-//! — and the spec table the entry file returns declares the rest.
+//! — and the fragment beside the entry file (`spec.luau`, read by
+//! `lifecycle::fragment`) declares the rest. Discovery reads the fragment
+//! and runs no plugin code, so every field here is known before activation.
 //!
-//! ## Example entry file
+//! ## Example fragment
 //!
 //! ```lua
 //! return {
@@ -15,11 +17,10 @@
 //!     description = "A sample plugin",
 //!     author = "Your Name",
 //!     license = "MIT",
-//!
-//!     setup = function(opts) end,
 //! }
 //! ```
 
+use crucible_core::config::{is_valid_plugin_name, PLUGIN_NAME_RULE};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -45,12 +46,13 @@ pub type ManifestResult<T> = Result<T, ManifestError>;
 pub struct PluginManifest {
     pub name: String,
 
-    /// The version the plugin's spec table declares, once one has been read.
+    /// The version the plugin's fragment declares.
     ///
-    /// `None` until then. Discovery walks directories and never runs Lua, so
-    /// between discovery and load the host knows no version at all. This
-    /// used to hold a synthesized `"0.0.0"`, which `plugin.list` and the
-    /// session-setup event both reported as if a release had said so.
+    /// `None` when the plugin has no fragment, or its fragment names none.
+    /// Discovery reads the fragment and runs no plugin code, so a plugin
+    /// with no fragment has no version at any point. This used to hold a
+    /// synthesized `"0.0.0"`, which `plugin.list` and the session-setup
+    /// event both reported as if a release had said so.
     #[serde(default)]
     pub version: Option<String>,
 
@@ -81,7 +83,7 @@ pub struct PluginManifest {
     #[serde(default, rename = "intercept_tools", alias = "intercept-tools")]
     pub intercepts_tools: bool,
 
-    /// The name the plugin's spec table declares, when it differs from the
+    /// The name the plugin's fragment declares, when it differs from the
     /// directory it lives in.
     ///
     /// Identity is the DIRECTORY name — the only name knowable without running
@@ -90,14 +92,24 @@ pub struct PluginManifest {
     /// its config section.
     #[serde(skip)]
     pub declared_name: Option<String>,
+
+    /// The default `opts` the plugin's fragment declares. An empty object
+    /// when the fragment says nothing, or when there is no fragment. The
+    /// spec's `opts` resolution reads it as the lowest rank.
+    #[serde(default = "empty_object")]
+    pub opts: serde_json::Value,
+}
+
+fn empty_object() -> serde_json::Value {
+    serde_json::json!({})
 }
 
 impl PluginManifest {
     /// Create a manifest from a directory path alone, with no Lua run.
     ///
     /// Uses the directory stem as the plugin name, and NO version: the
-    /// version is the plugin's own claim, and the spec table that carries it
-    /// is only read at load.
+    /// version is the plugin's own claim, and discovery fills it in from the
+    /// fragment when there is one.
     pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
         let name = dir
             .file_stem()
@@ -107,8 +119,7 @@ impl PluginManifest {
 
         if !is_valid_plugin_name(&name) {
             return Err(ManifestError::Validation(format!(
-                "Directory name '{}' is not a valid plugin name",
-                name
+                "Directory name '{name}' is not a valid plugin name: {PLUGIN_NAME_RULE}"
             )));
         }
 
@@ -120,6 +131,7 @@ impl PluginManifest {
             license: None,
             intercepts_tools: false,
             declared_name: None,
+            opts: empty_object(),
         })
     }
 
@@ -130,7 +142,7 @@ impl PluginManifest {
 
         if !is_valid_plugin_name(&self.name) {
             return Err(ManifestError::Validation(format!(
-                "Invalid plugin name '{}': must be lowercase alphanumeric with hyphens",
+                "Invalid plugin name '{}': {PLUGIN_NAME_RULE}",
                 self.name
             )));
         }
@@ -149,26 +161,6 @@ impl PluginManifest {
 
         Ok(())
     }
-}
-
-fn is_valid_plugin_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 64 {
-        return false;
-    }
-
-    let mut chars = name.chars().peekable();
-
-    if !chars.peek().is_some_and(|c| c.is_ascii_lowercase()) {
-        return false;
-    }
-
-    for c in chars {
-        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
-            return false;
-        }
-    }
-
-    !name.ends_with('-') && !name.ends_with('_')
 }
 
 fn is_valid_version(version: &str) -> bool {
@@ -200,7 +192,7 @@ fn is_valid_version(version: &str) -> bool {
 /// Where a plugin was discovered from, ordered by priority (highest first).
 ///
 /// There is no `Kiln` variant. The daemon's `daemon_plugin_paths` emits only
-/// these three, and `PluginManager::with_standard_paths` reads the first two
+/// these three, and `PluginManager::discover_only` reads the first two
 /// from `crucible_core::paths` (`env_plugin_paths`, `user_plugins_dir`), so
 /// the two path lists share one definition. Plugins are user-scoped; a kiln's
 /// tree is opted into via `runtimepath`, which makes it `Runtime` like any

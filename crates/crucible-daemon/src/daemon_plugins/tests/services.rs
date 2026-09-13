@@ -68,7 +68,7 @@ async fn extracted_service_fns_carry_their_owning_plugins_name() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
 
@@ -89,7 +89,7 @@ async fn reloading_a_plugin_replaces_its_service_task_instead_of_stacking() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     crate::server::plugins::spawn_plugin_services(&mut loader);
@@ -128,7 +128,7 @@ async fn disabling_then_reloading_a_plugin_aborts_its_service() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
     crate::server::plugins::spawn_plugin_services(&mut loader);

@@ -58,8 +58,8 @@ describe('PluginPanel', () => {
   });
 
   it('renders a plugin with no version without printing a null', async () => {
-    // A plugin the daemon discovered but has not loaded has no version yet:
-    // the version lives in the plugin's spec table, which only a load reads.
+    // A plugin without a `spec.luau` fragment has no version: discovery reads
+    // the version from the fragment, and nothing else declares one.
     // The daemon sends null. `v${null}` renders "vnull", which is worse than
     // the "0.0.0" placeholder it replaced, so the row names the state.
     getPluginsMock.mockResolvedValue([{ ...RICH_ROW, name: 'unloaded-plugin', version: null }]);

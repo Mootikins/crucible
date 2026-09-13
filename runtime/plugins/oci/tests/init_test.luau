@@ -8,8 +8,8 @@
 -- or stops claiming isolation — the three ways it has actually broken.
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Recorders, installed before require("init") because init.lua registers its
--- tool handlers at load time.
+-- Recorders, installed before require("oci") and its setup(), because setup()
+-- registers the tool handlers.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 --- pattern -> { fn, opts }. Open maps throughout: these record whatever the
@@ -34,8 +34,8 @@ end
 ;(cru :: any).on_session_end = function(fn)
   lifecycle.end_fn = fn
 end
--- The runner VM has no cru.isolation or cru.plugin (the daemon registers
--- them), so the stub creates the tables whole.
+-- The stubs replace cru.isolation and cru.plugin whole, so a test reads
+-- what the plugin passed and nothing reaches the daemon's registries.
 cru.isolation = {
   require = function(opts)
     table.insert(isolation_calls, opts)
@@ -114,10 +114,18 @@ end
 local real_json = cru.json
 install_shell()
 
--- Loaded by plugin name via the parent's `?/init.lua` path entry — the same
--- resolution the daemon's plugin loader performs, so a require that only
--- works in tests cannot slip through again.
+-- Loaded by plugin name through the loader's own searcher, so a require
+-- that only works in tests cannot slip through again. The runner activated
+-- this plugin before it loaded this file, and seeded `package.loaded` with
+-- the activated instance, whose setup() already ran against the real
+-- `cru.on`. This suite drives setup() itself with the stubs above and reads
+-- their recorders, so it requires a fresh instance.
+package.loaded["oci"] = nil
 local spec = require("oci")
+-- The module body registers nothing. setup() registers the handlers the
+-- recorders above capture, once; the later setup() calls only change the
+-- config.
+spec.setup(nil)
 
 --- The logged call whose argv starts with `verb`, or nil.
 local function exec_call(verb: string): { [string]: any }?
@@ -154,12 +162,14 @@ local function start_isolated_session(id: string, isolation: any, workspace: str
 end
 
 describe("oci plugin load", function()
-  it("returns its spec", function()
-    expect.equals("oci", spec.name)
+  it("returns its plugin table", function()
+    -- The name is in `spec.luau`, which discovery reads. The module table
+    -- carries no metadata, and the Rust gate
+    -- `no_shipped_module_table_carries_fragment_metadata` says so.
     expect.is_function(spec.setup)
   end)
 
-  it("registers every workspace tool handler at load, not per session", function()
+  it("registers every workspace tool handler from setup(), not per session", function()
     for _, tool in ipairs({ "bash", "read_file", "write_file", "edit_file", "glob", "grep" }) do
       expect.is_not_nil(hooks[tool], "no pre_tool_call handler for " .. tool)
       expect.equals(tool, hooks[tool].opts.pattern)

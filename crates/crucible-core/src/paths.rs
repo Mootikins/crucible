@@ -2,7 +2,7 @@
 //!
 //! Two loaders build a plugin path list: the daemon
 //! (`daemon_plugin_paths`) and the standalone `PluginManager` in
-//! `crucible-lua` (`with_standard_paths`). Each used to read
+//! `crucible-lua` (`discover_only`). Each used to read
 //! `CRUCIBLE_PLUGIN_PATH` and `~/.config/crucible/plugins/` on its own, and
 //! the two copies drifted (one removed duplicates, one did not). `crucible-lua`
 //! cannot depend on the daemon, so the shared part lives here. The daemon

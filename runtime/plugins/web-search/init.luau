@@ -31,9 +31,9 @@ local config = require("ws_config")
 local contract = require("contract")
 
 local TOOL = "web_search"
-local PLUGIN = "web-search"
-local VERSION = "0.1.0"
 
+--- The one table this file returns: the module `require("web-search")`
+--- answers, and the plugin table the loader reads `tools` and `setup` from.
 local M = {}
 
 -- ============================================================================
@@ -467,13 +467,14 @@ function M.web_search(options: { [string]: any }?): ToolResult
     return { error = failure_text(query, attempts), tried = tried }
 end
 
--- Registered at load, not in setup(): setup() is called once per plugin with
--- the TOML section and again from the user's init.lua, and a hook registered
--- there would be installed twice.
+-- Registered at load, not in setup(): the host calls setup() once at
+-- activation with the resolved opts (the entry's `opts` merged with the
+-- `plugins.web-search` config leaves), the user's init.lua may call it again,
+-- and a hook registered there would be installed twice.
 --
--- `package.loaded` below is what stops a second registration: without it, the
--- documented `require("web-search").setup{}` from a user's init.lua re-ran the
--- whole module and installed a second, unowned handler.
+-- Activation seeds `package.loaded` with this table, so the documented
+-- `require("web-search").setup{}` from a user's init.lua answers this
+-- module and does not run the file a second time.
 --
 -- A _G sentinel was tried here and was WORSE than the problem. `clear_plugin_handlers`
 -- drops this plugin's handlers on reload and then re-executes the module — but a
@@ -486,47 +487,32 @@ M.display_hook_registered = register_display_hook()
 -- Plugin spec
 -- ============================================================================
 
--- Publish under the name the README tells users to require, so that
--- `require("web-search")` returns this module instead of re-running the file.
-package.loaded[PLUGIN] = M
-
-return {
-    author = "Crucible Team",
-    license = "MIT",
-    name = PLUGIN,
-    version = VERSION,
-    description = "Web search over a configurable provider chain",
-
-    tools = {
-        web_search = {
-            desc = "Search the web. Returns titles, URLs and snippets from the first "
-                .. "provider in the configured chain that answers; the result names "
-                .. "which provider that was.",
-            params = {
-                { name = "query", type = "string", desc = "Search query" },
-                {
-                    name = "max_results",
-                    type = "number",
-                    desc = "Max results (default: 8, cap: 25)",
-                    optional = true,
-                },
-                {
-                    name = "provider",
-                    type = "string",
-                    desc = "Use only this provider. Must already be in the configured chain.",
-                    optional = true,
-                },
+M.tools = {
+    web_search = {
+        desc = "Search the web. Returns titles, URLs and snippets from the first "
+            .. "provider in the configured chain that answers; the result names "
+            .. "which provider that was.",
+        params = {
+            { name = "query", type = "string", desc = "Search query" },
+            {
+                name = "max_results",
+                type = "number",
+                desc = "Max results (default: 8, cap: 25)",
+                optional = true,
             },
-            fn = M.web_search,
+            {
+                name = "provider",
+                type = "string",
+                desc = "Use only this provider. Must already be in the configured chain.",
+                optional = true,
+            },
         },
+        fn = M.web_search,
     },
-
-    setup = function(cfg)
-        config.init(cfg)
-    end,
-
-    -- Not part of the spec grammar (unrecognised keys are ignored by
-    -- `load_plugin_spec`), but the display hook's text is worth asserting on
-    -- and the hook itself is unreachable from a suite with no daemon behind it.
-    summarise = M.summarise,
 }
+
+function M.setup(cfg: { [string]: any }?)
+    config.init(cfg)
+end
+
+return M

@@ -138,6 +138,28 @@ pub fn cancel_source(_lua: &Lua, _owner: &crate::plugin_context::LuaSource) -> u
     0
 }
 
+/// How many live schedules `source` created. The read beside
+/// [`cancel_source`]: it stops nothing.
+#[cfg(feature = "send")]
+pub fn count_source(lua: &Lua, source: &crate::plugin_context::LuaSource) -> usize {
+    let Some(installed) = lua.app_data_ref::<inner::InstalledSchedules>() else {
+        return 0;
+    };
+    let Ok(cancellers) = installed.0.cancellers.lock() else {
+        return 0;
+    };
+    cancellers
+        .values()
+        .filter(|(created_by, _)| created_by == source)
+        .count()
+}
+
+/// Without the `send` feature no schedule can be created, so none exists.
+#[cfg(not(feature = "send"))]
+pub fn count_source(_lua: &Lua, _source: &crate::plugin_context::LuaSource) -> usize {
+    0
+}
+
 /// Register `cru.schedule(spec, handler)` and `cru.schedule.cancel(handle)`.
 ///
 /// The schedule function is a callable table: calling it creates a new

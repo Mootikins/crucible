@@ -987,13 +987,10 @@ cru.check.one_of(val, { "json", "text", "yaml" }, "format")
 
 Plugins can declare long-running services that the daemon spawns automatically after plugin initialization. Each service is a function that runs as an independent async task.
 
-Services are declared in the plugin's spec table (returned from `init.lua`):
+Services are declared in the plugin's module table (returned from `init.luau`):
 
 ```lua
 return {
-    name = "my-plugin",
-    version = "1.0.0",
-
     services = {
         my_service = {
             desc = "Description of what this service does",
@@ -1036,7 +1033,7 @@ The `gateway.connect` function uses `cru.retry` with reconnection backoff, `cru.
 
 ## Supervised Services
 
-`cru.service` is a pure-Lua supervision layer over a service's start function: retry with backoff, a status registry, and config-schema resolution. **It is not the spawn mechanism.** Only the spec-table `services` field above gets a function spawned — `cru.service.define` on its own starts nothing, and the daemon never reads `cru.service`'s registry. The two compose: `define` returns a `{ desc, fn }` table shaped exactly like a spec-table entry.
+`cru.service` is a pure-Lua supervision layer over a service's start function: retry with backoff, a status registry, and config-schema resolution. **It is not the spawn mechanism.** Only the module table's `services` field above gets a function spawned — `cru.service.define` on its own starts nothing, and the daemon never reads `cru.service`'s registry. The two compose: `define` returns a `{ desc, fn }` table shaped exactly like a `services` entry.
 
 ```lua
 local svc = cru.service.define({
@@ -1049,7 +1046,6 @@ local svc = cru.service.define({
 })
 
 return {
-    name = "my-plugin",
     services = { gateway = svc },  -- this line is what gets it spawned
 }
 ```
@@ -1177,11 +1173,10 @@ Values written through the pane persist via the daemon's option store.
 
 ## Plugin Tools and Commands
 
-A plugin's spec table can also declare `tools` (callable by the agent's model) and `commands` (invocable by clients, e.g. as slash commands). Both take a `desc`, an optional `params` list, and a `fn`:
+A plugin's module table can also declare `tools` (callable by the agent's model) and `commands` (invocable by clients, e.g. as slash commands). Both take a `desc`, an optional `params` list, and a `fn`:
 
 ```lua
 return {
-    name = "shout",
 
     tools = {
         shout = {
@@ -1282,7 +1277,7 @@ end
 
 ## Kiln access and the `vault` name
 
-The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The old "vault" name survives in exactly one Lua-facing place: a plugin manifest may declare `capabilities: [vault]`, which parses as the `kiln` capability. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
+The kiln API is `cru.kiln` — there is no `cru.vault` table, and no plugin file declares capabilities: the fragment's `intercepts_tools` is the one declaration the host checks. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
 
 ## Session-VM-only: cru.modes
 

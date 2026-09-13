@@ -256,7 +256,7 @@ entry but no shipped proof.
 |---|---------|--------|
 | F170 | Luau runtime; host-owned `require`; `io`/`os` compatibility from the host | P, R, PL |
 | F171 | Plugin system: discovery on a search path, `plugin.yaml` manifest or bare `init.lua`, lifecycle, hot reload | P, R |
-| F172 | Plugin spec table: `tools`, `commands`, `handlers`, `setup(cfg)` | P, R |
+| F172 | Plugin module table (`init.luau`): `tools`, `commands`, `services`, `setup(opts)`; the fragment (`spec.luau`) carries the metadata | P, R |
 | F173 | Event hooks `cru.on(name, opts, handler)` with `pattern` and `priority` | P, R, PL |
 | F174 | Note lifecycle events `note:created`, `note:modified`, `note:deleted`, `note:renamed` | P, PL |
 | F175 | `FileChanged` workspace hook | P, T |

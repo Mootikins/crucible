@@ -32,7 +32,10 @@ fn never_hands_out_the_scope_stamp() {
     let public = public_properties(&properties());
     assert!(!public.contains_key(SCOPE_PROPERTY_KEY));
     let json = serde_json::to_string(&public).unwrap();
-    assert!(!json.contains("/home/someone/work"), "a host path escaped: {json}");
+    assert!(
+        !json.contains("/home/someone/work"),
+        "a host path escaped: {json}"
+    );
 }
 
 /// The table is the gate. A stamped key that leaves it ships by default, so

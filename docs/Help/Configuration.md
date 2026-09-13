@@ -364,47 +364,112 @@ stderr.
 | `workspace` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/init.lua` |
 | `server` | `auto_archive_hours` and `idle_shutdown_minutes`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `web` | `docs/init.lua` |
 | `schedules` | Recurring Lua snippets run on an interval — `cru.schedule` in `init.lua` is the native spelling | `docs/init.lua` |
-| `plugins.*` | Free-form per-plugin tables, fed to that plugin's `setup(cfg)`; plus the reserved `plugins.declare` table below | [[Help/Lua/Configuration|Lua Configuration]] — the two plugin-config forms |
+| `plugins.*` | Free-form per-plugin tables. The daemon merges `plugins.<name>` into the `opts` that plugin's `setup(opts)` receives, and `plugins.<name>.enabled` turns the plugin off. Which plugins exist is the spec, below | [[Help/Lua/Configuration|Lua Configuration]] — how `opts` merge |
 
 There is no `storage` key and no `discovery` key; both were removed.
 
-### plugins.declare — git-hosted plugin declarations
+### The spec — which plugins run
 
-Declare a plugin in your config and the daemon clones and loads it at every
-boot. Each entry is a URL string, or a table with `url`, `branch`, `pin`
-and `enabled`; the key must equal the URL-derived name (the last path
-segment, without `.git`).
+The spec is your list of plugins. You write it in `init.lua` with
+`cru.plugin.setup`. One entry names one plugin. The list takes its shape
+from lazy.nvim, not key for key: a string is a bare entry, and a table
+carries options. `docs/Meta/CONTEXT.md` defines the words *spec*, *spec entry*,
+*fragment*, *discovery* and *activation*.
 
 ```lua
-cru.config.set({
-  plugins = {
-    declare = {
-      greeter = "user/greeter",
-      review = { url = "someone/review", pin = "v1.2" },
-    },
-    -- Options stay per-plugin, beside the declarations:
-    greeter = { greeting = "hello" },
+cru.plugin.setup({
+  -- A bare name: a plugin on the runtimepath, shipped or local.
+  "reflection",
+
+  -- A shipped plugin, turned off. Its code never runs.
+  { "consolidation", enabled = false },
+
+  -- A git-hosted plugin. The daemon clones it at boot when the directory
+  -- is missing. `branch` and `pin` say what to check out. `opts` is the
+  -- table its `setup(opts)` receives.
+  { "user/greeter", branch = "main", pin = "v1.2", opts = { greeting = "hello" } },
+
+  -- A custom config step. The host calls it once, after init.lua finishes,
+  -- in place of the default `module.setup(opts)` call.
+  {
+    "review",
+    config = function(m, opts)
+      m.setup(opts)
+      cru.log("info", "review is configured")
+    end,
   },
+
+  -- Every `*.lua` and `*.luau` file under ~/.config/crucible/lua/plugins/,
+  -- in file-name order. Each file returns a list of entries like this one.
+  { import = "plugins" },
 })
 ```
 
-Declaration and configuration are different acts: `plugins.declare.<name>`
-says the plugin should exist; `plugins.<name>` configures it. The name
-`declare` is therefore reserved — a discovered plugin actually named
-`declare` is refused at discovery with an error naming its path.
+An entry has these fields:
+
+| Field | What it says |
+|---|---|
+| `[1]` | The plugin. A bare name is a directory on the runtimepath. A `user/repo` or a URL is a git source, and the name is the last path segment without `.git`. The name rule, as the daemon states it: "a plugin name starts with a lowercase letter, holds only a-z, 0-9, '-' and '_', is at most 64 bytes, and does not end with '-' or '_'". |
+| `enabled` | `false` turns the plugin off. `nil` says nothing. |
+| `branch`, `pin` | For a git source: the branch to check out, and a commit or tag to pin to. A bare name refuses both. |
+| `opts` | A table the daemon merges into the `opts` that `setup(opts)` receives. |
+| `config` | `function(module, opts)`. Replaces the default `module.setup(opts)` call. |
+| `import` | A directory under `~/.config/crucible/lua/`. Each file there returns a list of entries. An imported file returns its entries; it does not call `cru.plugin.setup` itself. |
+
+The rules, each stated once:
+
+- **Your entry wins.** Two sources merge by name into one spec: the shipped
+  defaults in `runtime/defaults/init.luau` (the Builtin fragment, which
+  lists every shipped plugin) and your `init.lua`. Your entry outranks the
+  shipped fragment, so `{ "reflection", enabled = false }` turns a shipped
+  plugin off. A plugin's own `spec.luau` (its fragment) feeds the manifest
+  and its default `opts`, not the spec.
+- **`enabled` resolves in this order, first answer wins:** your entry; the
+  config leaf `plugins.<name>.enabled` at any layer, so the web toggle in
+  `settings.json` still works; the shipped fragment; then `true`. A
+  plugin's own fragment has no `enabled` field.
+- **`opts` merge, lowest first:** the plugin fragment's `opts`, the shipped
+  fragment's `opts`, the config leaves under `plugins.<name>`, then your
+  entry's `opts`. The config leaf `plugins.<name>.enabled` is not an opt.
+  The daemon strips it before the merge, so that leaf never reaches
+  `setup`. An `enabled` key inside your entry's `opts` is an ordinary opt
+  and does reach `setup`.
+- **A `require` activates.** `require("reflection")` in `init.lua` runs the
+  module body at once and marks the plugin for activation. A spec entry
+  that says `enabled = false` for a plugin `init.lua` also requires loses
+  to the require, and the boot log names both sites.
+- **The host runs `config` once, after `init.lua` finishes.** The default
+  `config` calls `module.setup(opts)` when the module has `setup`. A
+  `require("x").setup{ ... }` line in `init.lua` therefore calls `setup`
+  twice: yours first, then the host's with the merged `opts`. To customize
+  setup, write `config` in the entry instead.
+- **A fragment is optional metadata.** A plugin's `spec.luau` may state
+  `name`, `version`, `description`, `author`, `license`, `intercepts_tools`
+  and default `opts`. Discovery reads it and runs no plugin code. A plugin
+  without one gets its directory name and no intercept grant.
+- **A discovered plugin with no entry stays inactive.** The Builtin fragment
+  is what keeps the shipped set active.
+- **`cru plugin check` refuses a top-level effect.** A `cru.on`, a schedule
+  or a timer at the top level of `init.luau` fails the check with "move
+  them into setup()". `init.luau` declares; `setup()` acts.
+- **The spec is written in `init.lua`.** A socket eval that calls
+  `cru.plugin.setup` is refused, so no client can rewrite your list.
 
 The machine's own record is separate: `cru plugin add` and the web install
-button write `<data_home>/plugins.installed.json`, never your config. The
-daemon loads the union, and when both name the same plugin your declaration
-wins — the boot says so by name. `cru plugin remove` removes installed
-plugins only; for a declared one it refuses and names the `file:line` of
-the declaration, because Crucible never edits your config file.
+button write `<data_home>/plugins.installed.json`, never your `init.lua`.
+The daemon merges that file into the spec at the rank of the shipped
+fragment, so your entry beats it: `{ "greeter", enabled = false }` disables
+an installed plugin too. A plugin the web disabled in `settings.json` is not
+cloned at boot. `cru plugin remove` removes installed plugins only; for a
+plugin your `init.lua` names with a git source it refuses and names the
+`cru.plugin.setup` entry to edit, because Crucible never edits your file.
 
-`plugins.toml`, which used to hold declarations, is no longer read. Its
-entries are imported into the installed manifest automatically, and the
-boot warns while the leftover file exists; delete it to silence the
-warning. (A kiln-local `.crucible/config.toml` needs no migration at all:
-nothing ever read it, and `cru doctor` says so when one exists.)
+`plugins.toml`, which used to hold git-hosted plugin declarations, is no
+longer read. Its entries are imported into the installed manifest
+automatically, and the boot warns while the leftover file exists; delete it
+to silence the warning. (A kiln-local `.crucible/config.toml` needs no
+migration at all: nothing ever read it, and `cru doctor` says so when one
+exists.)
 
 ## Secrets and computed values
 

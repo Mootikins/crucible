@@ -38,6 +38,20 @@ On session start the plugin creates a container named `crucible-<session id>`
 with the session's workspace bind-mounted at `/workspace` (configurable, see
 below), and removes it when the last session using it ends.
 
+The session hook that does this registers from the plugin's `setup()`, which
+the host calls once at activation. A spec entry for `oci` with a `config`
+function replaces that call. A `config` that never calls `m.setup(opts)`
+leaves `oci` active with no session hook, so every session starts and none
+is sandboxed. When you write `config` for `oci`, call `m.setup(opts)` in it:
+
+```lua
+cru.plugin.setup({
+  { "oci", config = function(m, opts)
+    m.setup(opts)
+  end },
+})
+```
+
 ## Options
 
 | Key | Default | Meaning |

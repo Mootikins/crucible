@@ -185,6 +185,19 @@ const DECLARED: &[Declared] = &[
         bound_at_load: true,
     },
     Declared {
+        // The spec, ranked by the source that runs the call
+        // (`plugin_spec_store.rs`). Each element is a string or a table, so
+        // the list is `{ any }`.
+        path: "cru.plugin.setup",
+        ty: || {
+            function(
+                vec![param("entries", LuaType::Array(Box::new(any())))],
+                Vec::new(),
+            )
+        },
+        bound_at_load: false,
+    },
+    Declared {
         path: "cru.plugin.options",
         ty: || {
             function(

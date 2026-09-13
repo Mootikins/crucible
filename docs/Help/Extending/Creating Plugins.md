@@ -71,7 +71,7 @@ out. This is a stated constraint with a named precondition, not a deferral.
 ### Loading another tree deliberately
 
 A plugin's own directory is also a runtime root, so a plugin may ship its own
-`skills/`, `agents/` and `themes/` beside its manifest — they are found with no
+`skills/`, `agents/` and `themes/` beside its `init.luau` — they are found with no
 registration. Crucible's own `crucible-help` plugin ships the documentation
 this way. A plugin's contributions rank below every root you named yourself, so
 they never shadow your own.
@@ -94,23 +94,25 @@ unchanged, which is why this is a deliberate act and not a default.
 ```
 ~/.config/crucible/plugins/
 ├── tasks/               # Directory plugin
-│   ├── init.lua         # Main module
-│   └── lua/parser.lua   # Helper modules
+│   ├── init.luau        # Main module
+│   ├── spec.luau        # Fragment: metadata, optional
+│   └── lua/parser.luau  # Helper modules
 └── quick-tag.lua        # Single-file plugin
 ```
 
-All plugin directories are also added to Lua's `package.path`, so `require("tasks")` works from anywhere — your init.lua, other plugins, or the built-in defaults. Note the module name is the **directory name**, not `init`; that is what a plugin's own test suite must require too.
+Every plugin directory is on the runtimepath, so `require("tasks")` resolves from anywhere — your `init.lua`, other plugins, or the built-in defaults. The module name is the **directory name**, not `init`; that is what a plugin's own test suite must require too. A `require` of a plugin from `init.lua` activates it: the body runs once, and the host runs its `config` after your file finishes.
 
 ### What ships
 
 `runtime/plugins/` in the repo is the bundled set, compiled into the binary and
-extracted on first run. Every one of them loads **enabled by default**, except
-`consolidation`:
+extracted on first run. The shipped defaults list every one of them in the
+spec, so every one **activates by default**. `consolidation` activates too,
+and its pass stays off until its `opts` say so:
 
 | Plugin | What it adds |
 |--------|--------------|
 | `auto-title` | Names a session after its opening exchange |
-| `consolidation` | Periodic pass that proposes pattern notes; off until `[plugins.consolidation] enabled = true` |
+| `consolidation` | Periodic pass that proposes pattern notes; off until its `opts` say `enabled = true` |
 | `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
 | `discord` | Discord gateway + REST integration |
 | `oci` | Routes workspace tools into containers |
@@ -120,8 +122,9 @@ extracted on first run. Every one of them loads **enabled by default**, except
 | `web-search` | Search over a provider chain |
 | `worktree` | Run a session against a git worktree |
 
-Turn one off with `plugins.<name>.enabled = false` in your `init.lua`. That is
-the only durable lever — an edit inside the extracted plugin does not survive,
+Turn one off with `{ "<name>", enabled = false }` in the spec, or with
+`plugins.<name>.enabled = false` in the config. Those are the only durable
+levers — an edit inside the extracted plugin does not survive,
 because the runtime tree is re-stamped from the binary whenever the build
 changes.
 
@@ -131,38 +134,56 @@ Crucible finds nothing. Run those from a checkout.
 
 ## The Setup Pattern
 
-Plugins export a module table with an optional `setup()` function. Users configure plugins in their `init.lua`:
+A plugin's `init.luau` returns a module table with an optional `setup(opts)`
+function. The host calls `setup` once, at activation, after the user's
+`init.lua` has finished. Users configure a plugin through its spec entry:
 
 ```lua
 -- ~/.config/crucible/init.lua
-require("reflection").setup({
-  enabled = true,
-  timeout = 60,
+cru.plugin.setup({
+  { "reflection", opts = { timeout = 60 } },
 })
 ```
 
-Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
+Bundled plugins (in `runtime/plugins/`) are listed by the shipped defaults,
+so they activate with their defaults when the user writes nothing. To turn
+one off, the user writes `{ "reflection", enabled = false }`. A disabled
+plugin's code never runs.
 
-Configuration precedence, highest first:
+The `opts` your `setup` receives merge from four places, lowest first:
 
-1. `setup({...})` calls — last call wins per key.
-2. `plugins.<name>` in the config store — the daemon passes that table to each plugin's `setup()`, so it is the base configuration.
-3. The plugin's own declared defaults.
+1. Your fragment's default `opts` (`spec.luau`, below).
+2. The shipped defaults' entry for the plugin.
+3. `plugins.<name>` in the config store, from any layer.
+4. The user's spec entry `opts`.
+
+A user who wants to replace the host's `setup(opts)` call writes
+`config = function(m, opts) ... end` in the entry. A user who writes
+`require("reflection").setup({...})` in `init.lua` calls `setup` twice:
+theirs first, then the host's. So write `setup` so a second call is safe.
 
 An `init.lua` that does not parse stops the daemon and names the line. One that parses and then raises is warned about, rolled back whole, and the daemon boots on the defaults.
 
-A plugin's `setup()` merges user config into its defaults:
+`init.luau` declares; `setup()` acts. The body of `init.luau` runs once and
+returns the module table. Every `cru.on`, schedule and timer belongs in
+`setup`, so a disabled plugin registers nothing and a reload clears what the
+previous generation registered. `cru plugin check` reports a registration at
+the top level as a finding.
+
+A plugin's `setup()` merges the `opts` into its defaults:
 
 ```lua
--- In your plugin's init.lua
-local config = require("config")
+-- In your plugin's init.luau
+local config = require("config")  -- lua/config.luau, private to this plugin
 
 return {
-    name = "my-plugin",
-    -- ... tools, commands, handlers ...
+    -- ... tools, commands, services ...
 
-    setup = function(cfg)
-        if cfg then config.init(cfg) end
+    setup = function(opts)
+        config.init(opts or {})
+        cru.on("pre_tool_call", function(ctx, event)
+            cru.log("info", "Tool called: " .. event.tool)
+        end)
     end,
 }
 ```
@@ -215,7 +236,6 @@ The simplest plugin is a single `.lua` file:
 -- ~/.config/crucible/plugins/greet.lua
 
 return {
-    name = "greet",
     tools = {
         greet = {
             desc = "Say hello to someone",
@@ -232,30 +252,37 @@ return {
 
 This registers one tool. Agents can now call `greet`. (Doc-comment `@tool`
 annotations appear in older examples; the daemon does not discover them from
-plugins — the returned spec table is the contract.)
+plugins — the returned module table is the contract.) A single-file plugin
+has no fragment, so its name is the file name without the extension.
 
 ## Directory Plugin
 
-For complex plugins, use a directory. The `init.lua` is what makes it one:
+For complex plugins, use a directory. The `init.luau` is what makes it one:
 
 ```
 plugins/tasks/
-├── init.lua        # Entry point; its spec table carries the metadata
-├── parser.lua      # TASKS.md format parser
-├── commands.lua    # Command handlers
+├── init.luau       # Entry point; returns the module table
+├── spec.luau       # The fragment: metadata, read without running the plugin
+├── lua/
+│   ├── parser.luau   # TASKS.md format parser
+│   └── commands.luau # Command handlers
 └── README.md       # Usage documentation
 ```
 
-### Plugin metadata
+### The fragment: `spec.luau`
 
 A plugin is one directory with one entry file: `init.luau`, or `init.lua`. A
-directory holding both is refused rather than resolved.
+directory holding both is refused rather than resolved. The same rule holds
+for `spec.luau` and `spec.lua`.
 
-There is no manifest. Metadata lives in the spec table the entry file returns.
-Crucible reads that table when it loads the plugin, so a plugin that is
-discovered but not loaded reports no version:
+The fragment is optional metadata. `spec.luau` sits beside `init.luau` and
+returns one table. Discovery reads it and runs no plugin code, so `cru plugin
+list`, the TUI `/plugins` list and the web plugin panel show the version of a
+plugin that is discovered and not yet active. A plugin without a fragment
+gets its directory name and no intercept grant.
 
 ```lua
+-- spec.luau
 return {
     name = "tasks",
     version = "1.0.0",
@@ -263,38 +290,52 @@ return {
     author = "Your Name",
     license = "MIT",
 
-    -- Optional. Matched by NAME only.
-    dependencies = { "core-utils" },
-
     -- Optional: this plugin takes tool calls over. The one declaration the
-    -- host checks. A `pre_tool_call` handler returning `handled = true`
-    -- returns BEFORE the permission gate; without this the daemon ignores the
-    -- takeover, dispatches normally, and logs that it did.
+    -- host checks, and this file is the only place it counts. A
+    -- `pre_tool_call` handler returning `handled = true` returns BEFORE the
+    -- permission gate; without this the daemon ignores the takeover,
+    -- dispatches normally, and logs that it did.
     intercepts_tools = false,
 
-    tools = { --[[ … ]] },
-    setup = function(cfg) end,
+    -- Optional: the defaults under every other source of `opts`.
+    opts = { path = "TASKS.md" },
 }
 ```
 
-`name` is the plugin's identity, and the directory name is only the fallback
-when the spec does not state one — so a repo cloned under a different
-directory name keeps its `plugins.<name>` config. A name that is not a
-usable plugin name is refused and the directory name stands.
+A fragment takes these seven keys and no other. `tools`, `commands`,
+`services`, `setup` and `handlers` belong in `init.luau`. Discovery refuses
+a fragment that holds one of them, and names the file. The fragment runs in a
+read-only environment: `string`, `table` and `math` as sealed copies, and
+`tostring`, `tonumber`, `ipairs`, `pairs`, `select` and `type`. There is no
+`cru`, no `require`, no `os` and no `io`. A fragment can describe; it cannot
+act. A fragment that returns no table, or that reaches outside that
+environment, is a discovery error that names `spec.luau`.
+
+`name` is the plugin's identity, and the directory name is the fallback when
+the fragment does not state one — so a repo cloned under a different
+directory name keeps its `plugins.<name>` config. A name starts with a
+lowercase letter and holds only `a-z`, `0-9`, `-` and `_`. A name that
+breaks the rule is refused and the directory name stands.
 
 `plugin.yaml` is gone. It carried `main:`, which could name a file that was not
 there and did; a ten-name `capabilities:` list of which nine were never
 consulted; and `exports:`, `config:` and `keywords:` blocks nothing ever
-parsed.
+parsed. The same metadata inside the table `init.luau` returns is ignored:
+discovery does not read that file.
+
+### The module: `init.luau`
+
+`init.luau` returns the module table: `tools`, `commands`, `services`,
+`setup`, and the optional `on_load` and `on_unload`. The host runs the file
+once, at activation, in the daemon VM.
 
 ```lua
--- init.lua - Main module: return the plugin spec table
+-- init.luau - Main module: return the module table
 
-local parser = require("parser")
-local commands = require("commands")
+local parser = require("parser")      -- lua/parser.luau
+local commands = require("commands")  -- lua/commands.luau
 
 return {
-    name = "tasks",
     tools = {
         tasks_list = {
             desc = "List all tasks",
@@ -316,7 +357,7 @@ return {
 
 ## Providing Tools
 
-Declare tools in the spec table your `init.lua` returns:
+Declare tools in the module table your `init.luau` returns:
 
 ```lua
 tools = {
@@ -341,33 +382,44 @@ is rejected, not shadowed.
 
 ## Providing Hooks
 
-Register handlers with `cru.on()` at the top level of your `init.lua` —
-registration happens once at plugin load, and each handler resolves its
-session via `ctx.session_id`:
+Register handlers with `cru.on()` inside your module's `setup()`. The host
+calls `setup` once, at activation, under your plugin's source, so a reload
+clears the handlers. Each handler resolves its session via `ctx.session_id`:
 
 ```lua
--- Log all tool calls
-cru.on("pre_tool_call", function(ctx, event)
-    cru.log("info", "Tool called: " .. event.tool)
-end)
+return {
+    setup = function(opts)
+        -- Log all tool calls
+        cru.on("pre_tool_call", function(ctx, event)
+            cru.log("info", "Tool called: " .. event.tool)
+        end)
 
--- Block dangerous operations
-cru.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
-    return { cancel = true, reason = "Deletes are blocked" }
-end)
+        -- Block dangerous operations
+        cru.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
+            return { cancel = true, reason = "Deletes are blocked" }
+        end)
+    end,
+}
 ```
 
-(`@handler` doc-comment annotations and the spec-table `handlers` field
+A `cru.on` at the top level of `init.luau` runs before the host calls
+`setup`, so a `config` function in the user's spec entry cannot turn it off.
+`cru plugin check` reports it as a finding and names the hook. A user may
+call `setup` a second time. When a double registration would matter, guard
+the registration with a flag.
+
+(`@handler` doc-comment annotations and the module table's `handlers` field
 appear in older material; neither is dispatched for plugins — `cru.on`
-is the contract. Declaring spec-table handlers logs a warning at load.)
+is the contract. Declaring `handlers` in the module table logs a warning at
+activation.)
 
 See [[Help/Extending/Event Hooks]] for event types, return values, and patterns.
 
 ## Providing Services
 
 A service is a long-running background task — a gateway connection, a poll
-loop. Declare it in the spec table; the daemon spawns each declared service
-as an independent async task when the plugin loads:
+loop. Declare it in the module table; the daemon spawns each declared service
+as an independent async task when the plugin activates:
 
 ```lua
 services = {
@@ -413,34 +465,41 @@ cru.config.set({
 
 ## Plugin Lifecycle
 
-1. **Discovery**: Crucible scans the plugin directories for entry files. It
-   runs no Lua here, so it knows only the directory name and the state. The
-   version comes from the spec table, so `cru plugin list`, the TUI `/plugins`
-   list and the web plugin panel show no version until the plugin loads.
-2. **Validation**: Crucible validates the name, and the version if the spec
-   table declares one
-3. **Dependency Resolution**: Load order determined by dependencies
-4. **Loading**: Each plugin is compiled/loaded by its runtime
-5. **Registration**: Tools, hooks, commands, and views are registered
-6. **Execution**: Components are invoked as needed
-7. **Unloading**: Plugins can be disabled/unloaded at runtime
+1. **Discovery**: Crucible scans the runtimepath for plugin directories and
+   reads each one's fragment, `spec.luau`. It runs no plugin code here. The
+   name, version, description and intercept grant come from the fragment, so
+   `cru plugin list`, the TUI `/plugins` list and the web plugin panel show
+   them before the plugin is active. A fragment error is a discovery error
+   for that directory.
+2. **Validation**: Crucible validates the name, and the version if the
+   fragment declares one.
+3. **The spec decides**: the user's `init.lua` entries, the shipped defaults
+   and each fragment merge by name. A discovered plugin with no entry stays
+   `Discovered`. A plugin whose resolved `enabled` is `false` is `Disabled`
+   and its code never runs.
+4. **Activation**: the host runs `init.luau` once in the daemon VM, reads the
+   returned module table, registers its tools, commands and services, then
+   runs the entry's `config`, or `setup(opts)` when the entry has none. A
+   `require` of the plugin from `init.lua` starts the same activation.
+5. **Execution**: Components are invoked as needed.
+6. **Unloading**: Plugins can be disabled, reloaded or unloaded at runtime.
+   A reload runs activation again from a clean source.
 
 ### Lifecycle States
 
 | State | Description |
 |-------|-------------|
-| `Discovered` | Manifest found, not yet loaded |
-| `Active` | Loaded and running |
-| `Disabled` | Explicitly disabled by user |
-| `Error` | Failed to load or execute. Guaranteed inert: nothing of the plugin's is registered or running. `plugin.list` still shows what it declares, plus `last_error` |
+| `Discovered` | Fragment read, not yet active |
+| `Active` | Activated and running |
+| `Disabled` | Turned off by the spec or by the config leaf `plugins.<name>.enabled`. Its code never ran |
+| `Error` | Failed to activate or execute. Guaranteed inert: nothing of the plugin's is registered or running. `plugin.list` still shows what it declares, plus `last_error` |
 
 ### Lifecycle Callbacks: `on_load` / `on_unload`
 
-The spec table may carry two optional lifecycle functions:
+The module table may carry two optional lifecycle functions:
 
 ```lua
 return {
-    name = "my-plugin",
     on_load = function()
         cru.log("info", "my-plugin loaded")
     end,
@@ -451,10 +510,11 @@ return {
 }
 ```
 
-`on_load` runs when the plugin is loaded, `on_unload` when it is unloaded — a
-reload runs `on_unload` for the old generation, then `on_load` for the new.
-Both are called with no arguments; an error in either is logged (and recorded
-in the plugin's error log) but does not abort the load or unload. For
+`on_load` runs after activation has run `config`, `on_unload` when the plugin
+is unloaded — a reload runs `on_unload` for the old generation, then
+`on_load` for the new. Both are called with no arguments; an error in either
+is logged and recorded in the VM's error log, read by `cru.errors.recent`,
+but does not abort the activation or the unload. For
 per-*session* work, use `cru.on_session_start` / `on_session_end`
 instead — see [[Help/Extending/Event Hooks]].
 
@@ -528,8 +588,6 @@ local function greet(args: GreetArgs): { message: string }
 end
 
 return {
-    name = "greet",
-    version = "0.1.0",
     tools = {
         greet = {
             desc = "A friendly greeting tool",
@@ -573,6 +631,17 @@ passing typecheck.
 Without a checker, `cru plugin check` still proves that every file parses and
 every declared tool parameter type is readable, and reports the typecheck as
 SKIPPED rather than as a pass.
+
+`cru plugin check` also runs `init.luau` once, on a throwaway VM in the CLI
+process with the real `cru.*` modules, so a top-level `require` of the
+plugin's own modules works. After the run it reads the VM's handler registry,
+schedules and timers for the plugin's source. A registration there is a
+top-level effect, and the check fails with a finding that names each hook:
+"N registration(s) at top level (turn:complete); move them into setup()".
+The rule is `init.luau` declares; `setup()` acts. A body that raises, or that
+returns no table, is a finding too. The fragment is read the way discovery
+reads it, in the read-only environment, so a `spec.luau` that acts is
+reported with its file name.
 
 ### What the types do not catch
 
@@ -909,7 +978,7 @@ After this, your editor should offer completions for `cru.kiln.search(`, `cru.he
 4. **Handle errors gracefully** - Return error tables with helpful messages
 5. **Provide param descriptions** - Help agents understand your tools
 6. **Minimize shell usage** - Prefer Crucible APIs over shelling out
-7. **Declare capabilities** - Only request what you need in manifest
+7. **Declare the intercept grant in `spec.luau`** - Only when the plugin takes tool calls over
 8. **Write tests** - Use `describe`/`it` blocks in a `tests/` directory
 9. **Add health checks** - Help users diagnose configuration problems
 10. **Generate stubs** - Run `cru plugin stubs` for editor autocompletion
@@ -923,7 +992,7 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 
 ## See Also
 
-- the plugin spec table - Manifest format and programmatic API
+- [[Help/Configuration#The spec — which plugins run|The spec]] - the entries in `init.lua` that name plugins
 - [[Help/Lua/Language Basics]] - Lua syntax
 - [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/Extending/Event Hooks]] - Hook system

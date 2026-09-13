@@ -1,6 +1,6 @@
 use super::helpers::{
-    refuse_if_base_is_stale,
-    note_to_metadata_json, validate_note_name, validate_write_target_within_kiln, MAX_CONTENT_SIZE,
+    note_to_metadata_json, refuse_if_base_is_stale, validate_note_name,
+    validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
 // The daemon owns the grep request shape. The copy that used to live in
 // this file had the same six fields and its own `default_grep_limit`

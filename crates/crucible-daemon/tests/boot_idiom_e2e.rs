@@ -1,7 +1,7 @@
 //! The one-VM boot, across the process seam: a real `cru daemon serve`
-//! evaluates the user's `init.lua` BEFORE plugin activation, the
-//! `require("<plugin>").setup{...}` idiom works verbatim at its top, and
-//! activation reuses the same module instance — one module, one setup.
+//! evaluates the user's `init.lua` BEFORE plugin activation, a spec entry
+//! written at its top activates the plugin with the entry's `opts`, and
+//! the host calls `setup` once — one module, one setup.
 
 mod common;
 
@@ -20,9 +20,8 @@ async fn lua_eval(conn: &mut RpcConn, code: &str, id: i64) -> String {
 
 /// The idiom test, per the plan: the fixture plugin lives in the DEFAULT
 /// user plugins dir (no `runtimepath` line at all), the user's init.lua
-/// `require`s it and calls `setup` with a marker, and after the daemon has
-/// fully booted: `setup` ran exactly ONCE and the marker survived
-/// activation.
+/// names it in `cru.plugin.setup` with `opts`, and after the daemon has
+/// fully booted: `setup` ran exactly ONCE, from the host, with those opts.
 #[tokio::test]
 async fn init_lua_setup_idiom_survives_a_real_daemon_boot() {
     let daemon = TestDaemon::start_with_home_setup(|home| {
@@ -43,10 +42,10 @@ return {
 }
 "#,
         )?;
-        // Requirable from line one, with no runtimepath line at all.
+        // On the runtimepath from line one, with no runtimepath line at all.
         std::fs::write(
             config_dir.join("init.lua"),
-            r#"require("prefs").setup({ marker = "user-owned" })"#,
+            r#"cru.plugin.setup({ { "prefs", opts = { marker = "user-owned" } } })"#,
         )?;
         Ok(())
     })
@@ -58,15 +57,9 @@ return {
         .expect("connect");
 
     let count = lua_eval(&mut conn, "return tostring(_G.__prefs_setups)", 1).await;
-    assert_eq!(
-        count, "1",
-        "setup must run exactly once — the user's own call"
-    );
+    assert_eq!(count, "1", "setup must run exactly once — the host's call");
     let marker = lua_eval(&mut conn, "return tostring(_G.__prefs_config.marker)", 2).await;
-    assert_eq!(
-        marker, "user-owned",
-        "the user's marker survives activation"
-    );
+    assert_eq!(marker, "user-owned", "the entry's opts reach setup");
 }
 
 /// `chat.system_prompt` in the user's `init.lua` reaches a real session.

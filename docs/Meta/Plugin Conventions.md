@@ -17,10 +17,14 @@ tags:
 > and a WASM/Extism capability sandbox. **None of it exists in the codebase.**
 >
 > The plugin system Crucible ships is **Luau**: plugins are directories
-> with an `init.lua` returning a spec table (tools, commands, services), hooks
-> register via `cru.on()`, and the spec table's declarations are documentation
-> rather than a sandbox — `intercepts_tools` is the one the host checks. See
-> [[Help/Extending/Creating Plugins]] and the plugin spec table for the real
+> with an `init.luau` returning a module table (tools, commands, services,
+> `setup`), an optional `spec.luau` fragment beside it (name, version,
+> `intercepts_tools`, default `opts`), and hooks that register via `cru.on()`
+> inside `setup`. The module table's declarations are documentation rather
+> than a sandbox — `intercepts_tools` in the fragment is the one the host
+> checks. The operator lists plugins in a spec, `cru.plugin.setup` in
+> `init.lua`. See [[Help/Extending/Creating Plugins]] and
+> [[Help/Configuration#The spec — which plugins run|the spec]] for the real
 > system, and
 > [[Help/Extending/Event Hooks]] for the real event set.
 
@@ -32,12 +36,12 @@ so in Lua form:
 
 | Studied here | What shipped instead |
 |---|---|
-| `trait Plugin` with `on_load`/`on_unload` | Spec-table `on_load`/`on_unload` functions in `init.lua` |
+| `trait Plugin` with `on_load`/`on_unload` | Module-table `on_load`/`on_unload` functions in `init.luau` |
 | `CrucibleEvent` enum, pre/post pairs | The closed set of fourteen `cru.on()` hook names |
 | Priority-ordered `EventSubscription` | `cru.on(..., { priority = N })`, ascending order |
 | Lifecycle-aware registration with auto-cleanup | Plugin reload clears the plugin's handlers, tools, and services |
-| VSCode-style contribution points | The spec table (`tools`, `commands`, `services`) |
-| WASM sandbox with granted capabilities | Not built — one shared Lua VM; manifest `capabilities` are declarative, except `intercept_tools` |
+| VSCode-style contribution points | The module table (`tools`, `commands`, `services`) |
+| WASM sandbox with granted capabilities | Not built — one shared Lua VM; the fragment's `intercepts_tools` is the one grant the host checks |
 | Advice/interception system | `pre_tool_call` returning cancel / transform / handled |
 
 The unbuilt remainder — the event bus with dead-letter queues, lazy

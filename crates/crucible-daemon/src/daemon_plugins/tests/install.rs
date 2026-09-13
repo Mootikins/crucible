@@ -22,7 +22,7 @@ fn write_plugin(plugins_dir: &std::path::Path, name: &str) {
 }
 
 /// The full install → activate → remove round trip that the RPC handlers
-/// perform: after install + a second `load_plugins` pass the plugin's tools
+/// perform: after install + a second activation pass the plugin's tools
 /// are registered and it is listed; after the remove flow nothing remains in
 /// the loader and the manifest record is gone.
 #[tokio::test]
@@ -37,12 +37,7 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
 
     // Step 1 of handle_plugin_install: clone + record.
     let installed = plugin_ops::install_at(
-        crucible_core::config::PluginEntry {
-            url: "user/fresh".to_string(),
-            branch: None,
-            pin: None,
-            enabled: true,
-        },
+        plugin_ops::InstalledEntry::new("user/fresh".to_string(), None, None),
         &manifest_path,
         &plugins_dir,
     )
@@ -57,7 +52,7 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
     // Step 2: activate on the running loader.
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .activate_discovered(&[(plugins_dir.clone(), PluginSource::User)])
         .await
         .expect("activation load");
     assert!(
@@ -113,9 +108,9 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
 /// network, repo gone). Removal must still work: `handle_plugin_remove`'s
 /// installed-precondition already guards against typos, and "nothing to
 /// deactivate" is not a refusal. Erroring on `unload`'s NotFound left the
-/// stale declaration permanently unremovable while the daemon ran.
+/// stale record permanently unremovable while the daemon ran.
 #[tokio::test]
-async fn removing_a_declared_plugin_the_daemon_never_discovered_still_works() {
+async fn removing_an_installed_plugin_the_daemon_never_discovered_still_works() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
         .deactivate_and_forget_plugin("ghost")
@@ -125,11 +120,10 @@ async fn removing_a_declared_plugin_the_daemon_never_discovered_still_works() {
 
 /// `plugin.install` of a plugin that is ALREADY Active — manually cloned
 /// into the user plugins dir and loaded at boot, now being recorded in the
-/// manifest — must report loaded, not failure. `load_all` skips Active
-/// plugins (`AlreadyLoaded`), so the activation pass's return value does not
-/// contain them; judging by that value alone reported `loaded: false` with a
-/// fabricated error for a healthy plugin and failed `cru plugin add`'s exit
-/// code.
+/// manifest — must report loaded, not failure. `activate` answers an Active
+/// plugin's stored table, so a pass's return value says nothing about it;
+/// judging by that value alone reported `loaded: false` with a fabricated
+/// error for a healthy plugin and failed `cru plugin add`'s exit code.
 #[tokio::test]
 async fn installing_an_already_active_plugin_reports_loaded_not_failure() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -139,13 +133,13 @@ async fn installing_an_already_active_plugin_reports_loaded_not_failure() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     // Boot: the manually cloned plugin loads and is Active.
     loader
-        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .activate_discovered(&[(plugins_dir.clone(), PluginSource::User)])
         .await
         .expect("boot load");
 
     // The install flow's activation pass over the same dir.
     loader
-        .load_plugins(&[(plugins_dir, PluginSource::User)])
+        .activate_discovered(&[(plugins_dir, PluginSource::User)])
         .await
         .expect("activation load");
 
@@ -175,9 +169,9 @@ async fn install_load_report_surfaces_failure_and_absence() {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::User)])
+        .activate_discovered(&[(tmp.path().to_path_buf(), PluginSource::User)])
         .await
-        .expect("load_plugins is fail-open per plugin");
+        .expect("activation is fail-open per plugin");
 
     let report = crate::server::plugin_install::install_load_report(&loader, "brokentool", &dir);
     assert!(!report.loaded);
@@ -231,12 +225,7 @@ async fn a_declared_name_differing_from_the_repo_name_still_installs_and_removes
     .unwrap();
 
     plugin_ops::install_at(
-        crucible_core::config::PluginEntry {
-            url: "user/crucible-greeter".to_string(),
-            branch: None,
-            pin: None,
-            enabled: true,
-        },
+        plugin_ops::InstalledEntry::new("user/crucible-greeter".to_string(), None, None),
         &manifest_path,
         &plugins_dir,
     )
@@ -245,7 +234,7 @@ async fn a_declared_name_differing_from_the_repo_name_still_installs_and_removes
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .activate_discovered(&[(plugins_dir.clone(), PluginSource::User)])
         .await
         .expect("activation load");
 
@@ -281,75 +270,130 @@ async fn a_declared_name_differing_from_the_repo_name_still_installs_and_removes
     );
 }
 
-/// The bootstrap union: a declared plugin bootstraps with nothing in the
-/// manifest, an installed one with nothing declared, and on a name shared
-/// by both the DECLARATION wins — with the shadowed name reported, never
-/// applied silently.
+/// The spec is the bootstrap's one list. An operator entry bootstraps with
+/// an empty manifest, an installed entry with no operator entry, and on a
+/// name both write the OPERATOR's entry wins: the merge lays it over the
+/// installed one, and the boot names the shadow through
+/// `declared_git_entry`.
 #[test]
-fn the_bootstrap_union_prefers_the_declaration_and_names_the_shadow() {
-    let entry = |url: &str, pin: Option<&str>| crucible_core::config::PluginEntry {
+fn the_installed_manifest_loses_to_the_declaration() {
+    use crucible_core::config::{Spec, SpecEntry, SpecRank, SpecSource};
+    let installed = |url: &str, pin: Option<&str>| plugin_ops::InstalledEntry {
         url: url.to_string(),
         branch: None,
         pin: pin.map(str::to_string),
         enabled: true,
     };
+    let pin_of = |entry: &SpecEntry| match &entry.source {
+        SpecSource::Git { pin, .. } => pin.clone(),
+        SpecSource::Runtimepath => panic!("a bootstrap entry has a git source"),
+    };
 
-    // Declared alone: bootstraps with an empty manifest.
-    let (entries, shadows) = crate::daemon_plugins::union_plugin_entries(
-        vec![("greeter".into(), entry("user/greeter", None))],
-        Vec::new(),
+    // Declared alone: the bootstrap set is the operator's entry.
+    let mut spec = Spec::default();
+    spec.merge(
+        SpecEntry::from_positional("user/greeter").unwrap(),
+        SpecRank::Operator,
     );
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
     assert_eq!(entries.len(), 1);
-    assert!(shadows.is_empty());
+    assert!(crate::daemon_plugins::declared_git_entry(&spec, "greeter"));
 
-    // Installed alone: bootstraps with nothing declared.
-    let (entries, shadows) = crate::daemon_plugins::union_plugin_entries(
-        Vec::new(),
-        vec![("tool".into(), entry("other/tool", None))],
+    // Installed alone: the bootstrap set is the manifest's entry, and it is
+    // not declared.
+    let mut spec = Spec::default();
+    spec.merge(
+        installed("other/tool", None).spec_entry("tool"),
+        SpecRank::Builtin,
     );
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
     assert_eq!(entries.len(), 1);
-    assert!(shadows.is_empty());
+    assert!(!crate::daemon_plugins::declared_git_entry(&spec, "tool"));
 
-    // Both name the same plugin: the declaration's entry survives, the
-    // installed one is shadowed BY NAME in the returned report.
-    let (entries, shadows) = crate::daemon_plugins::union_plugin_entries(
-        vec![("greeter".into(), entry("user/greeter", Some("v2")))],
-        vec![
-            ("greeter".into(), entry("user/greeter", Some("v1"))),
-            ("tool".into(), entry("other/tool", None)),
-        ],
+    // Both name the same plugin: the operator's entry survives whichever
+    // order the two arrive in, and a runtimepath entry is not cloned.
+    let mut spec = Spec::default();
+    spec.merge(
+        installed("user/greeter", Some("v1")).spec_entry("greeter"),
+        SpecRank::Builtin,
     );
-    assert_eq!(entries.len(), 2);
-    let greeter = entries.iter().find(|e| e.url == "user/greeter").unwrap();
+    spec.merge(
+        installed("other/tool", None).spec_entry("tool"),
+        SpecRank::Builtin,
+    );
+    spec.merge(
+        SpecEntry::from_positional("reflection").unwrap(),
+        SpecRank::Operator,
+    );
+    spec.merge(
+        SpecEntry {
+            source: SpecSource::Git {
+                url: "user/greeter".into(),
+                branch: None,
+                pin: Some("v2".into()),
+            },
+            ..SpecEntry::from_positional("user/greeter").unwrap()
+        },
+        SpecRank::Operator,
+    );
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    let greeter = entries.iter().find(|e| e.name == "greeter").unwrap();
     assert_eq!(
-        greeter.pin.as_deref(),
+        pin_of(greeter).as_deref(),
         Some("v2"),
-        "the declared entry must win the union"
+        "the declared entry must win the merge"
     );
-    assert_eq!(shadows, vec!["greeter".to_string()]);
+    assert!(crate::daemon_plugins::declared_git_entry(&spec, "greeter"));
+    assert!(!crate::daemon_plugins::declared_git_entry(&spec, "tool"));
 }
 
-/// `plugins.declare` is a reserved subkey holding declarations; the option
-/// splitter must never hand it to a plugin's `setup(cfg)`.
-#[test]
-fn split_plugins_config_never_hands_declarations_to_setup() {
-    let raw = std::collections::BTreeMap::from([
-        (
-            crucible_core::config::PLUGINS_DECLARE_KEY.to_string(),
-            serde_json::json!({ "greeter": "user/greeter" }),
-        ),
-        (
-            "reflection".to_string(),
-            serde_json::json!({ "model": "llama3.2" }),
-        ),
-        ("watch".to_string(), serde_json::json!(true)),
-    ]);
-
-    let (sections, watch) = crate::daemon_plugins::split_plugins_config(&raw);
-    assert!(watch);
-    assert!(sections.contains_key("reflection"));
-    assert!(
-        !sections.contains_key(crucible_core::config::PLUGINS_DECLARE_KEY),
-        "the declaration table must not reach any setup(cfg): {sections:?}"
+/// The bootstrap asks the question activation asks. A config leaf
+/// `plugins.<name>.enabled = false` (the web's toggle in `settings.json`)
+/// outranks the installed record's own `enabled`, so the plugin is not
+/// cloned. A clone of a plugin activation refuses is a directory nothing
+/// runs.
+#[tokio::test]
+async fn a_settings_disabled_git_plugin_is_not_cloned() {
+    use crucible_core::config::{Spec, SpecRank};
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mut spec = Spec::default();
+    spec.merge(
+        plugin_ops::InstalledEntry::new("file:///nowhere/tool".into(), None, None)
+            .spec_entry("tool"),
+        SpecRank::Builtin,
     );
+    let leaf = |name: &str| (name == "tool").then_some(false);
+
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, leaf);
+    for entry in &entries {
+        // The URL's scheme is refused, so a wrongly listed entry errors
+        // here instead of reaching the network.
+        let _ = crate::daemon_plugins::bootstrap_plugin_entry(entry, tmp.path()).await;
+    }
+
+    assert!(
+        entries.iter().all(|entry| entry.name != "tool"),
+        "a plugin the settings disable is not a bootstrap entry: {entries:?}"
+    );
+    assert!(!tmp.path().join("tool").exists(), "no clone was attempted");
+
+    // The same entry with no leaf against it is cloned.
+    let entries = crate::daemon_plugins::bootstrap_entries(&spec, |_| None);
+    assert_eq!(entries.len(), 1, "{entries:?}");
+}
+
+/// A runtimepath entry has nothing to clone. The bootstrap refuses it with
+/// the reason instead of deriving a name from a URL it does not have.
+#[tokio::test]
+async fn a_runtimepath_entry_is_not_cloned() {
+    use crucible_core::config::SpecEntry;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let err = crate::daemon_plugins::bootstrap_plugin_entry(
+        &SpecEntry::from_positional("reflection").unwrap(),
+        tmp.path(),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("no git source"), "got: {err}");
 }

@@ -1,14 +1,22 @@
 --!strict
--- The runner VM has no `cru.on` (the daemon registers it), so the stub
--- records each registration. A test fires the handler it recorded.
+-- The stub replaces `cru.on` and records each registration, so a test
+-- fires the handler it recorded.
 local registered: { [string]: any } = {}
 ;(cru :: any).on = function(event: string, opts: any, fn: any)
   registered[event] = if type(opts) == "function" then opts else fn
 end
 
 describe("reflection", function()
+  -- The runner activated this plugin before it loaded this file, and seeded
+  -- `package.loaded` with the activated instance, whose setup() already ran
+  -- against the real `cru.on`. This suite drives setup() itself with the stubs
+  -- above and reads their recorders, so it requires a fresh instance.
+  package.loaded["reflection"] = nil
   local plugin = require("reflection")
   local config = require("config")
+  -- The module body registers nothing. setup() registers the handlers the
+  -- tests below fire, once; the later setup() calls only change the config.
+  plugin.setup()
 
   describe("count_user_turns", function()
     it("counts only user messages", function()

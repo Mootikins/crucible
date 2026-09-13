@@ -11,9 +11,10 @@
 //! **Public roots** are the plugin directories and the user's `lua/`
 //! directory. A module found under one of them is cached by NAME, in the
 //! `package.loaded` compatibility table, exactly as Lua caches it. Names
-//! there are directory names, so they are already unique, and a plugin that
-//! writes `package.loaded["auto-title"] = plugin` (five shipped plugins do)
-//! makes the copy the daemon executed the copy a later `require` answers with.
+//! there are directory names, so they are already unique. The host seeds
+//! `package.loaded[name]` when it activates a plugin, so a later `require`
+//! answers with the instance the daemon runs. A plugin need not publish
+//! itself.
 //!
 //! **Private roots** are one plugin's own `lua/` directory, pushed for the
 //! duration of that plugin's load and popped after. A module found under one
@@ -178,6 +179,17 @@ impl ModuleRegistry {
     /// Replace the public roots. The order is the search order.
     pub fn set_roots(&self, roots: Vec<(PathBuf, RootKind)>) -> mlua::Result<()> {
         self.state.lock().map_err(|_| poisoned())?.roots = roots;
+        Ok(())
+    }
+
+    /// Append one public root, unless the same path is already a root. The
+    /// user root the boot seeded stays where it is, ahead of every plugin
+    /// root, so a user module keeps shadowing a same-named plugin module.
+    pub fn add_root(&self, root: PathBuf, kind: RootKind) -> mlua::Result<()> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        if !state.roots.iter().any(|(existing, _)| *existing == root) {
+            state.roots.push((root, kind));
+        }
         Ok(())
     }
 
@@ -1008,6 +1020,40 @@ mod tests {
             found.is_some_and(|path| path.ends_with("tests/fixtures/init.lua")),
             "searchpath must answer over the host roots"
         );
+    }
+
+    /// A dotted name walks into a plugin's directory: `my-plugin.vendored`
+    /// is `<plugins>/my-plugin/vendored.luau`. That is how a plugin's
+    /// sibling module is reached by its public name, from anywhere.
+    #[test]
+    fn a_vendored_module_resolves_under_the_plugin_namespace() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            &tmp.path().join("plugins/my-plugin/init.luau"),
+            "return { name = 'my-plugin' }",
+        );
+        write(
+            &tmp.path().join("plugins/my-plugin/vendored.luau"),
+            "return { answer = 42 }",
+        );
+        let (lua, registry) = vm();
+        registry
+            .set_roots(vec![(tmp.path().join("plugins"), RootKind::Plugin)])
+            .unwrap();
+
+        let answer: i64 = lua
+            .load("return require('my-plugin.vendored').answer")
+            .eval()
+            .unwrap();
+        assert_eq!(answer, 42);
+
+        // A sibling is not the plugin's entry module.
+        let request = registry
+            .resolve("my-plugin.vendored")
+            .unwrap()
+            .expect("the dotted name resolves");
+        assert!(!request.is_entry, "a sibling module is not an entry module");
+        assert!(request.path.ends_with("my-plugin/vendored.luau"));
     }
 }
 

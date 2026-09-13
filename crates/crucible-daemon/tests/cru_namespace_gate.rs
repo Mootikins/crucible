@@ -12,7 +12,7 @@ use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_lua::namespace::CruNamespace;
 
 /// The plugin VM as production boots it: `DaemonPluginLoader::new` plus the
-/// UI-config registration `plugin_boot` performs on the same VM.
+/// UI-config registration `Server::boot_plugins` performs on the same VM.
 fn plugin_vm() -> DaemonPluginLoader {
     let loader = DaemonPluginLoader::new(Default::default()).expect("plugin loader");
     crucible_lua::config::register_ui_namespaces(&loader.plugin_lua()).expect("ui namespaces");

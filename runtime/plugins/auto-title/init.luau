@@ -31,9 +31,6 @@
 
 local title = require("auto_title")
 
---- The plugin's name, and the `package.loaded` key the user requires it by.
-local NAME = "auto-title"
-
 --- The publication channel a session-title provider declares itself on.
 --- The daemon reads this key; the plugin's own name is not part of the
 --- contract.
@@ -84,25 +81,24 @@ local function generate(options: { [string]: any }?)
   return { title = title.sanitize(answer) }
 end
 
--- Declares the provider, not the title. Publishing the command name rather
--- than a value is what lets the daemon call back into Lua per session.
+-- Declares the provider, not the title. The plugin publishes the command
+-- name, not a value, so the daemon can call back into Lua per session.
 --
--- Here in the body rather than in setup(): setup() is the user's entry point
--- and runs again from their init.lua, where `cru.plugin.publish` is bound to
--- whichever plugin the loader executed last. A second publication under
--- someone else's name would make two plugins claim `session_title` — the
--- daemon then warns and picks by name, so configuring the prompt could change
--- who generates the title. The body runs once per load, with the binding the
--- loader set for this plugin.
-cru.plugin.publish(CHANNEL, { command = COMMAND })
+-- The publication comes from setup(), once. The host calls setup() at
+-- activation, under this plugin's source, so the daemon attributes the
+-- publication to this plugin. A second setup() call, from the user's
+-- init.lua, changes the config and publishes nothing again: the publish
+-- binding at that point can name another plugin, and two plugins would then
+-- claim `session_title`. The module body registers nothing, so
+-- `cru plugin check` reports no top-level effect.
+local published = false
+local function publish_provider()
+  if published then return end
+  published = true
+  cru.plugin.publish(CHANNEL, { command = COMMAND })
+end
 
 local plugin = {
-  author = "Crucible Team",
-  license = "MIT",
-  name = NAME,
-  version = "0.1.0",
-  description = "Name a session after what it is about",
-
   commands = {
     [COMMAND] = {
       desc = "Generate a topic title for a session's opening exchange",
@@ -119,16 +115,8 @@ local plugin = {
     for k, v in pairs(cfg or {}) do
       config[k] = v
     end
+    publish_provider()
   end,
 }
-
--- The daemon executes this file by path, not through `require`, so nothing
--- would otherwise fill `package.loaded`. The documented
--- `require("auto-title").setup{...}` from the user's init.lua would then load
--- a SECOND copy of this file with its own `config` upvalue, merge into that,
--- and leave the copy the daemon actually calls untouched — a config surface
--- that silently ignores you. Registering the spec here makes that `require`
--- answer with this table.
-package.loaded[NAME] = plugin
 
 return plugin

@@ -10,7 +10,8 @@ pub struct UpdateArgs {
 }
 
 pub async fn execute(args: UpdateArgs) -> Result<()> {
-    let (entries, notes) = super::configured_plugin_entries().await?;
+    let client = crate::common::daemon_client_if_running().await;
+    let (entries, notes) = super::configured_plugin_entries(client.as_ref()).await?;
     for note in &notes {
         eprintln!("note: {note}");
     }
@@ -21,11 +22,11 @@ pub async fn execute(args: UpdateArgs) -> Result<()> {
     let plugins_dir = crucible_daemon::plugin_ops::plugins_dir()?;
 
     let mut updated = 0;
-    for (name, entry, _source) in &entries {
+    for entry in &entries {
         if !entry.enabled {
             continue;
         }
-        let name = name.as_str();
+        let name = entry.name.as_str();
 
         if let Some(ref filter) = args.name {
             if name != filter.as_str() {

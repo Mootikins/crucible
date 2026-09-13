@@ -380,7 +380,7 @@ mod tests {
 
     /// `cru.tools.set_active` must write the registry the agent handle and the
     /// dispatcher read, not a private copy — the two halves were the whole
-    /// point of binding it in `plugin_boot`.
+    /// point of binding it in `Server::boot_plugins`.
     #[test]
     fn set_active_writes_the_bound_registry() {
         let mut id = String::new();

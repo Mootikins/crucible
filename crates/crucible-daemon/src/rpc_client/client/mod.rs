@@ -174,7 +174,7 @@ pub use agent::{
 pub use notifications::{NotificationDismissRequest, NotificationListRequest};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
-    PluginRemoveRequest, PluginRunCommandRequest, SurfaceRequest,
+    PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, SurfaceRequest,
 };
 pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest};
 pub use session::{
@@ -939,6 +939,16 @@ impl DaemonClient {
             .get("plugin_info")
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default())
+    }
+
+    /// The merged spec, one row per entry: the `spec` array of `plugin.list`.
+    /// An older daemon answers no `spec`, which reads as an empty list.
+    pub async fn plugin_list_spec(&self) -> Result<Vec<PluginSpecRow>> {
+        let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
+        match result.get("spec") {
+            Some(rows) => Ok(serde_json::from_value(rows.clone())?),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// What plugins published about themselves, as `key -> plugin -> value`.

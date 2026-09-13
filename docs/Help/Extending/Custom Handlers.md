@@ -110,7 +110,7 @@ Lua handlers are scripts that process events without requiring Rust compilation.
 
 ### Location
 
-Handlers live in plugins, and register with `cru.on` at load:
+Handlers live in plugins, and register with `cru.on` from `setup()` at activation:
 
 ```
 ~/.config/crucible/plugins/      # your plugins
@@ -131,12 +131,19 @@ cancel / handled / transform contract, and
 ```lua
 -- ~/.config/crucible/plugins/my-plugin.lua
 
-cru.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
-    cru.log("info", "Tool called: " .. tostring(event.tool))
-end)
-
-return { name = "my-plugin" }
+return {
+    setup = function(opts)
+        cru.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
+            cru.log("info", "Tool called: " .. tostring(event.tool))
+        end)
+    end,
+}
 ```
+
+The registration sits in `setup`, which the host calls once at activation.
+A `cru.on` at the top level of the file runs before `setup` and is a finding
+in `cru plugin check`. A single-file plugin has no `spec.luau`, so its name
+is the file name.
 
 ### Event API in Lua
 
@@ -349,7 +356,7 @@ Two cases stay outside the budget:
 ## Handler Lifecycle
 
 1. **Registration**: Rust handlers are registered on a `HandlerRegistry`; Lua
-   handlers register via `cru.on` when their plugin loads
+   handlers register via `cru.on` when their plugin activates
 2. **Execution**: Handlers execute in priority order when events are emitted.
    Two handlers of equal priority run in plugin load order, which
    [[Help/Extending/Creating Plugins]] specifies.

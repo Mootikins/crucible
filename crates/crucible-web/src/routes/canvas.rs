@@ -20,9 +20,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 use super::helpers::{
-    refuse_if_base_is_stale,
-    reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
-    MAX_CONTENT_SIZE,
+    refuse_if_base_is_stale, reject_path_traversal, validate_file_within_kiln,
+    validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
 use crucible_core::config::{read_project_config, ProjectFileAccess};
 

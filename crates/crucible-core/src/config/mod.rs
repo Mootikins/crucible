@@ -41,6 +41,7 @@ pub mod lua_emit;
 pub mod merge;
 pub mod overlay;
 mod patterns;
+pub mod plugin_spec;
 mod project_config;
 pub mod provenance;
 pub mod redact;
@@ -74,10 +75,9 @@ pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 // `config.set`) that should be able to find it without reading a 6-line list.
 #[cfg(feature = "toml")]
 pub use config::{
-    crucible_home, declared_plugins, lua_stubs_dir, lua_stubs_dir_in, parse_duration_string,
-    plugin_name_from_url, CliAppConfig, ConfigError, ConfigValidationError, EffectiveLlmConfig,
-    InvalidKilnName, KilnName, LoggingConfig, PluginEntry, PluginsConfig, ScheduleEntry,
-    ServerConfig, WebConfig, WorkspaceConfig, PLUGINS_DECLARE_KEY,
+    crucible_home, lua_stubs_dir, lua_stubs_dir_in, parse_duration_string, CliAppConfig,
+    ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName, KilnName,
+    LoggingConfig, ScheduleEntry, ServerConfig, WebConfig, WorkspaceConfig,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use credentials::{
@@ -99,6 +99,10 @@ pub use overlay::{
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, RefusedRule,
     ToolPatterns,
+};
+pub use plugin_spec::{
+    is_valid_plugin_name, plugin_name_from_url, Spec, SpecEntry, SpecRank, SpecSource,
+    PLUGIN_NAME_RULE,
 };
 pub use project_config::{read_project_config, write_project_config, ProjectConfig};
 pub use provenance::{ConfigSource, LastSet, LeafOrigin, ProvenanceMap, SourceOrigin};

@@ -22,7 +22,7 @@
 //!                       ▼
 //!             ┌─────────────────────────┐
 //!             │  PluginManager          │
-//!             │  Lua runtime loading    │
+//!             │  discovered plugins     │
 //!             └─────────────────────────┘
 //!                       │
 //!                       ▼
@@ -77,6 +77,7 @@ mod oil;
 pub mod options;
 mod paths;
 pub mod plugin_context;
+pub mod plugin_spec_store;
 pub mod plugin_status;
 mod prelude;
 pub mod publications;
@@ -92,7 +93,7 @@ pub mod source_files;
 mod storage_api;
 pub mod stubs;
 pub mod surfaces;
-mod timer;
+pub mod timer;
 mod tools_api;
 mod types;
 pub mod ui;
@@ -162,6 +163,9 @@ pub use plugin_context::{
     current_plugin_name, current_session, current_source, enter_plugin, enter_session,
     intercept_for, record_plugin_intercept, set_source, LuaSource, SessionGuard,
 };
+pub use plugin_spec_store::{
+    config_of, merge_spec_entry, register_plugin_spec_api, set_import_root, spec_of,
+};
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
 pub use schedule::{cancel_source, register_schedule_module};
@@ -193,8 +197,8 @@ pub use ws::register_ws_module;
 pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.luau");
 // Handler system
 pub use check::{
-    check_file, check_file_using, check_plugin, check_plugin_using, check_plugin_with,
-    find_checker, CheckReport, Checker, CheckerChoice, Finding, TypecheckStatus,
+    check_file, check_file_using, check_plugin, check_plugin_on, check_plugin_using,
+    check_plugin_with, find_checker, CheckReport, Checker, CheckerChoice, Finding, TypecheckStatus,
 };
 pub use handlers::{
     clear_source, execute_permission_hooks, execute_tool_before_execute_hooks,
@@ -212,7 +216,10 @@ pub use handlers::{
 };
 pub use host_api::render_declarations;
 pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};
-pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
+pub use lifecycle::{
+    read_fragment, spec_from_table, Fragment, LifecycleError, LifecycleResult, PluginManager,
+    PluginSpec, FRAGMENT_FILE,
+};
 pub use luau_compat::register_stdlib_compat;
 pub use manifest::{
     LoadedPlugin, ManifestError, ManifestResult, PluginManifest, PluginSource, PluginState,

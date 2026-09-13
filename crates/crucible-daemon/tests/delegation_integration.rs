@@ -164,7 +164,7 @@ async fn load_test_plugin(temp: &Path, init: &str) -> DaemonPluginLoader {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(root, PluginSource::EnvPath)])
+        .activate_discovered(&[(root, PluginSource::EnvPath)])
         .await
         .expect("load plugins");
     loader

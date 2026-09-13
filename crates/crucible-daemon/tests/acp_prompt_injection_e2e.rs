@@ -114,7 +114,7 @@ async fn load_plugin(root: &Path, init: &str) -> DaemonPluginLoader {
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
-        .load_plugins(&[(plugins, PluginSource::EnvPath)])
+        .activate_discovered(&[(plugins, PluginSource::EnvPath)])
         .await
         .expect("load plugins");
     loader
@@ -146,7 +146,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
         Some(init) => Some(load_plugin(temp.path(), init).await),
         None => None,
     };
-    // What `server/plugin_boot.rs` does at startup. Without it a plugin is
+    // What `Server::boot_plugins` does at startup. Without it a plugin is
     // loaded but its turn-loop handlers are never folded into a turn.
     let plugin_handlers = loaded_plugin
         .as_ref()

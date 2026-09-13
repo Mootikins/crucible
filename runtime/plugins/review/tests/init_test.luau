@@ -348,10 +348,9 @@ describe("review", function()
     end)
 
     describe("plugin metadata", function()
-        it("exports the correct name", function()
-            expect.equal(plugin.name, "review")
-        end)
-
+        -- The name and the version are in `spec.luau`, which discovery
+        -- reads. The module table carries no metadata, and the Rust gate
+        -- `no_shipped_module_table_carries_fragment_metadata` says so.
         it("exports every review operation as a tool", function()
             expect.truthy(plugin.tools.review_list_hunks)
             expect.truthy(plugin.tools.review_set_state)

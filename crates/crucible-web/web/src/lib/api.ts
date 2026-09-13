@@ -1688,7 +1688,7 @@ export function subscribeToSurfaceEvents(
 
 export interface PluginInfo {
   name: string;
-  /** Null until the plugin loads: the version is declared in its spec table. */
+  /** Null when the plugin has no `spec.luau`: the version is declared in its fragment. */
   version: string | null;
   source: 'User' | 'Runtime' | 'EnvPath' | 'Builtin' | string;
   state: 'Active' | 'Error' | 'Disabled' | string;

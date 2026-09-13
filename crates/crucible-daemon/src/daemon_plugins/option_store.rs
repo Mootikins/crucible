@@ -265,7 +265,7 @@ mod wiring_tests {
             .expect("loader")
             .with_option_store(store.to_path_buf());
         loader
-            .load_plugins(&[(plugins.to_path_buf(), PluginSource::Runtime)])
+            .activate_discovered(&[(plugins.to_path_buf(), PluginSource::Runtime)])
             .await
             .expect("load plugins");
         loader

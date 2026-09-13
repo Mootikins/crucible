@@ -276,6 +276,9 @@ impl LuaExecutor {
         crate::timer::register_timer_module(lua)?;
         crate::ratelimit::register_ratelimit_module(lua)?;
         crate::vec_api::register_vec_module(lua)?;
+        // The error log `cru.errors.recent` reads, and a raising lifecycle
+        // hook writes. It lives on the VM that runs the plugins.
+        crate::lifecycle::PluginErrorLog::install(lua, 100);
         crate::prelude::register_prelude(lua)?;
 
         Ok(())
@@ -365,6 +368,16 @@ impl LuaExecutor {
                 .map(|root| (root, RootKind::Plugin))
                 .collect(),
         )
+    }
+
+    /// Add plugin roots to the search roots that are already there. The
+    /// boot seeds the user root and the plugin roots before `init.lua`
+    /// runs; the activation pass adds its roots without dropping those.
+    pub fn add_module_roots(&self, roots: Vec<PathBuf>) -> Result<(), LuaError> {
+        for root in roots {
+            self.modules.add_root(root, RootKind::Plugin)?;
+        }
+        Ok(())
     }
 
     /// Set the search roots, user roots included.

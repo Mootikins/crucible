@@ -16,9 +16,9 @@ Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. 
 Create `~/.config/crucible/init.lua`:
 
 ```lua
--- Configure plugins
-require("reflection").setup({
-  enabled = true,
+-- Configure plugins: one spec entry per plugin
+cru.plugin.setup({
+  { "reflection", opts = { model = "llama3.2" } },
 })
 
 -- Colours
@@ -70,7 +70,7 @@ The daemon evaluates your `init.lua` exactly once, at boot, **before** it loads 
 - **`cru.config.set` writes one leaf per value.** The nested table is authoring sugar: `cru.config.set({ chat = { model = "x" } })` records the single key `chat.model`, so every other `chat` key stands untouched. An array and a scalar are single values, an empty table sets nothing, and a dotted key names the same path — `{ ["chat.model"] = "x" }` and `{ chat = { model = "x" } }` write one leaf. Neovim core makes the same choice: options are flat, and a deep merge is a library call (`vim.tbl_deep_extend`) a plugin makes for itself.
 - **A write never removes a key.** `cru.config.set` adds keys and changes them. To drop a stale `llm.providers.old`, call the `config.unset` RPC with that key: it removes the key and everything under it from the layers a `:set key&` may drop, and it edits no file. A provider your own `init.lua` declares goes away when you delete the line.
 - **The module search path is live.** A `runtimepath` entry added on line N serves every `require` after line N — and none before it. The lazy.nvim bootstrap has the same rule: prepend, then require. A failed `require` is never cached, so a retry after the addition succeeds.
-- **`require` is a module load, not membership.** It cannot enable, disable, or activate a plugin. A `require` of a disabled plugin still loads its module, but activation registers none of its hooks or exports.
+- **`require` of a plugin activates it.** `require("reflection")` in `init.lua` runs the module body at once, and the host runs the plugin's `config` after your file finishes. A spec entry with `enabled = false` for a plugin your file also requires loses to the require, and the boot log names both sites. To keep a plugin off, do not require it.
 - **Daemon-state APIs raise during evaluation.** `cru.kiln.*`, `cru.session.*`, and storage-backed calls answer "daemon state is not ready during init.lua evaluation; use a hook" — the kiln registry is built *from* your file's output, so it cannot exist during it. Move such reads into a hook.
 - **No hot reload.** Runtime `config.set` and `plugin.reload` do not re-run the bootstrap; a `runtimepath` change needs `cru daemon restart`.
 - **`require("my.mod")`** resolves from `~/.config/crucible/lua/` everywhere — during boot, in hooks, and in plugins. A module there shadows a same-named plugin module.
@@ -78,14 +78,18 @@ The daemon evaluates your `init.lua` exactly once, at boot, **before** it loads 
 
 ## Configuring Plugins
 
-Plugins are configured via `require("name").setup({...})` — the same pattern as Neovim plugins.
+A plugin is configured through its spec entry. The entry's `opts` table is
+what the host passes to the plugin's `setup(opts)`, once, after `init.lua`
+finishes. The spec itself, with every field an entry takes, is described in
+[[Help/Configuration#The spec — which plugins run|Configuration Reference]].
 
 ```lua
 -- Configure a bundled plugin with custom settings
-require("reflection").setup({
-  enabled = true,
-  model = "llama3.2",
-  timeout = 60,
+cru.plugin.setup({
+  { "reflection", opts = {
+    model = "llama3.2",
+    timeout = 60,
+  } },
 })
 ```
 
@@ -109,10 +113,12 @@ notes from several sessions at once. It is **off by default**, because a pass
 spends model calls with no user present. `kiln` and `model` have no default.
 
 ```lua
-require("consolidation").setup({
-  enabled = true,
-  kiln = "notes",
-  model = "llama3.2",
+cru.plugin.setup({
+  { "consolidation", opts = {
+    enabled = true,
+    kiln = "notes",
+    model = "llama3.2",
+  } },
 })
 ```
 
@@ -134,14 +140,43 @@ These two tables are the one place the keys are documented. Each plugin's
 `cru.plugin.options{}` call declares the same keys and defaults; [[Help/Concepts/Reflection Pass]] says what each pass does with
 them.
 
-Plugin configuration has two working forms, and each plugin uses **one**:
+The `opts` a plugin receives merge from four places, lowest first:
 
-- **The direct form** — `require("reflection").setup({...})` at the top of `init.lua`. The call you write *owns* that plugin's setup: activation reuses the same module instance (the file is never evaluated twice) and skips its default `setup(cfg)` call.
-- **The store form** — `cru.config.set({ plugins = { reflection = {...} } })`. This feeds the default `setup(cfg)` the activation phase calls for every plugin you did not set up directly.
+1. The plugin's own fragment, `spec.luau`, when it states default `opts`.
+2. The shipped defaults' entry for the plugin.
+3. The config leaves under `plugins.<name>`, from any layer. `cru.config.set({ plugins = { reflection = { model = "x" } } })` writes here, and so does the web settings UI.
+4. Your spec entry's `opts`, so your own line beats a saved setting.
 
-A plugin configured both ways takes the direct call; pick one form per plugin. Bundled plugins (in `runtime/plugins/`) load with their defaults when you configure nothing. To disable one entirely, set `plugins = { <name> = { enabled = false } }`.
+The config leaf `plugins.<name>.enabled` is the host's switch, not an opt.
+The daemon strips it from the config section before the merge, and resolves
+it on its own: your entry's `enabled` first, then that leaf, then the
+shipped fragment, then `true`. To turn a bundled plugin off, write
+`{ "reflection", enabled = false }` in the spec, or
+`plugins = { reflection = { enabled = false } }` in the config. A plugin's
+own `enabled` key, as `consolidation` declares above, reaches its `setup`
+through the entry's `opts` only.
 
-Declaring a git-hosted plugin is a third, separate act: `plugins.declare.<name>` in the same table names a repository the daemon clones and loads at boot. See the plugins section of [[Configuration]] — declarations are not configuration, and the `declare` key is reserved for them.
+The host calls `setup(opts)` once for every active plugin, after `init.lua`
+finishes. A `require("reflection").setup({...})` line in `init.lua` still
+works, and it calls `setup` a second time: yours runs first, then the host's
+with the merged `opts`. When you want to replace the host's call, give the
+entry a `config` function:
+
+```lua
+cru.plugin.setup({
+  { "reflection", config = function(m, opts)
+    m.setup(opts)
+  end },
+})
+```
+
+Bundled plugins (in `runtime/plugins/`) are listed by the shipped defaults,
+so they activate with their defaults when you write nothing. A plugin the
+daemon discovers with no spec entry stays inactive.
+
+A git-hosted plugin is a spec entry too: `{ "user/greeter", pin = "v1.2" }`
+names a repository the daemon clones and activates at boot. The full entry
+shape is in [[Help/Configuration#The spec — which plugins run|Configuration Reference]].
 
 
 See [[Help/Extending/Creating Plugins]] for writing your own plugins.

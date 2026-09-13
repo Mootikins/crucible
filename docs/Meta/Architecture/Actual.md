@@ -754,7 +754,7 @@ to resume and close. MCP: `InProcessMcpHost` URL goes into
   `None` (`server/mod.rs:127,472`, `server/bind.rs:27`). `Server::bind` has no
   caller (`server/bind.rs:75`). Nine `#[allow(dead_code)]` in `server/mod.rs`
   and `server/bind.rs`.
-- `plugin_boot.rs:93,139,148` and `rpc/ui.rs:152` read `dirs::config_dir()`
+- `Server::boot_plugins` (`server/mod.rs`) and `rpc/ui.rs:152` read `dirs::config_dir()`
   while `RpcContext.config_home` exists (`context.rs:93-97`); an in-process
   test daemon evaluates the developer's real `init.lua`.
   `platform.rs:58,108,150` call `current_dir()` inside the daemon and repeat
@@ -820,16 +820,18 @@ the precognition formatter. `ModeRegistry` has no Rust default.
 `crucible-daemon/src/daemon_plugins/`, `plugin_tools.rs`, `plugin_ops.rs`,
 `runtime_defaults.rs`, `rules_files.rs`, `skills/`, `session_bridge.rs`,
 `tools_bridge.rs`, `agent_manager/session_config.rs`, `server/{lua,plugins,
-plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
+plugin_install}.rs`, `server/mod.rs` (`Server::boot_plugins`), `rpc/ui.rs`, `runtime/`.
 
 **Types.**
 
 | Type | Location | Purpose |
 |---|---|---|
 | `LuaExecutor` | `crucible-lua/src/executor.rs:25` | Owns the Luau VM, the module registry, the current session |
-| `PluginManager` | `crucible-lua/src/lifecycle/mod.rs:31` | Discovers, loads, reloads, enables plugins |
-| `PluginSpec` | `crucible-lua/src/lifecycle/spec.rs:16` | Parsed spec table an `init.lua` returns |
-| `PluginManifest`, `Capability`, `PluginState`, `PluginSource` | `crucible-lua/src/manifest.rs:48,80,325,295` | `plugin.yaml` model |
+| `PluginManager` | `crucible-lua/src/lifecycle/mod.rs` | The registry of discovered plugins and the state of each; holds no VM |
+| `PluginSpec` | `crucible-lua/src/lifecycle/spec.rs` | The declarations (`tools`, `commands`, `services`, `handlers`, `has_setup`) read by `spec_from_table` from the module table `init.luau` returns; carries no metadata |
+| `Fragment` | `crucible-lua/src/lifecycle/fragment.rs` | What a plugin's `spec.luau` says about itself: name, version, description, author, license, `intercepts_tools`, default `opts`. Read in the daemon VM under a read-only environment |
+| `Spec`, `SpecEntry`, `SpecSource`, `SpecRank` | `crucible-core/src/config/plugin_spec.rs` | The operator's list of plugins, one entry per name, ranked by who wrote it; the store is `crucible-lua/src/plugin_spec_store.rs` |
+| `PluginManifest`, `Capability`, `PluginState`, `PluginSource` | `crucible-lua/src/manifest.rs:48,80,325,295` | The discovered plugin: directory, fragment fields, state |
 | `LuaScriptHandlerRegistry`, `Registration`, `RegistrationSpec` | `crucible-lua/src/handlers/registry.rs` | ONE store for every `cru.*` callback: `cru.on`, `cru.permissions.on_request`, both session hooks, `cru.on_provider_auth` |
 | `StageId`, `EventName`, `HookName` | `crucible-lua/src/handlers/hook_name.rs` | 17 stages, 10 events, union for validation. `cru.on` registers 13 stages; `HookName::own_api` names the four it refuses |
 | `ScriptHandlerResult` | `crucible-lua/src/handlers/script_handler.rs:15` | Transform, PassThrough, Cancel, Inject, Handled |
@@ -872,9 +874,11 @@ of which 5 are empty).
 `execute_permission_hooks` (sync by design), `execute_tool_*_hooks` (async).
 All Lua files run in one VM, the daemon's.
 `register_permission_hook_api` is called only from `daemon_plugins/mod.rs`; the
-plugin loader never registers it. `load_plugin_spec` spawns a fresh sandboxed
-`Lua` per spec (`spec.rs:140`) and the daemon executes the same file again in
-the real VM (`discovery.rs:295`). `ChannelSessionRpc` uses `blocking_recv`
+plugin loader never registers it. Discovery reads `spec.luau` in the daemon
+VM (`read_fragment`, `lifecycle/fragment.rs`) and runs no plugin code;
+`activate` (`daemon_plugins/activate.rs`) runs `init.luau` once in the same
+VM and reads its declarations with `spec_from_table`. There is no second VM
+and no sandboxed spec read. `ChannelSessionRpc` uses `blocking_recv`
 (`session_api.rs:156`). The plugin contract over RPC is ten opaque `plugin.*`
 methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
 
@@ -887,9 +891,9 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   (`crucible-cli/src/tui/oil/chat_runner/commands.rs:15-114`) form a dead
   cross-crate path; `with_session_command_receiver` has no caller. Plan T3-A5
   deleted the path.
-- `parse_capability` (`lifecycle/spec.rs:31`) hand-duplicates the serde
-  `Deserialize` of `Capability` and omits `intercept_tools`, so a spec-table
-  grant is dropped with a warning (`discovery.rs:267`).
+- The intercept grant is read from the fragment only (`Fragment::intercepts_tools`,
+  `lifecycle/fragment.rs`); the same flag in the module table `init.luau`
+  returns grants nothing, by design.
 - `register_permission_hook_api` names hooks from `guard.len()`
   (`handlers/permission.rs:132`), the pattern `crucible_on.rs:86-94` forbids.
 - 28 `cru.session` names are listed twice as strings
@@ -912,12 +916,12 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   `model` would silently replace the one the caller named on the command line.
 - `CONFIG` is process-global (`config.rs:55`); every VM shares theme state.
 - `daemon_plugin_paths` (`daemon_plugins/bootstrap.rs:33`) and
-  `PluginManager::with_standard_paths` (`lifecycle/mod.rs:112`) both compute
+  `PluginManager::discover_only` (`lifecycle/mod.rs`) both compute
   the plugin path list. `expand_tilde` (`bootstrap.rs:113`) equals
   `kiln_manager::expand_tilde_path` (`kiln_manager.rs:1199`).
 - `DaemonPluginLoader` stores `plugin_config` and copies it into a Lua table
   (`daemon_plugins/mod.rs:452`). `PluginSpec.handlers` is parsed and never
-  dispatched (`daemon_plugins/mod.rs:741`).
+  dispatched (`daemon_plugins/activate.rs`, which warns).
 - Skills: `Skill`, `SkillSource`, `SkillScope`, `ResolvedSkill` derive serde
   but `server/platform.rs:66-180` copies fields by hand and drops five;
   `Skill.content_hash` is computed with SHA-256 on every discovery and never
@@ -931,9 +935,7 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   shapes (`types.rs:9,28`, `discovered.rs:20,31`); `executor.rs:306,418`
   (`execute_file`, `execute_tool`) and `execute_source` have no production
   caller, so `types.rs` and `schema.rs` have no production reader.
-- Test-only public API on `PluginManager`: `active_plugins`, `eval_runtime`,
-  `reload`, `enable`, `initialize`, `error_log`, `with_search_paths`,
-  `load_plugin_spec_from_source`.
+- Test-only public API on `PluginManager`: `enable`.
 - `shell.rs:159-185,289-312` repeat Command setup; `http.rs:50-116` repeats
   five closures; `fs.rs:58,75,127,145` repeat the ensure-parent block.
 
@@ -1136,7 +1138,7 @@ Surprising edges:
 | `Group` (wire event groups) | `crucible-core/src/protocol/session_events/mod.rs:121,133` | 8 groups, 70 wire names | No gate. `Group::of` is a hand-maintained string match that mirrors `rename_all` of eight enums; drift surfaces at runtime as `UnknownEvent` |
 | Permission modes | `runtime/defaults/init.lua` as `BUILTIN_INIT_LUA` (`crucible-lua/src/lib.rs:164`); `ModeRegistry` (`crucible-lua/src/modes.rs:161`); `BuiltinMode` (`crucible-core/src/types/mode.rs:85`); `BUILTIN_MODE_NAMES` (`crucible-daemon/src/tools/tool_modes.rs:37`); `default_internal_modes` (`types/mode.rs:273`) | normal, plan, auto | Lua is the only definition of the rules; `ModeRegistry` has no Rust default and no fallback. `BuiltinMode::Auto` is matched but only built by `from_id`. `is_write_tool_name` (`genai_handle.rs:103`) and `PLAN_TOOL_NAMES` are hand lists that gate plan mode |
 | `InteractionRequest` kinds | `crucible-core/src/interaction/types.rs:380` | 7 | `KINDS` const; `interaction-coverage.test.ts` on the web side; `Show` has no response variant |
-| `Capability` (plugin) | `crucible-lua/src/manifest.rs:80` | 9 | serde derive for `plugin.yaml`; `parse_capability` (`lifecycle/spec.rs:31`) is a second decoder that omits `intercept_tools` |
+| `Capability` (plugin) | `crucible-lua/src/manifest.rs:80` | 9 | serde derive; the one the host checks, `intercept_tools`, is read from the fragment (`lifecycle/fragment.rs`) |
 | Built-in ACP agents | `crucible-daemon/src/acp/discovery.rs:52` | 6 | One table; `acp_launch.rs` resolves through `builtin_command` (`discovery.rs:111`); `test_default_agent_profiles_include_all_builtin_agents` walks it |
 | `cru.session` names | `crucible-lua/src/sessions/register.rs:26-74,187-867` | 28 | None; the stub list and the real list are both string literals |
 | REPL commands | `crucible-cli/src/tui/oil/chat_app/{autocomplete.rs:201,474; command_handling.rs:20,99}` | about 20 | None; four hand-kept lists |
@@ -1382,9 +1384,7 @@ Production items that only tests use:
 - `ComponentHarness` (`crucible-cli/src/tui/oil/component.rs:19`) and
   `AppHarness` (`tui/oil/test_harness.rs:8`) live in non-test modules and are
   re-exported from `tui/mod.rs`.
-- `PluginManager` test-only API: `active_plugins`, `eval_runtime`, `reload`,
-  `enable`, `initialize`, `error_log`, `with_search_paths`,
-  `load_plugin_spec_from_source` (`crucible-lua/src/lifecycle/`).
+- `PluginManager` test-only API: `enable` (`crucible-lua/src/lifecycle/`).
 - `crucible-daemon/src/server/lua_plugin_suite.rs:438` reads its own source
   with `include_str!` to enumerate test arms.
 - Test seams on `Server`: `shutdown_handle`, `event_sender` (`server/mod.rs:439,447`,

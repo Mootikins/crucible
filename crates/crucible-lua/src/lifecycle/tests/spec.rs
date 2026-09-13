@@ -1,17 +1,28 @@
-use super::{create_spec_plugin, create_test_plugin};
 use crate::command_effect::CommandEffect;
-use crate::lifecycle::{load_plugin_spec_from_source, LifecycleError, PluginManager};
-use crate::manifest::PluginState;
+use crate::lifecycle::{
+    spec_from_table, LifecycleError, LifecycleResult, PluginManager, PluginSpec, FRAGMENT_FILE,
+};
+use mlua::{Lua, Table};
 use std::path::Path;
 use tempfile::TempDir;
 
+/// Evaluate `source` on a plain VM, then read the table it returns.
+///
+/// The VM is the test's own. Production reads the table from the daemon VM
+/// after `init.luau` ran there, so no sandbox exists for a test to reach.
+fn spec_of(source: &str) -> LifecycleResult<PluginSpec> {
+    let lua = Lua::new();
+    let table: Table = lua
+        .load(source)
+        .eval()
+        .expect("the test source returns a table");
+    spec_from_table(&table, Path::new("test/init.lua"))
+}
+
 #[test]
-fn test_load_plugin_spec_basic() {
+fn a_tool_declaration_is_read_with_its_source_path() {
     let source = r#"
 return {
-    name = "test-plugin",
-    version = "1.2.3",
-    description = "A test plugin",
     tools = {
         my_tool = {
             desc = "Do something",
@@ -23,16 +34,12 @@ return {
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .expect("Should return Some(spec)");
+    let spec = spec_of(source).unwrap();
 
-    assert_eq!(spec.name, Some("test-plugin".to_string()));
-    assert_eq!(spec.version, Some("1.2.3".to_string()));
-    assert_eq!(spec.description, Some("A test plugin".to_string()));
     assert_eq!(spec.tools.len(), 1);
     assert_eq!(spec.tools[0].name, "my_tool");
     assert_eq!(spec.tools[0].description, "Do something");
+    assert_eq!(spec.tools[0].source_path, "test/init.lua");
     assert_eq!(spec.tools[0].params.len(), 1);
     assert_eq!(spec.tools[0].params[0].name, "query");
     assert_eq!(spec.tools[0].params[0].param_type, "string");
@@ -40,17 +47,14 @@ return {
 }
 
 #[test]
-fn test_load_plugin_spec_all_export_types() {
+fn every_declaration_kind_is_read() {
     let source = r#"
 local M = {}
 function M.my_tool(args) return { result = "ok" } end
 function M.my_command(args, ctx) end
 function M.my_handler(ctx, event) return event end
-function M.my_view(ctx) end
 
 return {
-    name = "full-plugin",
-    version = "0.1.0",
     tools = {
         my_tool = { desc = "A tool", fn = M.my_tool },
     },
@@ -60,14 +64,9 @@ return {
     handlers = {
         { event = "note:created", priority = 150, name = "on_note_created", fn = M.my_handler },
     },
-    views = {
-        ["my-view"] = { desc = "A view", fn = M.my_view },
-    },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .expect("Should return Some(spec)");
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.tools.len(), 1);
     assert_eq!(spec.commands.len(), 1);
@@ -75,65 +74,54 @@ return {
 }
 
 #[test]
-fn test_load_plugin_spec_with_setup() {
+fn a_setup_function_is_recorded() {
     let source = r#"
 return {
-    name = "setup-plugin",
-    version = "0.1.0",
     setup = function(config)
         -- Called after load with plugin config
     end,
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .expect("Should return Some(spec)");
+    let spec = spec_of(source).unwrap();
 
     assert!(spec.has_setup);
-    assert_eq!(spec.name, Some("setup-plugin".to_string()));
 }
 
+/// A table that declares nothing is an empty spec, not a refusal.
+///
+/// The old reader answered `None` for a table without a "spec field", and
+/// the daemon then refused the plugin. Every table `init.luau` returns is
+/// the plugin's module now, and a module may declare nothing.
 #[test]
-fn test_load_plugin_spec_empty_table() {
-    // Empty table with no recognized fields returns None (not a spec)
-    let source = "return {}";
-    let result = load_plugin_spec_from_source(source, Path::new("test/init.lua")).unwrap();
-    assert!(
-        result.is_none(),
-        "Empty table should not be recognized as a spec"
-    );
+fn an_empty_table_is_an_empty_spec() {
+    let spec = spec_of("return {}").unwrap();
+    assert!(spec.tools.is_empty());
+    assert!(spec.commands.is_empty());
+    assert!(spec.handlers.is_empty());
+    assert!(spec.services.is_empty());
+    assert!(!spec.has_setup);
 }
 
+/// A module table that holds functions at its own keys declares nothing:
+/// only the `tools`, `commands`, `services` and `handlers` tables do.
 #[test]
-fn test_load_plugin_spec_no_return() {
-    // Script that doesn't return anything (returns nil)
-    let source = "local x = 42";
-    let result = load_plugin_spec_from_source(source, Path::new("test/init.lua")).unwrap();
-    assert!(result.is_none(), "nil return should yield None");
-}
-
-#[test]
-fn test_load_plugin_spec_lua_error() {
-    // Syntax error in Lua
-    let source = "this is not valid lua!!!";
-    let result = load_plugin_spec_from_source(source, Path::new("test/init.lua"));
-    assert!(result.is_err(), "Lua syntax error should return Err");
-}
-
-#[test]
-fn test_load_plugin_spec_runtime_error() {
-    // Runtime error
-    let source = r#"error("boom")"#;
-    let result = load_plugin_spec_from_source(source, Path::new("test/init.lua"));
-    assert!(result.is_err(), "Runtime error should return Err");
+fn a_module_table_of_functions_declares_nothing() {
+    let source = r#"
+local M = {}
+function M.my_tool(args) return { result = "ok" } end
+function M.my_command(args, ctx) end
+return M
+"#;
+    let spec = spec_of(source).unwrap();
+    assert!(spec.tools.is_empty());
+    assert!(spec.commands.is_empty());
+    assert!(!spec.has_setup);
 }
 
 #[test]
 fn test_tool_params_required_and_optional() {
     let source = r#"
 return {
-    name = "params-test",
-    version = "1.0.0",
     tools = {
         search = {
             desc = "Search",
@@ -145,9 +133,7 @@ return {
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
+    let spec = spec_of(source).unwrap();
 
     let tool = &spec.tools[0];
     assert_eq!(tool.params.len(), 2);
@@ -160,17 +146,13 @@ return {
 fn test_handler_spec_fields() {
     let source = r#"
 return {
-    name = "handler-test",
-    version = "1.0.0",
     handlers = {
         { event = "note:created", priority = 50, pattern = "*.md", name = "on_md_created" },
         { event = "tool:after", name = "log_tool" },
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.handlers.len(), 2);
 
@@ -190,16 +172,12 @@ return {
 fn test_command_spec_with_hint() {
     let source = r#"
 return {
-    name = "cmd-test",
-    version = "1.0.0",
     commands = {
         daily = { desc = "Create daily note", hint = "[title]" },
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.commands.len(), 1);
     assert_eq!(spec.commands[0].name, "daily");
@@ -216,8 +194,6 @@ return {
 fn test_command_carries_params_and_hint_together() {
     let source = r#"
 return {
-    name = "cmd-test",
-    version = "1.0.0",
     commands = {
         daily = {
             desc = "Create daily note",
@@ -230,9 +206,7 @@ return {
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.commands[0].input_hint, Some("[title]".to_string()));
     assert_eq!(spec.commands[0].params.len(), 1);
@@ -245,16 +219,12 @@ return {
 fn test_command_effect_is_read_when_declared_read() {
     let source = r#"
 return {
-    name = "cmd-test",
-    version = "1.0.0",
     commands = {
         board = { desc = "Read the board", effect = "read" },
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.commands[0].effect, CommandEffect::Read);
 }
@@ -265,16 +235,12 @@ return {
 fn test_command_effect_defaults_to_write_when_absent() {
     let source = r#"
 return {
-    name = "cmd-test",
-    version = "1.0.0",
     commands = {
         legacy = { desc = "Declared before effects existed" },
     },
 }
 "#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.commands[0].effect, CommandEffect::Write);
 }
@@ -288,15 +254,12 @@ return {
 fn test_command_effect_unreadable_refuses_the_load() {
     let source = r#"
 return {
-    name = "cmd-test",
-    version = "1.0.0",
     commands = {
         board = { desc = "Read the board", effect = "raed" },
     },
 }
 "#;
-    let error = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .expect_err("an unreadable effect must refuse the load");
+    let error = spec_of(source).expect_err("an unreadable effect must refuse the load");
 
     let message = error.to_string();
     assert!(
@@ -323,8 +286,6 @@ return {
 fn test_command_param_types_are_validated() {
     let source = r#"
 return {
-    name = "cmd-test",
-    version = "1.0.0",
     commands = {
         board = {
             desc = "Read the board",
@@ -335,8 +296,8 @@ return {
     },
 }
 "#;
-    let error = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .expect_err("an unreadable command parameter type must refuse the load");
+    let error =
+        spec_of(source).expect_err("an unreadable command parameter type must refuse the load");
 
     assert!(
         matches!(error, LifecycleError::InvalidDeclaration(_)),
@@ -349,46 +310,28 @@ return {
     );
 }
 
-#[test]
-fn a_spec_can_declare_that_it_intercepts_tools() {
-    let source = r#"
-return {
-    name = "cap-test",
-    version = "1.0.0",
-    intercepts_tools = true,
-}
-"#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
-
-    assert!(spec.intercepts_tools);
-}
-
 /// A plugin keeps its declared name in a differently-named directory.
 ///
 /// `plugin_name_for_dir` documents the hazard: a repo cloned as
-/// `crucible-discord` whose plugin declares `name = "discord"`. Identity is
-/// the declared name, so `[plugins.discord]` still reaches its `setup`.
-/// Moving a directory must not change what a plugin IS.
+/// `crucible-discord` whose fragment declares `name = "discord"`. Identity is
+/// the directory name, and the declared name is recorded so
+/// `[plugins.discord]` still reaches its `setup`. Moving a directory must not
+/// change what a plugin IS.
 #[test]
 fn a_declared_name_is_recorded_for_config_lookup() {
     let temp = TempDir::new().unwrap();
     let dir = temp.path().join("crucible-discord");
     std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
     std::fs::write(
-        dir.join("init.luau"),
+        dir.join(FRAGMENT_FILE),
         "return { name = 'discord', version = '1.0.0' }\n",
     )
     .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("crucible-discord").unwrap();
+    manager.discover(&Lua::new()).unwrap();
 
-    // Identity stays the directory name — the only name the runtimepath knows
-    // without running Lua. The declared name is recorded so `[plugins.discord]`
-    // still reaches this plugin's `setup`.
     let plugin = manager
         .get("crucible-discord")
         .expect("identity is the directory name");
@@ -399,26 +342,26 @@ fn a_declared_name_is_recorded_for_config_lookup() {
     );
 }
 
-/// A spec name that is not a usable plugin name is refused, not adopted.
+/// A fragment name that is not a usable plugin name is refused, not adopted.
 ///
-/// Deleting the YAML reader deleted the only `validate()` call site. The Lua
-/// spec is now the only place a name comes from, so it takes the same checks
-/// the manifest used to: a name with a path separator would otherwise reach
-/// `[plugins.<name>]` lookups and the module search path.
+/// Deleting the YAML reader deleted the only `validate()` call site. The
+/// fragment is now the only place a name comes from, so it takes the same
+/// checks the manifest used to: a name with a path separator would otherwise
+/// reach `[plugins.<name>]` lookups and the module search path.
 #[test]
-fn a_spec_name_that_is_not_a_valid_plugin_name_is_refused() {
+fn a_fragment_name_that_is_not_a_valid_plugin_name_is_refused() {
     let temp = TempDir::new().unwrap();
     let dir = temp.path().join("wellformed");
     std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
     std::fs::write(
-        dir.join("init.luau"),
+        dir.join(FRAGMENT_FILE),
         "return { name = '../escape', version = '1.0.0' }\n",
     )
     .unwrap();
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("wellformed").unwrap();
+    manager.discover(&Lua::new()).unwrap();
 
     assert!(
         manager.get("../escape").is_none(),
@@ -436,135 +379,16 @@ fn a_spec_name_that_is_not_a_valid_plugin_name_is_refused() {
         None,
         "an unusable declared name is refused, not recorded for config lookup"
     );
-}
-
-#[test]
-fn test_plain_module_table_not_spec() {
-    // A plugin that returns a module table (not a spec) should be None
-    let source = r#"
-local M = {}
-function M.my_tool(args) return { result = "ok" } end
-function M.my_command(args, ctx) end
-return M
-"#;
-    let result = load_plugin_spec_from_source(source, Path::new("test/init.lua")).unwrap();
     assert!(
-        result.is_none(),
-        "Module table with only function values should not be a spec"
+        manager.discovery_errors().is_empty(),
+        "an unusable name is a warning, not a discovery error"
     );
-}
-
-#[test]
-fn test_spec_with_only_name() {
-    // A table with just a name field is recognized as a spec
-    let source = r#"return { name = "minimal" }"#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .expect("Table with name should be a spec");
-
-    assert_eq!(spec.name, Some("minimal".to_string()));
-    assert!(spec.tools.is_empty());
-}
-
-#[test]
-fn test_spec_plugin_full_lifecycle() {
-    let temp = TempDir::new().unwrap();
-    create_spec_plugin(temp.path(), "spec-test");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("spec-test").unwrap();
-
-    let plugin = manager.get("spec-test").unwrap();
-    assert_eq!(plugin.state, PluginState::Active);
-    assert_eq!(plugin.manifest.name, "spec-test");
-    assert_eq!(plugin.version(), Some("1.0.0"));
-
-    assert_eq!(manager.tools().len(), 1);
-    assert_eq!(manager.tools()[0].name, "search");
-    assert_eq!(manager.tools()[0].params.len(), 2);
-
-    assert_eq!(manager.commands().len(), 1);
-    assert_eq!(manager.commands()[0].name, "search");
-    assert_eq!(
-        manager.commands()[0].input_hint,
-        Some("[query]".to_string())
-    );
-
-    // Unload and verify cleanup
-    manager.unload("spec-test").unwrap();
-    assert_eq!(manager.tools().len(), 0);
-    assert_eq!(manager.commands().len(), 0);
-}
-
-#[test]
-fn test_spec_plugin_without_manifest() {
-    let temp = TempDir::new().unwrap();
-    // Create a manifest-less plugin that returns a spec
-    create_spec_plugin(temp.path(), "no-manifest");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("no-manifest").unwrap();
-
-    let plugin = manager.get("no-manifest").unwrap();
-    assert_eq!(plugin.state, PluginState::Active);
-    // Name/version updated from spec
-    assert_eq!(plugin.manifest.name, "no-manifest");
-    assert_eq!(plugin.version(), Some("1.0.0"));
-
-    assert_eq!(manager.tools().len(), 1);
-    assert_eq!(manager.commands().len(), 1);
-}
-
-#[test]
-fn a_spec_intercept_declaration_reaches_the_manifest() {
-    let temp = TempDir::new().unwrap();
-    create_spec_plugin(temp.path(), "cap-merge");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load("cap-merge").unwrap();
-
-    let plugin = manager.get("cap-merge").unwrap();
-    assert!(plugin.manifest.intercepts_tools);
-}
-
-#[test]
-fn test_multiple_spec_plugins_coexist() {
-    let temp = TempDir::new().unwrap();
-
-    // Manifest + spec plugin
-    create_test_plugin(temp.path(), "manifest-plugin", "1.0.0");
-
-    // Manifest-less spec plugin
-    create_spec_plugin(temp.path(), "spec-plugin");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover().unwrap();
-    manager.load_all().unwrap();
-
-    // Both should be loaded
-    assert_eq!(
-        manager.get("manifest-plugin").unwrap().state,
-        PluginState::Active
-    );
-    assert_eq!(
-        manager.get("spec-plugin").unwrap().state,
-        PluginState::Active
-    );
-
-    // manifest-plugin has 1 tool (test_tool), spec-plugin has 1 tool (search)
-    let tool_names: Vec<_> = manager.tools().iter().map(|t| t.name.clone()).collect();
-    assert!(tool_names.contains(&"test_tool".to_string()));
-    assert!(tool_names.contains(&"search".to_string()));
 }
 
 #[test]
 fn test_spec_services_parsed() {
     let source = r#"
         return {
-            name = "service-plugin",
             services = {
                 gateway = {
                     desc = "WebSocket gateway",
@@ -581,8 +405,7 @@ fn test_spec_services_parsed() {
         }
     "#;
 
-    let spec = load_plugin_spec_from_source(source, Path::new("test.lua")).unwrap();
-    let spec = spec.expect("should return Some");
+    let spec = spec_of(source).unwrap();
 
     assert_eq!(spec.services.len(), 2);
 

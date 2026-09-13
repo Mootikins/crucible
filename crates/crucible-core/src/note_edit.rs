@@ -67,7 +67,11 @@ pub enum EditOutcome {
 fn dominant_newline(text: &str) -> &'static str {
     let crlf = text.matches("\r\n").count();
     let lf = text.matches('\n').count() - crlf;
-    if crlf > lf { "\r\n" } else { "\n" }
+    if crlf > lf {
+        "\r\n"
+    } else {
+        "\n"
+    }
 }
 
 /// Byte ranges of fenced code blocks, which anchors never match inside.
@@ -123,7 +127,10 @@ fn line_spans(text: &str) -> Vec<(usize, usize, &str)> {
 fn matches_of(text: &str, expect: &str) -> Vec<(usize, usize)> {
     let spans = line_spans(text);
     let fences = fenced_ranges(&spans);
-    let wanted: Vec<&str> = expect.split('\n').map(|l| l.trim_end_matches('\r')).collect();
+    let wanted: Vec<&str> = expect
+        .split('\n')
+        .map(|l| l.trim_end_matches('\r'))
+        .collect();
     let mut found = Vec::new();
     if wanted.is_empty() {
         return found;
@@ -194,7 +201,12 @@ pub fn apply_anchored_edits(original: &str, edits: &[AnchoredEdit]) -> EditOutco
                 continue;
             }
         };
-        spans.push((chosen.0, chosen.1, edit.replace.replace('\n', newline), index));
+        spans.push((
+            chosen.0,
+            chosen.1,
+            edit.replace.replace('\n', newline),
+            index,
+        ));
     }
 
     // Overlap is checked across the whole batch, because two edits that cover

@@ -134,7 +134,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G96 | wire | One setter and one getter per knob on one field name (6.1, 9.18) | 15 one-field `SessionSet*Request` structs and 15 pairs (`rpc_client/client/agent.rs:32-144`); 16 `cached_*` fields mirror `SessionAgent` | code-wrong | M |
 | G97 | wire | A handler is a thin translation with a typed result (4.26) | Every handler returns hand-spelled `json!`; `require_param!` (56 uses) and `typed_params` (9 files) coexist; 46 request structs are client-only | code-wrong | L |
 | G98 | wire | One `RpcContext` (4.26) | `ServerContext` duplicates it with 8 unread fields under `#[allow(dead_code)]` (`server/mod.rs:950`) | code-wrong | S |
-| G99 | wire | The daemon reads its environment at bind (S41) | `plugin_boot.rs:93,139,148` and `rpc/ui.rs:152` read `dirs::config_dir()`; `platform.rs:58,108,150` call `current_dir()`; `workflow_handlers.rs:237` reads an env var per request | code-wrong | M |
+| G99 | wire | The daemon reads its environment at bind (S41) | `Server::boot_plugins` (`server/mod.rs`) and `rpc/ui.rs:152` read `dirs::config_dir()`; `platform.rs:58,108,150` call `current_dir()`; `workflow_handlers.rs:237` reads an env var per request | code-wrong | M |
 | G100 | wire | `Server::run` is a short accept loop (4.26) | About 500 lines with four inline task bodies (`server/mod.rs:452-945`); `Server::bind` has no caller; `web_config` is a stub | code-wrong | M |
 | G101 | wire | Web routes mirror RPC families and a test derives the route set (6.2) | `ReconnectingDaemon` is about 95 hand wrappers over four files with six dead ones (`services/daemon.rs:57`); no route-derivation test is recorded | code-wrong | M |
 | G102 | wire | The web server reaches the daemon through the RPC client only (4.27) | It imports `server::plugins::OptionAction`, `project_manager::*`, `webhook::*` (`routes/plugin.rs:8`, `routes/project.rs:8`, `routes/webhook.rs:11`) | code-wrong | M |
@@ -155,7 +155,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G117 | lua | A trait requires its contract (AGENTS.md) | `SessionConfigRpc` requires 0 of 22; five impls are `impl SessionConfigRpc for X {}` (`session_api.rs:67`) | code-wrong | S |
 | G118 | lua | `PluginSource` has four variants `EnvPath`, `User`, `RuntimePath`, `Runtime` (8.15, D7) | Three: `EnvPath`, `User`, `Runtime`; `runtimepath` entries and `$CRUCIBLE_RUNTIME` share `Runtime` (`crucible-lua/src/manifest.rs:295`) | expectation-wrong | - |
 | G119 | lua | `spec.handlers` registers hooks (F172) | `PluginSpec.handlers` is parsed and never dispatched (`daemon_plugins/mod.rs:741`) | not-built | - |
-| G120 | lua | `Capability` is one closed set with one decoder (8) | `parse_capability` hand-duplicates serde and omits `intercept_tools`, so a spec-table grant is dropped (`lifecycle/spec.rs:31`, `discovery.rs:267`) | code-wrong | S |
+| G120 | lua | ~~`Capability` is one closed set with one decoder (8)~~ | RESOLVED 2026-09-13: `parse_capability` and the `Capability` enum are gone. The one grant, `intercepts_tools`, is read from the fragment (`lifecycle/fragment.rs`) by one decoder | resolved | — |
 | G121 | lua | Modes exist in Lua only; no Rust copy of the names (8.6) | `BuiltinMode` (`crucible-core/src/types/mode.rs:85`), `BUILTIN_MODE_NAMES` (`tools/tool_modes.rs:37`), `default_internal_modes` (`mode.rs:273`) restate the three names | code-wrong | S |
 | G122 | lua | `cru.log.notify` reaches a client (F134) | `cru.log.notify` is a live Lua surface (`crates/crucible-lua/src/notify.rs:30`, registered at `crates/crucible-lua/src/executor.rs:260`); the queue reaches no client (`notify.rs:78`); Expected 2a lists it | expectation-incomplete | - |
 | G123 | lua | `cru.oil` nodes render somewhere (open 15) | `LuaNode` is built and nothing in the CLI consumes it (`crucible-lua/src/oil.rs:138`) | not-built | - |
@@ -168,7 +168,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G130 | lua | Hooks are named by the name table, not by position (9.3) | `register_permission_hook_api` names hooks from `guard.len()` (`handlers/permission.rs:132`) | code-wrong | S |
 | G131 | lua | ~~`cru.defaults` exposes every default (F183)~~ | RESOLVED 2026-09-10: `cru.defaults` is gone. `system_prompt` is the config key `chat.system_prompt`; `mode` and `model` are per-session by design, set by an `on_session_start` hook | resolved | — |
 | G132 | lua | One plugin path computation (8.15) | `daemon_plugin_paths` and `PluginManager::with_standard_paths` both compute it (`bootstrap.rs:33`, `lifecycle/mod.rs:112`) | code-wrong | S |
-| G133 | lua | A plugin spec loads once (3.20) | `load_plugin_spec` runs the file in a throwaway VM, then the daemon runs it again in the real VM (`spec.rs:140`, `discovery.rs:295`) | code-wrong | S |
+| G133 | lua | ~~A plugin spec loads once (3.20)~~ | RESOLVED 2026-09-13: discovery reads `spec.luau` in the daemon VM and runs no plugin code; `activate` (`daemon_plugins/activate.rs`) runs `init.luau` once. The throwaway VM is gone | resolved | — |
 | G134 | lua | No dead cross-crate path (4.17) | `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command` form a dead path; `with_session_command_receiver` has no caller | code-wrong | S |
 | G135 | lua | One Lua tool shape (9.2) | `LuaTool`/`DiscoveredTool` and `ToolParam`/`DiscoveredParam` duplicate; `execute_tool`, `execute_file`, `execute_source` have no caller | code-wrong | S |
 | G136 | lua | Plugin commands reach the web palette (9.13) | The web shows plugin commands as a count only | not-built | - |
@@ -481,8 +481,8 @@ rmcp::Tool`. First step: write the two `From` impls in `tools/helpers.rs`.
 `SessionConfigRpc` with 22 required. First step: remove the defaults and let
 the six test doubles fail to compile; give them one shared mock.
 
-**G120.** Target: `Capability` is decoded by serde only. First step: delete
-`parse_capability` and deserialize the spec-table list with `serde_json`.
+**G120.** Resolved: `parse_capability` is deleted with the spec sandbox, and
+the fragment reader is the one decoder of `intercepts_tools`.
 
 **G121.** Target: no Rust list of mode names. First step: delete
 `BUILTIN_MODE_NAMES` and `default_internal_modes`; read `session.list_modes`.
@@ -680,7 +680,7 @@ to wire it or withdraw it.
    rendering and a permission-rule writer. The web writes kiln files and walks
    the kiln. Rows: G17, G63, G71, G72, G139, G140, G141.
 7. **Environment reads instead of injection.** `execution_roots`,
-   `plugin_boot`, `platform.rs`, `Recorder`, `EMBEDDING_PROVIDER_CACHE`, Lua
+   `Server::boot_plugins`, `platform.rs`, `Recorder`, `EMBEDDING_PROVIDER_CACHE`, Lua
    `CONFIG`, `NO_COLOR`, `main.rs set_var`. Rows: G16, G59, G99, G108, G126,
    G147, G166.
 8. **Machinery with no consumer.** 40 scripting event variants, `EventRing`,

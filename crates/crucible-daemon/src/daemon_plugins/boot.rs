@@ -8,12 +8,19 @@
 //! ACTIVATION stays a deferred phase after the evaluation — Neovim's model:
 //! the search space is read live at every `require`; plugin execution is one
 //! deferred phase after the user config.
+//!
+//! A `require` of a plugin entry module during the evaluation runs the
+//! module body under that plugin's source, and nothing else. The resolver
+//! records which file answered the name, and `activate` (see
+//! `activate.rs`) reuses that instance instead of running the file a second
+//! time, then runs the entry's `config`. The host's `setup(opts)` therefore
+//! runs after `init.lua` has finished.
 
 use anyhow::Context;
 use crucible_core::config::{CliAppConfig, ConfigSource};
 use crucible_lua::{ModuleRegistry, ModuleRequest, PluginSource, RootKind};
 use mlua::{Lua, Table, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,95 +41,22 @@ const BOOT_EVAL_BUDGET: Duration = Duration::from_secs(30);
 /// top-level read raises and the file moves it into a hook.
 const BOOT_GUARDED_NAMESPACES: [&str; 3] = ["kiln", "sessions", "storage"];
 
-/// What the boot `require` machinery learned, stored in the VM's app data.
-///
-/// The searcher records which plugin entry modules the user's `require`
-/// loaded (so activation reuses the same `package.loaded` instance instead
-/// of evaluating the file a second time) and which plugins' `setup` the user
-/// called directly (so activation skips the default `setup(cfg)` for them).
-#[derive(Default)]
-pub(crate) struct BootRequireState {
-    /// Whether the boot phase is live. The searcher is inert when false.
+/// Whether the boot evaluation is live, stored in the VM's app data. The
+/// boot `require` hook is inert when it is not: after the boot a `require`
+/// of an entry module is the resolver's ordinary load.
+struct BootPhase {
     active: bool,
-    /// The plugin search roots (canonicalized), for attributing a required
-    /// file to a plugin.
-    plugin_roots: Vec<PathBuf>,
-    /// Module name → the plugin entry file the user's `require` loaded.
-    loaded_modules: HashMap<String, PathBuf>,
-    /// Plugins whose `setup` the user called during the evaluation.
-    user_setup: HashSet<String>,
-    /// The tables whose `setup` the boot wrapped, with the plugin's ORIGINAL
-    /// function — restored when the boot phase ends, so a module table in
-    /// `package.loaded` holds the plugin's own function for the process
-    /// lifetime, not the recorder.
-    wrapped_setups: Vec<(Table, mlua::Function)>,
 }
 
-impl BootRequireState {
-    fn record_module(lua: &Lua, name: &str, file: PathBuf) {
-        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
-            state.loaded_modules.insert(name.to_string(), file);
-        }
-    }
+fn boot_phase_active(lua: &Lua) -> bool {
+    lua.app_data_ref::<BootPhase>()
+        .is_some_and(|phase| phase.active)
+}
 
-    fn record_user_setup(lua: &Lua, plugin: &str) {
-        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
-            state.user_setup.insert(plugin.to_string());
-        }
-    }
-
-    fn record_wrapped_setup(lua: &Lua, table: Table, original: mlua::Function) {
-        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
-            state.wrapped_setups.push((table, original));
-        }
-    }
-
-    /// End-of-boot restore: every wrapped `setup` goes back to the plugin's
-    /// own function. A plugin that stores `M.setup` and compares it later —
-    /// or a user calling it after boot — must see the original.
-    fn restore_wrapped_setups(lua: &Lua) {
-        let wrapped = match lua.app_data_mut::<BootRequireState>() {
-            Some(mut state) => std::mem::take(&mut state.wrapped_setups),
-            None => Vec::new(),
-        };
-        for (table, original) in wrapped {
-            if let Err(e) = table.set("setup", original) {
-                warn!("could not restore a plugin's own setup after boot: {e}");
-            }
-        }
-    }
-
-    /// Whether the user called this plugin's `setup` during the evaluation.
-    pub(crate) fn user_owns_setup(lua: &Lua, plugin: &str) -> bool {
-        lua.app_data_ref::<BootRequireState>()
-            .is_some_and(|state| state.user_setup.contains(plugin))
-    }
-
-    /// The module name whose boot `require` loaded exactly `file`, if any.
-    ///
-    /// Matched by FILE, not by name: a plugin whose declared name differs
-    /// from its directory name is required under the directory-derived
-    /// module name, and activation must still find the instance.
-    pub(crate) fn module_for_file(lua: &Lua, file: &Path) -> Option<String> {
-        let state = lua.app_data_ref::<BootRequireState>()?;
-        state
-            .loaded_modules
-            .iter()
-            .find(|(_, loaded)| loaded.as_path() == file)
-            .map(|(name, _)| name.clone())
-    }
-
-    /// Plugin names the user's boot `require` loaded modules for.
-    pub(crate) fn required_plugins(lua: &Lua) -> Vec<String> {
-        lua.app_data_ref::<BootRequireState>()
-            .map(|state| {
-                state
-                    .loaded_modules
-                    .keys()
-                    .map(|name| plugin_of_module(name).to_string())
-                    .collect()
-            })
-            .unwrap_or_default()
+/// End the boot phase: the `require` hook goes inert.
+fn end_boot_require(lua: &Lua) {
+    if let Some(mut phase) = lua.app_data_mut::<BootPhase>() {
+        phase.active = false;
     }
 }
 
@@ -346,13 +280,7 @@ pub async fn evaluate_boot_config_with_paths(
         // that plugin's default and loses to the settings the user saves.
         install_author_roots(&config_root, &plugin_dirs);
         seed_boot_search_path(lua, &modules, &config_root, &plugin_dirs)?;
-        install_boot_hook(
-            &modules,
-            PluginBindings {
-                publications: loader.publications(),
-                options: loader.options(),
-            },
-        );
+        install_boot_require_hook(&loader);
         // The UI namespaces must exist on the VM that evaluates the user's
         // file, or `cru.colorscheme.setup{...}` is an index-nil error.
         crucible_lua::config::register_ui_namespaces(lua)?;
@@ -364,13 +292,13 @@ pub async fn evaluate_boot_config_with_paths(
         let extender_modules = modules.clone();
         let extender_root = config_root.clone();
         crucible_lua::set_runtimepath_extender(Some(Arc::new(
-            move |lua: &Lua, entries: &[String]| {
+            move |_lua: &Lua, entries: &[String]| {
                 let rtp: Vec<PathBuf> = entries.iter().map(PathBuf::from).collect();
                 let dirs = extender_paths(&rtp);
                 // A root added mid-evaluation is a plugin root from its next
                 // line on, so the classifier must learn it with the resolver.
                 install_author_roots(&extender_root, &dirs);
-                if let Err(e) = refresh_plugin_dirs(lua, &extender_modules, &extender_root, &dirs) {
+                if let Err(e) = refresh_plugin_dirs(&extender_modules, &extender_root, &dirs) {
                     warn!("runtimepath change did not reach the module search path: {e}");
                 }
             },
@@ -420,25 +348,12 @@ pub async fn evaluate_boot_config_with_paths(
             None
         };
 
-        // Before the phase ends: record every module the evaluation loaded
-        // from under a plugin root, whatever loader served it. The searcher
-        // records the entries it CLAIMED; a module whose name does not match
-        // the entry shape (a plugin whose declared name differs from its
-        // directory) went through the standard loader unobserved, and
-        // without this sweep activation would execute its file a second
-        // time — doubling every top-level hook and publish.
-        if failure.is_none() {
-            record_boot_loaded_modules(lua, &modules);
-        }
-
         // The boot phase ends: the searcher goes inert, the extender comes
-        // out, every wrapped `setup` is restored to the plugin's own
-        // function, and the store withholds location keys from here on.
+        // out, and the store withholds location keys from here on. The
+        // resolver keeps its record of which file answered each name, which
+        // is what activation reads to reuse an instance.
         crucible_lua::set_runtimepath_extender(None);
-        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
-            state.active = false;
-        }
-        BootRequireState::restore_wrapped_setups(lua);
+        end_boot_require(lua);
         failure
     };
 
@@ -477,9 +392,6 @@ pub async fn evaluate_boot_config_with_paths(
         // plan-mode deny hook — the defaults file is the only definition of
         // all three, and nothing else loads it.
         load_shipped_defaults(lua, &seed_rtp);
-        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
-            state.active = false;
-        }
         crucible_lua::config::register_ui_namespaces(lua)?;
     }
 
@@ -751,53 +663,29 @@ fn seed_boot_search_path(
 ) -> mlua::Result<()> {
     let plugin_roots = plugin_dir_roots(plugin_dirs);
     apply_search_roots(modules, config_root, &plugin_roots)?;
-
-    lua.set_app_data(BootRequireState {
-        active: true,
-        plugin_roots,
-        loaded_modules: HashMap::new(),
-        user_setup: HashSet::new(),
-        wrapped_setups: Vec::new(),
-    });
+    // `cru.plugin.setup{ { import = "<dir>" } }` reads `<dir>` under the same
+    // root `require` resolves user modules from.
+    crucible_lua::set_import_root(lua, config_root.join("lua"));
     Ok(())
 }
 
 /// A `runtimepath` change during evaluation: recompute the plugin dirs,
 /// update the searcher's view, rebuild the search path.
 fn refresh_plugin_dirs(
-    lua: &Lua,
     modules: &ModuleRegistry,
     config_root: &Path,
     plugin_dirs: &[(PathBuf, PluginSource)],
 ) -> mlua::Result<()> {
-    let plugin_roots = plugin_dir_roots(plugin_dirs);
-    if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
-        state.plugin_roots = plugin_roots.clone();
-    }
-    apply_search_roots(modules, config_root, &plugin_roots)
+    apply_search_roots(modules, config_root, &plugin_dir_roots(plugin_dirs))
 }
 
-/// Install the boot load hook on the module resolver.
-///
-/// The hook claims one shape only: a plugin ENTRY module — an undotted name
-/// answered by `<plugin root>/<name>.lua` or `<plugin root>/<name>/init.lua`.
-/// For those it runs the file under the plugin's context (so `cru.on`
-/// registrations are attributed and a later reload can clear them), records
-/// the module for activation reuse, and wraps the returned table's `setup` so
-/// a direct user call is recorded as ownership.
-///
-/// Every other module — the user's own `lua/` tree, a plugin's private
-/// submodule — is declined, and the resolver loads it the ordinary way. A
-/// plugin's nested `require` therefore cannot rebind the publish attribution
-/// away from the outer plugin. A user module that shadows a plugin module is
-/// logged on the way past.
-/// The three registries a plugin's own bindings are attributed to.
+/// The two registries a plugin's own bindings are attributed to.
 ///
 /// Grouped because they always travel together and always name the same
-/// plugin: `publish`, `options` and `views` are one concept — what THIS plugin
-/// contributes — split across three stores. Passing them as three arguments
-/// made the loader's signature grow by one every time a fourth kind of
-/// contribution appeared.
+/// plugin: `publish` and `options` are one concept — what THIS plugin
+/// contributes — split across two stores. Passing them as separate
+/// arguments made the loader's signature grow by one every time a new kind
+/// of contribution appeared.
 #[derive(Clone)]
 pub(crate) struct PluginBindings {
     pub publications: PublicationRegistry,
@@ -805,30 +693,61 @@ pub(crate) struct PluginBindings {
 }
 
 impl PluginBindings {
-    /// Release this plugin's previous contributions and rebind all three to it.
+    /// Release this plugin's previous contributions and rebind both to it.
     ///
     /// Release-then-bind, in that order and together: a reload's new closures
     /// must not sit beside the old version's state, and doing it per registry
-    /// at three call sites is how one of them gets forgotten.
-    fn rebind(&self, lua: &Lua, plugin: &str) -> mlua::Result<()> {
+    /// at two call sites is how one of them gets forgotten.
+    pub(super) fn rebind(&self, lua: &Lua, plugin: &str) -> mlua::Result<()> {
         self.publications.release_plugin(plugin);
-        register_publish_module(lua, self.publications.clone(), plugin.to_string())?;
         self.options.release_plugin(plugin);
+        self.bind(lua, plugin)
+    }
+
+    /// Bind both to `plugin` WITHOUT releasing. For an instance whose body
+    /// already ran under its own binding: releasing would wipe what the body
+    /// published.
+    pub(super) fn bind(&self, lua: &Lua, plugin: &str) -> mlua::Result<()> {
+        register_publish_module(lua, self.publications.clone(), plugin.to_string())?;
         register_options_module(lua, self.options.clone(), plugin.to_string())
     }
 }
 
-fn install_boot_hook(modules: &ModuleRegistry, bindings: PluginBindings) {
+/// Install the boot `require` hook on `loader`'s resolver and open the boot
+/// phase. The evaluation of `init.lua` calls this; a test that drives a
+/// boot-shaped `require` calls it too.
+///
+/// The hook claims one shape only: a plugin ENTRY module — an undotted name
+/// answered by `<plugin root>/<name>.lua` or `<plugin root>/<name>/init.lua`.
+/// For those it runs the file under the plugin's source, so its `cru.on`
+/// registrations are attributed and a later reload can clear them, with the
+/// plugin's own bindings and its own `lua/` directory in place. The resolver
+/// records the instance by name and file; `activate` reuses it. Nothing else
+/// happens at require time: the entry's `config` waits for the activation
+/// pass, after `init.lua` has finished.
+///
+/// Every other module — the user's own `lua/` tree, a plugin's private
+/// submodule — is declined, and the resolver loads it the ordinary way. A
+/// user module that shadows a plugin module is logged on the way past.
+///
+/// It admits no declaration, and it must not: this runs BEFORE discovery, so
+/// nothing has read the plugin's fragment yet, and a boot-time require must
+/// not admit `intercepts_tools` on a manifest nobody has read. An unrecorded
+/// name answers "no", which is that rule; `activate` records the grant.
+pub(crate) fn install_boot_require_hook(loader: &DaemonPluginLoader) {
+    let lua = loader.executor().lua();
+    lua.set_app_data(BootPhase { active: true });
+    let modules = loader.executor().modules().clone();
+    let bindings = PluginBindings {
+        publications: loader.publications(),
+        options: loader.options(),
+    };
     let hook_modules = modules.clone();
     modules.set_load_hook(Some(Arc::new(
         move |lua: &Lua, request: &ModuleRequest| -> Option<mlua::Result<Value>> {
-            let active = lua
-                .app_data_ref::<BootRequireState>()
-                .is_some_and(|state| state.active);
-            if !active {
+            if !boot_phase_active(lua) {
                 return None;
             }
-
             if request.shadows_plugin {
                 debug!(
                     module = %request.name,
@@ -839,42 +758,37 @@ fn install_boot_hook(modules: &ModuleRegistry, bindings: PluginBindings) {
             if !request.is_entry {
                 return None;
             }
-
             let plugin = plugin_of_module(&request.name).to_string();
-            Some(boot_load_plugin_module(
+            Some(boot_require_entry(
                 lua,
                 &hook_modules,
                 &plugin,
                 &request.path,
-                &request.name,
                 &bindings,
             ))
         },
     )));
 }
 
-/// Load one plugin entry module for a boot-phase `require`: execute the file
-/// under the plugin's context, record it, and wrap its `setup`.
-fn boot_load_plugin_module(
+/// Run one plugin entry module for a boot-phase `require`: the file, under
+/// the plugin's source, with its bindings and its own `lua/` directory.
+fn boot_require_entry(
     lua: &Lua,
     modules: &ModuleRegistry,
     plugin: &str,
     file: &Path,
-    module_name: &str,
     bindings: &PluginBindings,
 ) -> mlua::Result<Value> {
     let source = std::fs::read_to_string(file)
         .map_err(|e| mlua::Error::RuntimeError(format!("read {}: {e}", file.display())))?;
 
-    // Bind `cru.plugin.publish` / `cru.plugin.options` to THIS plugin before
-    // its body runs, exactly as activation does — a shipped plugin publishes
-    // its channel from its body, and an unbound publish would error the
-    // user's `require`.
+    // A shipped plugin publishes its channel from its body, and an unbound
+    // publish would error the user's `require`.
     bindings.rebind(lua, plugin)?;
 
     // The plugin's own `lua/` dir is resolvable for the duration of this
-    // load, exactly as activation makes it — so an entry module's own
-    // `require("submodule")` works, and no other plugin inherits it.
+    // load, exactly as activation makes it, so an entry module's own
+    // `require("submodule")` works and no other plugin inherits it.
     let _module_scope = match file.parent() {
         Some(plugin_dir) => Some(modules.enter_plugin_root(plugin_dir)?),
         None => None,
@@ -882,72 +796,13 @@ fn boot_load_plugin_module(
 
     // Source restored on every exit path: an unrestored source would
     // misattribute whatever the user's file registers next.
-    //
-    // It admits no declaration, and it must not: this runs BEFORE discovery,
-    // so nothing has read a `PluginManager` entry for the plugin yet, and a
-    // boot-time require must not admit `intercept_tools` on a manifest nobody
-    // has read. An unrecorded name answers "no", which is that rule.
     let previous = crucible_lua::enter_plugin(lua, plugin);
     let result: mlua::Result<Value> = lua
         .load(&source)
         .set_name(format!("@{}", file.display()))
         .call(());
     crucible_lua::set_source(lua, previous);
-    let value = result?;
-
-    BootRequireState::record_module(lua, module_name, file.to_path_buf());
-
-    if let Value::Table(table) = &value {
-        if let Ok(original) = table.get::<mlua::Function>("setup") {
-            let plugin_name = plugin.to_string();
-            let recorder = lua.create_function(move |lua, ()| {
-                BootRequireState::record_user_setup(lua, &plugin_name);
-                Ok(())
-            })?;
-            // A Lua-side wrapper keeps the call semantics (async setups
-            // included) exactly as the module wrote them.
-            let wrapped: mlua::Function = lua
-                .load(
-                    r#"
-local record, original = ...
-return function(...)
-    record()
-    return original(...)
-end
-"#,
-                )
-                .call((recorder, original.clone()))?;
-            table.set("setup", wrapped)?;
-            BootRequireState::record_wrapped_setup(lua, table.clone(), original);
-        }
-    }
-
-    Ok(value)
-}
-
-/// Record every module the evaluation loaded from under a plugin root.
-///
-/// The hook records the entries it CLAIMED; a module whose name does not
-/// match the entry shape — a plugin whose declared name differs from its
-/// directory — was loaded the ordinary way and is invisible to it. The
-/// resolver knows both, so this sweep asks the resolver and activation
-/// reuses by file identity rather than executing the file a second time.
-fn record_boot_loaded_modules(lua: &Lua, modules: &ModuleRegistry) {
-    let roots = match lua.app_data_ref::<BootRequireState>() {
-        Some(state) => state.plugin_roots.clone(),
-        None => return,
-    };
-    for (name, file) in modules.loaded_modules() {
-        let already = lua
-            .app_data_ref::<BootRequireState>()
-            .is_some_and(|state| state.loaded_modules.contains_key(&name));
-        if already {
-            continue;
-        }
-        if roots.iter().any(|root| file.starts_with(root)) {
-            BootRequireState::record_module(lua, &name, file);
-        }
-    }
+    result
 }
 
 /// Replace the daemon-state namespaces with tables that raise on any index.
