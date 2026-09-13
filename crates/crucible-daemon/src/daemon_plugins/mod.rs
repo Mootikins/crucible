@@ -12,6 +12,7 @@
 pub mod boot;
 pub mod bootstrap;
 pub mod option_store;
+pub mod resolve;
 
 pub use boot::{
     boot_input_hash, evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig,

@@ -155,8 +155,13 @@ pub async fn bootstrap_plugin_entry(
         return Ok(BootstrapOutcome::Disabled);
     }
 
-    let name = plugin_name_from_url(&entry.url)
-        .ok_or_else(|| anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url))?;
+    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Plugin URL '{}' has no usable name segment: a plugin name is lowercase, \
+             holds only a-z, 0-9, '-' and '_', and does not end with '-' or '_'",
+            entry.url
+        )
+    })?;
     let dest = plugins_dir.join(&name);
     if dest.exists() {
         return Ok(BootstrapOutcome::AlreadyPresent);

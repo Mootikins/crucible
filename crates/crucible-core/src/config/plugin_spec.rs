@@ -71,9 +71,16 @@ pub enum SpecRank {
 }
 
 /// The merged spec: one entry per plugin name, with the rank that wrote it.
+///
+/// Beside the merged entry, the spec keeps what each rank wrote on its own.
+/// The `enabled` and `opts` resolution rules read one rank at a time: the
+/// operator's `enabled` beats a settings leaf, a Builtin `enabled` loses to
+/// it, and a settings leaf sits between the Builtin `opts` and the
+/// operator's. A merged entry alone cannot say which rank wrote a field.
 #[derive(Debug, Default, Clone)]
 pub struct Spec {
     entries: BTreeMap<String, (SpecRank, SpecEntry)>,
+    layers: BTreeMap<String, BTreeMap<SpecRank, SpecEntry>>,
 }
 
 impl SpecEntry {
@@ -84,7 +91,12 @@ impl SpecEntry {
         // pass as `x`. A relative path segment is neither a name nor a remote.
         let name = plugin_name_from_url(text)
             .filter(|_| !text.split('/').any(|seg| seg == "." || seg == ".."))
-            .ok_or_else(|| format!("'{text}' does not name a plugin the filesystem can hold"))?;
+            .ok_or_else(|| {
+                format!(
+                    "'{text}' does not name a plugin: a name starts with a lowercase letter, \
+                     holds only a-z, 0-9, '-' and '_', and does not end with '-' or '_'"
+                )
+            })?;
         let source = if text.contains('/') || text.contains(':') {
             SpecSource::Git {
                 url: text.to_string(),
@@ -144,6 +156,14 @@ impl Spec {
     /// fills only what the stored entry left unsaid.
     pub fn merge(&mut self, entry: SpecEntry, rank: SpecRank) {
         let name = entry.name.clone();
+        match self.layers.entry(name.clone()).or_default().entry(rank) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(entry.clone());
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                slot.get_mut().absorb(entry.clone());
+            }
+        }
         match self.entries.get_mut(&name) {
             None => {
                 self.entries.insert(name, (rank, entry));
@@ -171,6 +191,12 @@ impl Spec {
     /// The highest rank that wrote to `name`.
     pub fn rank_of(&self, name: &str) -> Option<SpecRank> {
         self.entries.get(name).map(|(r, _)| *r)
+    }
+
+    /// What `rank` alone wrote for `name`: its own entries merged, and no
+    /// other rank's. `None` when that rank never wrote to the name.
+    pub fn at(&self, name: &str, rank: SpecRank) -> Option<&SpecEntry> {
+        self.layers.get(name)?.get(&rank)
     }
 
     /// Every entry, in name order.
@@ -212,6 +238,20 @@ mod tests {
         assert!(SpecEntry::from_positional("../x").is_err());
         assert!(SpecEntry::from_positional("-x").is_err());
         assert!(SpecEntry::from_positional("").is_err());
+    }
+
+    /// The name is a directory on the runtimepath, and the fragment reader
+    /// accepts only a lowercase start, `[a-z0-9_-]` and no trailing `-` or
+    /// `_`. The spec applies the same rule, so an entry the fragment would
+    /// refuse is refused here, with the reason.
+    #[test]
+    fn a_name_the_fragment_would_refuse_is_refused_here() {
+        let err = SpecEntry::from_positional("MyPlugin").unwrap_err();
+        assert!(err.contains("lowercase"), "{err}");
+        assert!(SpecEntry::from_positional("user/My-Repo.git").is_err());
+        assert!(SpecEntry::from_positional("my.plugin").is_err());
+        assert!(SpecEntry::from_positional("plugin-").is_err());
+        assert!(SpecEntry::from_positional("user/my_plugin-2.git").is_ok());
     }
 
     #[test]
@@ -281,6 +321,35 @@ mod tests {
         assert_eq!(x.enabled, Some(true));
         assert_eq!(x.opts, json!({ "a": 1, "b": 2 }));
         assert_eq!(spec.rank_of("x"), Some(SpecRank::Operator));
+    }
+
+    /// Each rank keeps what it wrote, so a reader can ask one rank alone.
+    #[test]
+    fn each_rank_keeps_what_it_wrote() {
+        let mut spec = Spec::default();
+        spec.merge(
+            SpecEntry {
+                enabled: Some(false),
+                opts: json!({ "a": 1 }),
+                ..SpecEntry::from_positional("x").unwrap()
+            },
+            SpecRank::Builtin,
+        );
+        spec.merge(
+            SpecEntry {
+                opts: json!({ "b": 2 }),
+                ..SpecEntry::from_positional("x").unwrap()
+            },
+            SpecRank::Operator,
+        );
+        let operator = spec.at("x", SpecRank::Operator).unwrap();
+        assert_eq!(operator.enabled, None);
+        assert_eq!(operator.opts, json!({ "b": 2 }));
+        let builtin = spec.at("x", SpecRank::Builtin).unwrap();
+        assert_eq!(builtin.enabled, Some(false));
+        assert_eq!(builtin.opts, json!({ "a": 1 }));
+        assert!(spec.at("x", SpecRank::PluginFragment).is_none());
+        assert_eq!(spec.get("x").unwrap().opts, json!({ "a": 1, "b": 2 }));
     }
 
     #[test]

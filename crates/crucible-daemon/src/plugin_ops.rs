@@ -145,8 +145,13 @@ pub async fn install_at(
     manifest_path: &Path,
     plugins_dir: &Path,
 ) -> Result<InstallOutcome> {
-    let name = plugin_name_from_url(&entry.url)
-        .ok_or_else(|| anyhow!("cannot derive plugin name from URL '{}'", entry.url))?;
+    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
+        anyhow!(
+            "cannot derive a plugin name from URL '{}': a plugin name is lowercase, \
+             holds only a-z, 0-9, '-' and '_', and does not end with '-' or '_'",
+            entry.url
+        )
+    })?;
 
     // Clone first. If the clone fails (bad URL, no network), don't
     // leave a phantom record behind in the manifest.

@@ -230,32 +230,40 @@ pub fn declared_plugins(
 
 /// Extract a safe plugin directory name from a git URL.
 ///
-/// Returns `None` when the derived name would be unsafe: empty, `.`,
-/// `..`, starts with `-` (would be parsed as a CLI flag by tools we
-/// later pass it to), or contains anything outside `[A-Za-z0-9._-]`.
-/// The strict character set prevents log-spoofing, shell-quoting
-/// hazards, and unsafe-path edge cases on filesystems that accept
-/// odd characters.
+/// The name is the URL's last segment without a trailing `.git`. It is
+/// checked by the same rule the fragment reader applies to a plugin's own
+/// name (`PluginManifest::validate` in crucible-lua): it starts with a
+/// lowercase letter, holds only `[a-z0-9_-]`, is at most 64 bytes, and does
+/// not end with `-` or `_`. One rule for both, so a spec entry the fragment
+/// would refuse is refused before anything is cloned.
+///
+/// Returns `None` when the segment fails that rule. The rule also refuses
+/// `.`, `..`, a leading `-` (a CLI flag to any tool the name later reaches)
+/// and every shell metacharacter, which the wider `[A-Za-z0-9._-]` set used
+/// to be the whole point of.
 pub fn plugin_name_from_url(url: &str) -> Option<String> {
     let name = url
         .trim_end_matches('/')
         .rsplit('/')
         .next()
         .unwrap_or("")
-        .trim_end_matches(".git")
-        .to_string();
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.starts_with('-')
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-    {
-        None
-    } else {
-        Some(name)
+        .trim_end_matches(".git");
+    is_valid_plugin_name(name).then(|| name.to_string())
+}
+
+/// The plugin name rule. `PluginManifest::validate` in crucible-lua applies
+/// the same one to a fragment's declared name.
+fn is_valid_plugin_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
     }
+    let mut chars = name.chars();
+    if !chars.next().is_some_and(|c| c.is_ascii_lowercase()) {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        && !name.ends_with('-')
+        && !name.ends_with('_')
 }
 
 #[cfg(test)]
