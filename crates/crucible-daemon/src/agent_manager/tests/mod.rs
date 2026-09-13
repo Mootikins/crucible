@@ -411,7 +411,18 @@ struct ReactorTestHarness {
     session_id: String,
     event_tx: broadcast::Sender<SessionEventMessage>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
+    /// The daemon's session start and end paths, bound by
+    /// [`Self::attach_lifecycle`]. `None` until a test binds a loader.
+    lifecycle: Option<LifecycleBinding>,
     _tmp: TempDir,
+}
+
+/// The loader, seen the way the daemon sees it after boot: through the
+/// `SessionLifecycle` that owns it, plus the two handles the manager keeps.
+struct LifecycleBinding {
+    lifecycle: Arc<crate::session_lifecycle::SessionLifecycle>,
+    lua: Arc<mlua::Lua>,
+    handlers: Arc<crucible_lua::LuaScriptHandlerRegistry>,
 }
 
 impl ReactorTestHarness {
@@ -442,6 +453,7 @@ impl ReactorTestHarness {
             session_id: session.id.to_string(),
             event_tx,
             event_rx,
+            lifecycle: None,
             _tmp: tmp,
         }
     }
@@ -513,6 +525,106 @@ impl ReactorTestHarness {
         )
         .unwrap();
         loader
+    }
+
+    /// Give a loader to the daemon's session lifecycle, as `RpcContext` does.
+    ///
+    /// After this call, [`Self::new_session`] fires `on_session_start` and
+    /// [`Self::end_session`] fires `on_session_end` through the code the RPC
+    /// server runs. The harness keeps the loader alive from here on.
+    fn attach_lifecycle(&mut self, loader: crate::daemon_plugins::DaemonPluginLoader) {
+        let lua = loader.plugin_lua();
+        let handlers = loader.plugin_handlers();
+        let lifecycle = crate::session_lifecycle::SessionLifecycle::new(
+            self.agent_manager.session_manager().clone(),
+            Arc::new(Mutex::new(Some(loader))),
+        );
+        self.lifecycle = Some(LifecycleBinding {
+            lifecycle,
+            lua,
+            handlers,
+        });
+    }
+
+    fn lifecycle(&self) -> &LifecycleBinding {
+        self.lifecycle
+            .as_ref()
+            .expect("call attach_lifecycle before a lifecycle helper")
+    }
+
+    /// Create a second live session on this manager, with an agent that
+    /// answers "ok". The daemon's start path runs, so `on_session_start`
+    /// hooks fire for the new id.
+    async fn new_session(&self) -> String {
+        let session = self
+            .agent_manager
+            .session_manager()
+            .create_session(
+                SessionType::Chat,
+                vec![kiln_name("kiln")],
+                Some(self._tmp.path().to_path_buf()),
+                None,
+            )
+            .await
+            .unwrap();
+        let id = session.id.to_string();
+        self.agent_manager
+            .configure_agent(&id, test_agent())
+            .await
+            .unwrap();
+        self.agent_manager.install_agent_for_test(
+            id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                events: Self::default_ok_events(),
+            }))),
+        );
+        self.lifecycle()
+            .lifecycle
+            .enforce_session_start(&id)
+            .await
+            .unwrap();
+        id
+    }
+
+    /// Send a message on `session_id` and wait until its turn is over,
+    /// `turn:complete` handlers included.
+    async fn send_on(&self, session_id: &str, msg: &str) {
+        let (_, done) = self
+            .agent_manager
+            .send_message_notified(session_id, msg.to_string(), &self.event_tx, true, None)
+            .await
+            .unwrap();
+        done.await.expect("the turn reports its outcome");
+    }
+
+    /// End a session the way `session.end` does: plugin end hooks first,
+    /// then the manager drops the session.
+    async fn end_session(&self, session_id: &str) {
+        self.lifecycle()
+            .lifecycle
+            .fire_session_end(session_id)
+            .await;
+        self.agent_manager
+            .session_manager()
+            .end_session(session_id)
+            .await
+            .unwrap();
+    }
+
+    /// Evaluate a Lua expression on the daemon VM and read the value back.
+    fn lua_eval<T: mlua::FromLuaMulti>(&self, code: &str) -> T {
+        self.lifecycle().lua.load(code).eval().unwrap()
+    }
+
+    /// How many handler rows the registry scopes to `session_id`.
+    fn registrations_scoped_to(&self, session_id: &str) -> usize {
+        let scope = crucible_lua::SessionScope::Session(session_id.to_string());
+        self.lifecycle()
+            .handlers
+            .all()
+            .iter()
+            .filter(|r| r.scope == scope)
+            .count()
     }
 
     /// Bind a plugin isolation registry, as the daemon does at startup.
@@ -849,6 +961,7 @@ mod revive_cold;
 mod title;
 mod transcript_containment;
 mod trust_gate;
+mod two_sessions;
 mod workspace;
 
 /// Mock agent that runs a scheduler-driven tool loop and records every event
