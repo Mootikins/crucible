@@ -11,14 +11,19 @@ import type { AnchoredEdit } from '@/lib/api';
  *
  * The edits apply in order against the running text. A line that is absent
  * refuses the whole batch and names the edit, so the caller queues nothing
- * and can revert. Nothing here guesses: a refused fold is an answer.
+ * and can revert. Nothing here guesses: a refused fold is an answer. An
+ * `expect` with no `occurrence` that matches more than one line is refused
+ * too, because the daemon refuses it as ambiguous.
+ *
+ * A multi-line `expect` never matches here. The daemon accepts one, but the
+ * only producer, `taskEditForLine`, emits single lines.
  */
 export type FoldOutcome = { ok: true; text: string } | { ok: false; index: number };
 
 export function applyAnchoredEdits(text: string, edits: AnchoredEdit[]): FoldOutcome {
   const lines = text.split('\n');
   for (const [index, edit] of edits.entries()) {
-    const at = lineOf(lines, edit.expect, edit.occurrence ?? 0);
+    const at = lineOf(lines, edit.expect, edit.occurrence);
     if (at === -1) return { ok: false, index };
     // A CRLF line keeps its ending: the compare dropped it, so put it back.
     lines[at] = lines[at].endsWith('\r') ? `${edit.replace}\r` : edit.replace;
@@ -26,14 +31,18 @@ export function applyAnchoredEdits(text: string, edits: AnchoredEdit[]): FoldOut
   return { ok: true, text: lines.join('\n') };
 }
 
-/** The index of the `occurrence`-th line equal to `expect`, or -1. */
-function lineOf(lines: string[], expect: string, occurrence: number): number {
-  let seen = 0;
+/**
+ * The index of the `occurrence`-th line equal to `expect`, or -1.
+ *
+ * With no `occurrence`, the line must be the ONLY match. This mirrors the
+ * daemon's `Ambiguous` refusal in `note_edit.rs`.
+ */
+function lineOf(lines: string[], expect: string, occurrence: number | undefined): number {
+  const found: number[] = [];
   for (const [i, line] of lines.entries()) {
     const bare = line.endsWith('\r') ? line.slice(0, -1) : line;
-    if (bare !== expect) continue;
-    if (seen === occurrence) return i;
-    seen += 1;
+    if (bare === expect) found.push(i);
   }
-  return -1;
+  if (occurrence === undefined) return found.length === 1 ? found[0] : -1;
+  return found[occurrence] ?? -1;
 }

@@ -233,6 +233,9 @@ export async function readNote(
     // An anchored entry holds no body. The best text there is, is the mirror
     // with the queued edits folded in: what the user will see once the drain
     // lands them. When they no longer apply, the mirror stands as it is.
+    // The preview's hash is the queued base, and its body is the frozen
+    // mirror, so the two can differ by one hash when the mirror predates the
+    // base.
     const queued = await readQueued(db, path);
     if (queued && queued.kind === 'whole') {
       return { content: queued.body, content_hash: queued.base, fromMirror: true };

@@ -101,16 +101,55 @@ describe('queueWrite', () => {
       expect(await readQueued(store, PATH)).toMatchObject({ kind: 'whole', body: '- [ ] eggs\n' });
     });
 
-    it('appends a second anchored edit to a queued anchored entry', async () => {
+    // The daemon anchors every edit of a batch on the ORIGINAL text, and it
+    // counts an edit whose `replace` is already there as applied. A queued
+    // [tick, untick] replays as a tick. So the second edit composes into the
+    // first, and a round trip to the original text leaves nothing to send.
+    it('a tick then an untick queues no edit', async () => {
       const untick = { expect: '- [x] milk', replace: '- [ ] milk' };
       await anchored([tick], 'h0');
       const out = await anchored([untick], 'h1');
       expect(out).toEqual({ ok: true, folded: true });
+      expect(await readQueued(store, PATH)).toBeNull();
+      expect(await queuedCount(store)).toBe(0);
+    });
+
+    it('a tick then a different edit queues two', async () => {
+      const eggs = { expect: '- [ ] eggs', replace: '- [x] eggs' };
+      await anchored([tick], 'h0');
+      const out = await anchored([eggs], 'h1');
+      expect(out).toEqual({ ok: true, folded: true });
       expect(await readQueued(store, PATH)).toMatchObject({
         kind: 'anchored',
-        edits: [tick, untick],
+        edits: [tick, eggs],
         base: 'h0',
       });
+    });
+
+    // The second edit expects the line the first one wrote. The daemon never
+    // sees that line, so the queue holds one edit from the original line to
+    // the last text.
+    it('a tick then a retick of the same line composes to one', async () => {
+      const retick = { expect: '- [x] milk', replace: '- [x] oat milk' };
+      await anchored([tick], 'h0');
+      const out = await anchored([retick], 'h1');
+      expect(out).toEqual({ ok: true, folded: true });
+      expect(await readQueued(store, PATH)).toMatchObject({
+        kind: 'anchored',
+        edits: [{ expect: '- [ ] milk', replace: '- [x] oat milk' }],
+        base: 'h0',
+      });
+    });
+
+    // An arriving edit with no occurrence names a line that is unique in the
+    // buffer. When exactly one held edit wrote that line, the held edit is the
+    // one it continues, whatever occurrence the held edit named.
+    it('an untick of a unique line composes with the held edit that wrote it', async () => {
+      const second = { expect: '- [ ] milk', replace: '- [x] milk', occurrence: 1 };
+      const untick = { expect: '- [x] milk', replace: '- [ ] milk' };
+      await anchored([second], 'h0');
+      await anchored([untick], 'h1');
+      expect(await readQueued(store, PATH)).toBeNull();
     });
 
     // The buffer the whole write came from already holds the tick.

@@ -17,12 +17,11 @@ describe('applyAnchoredEdits', () => {
     });
   });
 
-  it('takes the first match when no occurrence is named', () => {
+  // The daemon refuses this edit, so the fold refuses it too: a guess at the
+  // first line would show text the daemon will never write.
+  it('refuses an ambiguous match when no occurrence is named', () => {
     const out = applyAnchoredEdits(NOTE, [{ expect: '- [ ] milk', replace: '- [x] milk' }]);
-    expect(out).toEqual({
-      ok: true,
-      text: ['# List', '- [x] milk', '- [ ] eggs', '- [ ] milk', ''].join('\n'),
-    });
+    expect(out).toEqual({ ok: false, index: 0 });
   });
 
   // The match is the whole line: a line that only contains the text is not it.

@@ -129,17 +129,29 @@ export type QueueOutcome = { ok: true; folded: boolean } | { ok: false; index: n
  * | nothing  | any      | queue it                                      |
  * | whole    | whole    | replace the body, keep the first base         |
  * | whole    | anchored | apply the edits to the queued body, stay whole|
- * | anchored | anchored | append the edits, keep the base               |
+ * | anchored | anchored | compose the edits, keep the base              |
  * | anchored | whole    | the whole write replaces it, keep the base    |
  *
  * The last row is safe because the buffer the whole write came from already
  * holds the anchored change.
+ *
+ * The anchored row COMPOSES, because the daemon resolves every edit of a
+ * batch against the ORIGINAL text, and counts an edit whose `replace` is
+ * already present as applied. An appended [tick, untick] replayed as a tick:
+ * the untick's `expect` was absent, its `replace` was present, and the daemon
+ * reported success with the user's last action lost. See `composeEdits`.
+ * A composition that leaves no edit clears the entry.
  */
 export async function queueWrite(store: OfflineStore, entry: OutboxWrite): Promise<QueueOutcome> {
   const existing = await store.get<StoredEntry>('outbox', entry.path);
   const held = existing && withKind(existing);
   const folded: Fold = held ? fold(held, entry) : { ok: true, write: entry, folded: false };
   if (!folded.ok) return folded;
+  if (folded.write.kind === 'anchored' && folded.write.edits.length === 0) {
+    // The edits returned the note to the queued base. Nothing is owed.
+    await store.remove('outbox', entry.path);
+    return { ok: true, folded: folded.folded };
+  }
 
   const sequence = await nextSequence(store);
   await store.put<OutboxEntry>('outbox', entry.path, {
@@ -161,11 +173,55 @@ type Fold = { ok: true; write: OutboxWrite; folded: boolean } | { ok: false; ind
 function fold(held: OutboxEntry, arriving: OutboxWrite): Fold {
   if (arriving.kind === 'whole') return { ok: true, write: arriving, folded: false };
   if (held.kind === 'anchored') {
-    return { ok: true, write: { ...arriving, edits: [...held.edits, ...arriving.edits] }, folded: true };
+    return { ok: true, write: { ...arriving, edits: composeEdits(held.edits, arriving.edits) }, folded: true };
   }
   const applied = applyAnchoredEdits(held.body, arriving.edits);
   if (!applied.ok) return applied;
   return { ok: true, write: { ...arriving, kind: 'whole', body: applied.text }, folded: true };
+}
+
+/**
+ * Compose arriving edits into held ones, so the daemon can anchor every edit
+ * of the batch on the original text.
+ *
+ * An arriving edit whose `expect` is a held edit's `replace` continues that
+ * edit: the held edit keeps its anchor and takes the arriving `replace`. When
+ * that makes `expect` equal `replace`, the line is back where the daemon has
+ * it, and the edit is dropped. An arriving edit that continues no held edit
+ * is appended.
+ *
+ * Which held edit an arriving one continues: the one with the same
+ * `occurrence`. An arriving edit with NO `occurrence` names a line that is
+ * unique in the buffer, so when exactly one held edit wrote that line, it is
+ * the one, whatever occurrence it named against the original.
+ */
+function composeEdits(held: AnchoredEdit[], arriving: AnchoredEdit[]): AnchoredEdit[] {
+  const out = [...held];
+  for (const edit of arriving) {
+    const at = continuedBy(out, edit);
+    if (at === -1) {
+      out.push(edit);
+      continue;
+    }
+    const first = out[at];
+    if (first.expect === edit.replace) {
+      out.splice(at, 1);
+      continue;
+    }
+    out[at] = {
+      expect: first.expect,
+      replace: edit.replace,
+      ...(first.occurrence === undefined ? {} : { occurrence: first.occurrence }),
+    };
+  }
+  return out;
+}
+
+/** The index of the held edit that `arriving` continues, or -1. */
+function continuedBy(held: AnchoredEdit[], arriving: AnchoredEdit): number {
+  const wrote = held.map((e, i) => (e.replace === arriving.expect ? i : -1)).filter((i) => i !== -1);
+  if (arriving.occurrence === undefined && wrote.length === 1) return wrote[0];
+  return wrote.find((i) => held[i].occurrence === arriving.occurrence) ?? -1;
 }
 
 /** Whether a path has writing the daemon has not received. */
