@@ -9,7 +9,8 @@ import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
 import { listKilns } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
-import { readNote, writeNote } from '@/lib/offline/sync';
+import { readNote, writeConflictCopy, writeNote } from '@/lib/offline/sync';
+import { notificationActions } from '@/stores/notificationStore';
 
 
 const EditorContext = createContext<EditorContextValue>();
@@ -137,6 +138,30 @@ export const EditorProvider: ParentComponent = (props) => {
     });
   };
 
+  /**
+   * Keep the buffer's text beside the note the daemon refused to overwrite.
+   *
+   * Reads the buffer at the moment the user chooses, not at the moment the
+   * save was refused: the user may keep typing between the two.
+   */
+  const keepAsConflictCopy = (path: string) => {
+    const file = openFilesStore.find((f) => f.path === path);
+    if (!file) return;
+    writeConflictCopy(path, file.content, new Date())
+      .then((copy) =>
+        notificationActions.addNotification(
+          'success',
+          `Your version was saved as ${copy.split('/').pop()}`,
+        ),
+      )
+      .catch((err: unknown) =>
+        notificationActions.addNotification(
+          'error',
+          err instanceof Error ? err.message : 'Failed to save the conflict copy',
+        ),
+      );
+  };
+
   const saveFile = async (path: string) => {
     const file = openFilesStore.find((f) => f.path === path);
     if (!file) return;
@@ -148,22 +173,39 @@ export const EditorProvider: ParentComponent = (props) => {
     try {
       // Save by absolute path (symmetric with the load) — the editor addresses
       // files by path, and PUT /api/kiln/file writes within the open kiln.
-      //
-      // A save the daemon cannot take is QUEUED, not lost: the buffer goes
-      // clean because the writing is safe in the outbox, and the app bar says
-      // how much is still owed.
-      const { queued } = await writeNote({
+      const outcome = await writeNote({
         path,
         body: file.content,
         base: file.baseHash ?? '',
         kiln: await kilnOf(path),
       });
-      void queued;
+
+      if (!outcome.queued && outcome.stale) {
+        // The daemon answered: the note moved on since this buffer was read.
+        // The buffer keeps its text and stays dirty, and nothing is written.
+        // The user is present, so the copy is a choice and not an automatic
+        // write: they may prefer to reload and re-apply their change.
+        notificationActions.addNotification(
+          'warning',
+          'The note changed elsewhere. Reload it to see the current text, or keep yours as a copy.',
+          { label: 'Save as conflict copy', run: () => keepAsConflictCopy(path) },
+        );
+        return;
+      }
 
       setOpenFiles(
         produce((files) => {
           const f = files.find((x) => x.path === path);
-          if (f) f.dirty = false;
+          if (!f) return;
+          // A save the daemon cannot take is QUEUED, not lost: the buffer
+          // goes clean because the writing is safe in the outbox, and the
+          // app bar says how much is still owed. It keeps its base, which is
+          // the base the queued write carries.
+          f.dirty = false;
+          // The daemon now holds this text under the hash it answered with.
+          // Without this, the next save would carry the base of the FIRST
+          // read and the daemon would refuse it as stale, by construction.
+          if (!outcome.queued) f.baseHash = outcome.hash;
         })
       );
     } catch (err) {

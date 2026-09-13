@@ -108,6 +108,8 @@ describe('writeNote', () => {
     const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
     expect(out).toEqual({ queued: false, stale: true, current: 'h9' });
     expect(await queuedCount(offlineStore())).toBe(0);
+    // A blind write after the refusal would pass the two lines above.
+    expect(net.save).not.toHaveBeenCalled();
   });
 
   it('queues the writing when the daemon never answered', async () => {

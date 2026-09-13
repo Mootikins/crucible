@@ -7,6 +7,16 @@ import { render, waitFor } from '@solidjs/testing-library';
 const getFileContent = vi.fn(async (_path: string) => '');
 const saveFileContent = vi.fn(async (_path: string, _content: string) => {});
 const getNote = vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' }));
+// The daemon's answer to a whole write. The default writes through the body
+// spy, so the older tests below keep one place to read. A test that needs a
+// stale or a queued answer overrides one call.
+const guardedSave = vi.fn(async (p: string, c: string, _base: string) => {
+  await saveFileContent(p, c);
+  return { ok: true, content_hash: 'written' } as
+    | { ok: true; content_hash: string }
+    | { ok: false; current_hash: string };
+});
+const addNotification = vi.fn();
 
 const KILN = '/home/user/kiln';
 
@@ -19,13 +29,7 @@ vi.mock('@/lib/api', () => ({
   }),
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: (p: string, c: string) => saveFileContent(p, c),
-  // The whole write now sends its base through the guarded route. The spy
-  // still records the body that reached the daemon, so the assertions below
-  // read one place; the base is not what these tests are about.
-  saveFileIfUnchanged: async (p: string, c: string, _base: string) => {
-    await saveFileContent(p, c);
-    return { ok: true, content_hash: 'written' };
-  },
+  saveFileIfUnchanged: (p: string, c: string, base: string) => guardedSave(p, c, base),
   getNote: () => getNote(),
   listKilns: async () => [{ path: KILN }],
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
@@ -34,7 +38,13 @@ vi.mock('@/lib/api', () => ({
 }));
 
 
+vi.mock('@/stores/notificationStore', () => ({
+  notificationActions: { addNotification: (...a: unknown[]) => addNotification(...a) },
+}));
+
 const { EditorProvider, useEditor } = await import('../EditorContext');
+const { setOfflineStore } = await import('@/lib/offline/sync');
+const { memoryStore } = await import('@/lib/offline/store');
 
 function withEditor(fn: (editor: ReturnType<typeof useEditor>) => void) {
   let captured: ReturnType<typeof useEditor> | undefined;
@@ -200,5 +210,99 @@ describe('EditorContext — unsaved-changes guard on close (bug 6)', () => {
     expect(editor.openFiles().length).toBe(1);
     expect(editor.openFiles()[0].dirty).toBe(true);
     expect(getFileContent).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The daemon compares the base inside its write and answers. The buffer must
+ * follow that answer: a refused write keeps the user's text on screen, and an
+ * accepted one moves the base so the NEXT save is not stale by construction.
+ */
+describe('EditorContext — the buffer follows the answer to a whole write', () => {
+  const PATH = `${KILN}/notes/shared.md`;
+  const fileState = (editor: ReturnType<typeof useEditor>) =>
+    editor.openFiles().find((f) => f.path === PATH)!;
+
+  beforeEach(() => {
+    getFileContent.mockClear();
+    saveFileContent.mockClear();
+    guardedSave.mockClear();
+    addNotification.mockClear();
+    setOfflineStore(memoryStore());
+  });
+
+  const openEdited = async () => {
+    getFileContent.mockResolvedValueOnce('on disk\n');
+    const editor = withEditor(() => {});
+    await editor.openFile(PATH);
+    await waitFor(() => expect(editor.openFiles().length).toBe(1));
+    editor.updateFileContent(PATH, 'the unsaved text');
+    return editor;
+  };
+
+  it('keeps the buffer dirty and offers a conflict copy when the save is stale', async () => {
+    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
+    const editor = await openEdited();
+
+    await editor.saveFile(PATH);
+
+    expect(fileState(editor).dirty).toBe(true);
+    expect(fileState(editor).content).toBe('the unsaved text');
+    expect(fileState(editor).baseHash, 'a refused write moves no base').toBe('base-hash');
+    expect(saveFileContent, 'nothing is written without a choice').not.toHaveBeenCalled();
+    expect(addNotification).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('changed elsewhere'),
+      expect.objectContaining({ label: 'Save as conflict copy' }),
+    );
+    // A stale save is an answer, not a failure: the red retry line stays off.
+    expect(editor.error()).toBeNull();
+    expect(editor.retryFailedOperation()).toBeNull();
+  });
+
+  it('the conflict copy action writes the unsaved text beside the note', async () => {
+    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
+    const editor = await openEdited();
+    await editor.saveFile(PATH);
+
+    const action = addNotification.mock.calls[0][2] as { label: string; run: () => void };
+    // The dated name is free.
+    getFileContent.mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404 }));
+    action.run();
+
+    await waitFor(() =>
+      expect(saveFileContent).toHaveBeenCalledWith(
+        expect.stringMatching(/\/notes\/shared \(conflict, .*\)\.md$/),
+        'the unsaved text',
+      ),
+    );
+    expect(guardedSave, 'a copy is a fresh note, not a guarded write').toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the buffer clean and takes the answered hash on a clean save', async () => {
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    const editor = await openEdited();
+
+    await editor.saveFile(PATH);
+
+    await waitFor(() => expect(fileState(editor).dirty).toBe(false));
+    expect(fileState(editor).baseHash).toBe('h2');
+
+    // The next save is made FROM the text the daemon now holds.
+    editor.updateFileContent(PATH, 'the unsaved text, again');
+    await editor.saveFile(PATH);
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text, again', 'h2');
+  });
+
+  it('a queued save marks the buffer clean and takes no base', async () => {
+    // No status: the daemon never answered, so the outbox holds the writing.
+    guardedSave.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const editor = await openEdited();
+
+    await editor.saveFile(PATH);
+
+    await waitFor(() => expect(fileState(editor).dirty).toBe(false));
+    expect(fileState(editor).baseHash).toBe('base-hash');
+    expect(editor.error()).toBeNull();
   });
 });

@@ -89,15 +89,25 @@ export const networkSink: OutboxSink = {
     // a hash that described someone else's bytes beside this body.
     return { ok: true, hash: answer.content_hash };
   },
-  writeConflictCopy: async (entry) => {
-    // A free name, not merely a dated one. The stamp is a DATE, so a second
-    // conflict on the same note on the same day produced the same path and
-    // the PUT destroyed the first copy — the only place that writing existed.
-    const copy = await freeConflictPath(entry.path, new Date(entry.queuedAt));
-    await saveFileContent(copy, entry.body);
-    return copy;
-  },
+  writeConflictCopy: (entry) => writeConflictCopy(entry.path, entry.body, new Date(entry.queuedAt)),
 };
+
+/**
+ * Keep a stale write's text beside the note. Answers the path it took.
+ *
+ * The drain calls this for a queued write the daemon refused. The editor
+ * calls it when the user chooses to keep a refused save. One function, so
+ * the editor does not reach for the API to write a copy on its own.
+ *
+ * A free name, not merely a dated one. The stamp is a DATE, so a second
+ * conflict on the same note on the same day produced the same path and the
+ * PUT destroyed the first copy — the only place that writing existed.
+ */
+export async function writeConflictCopy(path: string, body: string, when: Date): Promise<string> {
+  const copy = await freeConflictPath(path, when);
+  await saveFileContent(copy, body);
+  return copy;
+}
 
 /** The first conflict-copy path nothing occupies. */
 async function freeConflictPath(path: string, when: Date): Promise<string> {
