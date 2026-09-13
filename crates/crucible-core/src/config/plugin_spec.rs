@@ -35,21 +35,31 @@ pub struct SpecEntry {
     pub name: String,
     /// Where the plugin comes from.
     pub source: SpecSource,
-    /// `None` means "this entry does not say". See the resolution rule.
+    /// `None` means "this entry does not say". `enabled` resolves in this
+    /// order, first answer wins: the operator's entry, the config leaf
+    /// `plugins.<name>.enabled`, the Builtin fragment, the plugin's fragment,
+    /// then `true`. `docs/Meta/CONTEXT.md` defines the terms.
     pub enabled: Option<bool>,
     /// The table passed to `setup(opts)`. Object or `Null`.
     #[serde(default)]
     pub opts: Value,
     /// Whether the defining VM holds a `config` function for this name.
+    /// OR-merged across ranks, so `true` means some rank holds one; the
+    /// store keyed by name says which.
     #[serde(default)]
     pub has_config: bool,
     /// Whether the defining VM holds an `init` function for this name.
+    /// OR-merged across ranks, so `true` means some rank holds one; the
+    /// store keyed by name says which.
     #[serde(default)]
     pub has_init: bool,
 }
 
-/// Who wrote an entry. Higher wins. The order is the resolution rule in the
-/// plan, and `Spec::merge` is its only reader.
+/// Who wrote an entry. Higher wins. `enabled` resolves in this order, first
+/// answer wins: the operator's entry, the config leaf
+/// `plugins.<name>.enabled`, the Builtin fragment, the plugin's fragment,
+/// then `true`. `Spec::merge` is the only reader of the order, and
+/// `docs/Meta/CONTEXT.md` defines the terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SpecRank {
     /// The plugin's own `spec.luau`.
@@ -101,6 +111,10 @@ impl SpecEntry {
     /// Lay `over` on top of `self`, field by field. A field `over` leaves
     /// unsaid keeps the value `self` holds.
     fn absorb(&mut self, over: SpecEntry) {
+        // A bare name says nothing about source, so Runtimepath never
+        // overwrites Git. Only an operator entry can name a Git source; the
+        // Builtin fragment lists directories and a plugin's own fragment
+        // carries no source.
         if over.source != SpecSource::Runtimepath {
             self.source = over.source;
         }
@@ -242,5 +256,53 @@ mod tests {
             SpecRank::Builtin,
         );
         assert_eq!(spec.get("x").unwrap().enabled, Some(false));
+    }
+
+    #[test]
+    fn a_lower_rank_fills_only_what_the_stored_entry_left_unsaid() {
+        let mut spec = Spec::default();
+        spec.merge(
+            SpecEntry {
+                enabled: None,
+                opts: json!({ "a": 1 }),
+                ..SpecEntry::from_positional("x").unwrap()
+            },
+            SpecRank::Operator,
+        );
+        spec.merge(
+            SpecEntry {
+                enabled: Some(true),
+                opts: json!({ "a": 2, "b": 2 }),
+                ..SpecEntry::from_positional("x").unwrap()
+            },
+            SpecRank::Builtin,
+        );
+        let x = spec.get("x").unwrap();
+        assert_eq!(x.enabled, Some(true));
+        assert_eq!(x.opts, json!({ "a": 1, "b": 2 }));
+        assert_eq!(spec.rank_of("x"), Some(SpecRank::Operator));
+    }
+
+    #[test]
+    fn a_bare_name_never_erases_a_git_source_at_equal_rank() {
+        let mut spec = Spec::default();
+        spec.merge(
+            SpecEntry::from_positional("user/greeter").unwrap(),
+            SpecRank::Operator,
+        );
+        spec.merge(
+            SpecEntry {
+                opts: json!({ "n": 1 }),
+                ..SpecEntry::from_positional("greeter").unwrap()
+            },
+            SpecRank::Operator,
+        );
+        let greeter = spec.get("greeter").unwrap();
+        assert!(
+            matches!(&greeter.source, SpecSource::Git { url, .. } if url == "user/greeter"),
+            "source was {:?}",
+            greeter.source
+        );
+        assert_eq!(greeter.opts, json!({ "n": 1 }));
     }
 }
