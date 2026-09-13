@@ -120,6 +120,33 @@ fn every_shipped_plugin_is_discovered() {
     );
 }
 
+/// Discovery reads the intercept grant from the fragment (`spec.luau`) and
+/// never from the entry file. `oci` declared `intercepts_tools = true` in
+/// its `init.luau` return table, which granted nothing: the host refused
+/// every `handled = true` it returned, and the container was a no-op.
+///
+/// The expectation comes from a real `discover` over `runtime/plugins/`,
+/// not from a grep of the fragment text.
+#[test]
+fn every_shipped_plugin_with_an_intercept_grant_declares_it_in_its_fragment() {
+    let mut manager = PluginManager::new();
+    manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
+    manager.discover(&mlua::Lua::new()).expect("discovery");
+
+    let mut granted: Vec<&str> = manager
+        .list()
+        .filter(|plugin| plugin.manifest.intercepts_tools)
+        .map(|plugin| plugin.manifest.name.as_str())
+        .collect();
+    granted.sort();
+
+    assert_eq!(
+        granted,
+        ["oci"],
+        "the plugins whose fragment grants interception must be exactly the ones that take tool calls over"
+    );
+}
+
 /// Every shipped manifest carries the same block of identifying fields.
 ///
 /// `oci` was eight lines with no `author` and no `license` while the

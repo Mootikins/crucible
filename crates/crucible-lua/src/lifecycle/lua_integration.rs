@@ -1,4 +1,7 @@
-use super::{LifecycleError, LifecycleResult, PluginManager};
+use super::PluginManager;
+// Only `eval_runtime` reads these, so the lib build must not see them.
+#[cfg(any(test, feature = "test-utils"))]
+use super::{LifecycleError, LifecycleResult};
 
 impl PluginManager {
     /// What a test reads out of the manager VM. The VM runs no plugin code,
