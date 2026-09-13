@@ -34,8 +34,8 @@ end
 ;(cru :: any).on_session_end = function(fn)
   lifecycle.end_fn = fn
 end
--- The runner VM has no cru.isolation or cru.plugin (the daemon registers
--- them), so the stub creates the tables whole.
+-- The stubs replace cru.isolation and cru.plugin whole, so a test reads
+-- what the plugin passed and nothing reaches the daemon's registries.
 cru.isolation = {
   require = function(opts)
     table.insert(isolation_calls, opts)
@@ -114,9 +114,13 @@ end
 local real_json = cru.json
 install_shell()
 
--- Loaded by plugin name via the parent's `?/init.lua` path entry — the same
--- resolution the daemon's plugin loader performs, so a require that only
--- works in tests cannot slip through again.
+-- Loaded by plugin name through the loader's own searcher, so a require
+-- that only works in tests cannot slip through again. The runner activated
+-- this plugin before it loaded this file, and the plugin put that instance
+-- in `package.loaded`. Its setup() ran against the real `cru.on`. This suite
+-- drives setup() itself and reads the recorders above, so it requires a
+-- fresh instance.
+package.loaded["oci"] = nil
 local spec = require("oci")
 -- The module body registers nothing. setup() registers the handlers the
 -- recorders above capture, once; the later setup() calls only change the

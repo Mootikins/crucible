@@ -1,9 +1,54 @@
 //! The `cru plugin test` runner: discovers a plugin's `*_test.lua` files,
-//! loads them into an executor whose module roots mirror the runtime plugin
-//! loader, and runs them through the bundled busted-style
-//! framework. Includes the CI gates that run every shipped plugin's suite.
+//! activates the plugin on a fresh `DaemonPluginLoader` with the body the
+//! daemon uses, then runs the files through the bundled busted-style
+//! framework on that VM. Includes the CI gates that run every shipped
+//! plugin's suite.
 
 use super::*;
+use crucible_lua::manifest::PluginSource;
+use std::collections::HashMap;
+
+/// Activate the plugin at `plugin_root` the way the daemon does, on a
+/// loader of its own.
+///
+/// The loader is `DaemonPluginLoader::new` with no config, so the plugin
+/// meets the real `cru.*` modules, the real `require` searcher and the real
+/// activation body: discovery, the private module root, `setup(opts)`, the
+/// tool registration and the handler store. A `require("<name>")` from a
+/// test file resolves through the parent directory the loader searches,
+/// and a `require("<private>")` resolves through the plugin directory the
+/// activation entered, from the file that asked.
+///
+/// A directory with no entry file is not a plugin. The suite then runs on a
+/// bare loader VM, and the answer names no plugin.
+pub(super) async fn activate_plugin_under_test(
+    plugin_root: &Path,
+) -> anyhow::Result<(DaemonPluginLoader, Option<String>)> {
+    let mut loader = DaemonPluginLoader::new(HashMap::new())?;
+    let entry = crucible_lua::source_files::init_file(plugin_root)
+        .map_err(|ambiguous| anyhow::anyhow!("{}: {ambiguous}", plugin_root.display()))?;
+    if entry.is_none() {
+        return Ok((loader, None));
+    }
+    let name = plugin_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("{}: not a plugin directory", plugin_root.display()))?
+        .to_string();
+    // The daemon searches a directory of plugins, so the parent goes on the
+    // path. The source is a label for `plugin.list`, which the runner never
+    // answers.
+    let parent = plugin_root
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("{}: has no parent", plugin_root.display()))?
+        .to_path_buf();
+    loader.add_plugin_paths(&[(parent, PluginSource::Runtime)])?;
+    loader
+        .activate_plugin(&name)
+        .await
+        .map_err(|e| anyhow::anyhow!("plugin '{name}' did not activate: {e}"))?;
+    Ok((loader, Some(name)))
+}
 
 pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
     let params =
@@ -22,6 +67,13 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
             format!("Test path does not exist: {}", test_path.display()),
         );
     }
+    // Canonical from here on. `require` resolves a plugin's private module
+    // from the FILE that asked, and that file must sit under the plugin
+    // directory the loader recorded. A `..` component in either path breaks
+    // the match.
+    let test_path = test_path
+        .canonicalize()
+        .unwrap_or_else(|_| test_path.clone());
 
     // Discover test files
     let test_files = match discover_plugin_test_files(&test_path) {
@@ -43,43 +95,34 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
         );
     }
 
-    let executor = match LuaExecutor::new() {
-        Ok(e) => e,
+    let plugin_root = if test_path.is_file() {
+        test_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| test_path.clone())
+    } else {
+        test_path.clone()
+    };
+
+    // The plugin activates BEFORE the harness goes in, on the loader the
+    // daemon uses. So `setup` runs against the real `cru.*` modules, the
+    // tools land in the plugin registry and the handlers land in the handler
+    // store, as they do at daemon boot. The runner used to build a bare
+    // `LuaExecutor` and reproduce the module roots by hand. That VM ran no
+    // activation, so a plugin whose `setup` raised in the daemon passed its
+    // suite here. An activation failure is now the answer to the request.
+    let (loader, _) = match activate_plugin_under_test(&plugin_root).await {
+        Ok(outcome) => outcome,
         Err(e) => return internal_error(req.id, e),
     };
+    let executor = loader.executor();
     // This VM runs plugin tests, so it gets `describe`, `it`, `run_tests` and
-    // the harness `assert`. No other VM does.
+    // the harness `assert`. No other VM does. The harness chunk captures the
+    // real `cru.fs` functions here, before `test_mocks.setup()` replaces the
+    // namespaces a suite stubs.
     if let Err(e) = executor.install_test_harness() {
         return internal_error(req.id, anyhow::Error::from(e));
     }
-
-    // Mirror the runtime loader exactly: the plugin's siblings are visible by
-    // name through the parent root, and the plugin's own `lua/` directory is
-    // private to its execution. A suite that passes here therefore proves the
-    // plugin loads in the daemon.
-    let plugin_root = test_path
-        .canonicalize()
-        .unwrap_or_else(|_| test_path.clone());
-    let plugin_root = if plugin_root.is_file() {
-        plugin_root
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or(plugin_root)
-    } else {
-        plugin_root
-    };
-    let plugin_parent = plugin_root.parent().unwrap_or(&plugin_root).to_path_buf();
-    if let Err(e) = executor.configure_module_roots(vec![plugin_parent]) {
-        return internal_error(req.id, e);
-    }
-    // The plugin under test owns its `lua/` directory for the whole run, and
-    // nothing else: the runtime grants exactly this. The harness used to add
-    // `<plugin_dir>/?.lua` as well, under which `require("lua.container")`
-    // passed here and failed in the daemon.
-    let _module_scope = match executor.enter_plugin_root(&plugin_root) {
-        Ok(guard) => guard,
-        Err(e) => return internal_error(req.id, e),
-    };
 
     // Setup test mocks
     if let Err(e) = executor
@@ -829,92 +872,73 @@ mod shipped_plugin_tests {
             .collect()
     }
 
-    /// Every shipped plugin either has its suite gated or says why it does not.
+    /// The suite runs the plugin the daemon activated, not a copy the runner
+    /// built by hand.
     ///
-    /// A plugin that registers a hook at body level must claim its own
-    /// `package.loaded` entry.
+    /// `activate_plugin_under_test` is the one function the runner and this
+    /// gate share, so what this gate proves about the loader holds for every
+    /// suite `shipped_plugin_lua_suite_passes` runs. Three facts, each read
+    /// from the loader and none from source text: the plugin is `Active`,
+    /// every tool its spec declares is in the plugin registry, and a
+    /// `setup` that calls `cru.on` left its registrations in the handler
+    /// store under the plugin's own source.
     ///
-    /// The daemon executes `init.lua` BY PATH (`daemon_plugins::activate`
-    /// → `lua.load(source).eval_async()`), never through `require`. So a
-    /// documented `require("<plugin>").setup{…}` in a user's `init.lua` loads a
-    /// SECOND copy of the file: new upvalues, and every body-level
-    /// `cru.on_*` call runs again. The handler is then registered twice
-    /// and fires twice per event — for `reflection` that is two forked
-    /// cheap-model reviews and two sets of staged proposals per session end.
+    /// The tool count comes from the running loader. One plugin activates
+    /// per loader, so the registry holds that plugin's tools and no others,
+    /// and the count must equal the spec's.
     ///
-    /// This exists because fixing it once was not enough. `auto-title` was
-    /// repaired on 2026-08-18 and the enumeration stopped there; an independent
-    /// reviewer then found `reflection` and `oci` carrying the identical shape,
-    /// with `require("reflection").setup` documented in five shipped places.
-    /// That is the third instance this repo has recorded of "fixed one call
-    /// site of many", so the fix is a sweep over every plugin rather than a
-    /// third patch.
-    ///
-    /// Textual on purpose: it must fail for a plugin whose Lua the test harness
-    /// cannot construct, and the property is a property of the source.
-    #[test]
-    fn a_plugin_registering_a_hook_at_body_level_guards_its_require() {
-        let mut unguarded = Vec::new();
-
+    /// This replaces a gate that read each `init.lua` for a `package.loaded`
+    /// assignment. Its own comment recorded that it passed with both guards
+    /// deleted, because the substring it looked for matched a comment.
+    #[tokio::test]
+    async fn the_suite_runs_the_plugin_the_daemon_activated() {
+        let mut checked = 0;
         for entry in std::fs::read_dir(shipped_plugins_dir()).expect("runtime/plugins must exist") {
             let dir = entry.expect("readable dir entry").path();
             if !dir.is_dir() {
                 continue;
             }
-            let init = dir.join("init.lua");
-            let Ok(src) = std::fs::read_to_string(&init) else {
-                continue;
-            };
-            let name = dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .expect("plugin dir name is UTF-8")
-                .to_string();
+            let dir = dir.canonicalize().expect("plugin dir");
+            let (loader, activated) = super::activate_plugin_under_test(&dir)
+                .await
+                .unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+            let name = activated.unwrap_or_else(|| panic!("{} is not a plugin", dir.display()));
 
-            // Body level means column zero: an `on_*` call indented inside a
-            // function runs when that function does, not on re-execution.
-            //
-            // ANY receiver, not just `crucible`/`cru`. Narrowing it to those
-            // two let `discord` through: it registers with `gateway.on(...)` on
-            // a `require`d module whose `Emitter:on` appends, so a second
-            // execution handled every Discord message twice — two agent turns,
-            // two replies, two quota charges — and `tests/service_test.lua`
-            // already does `require("discord")`. The property is "a handler is
-            // attached when this file runs", and the receiver's name has
-            // nothing to do with it.
-            let body_level_hook = src.lines().any(|l| {
-                let Some((receiver, rest)) = l.split_once(['.', ':']) else {
-                    return false;
-                };
-                !receiver.is_empty()
-                    && receiver
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                    && !receiver.starts_with(|c: char| c.is_ascii_digit())
-                    && (rest.starts_with("on(") || rest.starts_with("on_"))
-            });
-            // The ASSIGNMENT, not the substring. Checking `contains` matched
-            // the guard's own explanatory comment, so this test passed with
-            // both guards deleted — decorative in exactly the way the review
-            // has been catching all week. Found by red-proofing it.
-            let guarded = src.lines().any(|l| {
-                let l = l.trim_start();
-                !l.starts_with("--") && l.starts_with("package.loaded[") && l.contains("] =")
-            });
-            if body_level_hook && !guarded {
-                unguarded.push(name);
+            assert_eq!(
+                loader.plugin_state(&name),
+                Some(crucible_lua::manifest::PluginState::Active),
+                "{name}: the runner activates a plugin before it runs the suite"
+            );
+
+            let info = loader
+                .loaded_plugin_info()
+                .into_iter()
+                .find(|p| p["name"].as_str() == Some(name.as_str()))
+                .unwrap_or_else(|| panic!("{name}: missing from plugin info"));
+            let declared_tools = info["tools"].as_u64().expect("tool count") as usize;
+            let registered = loader.plugin_registry().tool_names();
+            assert_eq!(
+                registered.len(),
+                declared_tools,
+                "{name}: declares {declared_tools} tool(s), the registry holds {registered:?}"
+            );
+
+            let handlers = loader
+                .plugin_handlers()
+                .for_source(&crucible_lua::LuaSource::Plugin(name.clone()));
+            if name == "session-board" {
+                // Its `setup` subscribes to `session:created` and
+                // `session:ended`, and its own suite asserts the two calls.
+                assert_eq!(
+                    handlers.len(),
+                    2,
+                    "{name}: setup() registered {} handler(s) under its source",
+                    handlers.len()
+                );
             }
+            checked += 1;
         }
-
-        assert!(
-            unguarded.is_empty(),
-            "these plugins register a hook at body level but never set \
-             `package.loaded`, so the documented `require(\"<name>\").setup{{…}}` \
-             loads a second copy and registers the hook twice:\n  - {}\n\
-             Add `package.loaded[\"<name>\"] = plugin` before the final return, \
-             as `auto-title`, `web-search`, `reflection` and `oci` do.",
-            unguarded.join("\n  - ")
-        );
+        assert!(checked >= 12, "expected the shipped plugins, saw {checked}");
     }
 
     /// The gate that was missing. `shipped_plugin_lua_suite_passes` listed four

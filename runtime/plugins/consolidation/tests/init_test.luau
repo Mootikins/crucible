@@ -1,6 +1,6 @@
 --!strict
--- The runner VM has no `cru.schedule` (the daemon registers it), so the
--- stub records each timer the plugin asks for.
+-- The stub replaces `cru.schedule` and records each timer the plugin asks
+-- for, so no timer reaches the daemon's scheduler.
 local scheduled: { any } = {}
 ;(cru :: any).schedule = function(spec: any, fn: any): number
   scheduled[#scheduled + 1] = { spec = spec, fn = fn }
@@ -65,6 +65,11 @@ package.loaded["reflection"] = {
 }
 
 describe("consolidation", function()
+  -- The runner activated this plugin before it loaded this file, and the
+  -- plugin put that instance in `package.loaded`. Its setup() ran against the
+  -- real `cru.on`. This suite drives setup() itself and reads the recorders
+  -- above, so it requires a fresh instance.
+  package.loaded["consolidation"] = nil
   local plugin = require("consolidation")
 
   describe("load", function()

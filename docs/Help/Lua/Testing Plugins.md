@@ -17,10 +17,17 @@ cru plugin test ./my-plugin -f "search"        # filter by name
 
 ## Writing Tests
 
-Test files end in `_test.lua`. Use `describe` and `it`. Load the plugin under
-test by its **directory name** — the module name the daemon uses — not by
-`init`; the runner's `package.path` resolves `require("my-plugin")` via
-`<plugins-parent>/?/init.lua`, and `require("init")` resolves nothing:
+Test files end in `_test.lua`. Use `describe` and `it`. Before the runner
+loads a test file, it activates the plugin on a plugin loader of its own, with
+the body the daemon uses: the plugin's `setup()` runs against the real `cru.*`
+modules, and an activation failure fails the run. Load the plugin under test by
+its **directory name** — the module name the daemon uses — not by `init`; the
+loader's searcher resolves `require("my-plugin")` through the directory that
+holds the plugin, and `require("init")` resolves nothing. A plugin that puts
+its own table in `package.loaded` answers that `require` with the instance the
+runner activated. A suite that drives `setup()` itself and records its
+registrations through a stub sets `package.loaded["my-plugin"] = nil` first,
+so the `require` runs the file again:
 
 ```lua
 -- my-plugin/tests/init_test.lua
