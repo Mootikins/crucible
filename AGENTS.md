@@ -102,6 +102,8 @@ which is what the compiler knows.
 
 ### Terminology — never interchangeable
 
+The full glossary is [docs/Meta/CONTEXT.md](./docs/Meta/CONTEXT.md) (`CONTEXT.md` symlinks there). Add a term there when a design names a new concept.
+
 - **Project** — where work output goes. Registered directory (git root or invocation dir). `.crucible/project.toml`.
 - **Kiln** — where knowledge goes. `.crucible/kiln.toml`. A session *attaches* kilns (flat set, no primary); it is not *stored* in one — transcripts live under the daemon data root regardless.
 - **Workspace** — an instance of a project directory (root, or a worktree). Runtime concept, no config file. Do NOT rename correct existing uses (`session.workspace`, `WorkspaceTools`, Lua `paths.workspace()`).
