@@ -751,6 +751,9 @@ fn seed_boot_search_path(
 ) -> mlua::Result<()> {
     let plugin_roots = plugin_dir_roots(plugin_dirs);
     apply_search_roots(modules, config_root, &plugin_roots)?;
+    // `cru.plugin.setup{ { import = "<dir>" } }` reads `<dir>` under the same
+    // root `require` resolves user modules from.
+    crucible_lua::set_import_root(lua, config_root.join("lua"));
 
     lua.set_app_data(BootRequireState {
         active: true,

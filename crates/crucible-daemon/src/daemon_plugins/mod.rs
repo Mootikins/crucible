@@ -354,6 +354,12 @@ impl DaemonPluginLoader {
         let status = StatusRegistry::new();
         reg("status", register_status_module(lua, status.clone()))?;
 
+        // `cru.plugin.setup` — the spec. The rank of a write comes from the
+        // source in force on this VM, so the operator's `init.lua` outranks
+        // the shipped defaults and a plugin's own fragment. The boot sets the
+        // `import` root when it knows the config root (`boot.rs`).
+        reg("plugin spec", crucible_lua::register_plugin_spec_api(lua))?;
+
         // `cru.surface.declare` — a panel every client draws in its own idiom.
         // Data, never a node tree: the browser cannot afford a cell grid, and a
         // grid cannot express the DOM. See `crucible-lua/src/surfaces.rs`.

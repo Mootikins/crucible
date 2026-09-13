@@ -77,6 +77,7 @@ mod oil;
 pub mod options;
 mod paths;
 pub mod plugin_context;
+pub mod plugin_spec_store;
 pub mod plugin_status;
 mod prelude;
 pub mod publications;
@@ -161,6 +162,9 @@ pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
     current_plugin_name, current_session, current_source, enter_plugin, enter_session,
     intercept_for, record_plugin_intercept, set_source, LuaSource, SessionGuard,
+};
+pub use plugin_spec_store::{
+    config_of, init_of, register_plugin_spec_api, set_import_root, spec_of,
 };
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
