@@ -134,7 +134,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G96 | wire | One setter and one getter per knob on one field name (6.1, 9.18) | 15 one-field `SessionSet*Request` structs and 15 pairs (`rpc_client/client/agent.rs:32-144`); 16 `cached_*` fields mirror `SessionAgent` | code-wrong | M |
 | G97 | wire | A handler is a thin translation with a typed result (4.26) | Every handler returns hand-spelled `json!`; `require_param!` (56 uses) and `typed_params` (9 files) coexist; 46 request structs are client-only | code-wrong | L |
 | G98 | wire | One `RpcContext` (4.26) | `ServerContext` duplicates it with 8 unread fields under `#[allow(dead_code)]` (`server/mod.rs:950`) | code-wrong | S |
-| G99 | wire | The daemon reads its environment at bind (S41) | `plugin_boot.rs:93,139,148` and `rpc/ui.rs:152` read `dirs::config_dir()`; `platform.rs:58,108,150` call `current_dir()`; `workflow_handlers.rs:237` reads an env var per request | code-wrong | M |
+| G99 | wire | The daemon reads its environment at bind (S41) | `Server::boot_plugins` (`server/mod.rs`) and `rpc/ui.rs:152` read `dirs::config_dir()`; `platform.rs:58,108,150` call `current_dir()`; `workflow_handlers.rs:237` reads an env var per request | code-wrong | M |
 | G100 | wire | `Server::run` is a short accept loop (4.26) | About 500 lines with four inline task bodies (`server/mod.rs:452-945`); `Server::bind` has no caller; `web_config` is a stub | code-wrong | M |
 | G101 | wire | Web routes mirror RPC families and a test derives the route set (6.2) | `ReconnectingDaemon` is about 95 hand wrappers over four files with six dead ones (`services/daemon.rs:57`); no route-derivation test is recorded | code-wrong | M |
 | G102 | wire | The web server reaches the daemon through the RPC client only (4.27) | It imports `server::plugins::OptionAction`, `project_manager::*`, `webhook::*` (`routes/plugin.rs:8`, `routes/project.rs:8`, `routes/webhook.rs:11`) | code-wrong | M |
@@ -680,7 +680,7 @@ to wire it or withdraw it.
    rendering and a permission-rule writer. The web writes kiln files and walks
    the kiln. Rows: G17, G63, G71, G72, G139, G140, G141.
 7. **Environment reads instead of injection.** `execution_roots`,
-   `plugin_boot`, `platform.rs`, `Recorder`, `EMBEDDING_PROVIDER_CACHE`, Lua
+   `Server::boot_plugins`, `platform.rs`, `Recorder`, `EMBEDDING_PROVIDER_CACHE`, Lua
    `CONFIG`, `NO_COLOR`, `main.rs set_var`. Rows: G16, G59, G99, G108, G126,
    G147, G166.
 8. **Machinery with no consumer.** 40 scripting event variants, `EventRing`,

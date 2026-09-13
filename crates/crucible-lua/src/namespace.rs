@@ -109,7 +109,7 @@ impl CruNamespace {
 
     /// Whether the daemon's plugin VM carries this name after boot
     /// (`DaemonPluginLoader::new` plus the UI-config registration that
-    /// `plugin_boot` performs).
+    /// `Server::boot_plugins` performs).
     ///
     /// Exhaustive on purpose: a new variant does not compile until its VM
     /// placement is stated, and the gate then proves the statement.

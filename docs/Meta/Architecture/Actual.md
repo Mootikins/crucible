@@ -754,7 +754,7 @@ to resume and close. MCP: `InProcessMcpHost` URL goes into
   `None` (`server/mod.rs:127,472`, `server/bind.rs:27`). `Server::bind` has no
   caller (`server/bind.rs:75`). Nine `#[allow(dead_code)]` in `server/mod.rs`
   and `server/bind.rs`.
-- `plugin_boot.rs:93,139,148` and `rpc/ui.rs:152` read `dirs::config_dir()`
+- `Server::boot_plugins` (`server/mod.rs`) and `rpc/ui.rs:152` read `dirs::config_dir()`
   while `RpcContext.config_home` exists (`context.rs:93-97`); an in-process
   test daemon evaluates the developer's real `init.lua`.
   `platform.rs:58,108,150` call `current_dir()` inside the daemon and repeat
@@ -820,7 +820,7 @@ the precognition formatter. `ModeRegistry` has no Rust default.
 `crucible-daemon/src/daemon_plugins/`, `plugin_tools.rs`, `plugin_ops.rs`,
 `runtime_defaults.rs`, `rules_files.rs`, `skills/`, `session_bridge.rs`,
 `tools_bridge.rs`, `agent_manager/session_config.rs`, `server/{lua,plugins,
-plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
+plugin_install}.rs`, `server/mod.rs` (`Server::boot_plugins`), `rpc/ui.rs`, `runtime/`.
 
 **Types.**
 
