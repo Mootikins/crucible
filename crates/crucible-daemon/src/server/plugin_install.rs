@@ -6,7 +6,9 @@
 
 use super::plugins::spawn_plugin_services;
 use super::*;
-/// activation pass.
+
+/// What one install's activation reported: whether the plugin came up, and
+/// the counts `plugin.install` answers.
 #[derive(Debug)]
 pub(crate) struct InstallLoadReport {
     pub loaded: bool,
