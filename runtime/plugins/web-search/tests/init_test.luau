@@ -362,7 +362,7 @@ describe("web-search plugin", function()
     end)
 
     describe("re-execution", function()
-        -- `execute_plugin` evaluates init.lua without populating
+        -- `activate` evaluates init.lua without populating
         -- `package.loaded`, so the documented `require("web-search").setup{}`
         -- from a user's init.lua used to re-run the whole module — registering
         -- a SECOND display hook, outside any plugin's ownership, which

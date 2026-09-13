@@ -57,15 +57,38 @@ async fn a_boot_require_and_the_loader_share_one_activation() {
     assert_eq!(loader.plugin_state("once"), Some(PluginState::Active));
 }
 
+/// The body leaves a mark in the VM when it runs. A body that raised
+/// instead would pass this test through the wrong door: `activate` skips
+/// `mark_error` for a disabled plugin, so the state alone cannot tell a
+/// body that never ran from a body that ran and failed.
 #[tokio::test]
 async fn a_disabled_plugin_never_runs() {
-    let (mut loader, _dirs) = loader_with_plugin("quiet", r#"error("ran")"#).await;
+    let (mut loader, _dirs) = loader_with_plugin("quiet", r#"_G.ran = true; return {}"#).await;
     loader
         .eval_user_init(r#"cru.plugin.setup({ { "quiet", enabled = false } })"#)
         .await
         .unwrap();
     loader.load_plugins_from_spec().await.unwrap();
+    let ran: Option<bool> = loader.lua().globals().get("ran").unwrap();
+    assert_eq!(ran, None, "the disabled plugin's body ran");
     assert_eq!(loader.plugin_state("quiet"), Some(PluginState::Disabled));
+}
+
+/// A reload of a plugin that `init.lua` required must read its file again.
+/// The boot `require` left an instance in `package.loaded`, and `activate`
+/// reuses such an instance; the reload forgets it first, so the body runs
+/// a second time.
+#[tokio::test]
+async fn reloading_a_boot_required_plugin_reruns_its_file() {
+    let (mut loader, _dirs) =
+        loader_with_plugin("x", r#"_G.runs = (_G.runs or 0) + 1; return {}"#).await;
+    loader.eval_user_init(r#"require("x")"#).await.unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    assert_eq!(loader.plugin_state("x"), Some(PluginState::Active));
+
+    loader.reload_plugin("x").await.expect("reload");
+    let runs: i64 = loader.lua().globals().get("runs").unwrap();
+    assert_eq!(runs, 2, "the reload did not re-run the plugin's file");
 }
 
 #[tokio::test]

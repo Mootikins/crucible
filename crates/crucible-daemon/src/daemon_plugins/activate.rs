@@ -78,7 +78,8 @@ pub(super) async fn activate(loader: &mut DaemonPluginLoader, name: &str) -> any
     result
 }
 
-/// The ten steps. Each comment names what the step decides.
+/// The ten steps, numbered in the order the code runs them. Each comment
+/// names what the step decides.
 async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::Result<Table> {
     let lua = loader.executor.lua().clone();
     let plugin = loader
@@ -92,7 +93,7 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
     let declared_name = plugin.manifest.declared_name.clone();
     let state = plugin.state;
 
-    // 2. Idempotent: an active plugin answers the table it already holds.
+    // 1. Idempotent: an active plugin answers the table it already holds.
     if let Some(key) = loader.active_modules.get(name) {
         return Ok(lua.registry_value::<Table>(key)?);
     }
@@ -109,7 +110,7 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
     // `package.loaded` itself does not.
     let boot_instance = boot_required_instance(loader, &init_path)?;
 
-    // 1. `enabled`, first answer wins: the operator's entry, the config
+    // 2. `enabled`, first answer wins: the operator's entry, the config
     // leaf, the fragments, `true`. A boot-required plugin the spec disables
     // was asked for twice with two answers; the require was explicit, so it
     // activates, and the log names both sites.
@@ -148,6 +149,12 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
         options: loader.options.clone(),
     };
 
+    // 4. The intercept grant the fragment declared, admitted here and
+    // nowhere else. An unrecorded name answers "no". Recorded BEFORE the
+    // body runs: a reload whose fragment dropped the grant must not keep the
+    // previous generation's `true` while the body's async eval is under way.
+    crucible_lua::record_plugin_intercept(&lua, name, intercepts_tools);
+
     let module: Table = match boot_instance {
         Some(instance) => {
             // The body already ran under the boot `require`, with its own
@@ -168,7 +175,7 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
             // to THIS plugin before its body runs: one VM serves every
             // plugin, and the loader knows who it is about to execute.
             bindings.rebind(&lua, name)?;
-            // 4. A reload starts clean: the previous generation's handlers,
+            // 5. A reload starts clean: the previous generation's handlers,
             // session hooks, permission hooks, auth hooks and schedules go.
             crucible_lua::clear_source(
                 &lua,
@@ -178,10 +185,6 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
             run_module(&lua, name, &init_path).await?
         }
     };
-
-    // 5. The intercept grant the fragment declared, admitted here and
-    // nowhere else. An unrecorded name answers "no".
-    crucible_lua::record_plugin_intercept(&lua, name, intercepts_tools);
 
     // 7. Declarations first, then the callables. Read and remembered BEFORE
     // `config` runs, so a raise in `setup` keeps the declarations visible
