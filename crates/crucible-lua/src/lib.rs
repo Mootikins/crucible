@@ -22,7 +22,7 @@
 //!                       ▼
 //!             ┌─────────────────────────┐
 //!             │  PluginManager          │
-//!             │  Lua runtime loading    │
+//!             │  discovered plugins     │
 //!             └─────────────────────────┘
 //!                       │
 //!                       ▼

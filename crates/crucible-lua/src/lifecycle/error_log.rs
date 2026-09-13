@@ -1,7 +1,14 @@
-use super::PluginManager;
+//! The bounded log of plugin errors a VM carries.
+//!
+//! The log is app data on the VM whose plugins it describes, because the
+//! errors happen there: a hook that raises, an emitter listener that raises.
+//! `cru.errors.recent` (`prelude/mod.rs`) reads the same app data, so the
+//! Lua side sees what the Rust side recorded. A VM without a log drops the
+//! entry, because an error path that raises is worse than one that forgets.
+
+use mlua::Lua;
 use std::collections::VecDeque;
-#[cfg(any(test, feature = "test-utils"))]
-use std::sync::MutexGuard;
+use std::sync::{Arc, Mutex};
 use tracing::warn;
 
 /// A single captured error entry from plugin execution.
@@ -17,7 +24,7 @@ pub struct PluginErrorEntry {
     pub timestamp: std::time::Instant,
 }
 
-/// Bounded ring buffer of recent plugin errors. Stored per-PluginManager for test isolation.
+/// Bounded ring buffer of recent plugin errors. One per VM.
 #[derive(Debug)]
 pub struct PluginErrorLog {
     entries: VecDeque<PluginErrorEntry>,
@@ -31,6 +38,19 @@ impl PluginErrorLog {
             entries: VecDeque::with_capacity(capacity),
             capacity,
         }
+    }
+
+    /// Give `lua` an error log, and answer the shared handle.
+    pub fn install(lua: &Lua, capacity: usize) -> Arc<Mutex<Self>> {
+        let log = Arc::new(Mutex::new(Self::new(capacity)));
+        lua.set_app_data(Arc::clone(&log));
+        log
+    }
+
+    /// The log `lua` carries, when it has one.
+    pub fn of(lua: &Lua) -> Option<Arc<Mutex<Self>>> {
+        lua.app_data_ref::<Arc<Mutex<Self>>>()
+            .map(|shared| Arc::clone(&*shared))
     }
 
     /// Push a new error entry. Evicts oldest if over capacity.
@@ -63,27 +83,24 @@ impl PluginErrorLog {
     }
 }
 
-impl PluginManager {
-    /// Access the error log for this plugin manager.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn error_log(&self) -> MutexGuard<'_, PluginErrorLog> {
-        self.error_log.lock().expect("error_log: poisoned")
-    }
-
-    pub(super) fn capture_plugin_error(
-        &self,
-        plugin: &str,
-        error: impl ToString,
-        context: impl Into<String>,
-    ) {
-        match self.error_log.lock() {
-            Ok(mut log) => log.push(PluginErrorEntry {
-                plugin: plugin.to_string(),
-                error: error.to_string(),
-                context: context.into(),
-                timestamp: std::time::Instant::now(),
-            }),
-            Err(_) => warn!("Failed to capture plugin error due to poisoned error log"),
-        }
+/// Record an error in the log `lua` carries. A VM without a log drops it.
+pub fn record_plugin_error(
+    lua: &Lua,
+    plugin: &str,
+    error: impl ToString,
+    context: impl Into<String>,
+) {
+    let Some(log) = PluginErrorLog::of(lua) else {
+        return;
+    };
+    let locked = log.lock();
+    match locked {
+        Ok(mut guard) => guard.push(PluginErrorEntry {
+            plugin: plugin.to_string(),
+            error: error.to_string(),
+            context: context.into(),
+            timestamp: std::time::Instant::now(),
+        }),
+        Err(_) => warn!("Failed to capture plugin error due to poisoned error log"),
     }
 }

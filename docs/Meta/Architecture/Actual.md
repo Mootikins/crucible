@@ -827,7 +827,7 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | Type | Location | Purpose |
 |---|---|---|
 | `LuaExecutor` | `crucible-lua/src/executor.rs:25` | Owns the Luau VM, the module registry, the current session |
-| `PluginManager` | `crucible-lua/src/lifecycle/mod.rs:31` | Discovers, loads, reloads, enables plugins |
+| `PluginManager` | `crucible-lua/src/lifecycle/mod.rs` | The registry of discovered plugins and the state of each; holds no VM |
 | `PluginSpec` | `crucible-lua/src/lifecycle/spec.rs:16` | Parsed spec table an `init.lua` returns |
 | `PluginManifest`, `Capability`, `PluginState`, `PluginSource` | `crucible-lua/src/manifest.rs:48,80,325,295` | `plugin.yaml` model |
 | `LuaScriptHandlerRegistry`, `Registration`, `RegistrationSpec` | `crucible-lua/src/handlers/registry.rs` | ONE store for every `cru.*` callback: `cru.on`, `cru.permissions.on_request`, both session hooks, `cru.on_provider_auth` |
@@ -912,7 +912,7 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   `model` would silently replace the one the caller named on the command line.
 - `CONFIG` is process-global (`config.rs:55`); every VM shares theme state.
 - `daemon_plugin_paths` (`daemon_plugins/bootstrap.rs:33`) and
-  `PluginManager::with_standard_paths` (`lifecycle/mod.rs:112`) both compute
+  `PluginManager::discover_only` (`lifecycle/mod.rs`) both compute
   the plugin path list. `expand_tilde` (`bootstrap.rs:113`) equals
   `kiln_manager::expand_tilde_path` (`kiln_manager.rs:1199`).
 - `DaemonPluginLoader` stores `plugin_config` and copies it into a Lua table
@@ -931,9 +931,7 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   shapes (`types.rs:9,28`, `discovered.rs:20,31`); `executor.rs:306,418`
   (`execute_file`, `execute_tool`) and `execute_source` have no production
   caller, so `types.rs` and `schema.rs` have no production reader.
-- Test-only public API on `PluginManager`: `active_plugins`, `eval_runtime`,
-  `reload`, `enable`, `initialize`, `error_log`, `with_search_paths`,
-  `load_plugin_spec_from_source`.
+- Test-only public API on `PluginManager`: `enable`.
 - `shell.rs:159-185,289-312` repeat Command setup; `http.rs:50-116` repeats
   five closures; `fs.rs:58,75,127,145` repeat the ensure-parent block.
 
@@ -1382,9 +1380,7 @@ Production items that only tests use:
 - `ComponentHarness` (`crucible-cli/src/tui/oil/component.rs:19`) and
   `AppHarness` (`tui/oil/test_harness.rs:8`) live in non-test modules and are
   re-exported from `tui/mod.rs`.
-- `PluginManager` test-only API: `active_plugins`, `eval_runtime`, `reload`,
-  `enable`, `initialize`, `error_log`, `with_search_paths`,
-  `load_plugin_spec_from_source` (`crucible-lua/src/lifecycle/`).
+- `PluginManager` test-only API: `enable` (`crucible-lua/src/lifecycle/`).
 - `crucible-daemon/src/server/lua_plugin_suite.rs:438` reads its own source
   with `include_str!` to enumerate test arms.
 - Test seams on `Server`: `shutdown_handle`, `event_sender` (`server/mod.rs:439,447`,

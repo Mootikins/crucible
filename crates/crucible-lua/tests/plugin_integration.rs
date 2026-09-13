@@ -2,10 +2,10 @@
 //!
 //! Tests the manager's registry of discovered plugins:
 //! 1. Plugin discovery from directories
-//! 2. The state a load and an unload record
+//! 2. The state the daemon asks it to record
 //!
-//! The manager runs no plugin code. What a plugin exports is read at
-//! activation, in the daemon (`crucible-daemon/src/daemon_plugins/tests`).
+//! The manager holds no VM and runs no plugin code. Activation is the
+//! daemon's act (`crucible-daemon/src/daemon_plugins/tests/activate.rs`).
 
 use crucible_lua::{PluginManager, PluginState};
 use mlua::Lua;
@@ -112,51 +112,21 @@ fn test_discover_ignores_invalid_plugins() {
 }
 
 // ============================================================================
-// PLUGIN LOADING
+// PLUGIN STATE
 // ============================================================================
 
 #[test]
-fn test_load_plugin() {
-    let temp = TempDir::new().unwrap();
-    create_plugin_structure(temp.path(), "loadable", "1.0.0");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover(&Lua::new()).unwrap();
-
-    manager.load("loadable").unwrap();
-
-    let plugin = manager.get("loadable").unwrap();
-    assert_eq!(plugin.state, PluginState::Active);
-}
-
-#[test]
-fn test_load_all_plugins() {
-    let temp = TempDir::new().unwrap();
-    create_plugin_structure(temp.path(), "plugin-1", "1.0.0");
-    create_plugin_structure(temp.path(), "plugin-2", "1.0.0");
-
-    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
-    manager.discover(&Lua::new()).unwrap();
-
-    let loaded = manager.load_all().unwrap();
-
-    assert_eq!(loaded.len(), 2);
-    assert!(loaded.contains(&"plugin-1".to_string()));
-    assert!(loaded.contains(&"plugin-2".to_string()));
-}
-
-// ============================================================================
-// PLUGIN UNLOADING
-// ============================================================================
-
-#[test]
-fn test_unload_plugin() {
+fn test_mark_active_then_unload() {
     let temp = TempDir::new().unwrap();
     create_plugin_structure(temp.path(), "unloadable", "1.0.0");
 
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     manager.discover(&Lua::new()).unwrap();
-    manager.load("unloadable").unwrap();
+    manager.mark_active("unloadable");
+    assert_eq!(
+        manager.get("unloadable").unwrap().state,
+        PluginState::Active
+    );
 
     manager.unload("unloadable").unwrap();
 

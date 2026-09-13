@@ -1,5 +1,6 @@
-use super::setup_emitter_manager;
-use crate::lifecycle::{PluginErrorEntry, PluginErrorLog};
+use super::vm_with_error_log;
+use crate::lifecycle::{PluginErrorEntry, PluginErrorLog, PluginManager};
+use mlua::Lua;
 
 #[test]
 fn test_error_log_push_and_recent() {
@@ -59,19 +60,15 @@ fn test_error_log_clear() {
 
 #[test]
 fn test_cru_errors_recent_returns_entries() {
-    let manager = setup_emitter_manager();
-    {
-        let mut log = manager.error_log();
-        log.push(PluginErrorEntry {
-            plugin: "test-plugin".to_string(),
-            error: "test error".to_string(),
-            context: "test context".to_string(),
-            timestamp: std::time::Instant::now(),
-        });
-    }
+    let (lua, log) = vm_with_error_log();
+    log.lock().unwrap().push(PluginErrorEntry {
+        plugin: "test-plugin".to_string(),
+        error: "test error".to_string(),
+        context: "test context".to_string(),
+        timestamp: std::time::Instant::now(),
+    });
 
-    let recent = manager
-        .lua
+    let recent = lua
         .load("return cru.errors.recent(1)")
         .eval::<mlua::Table>()
         .unwrap();
@@ -86,21 +83,19 @@ fn test_cru_errors_recent_returns_entries() {
 
 #[test]
 fn test_emitter_error_captured_in_log() {
-    let manager = setup_emitter_manager();
-    manager
-        .lua
-        .load(
-            r#"
+    let (lua, log) = vm_with_error_log();
+    lua.load(
+        r#"
         cru.emitter.global():on("test_event", function()
             error("intentional error")
         end, "test-plugin")
         cru.emitter.global():emit("test_event")
     "#,
-        )
-        .exec()
-        .unwrap();
+    )
+    .exec()
+    .unwrap();
 
-    let log = manager.error_log();
+    let log = log.lock().unwrap();
     assert_eq!(log.len(), 1);
     let recent = log.recent(1);
     assert_eq!(recent[0].plugin, "test-plugin");
@@ -110,23 +105,69 @@ fn test_emitter_error_captured_in_log() {
 
 #[test]
 fn test_error_log_attributes_to_plugin() {
-    let manager = setup_emitter_manager();
-    manager
-        .lua
-        .load(
-            r#"
+    let (lua, log) = vm_with_error_log();
+    lua.load(
+        r#"
         cru.emitter.global():on("msg", function()
             error("boom")
         end, "my-plugin")
         cru.emitter.global():emit("msg")
     "#,
-        )
-        .exec()
-        .unwrap();
+    )
+    .exec()
+    .unwrap();
 
-    let log = manager.error_log();
+    let log = log.lock().unwrap();
     assert!(!log.is_empty());
     let recent = log.recent(1);
     assert_eq!(recent[0].plugin, "my-plugin");
     assert!(recent[0].context.contains("msg"));
+}
+
+/// A raising `on_load` lands in the log of the VM that holds the hook, so
+/// `cru.errors.recent` on that VM answers it. The manager has no log of its
+/// own: the daemon VM is the only VM that runs plugin code.
+#[test]
+fn a_hook_that_raises_is_recorded_in_the_vms_error_log() {
+    let (lua, log) = vm_with_error_log();
+    let on_load: mlua::Function = lua
+        .load(r#"return function() error("on_load boom") end"#)
+        .eval()
+        .unwrap();
+    let key = lua.create_registry_value(on_load).unwrap();
+
+    let mut manager = PluginManager::new();
+    manager.set_lifecycle_hooks("hooked", Some(key), None);
+    manager.call_on_load_hook(&lua, "hooked");
+
+    let log = log.lock().unwrap();
+    let recent = log.recent(1);
+    assert_eq!(recent.len(), 1, "the raise was not recorded");
+    assert_eq!(recent[0].plugin, "hooked");
+    assert!(
+        recent[0].error.contains("on_load boom"),
+        "{}",
+        recent[0].error
+    );
+    assert_eq!(recent[0].context, "handler:on_load:hooked");
+}
+
+/// A VM without a log drops the entry. The hook still ran, and the call
+/// did not raise.
+#[test]
+fn a_hook_that_raises_on_a_vm_without_a_log_is_not_fatal() {
+    let lua = Lua::new();
+    let on_unload: mlua::Function = lua
+        .load(r#"return function() _G.fired = true; error("late") end"#)
+        .eval()
+        .unwrap();
+    let key = lua.create_registry_value(on_unload).unwrap();
+
+    let mut manager = PluginManager::new();
+    manager.set_lifecycle_hooks("quiet", None, Some(key));
+    manager.call_on_unload_hook(&lua, "quiet");
+
+    let fired: bool = lua.globals().get("fired").unwrap();
+    assert!(fired, "the hook did not run");
+    assert!(PluginErrorLog::of(&lua).is_none());
 }

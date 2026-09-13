@@ -21,11 +21,11 @@ pub struct PluginDiscoveryError {
 /// `std::fs::read_dir` returns entries in an order the platform does not
 /// specify, so DISCOVERY order was a property of the disk.
 ///
-/// **This does not decide the load order, and an earlier version of this
-/// comment claimed it did.** `PluginManager::load_all` sorts its whole key set
-/// (`lifecycle/loading.rs`), so the load order was already one alphabetical
-/// sort across every directory, whatever `read_dir` answered. The handler
-/// tie-break reads that order, not this one.
+/// **This does not decide the activation order, and an earlier version of
+/// this comment claimed it did.** The daemon's activation pass
+/// (`load_plugins_from_spec`) sorts every discovered name, so that order is
+/// one alphabetical sort across every directory, whatever `read_dir`
+/// answered. The handler tie-break reads that order, not this one.
 ///
 /// What this sort decides is narrower: which plugin wins a duplicated name.
 /// Discovery walks the search paths in `Origin` order and the first name seen

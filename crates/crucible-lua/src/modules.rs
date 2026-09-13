@@ -1020,6 +1020,40 @@ mod tests {
             "searchpath must answer over the host roots"
         );
     }
+
+    /// A dotted name walks into a plugin's directory: `my-plugin.vendored`
+    /// is `<plugins>/my-plugin/vendored.luau`. That is how a plugin's
+    /// sibling module is reached by its public name, from anywhere.
+    #[test]
+    fn a_vendored_module_resolves_under_the_plugin_namespace() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            &tmp.path().join("plugins/my-plugin/init.luau"),
+            "return { name = 'my-plugin' }",
+        );
+        write(
+            &tmp.path().join("plugins/my-plugin/vendored.luau"),
+            "return { answer = 42 }",
+        );
+        let (lua, registry) = vm();
+        registry
+            .set_roots(vec![(tmp.path().join("plugins"), RootKind::Plugin)])
+            .unwrap();
+
+        let answer: i64 = lua
+            .load("return require('my-plugin.vendored').answer")
+            .eval()
+            .unwrap();
+        assert_eq!(answer, 42);
+
+        // A sibling is not the plugin's entry module.
+        let request = registry
+            .resolve("my-plugin.vendored")
+            .unwrap()
+            .expect("the dotted name resolves");
+        assert!(!request.is_entry, "a sibling module is not an entry module");
+        assert!(request.path.ends_with("my-plugin/vendored.luau"));
+    }
 }
 
 #[cfg(test)]

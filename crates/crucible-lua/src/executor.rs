@@ -276,6 +276,9 @@ impl LuaExecutor {
         crate::timer::register_timer_module(lua)?;
         crate::ratelimit::register_ratelimit_module(lua)?;
         crate::vec_api::register_vec_module(lua)?;
+        // The error log `cru.errors.recent` reads, and a raising lifecycle
+        // hook writes. It lives on the VM that runs the plugins.
+        crate::lifecycle::PluginErrorLog::install(lua, 100);
         crate::prelude::register_prelude(lua)?;
 
         Ok(())

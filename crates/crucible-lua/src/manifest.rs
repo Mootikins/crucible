@@ -192,7 +192,7 @@ fn is_valid_version(version: &str) -> bool {
 /// Where a plugin was discovered from, ordered by priority (highest first).
 ///
 /// There is no `Kiln` variant. The daemon's `daemon_plugin_paths` emits only
-/// these three, and `PluginManager::with_standard_paths` reads the first two
+/// these three, and `PluginManager::discover_only` reads the first two
 /// from `crucible_core::paths` (`env_plugin_paths`, `user_plugins_dir`), so
 /// the two path lists share one definition. Plugins are user-scoped; a kiln's
 /// tree is opted into via `runtimepath`, which makes it `Runtime` like any

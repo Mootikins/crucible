@@ -155,11 +155,11 @@ fn a_directory_holding_only_the_removed_manifest_is_not_a_plugin() {
 /// `std::fs::read_dir` specifies no order, and the order changes with the file
 /// system, so without the sort this assertion depends on the disk.
 ///
-/// This sort does not decide the load order. `PluginManager::load_all` sorts
-/// its whole key set, so the load order is one alphabetical sort across every
-/// directory whatever `read_dir` answers. What the discovery sort decides is
-/// which entry wins a duplicated name, and it makes a discovery log
-/// reproducible.
+/// This sort does not decide the activation order. The daemon's activation
+/// pass sorts every discovered name, so that order is one alphabetical sort
+/// across every directory whatever `read_dir` answers. What the discovery
+/// sort decides is which entry wins a duplicated name, and it makes a
+/// discovery log reproducible.
 #[test]
 fn discovery_reads_one_search_path_in_name_order() {
     let temp = TempDir::new().unwrap();
@@ -189,10 +189,11 @@ fn discovery_reads_one_search_path_in_name_order() {
 /// roots in the order it receives them, so a plugin from a higher root is
 /// DISCOVERED first even when its name sorts last.
 ///
-/// It does not LOAD first, and an earlier version of this test asserted that
-/// it did. `load_all` sorts every discovered name, so `alpha` from the lower
-/// root loads before `zulu` from the higher one. The rank decides which
-/// plugin a name resolves to, not when that plugin runs.
+/// It does not ACTIVATE first, and an earlier version of this test asserted
+/// that it did. The daemon's activation pass sorts every discovered name,
+/// so `alpha` from the lower root activates before `zulu` from the higher
+/// one. The rank decides which plugin a name resolves to, not when that
+/// plugin runs.
 #[test]
 fn a_higher_search_path_is_discovered_before_a_lower_one() {
     let high = TempDir::new().unwrap();
@@ -208,13 +209,6 @@ fn a_higher_search_path_is_discovered_before_a_lower_one() {
         discovered,
         vec!["zulu", "alpha"],
         "the search path rank must outrank the name order"
-    );
-
-    let loaded = manager.load_all().unwrap();
-    assert_eq!(
-        loaded,
-        vec!["alpha", "zulu"],
-        "the load order is one sort over every name, not the discovery order"
     );
 }
 
