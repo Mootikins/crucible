@@ -79,6 +79,10 @@ pub(crate) async fn handle_plugin_list(
                     // that doesn't parse has no `plugin_info` entry to carry its
                     // error, so it would otherwise reach no client.
                     "errors": l.discovery_errors(),
+                    // The merged spec. `cru plugin list` reads the git rows
+                    // from here: the spec lives on the plugin VM, so no
+                    // client can evaluate it on its own.
+                    "spec": spec_rows(l),
                 }),
             )
         }
@@ -88,9 +92,24 @@ pub(crate) async fn handle_plugin_list(
                 "plugins": [],
                 "plugin_info": [],
                 "errors": [],
+                "spec": [],
             }),
         ),
     }
+}
+
+/// The merged spec as `plugin.list` rows, in name order.
+fn spec_rows(loader: &DaemonPluginLoader) -> Vec<crate::rpc_client::PluginSpecRow> {
+    let spec = crucible_lua::spec_of(loader.lua());
+    spec.iter()
+        .map(|entry| crate::rpc_client::PluginSpecRow {
+            rank: spec
+                .rank_of(&entry.name)
+                .unwrap_or(crucible_core::config::SpecRank::PluginFragment),
+            declared: crate::daemon_plugins::declared_git_entry(&spec, &entry.name),
+            entry: entry.clone(),
+        })
+        .collect()
 }
 
 /// List the commands loaded plugins declared.

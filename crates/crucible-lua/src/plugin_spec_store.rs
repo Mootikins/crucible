@@ -85,6 +85,17 @@ pub fn spec_of(lua: &Lua) -> Spec {
     SpecStore::of(lua).lock().spec.clone()
 }
 
+/// Merge one entry the host built, at `rank`.
+///
+/// The one Rust-side writer. The daemon merges the installed manifest
+/// (`plugins.installed.json`) here at `SpecRank::Builtin`: an install is the
+/// operator's act through a tool, so it sits below the operator's own
+/// `init.lua` and above a plugin's fragment. An entry from Rust carries no
+/// `config` or `init` function, so the held-function maps stay as they are.
+pub fn merge_spec_entry(lua: &Lua, entry: SpecEntry, rank: SpecRank) {
+    SpecStore::of(lua).lock().spec.merge(entry, rank);
+}
+
 /// The `config` function from the highest-ranked entry for `name` that gave
 /// one, if any. This rank can differ from `Spec::rank_of(name)`: an operator
 /// entry with no `config` leaves a Builtin `config` in place.

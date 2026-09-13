@@ -25,7 +25,8 @@ pub use update::UpdateArgs;
 /// Where a git-hosted plugin entry came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntrySource {
-    /// `plugins.declare.<name>` in the config.
+    /// A `cru.plugin.setup` entry with a git source in the operator's
+    /// `init.lua`.
     Declared,
     /// `<data_home>/plugins.installed.json`.
     Installed,
@@ -40,32 +41,61 @@ impl EntrySource {
     }
 }
 
-/// Every configured git-hosted plugin: the config-declared entries plus the
-/// installed manifest, name-deduplicated with the declaration winning (the
-/// same rule the daemon's bootstrap union applies).
+/// A git-hosted plugin as `cru plugin list` and `cru plugin update` see it.
+#[derive(Debug, Clone)]
+pub(crate) struct GitPlugin {
+    pub name: String,
+    pub url: String,
+    pub branch: Option<String>,
+    pub pin: Option<String>,
+    /// The merged `enabled`, with `true` for an entry that does not say.
+    pub enabled: bool,
+    pub source: EntrySource,
+}
+
+/// Every configured git-hosted plugin, from the spec the daemon holds.
 ///
-/// Best-effort on the config side: an unreadable config yields the manifest
-/// alone, with the reason surfaced to the caller.
-pub(crate) async fn configured_plugin_entries() -> Result<(
-    Vec<(String, crucible_core::config::PluginEntry, EntrySource)>,
-    Vec<String>,
-)> {
+/// The spec lives on the daemon's plugin VM: the operator's `init.lua`
+/// entries and the installed manifest are merged there, with the
+/// declaration winning by rank. With no daemon (`client` is `None`) the
+/// manifest alone is read, and a note says the `init.lua` entries are not
+/// shown.
+pub(crate) async fn configured_plugin_entries(
+    client: Option<&crucible_daemon::DaemonClient>,
+) -> Result<(Vec<GitPlugin>, Vec<String>)> {
     let mut notes = Vec::new();
 
-    let declared = match crate::config::fetch_effective_config(None, None, None).await {
-        Ok(config) => {
-            let (entries, warnings) = crucible_core::config::declared_plugins(&config.plugins);
-            notes.extend(warnings);
-            entries
-        }
-        Err(e) => {
-            notes.push(format!(
-                "could not read the config for declared plugins: {e}"
-            ));
-            Vec::new()
-        }
-    };
+    if let Some(client) = client {
+        let rows = client.plugin_list_spec().await?;
+        let entries = rows
+            .into_iter()
+            .filter_map(|row| {
+                let crucible_core::config::SpecSource::Git { url, branch, pin } = row.entry.source
+                else {
+                    return None;
+                };
+                Some(GitPlugin {
+                    name: row.entry.name,
+                    url,
+                    branch,
+                    pin,
+                    enabled: row.entry.enabled.unwrap_or(true),
+                    source: if row.declared {
+                        EntrySource::Declared
+                    } else {
+                        EntrySource::Installed
+                    },
+                })
+            })
+            .collect();
+        return Ok((entries, notes));
+    }
 
+    notes.push(
+        "daemon not running: entries declared in init.lua are not shown, and an entry there \
+         that disables an installed plugin is not applied"
+            .to_string(),
+    );
     let manifest_path = crucible_daemon::plugin_ops::installed_manifest_path(
         &crucible_core::config::crucible_home(),
     );
@@ -76,22 +106,17 @@ pub(crate) async fn configured_plugin_entries() -> Result<(
             Vec::new()
         }
     };
-
-    let declared_names: std::collections::BTreeSet<String> =
-        declared.iter().map(|(name, _)| name.clone()).collect();
-    let mut entries: Vec<_> = declared
+    let entries = installed
         .into_iter()
-        .map(|(name, entry)| (name, entry, EntrySource::Declared))
+        .map(|(name, entry)| GitPlugin {
+            name,
+            url: entry.url,
+            branch: entry.branch,
+            pin: entry.pin,
+            enabled: entry.enabled,
+            source: EntrySource::Installed,
+        })
         .collect();
-    for (name, entry) in installed {
-        if declared_names.contains(&name) {
-            notes.push(format!(
-                "plugin '{name}': the config declaration supersedes the installed manifest entry"
-            ));
-        } else {
-            entries.push((name, entry, EntrySource::Installed));
-        }
-    }
     Ok((entries, notes))
 }
 
@@ -110,9 +135,9 @@ pub enum PluginCommands {
     Health(HealthArgs),
     /// Add a plugin from a git URL
     Add(AddArgs),
-    /// List declared plugins and their clone status
+    /// List git-hosted plugins and their clone status
     List(ListArgs),
-    /// Remove a plugin declaration
+    /// Remove an installed plugin
     Remove(RemoveArgs),
     /// Update installed plugins (git pull)
     Update(UpdateArgs),

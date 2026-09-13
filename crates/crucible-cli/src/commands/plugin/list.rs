@@ -1,6 +1,7 @@
-//! `cru plugin list` — the configured git-hosted plugins (declared in
-//! init.lua, or recorded in the installed manifest) plus the daemon's
-//! runtime view: what actually loaded, and *why* the broken ones broke.
+//! `cru plugin list` — the configured git-hosted plugins (a `cru.plugin.setup`
+//! entry in init.lua, or a record in the installed manifest) plus the
+//! daemon's runtime view: what actually loaded, and *why* the broken ones
+//! broke.
 //!
 //! The runtime section is the only place a user can see a load failure:
 //! `plugin.list` carries `state` and `last_error`, and until this command
@@ -18,32 +19,35 @@ pub struct ListArgs {
 }
 
 /// Runtime plugin info from the daemon, or `None` when no daemon is
-/// reachable. Best-effort by design: the declared section must work with the
-/// daemon down, and spawning one just to list plugins would be a surprise.
-async fn runtime_plugins() -> Option<Vec<serde_json::Value>> {
-    let client = crate::common::daemon_client_if_running().await?;
-    client.plugin_list_info().await.ok()
+/// reachable. Best-effort by design: the installed section must work with
+/// the daemon down, and spawning one just to list plugins would be a
+/// surprise.
+async fn runtime_plugins(
+    client: Option<&crucible_daemon::DaemonClient>,
+) -> Option<Vec<serde_json::Value>> {
+    client?.plugin_list_info().await.ok()
 }
 
 pub async fn execute(args: ListArgs) -> Result<()> {
-    let (entries, notes) = super::configured_plugin_entries().await?;
+    let client = crate::common::daemon_client_if_running().await;
+    let (entries, notes) = super::configured_plugin_entries(client.as_ref()).await?;
     let plugins_dir = crucible_daemon::plugin_ops::plugins_dir()?;
 
-    let runtime = runtime_plugins().await;
+    let runtime = runtime_plugins(client.as_ref()).await;
 
     if args.json {
         let configured: Vec<_> = entries
             .iter()
-            .map(|(name, entry, source)| {
-                let cloned = plugins_dir.join(name).exists();
+            .map(|entry| {
+                let cloned = plugins_dir.join(&entry.name).exists();
                 serde_json::json!({
-                    "name": name,
+                    "name": entry.name,
                     "url": entry.url,
                     "branch": entry.branch,
                     "pin": entry.pin,
                     "enabled": entry.enabled,
                     "cloned": cloned,
-                    "source": source.as_str(),
+                    "source": entry.source.as_str(),
                 })
             })
             .collect();
@@ -69,8 +73,8 @@ pub async fn execute(args: ListArgs) -> Result<()> {
             "{:<24} {:<10} {:<10} {:<10} URL",
             "NAME", "SOURCE", "STATE", "PIN"
         );
-        for (name, entry, source) in &entries {
-            let cloned = plugins_dir.join(name).exists();
+        for entry in &entries {
+            let cloned = plugins_dir.join(&entry.name).exists();
             let state = match (entry.enabled, cloned) {
                 (false, _) => "disabled",
                 (true, true) => "cloned",
@@ -79,8 +83,8 @@ pub async fn execute(args: ListArgs) -> Result<()> {
             let pin = entry.pin.as_deref().unwrap_or("-");
             println!(
                 "{:<24} {:<10} {:<10} {:<10} {}",
-                name,
-                source.as_str(),
+                entry.name,
+                entry.source.as_str(),
                 state,
                 pin,
                 entry.url

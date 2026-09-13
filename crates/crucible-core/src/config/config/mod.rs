@@ -18,10 +18,7 @@ pub use kiln_name::{InvalidKilnName, KilnName};
 pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]
 pub use server::{LoggingConfig, ServerConfig, WebConfig, WorkspaceConfig};
-pub use types::{
-    declared_plugins, is_valid_plugin_name, parse_duration_string, plugin_name_from_url,
-    PluginEntry, PluginsConfig, ScheduleEntry, PLUGINS_DECLARE_KEY, PLUGIN_NAME_RULE,
-};
+pub use types::{parse_duration_string, ScheduleEntry};
 
 /// Returns the Crucible home directory (`~/.crucible/`).
 ///

@@ -129,9 +129,10 @@ impl Server {
                 warn!("Failed to upgrade Lua tools module: {}", e);
             }
 
-            // Bootstrap git-hosted plugins before discovery: the union of
-            // the DECLARED set (`plugins.declare` in init.lua) and the
-            // INSTALLED manifest (`<data_home>/plugins.installed.json`).
+            // Bootstrap git-hosted plugins before discovery. The spec is
+            // the one list: the operator's `cru.plugin.setup` entries are in
+            // the store from the boot evaluation, and the INSTALLED manifest
+            // (`<data_home>/plugins.installed.json`) is merged in here.
             let manifest_path = crate::plugin_ops::installed_manifest_path(&self.data_home);
 
             // `plugins.toml` is no longer read. Its entries are imported
@@ -149,37 +150,34 @@ impl Server {
                 }
             }
 
-            let declared = self
-                .rpc_context
-                .effective_config()
-                .as_ref()
-                .and_then(|cfg| cfg.get("plugins"))
-                .and_then(|v| {
-                    serde_json::from_value::<std::collections::BTreeMap<String, serde_json::Value>>(
-                        v.clone(),
-                    )
-                    .ok()
-                })
-                .map(|map| crucible_core::config::declared_plugins(&map))
-                .unwrap_or_default();
-            for warning in &declared.1 {
-                warn!("{warning}");
-            }
-            let installed = match crate::plugin_ops::installed_entries(&manifest_path) {
+            // The installed manifest is a fragment source at Builtin rank.
+            // An install is the operator's act through a tool, so it sits
+            // below their own `init.lua`: `{ "greeter", enabled = false }`
+            // there disables an installed plugin, and an operator entry
+            // with a git source for the same name supersedes the record.
+            let installed = match crate::plugin_ops::installed_spec_entries(&manifest_path) {
                 Ok(entries) => entries,
                 Err(e) => {
                     warn!("Failed to read {}: {e}", manifest_path.display());
                     Vec::new()
                 }
             };
-            let (entries, shadows) =
-                crate::daemon_plugins::union_plugin_entries(declared.0, installed);
-            for name in &shadows {
-                info!(
-                    "plugin '{name}': the init.lua declaration supersedes the installed \
-                     manifest entry"
+            let lua = loader.plugin_lua();
+            let operator_spec = crucible_lua::spec_of(&lua);
+            for entry in installed {
+                if crate::daemon_plugins::declared_git_entry(&operator_spec, &entry.name) {
+                    info!(
+                        "plugin '{}': the init.lua entry supersedes the installed manifest entry",
+                        entry.name
+                    );
+                }
+                crucible_lua::merge_spec_entry(
+                    &lua,
+                    entry,
+                    crucible_core::config::SpecRank::Builtin,
                 );
             }
+            let entries = crate::daemon_plugins::bootstrap_entries(&crucible_lua::spec_of(&lua));
             if !entries.is_empty() {
                 if let Err(e) = crate::daemon_plugins::bootstrap_plugins(&entries).await {
                     warn!("Plugin bootstrap error: {}", e);
@@ -187,27 +185,15 @@ impl Server {
             }
 
             // The spec-driven activation pass: every entry the merged spec
-            // names, and every plugin `init.lua` required. Then the
-            // bootstrapped set by name: a declared or installed plugin is
-            // one the operator asked for, whether or not the spec names it
-            // yet.
+            // names, and every plugin `init.lua` required. A bootstrapped
+            // plugin has an entry, at Operator or Builtin rank, so this
+            // pass covers it.
             let paths = crate::daemon_plugins::daemon_plugin_paths(&self.runtimepath);
             if let Err(e) = loader.add_plugin_paths(&paths) {
                 warn!("Failed to add the plugin search paths: {}", e);
             }
             if let Err(e) = loader.load_plugins_from_spec().await {
                 warn!("Failed to activate daemon plugins: {}", e);
-            }
-            for entry in entries.iter().filter(|entry| entry.enabled) {
-                let Some(name) = crucible_core::config::plugin_name_from_url(&entry.url) else {
-                    continue;
-                };
-                if loader.plugin_state(&name).is_none() {
-                    continue;
-                }
-                if let Err(e) = loader.activate_plugin(&name).await {
-                    warn!("plugin '{name}' did not activate: {e}");
-                }
             }
 
             // Register `cru.colorscheme` / `cru.statusline` on the PLUGIN VM.

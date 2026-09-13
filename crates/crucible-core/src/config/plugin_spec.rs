@@ -9,8 +9,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::config::{plugin_name_from_url, PLUGIN_NAME_RULE};
-
 /// Where a plugin comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -55,12 +53,56 @@ pub struct SpecEntry {
     pub has_init: bool,
 }
 
+/// Extract a safe plugin directory name from a git URL.
+///
+/// The name is the URL's last segment without a trailing `.git`. It is
+/// checked by the same rule the fragment reader applies to a plugin's own
+/// name (`PluginManifest::validate` in crucible-lua): it starts with a
+/// lowercase letter, holds only `[a-z0-9_-]`, is at most 64 bytes, and does
+/// not end with `-` or `_`. One rule for both, so a spec entry the fragment
+/// would refuse is refused before anything is cloned.
+///
+/// Returns `None` when the segment fails that rule. The rule also refuses
+/// `.`, `..`, a leading `-` (a CLI flag to any tool the name later reaches)
+/// and every shell metacharacter.
+pub fn plugin_name_from_url(url: &str) -> Option<String> {
+    let name = url
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(".git");
+    is_valid_plugin_name(name).then(|| name.to_string())
+}
+
+/// The plugin name rule, in words. Every refusal of a name quotes this
+/// text, so the rule is stated once and read from one place.
+pub const PLUGIN_NAME_RULE: &str = "a plugin name starts with a lowercase letter, holds only \
+     a-z, 0-9, '-' and '_', is at most 64 bytes, and does not end with '-' or '_'";
+
+/// The plugin name rule. One function for the URL-derived name, the
+/// directory name and a fragment's declared name (`PluginManifest::validate`
+/// in crucible-lua calls this one).
+pub fn is_valid_plugin_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
+    }
+    let mut chars = name.chars();
+    if !chars.next().is_some_and(|c| c.is_ascii_lowercase()) {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        && !name.ends_with('-')
+        && !name.ends_with('_')
+}
+
 /// Who wrote an entry. Higher wins. `enabled` resolves in this order, first
 /// answer wins: the operator's entry, the config leaf
 /// `plugins.<name>.enabled`, the Builtin fragment, the plugin's fragment,
 /// then `true`. `Spec::merge` is the only reader of the order, and
 /// `docs/Meta/CONTEXT.md` defines the terms.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SpecRank {
     /// The plugin's own `spec.luau`.
     PluginFragment,

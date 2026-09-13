@@ -31,7 +31,7 @@ pub async fn execute(args: AddArgs) -> Result<()> {
             let (output, load_error) = render_install_response(&resp);
             print!("{output}");
             if let Some(err) = load_error {
-                // Non-zero exit: the clone + TOML entry landed (printed
+                // Non-zero exit: the clone + manifest entry landed (printed
                 // above), but "installed" must not read as success while the
                 // plugin sits broken in the daemon.
                 anyhow::bail!(
@@ -102,12 +102,8 @@ fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>)
 /// The pre-daemon-routing behavior: clone + manifest edit in-process,
 /// nothing loaded anywhere. Only reachable when connect_or_start failed.
 async fn install_offline(args: AddArgs) -> Result<()> {
-    let entry = crucible_core::config::PluginEntry {
-        url: args.url.clone(),
-        branch: args.branch,
-        pin: args.pin,
-        enabled: true,
-    };
+    let entry =
+        crucible_daemon::plugin_ops::InstalledEntry::new(args.url.clone(), args.branch, args.pin);
 
     let result = crucible_daemon::plugin_ops::install(entry).await?;
 

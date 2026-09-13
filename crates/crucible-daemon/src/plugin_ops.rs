@@ -5,16 +5,23 @@
 //! functions. The machine's record of installed plugins is
 //! `<data_home>/plugins.installed.json`, a [`RegistryStore`] file like
 //! `kilns.json` — locked through a sidecar, replaced atomically. The
-//! user's own declarations live in `init.lua` (`plugins.declare.<name>`)
-//! and are never written here: a machine that edits the user's config file
-//! is the defect this split removes.
+//! operator's own spec entries live in `init.lua` (`cru.plugin.setup`) and
+//! are never written here: a machine that edits the user's config file is
+//! the defect this split removes.
+//!
+//! The boot merges every installed entry into the spec store at
+//! `SpecRank::Builtin`, as a [`SpecEntry`] with a `Git` source. An install
+//! is the operator's act through a tool, so it sits below their own
+//! `init.lua`: `{ "greeter", enabled = false }` there disables an installed
+//! plugin, and an operator entry with a `Git` source for the same name
+//! replaces the installed one.
 //!
 //! `plugins.toml` — the file that used to hold both — is no longer read.
 //! [`import_legacy_plugins_toml`] moves its entries into the manifest once
 //! (idempotently), and the boot warns while the leftover file exists.
 
 use anyhow::{anyhow, Context, Result};
-use crucible_core::config::{plugin_name_from_url, PluginEntry, PluginsConfig, PLUGIN_NAME_RULE};
+use crucible_core::config::{plugin_name_from_url, SpecEntry, SpecSource, PLUGIN_NAME_RULE};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -28,10 +35,71 @@ pub const INSTALLED_PLUGINS_VERSION: u32 = 1;
 /// The file name under the daemon data root.
 pub const INSTALLED_PLUGINS_FILE: &str = "plugins.installed.json";
 
+/// One record in `plugins.installed.json`: the git source `cru plugin add`
+/// recorded.
+///
+/// This is the file's own shape, at [`INSTALLED_PLUGINS_VERSION`]. It is not
+/// a [`SpecEntry`]: the spec is what the boot reads, and
+/// [`InstalledEntry::spec_entry`] is the one conversion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledEntry {
+    /// Git URL or GitHub shorthand (e.g. "user/repo").
+    pub url: String,
+    /// Branch to clone. Defaults to the repo's default branch.
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// Pin to a specific tag or commit hash after cloning.
+    #[serde(default)]
+    pub pin: Option<String>,
+    /// Whether this plugin is enabled. A disabled entry is not cloned.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl InstalledEntry {
+    /// A record with a URL only: the default branch, no pin, enabled.
+    pub fn new(url: String, branch: Option<String>, pin: Option<String>) -> Self {
+        Self {
+            url,
+            branch,
+            pin,
+            enabled: true,
+        }
+    }
+
+    /// The plugin's directory name: the URL's last segment, without a
+    /// trailing `.git`. `None` when the segment fails the name rule.
+    pub fn name(&self) -> Option<String> {
+        plugin_name_from_url(&self.url)
+    }
+
+    /// This record as a spec entry with a `Git` source, for the spec store
+    /// and the bootstrap. `enabled` is `Some`, because the record always
+    /// says.
+    pub fn spec_entry(&self, name: &str) -> SpecEntry {
+        SpecEntry {
+            name: name.to_string(),
+            source: SpecSource::Git {
+                url: self.url.clone(),
+                branch: self.branch.clone(),
+                pin: self.pin.clone(),
+            },
+            enabled: Some(self.enabled),
+            opts: serde_json::Value::Null,
+            has_config: false,
+            has_init: false,
+        }
+    }
+}
+
 /// The whole of `plugins.installed.json`: name → entry.
 ///
 /// Name-keyed (the URL-derived directory name), because every read is by
-/// name: the bootstrap union, the remove path, the membership check.
+/// name: the spec merge, the remove path, the membership check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledPlugins {
     /// Gates future shape changes. A reader refuses a higher number rather
@@ -39,7 +107,15 @@ pub struct InstalledPlugins {
     pub version: u32,
     /// Installed plugins, keyed by the URL-derived name.
     #[serde(default)]
-    pub plugins: BTreeMap<String, PluginEntry>,
+    pub plugins: BTreeMap<String, InstalledEntry>,
+}
+
+/// The shape of the legacy `plugins.toml`. Read by
+/// [`import_legacy_plugins_toml`] only; nothing writes it.
+#[derive(Debug, Default, Deserialize)]
+struct LegacyPluginsToml {
+    #[serde(default)]
+    plugin: Vec<InstalledEntry>,
 }
 
 impl Default for InstalledPlugins {
@@ -129,7 +205,7 @@ fn read_manifest(manifest_path: &Path) -> Result<InstalledPlugins> {
 /// Path-resolving wrapper over [`install_at`] for callers acting without a
 /// daemon context (CLI offline fallback); the RPC handler passes the
 /// daemon's own `data_home` instead.
-pub async fn install(entry: PluginEntry) -> Result<InstallOutcome> {
+pub async fn install(entry: InstalledEntry) -> Result<InstallOutcome> {
     install_at(
         entry,
         &installed_manifest_path(&crucible_core::config::crucible_home()),
@@ -141,11 +217,11 @@ pub async fn install(entry: PluginEntry) -> Result<InstallOutcome> {
 /// [`install`]'s core with every path injected, so tests never touch the
 /// real data root or `~/.config/crucible`.
 pub async fn install_at(
-    entry: PluginEntry,
+    entry: InstalledEntry,
     manifest_path: &Path,
     plugins_dir: &Path,
 ) -> Result<InstallOutcome> {
-    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
+    let name = entry.name().ok_or_else(|| {
         anyhow!(
             "cannot derive a plugin name from URL '{}': {PLUGIN_NAME_RULE}",
             entry.url
@@ -154,7 +230,7 @@ pub async fn install_at(
 
     // Clone first. If the clone fails (bad URL, no network), don't
     // leave a phantom record behind in the manifest.
-    let outcome = bootstrap_plugin_entry(&entry, plugins_dir)
+    let outcome = bootstrap_plugin_entry(&entry.spec_entry(&name), plugins_dir)
         .await
         .with_context(|| format!("failed to install plugin '{name}'"))?;
 
@@ -242,9 +318,19 @@ pub fn installed_at(manifest_path: &Path, name: &str) -> Result<bool> {
     Ok(read_manifest(manifest_path)?.plugins.contains_key(name))
 }
 
-/// Every installed entry, name-keyed, for the bootstrap union and listings.
-pub fn installed_entries(manifest_path: &Path) -> Result<Vec<(String, PluginEntry)>> {
+/// Every installed entry, name-keyed, for listings.
+pub fn installed_entries(manifest_path: &Path) -> Result<Vec<(String, InstalledEntry)>> {
     Ok(read_manifest(manifest_path)?.plugins.into_iter().collect())
+}
+
+/// Every installed entry as a spec entry with a `Git` source. The boot
+/// merges these into the spec store at `SpecRank::Builtin`.
+pub fn installed_spec_entries(manifest_path: &Path) -> Result<Vec<SpecEntry>> {
+    Ok(read_manifest(manifest_path)?
+        .plugins
+        .iter()
+        .map(|(name, entry)| entry.spec_entry(name))
+        .collect())
 }
 
 /// The boot-time legacy sweep: import `plugins.toml` if it exists, and
@@ -298,8 +384,8 @@ pub fn import_legacy_plugins_toml(toml_path: &Path, manifest_path: &Path) -> Res
     }
     let content = std::fs::read_to_string(toml_path)
         .with_context(|| format!("failed to read {}", toml_path.display()))?;
-    let legacy: PluginsConfig = if content.trim().is_empty() {
-        PluginsConfig::default()
+    let legacy: LegacyPluginsToml = if content.trim().is_empty() {
+        LegacyPluginsToml::default()
     } else {
         toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", toml_path.display()))?
@@ -323,13 +409,8 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn entry(url: &str) -> PluginEntry {
-        PluginEntry {
-            url: url.to_string(),
-            branch: None,
-            pin: None,
-            enabled: true,
-        }
+    fn entry(url: &str) -> InstalledEntry {
+        InstalledEntry::new(url.to_string(), None, None)
     }
 
     /// Write a fake pre-cloned plugin so `bootstrap_plugin_entry`

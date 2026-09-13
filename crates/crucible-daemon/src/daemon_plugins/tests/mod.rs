@@ -903,11 +903,9 @@ async fn bootstrap_skips_disabled_entries() {
     let tmp = tempfile::TempDir::new().unwrap();
     // Override config dir isn't feasible, but we can verify the function
     // doesn't attempt to clone when entry is disabled
-    let entries = vec![crucible_core::config::PluginEntry {
-        url: "user/disabled-plugin".to_string(),
-        branch: None,
-        pin: None,
-        enabled: false,
+    let entries = vec![crucible_core::config::SpecEntry {
+        enabled: Some(false),
+        ..crucible_core::config::SpecEntry::from_positional("user/disabled-plugin").unwrap()
     }];
     // Should succeed without attempting any git operations
     let result = bootstrap_plugins(&entries).await;

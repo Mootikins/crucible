@@ -19,12 +19,14 @@ pub use boot::{
     boot_input_hash, evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig,
     PluginPathsFn,
 };
+#[cfg(test)]
+pub(crate) use bootstrap::normalize_git_url;
 pub use bootstrap::{
-    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, daemon_plugin_paths_from,
-    default_daemon_plugin_paths, union_plugin_entries, BootstrapOutcome,
+    bootstrap_entries, bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths,
+    daemon_plugin_paths_from, declared_git_entry, default_daemon_plugin_paths, BootstrapOutcome,
 };
 #[cfg(test)]
-pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url};
+pub(crate) use crucible_core::config::plugin_name_from_url;
 
 use crate::plugin_tools::PluginRegistry;
 use crucible_core::storage::NoteStore;
@@ -71,11 +73,6 @@ pub fn split_plugins_config(
     let watch = raw.get("watch").and_then(|v| v.as_bool()).unwrap_or(false);
     let sections = raw
         .iter()
-        // `plugins.declare` holds plugin DECLARATIONS, not the options of a
-        // plugin named "declare" — handing it to `setup(cfg)` would feed one
-        // plugin's install table to another's configuration. Discovery
-        // refuses a plugin actually carrying the reserved name.
-        .filter(|(k, _)| k.as_str() != crucible_core::config::PLUGINS_DECLARE_KEY)
         .filter(|(_, v)| v.is_object())
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
@@ -1174,7 +1171,7 @@ impl DaemonPluginLoader {
 
     /// Manager key (manifest `name`) for the plugin discovered at `dir`.
     ///
-    /// plugins.toml declarations and clone directories go by the URL's last
+    /// The installed manifest and clone directories go by the URL's last
     /// segment; the plugin manager goes by the name the spec table declares.
     /// For a repo `crucible-discord` whose entry file returns
     /// `name = "discord"` the two differ, and resolving by URL name silently
@@ -1202,11 +1199,11 @@ impl DaemonPluginLoader {
     pub async fn deactivate_and_forget_plugin(&mut self, name: &str) -> anyhow::Result<()> {
         match self.plugin_manager.unload(name) {
             Ok(()) => {}
-            // Declared in plugins.toml but never discovered by this daemon
-            // (clone deleted by hand, bootstrap failed at boot): nothing to
-            // deactivate is not a refusal. Erroring here made a stale
-            // declaration unremovable for as long as the daemon ran — the
-            // caller's declared-in-TOML precondition already guards typos.
+            // Recorded in the installed manifest but never discovered by
+            // this daemon (clone deleted by hand, bootstrap failed at boot):
+            // nothing to deactivate is not a refusal. Erroring here made a
+            // stale record unremovable for as long as the daemon ran — the
+            // caller's installed precondition already guards typos.
             Err(crucible_lua::lifecycle::LifecycleError::NotFound(_)) => {}
             Err(e) => return Err(e.into()),
         }

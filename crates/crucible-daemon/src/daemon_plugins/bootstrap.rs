@@ -2,10 +2,11 @@
 //!
 //! Free functions split out of `daemon_plugins/mod.rs`: everything here runs
 //! before (or independently of) a [`super::DaemonPluginLoader`] — building the
-//! prioritized search-path list and cloning declared plugins that are missing
-//! on disk.
+//! prioritized search-path list and cloning the spec's `Git` entries that are
+//! missing on disk.
 
 use anyhow::Context;
+use crucible_core::config::{Spec, SpecEntry, SpecRank, SpecSource};
 use crucible_lua::PluginSource;
 use std::path::PathBuf;
 use tracing::{info, warn};
@@ -101,29 +102,27 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
     daemon_plugin_paths(&[])
 }
 
-/// Union of the config-DECLARED entries and the INSTALLED manifest entries,
-/// by name. The declaration wins — config over state, the same rule the
-/// kiln overlay applies — and each shadowed installed entry's name comes
-/// back so the boot can say the supersession out loud instead of applying
-/// it silently.
-pub fn union_plugin_entries(
-    declared: Vec<(String, crucible_core::config::PluginEntry)>,
-    installed: Vec<(String, crucible_core::config::PluginEntry)>,
-) -> (Vec<crucible_core::config::PluginEntry>, Vec<String>) {
-    let declared_names: std::collections::BTreeSet<String> =
-        declared.iter().map(|(name, _)| name.clone()).collect();
+/// The spec's `Git` entries: what the bootstrap clones when the directory
+/// is missing. The operator's `init.lua` and the installed manifest both
+/// land in the spec, so this is the whole set, with the operator's entry
+/// already laid over the installed one for a shared name.
+pub fn bootstrap_entries(spec: &Spec) -> Vec<SpecEntry> {
+    spec.iter()
+        .filter(|entry| matches!(entry.source, SpecSource::Git { .. }))
+        .cloned()
+        .collect()
+}
 
-    let mut entries: Vec<crucible_core::config::PluginEntry> =
-        declared.into_iter().map(|(_, entry)| entry).collect();
-    let mut shadows = Vec::new();
-    for (name, entry) in installed {
-        if declared_names.contains(&name) {
-            shadows.push(name);
-        } else {
-            entries.push(entry);
-        }
-    }
-    (entries, shadows)
+/// Whether the operator's own entry for `name` names a `Git` source.
+///
+/// This is the "declared" test. An installed plugin also has a `Git`
+/// source, at `SpecRank::Builtin`, and an operator entry `{ "greeter",
+/// enabled = false }` over it has none of its own. Both are not declared:
+/// `cru plugin remove` may act on them, because the record it removes is
+/// the manifest's, not a line in `init.lua`.
+pub fn declared_git_entry(spec: &Spec, name: &str) -> bool {
+    spec.at(name, SpecRank::Operator)
+        .is_some_and(|entry| matches!(entry.source, SpecSource::Git { .. }))
 }
 
 /// Outcome of attempting to bootstrap a single plugin entry.
@@ -137,48 +136,51 @@ pub enum BootstrapOutcome {
     Cloned { dest: PathBuf },
 }
 
-/// Bootstrap a single plugin entry: clone into `plugins_dir` if missing,
-/// check out pin if set. Returns a structured outcome so callers (CLI vs
-/// daemon startup) can decide how loudly to react to failures. The target
-/// dir is a parameter so tests can inject a temp dir instead of touching
-/// the real `~/.config/crucible/plugins`.
+/// Bootstrap one spec entry with a `Git` source: clone into `plugins_dir`
+/// if missing, check out the pin if set. Returns a structured outcome so
+/// callers (CLI vs daemon startup) can decide how loudly to react to
+/// failures. The target dir is a parameter so tests can inject a temp dir
+/// instead of touching the real `~/.config/crucible/plugins`.
+///
+/// An entry whose `enabled` is `Some(false)` is skipped. The config leaf
+/// `plugins.<name>.enabled` is not read here: a plugin a setting disables
+/// is still cloned, and activation is what reads the leaf.
 ///
 /// Pin handling: when a pin is set we drop `--depth 1` because a shallow
 /// clone often won't contain the target SHA on the tip. Tags and branch
 /// names usually work shallow, but SHAs need full history. Trading
 /// bandwidth for correctness.
 pub async fn bootstrap_plugin_entry(
-    entry: &crucible_core::config::PluginEntry,
+    entry: &SpecEntry,
     plugins_dir: &std::path::Path,
 ) -> anyhow::Result<BootstrapOutcome> {
-    if !entry.enabled {
+    let SpecSource::Git { url, branch, pin } = &entry.source else {
+        anyhow::bail!(
+            "plugin '{}' has no git source; a runtimepath entry is not cloned",
+            entry.name
+        );
+    };
+    if entry.enabled == Some(false) {
         return Ok(BootstrapOutcome::Disabled);
     }
 
-    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Plugin URL '{}' has no usable name segment: {}",
-            entry.url,
-            crucible_core::config::PLUGIN_NAME_RULE
-        )
-    })?;
-    let dest = plugins_dir.join(&name);
+    let name = &entry.name;
+    let dest = plugins_dir.join(name);
     if dest.exists() {
         return Ok(BootstrapOutcome::AlreadyPresent);
     }
 
-    let url =
-        normalize_git_url(&entry.url).with_context(|| format!("rejecting plugin '{}'", name))?;
+    let url = normalize_git_url(url).with_context(|| format!("rejecting plugin '{}'", name))?;
     info!("Cloning plugin '{}' from {}", name, url);
 
     let mut cmd = tokio::process::Command::new("git");
     cmd.arg("clone");
     // Shallow clone unless we need to check out a specific SHA later —
     // shallow clones often don't contain the target SHA.
-    if entry.pin.is_none() {
+    if pin.is_none() {
         cmd.args(["--depth", "1"]);
     }
-    if let Some(ref branch) = entry.branch {
+    if let Some(branch) = branch {
         cmd.args(["--branch", branch]);
     }
     // Defense-in-depth: `--` stops git from parsing any subsequent argv
@@ -194,7 +196,7 @@ pub async fn bootstrap_plugin_entry(
         anyhow::bail!("git clone failed for '{}': {}", name, stderr.trim());
     }
 
-    if let Some(ref pin) = entry.pin {
+    if let Some(pin) = pin {
         let checkout = tokio::process::Command::new("git")
             .args(["checkout", pin])
             .current_dir(&dest)
@@ -229,15 +231,12 @@ pub async fn bootstrap_plugin_entry(
     Ok(BootstrapOutcome::Cloned { dest })
 }
 
-/// Bootstrap declared plugins by git-cloning any that are missing.
+/// Bootstrap the spec's `Git` entries by git-cloning any that are missing.
 ///
-/// Reads `PluginEntry` declarations (typically from `plugins.toml`).
 /// Failures are warned and skipped — the daemon should start even if
 /// one plugin can't be fetched. For per-entry error reporting (e.g.
 /// `cru install`), use `bootstrap_plugin_entry` directly.
-pub async fn bootstrap_plugins(
-    entries: &[crucible_core::config::PluginEntry],
-) -> anyhow::Result<()> {
+pub async fn bootstrap_plugins(entries: &[SpecEntry]) -> anyhow::Result<()> {
     let plugins_dir = crate::plugin_ops::plugins_dir()?;
     for entry in entries {
         match bootstrap_plugin_entry(entry, &plugins_dir).await {
@@ -248,14 +247,6 @@ pub async fn bootstrap_plugins(
         }
     }
     Ok(())
-}
-
-/// Local alias for `crucible_core::config::plugin_name_from_url` so
-/// the existing call sites in this file read naturally. The canonical
-/// implementation lives in core so CLI, daemon, and any future
-/// consumer share the same definition of "safe plugin directory name".
-pub(crate) fn plugin_name_from_url(url: &str) -> Option<String> {
-    crucible_core::config::plugin_name_from_url(url)
 }
 
 /// Normalize and validate a plugin git URL.

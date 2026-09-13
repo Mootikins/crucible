@@ -62,26 +62,19 @@ async fn the_plugin_boot_binds_the_notification_hub_to_the_agent_manager_and_the
     assert_eq!(event.session_id, WILDCARD_SESSION);
 }
 
-/// A git plugin the bootstrap put on disk has no spec entry yet: the
-/// operator asked for it through `plugins.installed.json`, not through
-/// `cru.plugin.setup`. The interim loop after the spec-driven pass activates
-/// it by name.
-///
-/// Task 10 moves declarations into the spec; keep or retire this test then.
-///
-/// The URL's scheme is one `normalize_git_url` refuses, so the bootstrap
-/// clones nothing and touches no network. The plugin's directory sits on the
-/// injected `runtimepath`, which is where discovery finds it.
-#[tokio::test(flavor = "multi_thread")]
-async fn the_plugin_boot_activates_a_bootstrapped_plugin_that_has_no_spec_entry() {
-    let tmp = TempDir::new().unwrap();
+/// A server over one fixture plugin `<rp>/plugins/<name>/init.luau` whose
+/// body sets the global `<name>_ran`, recorded in the installed manifest
+/// under `data_home`. The URL's scheme is one `normalize_git_url` refuses,
+/// so the bootstrap clones nothing and touches no network; discovery finds
+/// the directory on the injected `runtimepath`.
+async fn server_with_installed_plugin(tmp: &TempDir, name: &str) -> Server {
     let data_home = tmp.path().join("data");
     let runtimepath = tmp.path().join("rp");
-    let plugin_dir = runtimepath.join("plugins").join("boot-interim-probe");
+    let plugin_dir = runtimepath.join("plugins").join(name);
     std::fs::create_dir_all(&plugin_dir).unwrap();
     std::fs::write(
         plugin_dir.join("init.luau"),
-        "_G.boot_interim_probe_ran = true\nreturn {}\n",
+        format!("_G.{}_ran = true\nreturn {{}}\n", name.replace('-', "_")),
     )
     .unwrap();
     std::fs::create_dir_all(&data_home).unwrap();
@@ -90,13 +83,106 @@ async fn the_plugin_boot_activates_a_bootstrapped_plugin_that_has_no_spec_entry(
         serde_json::json!({
             "version": crate::plugin_ops::INSTALLED_PLUGINS_VERSION,
             "plugins": {
-                "boot-interim-probe": { "url": "file:///nowhere/boot-interim-probe" }
+                name: { "url": format!("file:///nowhere/{name}") }
             }
         })
         .to_string(),
     )
     .unwrap();
 
+    Server::bind_with_plugin_config(BindWithPluginConfigParams {
+        path: tmp.path().join("d.sock"),
+        runtimepath: vec![runtimepath],
+        config_home: Some(data_home.join("config")),
+        data_home: Some(data_home),
+        ..Default::default()
+    })
+    .await
+    .expect("bind")
+}
+
+/// Whether the fixture plugin's body set its global on the plugin VM.
+fn plugin_ran(loader: &crate::daemon_plugins::DaemonPluginLoader, name: &str) -> bool {
+    loader
+        .lua()
+        .globals()
+        .get::<Option<bool>>(format!("{}_ran", name.replace('-', "_")))
+        .expect("a boolean or nil")
+        .unwrap_or(false)
+}
+
+/// The operator asked for an installed plugin through `cru plugin add`, not
+/// through `cru.plugin.setup`. The boot merges the manifest into the spec
+/// at Builtin rank, so the spec-driven pass activates it like any entry.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_installed_plugin_with_no_operator_entry_is_activated_at_boot() {
+    let tmp = TempDir::new().unwrap();
+    let server = server_with_installed_plugin(&tmp, "boot-installed-probe").await;
+
+    server.boot_plugins().await;
+
+    let loader = server.plugin_loader.lock().await;
+    let loader = loader.as_ref().expect("loader present");
+    assert_eq!(
+        loader.plugin_state("boot-installed-probe"),
+        Some(crucible_lua::manifest::PluginState::Active)
+    );
+    assert!(plugin_ran(loader, "boot-installed-probe"));
+    let spec = crucible_lua::spec_of(loader.lua());
+    assert_eq!(
+        spec.rank_of("boot-installed-probe"),
+        Some(crucible_core::config::SpecRank::Builtin),
+        "the installed manifest is a Builtin-rank fragment source"
+    );
+}
+
+/// An install sits below the operator's own `init.lua`: `{ "<name>",
+/// enabled = false }` there disables an installed plugin, and its body
+/// never runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_installed_plugin_is_a_builtin_rank_entry_the_operator_can_disable() {
+    let tmp = TempDir::new().unwrap();
+    let server = server_with_installed_plugin(&tmp, "boot-quiet-probe").await;
+    {
+        let loader = server.plugin_loader.lock().await;
+        loader
+            .as_ref()
+            .expect("loader present")
+            .eval_user_init(r#"cru.plugin.setup({ { "boot-quiet-probe", enabled = false } })"#)
+            .await
+            .expect("the operator's init.lua");
+    }
+
+    server.boot_plugins().await;
+
+    let loader = server.plugin_loader.lock().await;
+    let loader = loader.as_ref().expect("loader present");
+    assert_eq!(
+        loader.plugin_state("boot-quiet-probe"),
+        Some(crucible_lua::manifest::PluginState::Disabled)
+    );
+    assert!(
+        !plugin_ran(loader, "boot-quiet-probe"),
+        "a disabled plugin's body must not run"
+    );
+}
+
+/// A `cru.plugin.setup` entry with a git source is cloned at boot and then
+/// activated by the spec-driven pass. Here the clone is refused (the URL's
+/// scheme is not allowed), and the directory already sits on the
+/// runtimepath, so the test reads the activation alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_declared_git_plugin_is_activated_at_boot() {
+    let tmp = TempDir::new().unwrap();
+    let data_home = tmp.path().join("data");
+    let runtimepath = tmp.path().join("rp");
+    let plugin_dir = runtimepath.join("plugins").join("boot-declared-probe");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(
+        plugin_dir.join("init.luau"),
+        "_G.boot_declared_probe_ran = true\nreturn {}\n",
+    )
+    .unwrap();
     let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
         path: tmp.path().join("d.sock"),
         runtimepath: vec![runtimepath],
@@ -106,19 +192,28 @@ async fn the_plugin_boot_activates_a_bootstrapped_plugin_that_has_no_spec_entry(
     })
     .await
     .expect("bind");
+    {
+        let loader = server.plugin_loader.lock().await;
+        loader
+            .as_ref()
+            .expect("loader present")
+            .eval_user_init(r#"cru.plugin.setup({ "file:///nowhere/boot-declared-probe" })"#)
+            .await
+            .expect("the operator's init.lua");
+    }
 
     server.boot_plugins().await;
 
     let loader = server.plugin_loader.lock().await;
     let loader = loader.as_ref().expect("loader present");
     assert_eq!(
-        loader.plugin_state("boot-interim-probe"),
+        loader.plugin_state("boot-declared-probe"),
         Some(crucible_lua::manifest::PluginState::Active)
     );
-    let ran: bool = loader
-        .lua()
-        .globals()
-        .get("boot_interim_probe_ran")
-        .expect("the plugin's body ran on the plugin VM");
-    assert!(ran);
+    assert!(plugin_ran(loader, "boot-declared-probe"));
+    let spec = crucible_lua::spec_of(loader.lua());
+    assert!(crate::daemon_plugins::declared_git_entry(
+        &spec,
+        "boot-declared-probe"
+    ));
 }

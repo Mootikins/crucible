@@ -1,7 +1,7 @@
 //! `cru plugin remove` — deactivate a plugin in the running daemon and
-//! remove its record from the installed manifest. A config-DECLARED plugin
-//! is refused by the daemon with its declaration site: the user edits their
-//! own init.lua, never the machine.
+//! remove its record from the installed manifest. A DECLARED plugin (a
+//! `cru.plugin.setup` entry with a git source) is refused by the daemon: the
+//! user edits their own init.lua, never the machine.
 
 use std::fmt::Write as _;
 

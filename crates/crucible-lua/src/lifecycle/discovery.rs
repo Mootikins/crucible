@@ -58,30 +58,6 @@ impl PluginManager {
         });
     }
 
-    /// Refuse a plugin carrying the reserved declaration name, loudly.
-    ///
-    /// `plugins.declare` in the config is where plugin DECLARATIONS live, so
-    /// a plugin named `declare` could never be configured through the store
-    /// form — its section would be read as declarations. Discovering it
-    /// silently would drop that configuration with no visible reason; this
-    /// makes it a named discovery error instead. Returns whether the name
-    /// was refused.
-    fn refuse_reserved_name(&mut self, name: &str, path: &Path) -> bool {
-        if name != crucible_core::config::PLUGINS_DECLARE_KEY {
-            return false;
-        }
-        self.record_discovery_error(
-            path,
-            format!(
-                "plugin name '{name}' is reserved: `plugins.{name}` in the config holds plugin \
-                 declarations, so this plugin could never receive its own configuration. Rename \
-                 the plugin directory (from {})",
-                path.display()
-            ),
-        );
-        true
-    }
-
     /// Get the provenance source for a plugin directory.
     pub(super) fn source_for_dir(&self, plugin_dir: &Path) -> PluginSource {
         // Walk search paths to find which one contains this plugin dir
@@ -149,9 +125,6 @@ impl PluginManager {
                         }
                     };
                     let name = manifest.name.clone();
-                    if self.refuse_reserved_name(&name, &path) {
-                        continue;
-                    }
                     if self.plugins.contains_key(&name) {
                         debug!("Plugin already discovered: {name} (shadowed by higher-priority)");
                         continue;
@@ -190,9 +163,6 @@ impl PluginManager {
                             .to_string();
 
                         if stem.is_empty() || self.plugins.contains_key(&stem) {
-                            continue;
-                        }
-                        if self.refuse_reserved_name(&stem, &path) {
                             continue;
                         }
 
