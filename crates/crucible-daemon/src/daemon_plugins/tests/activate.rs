@@ -91,6 +91,110 @@ async fn reloading_a_boot_required_plugin_reruns_its_file() {
     assert_eq!(runs, 2, "the reload did not re-run the plugin's file");
 }
 
+/// A body that counts its runs and returns a table with a distinct marker.
+fn counted_plugin_body() -> &'static str {
+    r#"_G.runs = (_G.runs or 0) + 1; return { marker = math.random() }"#
+}
+
+/// The `marker` a `require(name)` answers, and the identity of the table.
+fn required_module(loader: &DaemonPluginLoader, name: &str) -> (f64, *const std::ffi::c_void) {
+    let table: mlua::Table = loader
+        .lua()
+        .load(format!("return require('{name}')"))
+        .eval()
+        .expect("require");
+    (
+        table.get::<f64>("marker").expect("marker"),
+        table.to_pointer(),
+    )
+}
+
+/// The loader activated the plugin, and no `require` ran before it. A later
+/// `require("x")` answers the activated module, as lazy.nvim's loader does,
+/// and the file does not run a second time.
+#[tokio::test]
+async fn require_after_activation_returns_the_activated_module() {
+    let (mut loader, _dirs) = loader_with_plugin("x", counted_plugin_body()).await;
+    loader
+        .eval_user_init(r#"cru.plugin.setup({ "x" })"#)
+        .await
+        .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    let activated = activate::activate(&mut loader, "x")
+        .await
+        .expect("activate");
+
+    let (marker, identity) = required_module(&loader, "x");
+    assert_eq!(
+        identity,
+        activated.to_pointer(),
+        "require answered another table"
+    );
+    assert_eq!(marker, activated.get::<f64>("marker").unwrap());
+    let runs: i64 = loader.lua().globals().get("runs").unwrap();
+    assert_eq!(runs, 1, "the require ran the plugin's file again");
+}
+
+/// A reload forgets the seeded entry with the rest: the file runs again, and
+/// `require("x")` answers the new instance.
+#[tokio::test]
+async fn reloading_a_loader_activated_plugin_reruns_its_file_and_reseeds_the_cache() {
+    let (mut loader, _dirs) = loader_with_plugin("x", counted_plugin_body()).await;
+    loader
+        .eval_user_init(r#"cru.plugin.setup({ "x" })"#)
+        .await
+        .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    let (first_marker, first_identity) = required_module(&loader, "x");
+
+    loader.reload_plugin("x").await.expect("reload");
+    let runs: i64 = loader.lua().globals().get("runs").unwrap();
+    assert_eq!(runs, 2, "the reload did not re-run the plugin's file");
+    let activated = activate::activate(&mut loader, "x")
+        .await
+        .expect("activate");
+    let (marker, identity) = required_module(&loader, "x");
+    assert_ne!(
+        identity, first_identity,
+        "require still answers the old instance"
+    );
+    assert_ne!(marker, first_marker);
+    assert_eq!(
+        identity,
+        activated.to_pointer(),
+        "require answered another table"
+    );
+}
+
+/// An inert plugin is not served from the cache: after `disable`, the entry
+/// the activation seeded is gone.
+#[tokio::test]
+async fn an_inert_plugin_is_not_served_from_the_module_cache() {
+    let (mut loader, _dirs) = loader_with_plugin("x", counted_plugin_body()).await;
+    loader
+        .eval_user_init(r#"cru.plugin.setup({ "x" })"#)
+        .await
+        .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    let seeded: bool = loader
+        .lua()
+        .load("return package.loaded['x'] ~= nil")
+        .eval()
+        .unwrap();
+    assert!(seeded, "activation did not seed package.loaded");
+
+    loader.disable_plugin("x");
+    let cached: bool = loader
+        .lua()
+        .load("return package.loaded['x'] ~= nil")
+        .eval()
+        .unwrap();
+    assert!(
+        !cached,
+        "a disabled plugin is still served from package.loaded"
+    );
+}
+
 #[tokio::test]
 async fn an_entry_config_replaces_the_default_setup_call() {
     let (mut loader, _dirs) = loader_with_plugin(

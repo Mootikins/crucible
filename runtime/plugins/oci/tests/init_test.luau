@@ -116,10 +116,10 @@ install_shell()
 
 -- Loaded by plugin name through the loader's own searcher, so a require
 -- that only works in tests cannot slip through again. The runner activated
--- this plugin before it loaded this file, and the plugin put that instance
--- in `package.loaded`. Its setup() ran against the real `cru.on`. This suite
--- drives setup() itself and reads the recorders above, so it requires a
--- fresh instance.
+-- this plugin before it loaded this file, and seeded `package.loaded` with
+-- the activated instance, whose setup() already ran against the real
+-- `cru.on`. This suite drives setup() itself with the stubs above and reads
+-- their recorders, so it requires a fresh instance.
 package.loaded["oci"] = nil
 local spec = require("oci")
 -- The module body registers nothing. setup() registers the handlers the

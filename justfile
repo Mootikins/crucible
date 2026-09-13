@@ -381,6 +381,17 @@ test tier="quick" *args: luau-lsp
             #
             # Hence the count: a selector that matches nothing must fail, not
             # report a clean run of no tests.
+            #
+            # A scratch socket and data root, so the daemon this recipe starts
+            # is its own and never reaches a developer's running daemon. The
+            # trap stops that daemon on every exit path.
+            cargo build -q -p crucible-cli --bin cru
+            cru="$(cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory)/debug/cru"
+            scratch="$(mktemp -d)"
+            mkdir -p "$scratch/home"
+            export CRUCIBLE_SOCKET="$scratch/daemon.sock"
+            export CRUCIBLE_HOME="$scratch/home"
+            trap '"$cru" daemon stop >/dev/null 2>&1 || true; rm -rf "$scratch"' EXIT
             ran=0
             for dir in runtime/plugins/*/; do
                 if compgen -G "${dir}tests/*.luau" > /dev/null \

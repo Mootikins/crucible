@@ -1092,6 +1092,15 @@ impl DaemonPluginLoader {
         if let Some(key) = self.active_modules.remove(name) {
             let _ = lua.remove_registry_value(key);
         }
+        // Nor a cached one. The activation seeded `package.loaded` with its
+        // instance, or a boot `require` put one there, and the plugin's own
+        // `lua/` modules sit beside it; an inert plugin is served from none
+        // of them.
+        if let Some(dir) = self.plugin_manager.get(name).map(|p| p.dir.clone()) {
+            if let Err(e) = self.executor.modules().invalidate_under(&lua, &dir) {
+                warn!("plugin '{name}': could not forget its cached modules: {e}");
+            }
+        }
         self.abort_services(name);
         self.plugin_registry.remove_plugin(name);
         // One call, every store this plugin can have written: `cru.on`
@@ -1120,33 +1129,22 @@ impl DaemonPluginLoader {
         self.executor.lua().expire_registry_values();
     }
 
-    /// Reload a plugin: `on_unload`, inert, forget its module, activate.
+    /// Reload a plugin: `on_unload`, inert, activate.
     ///
     /// The old generation's services die before the new one's are
-    /// extracted, and `activate` forgets the modules cached from under the
-    /// plugin's directory, so its `lua/` modules are read again. A reload
-    /// that fails leaves the plugin `Error` and inert, never half-alive: the
-    /// everyday trigger is saving `init.lua` with a syntax error while the
-    /// watcher is on, and the previous generation's tools and handlers must
-    /// not stay live behind an `Error` label.
+    /// extracted, and `make_plugin_inert` forgets the modules cached from
+    /// under the plugin's directory, so the entry file and its `lua/`
+    /// modules are read again. A reload that fails leaves the plugin `Error`
+    /// and inert, never half-alive: the everyday trigger is saving `init.lua`
+    /// with a syntax error while the watcher is on, and the previous
+    /// generation's tools and handlers must not stay live behind an `Error`
+    /// label.
     pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
         if self.plugin_manager.get(name).is_none() {
             anyhow::bail!("plugin '{}' not found", name);
         }
 
         self.make_plugin_inert(name);
-        // A boot `require` instance in `package.loaded` would be reused
-        // rather than re-read; the reload forgets it with the rest.
-        let dir = self.plugin_manager.get(name).map(|p| p.dir.clone());
-        if let Some(dir) = dir {
-            if let Err(e) = self
-                .executor
-                .modules()
-                .invalidate_under(self.executor.lua(), &dir)
-            {
-                warn!("plugin '{name}': could not forget its cached modules: {e}");
-            }
-        }
         if let Err(e) = self.plugin_manager.unload(name) {
             self.plugin_manager.mark_error(name, e.to_string());
             anyhow::bail!("reload plugin '{name}': {e}");

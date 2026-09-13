@@ -10,10 +10,10 @@
 --- "this provider failed" case: it costs no fixture and exercises the same
 --- failure path a real outage would.
 
--- The runner activated this plugin before it loaded this file. The plugin
--- put its INTERNAL table in `package.loaded`, not the spec it returns, so a
--- cached require has no `tools`. This suite requires a fresh instance, and
--- the require caches the spec the file returns.
+-- The runner activated this plugin before it loaded this file, and seeded
+-- `package.loaded` with the activated instance, whose setup() already ran.
+-- This suite drives setup() itself against the HTTP mock, so it requires a
+-- fresh instance, and the require caches the spec the file returns.
 package.loaded["web-search"] = nil
 local plugin = require("web-search")
 local config = require("ws_config")

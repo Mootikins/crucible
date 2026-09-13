@@ -883,21 +883,31 @@ mod shipped_plugin_tests {
     /// `setup` that calls `cru.on` left its registrations in the handler
     /// store under the plugin's own source.
     ///
-    /// The tool count comes from the running loader. One plugin activates
-    /// per loader, so the registry holds that plugin's tools and no others,
-    /// and the count must equal the spec's.
+    /// Both sides of the tool count come from the running loader: the spec
+    /// table the activation read, and the registry the activation filled.
+    /// One plugin activates per loader, so the registry holds that plugin's
+    /// tools and no others, and the two counts must be equal. That equality
+    /// is what proves the registry holds the activated plugin.
+    ///
+    /// Every directory under `runtime/plugins` is a plugin, so the count of
+    /// plugins checked must equal the count of directories.
     ///
     /// This replaces a gate that read each `init.lua` for a `package.loaded`
     /// assignment. Its own comment recorded that it passed with both guards
     /// deleted, because the substring it looked for matched a comment.
     #[tokio::test]
     async fn the_suite_runs_the_plugin_the_daemon_activated() {
+        let plugin_dirs: Vec<std::path::PathBuf> = std::fs::read_dir(shipped_plugins_dir())
+            .expect("runtime/plugins must exist")
+            .map(|entry| entry.expect("readable dir entry").path())
+            .filter(|path| path.is_dir())
+            .collect();
+        assert!(
+            !plugin_dirs.is_empty(),
+            "runtime/plugins holds no plugin directory"
+        );
         let mut checked = 0;
-        for entry in std::fs::read_dir(shipped_plugins_dir()).expect("runtime/plugins must exist") {
-            let dir = entry.expect("readable dir entry").path();
-            if !dir.is_dir() {
-                continue;
-            }
+        for dir in &plugin_dirs {
             let dir = dir.canonicalize().expect("plugin dir");
             let (loader, activated) = super::activate_plugin_under_test(&dir)
                 .await
@@ -938,7 +948,12 @@ mod shipped_plugin_tests {
             }
             checked += 1;
         }
-        assert!(checked >= 12, "expected the shipped plugins, saw {checked}");
+        assert_eq!(
+            checked,
+            plugin_dirs.len(),
+            "runtime/plugins holds {} directories, the gate checked {checked}",
+            plugin_dirs.len()
+        );
     }
 
     /// The gate that was missing. `shipped_plugin_lua_suite_passes` listed four

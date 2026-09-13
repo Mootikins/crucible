@@ -152,6 +152,7 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
     // previous generation's `true` while the body's async eval is under way.
     crucible_lua::record_plugin_intercept(&lua, name, intercepts_tools);
 
+    let boot_required = boot_instance.is_some();
     let module: Table = match boot_instance {
         Some(instance) => {
             // The body already ran under the boot `require`, with its own
@@ -217,10 +218,15 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
         exports.commands,
     );
 
-    // 8. The table, and the lifecycle hooks it carries.
+    // 8. The table, the module cache and the lifecycle hooks it carries. A
+    // boot-required instance is already in the cache, under the searcher's
+    // own record.
     loader
         .active_modules
         .insert(name.to_string(), lua.create_registry_value(module.clone())?);
+    if !boot_required {
+        seed_module_cache(loader, name, &init_path, &module)?;
+    }
     let hook_key = |field: &str| -> anyhow::Result<Option<RegistryKey>> {
         match module.get::<Value>(field)? {
             Value::Function(f) => Ok(Some(lua.create_registry_value(f)?)),
@@ -307,6 +313,31 @@ async fn run_config(
     Ok(())
 }
 
+/// Put the module the body returned where `require(name)` looks, so a later
+/// `require("x")` answers the activated instance and does not run the file
+/// a second time, as lazy.nvim's loader does. The resolver's record names
+/// the file, so `invalidate_under` forgets this entry with the rest when
+/// the plugin goes inert.
+fn seed_module_cache(
+    loader: &DaemonPluginLoader,
+    name: &str,
+    init_path: &Path,
+    module: &Table,
+) -> anyhow::Result<()> {
+    package_loaded(loader.executor.lua())?.set(name, module.clone())?;
+    let canonical = std::fs::canonicalize(init_path).unwrap_or_else(|_| init_path.to_path_buf());
+    loader.executor.modules().record_public(name, &canonical);
+    Ok(())
+}
+
+/// The VM's `package.loaded` table.
+fn package_loaded(lua: &mlua::Lua) -> anyhow::Result<Table> {
+    lua.globals()
+        .get::<Table>("package")
+        .and_then(|package| package.get("loaded"))
+        .map_err(|e| anyhow::anyhow!("package.loaded: {e}"))
+}
+
 /// The `package.loaded` instance a boot `require` created for this plugin's
 /// entry file, when there is one. The resolver records which file answered
 /// each public name, so the match is by file and not by name.
@@ -317,13 +348,7 @@ fn boot_required_instance(
     let Some(module_name) = loader.boot_required_module(init_path) else {
         return Ok(None);
     };
-    let loaded: Table = loader
-        .executor
-        .lua()
-        .globals()
-        .get::<Table>("package")
-        .and_then(|package| package.get("loaded"))
-        .map_err(|e| anyhow::anyhow!("package.loaded: {e}"))?;
+    let loaded = package_loaded(loader.executor.lua())?;
     match loaded.get::<Value>(module_name.as_str())? {
         Value::Table(table) => Ok(Some(table)),
         _ => Ok(None),
