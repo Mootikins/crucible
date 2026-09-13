@@ -240,7 +240,11 @@ async fn no_shipped_module_table_carries_fragment_metadata() {
         checked += 1;
     }
 
-    assert_eq!(checked, names.len(), "the gate checked fewer plugins than ship");
+    assert_eq!(
+        checked,
+        names.len(),
+        "the gate checked fewer plugins than ship"
+    );
     assert!(
         carried.is_empty(),
         "module tables that carry fragment metadata: {carried:#?}"

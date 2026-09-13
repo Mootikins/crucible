@@ -1301,10 +1301,12 @@ mod tests {
         let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
         let loads = load_findings(&report);
         assert!(
-            loads.iter().any(|m| m.contains("2 registration(s) at top level")
-                && m.contains("turn:complete")
-                && m.contains("session:end")
-                && m.contains("setup()")),
+            loads
+                .iter()
+                .any(|m| m.contains("2 registration(s) at top level")
+                    && m.contains("turn:complete")
+                    && m.contains("session:end")
+                    && m.contains("setup()")),
             "{:?}",
             report.findings
         );
@@ -1326,11 +1328,7 @@ mod tests {
         );
         let vm = check_vm();
         let report = check_plugin_on(&dir, None, false, &NO_CHECKER, &vm).expect("check runs");
-        assert!(
-            load_findings(&report).is_empty(),
-            "{:?}",
-            report.findings
-        );
+        assert!(load_findings(&report).is_empty(), "{:?}", report.findings);
         assert!(report.passed(), "{:?}", report.findings);
     }
 
