@@ -41,6 +41,7 @@ pub mod lua_emit;
 pub mod merge;
 pub mod overlay;
 mod patterns;
+pub mod plugin_spec;
 mod project_config;
 pub mod provenance;
 pub mod redact;
@@ -100,6 +101,7 @@ pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, RefusedRule,
     ToolPatterns,
 };
+pub use plugin_spec::{Spec, SpecEntry, SpecRank, SpecSource};
 pub use project_config::{read_project_config, write_project_config, ProjectConfig};
 pub use provenance::{ConfigSource, LastSet, LeafOrigin, ProvenanceMap, SourceOrigin};
 pub use redact::{names_a_credential, redact_credentials, REDACTED};
