@@ -45,14 +45,15 @@ async fn check_counts_a_top_level_schedule_and_timer_and_leaves_none_behind() {
     let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     let vm = loader.executor();
 
-    let report =
-        check_plugin_on(&dir, None, false, &CheckerChoice::None, vm).expect("check runs");
+    let report = check_plugin_on(&dir, None, false, &CheckerChoice::None, vm).expect("check runs");
 
     let loads = load_findings(&report);
     assert!(
-        loads.iter().any(|m| m.contains("2 registration(s) at top level")
-            && m.contains("cru.schedule")
-            && m.contains("cru.timer.spawn")),
+        loads
+            .iter()
+            .any(|m| m.contains("2 registration(s) at top level")
+                && m.contains("cru.schedule")
+                && m.contains("cru.timer.spawn")),
         "{:?}",
         report.findings
     );
