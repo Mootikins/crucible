@@ -3,7 +3,7 @@ title: CONTEXT
 description: The glossary. One name per concept, and the names to avoid.
 type: reference
 status: living
-updated: 2026-09-12
+updated: 2026-09-13
 tags:
   - meta
   - glossary
@@ -80,7 +80,7 @@ _Avoid_: capability, permission (for this meaning)
 ### Notes
 
 **Note write**:
-One change to a note's text sent to the daemon, online or offline. Either a whole write or an anchored edit.
+One change to a note's text, either a whole write or an anchored edit. Both go through one door: to the daemon when it answers, to the outbox when it does not.
 _Avoid_: save, patch, put
 
 **Whole write**:
@@ -92,15 +92,15 @@ A note write that changes named lines by their text, and is refused whole when a
 _Avoid_: patch, diff, partial write
 
 **Base**:
-The hash of the note text a note write was made from. A write whose base is not the current hash is stale.
+The hash of the note text a note write was made from. The daemon refuses a write whose base is not the current hash as stale.
 _Avoid_: version, etag, revision
 
 **Conflict copy**:
-A note written beside the original under a dated name, holding a stale write's text so the writing is not lost.
+A note written beside the original under a dated name, holding a stale write's text so the writing is not lost. Online the user chooses it; from the outbox the drain writes it.
 _Avoid_: backup, merge file
 
 **Outbox**:
-The ordered queue of note writes made while offline, replayed in order when the daemon answers again.
+The ordered queue of note writes the daemon never answered, one entry per note, replayed in order when the daemon answers again. A later write to a queued note folds into its entry.
 _Avoid_: queue, pending writes, sync log
 
 **Kept kiln**:
