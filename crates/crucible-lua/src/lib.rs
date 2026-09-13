@@ -197,8 +197,8 @@ pub use ws::register_ws_module;
 pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.luau");
 // Handler system
 pub use check::{
-    check_file, check_file_using, check_plugin, check_plugin_using, check_plugin_with,
-    find_checker, CheckReport, Checker, CheckerChoice, Finding, TypecheckStatus,
+    check_file, check_file_using, check_plugin, check_plugin_on, check_plugin_using,
+    check_plugin_with, find_checker, CheckReport, Checker, CheckerChoice, Finding, TypecheckStatus,
 };
 pub use handlers::{
     clear_source, execute_permission_hooks, execute_tool_before_execute_hooks,

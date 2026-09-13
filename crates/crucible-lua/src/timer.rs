@@ -91,6 +91,29 @@ pub fn abort_source(_lua: &Lua, _owner: &crate::plugin_context::LuaSource) -> us
     0
 }
 
+/// How many tasks `source` started through `cru.timer.spawn`, finished or
+/// not. The read beside [`abort_source`]: it aborts nothing. A finished task
+/// counts, because the question is whether the source spawned one.
+#[cfg(feature = "send")]
+pub fn count_source(lua: &Lua, source: &crate::plugin_context::LuaSource) -> usize {
+    let Some(installed) = lua.app_data_ref::<inner::InstalledTasks>() else {
+        return 0;
+    };
+    let Ok(tasks) = installed.0.tasks.lock() else {
+        return 0;
+    };
+    tasks
+        .iter()
+        .filter(|(spawned_by, _)| spawned_by == source)
+        .count()
+}
+
+/// Without the `send` feature no task can be spawned, so none exists.
+#[cfg(not(feature = "send"))]
+pub fn count_source(_lua: &Lua, _source: &crate::plugin_context::LuaSource) -> usize {
+    0
+}
+
 /// Register the timer module under `cru.timer`.
 ///
 /// Every function declares its Luau type beside its closure, and `Ns` holds

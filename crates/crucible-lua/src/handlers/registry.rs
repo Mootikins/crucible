@@ -542,6 +542,19 @@ impl LuaScriptHandlerRegistry {
             .count()
     }
 
+    /// Every registration `source` made, in registration order. The rows
+    /// stay: this is the read beside [`Self::clear_source`], which is the
+    /// removal. `cru plugin check` reads it after it runs a module body, so a
+    /// registration at the top level is a fact the store states, with the
+    /// hook's name.
+    pub fn for_source(&self, source: &LuaSource) -> Vec<Registration> {
+        self.rows()
+            .iter()
+            .filter(|r| &r.source == source)
+            .cloned()
+            .collect()
+    }
+
     /// Every registration for `name` matching `identifier` and serving
     /// `firing`, in REGISTRATION ORDER.
     ///
