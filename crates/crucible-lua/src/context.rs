@@ -394,6 +394,20 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             unimplemented!()
         }
+        fn set_mode(
+            &self,
+            _: String,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            unimplemented!()
+        }
+        fn set_title(
+            &self,
+            _: String,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            unimplemented!()
+        }
         fn respond_to_permission(
             &self,
             _: String,

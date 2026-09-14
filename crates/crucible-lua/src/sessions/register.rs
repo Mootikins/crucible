@@ -59,6 +59,17 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
     ("pause", "(session_id: string) -> (boolean?, string?)"),
     ("resume", "(session_id: string) -> (boolean?, string?)"),
     ("end_session", "(session_id: string) -> (boolean?, string?)"),
+    // The mode the session runs its TURNS in, persisted on its agent — not a
+    // property of one send. An id the session does not offer is an error
+    // naming the ids it does.
+    (
+        "set_mode",
+        "(session_id: string, mode_id: string) -> (boolean?, string?)",
+    ),
+    (
+        "set_title",
+        "(session_id: string, title: string) -> (boolean?, string?)",
+    ),
     (
         "interaction_respond",
         "(session_id: string, request_id: string, response: any) -> (boolean?, string?)",
@@ -352,6 +363,32 @@ pub(crate) async fn end_session_op(
     sid: &str,
 ) -> mlua::Result<(Value, Value)> {
     match api.end_session(sid.to_string()).await {
+        Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+        Err(e) => err_pair(lua, e),
+    }
+}
+
+/// set_mode(session_id, mode_id) -> (true, nil) | (nil, err)
+pub(crate) async fn set_mode_op(
+    lua: &Lua,
+    api: &Arc<dyn DaemonSessionApi>,
+    sid: &str,
+    mode_id: String,
+) -> mlua::Result<(Value, Value)> {
+    match api.set_mode(sid.to_string(), mode_id).await {
+        Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+        Err(e) => err_pair(lua, e),
+    }
+}
+
+/// set_title(session_id, title) -> (true, nil) | (nil, err)
+pub(crate) async fn set_title_op(
+    lua: &Lua,
+    api: &Arc<dyn DaemonSessionApi>,
+    sid: &str,
+    title: String,
+) -> mlua::Result<(Value, Value)> {
+    match api.set_title(sid.to_string(), title).await {
         Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
         Err(e) => err_pair(lua, e),
     }
@@ -799,6 +836,8 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("pause", String);
     stub_async!("resume", String);
     stub_async!("end_session", String);
+    stub_async!("set_mode", (String, String));
+    stub_async!("set_title", (String, String));
     stub_async!("interaction_respond", (String, String, Value));
     stub_async!("subscribe", String);
     stub_async!("unsubscribe", String);
@@ -1011,6 +1050,26 @@ fn register_sessions_inner(
         move |lua, session_id: String| {
             let a = Arc::clone(&a);
             async move { end_session_op(&lua, &a, &session_id).await }
+        },
+    )?;
+
+    let a = Arc::clone(&api);
+    ns.async_func(
+        "set_mode",
+        decl("set_mode")?,
+        move |lua, (session_id, mode_id): (String, String)| {
+            let a = Arc::clone(&a);
+            async move { set_mode_op(&lua, &a, &session_id, mode_id).await }
+        },
+    )?;
+
+    let a = Arc::clone(&api);
+    ns.async_func(
+        "set_title",
+        decl("set_title")?,
+        move |lua, (session_id, title): (String, String)| {
+            let a = Arc::clone(&a);
+            async move { set_title_op(&lua, &a, &session_id, title).await }
         },
     )?;
 

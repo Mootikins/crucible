@@ -527,6 +527,39 @@ pub(super) async fn sweep_and_archive_stale_sessions(
             }
         }
 
+        // A queue nobody has decided keeps the session out of the archive.
+        //
+        // Archiving removes the session from the in-memory map, and
+        // `review::ensure_loaded` restores a ledger only for a session that
+        // map still answers for — so an archived session's hunks have no door
+        // left, while the edits they describe are still on disk. A plugin
+        // session is the case this protects: a reflection pass writes its
+        // notes, ends, and nobody opens the queue for days.
+        //
+        // A session with no ledger has nothing to protect and archives as
+        // before. Any other answer means the queue cannot be read, and a
+        // sweep that cannot prove the queue is empty must not archive.
+        match agent_manager.review.unreviewed_hunks(&summary.id).await {
+            Ok(hunks) if !hunks.is_empty() => {
+                info!(
+                    session_id = %summary.id,
+                    unreviewed = hunks.len(),
+                    "Auto-archive sweep: session held, its review queue is undecided"
+                );
+                continue;
+            }
+            Ok(_) => {}
+            Err(crate::review::ReviewError::NoLedger(_)) => {}
+            Err(e) => {
+                warn!(
+                    session_id = %summary.id,
+                    error = %e,
+                    "Auto-archive sweep: session held, its review queue could not be read"
+                );
+                continue;
+            }
+        }
+
         // One unreadable meta.json must not wedge the whole sweep.
         match session_manager.archive_session(&summary.id).await {
             Ok(_) => {

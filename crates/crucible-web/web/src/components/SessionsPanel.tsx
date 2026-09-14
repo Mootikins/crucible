@@ -8,6 +8,7 @@ import { PanelShell } from './PanelShell';
 import { TreeSection } from '@/components/tree/TreeSection';
 import { sessionStatus } from '@/lib/session-status';
 import { inboxSessions } from '@/lib/session-inbox';
+import { reflectionSessions } from '@/lib/session-reflections';
 import { SessionRow, SessionTree } from './SessionTree';
 
 const byRecency = (a: Session, b: Session) =>
@@ -36,6 +37,7 @@ export const SessionsPanel: Component = () => {
   const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
   const [showArchived, setShowArchived] = createSignal(false);
   const [inboxOpen, setInboxOpen] = createSignal(true);
+  const [reflectionsOpen, setReflectionsOpen] = createSignal(false);
 
   onMount(() => {
     refreshSessions({ includeArchived: true });
@@ -101,6 +103,19 @@ export const SessionsPanel: Component = () => {
   const waitingCount = () => inbox().filter((s) => sessionStatus(s) === 'waiting').length;
   const archivedList = createMemo(() => sessions().filter((s) => s.archived).sort(byRecency));
 
+  /**
+   * The passes a plugin ran for itself — see `lib/session-reflections.ts`.
+   *
+   * Its own section because a pass has no workspace, so the tree below files
+   * it under "No project" with everything else that has none. The daemon
+   * keeps a pass out of the archive while its review queue is undecided, and
+   * this is where the user goes to decide it.
+   */
+  const reflections = createMemo(() => reflectionSessions(sessions()));
+
+  /** The tree below leaves the passes to that section, so neither repeats. */
+  const treeList = createMemo(() => activeList().filter((s) => s.session_type !== 'plugin'));
+
   const row = (s: Session) => (
     <SessionRow
       session={s}
@@ -141,7 +156,7 @@ export const SessionsPanel: Component = () => {
         </TreeSection>
 
         <SessionTree
-          sessions={activeList()}
+          sessions={treeList()}
           currentSessionId={currentSession()?.id}
           projects={projects()}
           currentProjectPath={currentProject()?.path}
@@ -153,9 +168,20 @@ export const SessionsPanel: Component = () => {
           branchOf={branchOf}
           kilnName={kilnName}
         />
-        <Show when={!projects().length && !activeList().length}>
+        <Show when={!projects().length && !treeList().length}>
           <p class="px-3 py-6 text-center text-muted-dark text-sm">No sessions yet</p>
         </Show>
+        <TreeSection
+          label="Reflections"
+          count={reflections().length}
+          open={reflectionsOpen()}
+          onToggle={() => setReflectionsOpen((v) => !v)}
+          testid="reflections-section"
+        >
+          <div class="flex flex-col">
+            <For each={reflections()}>{row}</For>
+          </div>
+        </TreeSection>
         <TreeSection
           label="Archived"
           count={archivedList().length}

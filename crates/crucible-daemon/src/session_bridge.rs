@@ -376,6 +376,34 @@ impl DaemonSessionApi for DaemonSessionBridge {
         )
     }
 
+    /// The mode a plugin's session runs its turns in.
+    ///
+    /// Straight to `AgentManager::set_mode`, which is what `session.set_mode`
+    /// calls: the mode is validated against the modes *that session* offers,
+    /// persisted on its agent so a later turn sees it, and pushed to a live
+    /// handle. An unknown id comes back as the error naming the valid ids,
+    /// which the Lua caller reads as the second return value.
+    fn set_mode(&self, session_id: String, mode_id: String) -> BoxFut<()> {
+        bridge_async!(self.agent_manager, self.event_tx, |am, event_tx| async move {
+            am.set_mode(&session_id, &mode_id, Some(&event_tx))
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    /// The title a human reads for a plugin's session.
+    ///
+    /// Straight to `SessionManager::set_title`, which is what
+    /// `session.set_title` calls, so the title persists with the session
+    /// record rather than living in the plugin.
+    fn set_title(&self, session_id: String, title: String) -> BoxFut<()> {
+        bridge_async!(self.session_manager, |sm| async move {
+            sm.set_title(&session_id, title)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn request_interaction(
         &self,
         session_id: String,

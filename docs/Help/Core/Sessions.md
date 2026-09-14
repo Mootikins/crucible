@@ -389,6 +389,8 @@ cru.config.set({
 
 The sweep skips sessions that have active subscribers (connected clients). It also re-checks activity timestamps before archiving to avoid race conditions where a session receives new activity between the staleness check and the archive operation.
 
+**The sweep also skips a session whose review queue is undecided.** An archive drops the session from the daemon's memory, and the review surface restores a ledger only for a session that memory still answers for — so an archived session's hunks have no door left, while the edits they describe are still on disk. This matters most for a plugin session: a reflection pass writes its notes through the note tools, ends, and nobody opens the queue for days. Accept or reject its hunks in the web Changes panel, which lists the passes under **Reflections**, and the next sweep archives the session.
+
 Auto-archived sessions can be unarchived at any time. No data is lost.
 
 ## Session Configuration

@@ -107,4 +107,25 @@ describe('SessionsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New session in alpha' }));
     expect(events).toEqual([{ workspace: '/work/alpha' }]);
   });
+
+  // A pass a plugin ran has no workspace, so the project switcher can never
+  // reach it: it is not in any project's list, and under "All projects" it
+  // sits among every ordinary session. The daemon holds it out of the archive
+  // while its review queue is undecided, and this is where a phone finds it.
+  it('lists a plugin session under Reflections, whatever project is chosen', () => {
+    state.sessions = [
+      ...state.sessions,
+      { ...session('p1', '', 'Reflection: yesterday'), session_type: 'plugin', workspace: null },
+    ];
+    render(() => <SessionsTab />);
+    const section = screen.getByTestId('compact-reflections');
+    expect(section.textContent).toContain('Reflection: yesterday');
+    // Not repeated in the project list below.
+    expect(screen.getAllByText('Reflection: yesterday')).toHaveLength(1);
+  });
+
+  it('offers no Reflections section when no plugin session is listed', () => {
+    render(() => <SessionsTab />);
+    expect(screen.queryByTestId('compact-reflections')).toBeNull();
+  });
 });

@@ -35,6 +35,12 @@ pub(super) struct MockDaemonApi {
     end_calls: StdMutex<Vec<String>>,
     /// `(session_id, hunk_id)` from every `review_list_hunks` call.
     review_list_calls: StdMutex<Vec<String>>,
+    /// Every `set_mode` call, as `(session_id, mode_id)`.
+    mode_calls: StdMutex<Vec<(String, String)>>,
+    /// Every `set_title` call, as `(session_id, title)`.
+    title_calls: StdMutex<Vec<(String, String)>>,
+    /// What the next `set_mode` refuses with, if anything.
+    mode_refusal: StdMutex<Option<String>>,
     /// Every `request_interaction` call, as `(session_id, request, timeout)`.
     interaction_calls: StdMutex<Vec<(String, serde_json::Value, u64)>>,
     /// What the next `request_interaction` resolves to. Defaults to
@@ -55,6 +61,9 @@ impl MockDaemonApi {
             send_calls: StdMutex::new(Vec::new()),
             end_calls: StdMutex::new(Vec::new()),
             review_list_calls: StdMutex::new(Vec::new()),
+            mode_calls: StdMutex::new(Vec::new()),
+            title_calls: StdMutex::new(Vec::new()),
+            mode_refusal: StdMutex::new(None),
             interaction_calls: StdMutex::new(Vec::new()),
             interaction_answer: StdMutex::new(None),
         }
@@ -78,6 +87,22 @@ impl MockDaemonApi {
     /// Session ids from every `review_list_hunks` call, in order.
     pub(super) fn review_list_calls(&self) -> Vec<String> {
         self.review_list_calls.lock().unwrap().clone()
+    }
+
+    /// Every `set_mode` call this mock saw, in order.
+    pub(super) fn mode_calls(&self) -> Vec<(String, String)> {
+        self.mode_calls.lock().unwrap().clone()
+    }
+
+    /// Every `set_title` call this mock saw, in order.
+    pub(super) fn title_calls(&self) -> Vec<(String, String)> {
+        self.title_calls.lock().unwrap().clone()
+    }
+
+    /// Make every later `set_mode` answer this refusal, the way the daemon
+    /// refuses a mode the session does not offer.
+    pub(super) fn refuse_mode(&self, message: &str) {
+        *self.mode_refusal.lock().unwrap() = Some(message.to_string());
     }
 
     /// Every `request_interaction` call this mock saw.
@@ -311,6 +336,30 @@ impl DaemonSessionApi for MockDaemonApi {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         self.end_calls.lock().unwrap().push(session_id);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn set_mode(
+        &self,
+        session_id: String,
+        mode_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        self.mode_calls.lock().unwrap().push((session_id, mode_id));
+        let refusal = self.mode_refusal.lock().unwrap().clone();
+        Box::pin(async move {
+            match refusal {
+                Some(message) => Err(message),
+                None => Ok(()),
+            }
+        })
+    }
+
+    fn set_title(
+        &self,
+        session_id: String,
+        title: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        self.title_calls.lock().unwrap().push((session_id, title));
         Box::pin(async { Ok(()) })
     }
 

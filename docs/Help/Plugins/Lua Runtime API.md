@@ -359,7 +359,7 @@ field the old plain table exposed (`session.id`, `session.state`,
   calling the same implementation — `s:send_message("…")` is
   `cru.session.send_message(s.id, "…")`:
   `configure_agent`, `send_message`, `cancel`, `pause`, `resume`,
-  `end_session`, `interaction_respond`, `subscribe`, `unsubscribe`,
+  `end_session`, `set_mode`, `set_title`, `interaction_respond`, `subscribe`, `unsubscribe`,
   `send_and_collect`, `inject`, `messages`, `fork`, `cache_stats`, `complete`,
   `undo`, `can_undo`, `undo_depth`, `undo_history`,
   `review_list_hunks`, `review_set_state`, `review_comment`,
@@ -615,6 +615,48 @@ End a session permanently. Returns `(true, nil)` on success.
 
 ```lua
 cru.session.end_session(session_id)
+```
+
+### cru.session.set_mode(session_id, mode_id)
+
+Set the mode a session runs its turns in. Returns `(true, nil)` on success.
+
+`mode_id` is `normal`, `plan`, `auto`, or a mode a Lua `cru.modes` declaration
+added. An id the session does not offer is an error that names the ids it does.
+
+The mode belongs to the session, not to one turn: it persists on the session's
+agent, so a turn the plugin sends later runs in it, and it survives a handle
+eviction.
+
+**An unattended pass needs this.** A session a plugin creates starts in the
+default mode, `ask`, which asks a human for permission before a write. A plugin
+turn is non-interactive — there is no Crucible principal behind it — so the
+permission engine turns every `Ask` into `Deny` and the pass writes nothing.
+`auto` gives the pass the stance it needs, and with it the `PostTurn` review
+policy, so a second write to one note is not held at the review gate. The edits
+land in that session's review queue, and a human accepts or rejects them in the
+Changes panel.
+
+```lua
+local s = cru.session.create({ type = "plugin" })
+s:configure_agent({ ... })
+local ok, err = s:set_mode("auto")
+```
+
+Use the verb, not `s.mode = "auto"`: a handle from `create` binds no live
+config RPC, so the assignment answers "Session not connected".
+
+### cru.session.set_title(session_id, title)
+
+Set the title a human reads for a session, in the sessions list and the web
+Reflections section. Returns `(true, nil)` on success.
+
+A plugin session is one nobody typed into, so the daemon's own titling — which
+reads the first user message — leaves it "Untitled". The plugin is the only
+caller that knows what its pass was about.
+
+```lua
+local ok, err = s:set_title("Reflection: " .. (info.title or session_id))
 ```
 
 ### cru.session.interaction_respond(session_id, request_id, response)

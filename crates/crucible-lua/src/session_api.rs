@@ -31,8 +31,8 @@ use crate::sessions::register::{
     cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
     fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
     review_comment_op, review_list_hunks_op, review_resolve_comment_op, review_set_state_op,
-    send_and_collect_op, send_message_op, subscribe_op, undo_depth_op, undo_history_op, undo_op,
-    unsubscribe_op,
+    send_and_collect_op, send_message_op, set_mode_op, set_title_op, subscribe_op, undo_depth_op,
+    undo_history_op, undo_op, unsubscribe_op,
 };
 use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
@@ -437,6 +437,11 @@ impl UserData for Session {
         session_method!(methods, "pause", pause_op);
         session_method!(methods, "resume", resume_op);
         session_method!(methods, "end_session", end_session_op);
+        // A verb, not `s.mode = "auto"`: a handle from `create` binds no
+        // `SessionConfigRpc`, so the NewIndex arm would answer "Session not
+        // connected" on the one handle a plugin actually holds.
+        session_method!(methods, "set_mode", set_mode_op, mode_id: String);
+        session_method!(methods, "set_title", set_title_op, title: String);
         session_method!(
             methods,
             "interaction_respond",

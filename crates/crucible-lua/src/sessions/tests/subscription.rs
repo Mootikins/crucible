@@ -216,6 +216,20 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
     fn end_session(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }
+    fn set_mode(
+        &self,
+        _: String,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn set_title(
+        &self,
+        _: String,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
     fn respond_to_permission(
         &self,
         _: String,

@@ -7,6 +7,7 @@ import { sessionDisplayTitle } from '@/lib/session-display';
 import { sessionWorkspace } from '@/lib/session-scope';
 import { sessionStatus } from '@/lib/session-status';
 import { inboxSessions } from '@/lib/session-inbox';
+import { reflectionSessions } from '@/lib/session-reflections';
 import { terseAge } from '@/lib/format-time';
 import { ChevronDown, GitBranch, Plus } from '@/lib/icons';
 import { treeChevron, treeSectionHeader } from '@/components/tree/tree-style';
@@ -45,13 +46,23 @@ export const SessionsTab: Component = () => {
 
   const active = createMemo(() => sessions().filter((s) => !s.archived));
   const inbox = createMemo(() => inboxSessions(active()));
+  /**
+   * The passes a plugin ran for itself — see `lib/session-reflections.ts`.
+   *
+   * Cross-project like the Inbox, and for a stronger reason: a pass has no
+   * workspace, so no project's list holds it and the switcher cannot reach
+   * it. Its own section is the only way a phone meets one.
+   */
+  const reflections = createMemo(() => reflectionSessions(active()));
   const listed = createMemo(() => {
     const target = chosen();
-    const all = [...active()].sort(
-      (a, b) =>
-        (Date.parse(b.last_activity ?? b.started_at) || 0) -
-        (Date.parse(a.last_activity ?? a.started_at) || 0),
-    );
+    const all = [...active()]
+      .filter((s) => s.session_type !== 'plugin')
+      .sort(
+        (a, b) =>
+          (Date.parse(b.last_activity ?? b.started_at) || 0) -
+          (Date.parse(a.last_activity ?? a.started_at) || 0),
+      );
     return target === ALL_PROJECTS ? all : all.filter((s) => sessionWorkspace(s) === target);
   });
 
@@ -136,6 +147,15 @@ export const SessionsTab: Component = () => {
                 block, and the tint is what says which session is open. */}
             <div class="flex flex-col gap-0.5 px-1">
               <For each={inbox()}>{(s) => <Row session={s} showProject />}</For>
+            </div>
+          </section>
+        </Show>
+
+        <Show when={reflections().length > 0}>
+          <section data-testid="compact-reflections" class="mb-2">
+            <h2 class={treeSectionHeader}>Reflections ({reflections().length})</h2>
+            <div class="flex flex-col gap-0.5 px-1">
+              <For each={reflections()}>{(s) => <Row session={s} />}</For>
             </div>
           </section>
         </Show>

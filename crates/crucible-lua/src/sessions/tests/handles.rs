@@ -127,3 +127,99 @@ async fn model_on_a_get_handle_is_nil_when_the_record_has_none() {
     let is_nil: bool = lua.load("return bare_session.model == nil").eval().unwrap();
     assert!(is_nil);
 }
+
+/// The two verbs a plugin needs to prepare a session it created: the mode it
+/// runs its turn in, and the title a human reads in the sessions list.
+///
+/// Both go through the handle, because the id is the handle's. A
+/// `NewIndex` setter (`s.mode = "auto"`) cannot serve here: a handle from
+/// `create` binds no `SessionConfigRpc`, so the assignment answers
+/// "Session not connected".
+#[tokio::test]
+async fn a_handle_sets_the_mode_and_the_title_of_its_own_session() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let ok: bool = lua
+        .load(
+            r#"
+            local s, cerr = cru.session.create({ type = "plugin" })
+            assert(cerr == nil, "unexpected error: " .. tostring(cerr))
+            local m, merr = s:set_mode("auto")
+            assert(merr == nil, "set_mode: " .. tostring(merr))
+            local t, terr = s:set_title("Reflection: yesterday")
+            assert(terr == nil, "set_title: " .. tostring(terr))
+            return m and t
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(ok, "both verbs answer true");
+    let modes = mock.mode_calls();
+    assert_eq!(modes.len(), 1);
+    assert!(modes[0].0.starts_with("plugin-"), "{:?}", modes[0]);
+    assert_eq!(modes[0].1, "auto");
+    let titles = mock.title_calls();
+    assert_eq!(titles.len(), 1);
+    assert_eq!(titles[0].0, modes[0].0, "one session, one id");
+    assert_eq!(titles[0].1, "Reflection: yesterday");
+}
+
+/// The free function and the handle method call one body, so
+/// `cru.session.set_title(id, t)` reaches the same daemon call with the id
+/// the caller named.
+#[tokio::test]
+async fn the_free_functions_set_the_mode_and_the_title_by_id() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let ok: bool = lua
+        .load(
+            r#"
+            local m = cru.session.set_mode("exists-123", "plan")
+            local t = cru.session.set_title("exists-123", "T")
+            return m and t
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(ok);
+    assert_eq!(
+        mock.mode_calls(),
+        vec![("exists-123".to_string(), "plan".to_string())]
+    );
+    assert_eq!(
+        mock.title_calls(),
+        vec![("exists-123".to_string(), "T".to_string())]
+    );
+}
+
+/// A daemon refusal is the `(nil, err)` pair every other session function
+/// answers with, not a raise.
+#[tokio::test]
+async fn an_unknown_mode_answers_the_error_pair() {
+    let mock = Arc::new(MockDaemonApi::new());
+    mock.refuse_mode("unknown mode 'zoom'. Valid: normal, plan, auto");
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let (value, err): (Value, String) = lua
+        .load(
+            r#"
+            local ok, err = cru.session.set_mode("exists-123", "zoom")
+            return ok, err
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert!(matches!(value, Value::Nil), "{value:?}");
+    assert!(err.contains("unknown mode 'zoom'"), "{err}");
+}

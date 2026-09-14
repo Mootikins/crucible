@@ -527,6 +527,96 @@ async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscr
     assert!(!still_active.archived);
 }
 
+/// An unreviewed hunk keeps a session out of the archive.
+///
+/// The archive removes a session from the in-memory map, and
+/// `review::ensure_loaded` restores a ledger only for a session that map
+/// still answers for — so archiving a session with a queue makes its hunks
+/// unreachable, and the edits on disk have no door left to accept or reject
+/// them through. This matters most for a plugin session: a reflection pass
+/// writes its notes and ends, and nobody looks at the queue for days.
+#[tokio::test]
+async fn the_archive_sweep_skips_a_session_with_unreviewed_hunks() {
+    let repo = TempDir::new().unwrap();
+    crate::test_support::init_repo(repo.path(), &[("a.txt", "one\n")]).await;
+
+    let session_manager = temp_session_manager();
+    let subscription_manager = SubscriptionManager::new();
+    let agent_manager = sweep_test_agent_manager();
+
+    let with_hunks = session_manager
+        .create_session(
+            SessionType::Plugin,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let idle = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    for id in [&with_hunks.id, &idle.id] {
+        session_manager
+            .update_last_activity(id, Utc::now() - ChronoDuration::hours(80))
+            .await
+            .unwrap();
+    }
+
+    // One bracketed write, left undecided: the queue the sweep must respect.
+    agent_manager
+        .review
+        .open(&with_hunks.id, &[repo.path().to_path_buf()])
+        .await
+        .unwrap();
+    let bracket = agent_manager
+        .review
+        .open_bracket(&with_hunks.id)
+        .await
+        .unwrap();
+    std::fs::write(repo.path().join("a.txt"), "one\ntwo\n").unwrap();
+    agent_manager
+        .review
+        .close(&with_hunks.id, bracket, "call-1", 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        agent_manager
+            .review
+            .unreviewed_hunks(&with_hunks.id)
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "the fixture itself must leave one hunk undecided"
+    );
+
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &subscription_manager,
+        &agent_manager,
+        72,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(archived, 1, "only the session with an empty queue");
+    assert!(
+        session_manager.get_session(&idle.id).is_none(),
+        "the idle session archived as before"
+    );
+    let held = session_manager
+        .get_session(&with_hunks.id)
+        .expect("a session with unreviewed hunks stays in memory");
+    assert!(!held.archived);
+}
+
 #[tokio::test]
 async fn test_session_create_with_granular_recording_mode() {
     let server = TestServer::start().await;

@@ -175,6 +175,40 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
+    /// Set the session's mode by id (`normal`, `plan`, `auto`, or a
+    /// Lua-declared one).
+    ///
+    /// The mode a session runs its turns in, not a property of one turn: it
+    /// persists on the session's agent, so it applies to a turn a plugin
+    /// sends later and survives a handle eviction. A plugin needs it because
+    /// a session it creates starts in the default mode, which asks for
+    /// permission, while a plugin turn has nobody to answer — an unattended
+    /// pass therefore has every write denied until it says which stance it
+    /// wants.
+    ///
+    /// It is a verb rather than a `session.mode = …` setter because a handle
+    /// from `create` binds no [`crate::session_api::SessionConfigRpc`], so the
+    /// assignment would answer "Session not connected" on exactly the handle
+    /// a plugin has.
+    ///
+    /// An id the session does not offer is an error naming the ids it does.
+    fn set_mode(
+        &self,
+        session_id: String,
+        mode_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+    /// Set the session's title, the name a human reads in the sessions list.
+    ///
+    /// A plugin session is one nobody typed into, so the daemon's own
+    /// titling — which reads the first user message — leaves it "Untitled".
+    /// The plugin is the only caller that knows what its pass was about.
+    fn set_title(
+        &self,
+        session_id: String,
+        title: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
     /// End a session permanently.
     fn end_session(
         &self,

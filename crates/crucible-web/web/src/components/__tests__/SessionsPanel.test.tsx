@@ -228,3 +228,39 @@ describe('SessionsPanel — the tree is scoped to the pinned project', () => {
     expect(started).toEqual([{ workspace: '/home/me/atlas' }]);
   });
 });
+
+describe('SessionsPanel — Reflections', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    projectList = [project('/home/me/crucible', 'crucible')];
+    pinnedProject = projectList[0];
+    sessionList = [
+      session('s1', 'netcode-spike', '/home/me/crucible'),
+      { ...session('p1', 'Reflection: yesterday', null), session_type: 'plugin' },
+    ];
+  });
+
+  // A pass has no workspace, so the project tree files it under "No project"
+  // beside every other workspace-less session. The daemon now holds it out of
+  // the archive while its hunks are undecided, which is only useful if the
+  // user can find it.
+  it('lists a plugin session under its own section', () => {
+    render(() => <SessionsPanel />);
+    const section = screen.getByTestId('reflections-section');
+    expect(section.textContent).toContain('Reflections');
+    expect(section.textContent).toContain('1');
+    // Folded like Archived, and the count is what makes it discoverable.
+    expect(screen.queryByTestId('session-item-p1')).toBeNull();
+    fireEvent.click(section);
+    expect(screen.getByTestId('session-item-p1')).toBeTruthy();
+    // And the tree below leaves it to this section, so it is listed once.
+    expect(screen.getAllByText('Reflection: yesterday')).toHaveLength(1);
+  });
+
+  it('offers no section when no plugin session is listed', () => {
+    sessionList = [session('s1', 'netcode-spike', '/home/me/crucible')];
+    render(() => <SessionsPanel />);
+    // A control that does nothing must not take a row.
+    expect(screen.queryByTestId('reflections-section')).toBeNull();
+  });
+});

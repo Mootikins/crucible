@@ -700,3 +700,92 @@ async fn remove_messages_invalid_range_type_errors() {
         .unwrap_err();
     assert!(err.contains("unknown variant `bogus`"), "got: {err}");
 }
+
+/// A plugin prepares the session it just created: the mode its turn runs in,
+/// and the title a human reads in the sessions list.
+///
+/// Both verbs go through the handle, and the daemon answers with both. The
+/// mode matters most: an aux session sits in the default `ask` mode, and a
+/// plugin turn is non-interactive, so every write the reviewer makes is
+/// denied until the plugin moves it to `auto`. Lua had no way to say so —
+/// `DaemonSessionApi` carried no `set_mode`, and `s.mode = "auto"` answers
+/// "Session not connected" on a handle from `create`, which binds no
+/// `SessionConfigRpc`.
+#[tokio::test]
+async fn a_plugin_titles_and_switches_the_session_it_created_and_the_daemon_reads_both_back() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let tmp = TempDir::new().unwrap();
+    let session_manager = temp_session_manager();
+    let agent_manager = build_test_agent_manager_with_llm_config(
+        session_manager.clone(),
+        Some(bridge_llm_config()),
+    );
+    let (event_tx, _keep_open) = broadcast::channel(64);
+    let ctx = bridge_ctx(
+        session_manager.clone(),
+        agent_manager.clone(),
+        event_tx,
+        tmp.path(),
+    );
+
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("plugin loader");
+    loader
+        .upgrade_with_sessions(Arc::new(DaemonSessionBridge::new(ctx)))
+        .expect("wire the bridge into the plugin VM");
+    let plugin_lua = loader.plugin_lua();
+    loader
+        .eval(
+            r#"
+            local s, err = cru.session.create({ type = "plugin" })
+            if err or not s then
+                _G.plugin_error = "create: " .. tostring(err)
+                return
+            end
+            _G.aux_id = s.id
+            local _, cfg_err = s:configure_agent({
+                agent_type = "internal",
+                provider = "ollama",
+                provider_key = "ollama",
+                model = "llama3.2",
+                system_prompt = "reflect",
+            })
+            if cfg_err then
+                _G.plugin_error = "configure_agent: " .. tostring(cfg_err)
+                return
+            end
+            local _, mode_err = s:set_mode("auto")
+            if mode_err then
+                _G.plugin_error = "set_mode: " .. tostring(mode_err)
+                return
+            end
+            local _, title_err = s:set_title("Reflection: yesterday")
+            if title_err then
+                _G.plugin_error = "set_title: " .. tostring(title_err)
+                return
+            end
+            -- Read back through the same surface a plugin would.
+            local again = cru.session.get(s.id)
+            _G.read_back_title = again.title
+            "#,
+        )
+        .await
+        .expect("the plugin script runs");
+
+    let plugin_error: Option<String> = plugin_lua.globals().get("plugin_error").unwrap();
+    assert_eq!(plugin_error, None, "the plugin script itself failed");
+    let aux_id: String = plugin_lua.globals().get("aux_id").expect("the plugin created a session");
+
+    // The daemon's own readers, not the plugin's word for it.
+    assert_eq!(
+        agent_manager.get_mode(&aux_id).unwrap().as_deref(),
+        Some("auto"),
+        "set_mode persisted on the session's agent"
+    );
+    let aux = session_manager.get_session(&aux_id).expect("aux registered");
+    assert_eq!(aux.title.as_deref(), Some("Reflection: yesterday"));
+
+    // And the plugin reads the same title back through `cru.session.get`.
+    let read_back: String = plugin_lua.globals().get("read_back_title").unwrap();
+    assert_eq!(read_back, "Reflection: yesterday");
+}
