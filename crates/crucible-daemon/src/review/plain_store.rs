@@ -291,9 +291,9 @@ impl PlainStore {
     /// review.
     ///
     /// **Fails closed.** Every step that cannot prove what is claimed — an
-    /// unreadable sessions root, a claim file that will not parse, a live
-    /// manifest that will not read — abandons the whole pass with nothing
-    /// removed. The cost of waiting for the next tick is disk; the cost of
+    /// unreadable sessions root, a claim file that will not parse, a manifest
+    /// the pass must account for and cannot read — abandons the whole pass
+    /// with nothing removed. The cost of waiting for the next tick is disk; the cost of
     /// guessing is a review that can no longer be computed.
     ///
     /// The one window it shares with `git gc` — a capture writes its snapshot
@@ -304,6 +304,12 @@ impl PlainStore {
     /// an interval's `before_tree`, which is a past state of the disk, so a
     /// snapshot taken mid-bracket leaves that session's hunks uncomputable
     /// until a rebase.
+    ///
+    /// The grace period covers the whole snapshot, contents included: a young
+    /// unclaimed manifest is read for its blobs like a claimed one. Blobs are
+    /// content-addressed, so a capture that finds one on disk writes nothing
+    /// and the file keeps the age of the capture that first stored it — old
+    /// enough to take, while a snapshot the pass has just spared names it.
     pub(super) async fn sweep(&self, sessions_root: &Path) -> usize {
         let Some((live_snapshots, dead_keeps)) = self.claims(sessions_root).await else {
             return 0;
@@ -329,10 +335,11 @@ impl PlainStore {
             let Some(hash) = name.strip_suffix(".json").filter(|h| is_content_hash(h)) else {
                 continue;
             };
-            if !live_snapshots.contains(hash) {
-                if old_enough(&entry).await {
-                    dead_snapshots.push(entry.path());
-                }
+            // A snapshot the grace period still protects is read like a live
+            // one: keeping it while counting its blobs as garbage would leave
+            // it naming content nothing can produce again.
+            if !live_snapshots.contains(hash) && old_enough(&entry).await {
+                dead_snapshots.push(entry.path());
                 continue;
             }
             match self.manifest(&SnapshotId::plain(hash)).await {
@@ -341,7 +348,7 @@ impl PlainStore {
                     warn!(
                         snapshot = hash,
                         error = %e,
-                        "a claimed review snapshot will not read; sweeping nothing this pass"
+                        "a review snapshot the pass must account for will not read; sweeping nothing this pass"
                     );
                     return 0;
                 }
@@ -759,10 +766,7 @@ mod tests {
         fixture.write_aged("a.md", "two\n");
         fixture.store.capture(fixture.root.path()).await.unwrap();
         age(&blob);
-        assert!(
-            !old_enough_path(&blob),
-            "the blob must start out collectable"
-        );
+        assert!(!within_grace(&blob), "the blob must start out collectable");
 
         // The revert: the same bytes again, so the store finds the blob there.
         fixture.write_aged("a.md", "one\n");
@@ -772,15 +776,15 @@ mod tests {
             "the same content must reach the same snapshot"
         );
         assert!(
-            old_enough_path(&blob),
+            within_grace(&blob),
             "a reused blob kept the age of the capture that first stored it, \
              so the sweep may take it while a bracket names it"
         );
     }
 
-    /// [`old_enough`] over a path, inverted for readability: whether the sweep
-    /// would treat this file as collectable.
-    fn old_enough_path(path: &Path) -> bool {
+    /// Whether the sweep's grace period still protects this file —
+    /// [`old_enough`] over a path, inverted.
+    fn within_grace(path: &Path) -> bool {
         let modified = std::fs::metadata(path).unwrap().modified().unwrap();
         SystemTime::now()
             .duration_since(modified)

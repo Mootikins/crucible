@@ -545,3 +545,70 @@ async fn a_sweep_inside_a_bracket_keeps_the_snapshot_the_call_will_name() {
         "attribution reads the interval's own snapshots, which is what the sweep took"
     );
 }
+
+/// The blob half of the same window, which the snapshot half does not close.
+/// A sweep that keeps a young unclaimed snapshot but reads no manifest for it
+/// leaves that snapshot naming blobs the pass counted as garbage; and a file
+/// the capture answers for out of its stat cache keeps the blob mtime of the
+/// capture that first stored it, so those blobs are old enough to take. The
+/// loss is the whole session's review, not one hunk: attribution reads the
+/// interval's own snapshots, and a `before_tree` is a past state no later
+/// capture reproduces.
+#[tokio::test]
+async fn a_sweep_inside_a_bracket_keeps_the_blobs_that_snapshot_names() {
+    let home = TempDir::new().unwrap();
+    let snaps = TempDir::new().unwrap();
+    let sessions = home.path().join("sessions");
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+
+    let root = plain_root("one\n").await;
+    ledgers
+        .open_or_restore("live", &sessions.join("live"), &[root.path().to_path_buf()])
+        .await
+        .unwrap();
+
+    // The user edits the root themselves, so the bracket's before-snapshot
+    // names content the base does not. The edit is backdated because a capture
+    // discards the stat key of a file as young as itself, and the cache hit is
+    // what leaves the blob carrying the age of the capture that stored it.
+    let own = root.path().join("own.md");
+    std::fs::write(&own, "two\n").unwrap();
+    age_file(&own);
+    // A listing captures the worktree, which stores the edited file's blob.
+    ledgers.list_hunks("live").await.unwrap();
+
+    age_store(snaps.path());
+    let handle = ledgers.open_bracket("live").await.unwrap();
+
+    let released = crate::review::sweep_review_refs(&sessions, snaps.path()).await;
+
+    std::fs::write(&own, "EDITED\n").unwrap();
+    ledgers.close("live", handle, "call-1", 1).await.unwrap();
+
+    let hunks = ledgers.list_hunks("live").await;
+    assert!(
+        hunks.is_ok(),
+        "the review of a live session became uncomputable: {hunks:?} \
+         (the sweep released {released} files during the bracket)"
+    );
+    assert_eq!(released, 0, "the sweep took a file the open bracket names");
+    let hunks = hunks.unwrap();
+    assert_eq!(hunks.len(), 1, "{hunks:?}");
+    assert_eq!(hunks[0].after_content, "EDITED\n");
+    assert_eq!(
+        hunks[0].tool_call_ids,
+        vec!["call-1".to_string()],
+        "attribution reads the interval's own snapshots, whose blobs the sweep took"
+    );
+}
+
+/// Backdate one file in a worktree past the sweep's grace period.
+fn age_file(path: &Path) {
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(old))
+        .unwrap();
+}
