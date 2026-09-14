@@ -17,7 +17,7 @@ import {
   revealedToolCall,
 } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
-import { announceReject, confirmReject } from '@/lib/review-confirm';
+import { announceReject, confirmReject, undoLastReject } from '@/lib/review-confirm';
 import { hit } from '@/lib/touch';
 import {
   Check,
@@ -428,10 +428,13 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                           data-testid={`tool-reject-${hunk.id}`}
                           onClick={() => {
                             if (!confirmReject(hunk)) return;
+                            const id = sessionId()!;
                             review(
                               reviewActions
-                                .reject(sessionId()!, hunk.id)
-                                .then(() => announceReject(hunk)),
+                                .reject(id, hunk.id)
+                                .then(() =>
+                                  announceReject(hunk, () => void undoLastReject(id, [hunk])),
+                                ),
                             );
                           }}
                           class={`rounded p-0.5 text-muted-dark hover:text-error hover:bg-hover-wash ${hit()}`}

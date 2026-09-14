@@ -26,12 +26,24 @@ const setHunkState = vi.fn(async () => ({
   hunk_id: 'h',
   state: 'accepted' as const,
 }));
+// The bulk answers echo the ids they were given, the way the mock daemon does.
+const setHunkStates = vi.fn(async (_s: string, ids: string[], state: string) => ({
+  applied: ids,
+  failed: [] as { hunk_id: string; reason: string }[],
+  state,
+}));
+const undoReject = vi.fn(async () => ({
+  applied: ['h1'],
+  failed: [] as { hunk_id: string; reason: string }[],
+}));
 const addReviewComment = vi.fn(async () => ({ comment: {} }));
 const resolveReviewComment = vi.fn(async () => ({ comment_id: 'c1' }));
 const rebaseReview = vi.fn(async () => ({ roots: [] }));
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
   setHunkState: (...a: unknown[]) => setHunkState(...(a as [])),
+  setHunkStates: (...a: unknown[]) => setHunkStates(...(a as [string, string[], string])),
+  undoReject: (...a: unknown[]) => undoReject(...(a as [])),
   addReviewComment: (...a: unknown[]) => addReviewComment(...(a as [])),
   resolveReviewComment: (...a: unknown[]) => resolveReviewComment(...(a as [])),
   rebaseReview: (...a: unknown[]) => rebaseReview(...(a as [])),
@@ -99,7 +111,19 @@ beforeEach(() => {
   // installs one that never settles.
   setHunkState.mockReset();
   setHunkState.mockResolvedValue({ hunk_id: 'h', state: 'accepted' });
+  setHunkStates.mockReset();
+  setHunkStates.mockImplementation(async (_s, ids, state) => ({ applied: ids, failed: [], state }));
+  undoReject.mockReset();
+  undoReject.mockResolvedValue({ applied: ['h1'], failed: [] });
 });
+
+/** The `Undo` the last toast offered, or a failure naming what was posted. */
+function lastUndo(): () => void {
+  const calls = addNotification.mock.calls as [string, string, { label: string; run: () => void }?][];
+  const withUndo = calls.filter((c) => c[2]?.label === 'Undo');
+  expect(withUndo, JSON.stringify(calls)).not.toHaveLength(0);
+  return withUndo.at(-1)![2]!.run;
+}
 
 afterEach(() => {
   cleanup();
@@ -202,7 +226,10 @@ describe('ChangesPanel — the queue', () => {
     const prompt = confirm.mock.calls[0][0] as string;
     expect(prompt).toContain('src/a.rs');
     expect(prompt).toContain('L4');
-    expect(prompt).toContain('cannot be undone');
+    // The daemon keeps a stack of rejects now; a prompt that still said
+    // "cannot be undone" would be a lie the user acts on.
+    expect(prompt).not.toContain('cannot be undone');
+    expect(prompt).toContain('Undo');
     confirm.mockRestore();
   });
 
@@ -246,6 +273,22 @@ describe('ChangesPanel — the queue', () => {
     const [type, message] = addNotification.mock.calls.at(-1) as [string, string];
     expect(type).toBe('info');
     expect(message).toContain('src/a.rs');
+    confirm.mockRestore();
+  });
+
+  // A single reject is a batch of one on the daemon's stack, so it gets the
+  // same way back as a bulk one.
+  it('a single reject offers an undo that pops the daemon stack', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-h1'));
+    await waitFor(() => expect(addNotification).toHaveBeenCalled());
+    lastUndo()();
+    await waitFor(() => expect(undoReject).toHaveBeenCalledWith('s1'));
     confirm.mockRestore();
   });
 
@@ -422,6 +465,160 @@ describe('ChangesPanel — the queue', () => {
 
     fireEvent.click(screen.getByTestId('resolve-c1'));
     await waitFor(() => expect(resolveReviewComment).toHaveBeenCalledWith('s1', 'c1'));
+  });
+});
+
+describe('ChangesPanel — bulk decisions', () => {
+  // Composed-diff order, with one file's hunks interleaved with another's, an
+  // external hunk and an already-decided one: the bulk buttons must pick the
+  // right subset and keep the order.
+  const queue = () => [
+    hunk({ id: 'a' }),
+    hunk({ id: 'x', path: 'src/b.rs' }),
+    hunk({ id: 'b', current_range: { start: 20, end: 21 } }),
+    hunk({ id: 'ext', tool_call_ids: [], current_range: { start: 30, end: 31 } }),
+    hunk({ id: 'done', state: 'accepted', current_range: { start: 40, end: 41 } }),
+    hunk({ id: 'y', root: '/other', path: 'x.md' }),
+  ];
+
+  it('reject all on a file asks once and then undoes as one', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer(queue());
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm.mock.calls[0][0]).toContain('src/a.rs');
+    expect(confirm.mock.calls[0][0]).toContain('2');
+    // One call, the file's unreviewed non-external hunks, in file order.
+    await waitFor(() => expect(setHunkStates).toHaveBeenCalledOnce());
+    expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'b'], 'rejected');
+    expect(setHunkState).not.toHaveBeenCalled();
+
+    // The receipt carries the way back, and the way back is one daemon call.
+    await waitFor(() => expect(addNotification).toHaveBeenCalled());
+    lastUndo()();
+    await waitFor(() => expect(undoReject).toHaveBeenCalledWith('s1'));
+    confirm.mockRestore();
+  });
+
+  it('reject all is not sent when the confirm is declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    answer(queue());
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
+    expect(confirm).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByTestId('changes-reject-all'));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(setHunkStates).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('accept all on a file is one click and one call', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer(queue());
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('accept-all-src/a.rs'));
+    await waitFor(() => expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'b'], 'accepted'));
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('the review-wide buttons decide every root in composed order', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answer(queue());
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('changes-accept-all'));
+    await waitFor(() =>
+      expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'x', 'b', 'y'], 'accepted'),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+
+    // The pair is one door: the second click waits for the first to settle.
+    await waitFor(() => expect(screen.getByTestId('changes-reject-all')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('changes-reject-all'));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm.mock.calls[0][0]).toContain('4');
+    await waitFor(() =>
+      expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'x', 'b', 'y'], 'rejected'),
+    );
+    confirm.mockRestore();
+  });
+
+  it('a file with nothing left to decide offers no bulk buttons', async () => {
+    answer([hunk({ id: 'done', state: 'accepted' }), hunk({ id: 'ext', tool_call_ids: [] })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-done')).toBeInTheDocument());
+
+    expect(screen.queryByTestId('accept-all-src/a.rs')).toBeNull();
+    expect(screen.queryByTestId('reject-all-src/a.rs')).toBeNull();
+    expect(screen.getByTestId('changes-accept-all')).toBeDisabled();
+    expect(screen.getByTestId('changes-reject-all')).toBeDisabled();
+  });
+
+  // The daemon applies what it can and names what it refused. Silence on the
+  // refused half would read as "everything went through".
+  it('names the hunks the daemon refused in one notification', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    setHunkStates.mockResolvedValue({
+      applied: ['a'],
+      failed: [{ hunk_id: 'b', reason: 'unknown hunk b' }],
+      state: 'rejected',
+    });
+    answer(queue());
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
+    await waitFor(() => expect(setHunkStates).toHaveBeenCalledOnce());
+    const warning = await waitFor(() => {
+      const c = addNotification.mock.calls.find((c) => c[0] === 'warning');
+      expect(c).toBeDefined();
+      return c as [string, string];
+    });
+    // Named as the user saw the hunk, not by its hash.
+    expect(warning[1]).toContain('src/a.rs L20');
+    expect(warning[1]).toContain('unknown hunk b');
+    // The one that landed still has its way back.
+    expect(lastUndo()).toBeTypeOf('function');
+    confirm.mockRestore();
+  });
+
+  it('an undo the daemon refused says which hunks moved on', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    undoReject.mockResolvedValue({
+      applied: [],
+      failed: [{ hunk_id: 'a', reason: 'src/a.rs changed since the hunk was computed' }],
+    });
+    answer(queue());
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
+    await waitFor(() => expect(addNotification).toHaveBeenCalled());
+    lastUndo()();
+    await waitFor(() => expect(undoReject).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      const c = addNotification.mock.calls.find((c) => c[0] === 'warning') as [string, string];
+      expect(c).toBeDefined();
+      expect(c[1]).toContain('changed since the hunk was computed');
+    });
+    confirm.mockRestore();
   });
 });
 

@@ -19,7 +19,14 @@ import { HunkMergeView } from './HunkMergeView';
 import { openFileInEditor } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { reviewActions, reviewStore, toolCallLabel, useReviewSession } from '@/lib/review-store';
-import { announceReject, confirmReject } from '@/lib/review-confirm';
+import {
+  announceRefused,
+  announceReject,
+  announceRejectAll,
+  confirmReject,
+  confirmRejectAll,
+  undoLastReject,
+} from '@/lib/review-confirm';
 import { hit } from '@/lib/touch';
 import { hunkPath, hunkRangeLabel, isExternal, type ComposedHunk } from '@/lib/review-types';
 import { Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
@@ -52,6 +59,15 @@ function groupByRoot(hunks: ComposedHunk[]): { root: string; files: FileGroup[] 
     else roots.push({ root: file.root, files: [file] });
   }
   return roots;
+}
+
+/**
+ * The hunks a bulk decision reaches: unreviewed and the agent's own. An
+ * accepted or rejected hunk is already decided, and an external one is the
+ * user's edit, which "Reject all" must never revert out from under them.
+ */
+function decidable(hunks: ComposedHunk[]): ComposedHunk[] {
+  return hunks.filter((h) => h.state === 'unreviewed' && !isExternal(h));
 }
 
 const STATE_CLASS: Record<string, string> = {
@@ -88,7 +104,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
     if (!confirmReject(props.hunk)) return;
     act(async () => {
       await reviewActions.reject(props.sessionId, props.hunk.id);
-      announceReject(props.hunk);
+      announceReject(props.hunk, () => void undoLastReject(props.sessionId, [props.hunk]));
     });
   };
 
@@ -239,8 +255,57 @@ export const ChangesPanel: Component = () => {
 
   const [unreviewedOnly, setUnreviewedOnly] = createSignal(false);
   const [rebasing, setRebasing] = createSignal(false);
+  const [bulkBusy, setBulkBusy] = createSignal(false);
 
   const state = () => reviewStore.session(sessionId());
+
+  // One bulk decision in flight at a time. A second click while the daemon is
+  // still applying the first would send the same ids again.
+  const bulk = (fn: (id: string) => Promise<void>) => {
+    const id = sessionId();
+    if (!id || bulkBusy()) return;
+    setBulkBusy(true);
+    void fn(id)
+      .catch((e: Error) => notificationActions.addNotification('error', e.message))
+      .finally(() => setBulkBusy(false));
+  };
+
+  /** Accept every decidable hunk in `hunks`, in the order given. */
+  const acceptAll = (hunks: ComposedHunk[]) => {
+    const batch = decidable(hunks);
+    if (batch.length === 0) return;
+    bulk(async (id) => {
+      const outcome = await reviewActions.setStates(
+        id,
+        batch.map((h) => h.id),
+        'accepted',
+      );
+      announceRefused(outcome.failed, batch);
+    });
+  };
+
+  /**
+   * Reject every decidable hunk in `hunks` as ONE batch: one confirm, one
+   * daemon call, one receipt with one undo. `label` names the scope in the
+   * confirm.
+   */
+  const rejectAll = (hunks: ComposedHunk[], label: string) => {
+    const batch = decidable(hunks);
+    if (batch.length === 0) return;
+    if (!confirmRejectAll(batch.length, label)) return;
+    bulk(async (id) => {
+      const outcome = await reviewActions.rejectMany(
+        id,
+        batch.map((h) => h.id),
+      );
+      // The names come from the batch, not from a re-list: a reverted hunk has
+      // already left the composed diff by the time the daemon answers.
+      if (outcome.applied.length > 0) {
+        announceRejectAll(outcome.applied.length, () => void undoLastReject(id, batch));
+      }
+      announceRefused(outcome.failed, batch);
+    });
+  };
   // Named roots first, then the losses that name none — a journal that will not
   // read at all leaves nothing that can identify a repository, and that is
   // precisely the case a root-only list reports as "everything is fine".
@@ -264,6 +329,9 @@ export const ChangesPanel: Component = () => {
   );
   const roots = createMemo(() => groupByRoot(visible()));
   const unreviewed = () => reviewStore.unreviewedCount(sessionId());
+  // The whole review, filter or no filter: the buttons decide what is owed,
+  // not what is on screen.
+  const decidableAll = createMemo(() => decidable(state().hunks));
 
   const openComments = createMemo(() => state().comments.filter((c) => !c.resolved));
 
@@ -295,6 +363,30 @@ export const ChangesPanel: Component = () => {
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
           >
             <RefreshCw class={`w-3.5 h-3.5 ${state().loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        {/* The review-wide pair. Disabled, not hidden, so the panel keeps its
+            shape while the queue drains. */}
+        <div class="mt-1 flex items-center gap-1.5">
+          <button
+            type="button"
+            title="Accept every unreviewed change in this review"
+            data-testid="changes-accept-all"
+            disabled={bulkBusy() || decidableAll().length === 0}
+            onClick={() => acceptAll(state().hunks)}
+            class={`rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
+          >
+            Accept all
+          </button>
+          <button
+            type="button"
+            title="Reject every unreviewed change in this review — reverts them on disk and tells the agent"
+            data-testid="changes-reject-all"
+            disabled={bulkBusy() || decidableAll().length === 0}
+            onClick={() => rejectAll(state().hunks, 'every file in this review')}
+            class={`rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
+          >
+            Reject all
           </button>
         </div>
       </PanelHeader>
@@ -381,22 +473,48 @@ export const ChangesPanel: Component = () => {
                 <For each={root.files}>
                   {(file) => (
                     <div class="border-b border-hairline">
-                      <button
-                        type="button"
-                        data-testid={`changes-file-${file.path}`}
-                        onClick={() => {
-                          openFileInEditor(file.absPath, file.path.split('/').pop());
-                          reviewActions.reveal(file.absPath, file.hunks[0].current_range.start);
-                        }}
-                        class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-hover-wash"
-                      >
-                        <span class="flex-1 min-w-0 truncate text-xs font-mono text-shell-ink">
-                          {file.path}
-                        </span>
-                        <span class="shrink-0 text-floor text-muted-dark">
-                          {file.hunks.length}
-                        </span>
-                      </button>
+                      <div class="flex items-center gap-1 pr-2">
+                        <button
+                          type="button"
+                          data-testid={`changes-file-${file.path}`}
+                          onClick={() => {
+                            openFileInEditor(file.absPath, file.path.split('/').pop());
+                            reviewActions.reveal(file.absPath, file.hunks[0].current_range.start);
+                          }}
+                          class="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 text-left hover:bg-hover-wash"
+                        >
+                          <span class="flex-1 min-w-0 truncate text-xs font-mono text-shell-ink">
+                            {file.path}
+                          </span>
+                          <span class="shrink-0 text-floor text-muted-dark">
+                            {file.hunks.length}
+                          </span>
+                        </button>
+                        {/* Per-file pair. Hidden once the file has nothing left
+                            to decide: a decided file is history, not a queue. */}
+                        <Show when={decidable(file.hunks).length > 0}>
+                          <button
+                            type="button"
+                            title={`Accept every unreviewed change in ${file.path}`}
+                            data-testid={`accept-all-${file.path}`}
+                            disabled={bulkBusy()}
+                            onClick={() => acceptAll(file.hunks)}
+                            class={`shrink-0 rounded px-1.5 py-0.5 text-floor text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
+                          >
+                            Accept all
+                          </button>
+                          <button
+                            type="button"
+                            title={`Reject every unreviewed change in ${file.path} — reverts them on disk and tells the agent`}
+                            data-testid={`reject-all-${file.path}`}
+                            disabled={bulkBusy()}
+                            onClick={() => rejectAll(file.hunks, file.path)}
+                            class={`shrink-0 rounded px-1.5 py-0.5 text-floor text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
+                          >
+                            Reject all
+                          </button>
+                        </Show>
+                      </div>
                       <For each={file.hunks}>
                         {(hunk) => <HunkRow sessionId={sessionId()!} hunk={hunk} />}
                       </For>

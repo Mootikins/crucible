@@ -31,14 +31,17 @@ vi.mock('@/contexts/ChatContext', () => ({
 
 const listReviewHunks = vi.fn();
 const setHunkState = vi.fn(async () => ({ hunk_id: 'h1', state: 'accepted' as const }));
+const undoReject = vi.fn(async () => ({ applied: ['h1'], failed: [] }));
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
   setHunkState: (...a: unknown[]) => setHunkState(...(a as [])),
+  undoReject: (...a: unknown[]) => undoReject(...(a as [])),
   addReviewComment: vi.fn(),
   resolveReviewComment: vi.fn(),
 }));
 
 const { ToolCard } = await import('../ToolCard');
+const { notificationActions } = await import('@/stores/notificationStore');
 const { __resetReviewStore, reviewActions, revealedToolCall, toolCallLabel } = await import(
   '@/lib/review-store'
 );
@@ -185,6 +188,23 @@ describe('ToolCard — accept / reject', () => {
     expand();
     fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
     await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
+    confirm.mockRestore();
+  });
+
+  // The same receipt as the panel's: the reject is a batch of one on the
+  // daemon's stack whichever door it came through.
+  it('a reject from the transcript offers the same undo as the panel', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await seed([hunk({ id: 'h1' })]);
+    render(() => <ToolCard toolCall={editCall()} />);
+    expand();
+    fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
+    const add = vi.mocked(notificationActions.addNotification);
+    await waitFor(() => expect(add).toHaveBeenCalled());
+    const action = add.mock.calls.at(-1)![2] as { label: string; run: () => void };
+    expect(action.label).toBe('Undo');
+    action.run();
+    await waitFor(() => expect(undoReject).toHaveBeenCalledWith('s1'));
     confirm.mockRestore();
   });
 
