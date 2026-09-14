@@ -28,9 +28,8 @@ export type CommentAuthor = 'human' | 'agent';
  * A hunk of the composed diff (`session_base` → current worktree).
  *
  * The action unit of review. `before_content`/`after_content` are whole
- * newline-terminated blocks (empty for a pure insertion / deletion), which is
- * exactly the `oldContent`/`newContent` pair `DiffViewer` takes — the composed
- * diff is rendered by the existing viewer, not a second one.
+ * newline-terminated blocks (empty for a pure insertion / deletion). They are
+ * the original and the document of the merge view `HunkMergeView` mounts.
  */
 export interface ComposedHunk {
   /** Content-derived, stable across line shifts. The only handle for mutations. */

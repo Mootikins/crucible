@@ -15,7 +15,7 @@ import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
-import { DiffViewer } from './DiffViewer';
+import { HunkMergeView } from './HunkMergeView';
 import { openFileInEditor } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { reviewActions, reviewStore, toolCallLabel, useReviewSession } from '@/lib/review-store';
@@ -76,6 +76,19 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
     void fn()
       .catch((e: Error) => notificationActions.addNotification('error', e.message))
       .finally(() => setBusy(false));
+  };
+
+  const accept = () =>
+    act(() => reviewActions.setState(props.sessionId, props.hunk.id, 'accepted'));
+  // The confirm is the gate in front of the one destructive verb. The row's
+  // button and the merge view's control share it, so neither is an unguarded
+  // door to the same daemon call.
+  const reject = () => {
+    if (!confirmReject(props.hunk)) return;
+    act(async () => {
+      await reviewActions.reject(props.sessionId, props.hunk.id);
+      announceReject(props.hunk);
+    });
   };
 
   const submitComment = () => {
@@ -148,9 +161,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             title="Accept"
             data-testid={`accept-${props.hunk.id}`}
             disabled={busy()}
-            onClick={() =>
-              act(() => reviewActions.setState(props.sessionId, props.hunk.id, 'accepted'))
-            }
+            onClick={accept}
             class="shrink-0 rounded p-1 text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50"
           >
             <Check class="w-3.5 h-3.5" />
@@ -164,13 +175,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             title="Reject — reverts the change on disk and tells the agent"
             data-testid={`reject-${props.hunk.id}`}
             disabled={busy()}
-            onClick={() => {
-              if (!confirmReject(props.hunk)) return;
-              act(async () => {
-                await reviewActions.reject(props.sessionId, props.hunk.id);
-                announceReject(props.hunk);
-              });
-            }}
+            onClick={reject}
             class="shrink-0 rounded p-1 text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50"
           >
             <Undo2 class="w-3.5 h-3.5" />
@@ -211,14 +216,14 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
 
       <Show when={open()}>
         <div class="px-2 pb-2">
-          {/* The one diff renderer. `before_content`/`after_content` are the
-              hunk's session_base and worktree text, which is exactly the pair
-              DiffViewer takes — no second viewer for the composed diff. */}
-          <DiffViewer
-            fileName={props.hunk.path}
-            oldContent={props.hunk.before_content}
-            newContent={props.hunk.after_content}
-            hideHeader
+          {/* `before_content` is the hunk's session_base text and
+              `after_content` its worktree text: the original and the document
+              of one merge view. The view's controls decide through the daemon,
+              the way the row's buttons do. */}
+          <HunkMergeView
+            hunk={props.hunk}
+            onAccept={accept}
+            onReject={external() ? undefined : reject}
           />
         </div>
       </Show>

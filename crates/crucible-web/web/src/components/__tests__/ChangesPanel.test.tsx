@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@solidjs/testing-library';
+import { render, screen, cleanup, waitFor, fireEvent, within } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
@@ -31,15 +31,6 @@ vi.mock('@/lib/review-api', () => ({
   addReviewComment: (...a: unknown[]) => addReviewComment(...(a as [])),
   resolveReviewComment: (...a: unknown[]) => resolveReviewComment(...(a as [])),
   rebaseReview: (...a: unknown[]) => rebaseReview(...(a as [])),
-}));
-
-// DiffViewer pulls in Shiki; the panel's job is the queue, not tokenization.
-vi.mock('../DiffViewer', () => ({
-  DiffViewer: (props: { oldContent: string; newContent: string }) => (
-    <div data-testid="diff-viewer">
-      old:{props.oldContent}|new:{props.newContent}
-    </div>
-  ),
 }));
 
 const openFileInEditor = vi.fn();
@@ -322,17 +313,42 @@ describe('ChangesPanel — the queue', () => {
     expect(pendingReveal()).toEqual({ path: '/repo/src/a.rs', line: 12 });
   });
 
-  it('expanding a hunk shows its composed before/after through the one DiffViewer', async () => {
+  // The daemon decides. CodeMirror's own accept/reject `action` would edit the
+  // browser's copy of the text and leave the disk untouched, so the controls
+  // the merge view draws call the same review actions as the row's buttons.
+  it('an expanded hunk mounts the merge view with accept and reject controls', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     answer([hunk({ id: 'h1', before_content: 'a\n', after_content: 'b\n' })]);
     setCurrentSession(session());
     render(() => <ChangesPanel />);
     await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-    expect(screen.queryByTestId('diff-viewer')).toBeNull();
+    expect(screen.queryByTestId('hunk-merge')).toBeNull();
 
     fireEvent.click(screen.getByTestId('hunk-h1').querySelector('button')!);
-    await waitFor(() =>
-      expect(screen.getByTestId('diff-viewer').textContent).toBe('old:a\n|new:b\n'),
-    );
+    const merge = await waitFor(() => screen.getByTestId('hunk-merge'));
+    const accept = await waitFor(() => within(merge).getByRole('button', { name: 'Accept' }));
+    const reject = within(merge).getByRole('button', { name: 'Reject' });
+    expect(accept.className).toContain('min-h-11');
+    expect(reject.className).toContain('min-h-11');
+
+    fireEvent.click(reject);
+    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
+    // The merge view still shows the hunk as the daemon composed it.
+    expect(merge.textContent).toContain('a');
+    expect(merge.textContent).toContain('b');
+    confirm.mockRestore();
+  });
+
+  it("an external hunk's merge view offers accept and no reject", async () => {
+    answer([hunk({ id: 'ext', tool_call_ids: [], before_content: 'a\n', after_content: 'b\n' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-ext')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('hunk-ext').querySelector('button')!);
+    const merge = await waitFor(() => screen.getByTestId('hunk-merge'));
+    await waitFor(() => within(merge).getByRole('button', { name: 'Accept' }));
+    expect(within(merge).queryByRole('button', { name: 'Reject' })).toBeNull();
   });
 
   it('comments a range, not a hunk id', async () => {
