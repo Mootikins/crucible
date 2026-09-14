@@ -13,6 +13,7 @@ import FileViewerPanel from '@/components/FileViewerPanel';
 import InboxPanel from '@/components/InboxPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { ChangesPanel } from '@/components/ChangesPanel';
+import { ConflictsPanel } from '@/components/ConflictsPanel';
 import { GraphPanel } from '@/components/graph/GraphPanel';
 import { CanvasPanel } from '@/components/canvas/CanvasPanel';
 import { PluginBlockPanel } from '@/components/blocks/PluginBlockPanel';
@@ -48,6 +49,10 @@ export function registerPanels(): void {
   // The session's review queue, beside Activity and Backlinks. Reviewing
   // happens in the center buffer; this is the index into it.
   registry.register('changes', 'Changes', ChangesPanel, 'right');
+  // A note write waiting on a person. Centre, not the right rail: settling one
+  // is reading and choosing inside the note, which is editor work, and the
+  // phone opens it as a content tab from the same registry.
+  registry.register('conflicts', 'Conflicts', ConflictsPanel, 'center');
   registry.register('graph', 'Graph', GraphPanel, 'center');
   registry.register('canvas', 'Canvas', CanvasPanel, 'center');
   // A plugin block, docked rather than embedded in a note. Until this existed

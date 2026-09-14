@@ -4,6 +4,14 @@ import { render, screen, fireEvent } from '@solidjs/testing-library';
 // This shell only ever draws on a phone, so the device store says so here.
 vi.mock('@/stores/deviceStore', () => ({ isCompact: () => true }));
 
+// Only the queue's answer is staged; the rest of the sync layer is the real
+// one, because the badge in the app bar reads it.
+const offline = vi.hoisted(() => ({ conflicts: [] as Conflicted[] }));
+vi.mock('@/lib/offline/sync', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/offline/sync')>()),
+  pendingConflicts: async () => offline.conflicts,
+}));
+
 // The drawers' panels need every context; the shell's own job is the frame.
 vi.mock('@/components/mobile/SessionsTab', () => ({
   SessionsTab: () => <div data-testid="sessions-panel" />,
@@ -18,7 +26,20 @@ vi.mock('@/components/BacklinksPanel', () => ({
 import { MobileShell } from '@/components/mobile/MobileShell';
 import { tabStackActions } from '@/stores/tabStackStore';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
+import { __resetConflictStore } from '@/lib/conflicts';
 import type { Tab } from '@/types/windowTypes';
+import type { Conflicted } from '@/lib/offline/outbox';
+
+/** One note whose write waits on a person. */
+const conflict = (path: string): Conflicted => ({
+  path,
+  base: 'h0',
+  kiln: '/kilns/notes',
+  currentHash: 'h9',
+  currentContent: 'theirs\n',
+  mergedContent: 'mine\n',
+  regions: [{ start_line: 1, end_line: 2, base: '', ours: 'mine\n', theirs: 'theirs\n' }],
+});
 
 const noteTab = (id: string, title: string): Tab => ({
   id,
@@ -40,6 +61,9 @@ beforeEach(() => {
   registry.register('terminal', 'Terminal', Stub, 'right');
   registry.register('canvas', 'Canvas', Stub, 'center');
   registry.register('files', 'Files', Stub, 'right');
+  registry.register('conflicts', 'Conflicts', Stub, 'center');
+  offline.conflicts = [];
+  __resetConflictStore();
 });
 
 const isOpen = (side: 'left' | 'right') =>
@@ -121,6 +145,28 @@ describe('MobileShell overflow menu', () => {
     expect(labels).toContain('Settings');
     expect(labels).not.toContain('Terminal');
     expect(labels).not.toContain('Canvas');
+  });
+
+  // A phone has no rail to park a count in, so the one menu a thumb reaches
+  // is where a conflict announces itself and where it is opened.
+  it('lists Conflicts when one waits', async () => {
+    offline.conflicts = [conflict('/kilns/notes/A.md')];
+    render(() => <MobileShell />);
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+
+    const row = await screen.findByRole('button', { name: 'Conflicts (1)' });
+    fireEvent.click(row);
+    expect(tabStackActions.activeTab()?.contentType).toBe('conflicts');
+  });
+
+  // The row is a count, not a panel: with nothing waiting it says nothing,
+  // and the generic panel list must not offer a second door to the same tab.
+  it('offers no Conflicts row when none waits', async () => {
+    render(() => <MobileShell />);
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await screen.findByRole('button', { name: 'Search' });
+    const labels = screen.getAllByRole('button').map((b) => b.textContent);
+    expect(labels.filter((l) => l?.startsWith('Conflicts'))).toHaveLength(0);
   });
 });
 

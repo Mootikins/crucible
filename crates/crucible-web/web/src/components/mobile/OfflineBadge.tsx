@@ -1,6 +1,7 @@
 import { Component, Show, createSignal, onCleanup, onMount } from 'solid-js';
-import { Cloud } from '@/lib/icons';
+import { AlertTriangle, Cloud } from '@/lib/icons';
 import { isOnline, pendingCount, syncNow, warmIdentity } from '@/lib/offline/sync';
+import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
 
 /**
  * Whether this device can reach the daemon, and how much writing it owes it.
@@ -8,10 +9,16 @@ import { isOnline, pendingCount, syncNow, warmIdentity } from '@/lib/offline/syn
  * A queued write that looks saved and is not is the failure the whole offline
  * design exists to prevent, so the count is on the app bar rather than behind
  * a settings screen.
+ *
+ * Two counts, never one sum. A queued write is owed to the NETWORK and leaves
+ * on the next drain; a conflict is owed to a PERSON and no amount of sending
+ * will clear it. Added together they would tell a user to keep pressing a
+ * button that cannot help.
  */
 export const OfflineBadge: Component = () => {
   const [online, setOnline] = createSignal(isOnline());
   const [queued, setQueued] = createSignal(0);
+  const conflicts = () => conflictStore.count();
 
   const refresh = async () => {
     try {
@@ -19,7 +26,21 @@ export const OfflineBadge: Component = () => {
     } catch {
       /* no store yet: nothing is queued */
     }
+    try {
+      await conflictActions.refresh();
+    } catch {
+      /* no store yet: nothing waits */
+    }
   };
+
+  const label = () =>
+    [
+      online() ? null : 'Offline',
+      conflicts() > 0 ? `${conflicts()} conflict${conflicts() === 1 ? '' : 's'}` : null,
+      `${queued()} unsent edit${queued() === 1 ? '' : 's'}`,
+    ]
+      .filter(Boolean)
+      .join(', ');
 
   onMount(() => {
     void refresh();
@@ -44,20 +65,28 @@ export const OfflineBadge: Component = () => {
   });
 
   return (
-    <Show when={!online() || queued() > 0}>
+    <Show when={!online() || queued() > 0 || conflicts() > 0}>
       <button
         type="button"
         data-testid="offline-badge"
-        aria-label={
-          online()
-            ? `${queued()} unsent edit${queued() === 1 ? '' : 's'}`
-            : `Offline, ${queued()} unsent edit${queued() === 1 ? '' : 's'}`
-        }
+        aria-label={label()}
         class="h-11 px-2 flex items-center gap-1 shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
-        onClick={() => void syncNow().then(refresh)}
+        // Sending is the right answer to a queue and the wrong one to a
+        // conflict: the daemon already refused that write, and only a person
+        // can settle it. So a waiting conflict takes the tap.
+        onClick={() => (conflicts() > 0 ? openConflict() : void syncNow().then(refresh))}
       >
         <Show when={!online()}>
           <Cloud class="w-4 h-4" />
+        </Show>
+        <Show when={conflicts() > 0}>
+          <AlertTriangle class="w-4 h-4 text-attention" />
+          <span
+            class="text-floor tabular-nums text-attention"
+            data-testid="offline-badge-conflicts"
+          >
+            {conflicts()}
+          </span>
         </Show>
         <Show when={queued() > 0}>
           <span class="text-floor tabular-nums">{queued()}</span>

@@ -2,6 +2,7 @@ import type { Component } from 'solid-js';
 import type { TabContentType } from '@/types/windowTypes';
 import {
   Activity,
+  AlertTriangle,
   ChartNetwork,
   ClipboardList,
   FileDiff,
@@ -54,6 +55,7 @@ const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> 
  */
 const PANEL_ICONS: Record<string, Component<{ class?: string }>> = {
   changes: FileDiff,
+  conflicts: AlertTriangle,
   'plugin-blocks': Puzzle,
 };
 

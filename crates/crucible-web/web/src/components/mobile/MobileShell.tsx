@@ -7,12 +7,13 @@ import { SessionsTab } from '@/components/mobile/SessionsTab';
 import { FilesPanel } from '@/components/FilesPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { DrawerTabs } from '@/components/mobile/DrawerTabs';
-import { FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
+import { AlertTriangle, FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
 import { TabOverview } from '@/components/mobile/TabOverview';
 import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
 import { OfflineBadge } from '@/components/mobile/OfflineBadge';
 import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
 import { openPanelTab } from '@/lib/panel-actions';
+import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
 import { iconForPanelId } from '@/lib/tab-icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { navStack } from '@/components/mobile/NavStack';
@@ -36,6 +37,9 @@ const NOT_IN_MENU = new Set([
   'file',
   'chat',
   'chat-draft',
+  // Conflicts has its own row above the list, with its count. A second,
+  // countless door to the same tab would read as a different surface.
+  'conflicts',
 ]);
 
 /** `min(85vw, 320px)`, in px, because the swipe measures against it. */
@@ -53,6 +57,11 @@ export const MobileShell: Component = () => {
   const activeTab = () => tabStackActions.activeTab();
   const [overviewOpen, setOverviewOpen] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
+  const conflicts = () => conflictStore.count();
+  // A phone has no rail to park a count in, so this menu is where a conflict
+  // announces itself. Read again as the sheet opens: a drain while the user
+  // was reading is exactly when one appears.
+  const readConflicts = () => void conflictActions.refresh().catch(() => undefined);
   const menuPanels = () =>
     getGlobalRegistry()
       .list()
@@ -96,6 +105,7 @@ export const MobileShell: Component = () => {
   const width = () => drawerWidthFor(viewport());
 
   onMount(() => {
+    readConflicts();
     const onResize = () => setViewport(window.innerWidth);
     window.addEventListener('resize', onResize);
     onCleanup(() => window.removeEventListener('resize', onResize));
@@ -182,7 +192,10 @@ export const MobileShell: Component = () => {
           type="button"
           aria-label="More"
           class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring"
-          onClick={() => setMenuOpen(true)}
+          onClick={() => {
+            readConflicts();
+            setMenuOpen(true);
+          }}
         >
           <MoreHorizontal class="w-5 h-5" />
         </button>
@@ -218,6 +231,19 @@ export const MobileShell: Component = () => {
         </Show>
       </main>
       <BottomSheet open={menuOpen()} label="More" onClose={() => setMenuOpen(false)}>
+        {/* Above the panel list, and only when one waits: a conflict is the
+            one thing here that is owed to the user rather than offered to
+            them, and nothing else on a phone says so. */}
+        <Show when={conflicts() > 0}>
+          <SheetOption
+            label={`Conflicts (${conflicts()})`}
+            icon={AlertTriangle}
+            onSelect={() => {
+              setMenuOpen(false);
+              openConflict();
+            }}
+          />
+        </Show>
         <For each={menuPanels()}>
           {(def) => (
             <SheetOption

@@ -5,6 +5,7 @@ import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { Session } from '@/lib/types';
 import type { ComposedHunk, ReviewComment } from '@/lib/review-types';
+import type { Conflicted } from '@/lib/offline/outbox';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
 vi.mock('@/contexts/SessionContext', () => ({
@@ -54,6 +55,16 @@ vi.mock('@/lib/file-actions', () => ({
   openFileInEditor: (...a: unknown[]) => openFileInEditor(...a),
 }));
 
+// A conflict is a note write waiting on a person, read from the outbox. The
+// panel lists it; the conflict view itself opens as a tab.
+const conflicts = vi.hoisted(() => ({ rows: [] as Conflicted[] }));
+vi.mock('@/lib/offline/sync', () => ({
+  pendingConflicts: async () => conflicts.rows,
+  resolveConflict: async () => ({ queued: false, stale: false, hash: 'h' }),
+}));
+const openPanelTab = vi.fn();
+vi.mock('@/lib/panel-actions', () => ({ openPanelTab: (id: string) => openPanelTab(id) }));
+
 // Rejecting rewrites a file; the toast is how the user learns it happened.
 const addNotification = vi.fn();
 vi.mock('@/stores/notificationStore', () => ({
@@ -62,6 +73,18 @@ vi.mock('@/stores/notificationStore', () => ({
 
 const { ChangesPanel } = await import('../ChangesPanel');
 const { __resetReviewStore, pendingReveal } = await import('@/lib/review-store');
+const { __resetConflictStore, conflictStore } = await import('@/lib/conflicts');
+
+/** One note whose write the daemon could neither take nor merge. */
+const conflict = (path: string): Conflicted => ({
+  path,
+  base: 'h0',
+  kiln: '/repo',
+  currentHash: 'h9',
+  currentContent: 'theirs\n',
+  mergedContent: 'mine\n',
+  regions: [{ start_line: 1, end_line: 2, base: '', ours: 'mine\n', theirs: 'theirs\n' }],
+});
 
 function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
   return {
@@ -106,6 +129,8 @@ const answer = (
 
 beforeEach(() => {
   resetGlobalRegistry();
+  conflicts.rows = [];
+  __resetConflictStore();
   answer([]);
   // clearMocks wipes call history, not implementations — the in-flight test
   // installs one that never settles.
@@ -741,5 +766,45 @@ describe('ChangesPanel — re-applied changes', () => {
     await waitFor(() => expect(screen.getByTestId('hunk-h2')).toBeInTheDocument());
     expect(screen.getByTestId('hunk-reapplied-h2')).toBeInTheDocument();
     expect(screen.queryByTestId('hunk-reapplied-h1')).toBeNull();
+  });
+});
+
+describe('ChangesPanel — conflicts', () => {
+  // The panel is the disposition surface for a session's writing, and a
+  // conflict is a write nobody has disposed of. It goes ABOVE the hunks: it is
+  // the one row here that cannot drain on its own.
+  it('lists a conflicted note above the hunks', async () => {
+    conflicts.rows = [conflict('/repo/notes/A.md')];
+    answer([hunk({ id: 'a' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+
+    const section = await screen.findByTestId('changes-conflicts');
+    expect(within(section).getByText('/repo/notes/A.md')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
+    expect(section.compareDocumentPosition(screen.getByTestId('hunk-a'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  // A conflict belongs to no session's composed diff, and the desktop has no
+  // offline badge; listing one only under a selected session would leave a
+  // write nothing on this shell mentions.
+  it('lists a conflict with no session selected', async () => {
+    conflicts.rows = [conflict('/repo/notes/A.md')];
+    render(() => <ChangesPanel />);
+
+    expect(await screen.findByTestId('changes-conflicts')).toBeInTheDocument();
+    expect(screen.getByText('No session selected.')).toBeInTheDocument();
+  });
+
+  it('opens the conflict a row names', async () => {
+    conflicts.rows = [conflict('/repo/notes/A.md')];
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+
+    fireEvent.click(await screen.findByTestId('changes-conflict-open-/repo/notes/A.md'));
+    expect(openPanelTab).toHaveBeenCalledWith('conflicts');
+    expect(conflictStore.selected()).toBe('/repo/notes/A.md');
   });
 });

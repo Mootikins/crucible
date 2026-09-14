@@ -13,6 +13,8 @@
  * right edge region.
  */
 import { createStore } from 'solid-js/store';
+import { openPanelTab } from '@/lib/panel-actions';
+import type { TabContentType } from '@/types/windowTypes';
 import {
   pendingConflicts,
   resolveConflict,
@@ -20,7 +22,19 @@ import {
   type WriteOutcome,
 } from '@/lib/offline/sync';
 
-const [state, setState] = createStore<{ rows: Conflicted[] }>({ rows: [] });
+/**
+ * The registered panel that draws a conflict, as `openPanelTab` names it.
+ *
+ * The registry keys on a plain string and the tab store on `TabContentType`,
+ * which no registered panel outside the layout's own set belongs to. The cast
+ * is the same one the phone's overflow menu makes (`MobileShell.tsx`).
+ */
+const CONFLICTS_PANEL = 'conflicts' as TabContentType;
+
+const [state, setState] = createStore<{ rows: Conflicted[]; selected: string | null }>({
+  rows: [],
+  selected: null,
+});
 
 export const conflictStore = {
   /** Every conflict, oldest first. Reactive. */
@@ -35,9 +49,24 @@ export const conflictStore = {
   get(path: string): Conflicted | null {
     return state.rows.find((row) => row.path === path) ?? null;
   },
+  /**
+   * The note a surface asked to settle, or null for the list.
+   *
+   * It lives here rather than in the panel because three surfaces point at
+   * one conflict — the badge, the phone's More sheet and the Changes panel —
+   * and none of them draws it.
+   */
+  selected(): string | null {
+    return state.selected;
+  },
 };
 
 export const conflictActions = {
+  /** Say which conflict the panel should draw. `null` draws the list. */
+  select(path: string | null): void {
+    setState('selected', path);
+  },
+
   /** Read the outbox again. Cheap: it is one indexed list of a short queue. */
   async refresh(): Promise<void> {
     setState('rows', await pendingConflicts());
@@ -71,7 +100,19 @@ export const conflictActions = {
   },
 };
 
+/**
+ * Show a conflict, or the list of them, wherever this device draws panels.
+ *
+ * One door for every surface that counts conflicts but does not draw them.
+ * On a phone `openPanelTab` stacks the tab; on a desktop it opens it in the
+ * centre, beside the note the writing belongs to.
+ */
+export function openConflict(path: string | null = null): void {
+  conflictActions.select(path);
+  openPanelTab(CONFLICTS_PANEL);
+}
+
 /** Test seam: forget every row, the way `__resetReviewStore` does. */
 export function __resetConflictStore(): void {
-  setState('rows', []);
+  setState({ rows: [], selected: null });
 }

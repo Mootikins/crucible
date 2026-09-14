@@ -11,7 +11,7 @@
  * plus the global review store rather than `useChatSafe`, which would silently
  * hand back the inert fallback context.
  */
-import { Component, For, Show, createMemo, createSignal } from 'solid-js';
+import { Component, For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
@@ -28,6 +28,7 @@ import {
   undoLastReject,
 } from '@/lib/review-confirm';
 import { hit } from '@/lib/touch';
+import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
 import {
   hunkPath,
   hunkRangeLabel,
@@ -35,7 +36,7 @@ import {
   type ComposedHunk,
   type ReviewScope,
 } from '@/lib/review-types';
-import { Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
+import { AlertTriangle, Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
 
 /** Files, in composed-diff order, with their hunks. */
 interface FileGroup {
@@ -352,6 +353,12 @@ export const ChangesPanel: Component = () => {
 
   const openComments = createMemo(() => state().comments.filter((c) => !c.resolved));
 
+  // A conflict is a disposition of a note write, and this panel is where a
+  // disposition is made. Read once on mount: the drain is what creates one,
+  // and the drain is not this panel's event stream.
+  onMount(() => void conflictActions.refresh().catch(() => undefined));
+  const conflicts = () => conflictStore.list();
+
   return (
     <PanelShell>
       <PanelHeader title="Changes" class="shrink-0">
@@ -437,6 +444,45 @@ export const ChangesPanel: Component = () => {
       </PanelHeader>
 
       <div class="flex-1 overflow-y-auto">
+        {/* Above the roots, and OUTSIDE the session gate. A hunk drains as
+            you decide it; a conflict does not, it belongs to no session's
+            composed diff, and on a desktop there is no offline badge to carry
+            it — so a conflict that only showed under a selected session would
+            be a write nothing lists. The counts below stay about the session. */}
+        <Show when={conflicts().length > 0}>
+          <div data-testid="changes-conflicts">
+            <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 border-b border-hairline">
+              <AlertTriangle class="w-3 h-3 shrink-0" />
+              Conflicts
+            </div>
+            <For each={conflicts()}>
+              {(row) => (
+                <div
+                  class="flex items-center gap-2 border-b border-hairline px-3 py-1.5"
+                  data-testid={`changes-conflict-${row.path}`}
+                >
+                  <span
+                    class="min-w-0 flex-1 truncate text-xs font-mono text-shell-ink"
+                    title={row.path}
+                  >
+                    {row.path}
+                  </span>
+                  <span class="shrink-0 text-floor text-muted-dark">{row.regions.length}</span>
+                  <button
+                    type="button"
+                    title={`Settle ${row.path}`}
+                    data-testid={`changes-conflict-open-${row.path}`}
+                    onClick={() => openConflict(row.path)}
+                    class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
+                  >
+                    Open
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+
         <Show
           when={sessionId()}
           fallback={<p class="p-3 text-xs text-muted-dark">No session selected.</p>}
