@@ -483,33 +483,30 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     expect(fileState(editor).dirty).toBe(false);
   });
 
-  /** The daemon refuses the queued write, and the copy's dated name is free. */
+  /** The daemon refuses the queued write, and answers the text it holds now. */
   const conflictOnDrain = () => {
     guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
-    getFileContent.mockRejectedValueOnce(Object.assign(new Error('HTTP 404'), { status: 404 }));
+    getFileContent.mockResolvedValueOnce('their text\n');
   };
 
-  // The queued write went clean at queue time. The drain wrote a copy and
-  // cleared the entry, so the buffer shows text that lives only in the copy.
-  // A clean buffer here is a lie the user acts on.
-  it('a drained conflict marks the open buffer dirty and names the copy', async () => {
+  // The queued write went clean at queue time. The drain could not merge it,
+  // so the buffer shows text the note does not hold. A clean buffer here is a
+  // lie the user acts on, and the notice must say where the text waits.
+  it('a drained conflict marks the open buffer and names the conflict', async () => {
     const editor = await openAndQueue();
     conflictOnDrain();
 
     const result = await syncNow();
 
     expect(result.conflicted).toHaveLength(1);
-    const copy = result.conflicted[0].copy;
-    expect(saveFileContent).toHaveBeenCalledWith(copy, 'queued text\n');
+    expect(saveFileContent, 'nothing is written beside the note').not.toHaveBeenCalled();
     expect(fileState(editor).dirty).toBe(true);
     expect(fileState(editor).content, 'the buffer keeps the user\'s text').toBe('queued text\n');
     expect(fileState(editor).baseHash, 'a refused write moves no base').toBe('base-hash');
     expect(addNotification).toHaveBeenCalledTimes(1);
     expect(addNotification).toHaveBeenCalledWith(
       'warning',
-      `The note changed elsewhere while you were offline. Your version was saved as ${copy
-        .split('/')
-        .pop()}. Reload the note to continue from the current text.`,
+      'The note changed elsewhere while you were offline. Your text is kept as a conflict — open Conflicts to resolve it.',
     );
   });
 
@@ -523,11 +520,11 @@ describe('EditorContext — a drained write moves the open buffer', () => {
 
     expect(fileState(editor).dirty).toBe(false);
     expect(fileState(editor).baseHash).toBe('h7');
-    // The drain's own notice still names the copy: nothing else on screen does.
+    // The drain's own notice still points at the conflict: nothing else does.
     expect(addNotification).toHaveBeenCalledTimes(1);
     expect(addNotification).toHaveBeenCalledWith(
       'warning',
-      expect.stringMatching(/^The note changed elsewhere\. Your version was saved as /),
+      'The note changed elsewhere. Open Conflicts to resolve it.',
     );
   });
 

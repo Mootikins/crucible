@@ -14,7 +14,6 @@ import { keptMode } from '@/lib/offline/kept';
 import { notificationActions } from '@/stores/notificationStore';
 import { forgetKiln, mirrorKiln, readMirrored, type MirrorSource } from '@/lib/offline/mirror';
 import {
-  conflictCopyPath,
   drainOutbox,
   isQueued,
   queueWrite,
@@ -135,12 +134,6 @@ export const networkSink: OutboxSink = {
     // that cannot merge. A read that fails leaves the text unknown.
     return { ok: false, current: answer.current_hash, currentContent: await currentText(entry.path) };
   },
-  writeConflictCopy: (entry) => {
-    // The drain reports a refused anchored entry instead of calling this: an
-    // edit has no body to keep. A throw here keeps the entry queued.
-    if (entry.kind === 'anchored') throw new Error(`${entry.path}: an anchored edit has no body to copy`);
-    return writeConflictCopy(entry.path, entry.body, new Date(entry.queuedAt));
-  },
 };
 
 /** The note as the daemon holds it now, or undefined when it cannot be read. */
@@ -158,9 +151,9 @@ async function currentText(path: string): Promise<string | undefined> {
 /**
  * Keep a stale write's text beside the note. Answers the path it took.
  *
- * The drain calls this for a queued write the daemon refused. The editor
- * calls it when the user chooses to keep a refused save. One function, so
- * the editor does not reach for the API to write a copy on its own.
+ * The EDITOR calls this, when a save the user is present for is refused and
+ * they choose to park their text. The drain writes none: a queued write the
+ * daemon cannot merge stays in the outbox as a conflict.
  *
  * A free name, not merely a dated one. The stamp is a DATE, so a second
  * conflict on the same note on the same day produced the same path and the
@@ -188,6 +181,15 @@ async function freeConflictPath(path: string, when: Date): Promise<string> {
     }
   }
   return numbered(conflictCopyPath(path, when), Date.now());
+}
+
+/** The name a parked copy takes, beside the note it was refused for. */
+function conflictCopyPath(path: string, when: Date, device = 'phone'): string {
+  const stamp = when.toISOString().slice(0, 10);
+  const dot = path.lastIndexOf('.');
+  const stem = dot > path.lastIndexOf('/') ? path.slice(0, dot) : path;
+  const extension = dot > path.lastIndexOf('/') ? path.slice(dot) : '';
+  return `${stem} (conflict, ${device}, ${stamp})${extension}`;
 }
 
 function numbered(path: string, n: number): string {
@@ -455,6 +457,34 @@ export async function pendingCount(): Promise<number> {
   return queuedCount(offlineStore());
 }
 
+/**
+ * Settle a conflict: write the text a person chose, and drop the entry.
+ *
+ * The resolution is made FROM the text the daemon holds now — that is what
+ * the person read while choosing — so it carries that hash and that text. A
+ * stale answer means the note moved AGAIN between the merge and the choice:
+ * nothing is settled, so the conflict stays where it is, and the caller shows
+ * the new regions. Offline, the write queues against the current hash, which
+ * is why a conflicted entry never lends its base to an arriving write.
+ */
+export async function resolveConflict(path: string, text: string): Promise<WriteOutcome> {
+  const db = offlineStore();
+  const held = await readQueued(db, path);
+  if (!held || held.state !== 'conflicted') {
+    throw new Error(`${path} has no conflict to resolve`);
+  }
+  const outcome = await writeNote({
+    path,
+    body: text,
+    base: held.currentHash,
+    baseText: held.currentContent,
+    kiln: held.kiln || null,
+  });
+  // A queued resolution already REPLACED the entry, with its own base.
+  if (!outcome.queued && !outcome.stale) await db.remove('outbox', path);
+  return outcome;
+}
+
 export type { Conflicted, Landed };
 
 /**
@@ -477,18 +507,17 @@ export function onNoteLanded(listener: (row: Landed) => void): () => void {
 }
 
 /**
- * Who wants to know that a queued whole write was refused, and where its
- * text went.
+ * Who wants to know that a queued whole write could not be settled.
  *
- * The write went clean at queue time. The drain wrote a conflict copy and
- * cleared the entry, so an open buffer made from the entry's base shows text
- * the note does not hold, and looks clean. A listener that answers `true`
- * told the user itself, with the buffer in view; the drain then says nothing
- * more about that row.
+ * The write went clean at queue time. The entry is still held, now marked as
+ * a conflict, so an open buffer made from the entry's base shows text the
+ * note does not hold, and looks clean. A listener that answers `true` told
+ * the user itself, with the buffer in view; the drain then says nothing more
+ * about that row.
  */
 const conflictedListeners = new Set<(row: Conflicted) => boolean | void>();
 
-/** Hear each whole write the drain turned into a conflict copy. */
+/** Hear each whole write the drain turned into a conflict. */
 export function onNoteConflicted(listener: (row: Conflicted) => boolean | void): () => void {
   conflictedListeners.add(listener);
   return () => {
@@ -509,9 +538,9 @@ export async function syncNow() {
       }
     }
   }
-  // A conflict copy is the one outcome a user MUST be told about: their text
-  // did not land on the note they wrote it in, and nothing else on screen
-  // says so — the queue count drops either way. Every caller discarded this.
+  // A conflict is the one outcome a user MUST be told about: their text did
+  // not land on the note they wrote it in, and nothing else on screen says
+  // so — the unsent count drops either way. Every caller discarded this.
   for (const row of result.conflicted) {
     let told = false;
     for (const listener of conflictedListeners) {
@@ -524,7 +553,7 @@ export async function syncNow() {
     if (told) continue;
     notificationActions.addNotification(
       'warning',
-      `The note changed elsewhere. Your version was saved as ${row.copy.split('/').pop()}`,
+      'The note changed elsewhere. Open Conflicts to resolve it.',
     );
   }
   // A refused anchored edit leaves no copy behind, so this is the only trace.

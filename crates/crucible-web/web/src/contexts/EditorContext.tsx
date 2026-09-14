@@ -302,12 +302,13 @@ export const EditorProvider: ParentComponent = (props) => {
   onCleanup(onNoteLanded(onLanded));
 
   /**
-   * A queued whole write the drain turned into a conflict copy. The buffer
-   * whose base the write was made from went clean when the write queued, and
-   * its text now lives only in the copy: the note holds someone else's. The
-   * buffer goes dirty, keeps its text, and the notice names the copy. A
-   * buffer with another base was moved by a later write and is left alone;
-   * the drain's own notice covers it.
+   * A queued whole write the drain could not settle. The buffer whose base
+   * the write was made from went clean when the write queued, and the note
+   * now holds someone else's text: a clean buffer here is a lie the user
+   * acts on. The buffer goes dirty and keeps its text, which is also what the
+   * conflict holds, and the notice points at where it waits. A buffer with
+   * another base was moved by a later write and is left alone; the drain's
+   * own notice covers it.
    */
   const onConflicted = (row: Conflicted): boolean => {
     const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
@@ -320,9 +321,7 @@ export const EditorProvider: ParentComponent = (props) => {
     );
     notificationActions.addNotification(
       'warning',
-      `The note changed elsewhere while you were offline. Your version was saved as ${row.copy
-        .split('/')
-        .pop()}. Reload the note to continue from the current text.`,
+      'The note changed elsewhere while you were offline. Your text is kept as a conflict — open Conflicts to resolve it.',
     );
     return true;
   };

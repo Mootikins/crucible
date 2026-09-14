@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const notify = vi.hoisted(() => vi.fn());
+vi.mock('@/stores/notificationStore', () => ({
+  notificationActions: { addNotification: (...a: unknown[]) => notify(...a) },
+}));
+
 const net = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
@@ -36,8 +41,10 @@ import {
   pendingCount,
   readNote,
   setOfflineStore,
+  resolveConflict,
   syncNow,
   warmIdentity,
+  writeConflictCopy,
   writeNote,
 } from '@/lib/offline/sync';
 
@@ -52,6 +59,7 @@ beforeEach(() => {
   net.save.mockReset();
   net.guardedSave.mockReset();
   net.patch.mockReset();
+  notify.mockReset();
   store = memoryStore();
   setOfflineStore(store);
   keptActions.keep(KILN, 'notes');
@@ -422,12 +430,14 @@ describe('onNoteLanded', () => {
 const answered = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
 
 /**
- * A drained conflict clears the entry and writes a copy, and nothing else on
- * screen says so. The editor holds the open buffers, so the drain names each
- * conflicted write to whoever listens, with the base the entry was made from.
+ * A drained conflict keeps the entry and writes nothing beside the note. The
+ * editor holds the open buffers, so the drain names each conflicted write to
+ * whoever listens, with the base the entry was made from and the three texts
+ * a person needs to settle it.
  */
 describe('onNoteConflicted', () => {
-  it('calls a listener once per conflicted row with the base and the copy', async () => {
+  /** Queue a write offline, then let the daemon refuse it as stale. */
+  async function conflictOnDrain() {
     net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
     await warmIdentity();
     net.online = false;
@@ -435,8 +445,11 @@ describe('onNoteConflicted', () => {
     await writeNote({ path: PATH, body: 'mine', base: 'h0', kiln: KILN });
     net.online = true;
     net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
-    net.read.mockRejectedValue(answered(404)); // the copy's name is free
-    net.save.mockResolvedValue(undefined);
+    net.read.mockResolvedValue({ content: 'theirs', content_hash: 'h9' });
+  }
+
+  it('calls a listener once per conflicted row with the texts that settle it', async () => {
+    await conflictOnDrain();
 
     const listener = vi.fn();
     const stop = onNoteConflicted(listener);
@@ -449,13 +462,45 @@ describe('onNoteConflicted', () => {
       expect.objectContaining({
         path: PATH,
         base: 'h0',
-        copy: expect.stringMatching(/\/Note \(conflict, phone, \d{4}-\d{2}-\d{2}\)\.md$/),
+        currentHash: 'h9',
+        currentContent: 'theirs',
+        mergedContent: 'mine',
       }),
     );
-    expect(net.save).toHaveBeenCalledWith(listener.mock.calls[0][0].copy, 'mine');
+    expect(net.save, 'nothing is written beside the note').not.toHaveBeenCalled();
+    expect(await pendingCount(), 'a conflict is not owed to the daemon').toBe(0);
+  });
+
+  // Nothing else on screen says the write did not land: the queue count drops
+  // either way. The notice names where the text waits.
+  it('tells the user where the conflict waits when no listener did', async () => {
+    await conflictOnDrain();
+
+    await syncNow();
+
+    expect(notify).toHaveBeenCalledWith(
+      'warning',
+      'The note changed elsewhere. Open Conflicts to resolve it.',
+    );
   });
 
   it('never calls a listener that unsubscribed', async () => {
+    await conflictOnDrain();
+
+    const gone = vi.fn();
+    onNoteConflicted(gone)();
+    await syncNow();
+
+    expect(gone).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A person settled the conflict. The resolution is made FROM the text the
+ * daemon holds now, so it carries that hash, and the entry goes.
+ */
+describe('resolveConflict', () => {
+  async function conflicted() {
     net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
     await warmIdentity();
     net.online = false;
@@ -463,14 +508,52 @@ describe('onNoteConflicted', () => {
     await writeNote({ path: PATH, body: 'mine', base: 'h0', kiln: KILN });
     net.online = true;
     net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
-    net.read.mockRejectedValue(answered(404));
-    net.save.mockResolvedValue(undefined);
-
-    const gone = vi.fn();
-    onNoteConflicted(gone)();
+    net.read.mockResolvedValue({ content: 'theirs', content_hash: 'h9' });
     await syncNow();
+    net.guardedSave.mockReset();
+  }
 
-    expect(gone).not.toHaveBeenCalled();
+  it('writes with the current hash and clears the entry', async () => {
+    await conflicted();
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h10' });
+
+    const out = await resolveConflict(PATH, 'settled');
+
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'settled', 'h9');
+    expect(out).toEqual({ queued: false, stale: false, hash: 'h10' });
+    expect(await store.get('outbox', PATH)).toBeNull();
+  });
+
+  // Settled with no network. The write queues against the hash and the text
+  // the person chose FROM, not against the base the daemon already refused —
+  // a fold onto the conflict's own base would ask for the same merge again.
+  it('queues a resolution against the text it was settled from', async () => {
+    await conflicted();
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    expect(await resolveConflict(PATH, 'settled')).toEqual({ queued: true });
+
+    const held = await store.get<OutboxEntry>('outbox', PATH);
+    expect(held).toMatchObject({ body: 'settled', base: 'h9', baseText: 'theirs' });
+    expect(held?.state, 'the conflict is settled, whatever the network does').toBeUndefined();
+  });
+
+  // The daemon moved again between the merge and the choice. The conflict is
+  // not settled, so it stays where it is.
+  it('keeps the conflict when the note moved again', async () => {
+    await conflicted();
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h11' });
+
+    expect(await resolveConflict(PATH, 'settled')).toEqual({
+      queued: false,
+      stale: true,
+      current: 'h11',
+    });
+    expect(await store.get<OutboxEntry>('outbox', PATH)).toMatchObject({ state: 'conflicted' });
+  });
+
+  it('refuses a path with no conflict to settle', async () => {
+    await expect(resolveConflict(PATH, 'settled')).rejects.toThrow('no conflict');
   });
 });
 
@@ -552,13 +635,36 @@ describe('networkSink lets the daemon refuse a stale write', () => {
     expect(await networkSink.write(anchored)).toEqual({ ok: false, refused: true, current: 'h9' });
   });
 
-  it('takes a free name when a conflict copy already exists for today', async () => {
+});
+
+/**
+ * The copy the EDITOR still offers for a save the daemon refused with the
+ * user present. The drain writes none: a queued write becomes a conflict.
+ */
+describe('writeConflictCopy', () => {
+  it('names the copy beside the note, keeping its extension', async () => {
+    net.read.mockRejectedValue(answered(404));
+    net.save.mockResolvedValue(undefined);
+    expect(
+      await writeConflictCopy(`${KILN}/Release Notes.md`, 'mine', new Date('2026-09-12T10:00:00Z')),
+    ).toBe(`${KILN}/Release Notes (conflict, phone, 2026-09-12).md`);
+  });
+
+  it('handles a name with no extension', async () => {
+    net.read.mockRejectedValue(answered(404));
+    net.save.mockResolvedValue(undefined);
+    expect(await writeConflictCopy(`${KILN}/README`, 'mine', new Date('2026-09-12T10:00:00Z'))).toBe(
+      `${KILN}/README (conflict, phone, 2026-09-12)`,
+    );
+  });
+
+  it('takes a free name when a copy already exists for today', async () => {
     net.read
       .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // dated name taken
       .mockRejectedValueOnce(answered(404)); // the numbered one is free
     net.save.mockResolvedValue(undefined);
 
-    const copy = await networkSink.writeConflictCopy(entry);
+    const copy = await writeConflictCopy(PATH, 'mine', new Date('2026-09-12T10:00:00Z'));
     expect(copy).toMatch(/ 2\.md$/);
     expect(net.save).toHaveBeenCalledWith(copy, 'mine');
   });

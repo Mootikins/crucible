@@ -21,7 +21,12 @@ import type { MirroredNote } from '@/lib/offline/mirror';
  *   the third one a three-way merge needs, and this device is the only party
  *   that holds it: without it a write the daemon refuses as stale can only be
  *   refused whole or overwrite the other writer.
- * - An entry clears only after its writing is safe somewhere the daemon holds.
+ * - An entry clears only after its writing is safe somewhere the daemon holds,
+ *   or after a person settles it. A write the daemon can neither take nor
+ *   merge STAYS here, marked `conflicted`, with the texts that settle it. It
+ *   used to be copied to a second note and cleared: that moved the user's
+ *   writing out of the note they made it in, and left two files to reconcile
+ *   by hand.
  */
 
 /** What every queued write names: which note, from which text, for which daemon. */
@@ -54,11 +59,27 @@ export type WriteKind =
 /** A note write as a caller queues it. The queue stamps the time and the order. */
 export type OutboxWrite = NoteWrite & WriteKind;
 
+/**
+ * What a write the daemon could not settle carries, beside the writing.
+ *
+ * `mergedContent` is our text merged with theirs as far as the merge got, and
+ * `regions` is every span the two writers changed differently — never empty,
+ * so there is always something to choose. `currentHash` is what a resolution
+ * must be written against.
+ */
+type ConflictState = {
+  state: 'conflicted';
+  currentHash: string;
+  currentContent: string;
+  mergedContent: string;
+  regions: MergeRegion[];
+};
+
 export type OutboxEntry = OutboxWrite & {
   queuedAt: number;
   /** Ordering, so two writes to one note replay as they were made. */
   sequence: number;
-};
+} & (ConflictState | { state?: undefined });
 
 /**
  * What a device's IndexedDB can hold: an entry queued before entries had a
@@ -68,7 +89,8 @@ export type OutboxEntry = OutboxWrite & {
 type StoredEntry = NoteWrite & { queuedAt: number; sequence: number } & (
     | WriteKind
     | { kind?: undefined; body: string }
-  );
+  ) &
+  (ConflictState | { state?: undefined });
 
 /**
  * Read a stored entry as a current one.
@@ -94,8 +116,6 @@ export interface OutboxSink {
    * attempt is still its anchored replay.
    */
   write(entry: OutboxEntry, opts?: { baseText: string }): Promise<SinkAnswer>;
-  /** Write the losing copy beside the note. Answers its path. */
-  writeConflictCopy(entry: OutboxEntry): Promise<string>;
 }
 
 /** The daemon took the write. `merged` says it merged our text with the disk. */
@@ -129,13 +149,14 @@ export type Landed = { path: string; base: string; hash: string };
  *
  * The base names the buffer the write came from, so the editor can mark that
  * buffer and no other. The three texts are what resolving it needs, without a
- * second round trip that would race the same way.
+ * second round trip that would race the same way. The entry itself stays
+ * queued, marked `conflicted`, and carries the same texts.
  */
 export type Conflicted = {
   path: string;
   base: string;
-  /** The conflict copy that now holds the text. */
-  copy: string;
+  /** Which kiln the note belongs to, for a resolution written later. */
+  kiln: string;
   /** The hash the note has now: what a resolution must be written against. */
   currentHash: string;
   /** The note as the daemon holds it now. Empty when it could not be read. */
@@ -157,8 +178,12 @@ export interface DrainResult {
    * landed too, and its buffer moved the same way.
    */
   landed: Landed[];
+  /**
+   * One row per write that could not be settled. Each one is still in the
+   * queue, marked, and every later drain skips it until a person resolves it.
+   */
   conflicted: Conflicted[];
-  /** Anchored entries the daemon refused. There is no body to copy. */
+  /** Anchored entries the daemon refused. There is no body to keep. */
   refusedEdits: string[];
   /** Entries left alone because they belong to a different daemon. */
   foreign: number;
@@ -216,7 +241,14 @@ export type QueueOutcome = { ok: true; folded: boolean } | { ok: false; index: n
  */
 export async function queueWrite(store: OfflineStore, entry: OutboxWrite): Promise<QueueOutcome> {
   const existing = await store.get<StoredEntry>('outbox', entry.path);
-  const held = existing && withKind(existing);
+  const found = existing && withKind(existing);
+  // A CONFLICTED entry does not fold, and does not lend its base. That base
+  // is the one the daemon already refused, and the note has moved past it, so
+  // an arriving write — a person settling the conflict, or an ordinary save
+  // from a buffer read since — is a new write from a text they have in front
+  // of them, and it keeps its own base. Folding would ask the daemon to merge
+  // the resolution against the text it already settled.
+  const held = found?.state === 'conflicted' ? null : found;
   const folded: Fold = held ? fold(held, entry) : { ok: true, write: entry, folded: false };
   if (!folded.ok) return folded;
   if (folded.write.kind === 'anchored' && folded.write.edits.length === 0) {
@@ -310,8 +342,24 @@ export async function readQueued(store: OfflineStore, path: string): Promise<Out
   return held && withKind(held);
 }
 
+/** Whether an entry waits on a person rather than on the network. */
+function isConflicted(entry: OutboxEntry): boolean {
+  return entry.state === 'conflicted';
+}
+
+/**
+ * How many writes the daemon has not received.
+ *
+ * A conflict is NOT one of them: no send will ever clear it, so counting it
+ * as an unsent edit tells the user the network still owes them something.
+ */
 export async function queuedCount(store: OfflineStore): Promise<number> {
-  return (await store.list('outbox')).length;
+  return (await store.list<OutboxEntry>('outbox')).filter((e) => !isConflicted(e.value)).length;
+}
+
+/** How many writes wait on a person to choose between two texts. */
+export async function conflictCount(store: OfflineStore): Promise<number> {
+  return (await store.list<OutboxEntry>('outbox')).filter((e) => isConflicted(e.value)).length;
 }
 
 /** A queued write that carries the whole note. */
@@ -398,22 +446,38 @@ export async function drainOutbox(
     else result.sent += 1;
   };
 
-  /** The daemon answered, nothing could be merged: keep the text, report it. */
+  /**
+   * The daemon answered and nothing could be merged.
+   *
+   * The entry STAYS, marked, with the texts that settle it: the writing is
+   * the user's and exists nowhere else, and no later send can clear it on its
+   * own. A newer save arrived meanwhile is left alone, exactly as a landed
+   * write leaves it alone.
+   */
   const conflict = async (entry: WholeEntry, answer: SinkRefused) => {
-    const copy = await sink.writeConflictCopy(entry);
-    // Only now: if the copy failed, the writing is still queued.
-    if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
     const currentContent = answer.currentContent ?? '';
-    result.conflicted.push({
-      path: entry.path,
-      base: entry.base,
-      copy,
+    const state: ConflictState = {
+      state: 'conflicted',
       currentHash: answer.current,
       currentContent,
       mergedContent: answer.mergedContent ?? entry.body,
       regions: answer.regions?.length
         ? answer.regions
         : [wholeNoteRegion(entry.body, currentContent)],
+    };
+    if (!(await markIfUnchanged(store, entry, state))) {
+      result.superseded += 1;
+      return;
+    }
+    // The `state` tag belongs to the stored entry, not to the report.
+    result.conflicted.push({
+      path: entry.path,
+      base: entry.base,
+      kiln: entry.kiln,
+      currentHash: state.currentHash,
+      currentContent: state.currentContent,
+      mergedContent: state.mergedContent,
+      regions: state.regions,
     });
   };
 
@@ -428,6 +492,9 @@ export async function drainOutbox(
       result.foreign += 1;
       continue;
     }
+    // A conflict is settled by a person, not by another send. Sending it
+    // again would be refused again, and would re-notify on every drain.
+    if (isConflicted(entry)) continue;
     try {
       const answer = await sink.write(entry);
       if (answer.ok) {
@@ -496,11 +563,20 @@ async function clearIfUnchanged(store: OfflineStore, sent: OutboxEntry): Promise
   return true;
 }
 
-/** The name a losing copy takes, beside the note it lost to. */
-export function conflictCopyPath(path: string, when: Date, device = 'phone'): string {
-  const stamp = when.toISOString().slice(0, 10);
-  const dot = path.lastIndexOf('.');
-  const stem = dot > path.lastIndexOf('/') ? path.slice(0, dot) : path;
-  const extension = dot > path.lastIndexOf('/') ? path.slice(dot) : '';
-  return `${stem} (conflict, ${device}, ${stamp})${extension}`;
+/**
+ * Mark an entry conflicted ONLY if it is still the one that was sent.
+ *
+ * Same rule as `clearIfUnchanged`, for the same reason: a save during the
+ * send replaced the entry, and that newer writing is not the one the daemon
+ * refused. Answers false when the entry was replaced.
+ */
+async function markIfUnchanged(
+  store: OfflineStore,
+  sent: OutboxEntry,
+  state: ConflictState,
+): Promise<boolean> {
+  const held = await store.get<OutboxEntry>('outbox', sent.path);
+  if (!held || held.sequence !== sent.sequence || held.queuedAt !== sent.queuedAt) return false;
+  await store.put<OutboxEntry>('outbox', sent.path, { ...held, ...state });
+  return true;
 }

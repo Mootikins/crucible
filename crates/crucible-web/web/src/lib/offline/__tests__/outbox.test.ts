@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { memoryStore, type OfflineStore } from '@/lib/offline/store';
 import {
-  conflictCopyPath,
+  conflictCount,
   drainOutbox,
   isQueued,
   queueWrite,
@@ -18,7 +18,6 @@ const PATH = `${KILN}/Note.md`;
 /** A sink that accepts everything. */
 const okSink = (): OutboxSink => ({
   write: async () => ({ ok: true, hash: 'h1' }),
-  writeConflictCopy: async () => 'copy',
 });
 
 let store: OfflineStore;
@@ -40,7 +39,6 @@ const queue = (over: Partial<Extract<OutboxEntry, { kind: 'whole' }>> = {}) =>
 function sink(over: Partial<OutboxSink> = {}): OutboxSink {
   return {
     write: async () => ({ ok: true, hash: 'new-hash' }),
-    writeConflictCopy: async (entry) => `${entry.path} (conflict)`,
     ...over,
   };
 }
@@ -61,9 +59,6 @@ function mergingSink(merged: string) {
       calls.push({ entry, opts });
       if (!opts) return { ok: false, current: 'their-hash' };
       return { ok: true, hash: 'merged-hash', merged: true, content: merged };
-    },
-    writeConflictCopy: async () => {
-      throw new Error('a clean merge must not write a copy');
     },
   };
   return { sink, calls };
@@ -246,10 +241,10 @@ describe('drainOutbox', () => {
     expect(await store.get('mirror', PATH)).toMatchObject({ body: '- [ ] milk\n', hash: 'h0' });
   });
 
-  // A refused anchored entry has no body to keep, so no conflict copy is
-  // written. The refusal is reported on its own, and the entry clears: the
-  // daemon answered, and a replay would be refused again.
-  it('reports a refused anchored entry and writes no conflict copy', async () => {
+  // A refused anchored entry has no body to keep, so there is nothing to hold
+  // as a conflict. The refusal is reported on its own, and the entry clears:
+  // the daemon answered, and a replay would be refused again.
+  it('reports a refused anchored entry and leaves no conflict', async () => {
     await queueWrite(store, {
       kind: 'anchored',
       path: PATH,
@@ -258,15 +253,14 @@ describe('drainOutbox', () => {
       kiln: KILN,
       daemon: DAEMON,
     });
-    const writeConflictCopy = vi.fn(async () => 'copy');
     const result = await drainOutbox(
       store,
-      sink({ write: async () => ({ ok: false, refused: true, current: 'h9' }), writeConflictCopy }),
+      sink({ write: async () => ({ ok: false, refused: true, current: 'h9' }) }),
       DAEMON,
     );
     expect(result.refusedEdits).toEqual([PATH]);
     expect(result.conflicted).toEqual([]);
-    expect(writeConflictCopy).not.toHaveBeenCalled();
+    expect(await conflictCount(store)).toBe(0);
     expect(await isQueued(store, PATH)).toBe(false);
   });
 
@@ -329,31 +323,17 @@ describe('drainOutbox', () => {
     expect(seen).toEqual([`${KILN}/A.md`, `${KILN}/B.md`]);
   });
 
-  it('writes a conflict copy when the note moved on', async () => {
+  // The note moved on and nothing could be merged. The writing is the user's
+  // and exists only here, so it STAYS, marked as a conflict for a person to
+  // settle. It used to be copied to a second note and cleared.
+  it('keeps a stale write as a conflict when the note moved on', async () => {
     await queue();
     const result = await drainOutbox(
       store,
-      sink({ write: async () => ({ ok: false, current: 'other-hash' }) }),
+      sink({ write: async () => ({ ok: false, current: 'other-hash', currentContent: 'theirs\n' }) }),
       DAEMON,
     );
-    expect(result.conflicted[0]).toMatchObject({ path: PATH, base: 'base-hash', copy: `${PATH} (conflict)` });
-    expect(await isQueued(store, PATH)).toBe(false);
-  });
-
-  // If the copy fails after the entry is cleared, the user's text is gone.
-  it('keeps the writing when the conflict copy itself fails', async () => {
-    await queue();
-    const result = await drainOutbox(
-      store,
-      sink({
-        write: async () => ({ ok: false, current: 'other' }),
-        writeConflictCopy: async () => {
-          throw new Error('network gone');
-        },
-      }),
-      DAEMON,
-    );
-    expect(result.failed).toBe(1);
+    expect(result.conflicted[0]).toMatchObject({ path: PATH, base: 'base-hash', kiln: KILN });
     expect(await isQueued(store, PATH)).toBe(true);
   });
 
@@ -496,7 +476,6 @@ describe('a stale write is retried with the base text it was made from', () => {
       currentHash: 'h9',
       currentContent: 'theirs\n',
       mergedContent: 'mine\nand more\n',
-      copy: `${PATH} (conflict)`,
       regions: [
         { start_line: 1, end_line: 3, base: '', ours: 'mine\nand more\n', theirs: 'theirs\n' },
       ],
@@ -513,19 +492,114 @@ describe('a stale write is retried with the base text it was made from', () => {
   });
 });
 
-describe('conflictCopyPath', () => {
-  it('names the copy beside the note, keeping its extension', () => {
-    expect(conflictCopyPath(`${KILN}/Release Notes.md`, new Date('2026-09-12T10:00:00Z'))).toBe(
-      `${KILN}/Release Notes (conflict, phone, 2026-09-12).md`,
-    );
+/**
+ * A conflict is an ENTRY, not a copy of the note under another name.
+ *
+ * A copy moved the user's text out of the note they wrote it in, cleared the
+ * queue and left them to reconcile two files by hand. The writing stays where
+ * it is, marked, with the three texts a person needs to settle it.
+ */
+describe('a merge the daemon could not settle stays queued as a conflict', () => {
+  const REGION = { start_line: 2, end_line: 3, base: 'B\n', ours: 'MINE\n', theirs: 'THEIRS\n' };
+
+  /** A daemon that refuses the first attempt and answers regions to the retry. */
+  const regionSink = (seen: string[] = []): OutboxSink => ({
+    write: async (entry, opts) => {
+      seen.push(entry.path);
+      return opts
+        ? {
+            ok: false,
+            current: 'h9',
+            currentContent: 'A\nTHEIRS\n',
+            mergedContent: 'A\nMINE\n',
+            regions: [REGION],
+          }
+        : { ok: false, current: 'h9' };
+    },
   });
 
-  it('handles a name with no extension', () => {
-    expect(conflictCopyPath(`${KILN}/README`, new Date('2026-09-12T10:00:00Z'))).toBe(
-      `${KILN}/README (conflict, phone, 2026-09-12)`,
-    );
+  it('a stale write with regions stays queued as conflicted and writes no copy', async () => {
+    await queue({ body: 'A\nMINE\n', base: 'h0', baseText: 'A\nB\n' });
+    const seen: string[] = [];
+
+    const result = await drainOutbox(store, regionSink(seen), DAEMON);
+
+    expect(result.conflicted).toEqual([
+      {
+        path: PATH,
+        base: 'h0',
+        kiln: KILN,
+        currentHash: 'h9',
+        currentContent: 'A\nTHEIRS\n',
+        mergedContent: 'A\nMINE\n',
+        regions: [REGION],
+      },
+    ]);
+    // Two attempts on ONE note, and nothing written beside it.
+    expect(seen).toEqual([PATH, PATH]);
+    expect(await store.get<OutboxEntry>('outbox', PATH)).toMatchObject({
+      state: 'conflicted',
+      body: 'A\nMINE\n',
+      currentHash: 'h9',
+      currentContent: 'A\nTHEIRS\n',
+      mergedContent: 'A\nMINE\n',
+      regions: [REGION],
+    });
   });
 
+  // A conflict waits on a person. Counting it as an unsent edit would tell
+  // the user the network still owes them a send that will never happen.
+  it('a conflict is counted apart from what is still owed to the daemon', async () => {
+    await queue({ body: 'A\nMINE\n', base: 'h0', baseText: 'A\nB\n' });
+    await queue({ path: `${KILN}/Other.md` });
+
+    await drainOutbox(
+      store,
+      sink({
+        write: async (entry, opts) => {
+          if (entry.path !== PATH) throw new Error('offline');
+          return regionSink().write(entry, opts);
+        },
+      }),
+      DAEMON,
+    );
+
+    expect(await conflictCount(store)).toBe(1);
+    expect(await queuedCount(store), 'the other note is still owed to the daemon').toBe(1);
+  });
+
+  it('a conflicted entry is skipped by the next drain', async () => {
+    await queue({ body: 'A\nMINE\n', base: 'h0', baseText: 'A\nB\n' });
+    await drainOutbox(store, regionSink(), DAEMON);
+
+    const seen: string[] = [];
+    const again = await drainOutbox(store, sink({ write: async (e) => { seen.push(e.path); return { ok: true, hash: 'h1' }; } }), DAEMON);
+
+    expect(seen, 'a conflict is settled by a person, not by another send').toEqual([]);
+    expect(again).toMatchObject({ sent: 0, conflicted: [], failed: 0 });
+    expect(await conflictCount(store)).toBe(1);
+  });
+
+  // The conflict's own base is the one the daemon already refused. A write
+  // arriving for the note is a NEW write from a text the user has in front of
+  // them, so it replaces the conflict with its own base.
+  it('a write arriving for a conflicted note replaces it with its own base', async () => {
+    await queue({ body: 'A\nMINE\n', base: 'h0', baseText: 'A\nB\n' });
+    await drainOutbox(store, regionSink(), DAEMON);
+
+    await queue({ body: 'settled\n', base: 'h9', baseText: 'A\nTHEIRS\n' });
+
+    expect(await readQueued(store, PATH)).toMatchObject({
+      body: 'settled\n',
+      base: 'h9',
+      baseText: 'A\nTHEIRS\n',
+    });
+    expect(await conflictCount(store)).toBe(0);
+    expect(await queuedCount(store)).toBe(1);
+  });
+});
+
+describe('an entry clears only when it is still the one that was sent', () => {
   /**
    * A drain awaits the network. A save during that await replaces the entry
    * at the same key, and removing by path alone deleted the NEWER writing —
@@ -542,7 +616,6 @@ describe('conflictCopyPath', () => {
         await inFlight; // the user saves again while this is out
         return { ok: true, hash: 'h1' };
       },
-      writeConflictCopy: async () => 'copy',
     };
 
     const draining = drainOutbox(store, sink, DAEMON);
