@@ -17,6 +17,9 @@ vi.mock('@/lib/api', () => ({
   subscribeToEvents: () => () => {},
 }));
 vi.mock('@/lib/file-actions', () => ({ openFileWithDiff: vi.fn() }));
+// The shell is decided once at page load; the test stages it before a render.
+const device = vi.hoisted(() => ({ compact: false }));
+vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
 vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: vi.fn() },
 }));
@@ -88,6 +91,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   __resetReviewStore();
+  device.compact = false;
   vi.clearAllMocks();
 });
 
@@ -195,6 +199,19 @@ describe('ToolCard — accept / reject', () => {
     expect(confirm).toHaveBeenCalledOnce();
     expect(setHunkState).not.toHaveBeenCalled();
     confirm.mockRestore();
+  });
+
+  it('on a compact shell the transcript chip controls are at least 44 px', async () => {
+    device.compact = true;
+    await seed([hunk({ id: 'h1' })]);
+    render(() => <ToolCard toolCall={editCall()} />);
+    expand();
+    const accept = await waitFor(() => screen.getByTestId('tool-accept-h1'));
+    const reject = screen.getByTestId('tool-reject-h1');
+    expect(accept.className).toContain('min-h-11');
+    expect(accept.className).toContain('min-w-11');
+    expect(reject.className).toContain('min-h-11');
+    expect(reject.className).toContain('min-w-11');
   });
 
   it('an accepted hunk keeps its reject, loses its accept', async () => {

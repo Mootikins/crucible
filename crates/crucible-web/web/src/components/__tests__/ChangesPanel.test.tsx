@@ -17,6 +17,10 @@ vi.mock('@/lib/api', () => ({
   subscribeToEvents: () => () => {},
 }));
 
+// The shell is decided once at page load; the test stages it before a render.
+const device = vi.hoisted(() => ({ compact: false }));
+vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
+
 const listReviewHunks = vi.fn();
 const setHunkState = vi.fn(async () => ({
   hunk_id: 'h',
@@ -100,6 +104,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   setCurrentSession(undefined);
+  device.compact = false;
   __resetReviewStore();
   vi.clearAllMocks();
 });
@@ -349,6 +354,28 @@ describe('ChangesPanel — the queue', () => {
     const merge = await waitFor(() => screen.getByTestId('hunk-merge'));
     await waitFor(() => within(merge).getByRole('button', { name: 'Accept' }));
     expect(within(merge).queryByRole('button', { name: 'Reject' })).toBeNull();
+  });
+
+  it('on a compact shell every hunk control is at least 44 px', async () => {
+    device.compact = true;
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+    for (const id of ['accept-h1', 'reject-h1', 'comment-h1']) {
+      expect(screen.getByTestId(id).className, id).toContain('min-h-11');
+      expect(screen.getByTestId(id).className, id).toContain('min-w-11');
+    }
+  });
+
+  it('on the desktop shell the hunk controls keep their dense size', async () => {
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+    for (const id of ['accept-h1', 'reject-h1', 'comment-h1']) {
+      expect(screen.getByTestId(id).className, id).not.toContain('min-h-11');
+    }
   });
 
   it('comments a range, not a hunk id', async () => {

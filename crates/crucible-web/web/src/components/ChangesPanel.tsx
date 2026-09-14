@@ -20,6 +20,7 @@ import { openFileInEditor } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { reviewActions, reviewStore, toolCallLabel, useReviewSession } from '@/lib/review-store';
 import { announceReject, confirmReject } from '@/lib/review-confirm';
+import { hit } from '@/lib/touch';
 import { hunkPath, hunkRangeLabel, isExternal, type ComposedHunk } from '@/lib/review-types';
 import { Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
 
@@ -162,7 +163,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             data-testid={`accept-${props.hunk.id}`}
             disabled={busy()}
             onClick={accept}
-            class="shrink-0 rounded p-1 text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50"
+            class={`shrink-0 rounded p-1 text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
           >
             <Check class="w-3.5 h-3.5" />
           </button>
@@ -176,7 +177,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
             data-testid={`reject-${props.hunk.id}`}
             disabled={busy()}
             onClick={reject}
-            class="shrink-0 rounded p-1 text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50"
+            class={`shrink-0 rounded p-1 text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
           >
             <Undo2 class="w-3.5 h-3.5" />
           </button>
@@ -186,7 +187,7 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
           title="Comment on these lines"
           data-testid={`comment-${props.hunk.id}`}
           onClick={() => setCommenting(!commenting())}
-          class="shrink-0 rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash"
+          class={`shrink-0 rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash ${hit()}`}
         >
           <MessageCircle class="w-3.5 h-3.5" />
         </button>

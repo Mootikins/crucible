@@ -18,6 +18,7 @@ import {
 } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
 import { announceReject, confirmReject } from '@/lib/review-confirm';
+import { hit } from '@/lib/touch';
 import {
   Check,
   ChevronRight,
@@ -413,7 +414,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                             onClick={() =>
                               review(reviewActions.setState(sessionId()!, hunk.id, 'accepted'))
                             }
-                            class="rounded p-0.5 text-muted-dark hover:text-ok hover:bg-hover-wash"
+                            class={`rounded p-0.5 text-muted-dark hover:text-ok hover:bg-hover-wash ${hit()}`}
                           >
                             <Check class="w-3 h-3" />
                           </button>
@@ -433,7 +434,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                                 .then(() => announceReject(hunk)),
                             );
                           }}
-                          class="rounded p-0.5 text-muted-dark hover:text-error hover:bg-hover-wash"
+                          class={`rounded p-0.5 text-muted-dark hover:text-error hover:bg-hover-wash ${hit()}`}
                         >
                           <Undo2 class="w-3 h-3" />
                         </button>
