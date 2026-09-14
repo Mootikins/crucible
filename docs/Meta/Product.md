@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-08-29
+updated: 2026-09-13
 tags:
   - meta
   - product
@@ -1219,6 +1219,9 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **Review Comments and Rebase** `P1` — `review.comment`, `review.resolve_comment` and `review.rebase` beside `review.list_hunks` and `review.set_state` · `crucible-daemon`, `crucible-web`
   - **Gets you:** a comment anchors to a root and comes back with the hunks; a comment without a body names the missing field; `resolve_comment` marks a comment and refuses an unknown id. `rebase` moves the session base to the worktree as it is now, which clears a block that reviewing cannot (a gc'd base tree, a moved root, a journal record that does not parse). The web routes forward each call to the daemon.
   - **Proof:** `crates/crucible-daemon/src/server/session/review/tests.rs`::a_comment_anchors_to_the_root_and_comes_back_with_the_hunks, `::a_comment_without_a_body_names_the_field_it_wants`, `::resolving_a_comment_marks_it_and_an_unknown_id_is_refused`, `::commenting_without_a_ledger_is_refused`; `crates/crucible-daemon/src/review/tests/persistence.rs`::a_journal_with_no_base_blocks_every_write_until_a_rebase, `::a_rebase_on_a_session_with_no_journal_still_persists_and_keeps_its_trees`; `crates/crucible-web/tests/route_contract_tests/review.rs`::rebase_reaches_the_daemon_and_returns_its_root_statuses, `::a_comment_forwards_the_optional_fields_the_caller_sent`, `::resolve_comment_takes_the_comment_id_from_the_path`
+- [x] **Bulk Review Decisions, Undo and Scope** `P1` — `review.set_states` and `review.undo_reject` beside `review.set_state`; `review.list_hunks` by session or by turn · `crucible-daemon`, `crucible-web`
+  - **Gets you:** Accept all / Reject all on a file or on the whole review, one confirm and one daemon call, in composed order, with each refused hunk named; every reject leaves an Undo that pops a journaled per-session stack of reject batches, multi-level and intact after a restart; a Session / Turn control lists the whole diff or only what the current turn's tool calls touched; each expanded hunk is a CodeMirror merge view; on a phone every control is a 44 px target.
+  - **Proof:** `crates/crucible-daemon/src/server/session/review/tests.rs`::a_bulk_reject_applies_in_order_and_reports_the_hunk_it_no_longer_knows, `::three_rejects_undo_in_reverse_order_one_at_a_time`, `::a_bulk_reject_undoes_as_one_batch`, `::an_undo_after_the_file_moved_on_is_refused_as_stale_and_keeps_the_batch`, `::turn_scope_lists_only_hunks_the_current_turn_touched`; `crates/crucible-daemon/src/review/tests/persistence.rs`::a_reject_stack_survives_a_reload; `crates/crucible-web/tests/route_contract_tests/review.rs`::set_states_forwards_the_ids_in_order, `::undo_reject_reaches_the_daemon_with_the_path_session`, `::an_unknown_scope_is_a_bad_request`; `web/src/components/__tests__/ChangesPanel.test.tsx::reject all on a file asks once and then undoes as one`, `::an expanded hunk mounts the merge view with accept and reject controls`, `::on a compact shell every hunk control is at least 44 px`
 - [x] **Model Picker** `P1` — Cursor-style dropdown below the textarea; switch model during a conversation · `crucible-web`
   - **Gets you:** the picker opens, shows available models, and switching one calls the API mid-conversation.
   - **Proof:** `web/e2e/model-switching.spec.ts::model picker opens and shows available models`, `::switching model calls the API`; routes `route_contract_tests/sessions.rs::list_models_returns_200_with_models_array`, `::switch_model_returns_200`

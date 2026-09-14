@@ -1,6 +1,6 @@
 //! Review route contract tests.
 //!
-//! These eight routes are a pure passthrough in both directions, so the type
+//! These seven routes are a pure passthrough in both directions, so the type
 //! system proves nothing about them: the daemon's result objects are
 //! `serde_json::Value` all the way to the browser precisely so a key the
 //! daemon grows (`degraded`, `gate`) reaches a frontend that reads it without

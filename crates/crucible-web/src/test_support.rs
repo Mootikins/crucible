@@ -865,7 +865,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // ── review.* ───────────────────────────────────────────────────────
         // Shaped from the daemon's real handlers in
         // `crucible-daemon/src/server/session/review.rs`, echoing the same
-        // params back, because the web layer's whole contract for these eight
+        // params back, because the web layer's whole contract for these seven
         // is "forward it untouched in both directions" — a hand-simplified
         // stub could not fail when that stopped being true.
         "review.list_hunks" => {

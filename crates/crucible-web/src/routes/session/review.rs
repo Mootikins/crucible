@@ -1,6 +1,6 @@
 //! `/api/session/{id}/review/…` — the attributed-diff review surface.
 //!
-//! The browser never speaks raw JSON-RPC, so these eight routes are the only
+//! The browser never speaks raw JSON-RPC, so these seven routes are the only
 //! way `ChangesPanel`, the file viewer's gutter, and `ToolCard` reach the
 //! daemon's `review.*` methods. They are registered inside
 //! [`super::session_routes_with`] rather than as their own group, and that is

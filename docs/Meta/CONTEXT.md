@@ -36,8 +36,12 @@ _Avoid_: search path, plugin path, package.path
 ### Dispositions
 
 **Review**:
-The disposition of an agent's file edits. The composed diff in `review/`.
+The disposition of an agent's file edits, per hunk, per file, per turn or per session. The composed diff in `review/`.
 _Avoid_: proposal (for this meaning), approval
+
+**Scope**:
+Which hunks a review lists: the session's, or the current turn's.
+_Avoid_: filter, view (for this meaning)
 
 **Proposal**:
 The disposition of a suggested knowledge note. Lives under a kiln's `proposals/`.

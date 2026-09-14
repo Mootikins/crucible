@@ -41,7 +41,11 @@ Each hunk is `unreviewed`, `accepted`, or `rejected`. Absent a recorded decision
 
 - **Accept** records the decision, silently.
 - **Reject** is one operation: the daemon reverts the hunk on disk immediately, records the rejection, and injects a user-role note into the session's conversation naming the file and lines — so the agent learns the revert happened and does not re-apply the edit. If it applies the same change again anyway, the hunk returns to the queue flagged as *reapplied*.
+- **Undo** takes a reject back. Every reject, single or bulk, pushes one batch onto a per-session stack that the journal records, so the stack is multi-level and survives a daemon restart. `review.undo_reject` pops the top batch, puts each hunk's lines back on disk, lists the hunks as unreviewed again, and injects a second note telling the agent the rejection is withdrawn. A hunk whose file moved on since the revert refuses the whole batch as stale; nothing is written and the batch stays on the stack. The stack keeps the last 50 batches.
+- **Bulk decisions** (`review.set_states`) accept or reject a list of hunks in one call. The daemon applies the list in order and reports each hunk it refused — unknown, stale, or external — beside the ones it applied; one refusal never stops the rest. A bulk reject is one undo batch and one conversation note.
 - **Comments** anchor to a line range (changed or not), and can be resolved.
+
+A listing has a **scope**: `session` lists every hunk since `session_base`; `turn` lists only the hunks a tool call of the current turn touched. The turn starts at the last user message on the conversation's current path, so the daemon needs no marker. Under `turn`, external hunks are not listed, and a session with no turn yet lists nothing. Decisions and the gate always read the whole session.
 
 Every queue movement emits a `review_changed` event, so open clients refresh without polling.
 
@@ -63,17 +67,19 @@ The gate fails closed on structural damage: an unreadable `review.jsonl`, a trac
 
 ## Where you meet it
 
-**The web console.** The Changes panel lists the composed diff grouped root → file → hunk with accept/reject per hunk; the file viewer tones unreviewed, accepted, and external lines inline; status chips show the effective review policy and a "waiting on review" chip while the gate holds a call. It talks to five session-scoped routes:
+**The web console.** The Changes panel lists the composed diff grouped root → file → hunk. Each hunk expands into a CodeMirror merge view (`HunkMergeView`) that shows the hunk's base text against its worktree text, with Accept and Reject controls; every control calls the daemon, never CodeMirror's own chunk action. Each file row and the panel header carry **Accept all** and **Reject all**: one confirm, then one `review.set_states` call for every unreviewed hunk in that file or in the whole review, in composed order. Every reject leaves a notification with an **Undo** action, which calls `review.undo_reject`; a refused hunk is named in one notification. A **Session / Turn** control chooses the listing scope. The file viewer tones unreviewed, accepted, and external lines inline; status chips show the effective review policy and a "waiting on review" chip while the gate holds a call. On a phone the panel opens from the More menu, and every control is a 44 px target. The panel talks to seven session-scoped routes:
 
 ```text
-GET  /api/session/{id}/review/hunks
+GET  /api/session/{id}/review/hunks?scope=session|turn
 POST /api/session/{id}/review/rebase
 POST /api/session/{id}/review/state
+POST /api/session/{id}/review/states
+POST /api/session/{id}/review/undo-reject
 POST /api/session/{id}/review/comment
 POST /api/session/{id}/review/comment/{comment_id}/resolve
 ```
 
-These forward to the daemon's `review.list_hunks`, `review.rebase`, `review.set_state`, `review.comment`, and `review.resolve_comment` RPC methods. `list_hunks` returns the hunks plus `comments`, `degraded` roots, journal `integrity`, and the current `gate` block. There is no TUI review panel.
+These forward to the daemon's `review.list_hunks`, `review.rebase`, `review.set_state`, `review.set_states`, `review.undo_reject`, `review.comment`, and `review.resolve_comment` RPC methods. `list_hunks` returns the hunks plus `comments`, `degraded` roots, journal `integrity`, the current `gate` block, and the `scope` it answered under; an unknown scope is refused before the daemon is asked. `set_states` and `undo_reject` answer `applied` and `failed`, each failure naming the hunk and the reason. There is no TUI review panel.
 
 **The bundled `review` plugin** (`runtime/plugins/review/`) exposes the same operations as agent-callable tools: `review_list_hunks`, `review_set_state`, `review_comment`, `review_resolve_comment`. Every tool takes an explicit `session_id` because the session under review is usually not the caller's own: a delegating agent gets `child_session_id` from `delegate_session`'s result and reviews the child's diff before accepting it. Hunk bodies are truncated at 2000 characters — an agent deciding on a long hunk should open the file.
 

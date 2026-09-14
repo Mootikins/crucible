@@ -233,7 +233,7 @@ entry but no shipped proof.
 | F151 | Right-click menus with native fall-through | W |
 | F152 | Panel system: ribbons, edge panels, splits, floating windows, server-side layout `/api/layout` | P, W |
 | F153 | Graph view over `kiln.graph` with physics and settings | P, W |
-| F154 | Changes panel and inline review: `review.list_hunks`, `set_state`, review gate chips | W, P |
+| F154 | Changes panel and inline review: `review.list_hunks` by session or turn, `set_state`, `set_states`, `undo_reject`, the merge view per hunk, review gate chips | W, P |
 | F155 | Image viewer pane with zoom and pan | W |
 | F156 | Inbox of pending interactions across sessions; attention badges | P, W |
 | F157 | Omnibox Ctrl+P with `>` and `[[` scopes; note switcher Ctrl+O | P, W |
@@ -1201,7 +1201,7 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 ### 4.22 ReviewLedger
 
 - Responsibility: the composed diff from the session base to the worktree; hunk state; `review.jsonl`.
-- Operations: `review.list_hunks`, `review.set_state(hunk, state)` (reject reverts on disk in the same call), `review.comment(range, text)`, `review.resolve(comment)`, the gate (`ReviewGate` events). An ACP session degrades to review at turn end.
+- Operations, seven: `review.list_hunks(scope)` (the session's hunks, or the current turn's), `review.set_state(hunk, state)` (reject reverts on disk in the same call and pushes one undo batch), `review.set_states(hunks, state)` (one bulk decision, applied in order, each refused hunk named), `review.undo_reject` (pops the journaled stack of reject batches), `review.comment(range, text)`, `review.resolve_comment(comment)`, `review.rebase`; the gate (`ReviewGate` events). An ACP session degrades to review at turn end.
 - Must never know: the editor.
 
 ### 4.23 WorkflowRunner
@@ -1336,7 +1336,7 @@ GET  /api/canvas  PUT /api/canvas
 GET  /api/skills  GET /api/skills/search  GET /api/skills/:name
 GET  /api/plugins  POST /api/plugins  DELETE /api/plugins/:name  POST /api/plugins/:name/reload
 GET  /api/plugins/{publications,options}  POST /api/plugins/:name/option  POST /api/plugins/command
-GET  /api/review/hunks  POST /api/review/hunk/:id/state  POST /api/review/comment
+GET  /api/session/:id/review/hunks?scope=  POST /api/session/:id/review/{state,states,undo-reject,rebase,comment}  POST /api/session/:id/review/comment/:comment_id/resolve
 GET  /api/scm/branches  POST /api/scm/worktree  POST /api/scm/clone
 GET  /api/layout  POST /api/layout  DELETE /api/layout
 GET  /api/config  POST /api/config  GET /api/mcp/status
@@ -1637,7 +1637,7 @@ below follow the product docs where the docs name a method. [D10]
 - `process_file`, `process_batch`, `search_vectors`, `search_semantic`, `search_text`, `search_grep`, `property_search`
 - `fs.list_dir`, `fs.move`, `fs.mkdir`, `fs.trash`, `fs.read`, `fs.write`
 - `canvas.get`, `canvas.put`
-- `review.list_hunks`, `review.set_state`, `review.comment`, `review.resolve_comment`
+- `review.list_hunks`, `review.set_state`, `review.set_states`, `review.undo_reject`, `review.comment`, `review.resolve_comment`, `review.rebase`
 - `scm.clone`
 - `providers.list`, `models.list`, `auth.store_key`
 - `skills.list`, `skills.search`, `skills.get`
