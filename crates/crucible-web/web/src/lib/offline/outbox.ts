@@ -343,8 +343,26 @@ export async function readQueued(store: OfflineStore, path: string): Promise<Out
 }
 
 /** Whether an entry waits on a person rather than on the network. */
-function isConflicted(entry: OutboxEntry): boolean {
+function isConflicted(entry: OutboxEntry): entry is OutboxEntry & ConflictState {
   return entry.state === 'conflicted';
+}
+
+/**
+ * A conflicted entry as the surfaces read it.
+ *
+ * The `state` tag belongs to the stored entry; everything a person needs to
+ * settle it is here, and this is the ONE place the two are separated.
+ */
+function conflictReport(entry: OutboxEntry & ConflictState): Conflicted {
+  return {
+    path: entry.path,
+    base: entry.base,
+    kiln: entry.kiln,
+    currentHash: entry.currentHash,
+    currentContent: entry.currentContent,
+    mergedContent: entry.mergedContent,
+    regions: entry.regions,
+  };
 }
 
 /**
@@ -360,6 +378,21 @@ export async function queuedCount(store: OfflineStore): Promise<number> {
 /** How many writes wait on a person to choose between two texts. */
 export async function conflictCount(store: OfflineStore): Promise<number> {
   return (await store.list<OutboxEntry>('outbox')).filter((e) => isConflicted(e.value)).length;
+}
+
+/**
+ * Every write that waits on a person, oldest first.
+ *
+ * The outbox IS the conflict list: the entry holds the three texts and the
+ * hash a resolution must be written against, and it survives a reload. A
+ * second store beside it would be a copy of the answer that a reload loses.
+ */
+export async function listConflicts(store: OfflineStore): Promise<Conflicted[]> {
+  const held = (await store.list<StoredEntry>('outbox')).map((e) => withKind(e.value));
+  return held
+    .filter(isConflicted)
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(conflictReport);
 }
 
 /** A queued write that carries the whole note. */
@@ -469,16 +502,7 @@ export async function drainOutbox(
       result.superseded += 1;
       return;
     }
-    // The `state` tag belongs to the stored entry, not to the report.
-    result.conflicted.push({
-      path: entry.path,
-      base: entry.base,
-      kiln: entry.kiln,
-      currentHash: state.currentHash,
-      currentContent: state.currentContent,
-      mergedContent: state.mergedContent,
-      regions: state.regions,
-    });
+    result.conflicted.push(conflictReport({ ...entry, ...state }));
   };
 
   /** The refusal an anchored entry ends in: no body, so nothing to keep. */

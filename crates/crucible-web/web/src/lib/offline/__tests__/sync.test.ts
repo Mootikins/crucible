@@ -38,6 +38,7 @@ import {
   networkSource,
   onNoteConflicted,
   onNoteLanded,
+  pendingConflicts,
   pendingCount,
   readNote,
   setOfflineStore,
@@ -554,6 +555,25 @@ describe('resolveConflict', () => {
 
   it('refuses a path with no conflict to settle', async () => {
     await expect(resolveConflict(PATH, 'settled')).rejects.toThrow('no conflict');
+  });
+
+  // The conflict view reads this, not the answer it was notified with: the
+  // outbox is what survives a reload, and the notification does not.
+  it('lists what waits on a person, apart from what is owed to the daemon', async () => {
+    await conflicted();
+
+    expect(await pendingConflicts()).toEqual([
+      {
+        path: PATH,
+        base: 'h0',
+        kiln: KILN,
+        currentHash: 'h9',
+        currentContent: 'theirs',
+        mergedContent: 'mine',
+        regions: [{ start_line: 1, end_line: 2, base: '', ours: 'mine', theirs: 'theirs' }],
+      },
+    ]);
+    expect(await pendingCount(), 'a conflict is not owed to the daemon').toBe(0);
   });
 });
 

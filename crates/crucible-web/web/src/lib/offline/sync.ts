@@ -16,6 +16,7 @@ import { forgetKiln, mirrorKiln, readMirrored, type MirrorSource } from '@/lib/o
 import {
   drainOutbox,
   isQueued,
+  listConflicts,
   queueWrite,
   queuedCount,
   readQueued,
@@ -455,6 +456,17 @@ async function sendOrQueue<T>(
 /** How many writes this device still owes the daemon. */
 export async function pendingCount(): Promise<number> {
   return queuedCount(offlineStore());
+}
+
+/**
+ * Every write that waits on a person to choose between two texts.
+ *
+ * The twin of `pendingCount`, over the other half of the queue. A conflict is
+ * not owed to the network: no send will ever clear it, so the surfaces that
+ * count what is unsent must not count these too.
+ */
+export async function pendingConflicts(): Promise<Conflicted[]> {
+  return listConflicts(offlineStore());
 }
 
 /**

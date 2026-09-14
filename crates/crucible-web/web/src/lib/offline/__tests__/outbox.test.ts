@@ -3,6 +3,7 @@ import { memoryStore, type OfflineStore } from '@/lib/offline/store';
 import {
   conflictCount,
   drainOutbox,
+  listConflicts,
   isQueued,
   queueWrite,
   queuedCount,
@@ -566,6 +567,40 @@ describe('a merge the daemon could not settle stays queued as a conflict', () =>
 
     expect(await conflictCount(store)).toBe(1);
     expect(await queuedCount(store), 'the other note is still owed to the daemon').toBe(1);
+  });
+
+  // The conflict view reads the outbox, not a second copy of the answer: the
+  // entry is where the texts live, and it is what survives a reload.
+  it('lists every conflict with the texts that settle it, oldest first', async () => {
+    await queue({ body: 'A\nMINE\n', base: 'h0', baseText: 'A\nB\n' });
+    await queue({ path: `${KILN}/Other.md`, body: 'B\nMINE\n', base: 'h0', baseText: 'B\nB\n' });
+    await drainOutbox(store, regionSink(), DAEMON);
+
+    expect(await listConflicts(store)).toEqual([
+      {
+        path: PATH,
+        base: 'h0',
+        kiln: KILN,
+        currentHash: 'h9',
+        currentContent: 'A\nTHEIRS\n',
+        mergedContent: 'A\nMINE\n',
+        regions: [REGION],
+      },
+      {
+        path: `${KILN}/Other.md`,
+        base: 'h0',
+        kiln: KILN,
+        currentHash: 'h9',
+        currentContent: 'A\nTHEIRS\n',
+        mergedContent: 'A\nMINE\n',
+        regions: [REGION],
+      },
+    ]);
+  });
+
+  it('lists nothing for a note the daemon merely has not been sent yet', async () => {
+    await queue();
+    expect(await listConflicts(store)).toEqual([]);
   });
 
   it('a conflicted entry is skipped by the next drain', async () => {
