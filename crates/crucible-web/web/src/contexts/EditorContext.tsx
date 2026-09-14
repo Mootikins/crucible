@@ -14,11 +14,11 @@ import {
   onNoteConflicted,
   onNoteLanded,
   readNote,
-  writeConflictCopy,
   writeNote,
   type Conflicted,
   type Landed,
 } from '@/lib/offline/sync';
+import { conflictActions, openConflict } from '@/lib/conflicts';
 import { notificationActions } from '@/stores/notificationStore';
 
 
@@ -86,7 +86,9 @@ export const EditorProvider: ParentComponent = (props) => {
 
       setOpenFiles(
         produce((files) => {
-          files.push({ path, content, dirty: false, baseHash: content_hash });
+          // The text comes with the hash: the two are one fact, and this is
+          // the only copy of the text a later merge can be made from.
+          files.push({ path, content, dirty: false, baseHash: content_hash, baseText: content });
         })
       );
       openCounts.set(path, 1);
@@ -147,32 +149,6 @@ export const EditorProvider: ParentComponent = (props) => {
     });
   };
 
-  /**
-   * Keep the text the daemon refused beside the note it refused to overwrite.
-   *
-   * The caller captures `refused` at the moment of the refusal, not at the
-   * moment the user chooses. Between the two, the user may close the note
-   * and open it again: the buffer then holds the server text, and a copy of
-   * that text is not "your version". Text typed after the refusal stays in
-   * the dirty buffer on screen, so the snapshot loses nothing, and the
-   * snapshot is what the refusal was about.
-   */
-  const keepAsConflictCopy = (path: string, refused: string) => {
-    writeConflictCopy(path, refused, new Date())
-      .then((copy) =>
-        notificationActions.addNotification(
-          'success',
-          `Your version was saved as ${copy.split('/').pop()}. Reload the note to continue from the current text.`,
-        ),
-      )
-      .catch((err: unknown) =>
-        notificationActions.addNotification(
-          'error',
-          err instanceof Error ? err.message : 'Failed to save the conflict copy',
-        ),
-      );
-  };
-
   const saveFile = async (path: string) => {
     const file = openFilesStore.find((f) => f.path === path);
     if (!file) return;
@@ -181,28 +157,44 @@ export const EditorProvider: ParentComponent = (props) => {
     setError(null);
     setRetryFailedOperation(null);
 
+    // The bytes this save is about. The buffer is a store proxy, so reading it
+    // again after the await would be a different text.
+    const sent = file.content;
+
     try {
       // Save by absolute path (symmetric with the load) — the editor addresses
       // files by path, and PUT /api/kiln/file writes within the open kiln.
+      //
+      // The base text goes with the base hash: it is what lets the route MERGE
+      // a note someone else changed meanwhile, instead of refusing the save and
+      // leaving the user to reconcile two texts by hand.
       const outcome = await writeNote({
         path,
-        body: file.content,
+        body: sent,
         base: file.baseHash,
+        baseText: file.baseText,
         kiln: await kilnOf(path),
       });
 
       if (!outcome.queued && outcome.stale) {
         // The daemon answered: the note moved on since this buffer was read.
         // The buffer keeps its text and stays dirty, and nothing is written.
-        // The user is present, so the copy is a choice and not an automatic
-        // write: they may prefer to reload and re-apply their change. The
-        // choice copies the text the daemon refused, whatever the buffer
-        // holds when the user clicks.
-        const refused = file.content;
+        if (outcome.conflict) {
+          // The route merged as far as it could and a region was left. The
+          // writing is held in the outbox now, so the choice is made on the
+          // conflict surface, over both texts — not in a toast that copies
+          // the note aside and leaves two files to reconcile.
+          await conflictActions.refresh();
+          openConflict(path);
+          notificationActions.addNotification(
+            'warning',
+            'The note changed elsewhere. Choose between the two texts to finish the save.',
+          );
+          return;
+        }
         notificationActions.addNotification(
           'warning',
-          'The note changed elsewhere. Reload it to see the current text, or keep yours as a copy.',
-          { label: 'Save as conflict copy', run: () => keepAsConflictCopy(path, refused) },
+          'The note changed elsewhere. Reload it to see the current text.',
         );
         return;
       }
@@ -216,10 +208,18 @@ export const EditorProvider: ParentComponent = (props) => {
           // app bar says how much is still owed. It keeps its base, which is
           // the base the queued write carries.
           f.dirty = false;
+          if (outcome.queued) return;
           // The daemon now holds this text under the hash it answered with.
           // Without this, the next save would carry the base of the FIRST
           // read and the daemon would refuse it as stale, by construction.
-          if (!outcome.queued) f.baseHash = outcome.hash;
+          f.baseHash = outcome.hash;
+          // What the daemon holds under that hash: the text it merged, when
+          // it merged, and otherwise the text we sent. A merged note is
+          // neither writer's alone and exists nowhere else, so the buffer
+          // takes it — a buffer left showing our half would send that half
+          // back over the merge on the next save.
+          if (outcome.merged) f.content = outcome.content;
+          f.baseText = outcome.merged ? outcome.content : sent;
         })
       );
     } catch (err) {
@@ -253,11 +253,18 @@ export const EditorProvider: ParentComponent = (props) => {
     );
   };
 
-  const setBaseHash = (path: string, hash: string) => {
+  const setBaseHash = (path: string, hash: string, text?: string) => {
     setOpenFiles(
       produce((files) => {
         const f = files.find((x) => x.path === path);
-        if (f) f.baseHash = hash;
+        if (!f) return;
+        f.baseHash = hash;
+        // The pair moves together or not at all. A caller that does not know
+        // the text at the new hash leaves the buffer with a hash alone, and
+        // the next save is refused rather than merged — which is the honest
+        // answer: a base text that is not the text of the base is a caller
+        // bug the route refuses outright.
+        f.baseText = text;
       })
     );
   };
@@ -292,6 +299,9 @@ export const EditorProvider: ParentComponent = (props) => {
             if (!f || f.dirty || f.baseHash !== row.hash) return;
             f.content = content;
             f.baseHash = content_hash;
+            // The read answers a text and a hash that belong together, so the
+            // buffer is mergeable again — the landed write cleared the pair.
+            f.baseText = content;
           }),
         );
       })

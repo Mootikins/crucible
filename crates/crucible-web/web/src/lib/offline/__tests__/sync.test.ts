@@ -45,7 +45,6 @@ import {
   resolveConflict,
   syncNow,
   warmIdentity,
-  writeConflictCopy,
   writeNote,
 } from '@/lib/offline/sync';
 
@@ -114,7 +113,7 @@ describe('writeNote', () => {
   it('sends the base it was edited from when the daemon answers', async () => {
     net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
     const out = await writeNote({ path: PATH, body: 'new', base: 'h1', kiln: KILN });
-    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'new', 'h1');
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'new', 'h1', undefined);
     expect(net.save, 'the guarded route is the only save').not.toHaveBeenCalled();
     expect(out).toEqual({ queued: false, stale: false, hash: 'h2' });
   });
@@ -155,6 +154,70 @@ describe('writeNote', () => {
     await writeNote({ path: PATH, body: 'edited', base: 'h0', baseText: 'original', kiln: KILN });
     const [held] = await store.list<OutboxEntry>('outbox');
     expect(held.value).toMatchObject({ base: 'h0', baseText: 'original', body: 'edited' });
+  });
+
+  // The base text is what turns a refusal into a merge. The online leg used
+  // to drop it, so a save the user was present for could only ever be refused
+  // — the one caller that always holds the text got the least of it.
+  it('sends the base text with an online save', async () => {
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
+    await writeNote({ path: PATH, body: 'edited', base: 'h0', baseText: 'original', kiln: KILN });
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'edited', 'h0', 'original');
+  });
+
+  // The route wrote neither text alone. The caller holds what it wrote
+  // nowhere else, so the answer carries it.
+  it('answers the merged text when the route merged a stale write', async () => {
+    net.guardedSave.mockResolvedValue({
+      ok: true,
+      content_hash: 'h2',
+      merged: true,
+      content: 'MERGED',
+    });
+    expect(
+      await writeNote({ path: PATH, body: 'edited', base: 'h0', baseText: 'original', kiln: KILN }),
+    ).toEqual({ queued: false, stale: false, merged: true, hash: 'h2', content: 'MERGED' });
+  });
+
+  // A merge the route could not settle. The writing exists only in the
+  // buffer, so it goes where every conflict waits — the outbox — rather than
+  // living in a toast the user can dismiss.
+  it('records a refusal it could not merge as a conflict it answers with', async () => {
+    await warmIdentity();
+    const regions = [{ start_line: 1, end_line: 2, base: 'was', ours: 'mine', theirs: 'theirs' }];
+    net.guardedSave.mockResolvedValue({
+      ok: false,
+      current_hash: 'h9',
+      current_content: 'theirs',
+      merged_content: 'merged',
+      regions,
+    });
+
+    const out = await writeNote({
+      path: PATH,
+      body: 'mine',
+      base: 'h0',
+      baseText: 'was',
+      kiln: KILN,
+    });
+
+    expect(out).toEqual({
+      queued: false,
+      stale: true,
+      current: 'h9',
+      conflict: {
+        path: PATH,
+        base: 'h0',
+        kiln: KILN,
+        currentHash: 'h9',
+        currentContent: 'theirs',
+        mergedContent: 'merged',
+        regions,
+      },
+    });
+    expect(await pendingConflicts(), 'it waits where the surfaces read it').toHaveLength(1);
+    expect(await pendingCount(), 'a conflict is not owed to the daemon').toBe(0);
+    expect(net.save, 'nothing is written beside the note').not.toHaveBeenCalled();
   });
 
   // Private mode: the save failed AND nothing can hold the writing. Telling a
@@ -288,7 +351,7 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     const result = await syncNow();
     expect(result.foreign, 'a write this device queued is not from a foreign daemon').toBe(0);
     expect(result.sent).toBe(1);
-    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT', 'h0');
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'OFFLINE EDIT', 'h0', undefined);
   });
 
   /** Queue one tick while the daemon is away. */
@@ -520,7 +583,7 @@ describe('resolveConflict', () => {
 
     const out = await resolveConflict(PATH, 'settled');
 
-    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'settled', 'h9');
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'settled', 'h9', 'theirs');
     expect(out).toEqual({ queued: false, stale: false, hash: 'h10' });
     expect(await store.get('outbox', PATH)).toBeNull();
   });
@@ -655,39 +718,6 @@ describe('networkSink lets the daemon refuse a stale write', () => {
     expect(await networkSink.write(anchored)).toEqual({ ok: false, refused: true, current: 'h9' });
   });
 
-});
-
-/**
- * The copy the EDITOR still offers for a save the daemon refused with the
- * user present. The drain writes none: a queued write becomes a conflict.
- */
-describe('writeConflictCopy', () => {
-  it('names the copy beside the note, keeping its extension', async () => {
-    net.read.mockRejectedValue(answered(404));
-    net.save.mockResolvedValue(undefined);
-    expect(
-      await writeConflictCopy(`${KILN}/Release Notes.md`, 'mine', new Date('2026-09-12T10:00:00Z')),
-    ).toBe(`${KILN}/Release Notes (conflict, phone, 2026-09-12).md`);
-  });
-
-  it('handles a name with no extension', async () => {
-    net.read.mockRejectedValue(answered(404));
-    net.save.mockResolvedValue(undefined);
-    expect(await writeConflictCopy(`${KILN}/README`, 'mine', new Date('2026-09-12T10:00:00Z'))).toBe(
-      `${KILN}/README (conflict, phone, 2026-09-12)`,
-    );
-  });
-
-  it('takes a free name when a copy already exists for today', async () => {
-    net.read
-      .mockResolvedValueOnce({ content: '', content_hash: 'x' }) // dated name taken
-      .mockRejectedValueOnce(answered(404)); // the numbered one is free
-    net.save.mockResolvedValue(undefined);
-
-    const copy = await writeConflictCopy(PATH, 'mine', new Date('2026-09-12T10:00:00Z'));
-    expect(copy).toMatch(/ 2\.md$/);
-    expect(net.save).toHaveBeenCalledWith(copy, 'mine');
-  });
 });
 
 /**

@@ -4,7 +4,6 @@ import {
   listNotes,
   patchKilnFile,
   rawFileUrl,
-  saveFileContent,
   type AnchoredEdit,
   type PatchRefused,
 } from '@/lib/api';
@@ -20,6 +19,7 @@ import {
   queueWrite,
   queuedCount,
   readQueued,
+  recordConflict,
   type Conflicted,
   type Landed,
   type NoteWrite,
@@ -80,11 +80,6 @@ export const networkSource: MirrorSource = {
     return await response.blob();
   },
 };
-
-/** Whether an error is the daemon saying the path is not there. */
-function isMissing(error: unknown): boolean {
-  return !!error && typeof error === 'object' && (error as { status?: number }).status === 404;
-}
 
 export const networkSink: OutboxSink = {
   write: async (entry, opts) => {
@@ -147,57 +142,6 @@ async function currentText(path: string): Promise<string | undefined> {
     // unknown.
     return undefined;
   }
-}
-
-/**
- * Keep a stale write's text beside the note. Answers the path it took.
- *
- * The EDITOR calls this, when a save the user is present for is refused and
- * they choose to park their text. The drain writes none: a queued write the
- * daemon cannot merge stays in the outbox as a conflict.
- *
- * A free name, not merely a dated one. The stamp is a DATE, so a second
- * conflict on the same note on the same day produced the same path and the
- * PUT destroyed the first copy — the only place that writing existed.
- */
-export async function writeConflictCopy(path: string, body: string, when: Date): Promise<string> {
-  const copy = await freeConflictPath(path, when);
-  await saveFileContent(copy, body);
-  return copy;
-}
-
-/** The first conflict-copy path nothing occupies. */
-async function freeConflictPath(path: string, when: Date): Promise<string> {
-  const base = conflictCopyPath(path, when);
-  for (let n = 1; n <= 50; n += 1) {
-    const candidate = n === 1 ? base : numbered(base, n);
-    try {
-      await getFileWithHash(candidate);
-    } catch (error) {
-      // Nothing there: the name is free. Any other failure means we cannot
-      // tell, and guessing risks overwriting — fall through to a stamp that
-      // cannot collide.
-      if (isMissing(error)) return candidate;
-      break;
-    }
-  }
-  return numbered(conflictCopyPath(path, when), Date.now());
-}
-
-/** The name a parked copy takes, beside the note it was refused for. */
-function conflictCopyPath(path: string, when: Date, device = 'phone'): string {
-  const stamp = when.toISOString().slice(0, 10);
-  const dot = path.lastIndexOf('.');
-  const stem = dot > path.lastIndexOf('/') ? path.slice(0, dot) : path;
-  const extension = dot > path.lastIndexOf('/') ? path.slice(dot) : '';
-  return `${stem} (conflict, ${device}, ${stamp})${extension}`;
-}
-
-function numbered(path: string, n: number): string {
-  const dot = path.lastIndexOf('.');
-  return dot > path.lastIndexOf('/')
-    ? `${path.slice(0, dot)} ${n}${path.slice(dot)}`
-    : `${path} ${n}`;
 }
 
 /**
@@ -310,8 +254,20 @@ export async function readNote(
  * the writing until it does.
  */
 export type WriteOutcome =
-  | { queued: false; stale: false; hash: string }
-  | { queued: false; stale: true; current: string }
+  | { queued: false; stale: false; hash: string; merged?: false }
+  /**
+   * The base was stale and the route MERGED our text with the disk. `content`
+   * is what it wrote — neither writer's text alone, and held nowhere else, so
+   * the buffer must take it or the next save would send half of it back.
+   */
+  | { queued: false; stale: false; merged: true; hash: string; content: string }
+  /**
+   * The note moved on. `conflict` is present when the route tried a merge and
+   * a region was left: the writing is then held in the outbox, and this is the
+   * row that settles it. Without it the caller sent no base text, so nothing
+   * could be merged and nothing is held.
+   */
+  | { queued: false; stale: true; current: string; conflict?: Conflicted }
   | { queued: true };
 
 /**
@@ -336,9 +292,43 @@ export async function writeNote(opts: {
 }): Promise<WriteOutcome> {
   return sendOrQueue(
     async () => {
-      const answer = await saveFileIfUnchanged(opts.path, opts.body, opts.base);
-      if (!answer.ok) return { queued: false, stale: true, current: answer.current_hash };
-      return { queued: false, stale: false, hash: answer.content_hash };
+      const answer = await saveFileIfUnchanged(opts.path, opts.body, opts.base, opts.baseText);
+      if (answer.ok) {
+        return answer.merged
+          ? { queued: false, stale: false, merged: true, hash: answer.content_hash, content: answer.content }
+          : { queued: false, stale: false, hash: answer.content_hash };
+      }
+      const stale = { queued: false, stale: true, current: answer.current_hash } as const;
+      if (!answer.regions?.length) return stale;
+      // The route merged and a region was left. The user's writing exists only
+      // in their buffer, and a toast is not somewhere it can wait: hold it
+      // where every conflict waits, so a reload still finds it.
+      try {
+        const conflict = await recordConflict(
+          offlineStore(),
+          {
+            kind: 'whole',
+            path: opts.path,
+            body: opts.body,
+            base: opts.base,
+            baseText: opts.baseText,
+            kiln: opts.kiln ?? '',
+            daemon: await daemonIdentity(offlineStore()),
+          },
+          {
+            ok: false,
+            current: answer.current_hash,
+            currentContent: answer.current_content ?? '',
+            mergedContent: answer.merged_content ?? opts.body,
+            regions: answer.regions,
+          },
+        );
+        return { ...stale, conflict };
+      } catch {
+        // Nowhere to hold it — private mode, or no IndexedDB. The refusal is
+        // still the answer, and the buffer still holds the writing.
+        return stale;
+      }
     },
     {
       kind: 'whole',
@@ -489,7 +479,10 @@ export async function resolveConflict(path: string, text: string): Promise<Write
     path,
     body: text,
     base: held.currentHash,
-    baseText: held.currentContent,
+    // Empty means the daemon's text could not be read, not that the note is
+    // empty (`Conflicted.currentContent`). Sending it would name a text that
+    // does not hash to `currentHash`, which the route refuses as a caller bug.
+    baseText: held.currentContent || undefined,
     kiln: held.kiln || null,
   });
   // A queued resolution already REPLACED the entry, with its own base.

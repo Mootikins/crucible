@@ -130,7 +130,7 @@ type SinkWrote =
  * moved on: `currentContent` is what it holds now, and `mergedContent` with
  * `regions` is how far a merge got, when one was asked for.
  */
-type SinkRefused = {
+export type SinkRefused = {
   ok: false;
   current: string;
   refused?: true;
@@ -398,6 +398,9 @@ export async function listConflicts(store: OfflineStore): Promise<Conflicted[]> 
 /** A queued write that carries the whole note. */
 type WholeEntry = Extract<OutboxEntry, { kind: 'whole' }>;
 
+/** A whole write as a caller makes it, before the queue stamps it. */
+type WholeWrite = Extract<OutboxWrite, { kind: 'whole' }>;
+
 /**
  * Our text as a whole note, to merge against the disk.
  *
@@ -429,6 +432,53 @@ function lineCount(text: string): number {
  */
 function wholeNoteRegion(ours: string, theirs: string): MergeRegion {
   return { start_line: 1, end_line: 1 + lineCount(ours), base: '', ours, theirs };
+}
+
+/**
+ * What a refusal becomes, beside the writing it refused.
+ *
+ * One rule for both doors: the drain, and a save the user was present for.
+ * A refusal with no region is a write that carried no base text, so nothing
+ * could be merged and the whole note is the one span to choose in.
+ */
+function conflictStateOf(ours: string, answer: SinkRefused): ConflictState {
+  const currentContent = answer.currentContent ?? '';
+  return {
+    state: 'conflicted',
+    currentHash: answer.current,
+    currentContent,
+    mergedContent: answer.mergedContent ?? ours,
+    regions: answer.regions?.length ? answer.regions : [wholeNoteRegion(ours, currentContent)],
+  };
+}
+
+/**
+ * Hold a write the daemon refused and could not merge, for a person to settle.
+ *
+ * The OTHER door into the conflicted state. The drain marks an entry it
+ * already had; this takes a write that never queued — a save the user was
+ * present for, which the daemon answered — and stores it as one, so both
+ * kinds of conflict wait in the same place and survive a reload. Without it
+ * the writing would live only in a toast and in a buffer.
+ *
+ * It replaces whatever is queued for the note, the way a whole write replaces
+ * a queued whole write: it came from a buffer that already holds the older
+ * writing. A conflicted entry lends nothing to an arriving write, so the
+ * replacement is not a fold and `queueWrite` is not the door.
+ */
+export async function recordConflict(
+  store: OfflineStore,
+  write: WholeWrite,
+  answer: SinkRefused,
+): Promise<Conflicted> {
+  const entry: OutboxEntry = {
+    ...write,
+    queuedAt: Date.now(),
+    sequence: await nextSequence(store),
+    ...conflictStateOf(write.body, answer),
+  };
+  await store.put<OutboxEntry>('outbox', write.path, entry);
+  return conflictReport(entry);
 }
 
 /**
@@ -488,16 +538,7 @@ export async function drainOutbox(
    * write leaves it alone.
    */
   const conflict = async (entry: WholeEntry, answer: SinkRefused) => {
-    const currentContent = answer.currentContent ?? '';
-    const state: ConflictState = {
-      state: 'conflicted',
-      currentHash: answer.current,
-      currentContent,
-      mergedContent: answer.mergedContent ?? entry.body,
-      regions: answer.regions?.length
-        ? answer.regions
-        : [wholeNoteRegion(entry.body, currentContent)],
-    };
+    const state = conflictStateOf(entry.body, answer);
     if (!(await markIfUnchanged(store, entry, state))) {
       result.superseded += 1;
       return;

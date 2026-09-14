@@ -873,10 +873,20 @@ export interface EditorFile {
   /** The disk hash this buffer was read at.
    *
    * What every save is anchored on: the daemon compares it to the bytes on
-   * disk, so a note someone else changed meanwhile is refused or becomes a
-   * conflict copy rather than an overwrite. Every open sets it from the
-   * read, and a landed write moves it. */
+   * disk, so a note someone else changed meanwhile is merged or refused
+   * rather than overwritten. Every open sets it from the read, and a landed
+   * write moves it. */
   baseHash: string;
+  /**
+   * The note as it was at `baseHash`: the text this buffer was read FROM.
+   *
+   * The third text a three-way merge needs, and the browser is the only party
+   * that holds it — so a save the daemon would refuse as stale is merged
+   * against the disk instead. The pair is one fact: a base that moves with no
+   * text beside it clears this, because a hash and a text that do not belong
+   * together is what the route refuses as a caller bug.
+   */
+  baseText?: string;
 }
 
 // =============================================================================

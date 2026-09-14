@@ -10,11 +10,17 @@ const getNote = vi.fn(async () => ({ name: '', path: '', content: '', title: nul
 // The daemon's answer to a whole write. The default writes through the body
 // spy, so the older tests below keep one place to read. A test that needs a
 // stale or a queued answer overrides one call.
-const guardedSave = vi.fn(async (p: string, c: string, _base: string) => {
+const guardedSave = vi.fn(async (p: string, c: string, _base: string, _baseText?: string) => {
   await saveFileContent(p, c);
   return { ok: true, content_hash: 'written' } as
-    | { ok: true; content_hash: string }
-    | { ok: false; current_hash: string };
+    | { ok: true; content_hash: string; merged?: true; content?: string }
+    | {
+        ok: false;
+        current_hash: string;
+        current_content?: string;
+        merged_content?: string;
+        regions?: { start_line: number; end_line: number; base: string; ours: string; theirs: string }[];
+      };
 });
 const addNotification = vi.fn();
 /** The hash a read answers. A test that lands a write sets it to the landed hash. */
@@ -31,7 +37,11 @@ vi.mock('@/lib/api', () => ({
   }),
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: (p: string, c: string) => saveFileContent(p, c),
-  saveFileIfUnchanged: (p: string, c: string, base: string) => guardedSave(p, c, base),
+  // The base TEXT is the fourth argument: it is what asks the route to merge
+  // a stale write instead of refusing it, so a mock that dropped it would
+  // hide every merge the editor now asks for.
+  saveFileIfUnchanged: (p: string, c: string, base: string, baseText?: string) =>
+    guardedSave(p, c, base, baseText),
   getNote: () => getNote(),
   listKilns: async () => [{ path: KILN }],
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
@@ -44,8 +54,17 @@ vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: (...a: unknown[]) => addNotification(...a) },
 }));
 
+// The conflict surface, mocked: the editor's job is to put the conflict where
+// that surface reads it and to point at it. Drawing it is `ConflictsPanel`'s.
+const openConflict = vi.fn();
+const refreshConflicts = vi.fn(async () => {});
+vi.mock('@/lib/conflicts', () => ({
+  openConflict: (path?: string | null) => openConflict(path),
+  conflictActions: { refresh: () => refreshConflicts() },
+}));
+
 const { EditorProvider, useEditor } = await import('../EditorContext');
-const { setOfflineStore, syncNow } = await import('@/lib/offline/sync');
+const { pendingConflicts, setOfflineStore, syncNow } = await import('@/lib/offline/sync');
 const { memoryStore } = await import('@/lib/offline/store');
 
 function withEditor(fn: (editor: ReturnType<typeof useEditor>) => void) {
@@ -230,6 +249,8 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     saveFileContent.mockClear();
     guardedSave.mockClear();
     addNotification.mockClear();
+    openConflict.mockClear();
+    refreshConflicts.mockClear();
     setOfflineStore(memoryStore());
   });
 
@@ -242,8 +263,16 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     return editor;
   };
 
-  it('keeps the buffer dirty and offers a conflict copy when the save is stale', async () => {
-    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
+  // A refusal the route could not merge. Nothing is written, the buffer keeps
+  // the user's text, and the writing waits where a person settles it.
+  it('a stale desktop save with regions opens the conflict view and keeps the buffer dirty', async () => {
+    guardedSave.mockResolvedValueOnce({
+      ok: false,
+      current_hash: 'h9',
+      current_content: 'their text',
+      merged_content: 'merged, with a region',
+      regions: [{ start_line: 1, end_line: 2, base: 'on disk\n', ours: 'the unsaved text', theirs: 'their text' }],
+    });
     const editor = await openEdited();
 
     await editor.saveFile(PATH);
@@ -252,66 +281,64 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     expect(fileState(editor).content).toBe('the unsaved text');
     expect(fileState(editor).baseHash, 'a refused write moves no base').toBe('base-hash');
     expect(saveFileContent, 'nothing is written without a choice').not.toHaveBeenCalled();
-    expect(addNotification).toHaveBeenCalledWith(
-      'warning',
-      expect.stringContaining('changed elsewhere'),
-      expect.objectContaining({ label: 'Save as conflict copy' }),
-    );
+
+    // The conflict is in the outbox, where every conflict surface reads it.
+    const waiting = await pendingConflicts();
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toMatchObject({
+      path: PATH,
+      currentHash: 'h9',
+      currentContent: 'their text',
+      mergedContent: 'merged, with a region',
+    });
+    expect(waiting[0].regions).toHaveLength(1);
+
+    // And the view is opened on it, after the store has been told to re-read.
+    await waitFor(() => expect(openConflict).toHaveBeenCalledWith(PATH));
+    expect(refreshConflicts).toHaveBeenCalled();
     // A stale save is an answer, not a failure: the red retry line stays off.
     expect(editor.error()).toBeNull();
     expect(editor.retryFailedOperation()).toBeNull();
   });
 
-  it('the conflict copy action writes the unsaved text beside the note', async () => {
-    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
+  // The route merged our text with the disk. What it wrote is neither text
+  // alone, and this buffer is the only place it would otherwise be lost.
+  it('a stale desktop save with a clean merge lands and moves the base', async () => {
+    guardedSave.mockResolvedValueOnce({
+      ok: true,
+      content_hash: 'h5',
+      merged: true,
+      content: 'merged text',
+    });
     const editor = await openEdited();
+
     await editor.saveFile(PATH);
 
-    const action = addNotification.mock.calls[0][2] as { label: string; run: () => void };
-    // The dated name is free.
-    getFileContent.mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404 }));
-    action.run();
+    await waitFor(() => expect(fileState(editor).dirty).toBe(false));
+    expect(fileState(editor).content).toBe('merged text');
+    expect(fileState(editor).baseHash).toBe('h5');
+    expect(await pendingConflicts(), 'a merge that landed is no conflict').toHaveLength(0);
 
-    await waitFor(() =>
-      expect(saveFileContent).toHaveBeenCalledWith(
-        expect.stringMatching(/\/notes\/shared \(conflict, .*\)\.md$/),
-        'the unsaved text',
-      ),
-    );
-    expect(guardedSave, 'a copy is a fresh note, not a guarded write').toHaveBeenCalledTimes(1);
+    // The next save is made FROM what the daemon wrote, not from our half.
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h6' });
+    editor.updateFileContent(PATH, 'merged text, edited');
+    await editor.saveFile(PATH);
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'merged text, edited', 'h5', 'merged text');
   });
 
-  it('the conflict copy keeps the refused text even after the note was reopened', async () => {
-    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
-    const editor = await openEdited();
-    await editor.saveFile(PATH);
-    const action = addNotification.mock.calls[0][2] as { label: string; run: () => void };
-
-    // The user reloads: the only path is to close the note and to open it again.
-    editor.closeFile(PATH, { force: true });
-    await Promise.resolve(); // the eviction is deferred by one microtask
-    await waitFor(() => expect(editor.openFiles().length).toBe(0));
-    getFileContent.mockResolvedValueOnce('server text\n');
+  // The pair is one fact. Without the text, a stale save can only be refused.
+  it('a buffer opened from a read carries its text as the base text', async () => {
+    getFileContent.mockResolvedValueOnce('on disk\n');
+    const editor = withEditor(() => {});
     await editor.openFile(PATH);
-    await waitFor(() => expect(fileState(editor).content).toBe('server text\n'));
+    await waitFor(() => expect(editor.openFiles().length).toBe(1));
 
-    // The dated name is free.
-    getFileContent.mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404 }));
-    action.run();
+    expect(fileState(editor).baseText).toBe('on disk\n');
 
-    // The copy holds the text the daemon refused, not the text the buffer shows now.
-    await waitFor(() =>
-      expect(saveFileContent).toHaveBeenCalledWith(
-        expect.stringMatching(/\/notes\/shared \(conflict, .*\)\.md$/),
-        'the unsaved text',
-      ),
-    );
-    await waitFor(() =>
-      expect(addNotification).toHaveBeenCalledWith(
-        'success',
-        expect.stringMatching(/^Your version was saved as .*\. Reload the note to continue from the current text\.$/),
-      ),
-    );
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h2' });
+    editor.updateFileContent(PATH, 'typed');
+    await editor.saveFile(PATH);
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'typed', 'base-hash', 'on disk\n');
   });
 
   it('marks the buffer clean and takes the answered hash on a clean save', async () => {
@@ -326,7 +353,7 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     // The next save is made FROM the text the daemon now holds.
     editor.updateFileContent(PATH, 'the unsaved text, again');
     await editor.saveFile(PATH);
-    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text, again', 'h2');
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text, again', 'h2', 'the unsaved text');
   });
 
   it('a queued save marks the buffer clean and takes no base', async () => {
@@ -352,7 +379,9 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     expect(fileState(editor).baseHash).toBe('h2');
     expect(fileState(editor).dirty).toBe(true);
     await editor.saveFile(PATH);
-    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text', 'h2');
+    // A base moved with no text beside it carries no base text: a hash and a
+    // text that do not belong together is what the route refuses as a caller bug.
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'the unsaved text', 'h2', undefined);
   });
 });
 
@@ -405,7 +434,7 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     // The next save is made from the hash the daemon holds now.
     guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h3' });
     await editor.saveFile(PATH);
-    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'queued text, and more\n', 'h2');
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'queued text, and more\n', 'h2', undefined);
   });
 
   it('a drained write leaves a buffer with another base alone', async () => {
@@ -434,6 +463,11 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     await waitFor(() => expect(fileState(editor).content).toBe('queued text\n'));
     expect(fileState(editor).baseHash).toBe('h2');
     expect(fileState(editor).dirty).toBe(false);
+    // The read answered a text and a hash that belong together, so the buffer
+    // is mergeable again: the landed write moved the hash on its own first.
+    // `waitFor`, not a bare read: the buffer already showed this text before
+    // the drain, so only the base moving proves the READ landed.
+    await waitFor(() => expect(fileState(editor).baseText).toBe('queued text\n'));
   });
 
   it('a drained write refreshes no text the user typed during the read', async () => {
@@ -483,10 +517,21 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     expect(fileState(editor).dirty).toBe(false);
   });
 
-  /** The daemon refuses the queued write, and answers the text it holds now. */
+  /**
+   * The daemon refuses the queued write, then refuses the merge the drain
+   * retries with the entry's base text, naming the span it could not settle.
+   */
   const conflictOnDrain = () => {
     guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'h9' });
-    getFileContent.mockResolvedValueOnce('their text\n');
+    guardedSave.mockResolvedValueOnce({
+      ok: false,
+      current_hash: 'h9',
+      current_content: 'their text\n',
+      merged_content: 'queued text\n',
+      regions: [
+        { start_line: 1, end_line: 2, base: 'on disk\n', ours: 'queued text\n', theirs: 'their text\n' },
+      ],
+    });
   };
 
   // The queued write went clean at queue time. The drain could not merge it,

@@ -124,8 +124,13 @@ export interface EditorContextValue {
   updateFileContent: (path: string, content: string) => void;
   /** Move a buffer's base to the hash the daemon answered with. An anchored
    * edit that landed changed the note on disk without a whole save, so the
-   * next save would be stale without this. */
-  setBaseHash: (path: string, hash: string) => void;
+   * next save would be stale without this.
+   *
+   * `text` is the note as it is at that hash. A caller that knows it keeps
+   * the buffer mergeable; a caller that does not CLEARS the base text, so the
+   * next save carries a hash alone rather than a hash paired with a text that
+   * is no longer its own. */
+  setBaseHash: (path: string, hash: string, text?: string) => void;
   isLoading: Accessor<boolean>;
   error: Accessor<string | null>;
   /** Re-issue the call that produced `error()`, or null when nothing failed.
