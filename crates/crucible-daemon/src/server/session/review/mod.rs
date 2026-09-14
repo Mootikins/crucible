@@ -1,9 +1,9 @@
 //! The `review.*` RPC surface: the composed-diff review queue.
 //!
-//! Five operations — list, decide, revert, comment, resolve — over the
-//! session-scoped ledger `AgentManager` owns. The engine lives in
-//! `crate::review`; this module is the boundary that turns [`ReviewError`]
-//! into JSON-RPC codes and decides what a decision *emits*.
+//! Seven operations — list, decide, decide in bulk, revert, comment, resolve,
+//! rebase — over the session-scoped ledger `AgentManager` owns. The engine
+//! lives in `crate::review`; this module is the boundary that turns
+//! [`ReviewError`] into JSON-RPC codes and decides what a decision *emits*.
 //!
 //! Two boundary rules are load-bearing and are why the operations are not
 //! thin passthroughs:
@@ -24,7 +24,8 @@
 
 use super::super::*;
 use crate::rpc_client::{
-    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest, SessionIdRequest,
+    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest,
+    ReviewSetStatesRequest, SessionIdRequest,
 };
 use crate::rpc_helpers::typed_params;
 
@@ -34,7 +35,7 @@ use crucible_core::session::{
     Comment, CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewState, RootBase, RootStatus,
 };
 
-use crate::review::{paths, ReviewError, ReviewResult};
+use crate::review::{paths, BulkOutcome, ReviewError, ReviewResult};
 use crate::tools::containment::reject_non_normal;
 
 // ── Operations (shared with the Lua bridge) ─────────────────────────────────
@@ -203,6 +204,62 @@ async fn reject_hunk(
     Ok(())
 }
 
+/// Record one decision about several hunks, in the given order.
+///
+/// The engine applies and reports per hunk ([`ReviewLedgers::set_states`]);
+/// this boundary adds what the single decision adds. A bulk reject tells the
+/// agent once, in one note that names every hunk that was reverted — one
+/// conversation event for one user action, not one per hunk. The hunks are
+/// read *before* the reverts, for the same reason [`reject_hunk`] reads its
+/// one: afterwards their identities are gone from the composed diff, and the
+/// note has to name the lines the user was looking at. One `review_changed`
+/// follows, and only when something applied — a batch of refusals moved
+/// nothing, so the panel has nothing to redraw.
+///
+/// [`ReviewLedgers::set_states`]: crate::review::ReviewLedgers::set_states
+pub(crate) async fn set_states(
+    am: &AgentManager,
+    sm: &SessionManager,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    session_id: &str,
+    hunk_ids: &[HunkId],
+    state: ReviewState,
+) -> ReviewResult<BulkOutcome> {
+    let before = if state == ReviewState::Rejected {
+        am.review.list_hunks(session_id).await?
+    } else {
+        Vec::new()
+    };
+
+    let outcome = am.review.set_states(session_id, hunk_ids, state).await?;
+
+    if state == ReviewState::Rejected && !outcome.applied.is_empty() {
+        let notice = outcome
+            .applied
+            .iter()
+            .filter_map(|id| before.iter().find(|h| &h.id == id))
+            .map(rejection_notice)
+            .collect::<Vec<_>>()
+            .join("\n");
+        // The reverts already landed on disk. A failure to inject the note
+        // leaves the worktree correct and the agent ignorant — loud, but
+        // never a failed RPC, the same rule as the single reject.
+        if let Err(e) = super::inject_context_impl(sm, event_tx, session_id, "user", &notice).await
+        {
+            warn!(
+                session_id,
+                hunks = outcome.applied.len(),
+                error = %e,
+                "hunks reverted but the rejection was not injected; the agent may re-apply them"
+            );
+        }
+    }
+    if !outcome.applied.is_empty() {
+        emit_review_changed(event_tx, session_id, &state_reason(state));
+    }
+    Ok(outcome)
+}
+
 /// Anchor a comment to a line range.
 ///
 /// `path` may be absolute or relative to one of the session's tracked roots;
@@ -361,6 +418,55 @@ pub(crate) async fn handle_review_set_state(
                 "session_id": session_id,
                 "hunk_id": hunk_id,
                 "state": state,
+            }),
+        ),
+        Err(e) => review_error_to_response(req.id, e),
+    }
+}
+
+/// `review.set_states` — one decision over several hunks, in order.
+///
+/// A refused hunk is part of the answer, not an error: the ids that applied
+/// are on disk and in the journal whatever happened to the rest, and a client
+/// told only "failed" would have to re-list to learn which were which.
+pub(crate) async fn handle_review_set_states(
+    req: Request,
+    am: &Arc<AgentManager>,
+    sm: &Arc<SessionManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let params = match typed_params::<ReviewSetStatesRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
+    let state_str = &params.state;
+    ensure_loaded(am, sm, session_id).await;
+
+    let Some(state) = parse_wire::<ReviewState>(state_str) else {
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!("Invalid 'state': {state_str} (expected unreviewed, accepted or rejected)"),
+        );
+    };
+    let hunk_ids: Vec<HunkId> = params.hunk_ids.iter().cloned().map(HunkId::from).collect();
+
+    match set_states(am, sm, event_tx, session_id, &hunk_ids, state).await {
+        Ok(outcome) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "state": state,
+                "applied": outcome.applied,
+                "failed": outcome
+                    .failed
+                    .iter()
+                    .map(|(hunk_id, reason)| serde_json::json!({
+                        "hunk_id": hunk_id,
+                        "reason": reason.to_string(),
+                    }))
+                    .collect::<Vec<_>>(),
             }),
         ),
         Err(e) => review_error_to_response(req.id, e),

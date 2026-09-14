@@ -162,6 +162,7 @@ rpc_methods! {
     SessionUndoDepth = "session.undo_depth",
     ReviewListHunks = "review.list_hunks",
     ReviewSetState = "review.set_state",
+    ReviewSetStates = "review.set_states",
     ReviewComment = "review.comment",
     ReviewResolveComment = "review.resolve_comment",
     ReviewRebase = "review.rebase",
@@ -725,6 +726,18 @@ impl RpcDispatcher {
             RpcMethod::ReviewSetState => forward!(
                 id,
                 crate::server::session::handle_review_set_state(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.sessions,
+                    &self.ctx.event_tx
+                )
+            ),
+            // One decision over several hunks. The daemon applies them in
+            // order and names each refusal, so a client never has to loop
+            // over `review.set_state` and reconcile a half-applied batch.
+            RpcMethod::ReviewSetStates => forward!(
+                id,
+                crate::server::session::handle_review_set_states(
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.sessions,

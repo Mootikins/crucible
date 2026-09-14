@@ -124,6 +124,18 @@ impl Drop for GateHold {
     }
 }
 
+/// What one bulk decision did: the ids it applied, in order, and the ids it
+/// refused, each with the refusal.
+///
+/// Both lists are reported rather than the first refusal ending the call: the
+/// client holds a list of ids that may be stale one at a time, and it needs to
+/// know which ones landed so it can redraw the rest, not retry the batch.
+#[derive(Debug, Default)]
+pub struct BulkOutcome {
+    pub applied: Vec<HunkId>,
+    pub failed: Vec<(HunkId, ReviewError)>,
+}
+
 /// Per-session review ledgers.
 ///
 /// Mirrors `SnapshotMap`: a `DashMap` owned by `AgentManager`, cleared on
@@ -824,6 +836,41 @@ impl ReviewLedgers {
         }
         self.record_state(session_id, hunk_id, state).await;
         Ok(())
+    }
+
+    /// Record one decision about several hunks, in the given order.
+    ///
+    /// Each id goes through [`Self::set_state`], so every reject re-lists the
+    /// worktree after the reverts before it. A hunk's identity survives a
+    /// neighbour's revert (it hashes the base range, not the current one),
+    /// while its current range does not, and the re-list is what keeps the
+    /// second write on the right lines.
+    ///
+    /// A refusal about one hunk — [`ReviewError::UnknownHunk`],
+    /// [`ReviewError::Stale`], [`ReviewError::ExternalHunk`] — is recorded and
+    /// the loop continues, because a later hunk's range is independent of it.
+    /// Any other error is about the ledger or the repository, not the hunk,
+    /// and ends the call: what applied before it is on disk and in the
+    /// journal, and a re-list shows it.
+    pub async fn set_states(
+        &self,
+        session_id: &str,
+        hunk_ids: &[HunkId],
+        state: ReviewState,
+    ) -> ReviewResult<BulkOutcome> {
+        let mut outcome = BulkOutcome::default();
+        for hunk_id in hunk_ids {
+            match self.set_state(session_id, hunk_id, state).await {
+                Ok(()) => outcome.applied.push(hunk_id.clone()),
+                Err(
+                    e @ (ReviewError::UnknownHunk(_)
+                    | ReviewError::Stale { .. }
+                    | ReviewError::ExternalHunk(_)),
+                ) => outcome.failed.push((hunk_id.clone(), e)),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(outcome)
     }
 
     /// Revert one composed hunk in the worktree and mark it rejected.

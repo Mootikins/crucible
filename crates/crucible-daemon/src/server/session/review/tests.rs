@@ -324,6 +324,124 @@ async fn an_unparseable_state_is_refused_before_the_ledger_is_touched() {
     assert!(err.message.contains("Invalid 'state'"), "{}", err.message);
 }
 
+/// A bulk decision is one daemon call that applies in the given order and
+/// names each hunk it refused. The refusals do not stop the loop: a later
+/// hunk's range is independent of an earlier one's identity, so the client
+/// learns exactly which of its ids were stale instead of losing the whole
+/// batch to the first one.
+#[tokio::test]
+async fn a_bulk_reject_applies_in_order_and_reports_the_hunk_it_no_longer_knows() {
+    let mut fx = Fixture::new("1\n2\n3\n4\n5\n6\n7\n8\n9\n").await;
+    fx.open_ledger().await;
+    fx.call("call-1", "one\n2\n3\n4\nfive\n6\n7\n8\nnine\n")
+        .await;
+    let _ = fx.review_reasons();
+
+    let mut hunks = fx.list().await;
+    hunks.sort_by_key(|h| h.current_range.start);
+    assert_eq!(hunks.len(), 3, "{hunks:?}");
+    let ids: Vec<HunkId> = hunks.iter().map(|h| h.id.clone()).collect();
+
+    // The file moves under the second hunk. `HunkId::derive` hashes `after`,
+    // so the id the client holds names a hunk the ledger no longer knows.
+    std::fs::write(
+        fx.dir.path().join("a.txt"),
+        "one\n2\n3\n4\nFIVE\n6\n7\n8\nnine\n",
+    )
+    .unwrap();
+
+    let resp = handle_review_set_states(
+        fx.request(
+            "review.set_states",
+            serde_json::json!({ "hunk_ids": ids, "state": "rejected" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp.result.expect("a bulk decision answers success");
+
+    assert_eq!(fx.read(), "1\n2\n3\n4\nFIVE\n6\n7\n8\n9\n");
+    assert_eq!(result["state"], serde_json::json!("rejected"));
+    assert_eq!(
+        result["applied"],
+        serde_json::json!([ids[0], ids[2]]),
+        "the first and third revert, in the given order"
+    );
+    let failed = result["failed"].as_array().expect("failed is a list");
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert_eq!(failed[0]["hunk_id"], serde_json::json!(ids[1]));
+    let reason = failed[0]["reason"].as_str().unwrap_or_default();
+    assert!(
+        reason.contains("unknown hunk"),
+        "the refusal names the cause: {reason}"
+    );
+    // One decision, one event: the panel redraws once, not per hunk.
+    assert_eq!(fx.review_reasons(), vec!["rejected".to_string()]);
+}
+
+/// Accepting in bulk touches no file and records every state.
+#[tokio::test]
+async fn a_bulk_accept_records_every_state_and_emits_one_review_changed() {
+    let mut fx = Fixture::new("1\n2\n3\n").await;
+    fx.open_ledger().await;
+    fx.call("call-1", "one\n2\nthree\n").await;
+    let _ = fx.review_reasons();
+
+    let ids: Vec<HunkId> = fx.list().await.into_iter().map(|h| h.id).collect();
+    assert_eq!(ids.len(), 2);
+
+    let resp = handle_review_set_states(
+        fx.request(
+            "review.set_states",
+            serde_json::json!({ "hunk_ids": ids, "state": "accepted" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp.result.expect("success");
+    assert_eq!(result["applied"].as_array().unwrap().len(), 2);
+    assert_eq!(result["failed"], serde_json::json!([]));
+
+    assert!(fx
+        .list()
+        .await
+        .iter()
+        .all(|h| h.state == ReviewState::Accepted));
+    assert_eq!(fx.read(), "one\n2\nthree\n");
+    assert_eq!(fx.review_reasons(), vec!["accepted".to_string()]);
+}
+
+/// A bulk decision that applied nothing changed nothing, so the panel is not
+/// told to redraw.
+#[tokio::test]
+async fn a_bulk_decision_that_applies_nothing_emits_no_review_changed() {
+    let mut fx = Fixture::new("one\n").await;
+    fx.open_ledger().await;
+    fx.call("call-1", "two\n").await;
+    let _ = fx.review_reasons();
+
+    let resp = handle_review_set_states(
+        fx.request(
+            "review.set_states",
+            serde_json::json!({ "hunk_ids": ["0000"], "state": "accepted" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp
+        .result
+        .expect("a refused hunk is a report, not an error");
+    assert_eq!(result["applied"], serde_json::json!([]));
+    assert_eq!(result["failed"].as_array().unwrap().len(), 1);
+    assert!(fx.review_reasons().is_empty());
+}
+
 #[tokio::test]
 async fn a_comment_anchors_to_the_root_and_comes_back_with_the_hunks() {
     let mut fx = Fixture::new("one\n").await;

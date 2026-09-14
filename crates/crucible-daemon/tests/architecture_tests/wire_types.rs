@@ -231,6 +231,10 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/review/mod.rs",
     ),
     (
+        "ReviewSetStatesRequest",
+        "crates/crucible-daemon/src/server/session/review/mod.rs",
+    ),
+    (
         "ReviewCommentRequest",
         "crates/crucible-daemon/src/server/session/review/mod.rs",
     ),

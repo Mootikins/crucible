@@ -176,7 +176,10 @@ pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
     PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, SurfaceRequest,
 };
-pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest};
+pub use review::{
+    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest,
+    ReviewSetStatesRequest,
+};
 pub use session::{
     SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionDismissNotificationRequest,
     SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,

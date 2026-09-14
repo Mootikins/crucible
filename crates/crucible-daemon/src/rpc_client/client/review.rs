@@ -33,6 +33,19 @@ pub struct ReviewSetStateRequest {
     pub state: String,
 }
 
+/// Request for `review.set_states`: one state for several hunks.
+///
+/// `hunk_ids` is applied in the order given. The daemon answers which ids it
+/// applied and which it refused, so the shape of a partial success is part of
+/// the contract, not an error.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReviewSetStatesRequest {
+    pub session_id: String,
+    pub hunk_ids: Vec<String>,
+    /// `unreviewed`, `accepted` or `rejected`.
+    pub state: String,
+}
+
 /// Request for `review.comment`.
 ///
 /// This is what the handler reads, and what [`DaemonClient::review_comment`]
@@ -122,6 +135,28 @@ impl DaemonClient {
             serde_json::to_value(ReviewSetStateRequest {
                 session_id: session_id.to_string(),
                 hunk_id: hunk_id.to_string(),
+                state: state.to_string(),
+            })?,
+        )
+        .await
+    }
+
+    /// `review.set_states` — one decision over several hunks, in order.
+    ///
+    /// A write that may revert several files: at-most-once, like the single
+    /// decision. The answer names the ids that applied and the ids the daemon
+    /// refused, each with its reason.
+    pub async fn review_set_states(
+        &self,
+        session_id: &str,
+        hunk_ids: &[String],
+        state: &str,
+    ) -> Result<Value> {
+        self.call_once(
+            "review.set_states",
+            serde_json::to_value(ReviewSetStatesRequest {
+                session_id: session_id.to_string(),
+                hunk_ids: hunk_ids.to_vec(),
                 state: state.to_string(),
             })?,
         )
