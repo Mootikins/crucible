@@ -131,6 +131,11 @@ export interface EditorContextValue {
    * next save carries a hash alone rather than a hash paired with a text that
    * is no longer its own. */
   setBaseHash: (path: string, hash: string, text?: string) => void;
+  /** Take the note as the disk holds it now: text, base hash and base text.
+   *
+   * A dirty buffer is asked first — the bytes it holds exist nowhere else, so
+   * this is the same discard the close path guards. */
+  reloadFile: (path: string) => Promise<void>;
   isLoading: Accessor<boolean>;
   error: Accessor<string | null>;
   /** Re-issue the call that produced `error()`, or null when nothing failed.

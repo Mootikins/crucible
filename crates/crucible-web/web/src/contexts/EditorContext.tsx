@@ -2,13 +2,15 @@ import {
   createContext,
   useContext,
   ParentComponent,
+  createEffect,
+  createMemo,
   createSignal,
   onCleanup,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import type { EditorFile } from '@/lib/types';
+import type { EditorFile, FsEvent } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
-import { listKilns } from '@/lib/api';
+import { listKilns, subscribeToFsEvents } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
 import {
   onNoteConflicted,
@@ -220,6 +222,10 @@ export const EditorProvider: ParentComponent = (props) => {
           // back over the merge on the next save.
           if (outcome.merged) f.content = outcome.content;
           f.baseText = outcome.merged ? outcome.content : sent;
+          // The note on disk is what this buffer holds, so there is nothing
+          // left to choose between. A merge answers this too: the daemon
+          // wrote the other writer's text INTO what it handed back.
+          f.changedOnDisk = false;
         })
       );
     } catch (err) {
@@ -268,6 +274,126 @@ export const EditorProvider: ParentComponent = (props) => {
       })
     );
   };
+
+  /**
+   * Take the note as the disk holds it now.
+   *
+   * The banner's Reload, and the quiet path of the watcher below. A dirty
+   * buffer is ASKED first: its bytes exist nowhere else, and a button beside
+   * "This note changed on disk" is not consent to drop them — the same loss
+   * the close path guards against.
+   */
+  const reloadFile = async (path: string) => {
+    const file = openFilesStore.find((f) => f.path === path);
+    if (!file) return;
+    if (file.dirty) {
+      const filename = path.split('/').pop() ?? path;
+      if (!window.confirm(`Discard unsaved changes to ${filename}?`)) return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setRetryFailedOperation(null);
+
+    try {
+      const { content, content_hash } = await readNote(path, await kilnOf(path));
+      setOpenFiles(
+        produce((files) => {
+          const f = files.find((x) => x.path === path);
+          if (!f) return;
+          f.content = content;
+          f.dirty = false;
+          // The read answers a text and a hash that belong together, so the
+          // buffer is mergeable again from the text the other writer left.
+          f.baseHash = content_hash;
+          f.baseText = content;
+          f.changedOnDisk = false;
+        }),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to reload file';
+      setError(msg);
+      // The recovery is the SAME read: the buffer is showing bytes the note
+      // no longer holds until one answers.
+      setRetryFailedOperation(() => () => reloadFile(path));
+      console.error('Failed to reload file:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /** The note moved on disk and this buffer has not followed it. */
+  const flagChangedOnDisk = (path: string) => {
+    setOpenFiles(
+      produce((files) => {
+        const f = files.find((x) => x.path === path);
+        if (f) f.changedOnDisk = true;
+      }),
+    );
+  };
+
+  /**
+   * Take the disk quietly, for a buffer with nothing of the user's in it.
+   *
+   * A buffer the user typed into, or whose base moved, while the read was out
+   * is left alone — those bytes are newer than this answer. A read that cannot
+   * answer raises the flag instead, so a buffer showing text the note no
+   * longer holds is never silent about it.
+   */
+  const refreshFromDisk = async (path: string) => {
+    const before = openFilesStore.find((f) => f.path === path);
+    if (!before) return;
+    const baseAtRead = before.baseHash;
+    try {
+      const { content, content_hash } = await readNote(path, await kilnOf(path));
+      setOpenFiles(
+        produce((files) => {
+          const f = files.find((x) => x.path === path);
+          if (!f || f.dirty || f.baseHash !== baseAtRead) return;
+          f.content = content;
+          f.baseHash = content_hash;
+          f.baseText = content;
+          f.changedOnDisk = false;
+        }),
+      );
+    } catch {
+      flagChangedOnDisk(path);
+    }
+  };
+
+  /**
+   * The kiln watcher names a path, and this editor holds it open.
+   *
+   * A move names both ends: the note left one path and arrived at the other,
+   * so a buffer on either side is looking at bytes that moved. A delete is not
+   * acted on — there is no text to take and nothing for the banner to offer.
+   *
+   * The watcher also echoes this editor's OWN saves. The buffer is clean by
+   * then and the re-read answers the text and hash it already holds, so the
+   * echo costs one read and changes nothing.
+   */
+  const onFsEvent = (event: FsEvent) => {
+    const paths =
+      event.type === 'changed' ? [event.path] : event.type === 'moved' ? [event.from, event.to] : [];
+    for (const path of paths) {
+      const file = openFilesStore.find((f) => f.path === path);
+      if (!file) continue;
+      // The user's text is the only copy there is: it is never replaced and
+      // never re-read behind them. They choose on the banner instead.
+      if (file.dirty) flagChangedOnDisk(path);
+      else void refreshFromDisk(path);
+    }
+  };
+
+  // One stream, open while there is a buffer it could speak about and closed
+  // when the last one goes. `FilesPanel` keeps its own subscription: two
+  // independent readers are two `EventSource`s, and one shared subscription is
+  // a recorded follow-up rather than a coupling between a panel and a context.
+  const anyFileOpen = createMemo(() => openFilesStore.length > 0);
+  createEffect(() => {
+    if (!anyFileOpen()) return;
+    onCleanup(subscribeToFsEvents(onFsEvent));
+  });
 
   /**
    * A queued write landed while its note stays open.
@@ -346,6 +472,7 @@ export const EditorProvider: ParentComponent = (props) => {
     setActiveFile,
     updateFileContent,
     setBaseHash,
+    reloadFile,
     isLoading,
     error,
     retryFailedOperation,
@@ -377,6 +504,7 @@ const fallbackEditorContext: EditorContextValue = {
   setActiveFile: () => {},
   updateFileContent: () => {},
   setBaseHash: () => {},
+  reloadFile: noopAsync,
   isLoading: () => false,
   error: () => null,
   retryFailedOperation: () => null,

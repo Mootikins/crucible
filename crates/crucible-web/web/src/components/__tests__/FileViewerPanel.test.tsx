@@ -11,9 +11,16 @@ import { registerPanels } from '@/lib/register-panels';
 const saveFile = vi.fn(async () => {});
 const openFileSpy = vi.fn(async () => {});
 const setBaseHash = vi.fn();
+const reloadFile = vi.fn(async () => {});
 const FILE_PATH = '/kiln/notes/from-tui.md';
 
-let openFilesValue: { path: string; content: string; dirty: boolean; baseHash: string }[] = [];
+let openFilesValue: {
+  path: string;
+  content: string;
+  dirty: boolean;
+  baseHash: string;
+  changedOnDisk?: boolean;
+}[] = [];
 let activeFileValue: string | null = null;
 let autosaveSeconds = 0;
 let vimMode = true;
@@ -50,6 +57,7 @@ vi.mock('@/contexts/EditorContext', () => ({
     setActiveFile: vi.fn(),
     updateFileContent: vi.fn(),
     setBaseHash,
+    reloadFile,
     isLoading: () => false,
     error: () => null,
   }),
@@ -322,5 +330,42 @@ describe('FileViewerPanel — the base hash reaches the editor and comes back', 
     expect(editorProps.last?.baseHash).toBe('h1');
     (editorProps.last?.onBaseChange as (hash: string) => void)('h2');
     expect(setBaseHash).toHaveBeenCalledWith(FILE_PATH, 'h2');
+  });
+});
+
+/**
+ * The kiln watcher moved the note while it was open and dirty. The panel is
+ * where the user meets that: the buffer holds their bytes, the disk holds
+ * somebody else's, and the two ways out are named.
+ */
+describe('FileViewerPanel — the note changed on disk', () => {
+  beforeEach(() => {
+    activeFileValue = FILE_PATH;
+    reloadFile.mockClear();
+    saveFile.mockClear();
+  });
+
+  it('offers reload and merge when the disk moved under a dirty buffer', () => {
+    openFilesValue = [
+      { path: FILE_PATH, content: 'mine', dirty: true, baseHash: 'h1', changedOnDisk: true },
+    ];
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+
+    expect(screen.getByTestId('disk-changed-banner')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('disk-changed-reload'));
+    expect(reloadFile).toHaveBeenCalledWith(FILE_PATH);
+
+    // Merge is the ordinary save: it carries the buffer's base text, so the
+    // route merges against the other writer instead of refusing.
+    fireEvent.click(screen.getByTestId('disk-changed-merge'));
+    expect(saveFile).toHaveBeenCalledWith(FILE_PATH);
+  });
+
+  it('draws no banner while the buffer and the disk agree', () => {
+    openFilesValue = [{ path: FILE_PATH, content: 'mine', dirty: true, baseHash: 'h1' }];
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+
+    expect(screen.queryByTestId('disk-changed-banner')).toBeNull();
   });
 });

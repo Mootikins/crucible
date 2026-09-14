@@ -2,6 +2,7 @@ import { test, expect, request as playwrightRequest } from '@playwright/test';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { readState } from './_state';
+import { appReady } from '../helpers/nav';
 
 /**
  * Live tier — real `cru web` + daemon + TempDir kiln. Exercises the kiln/notes
@@ -437,5 +438,67 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     expect(readFileSync(notePath, 'utf-8')).toBe(
       '# Tasks\n\n- [x] ship it\n- [ ] ping\n- [x] ping\n\nAN AGENT WROTE HERE\n',
     );
+  });
+
+  /**
+   * WS-323: an open note hears the kiln watcher.
+   *
+   * A second writer — the agent, the terminal, another browser — lands a note
+   * this editor holds open with unsent edits. Two things must hold at once:
+   * the user's bytes are never replaced, because they exist nowhere else, and
+   * the user is never left editing a text the note no longer holds. The banner
+   * is how both hold: it says the disk moved and names the two ways out.
+   *
+   * Only a real daemon proves it. The watcher, its debounce and the SSE leg
+   * are three processes' worth of plumbing that no mocked subscription runs.
+   */
+  test('WS-323: an open note shows the banner when a second writer PUTs it', async ({ page }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const notePath = path.join(kilnDir, 'Watched.md');
+    writeFileSync(notePath, '# Watched\n\nthe first text\n');
+
+    await page.goto(baseURL);
+    await appReady(page);
+
+    // The product's own open-file door — a source import would not reach the
+    // bundled live app.
+    await page.evaluate((file) => {
+      window.dispatchEvent(
+        new CustomEvent('crucible:open-file', { detail: { path: file, name: 'Watched.md' } }),
+      );
+    }, notePath);
+    await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.cm-content')).toContainText('the first text');
+
+    // Type, so the buffer holds bytes that are nowhere else. vimMode is on by
+    // default, so `A` — append at end of line — is what makes the keystrokes
+    // that follow land as literal text (the hero spec does the same dance).
+    await page.locator('.cm-content').first().click();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('A');
+    await page.keyboard.type(' and my unsent edit');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.cm-content')).toContainText('and my unsent edit');
+
+    // The second writer: a blind PUT, the shape every other caller makes.
+    const wrote = await page.evaluate(async (file) => {
+      const res = await fetch('/api/kiln/file', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: file, content: '# Watched\n\nANOTHER WRITER GOT HERE\n' }),
+      });
+      return res.status;
+    }, notePath);
+    expect(wrote).toBe(200);
+
+    // The daemon's watcher debounces 500 ms; the SSE leg carries it from there.
+    await expect(page.getByTestId('disk-changed-banner')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('disk-changed-reload')).toBeVisible();
+    await expect(page.getByTestId('disk-changed-merge')).toBeVisible();
+
+    // Nothing of the user's was taken, and the other writer's text stands.
+    await expect(page.locator('.cm-content')).toContainText('and my unsent edit');
+    expect(readFileSync(notePath, 'utf-8')).toBe('# Watched\n\nANOTHER WRITER GOT HERE\n');
   });
 });

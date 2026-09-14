@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
+import type { FsEvent } from '@/lib/types';
 
 // get_note_by_name returns metadata only (no content), so the editor must load
 // file bytes via GET /api/kiln/file (getFileContent). These mocks let us assert
@@ -28,6 +29,20 @@ let readHash = 'base-hash';
 
 const KILN = '/home/user/kiln';
 
+/**
+ * The kiln watcher, in the hand. Every live subscription the provider opens
+ * lands here, so a test can say what the disk did and count how many streams
+ * the editor holds open.
+ */
+const fsListeners = new Set<(event: FsEvent) => void>();
+const subscribeToFsEvents = vi.fn((cb: (event: FsEvent) => void) => {
+  fsListeners.add(cb);
+  return () => fsListeners.delete(cb);
+});
+const diskSays = (event: FsEvent) => {
+  for (const listener of [...fsListeners]) listener(event);
+};
+
 vi.mock('@/lib/api', () => ({
   // The editor reads through the offline layer now, which asks for the hash
   // the buffer was read at; the transport underneath is the same endpoint.
@@ -47,6 +62,7 @@ vi.mock('@/lib/api', () => ({
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
   getConfig: async () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
   listNotes: async () => [],
+  subscribeToFsEvents: (cb: (event: FsEvent) => void) => subscribeToFsEvents(cb),
 }));
 
 
@@ -582,5 +598,179 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     await syncNow();
 
     expect(fileState(editor).baseHash).toBe('base-hash');
+  });
+});
+
+/**
+ * The kiln watcher says a note moved on disk while it is open here.
+ *
+ * A clean buffer has nothing of the user's in it, so it takes the new text:
+ * showing yesterday's bytes of a note somebody else just wrote is a lie the
+ * user edits from. A dirty buffer keeps the user's text — it exists nowhere
+ * else — and raises a flag the panel draws as a banner, because only the user
+ * can say whether their text or the disk's wins.
+ */
+describe('EditorContext — an open buffer hears the kiln watcher', () => {
+  const PATH = `${KILN}/notes/watched.md`;
+  const CHANGED: FsEvent = { type: 'changed', path: PATH, kind: 'modified' };
+  const fileState = (editor: ReturnType<typeof useEditor>) =>
+    editor.openFiles().find((f) => f.path === PATH)!;
+
+  beforeEach(() => {
+    getFileContent.mockClear();
+    guardedSave.mockClear();
+    addNotification.mockClear();
+    fsListeners.clear();
+    readHash = 'base-hash';
+    setOfflineStore(memoryStore());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const openClean = async () => {
+    getFileContent.mockResolvedValueOnce('on disk\n');
+    const editor = withEditor(() => {});
+    await editor.openFile(PATH);
+    await waitFor(() => expect(editor.openFiles().length).toBe(1));
+    await waitFor(() => expect(fsListeners.size).toBe(1));
+    return editor;
+  };
+
+  // One stream, and only while there is a buffer it could speak about.
+  it('listens to the watcher only while a file is open', async () => {
+    const editor = withEditor(() => {});
+    expect(subscribeToFsEvents).not.toHaveBeenCalled();
+
+    getFileContent.mockResolvedValueOnce('on disk\n');
+    await editor.openFile(PATH);
+    await waitFor(() => expect(subscribeToFsEvents).toHaveBeenCalledTimes(1));
+
+    editor.closeFile(PATH, { force: true });
+    await waitFor(() => expect(fsListeners.size).toBe(0));
+  });
+
+  it('a clean buffer takes the disk text and the new base', async () => {
+    const editor = await openClean();
+
+    readHash = 'h9';
+    getFileContent.mockResolvedValueOnce('another writer was here\n');
+    diskSays(CHANGED);
+
+    await waitFor(() => expect(fileState(editor).content).toBe('another writer was here\n'));
+    expect(fileState(editor).baseHash).toBe('h9');
+    // Text and hash arrive together, so the buffer stays mergeable.
+    expect(fileState(editor).baseText).toBe('another writer was here\n');
+    expect(fileState(editor).dirty).toBe(false);
+    expect(fileState(editor).changedOnDisk, 'nothing is left to tell the user').toBeFalsy();
+  });
+
+  it('a dirty buffer keeps its text and says the disk moved', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'my unsent text\n');
+    getFileContent.mockClear();
+
+    diskSays(CHANGED);
+
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+    expect(fileState(editor).content).toBe('my unsent text\n');
+    expect(fileState(editor).dirty).toBe(true);
+    expect(fileState(editor).baseHash, 'the base is what a merge is made from').toBe('base-hash');
+    expect(getFileContent, 'no read behind the user\'s back').not.toHaveBeenCalled();
+  });
+
+  it('a note moved out from under a dirty buffer says the disk moved', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'my unsent text\n');
+
+    diskSays({ type: 'moved', from: PATH, to: `${KILN}/notes/renamed.md` });
+
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+    expect(fileState(editor).content).toBe('my unsent text\n');
+  });
+
+  // A read that cannot answer leaves the buffer stale, so the user is told
+  // rather than left reading bytes the note no longer holds.
+  it('a clean buffer whose re-read fails says the disk moved', async () => {
+    const editor = await openClean();
+    getFileContent.mockRejectedValueOnce(new Error('gone'));
+
+    diskSays(CHANGED);
+
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+    expect(fileState(editor).content).toBe('on disk\n');
+  });
+
+  it('a path no buffer holds is left alone', async () => {
+    const editor = await openClean();
+    getFileContent.mockClear();
+
+    diskSays({ type: 'changed', path: `${KILN}/notes/other.md`, kind: 'modified' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(getFileContent).not.toHaveBeenCalled();
+    expect(fileState(editor).content).toBe('on disk\n');
+    expect(fileState(editor).changedOnDisk).toBeFalsy();
+  });
+
+  it('reload takes the disk text and the new base', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'my unsent text\n');
+    diskSays(CHANGED);
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    readHash = 'h9';
+    getFileContent.mockResolvedValueOnce('their text\n');
+    await editor.reloadFile(PATH);
+
+    expect(fileState(editor).content).toBe('their text\n');
+    expect(fileState(editor).baseHash).toBe('h9');
+    expect(fileState(editor).baseText).toBe('their text\n');
+    expect(fileState(editor).dirty).toBe(false);
+    expect(fileState(editor).changedOnDisk).toBeFalsy();
+  });
+
+  // Reload over a dirty buffer discards bytes that exist nowhere else. The
+  // same guard the close path carries (bug 6) applies to the same loss.
+  it('reload asks before it discards unsaved edits', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'my unsent text\n');
+    diskSays(CHANGED);
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    getFileContent.mockClear();
+    await editor.reloadFile(PATH);
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(getFileContent).not.toHaveBeenCalled();
+    expect(fileState(editor).content).toBe('my unsent text\n');
+    expect(fileState(editor).dirty).toBe(true);
+    expect(fileState(editor).changedOnDisk, 'the disk is still ahead').toBe(true);
+  });
+
+  // Merge is the ordinary save. It carries the base text, so the route merges
+  // our text against what the other writer left instead of refusing it.
+  it('merge saves with the buffer\'s base text and clears the flag', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'my unsent text\n');
+    diskSays(CHANGED);
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+
+    guardedSave.mockResolvedValueOnce({
+      ok: true,
+      content_hash: 'h5',
+      merged: true,
+      content: 'both texts\n',
+    });
+    await editor.saveFile(PATH);
+
+    expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'my unsent text\n', 'base-hash', 'on disk\n');
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBeFalsy());
+    expect(fileState(editor).content).toBe('both texts\n');
+    expect(fileState(editor).dirty).toBe(false);
   });
 });

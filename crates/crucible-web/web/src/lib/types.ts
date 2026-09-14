@@ -887,6 +887,15 @@ export interface EditorFile {
    * together is what the route refuses as a caller bug.
    */
   baseText?: string;
+  /**
+   * The kiln watcher says this note moved on disk since the buffer last agreed
+   * with it.
+   *
+   * Only a DIRTY buffer carries it: a clean one re-reads and the flag never
+   * rises. It is the panel's banner — the user chooses between their text and
+   * the disk's, because nothing else can. A landed save clears it.
+   */
+  changedOnDisk?: boolean;
 }
 
 // =============================================================================

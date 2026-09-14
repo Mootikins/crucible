@@ -8,7 +8,7 @@ import {
   onMount,
   untrack,
 } from 'solid-js';
-import { FileText, Pencil } from '@/lib/icons';
+import { AlertTriangle, FileText, Pencil } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style';
 import { EditorWithPreview } from './editor/EditorWithPreview';
@@ -18,6 +18,7 @@ import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
 import { listKilns, rawFileUrl } from '@/lib/api';
 import { tabHost } from '@/lib/tab-host';
 import { isCompact } from '@/stores/deviceStore';
+import { hit } from '@/lib/touch';
 import { compactEditorMode, setCompactEditorMode } from '@/stores/editorModeStore';
 import { swrLocal } from '@/lib/local-cache';
 import { PanelShell } from './PanelShell';
@@ -53,7 +54,7 @@ interface FileViewerPanelProps {
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
-  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, setBaseHash, saveFile } = useEditorSafe();
+  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, setBaseHash, saveFile, reloadFile } = useEditorSafe();
   const { settings } = useSettingsSafe();
 
   // Live CodeMirror view (source/live modes; undefined in reading mode) for
@@ -413,6 +414,36 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
             <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
           </svg>
           <span>{error()}</span>
+        </div>
+      </Show>
+
+      {/* The kiln watcher moved this note while the buffer held unsent edits.
+          Both texts exist and only the user can choose: Reload takes the
+          disk's (asking first, the bytes here exist nowhere else), Merge is
+          the ordinary save, which carries this buffer's base text so the
+          route merges the two instead of refusing the write. */}
+      <Show when={fileData()?.changedOnDisk}>
+        <div
+          data-testid="disk-changed-banner"
+          class="mx-3 mt-2 px-3 py-1.5 rounded-md border border-attention/50 bg-attention/[0.06] flex items-center gap-2 text-reading"
+        >
+          <AlertTriangle class="w-3.5 h-3.5 text-attention shrink-0" />
+          <span class="text-shell-ink">This note changed on disk</span>
+          <span class="text-muted-dark">— your unsaved edits are still here</span>
+          <button
+            data-testid="disk-changed-reload"
+            onClick={() => props.filePath && void reloadFile(props.filePath)}
+            class={`ml-auto shrink-0 rounded px-2 py-0.5 text-muted-dark hover:text-shell-ink hover:bg-hover-wash ${hit()}`}
+          >
+            Reload
+          </button>
+          <button
+            data-testid="disk-changed-merge"
+            onClick={handleSave}
+            class={`shrink-0 rounded px-2 py-0.5 text-muted-dark hover:text-shell-ink hover:bg-hover-wash ${hit()}`}
+          >
+            Merge
+          </button>
         </div>
       </Show>
 
