@@ -539,6 +539,15 @@ pub(super) async fn sweep_and_archive_stale_sessions(
         // A session with no ledger has nothing to protect and archives as
         // before. Any other answer means the queue cannot be read, and a
         // sweep that cannot prove the queue is empty must not archive.
+        //
+        // The ledger has to be brought back first. A plugin pass ends its
+        // session the moment its review returns, and `cleanup_session` clears
+        // the ledger out of memory there and then, so by the time this sweep
+        // runs the resident map answers for no pass at all. `ensure_loaded`
+        // returns at once when there is no journal, so the cost falls only on
+        // a stale session that has one, once each.
+        crate::server::session::review::ensure_loaded(agent_manager, session_manager, &summary.id)
+            .await;
         match agent_manager.review.unreviewed_hunks(&summary.id).await {
             Ok(hunks) if !hunks.is_empty() => {
                 info!(

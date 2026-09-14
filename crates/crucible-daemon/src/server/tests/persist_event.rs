@@ -570,9 +570,16 @@ async fn the_archive_sweep_skips_a_session_with_unreviewed_hunks() {
     }
 
     // One bracketed write, left undecided: the queue the sweep must respect.
+    // Through `open_or_restore`, so the decision is journaled where
+    // `ensure_loaded` looks for it — which is the only thing a session that
+    // has already ended leaves behind.
+    let session_dir = session_manager
+        .get_session(&with_hunks.id)
+        .unwrap()
+        .storage_path(session_manager.sessions_root());
     agent_manager
         .review
-        .open(&with_hunks.id, &[repo.path().to_path_buf()])
+        .open_or_restore(&with_hunks.id, &session_dir, &[repo.path().to_path_buf()])
         .await
         .unwrap();
     let bracket = agent_manager
@@ -595,6 +602,18 @@ async fn the_archive_sweep_skips_a_session_with_unreviewed_hunks() {
             .len(),
         1,
         "the fixture itself must leave one hunk undecided"
+    );
+
+    // What a plugin pass does the moment its review returns: `end_session`
+    // plus `cleanup_session`, which drops the ledger out of memory. The sweep
+    // runs 72 hours later, long after that, so a sweep that reads only the
+    // resident map sees no queue at all — and the one case this gate names is
+    // the one it never fires for.
+    session_manager.end_session(&with_hunks.id).await.unwrap();
+    agent_manager.cleanup_session(&with_hunks.id);
+    assert!(
+        !agent_manager.review.is_open(&with_hunks.id),
+        "the fixture must leave the ledger out of memory for this test to mean anything"
     );
 
     let archived = sweep_and_archive_stale_sessions(
