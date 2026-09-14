@@ -245,6 +245,11 @@ describe('SessionsPanel — Reflections', () => {
   // the archive while its hunks are undecided, which is only useful if the
   // user can find it.
   it('lists a plugin session under its own section', () => {
+    // No pinned project, so the tree below is the one that could hold a
+    // workspace-less pass. Pinned to a project the tree is scoped to it and
+    // the pass is absent whether or not the section claims it, which would
+    // make the "listed once" assertion gate nothing.
+    pinnedProject = null;
     render(() => <SessionsPanel />);
     const section = screen.getByTestId('reflections-section');
     expect(section.textContent).toContain('Reflections');

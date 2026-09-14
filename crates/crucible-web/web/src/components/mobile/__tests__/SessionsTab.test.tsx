@@ -113,6 +113,11 @@ describe('SessionsTab', () => {
   // sits among every ordinary session. The daemon holds it out of the archive
   // while its review queue is undecided, and this is where a phone finds it.
   it('lists a plugin session under Reflections, whatever project is chosen', () => {
+    // "All projects": the one choice under which the list below could hold a
+    // workspace-less pass at all. Scoped to a project it is absent whether or
+    // not the section filters it out, and the de-dup assertion would gate
+    // nothing.
+    state.currentProject = null;
     state.sessions = [
       ...state.sessions,
       { ...session('p1', '', 'Reflection: yesterday'), session_type: 'plugin', workspace: null },
