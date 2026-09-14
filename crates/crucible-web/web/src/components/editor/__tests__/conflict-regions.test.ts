@@ -107,6 +107,34 @@ describe('conflictRegions', () => {
     }
   });
 
+  it('keeping mine over a region the daemon answered leaves the note as it is', () => {
+    // The merge shortened the note: our side dropped the final newline of its
+    // line, and their side appended after it. The daemon's region names lines
+    // 2..3 of the merged text, and that span INCLUDES the newline the merged
+    // text gave that line back — so its `ours` carries it too
+    // (`crucible_core::note_merge`). Keeping mine is then a no-op on the
+    // document; a region that stopped at 'X' would glue X to D.
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const merged = 'A\nX\nD\n';
+    const view = new EditorView({
+      state: EditorState.create({ doc: merged, extensions: [conflictRegions({})] }),
+      parent,
+    });
+    views.push(view);
+    seedConflictRegions(view, [
+      { start_line: 2, end_line: 3, base: 'B\n', ours: 'X\n', theirs: 'Y\nC\n' },
+    ]);
+
+    const tracked = openConflictRegions(view.state)[0];
+    expect(view.state.doc.sliceString(tracked.from, tracked.to)).toBe(tracked.ours);
+
+    resolveConflictRegion(view, 0, 'mine');
+
+    expect(view.state.doc.toString()).toBe(merged);
+    expect(openConflictRegions(view.state)).toHaveLength(0);
+  });
+
   it('marks the words that differ on each side', () => {
     const view = mount();
     seedConflictRegions(view, [

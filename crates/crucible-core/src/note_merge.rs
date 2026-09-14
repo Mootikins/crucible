@@ -174,6 +174,21 @@ pub fn merge3(base: &str, ours: &str, theirs: &str) -> Merge {
     }
     out.extend_from_slice(&base_lines[pos..]);
 
+    // A region's text is written back over exactly the lines it names, so it
+    // must end them. `join` ends a line only when another line follows it in
+    // the slice it is given, and a region is one such slice: a side that ends
+    // without a newline ends the REGION, while the merged text may run on past
+    // it. A region with a line after it therefore ends each of its texts, and a
+    // region at the end of the note is left as the writers wrote it.
+    let total = out.len() as u32;
+    for region in &mut regions {
+        if region.end_line <= total {
+            terminate(&mut region.base);
+            terminate(&mut region.ours);
+            terminate(&mut region.theirs);
+        }
+    }
+
     Merge {
         text: join(&out),
         regions,
@@ -231,6 +246,16 @@ fn join(lines: &[&str]) -> String {
         }
     }
     text
+}
+
+/// Give `text` a final newline, unless it is empty.
+///
+/// An empty text is a side that deleted the cluster; it occupies no line, so a
+/// newline would invent one.
+fn terminate(text: &mut String) {
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
 }
 
 /// Base `cs..ce` with one side's sorted, disjoint `hunks` applied.
@@ -365,6 +390,63 @@ mod tests {
         let m = merge3("A\nB\nC\n", "A\nB2\nC\n", "A\nX\nB\nC\n");
         assert_eq!(m.text, "A\nX\nB2\nC\n");
         assert!(m.regions.is_empty());
+    }
+
+    /// A region's text is the span of the merged text it names, byte for byte.
+    ///
+    /// A side that ends without a newline ends the merge only when nothing
+    /// follows it. When the other side appends after the region, the merged
+    /// text gives that line its newline back, and the region must say so: the
+    /// browser writes the region's text back over exactly those lines, so a
+    /// region that stops short glues its last line to the line after it.
+    #[test]
+    fn a_region_holds_the_lines_it_names_in_the_merged_text() {
+        let cases = [
+            ("A\nB\nC\n", "A\nO\nC", "A\nT\nC\nD\n"),
+            ("A\nB\nC\n", "A\nO\nC\nD\n", "A\nT\nC"),
+            ("A\nB\nC\n", "A\nX", "A\nY\nC\nD\n"),
+        ];
+        for (base, ours, theirs) in cases {
+            let m = merge3(base, ours, theirs);
+            assert_eq!(
+                m.regions.len(),
+                1,
+                "one region for {ours:?} against {theirs:?}"
+            );
+            let region = &m.regions[0];
+            let lines: Vec<&str> = m.text.split_inclusive('\n').collect();
+            let span = lines[region.start_line as usize - 1..region.end_line as usize - 1].concat();
+            assert_eq!(span, region.ours, "ours is what the merged text holds");
+            assert!(
+                region.theirs.is_empty() || region.theirs.ends_with('\n'),
+                "theirs ends where the merged text carries on: {:?}",
+                region.theirs
+            );
+        }
+    }
+
+    /// The merged text runs on past the region, so the text a choice writes
+    /// back over the region's lines must end the last of them.
+    #[test]
+    fn a_region_that_shortens_the_note_still_ends_its_last_line() {
+        let m = merge3("A\nB\nC\n", "A\nX", "A\nY\nC\nD\n");
+        assert_eq!(m.text, "A\nX\nD\n");
+        assert_eq!(m.regions.len(), 1);
+        assert_eq!(m.regions[0].start_line, 2);
+        assert_eq!(m.regions[0].end_line, 3);
+        assert_eq!(m.regions[0].ours, "X\n");
+        assert_eq!(m.regions[0].theirs, "Y\nC\n");
+    }
+
+    /// A region at the END of the merged text has no line after it, so neither
+    /// side gains a newline it did not have, and a deleted side stays empty.
+    #[test]
+    fn a_region_at_the_end_of_the_note_keeps_its_last_line_unended() {
+        let m = merge3("A\nB\n", "A\nO", "A\nT");
+        assert_eq!(m.text, "A\nO");
+        assert_eq!(m.regions.len(), 1);
+        assert_eq!(m.regions[0].ours, "O");
+        assert_eq!(m.regions[0].theirs, "T");
     }
 
     #[test]
