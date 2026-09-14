@@ -216,9 +216,21 @@ export const EditorProvider: ParentComponent = (props) => {
           const stillSent = f.content === sent;
           f.dirty = !stillSent;
           if (outcome.queued) return;
+          // The daemon MERGED, and the buffer typed past what was sent. The
+          // merged text is on disk and in no buffer, and the newer bytes
+          // descend from the pre-save base alone. Advancing the base pair to
+          // the merge would make the next save NOT stale, so the route would
+          // write these bytes verbatim over the other writer's lines with no
+          // refusal and no notice. Keeping the pre-save pair leaves that save
+          // stale on purpose, so the daemon merges against the merge instead.
+          if (outcome.merged && !stillSent) {
+            f.changedOnDisk = true;
+            return;
+          }
           // The daemon now holds this text under the hash it answered with.
           // Without this, the next save would carry the base of the FIRST
-          // read and the daemon would refuse it as stale, by construction.
+          // read and the daemon would refuse it as stale. That refusal is
+          // wanted only in the merged-and-typed-past case handled above.
           f.baseHash = outcome.hash;
           // What the daemon holds under that hash: the text it merged, when
           // it merged, and otherwise the text we sent. A merged note is
@@ -228,11 +240,9 @@ export const EditorProvider: ParentComponent = (props) => {
           if (outcome.merged && stillSent) f.content = outcome.content;
           f.baseText = outcome.merged ? outcome.content : sent;
           // The note on disk is what this buffer holds, so there is nothing
-          // left to choose between — unless the daemon MERGED and the buffer
-          // has typed past what was sent. The merged text is then on disk and
-          // in no buffer, and the newer bytes descend from ours alone, so the
-          // banner stands and Reload is how the user takes the merge.
-          f.changedOnDisk = outcome.merged === true && !stillSent;
+          // left to choose between. The merged-and-typed-past case returned
+          // above, with the banner up.
+          f.changedOnDisk = false;
         })
       );
     } catch (err) {

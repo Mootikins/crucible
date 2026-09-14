@@ -363,10 +363,44 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
 
     expect(fileState(editor).content).toBe('the unsaved text, and more');
     expect(fileState(editor).dirty, 'the newer bytes still owe a save').toBe(true);
-    // The route wrote `merged text` under `h5`, so the pair still belongs
-    // together and the next save merges against it.
-    expect(fileState(editor).baseHash).toBe('h5');
-    expect(fileState(editor).baseText).toBe('merged text');
+    // The merge is on disk and in no buffer, so the user still has a choice
+    // to make and the banner stands.
+    expect(fileState(editor).changedOnDisk).toBe(true);
+    // The base pair stays where this save was made from. Advancing it to the
+    // merge would make the next save NOT stale, and the route writes a
+    // non-stale body verbatim — the other writer's lines would go with no
+    // refusal and no notice.
+    expect(fileState(editor).baseHash).toBe('base-hash');
+    expect(fileState(editor).baseText).toBe('on disk\n');
+  });
+
+  // The gate on the overwrite: the save that follows must reach the wire with
+  // a base the daemon treats as stale, so it merges instead of writing over.
+  it('the save after such a merge carries the pre-save base, so the daemon merges again', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const editor = await openEdited();
+    guardedSave.mockImplementationOnce(async () => {
+      await held;
+      return { ok: true, content_hash: 'h5', merged: true, content: 'merged text' };
+    });
+
+    const saving = editor.saveFile(PATH);
+    editor.updateFileContent(PATH, 'the unsaved text, and more');
+    release();
+    await saving;
+
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'h6' });
+    await editor.saveFile(PATH);
+
+    expect(guardedSave).toHaveBeenLastCalledWith(
+      PATH,
+      'the unsaved text, and more',
+      'base-hash',
+      'on disk\n',
+    );
   });
 
   // The pair is one fact. Without the text, a stale save can only be refused.
