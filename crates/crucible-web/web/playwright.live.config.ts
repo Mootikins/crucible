@@ -17,9 +17,10 @@ import { defineConfig, devices } from '@playwright/test';
  * agent, so the mock-acp-agent is unreachable and there is no deterministic
  * in-tree provider; those flows are covered at the mock tier.
  *
- * TWO projects, because "live" now means two different things:
+ * THREE projects, because "live" now means three different things:
  *
  *  - `live`   — e2e/live/*.live.spec.ts: the kiln/notes endpoint suite.
+ *  - `live-compact` — the conflict leg again, on a phone-shaped viewport.
  *  - `served` — tests/*.pw.ts: the BUILT bundle as the Rust server hands it
  *               over, headers and all. The mock tier cannot cover these at
  *               all: its baseURL is the Vite dev server, which emits no CSP,
@@ -75,6 +76,18 @@ export default defineConfig({
       // whatever stale .hero-state.json a previous `just web-test hero` run left
       // behind and fail against its dead temp dirs.
       testIgnore: ['**/hero.live.spec.ts', '**/agent-fs.live.spec.ts'],
+    },
+    {
+      // The conflict leg again, on a phone-shaped viewport. A phone is where
+      // an offline write is made, so a phone is where a conflict is met — and
+      // the two shells share no chrome: the compact shell draws its own app
+      // bar, its own save affordance and one content surface at a time. The
+      // width alone decides the shell (`stores/deviceStore.ts`, 767px), once,
+      // at load; `isMobile` is deliberately not set, because the leg types on
+      // a keyboard and touch emulation would only take that away.
+      name: 'live-compact',
+      testMatch: '**/conflict.live.spec.ts',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
     },
     { name: 'served', testDir: './tests', testMatch: '**/*.pw.ts' },
   ],

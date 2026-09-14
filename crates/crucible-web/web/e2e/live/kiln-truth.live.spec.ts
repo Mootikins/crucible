@@ -342,8 +342,14 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
    * browser must never make that decision" — and until now no route could
    * enforce it, so the offline drain compared in the browser instead. The
    * check is only real against a file another process can move under it.
+   *
+   * A refusal alone lost the caller's writing, so the route now MERGES when
+   * the caller sends the text its write was made from: the caller is the only
+   * party that holds it, and a three-way merge is what lets both writers keep
+   * their lines. The base text alone is what separates the two answers, which
+   * is why one leg sends both shapes.
    */
-  test('WS-318: a whole-file write whose base moved on is refused, and the disk is untouched', async ({
+  test('WS-318: a stale whole-file write is merged when it carries the text it was made from', async ({
     page,
   }) => {
     const baseURL = state.baseURL!;
@@ -351,40 +357,116 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     const notePath = path.join(kilnDir, 'Race.md');
 
     await page.goto(baseURL);
-    const put = (body: string, base?: string) =>
+    const put = (body: string, base?: string, baseText?: string) =>
       page.evaluate(
-        async ({ file, content, base_hash }) => {
+        async ({ file, content, base_hash, base_text }) => {
           const res = await fetch('/api/kiln/file', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: file, content, base_hash }),
+            body: JSON.stringify({ path: file, content, base_hash, base_text }),
           });
           return { status: res.status, body: await res.json().catch(() => null) };
         },
-        { file: notePath, content: body, base_hash: base },
+        { file: notePath, content: body, base_hash: base, base_text: baseText },
       );
 
     // A first write with no base: the blind path every existing caller uses.
-    const first = await put('the original\n');
+    const original = '# Race\n\nfirst line\nsecond line\n';
+    const first = await put(original);
     expect(first.status).toBe(200);
+    expect(first.body.merged).toBe(false);
     const base = first.body.content_hash as string;
     expect(base).toMatch(/^[0-9a-f]{64}$/);
 
-    // Another writer — the agent, the TUI, a second browser — gets there first.
-    writeFileSync(notePath, 'ANOTHER WRITER GOT HERE\n');
+    // Another writer — the agent, the TUI, a second browser — gets there first,
+    // on a line this caller never touched.
+    const theirs = '# Race\n\nANOTHER WRITER GOT HERE\nsecond line\n';
+    writeFileSync(notePath, theirs);
 
-    const refused = await put('what the first caller had\n', base);
+    // Our own change, made from `original`, on the other line.
+    const ours = '# Race\n\nfirst line\nmine at the end\n';
+
+    // With no base text there is nothing to merge FROM, so the refusal stands
+    // and the other writer's work survives byte for byte.
+    const refused = await put(ours, base);
     expect(refused.status).toBe(409);
     expect(refused.body.ok).toBe(false);
     expect(refused.body.current_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(refused.body.current_hash).not.toBe(base);
-    // The other writer's work survives, byte for byte.
-    expect(readFileSync(notePath, 'utf-8')).toBe('ANOTHER WRITER GOT HERE\n');
+    expect(readFileSync(notePath, 'utf-8')).toBe(theirs);
 
-    // The hash the refusal handed back is the one that works.
-    const retried = await put('now we agree\n', refused.body.current_hash as string);
-    expect(retried.status).toBe(200);
-    expect(readFileSync(notePath, 'utf-8')).toBe('now we agree\n');
+    // The same write, carrying the text it was made from: the daemon merges
+    // the two changes and writes both. Neither writer loses a line.
+    const merged = await put(ours, base, original);
+    expect(merged.status).toBe(200);
+    expect(merged.body.ok).toBe(true);
+    expect(merged.body.merged).toBe(true);
+    const both = '# Race\n\nANOTHER WRITER GOT HERE\nmine at the end\n';
+    expect(merged.body.content).toBe(both);
+    expect(readFileSync(notePath, 'utf-8')).toBe(both);
+    // The answer names the hash of what was written, so the caller's next
+    // write is not stale by construction.
+    expect(merged.body.content_hash).not.toBe(base);
+  });
+
+  /**
+   * WS-318: the line both writers changed.
+   *
+   * A merge that cannot decide must not decide. The route answers 409 with the
+   * merged text and one region per span the two writers changed differently,
+   * and writes nothing — the browser holds it as a conflict for a person
+   * (`components/ConflictView.tsx`), never as a copy beside the note.
+   */
+  test('WS-318: when both writers change one line, the answer names the region and writes nothing', async ({
+    page,
+  }) => {
+    const baseURL = state.baseURL!;
+    const kilnDir = state.kilnDir!;
+    const notePath = path.join(kilnDir, 'Region.md');
+
+    await page.goto(baseURL);
+    const put = (body: string, base?: string, baseText?: string) =>
+      page.evaluate(
+        async ({ file, content, base_hash, base_text }) => {
+          const res = await fetch('/api/kiln/file', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: file, content, base_hash, base_text }),
+          });
+          return { status: res.status, body: await res.json().catch(() => null) };
+        },
+        { file: notePath, content: body, base_hash: base, base_text: baseText },
+      );
+
+    const original = '# Region\n\nthe shared line\n';
+    const first = await put(original);
+    expect(first.status).toBe(200);
+    const base = first.body.content_hash as string;
+
+    const theirs = '# Region\n\nthe shared line plus theirs\n';
+    writeFileSync(notePath, theirs);
+
+    const ours = '# Region\n\nthe shared line plus mine\n';
+    const conflict = await put(ours, base, original);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.ok).toBe(false);
+    expect(conflict.body.stale_base).toBe(true);
+    // Both texts, so whoever resolves it can see what they are choosing
+    // between, and the merged text as far as the daemon could take it.
+    expect(conflict.body.current_content).toBe(theirs);
+    expect(conflict.body.merged_content).toBe(ours);
+    expect(conflict.body.regions).toHaveLength(1);
+    expect(conflict.body.regions[0]).toMatchObject({
+      base: 'the shared line\n',
+      ours: 'the shared line plus mine\n',
+      theirs: 'the shared line plus theirs\n',
+    });
+    // 1-based, end exclusive, pointing into `merged_content`.
+    expect(conflict.body.regions[0].start_line).toBe(3);
+    expect(conflict.body.regions[0].end_line).toBe(4);
+
+    // Nothing was written: an unchosen region is never resolved by the daemon.
+    expect(readFileSync(notePath, 'utf-8')).toBe(theirs);
   });
 
   /**
