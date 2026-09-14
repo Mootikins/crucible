@@ -55,6 +55,7 @@ import {
   listKilnNotes,
   getFileContent,
   saveFileContent,
+  saveFileIfUnchanged,
   generateMessageId,
   saveLayout,
   loadLayout,
@@ -1224,6 +1225,73 @@ describe('file endpoints', () => {
       path: '/k/a.md',
       content: 'new content',
     });
+  });
+});
+
+/**
+ * The guarded save is the one write the daemon may refuse, and the one that
+ * can be merged instead. Both answers are values a caller branches on.
+ */
+describe('saveFileIfUnchanged', () => {
+  it('sends the base text when it is given one, and reads the merged answer', async () => {
+    const mockFetch = createMockFetch({
+      'PUT /api/kiln/file': { body: { ok: true, content_hash: 'h2', merged: true, content: 'A\nB2\nC\nD\n' } },
+    });
+    global.fetch = mockFetch;
+
+    const answer = await saveFileIfUnchanged('/k/a.md', 'A\nB\nC\nD\n', 'h0', 'A\nB\nC\n');
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
+      path: '/k/a.md',
+      content: 'A\nB\nC\nD\n',
+      base_hash: 'h0',
+      base_text: 'A\nB\nC\n',
+    });
+    expect(answer).toEqual({ ok: true, content_hash: 'h2', merged: true, content: 'A\nB2\nC\nD\n' });
+  });
+
+  it('sends no base text when it has none', async () => {
+    const mockFetch = createMockFetch({ 'PUT /api/kiln/file': { body: { ok: true, content_hash: 'h2' } } });
+    global.fetch = mockFetch;
+
+    expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({ ok: true, content_hash: 'h2' });
+    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
+      path: '/k/a.md',
+      content: 'mine',
+      base_hash: 'h0',
+    });
+  });
+
+  it('reads a conflict with the texts and the regions it could not settle', async () => {
+    global.fetch = createMockFetch({
+      'PUT /api/kiln/file': {
+        status: 409,
+        body: {
+          ok: false,
+          stale_base: true,
+          current_hash: 'h9',
+          current_content: 'A\nTHEIRS\n',
+          merged_content: 'A\nMINE\n',
+          regions: [{ start_line: 2, end_line: 3, base: 'B\n', ours: 'MINE\n', theirs: 'THEIRS\n' }],
+        },
+      },
+    });
+
+    expect(await saveFileIfUnchanged('/k/a.md', 'A\nMINE\n', 'h0', 'A\nB\n')).toEqual({
+      ok: false,
+      current_hash: 'h9',
+      current_content: 'A\nTHEIRS\n',
+      merged_content: 'A\nMINE\n',
+      regions: [{ start_line: 2, end_line: 3, base: 'B\n', ours: 'MINE\n', theirs: 'THEIRS\n' }],
+    });
+  });
+
+  // The refusal a caller that sent no base text gets: a hash and nothing else.
+  it('reads a bare refusal as the hash on disk', async () => {
+    global.fetch = createMockFetch({
+      'PUT /api/kiln/file': { status: 409, body: { ok: false, current_hash: 'h9' } },
+    });
+    expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({ ok: false, current_hash: 'h9' });
   });
 });
 

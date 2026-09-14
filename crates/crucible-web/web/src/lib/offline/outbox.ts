@@ -1,4 +1,4 @@
-import type { AnchoredEdit } from '@/lib/api';
+import type { AnchoredEdit, MergeRegion } from '@/lib/api';
 import { applyAnchoredEdits } from '@/lib/offline/fold';
 import type { OfflineStore } from '@/lib/offline/store';
 import { sameDaemon } from '@/lib/offline/identity';
@@ -17,7 +17,11 @@ import type { MirroredNote } from '@/lib/offline/mirror';
  *   base, and the other writer's change disappears with no conflict copy.
  * - An entry is stamped with the daemon it came from and never drains into
  *   another. A key names a daemon, not a person.
- * - An entry clears only after its write lands — including a conflict copy.
+ * - An entry keeps the TEXT its base names, not only the hash. That text is
+ *   the third one a three-way merge needs, and this device is the only party
+ *   that holds it: without it a write the daemon refuses as stale can only be
+ *   refused whole or overwrite the other writer.
+ * - An entry clears only after its writing is safe somewhere the daemon holds.
  */
 
 /** What every queued write names: which note, from which text, for which daemon. */
@@ -25,6 +29,16 @@ export type NoteWrite = {
   path: string;
   /** The disk hash it was edited FROM. Never updated once queued. */
   base: string;
+  /**
+   * The note as it was at `base`: the text this write was made FROM.
+   *
+   * The pair is one fact — `base` is the hash of this text — so a fold keeps
+   * both or neither. Absent for an entry a device queued before writes kept
+   * it, and for a caller that does not hold it. Such an entry is never merged
+   * and never overwrites the other writer: it becomes a conflict over the
+   * whole note.
+   */
+  baseText?: string;
   kiln: string;
   daemon: string;
 };
@@ -73,25 +87,64 @@ export interface OutboxSink {
    * Answers the note's hash on success. `ok: false` with `current` says the
    * note moved on under a whole write; with `refused` it says the daemon
    * could not place an anchored edit.
+   *
+   * `opts.baseText` asks the daemon to MERGE a stale write against the disk
+   * instead of refusing it. The drain sends it only on the retry: the first
+   * attempt asks whether the note moved at all, and an anchored entry's first
+   * attempt is still its anchored replay.
    */
-  write(entry: OutboxEntry): Promise<SinkAnswer>;
+  write(entry: OutboxEntry, opts?: { baseText: string }): Promise<SinkAnswer>;
   /** Write the losing copy beside the note. Answers its path. */
   writeConflictCopy(entry: OutboxEntry): Promise<string>;
 }
 
-export type SinkAnswer =
-  | { ok: true; hash: string }
-  | { ok: false; current: string; refused?: true };
+/** The daemon took the write. `merged` says it merged our text with the disk. */
+type SinkWrote =
+  | { ok: true; hash: string; merged?: false }
+  | { ok: true; hash: string; merged: true; content: string };
+
+/**
+ * The daemon would not take the write.
+ *
+ * `refused` names an anchored edit it could not place. Otherwise the note
+ * moved on: `currentContent` is what it holds now, and `mergedContent` with
+ * `regions` is how far a merge got, when one was asked for.
+ */
+type SinkRefused = {
+  ok: false;
+  current: string;
+  refused?: true;
+  currentContent?: string;
+  mergedContent?: string;
+  regions?: MergeRegion[];
+};
+
+export type SinkAnswer = SinkWrote | SinkRefused;
 
 /** A write the daemon accepted: which note, from which base, to which hash. */
 export type Landed = { path: string; base: string; hash: string };
 
 /**
- * A whole write the daemon refused as stale: which note, from which base,
- * and the conflict copy that now holds the text. The base names the buffer
- * the write came from, so the editor can mark that buffer and no other.
+ * A whole write the daemon refused as stale, and could not merge cleanly.
+ *
+ * The base names the buffer the write came from, so the editor can mark that
+ * buffer and no other. The three texts are what resolving it needs, without a
+ * second round trip that would race the same way.
  */
-export type Conflicted = { path: string; base: string; copy: string };
+export type Conflicted = {
+  path: string;
+  base: string;
+  /** The conflict copy that now holds the text. */
+  copy: string;
+  /** The hash the note has now: what a resolution must be written against. */
+  currentHash: string;
+  /** The note as the daemon holds it now. Empty when it could not be read. */
+  currentContent: string;
+  /** Our text merged with theirs, as far as the merge got. */
+  mergedContent: string;
+  /** Every span the two writers changed differently. Never empty. */
+  regions: MergeRegion[];
+};
 
 export interface DrainResult {
   sent: number;
@@ -175,8 +228,11 @@ export async function queueWrite(store: OfflineStore, entry: OutboxWrite): Promi
   const sequence = await nextSequence(store);
   await store.put<OutboxEntry>('outbox', entry.path, {
     ...folded.write,
-    // The base is what the user edited FROM, so the FIRST queue wins it.
-    base: held?.base ?? entry.base,
+    // The base is what the user edited FROM, so the FIRST queue wins it — and
+    // its TEXT comes with it. A first hash paired with a later text asks the
+    // daemon to merge from a text that is not the base it names, which it
+    // refuses as a caller bug.
+    ...(held ? { base: held.base, baseText: held.baseText } : { base: entry.base, baseText: entry.baseText }),
     queuedAt: Date.now(),
     // A REPLACEMENT takes a new sequence. A drain that is mid-flight over the
     // old one compares this before it deletes, and leaves the newer writing
@@ -258,12 +314,50 @@ export async function queuedCount(store: OfflineStore): Promise<number> {
   return (await store.list('outbox')).length;
 }
 
+/** A queued write that carries the whole note. */
+type WholeEntry = Extract<OutboxEntry, { kind: 'whole' }>;
+
+/**
+ * Our text as a whole note, to merge against the disk.
+ *
+ * A whole entry already is one. An anchored entry becomes one by applying its
+ * edits to the text they were made from, which is the only text they are
+ * guaranteed to anchor in. Null when this device did not keep that text, or
+ * the edits no longer apply to it — neither is a merge anyone can make.
+ */
+function oursAsWhole(entry: OutboxEntry): string | null {
+  if (entry.baseText === undefined) return null;
+  if (entry.kind === 'whole') return entry.body;
+  const folded = applyAnchoredEdits(entry.baseText, entry.edits);
+  return folded.ok ? folded.text : null;
+}
+
+/** Lines the way the merge counts them: a trailing newline ends the last one. */
+function lineCount(text: string): number {
+  if (text === '') return 0;
+  const parts = text.split('\n');
+  return text.endsWith('\n') ? parts.length - 1 : parts.length;
+}
+
+/**
+ * The one region a write with no base text becomes.
+ *
+ * Nothing here can merge without the text the write was made from, and
+ * overwriting the other writer is not an answer either. So the whole note is
+ * one span both sides changed, and a user chooses between the two texts.
+ */
+function wholeNoteRegion(ours: string, theirs: string): MergeRegion {
+  return { start_line: 1, end_line: 1 + lineCount(ours), base: '', ours, theirs };
+}
+
 /**
  * Send what is queued, oldest first.
  *
- * A note the daemon changed meanwhile becomes a conflict copy beside it, and
- * the entry clears only once that copy lands. Obsidian resolves a sync
- * conflict the same way; a CRDT would need every writer to speak it, and the
+ * A note the daemon changed meanwhile is MERGED, not copied aside: the daemon
+ * holds the disk and the other writer's text, and the entry holds the text
+ * this device edited from, so the retry carries that text and the daemon
+ * merges the three. A merge that leaves a region writes nothing and comes
+ * back as a conflict. A CRDT would need every writer to speak it, and the
  * agent, the TUI and any editor never will.
  */
 export async function drainOutbox(
@@ -284,6 +378,51 @@ export async function drainOutbox(
     superseded: 0,
   };
 
+  /** The daemon took it: name it, mirror what it now holds, clear the entry. */
+  const land = async (entry: OutboxEntry, answer: SinkWrote) => {
+    result.landed.push({ path: entry.path, base: entry.base, hash: answer.hash });
+    // Only a whole write knows the note's text — and a merge answers with the
+    // text the daemon wrote, which is neither writer's alone. An anchored
+    // entry knows nothing, so the mirror keeps what it has until the next
+    // read refreshes it.
+    const body = answer.merged ? answer.content : entry.kind === 'whole' ? entry.body : null;
+    if (body !== null) {
+      await store.put<MirroredNote>('mirror', entry.path, {
+        body,
+        hash: answer.hash,
+        kiln: entry.kiln,
+        mirroredAt: Date.now(),
+      });
+    }
+    if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
+    else result.sent += 1;
+  };
+
+  /** The daemon answered, nothing could be merged: keep the text, report it. */
+  const conflict = async (entry: WholeEntry, answer: SinkRefused) => {
+    const copy = await sink.writeConflictCopy(entry);
+    // Only now: if the copy failed, the writing is still queued.
+    if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
+    const currentContent = answer.currentContent ?? '';
+    result.conflicted.push({
+      path: entry.path,
+      base: entry.base,
+      copy,
+      currentHash: answer.current,
+      currentContent,
+      mergedContent: answer.mergedContent ?? entry.body,
+      regions: answer.regions?.length
+        ? answer.regions
+        : [wholeNoteRegion(entry.body, currentContent)],
+    });
+  };
+
+  /** The refusal an anchored entry ends in: no body, so nothing to keep. */
+  const refuseEdit = async (entry: OutboxEntry) => {
+    if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
+    result.refusedEdits.push(entry.path);
+  };
+
   for (const entry of entries) {
     if (!sameDaemon(entry.daemon, daemon)) {
       result.foreign += 1;
@@ -292,31 +431,45 @@ export async function drainOutbox(
     try {
       const answer = await sink.write(entry);
       if (answer.ok) {
-        result.landed.push({ path: entry.path, base: entry.base, hash: answer.hash });
-        // Only a whole write knows the note's text. An anchored entry does
-        // not, so the mirror keeps what it has until the next read refreshes it.
-        if (entry.kind === 'whole') {
-          await store.put<MirroredNote>('mirror', entry.path, {
-            body: entry.body,
-            hash: answer.hash,
-            kiln: entry.kiln,
-            mirroredAt: Date.now(),
-          });
-        }
-        if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
-        else result.sent += 1;
-      } else if (entry.kind === 'anchored') {
-        // The daemon could not place the edit. There is no body to keep, so
-        // no conflict copy; and the daemon answered, so a replay would be
-        // refused again. The entry clears and the refusal is reported.
-        if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
-        result.refusedEdits.push(entry.path);
-      } else {
-        const copy = await sink.writeConflictCopy(entry);
-        // Only now: if the copy failed, the writing is still queued.
-        if (!(await clearIfUnchanged(store, entry))) result.superseded += 1;
-        result.conflicted.push({ path: entry.path, base: entry.base, copy });
+        await land(entry, answer);
+        continue;
       }
+      if (entry.kind === 'anchored' && answer.refused === true) {
+        // The daemon could not place the edit. There is no body to keep, and
+        // the daemon answered, so a replay would be refused again.
+        await refuseEdit(entry);
+        continue;
+      }
+
+      // The note moved on. With the text this device edited FROM, the three
+      // texts a merge needs are all in one place, so send ours whole and let
+      // the daemon merge it against the disk.
+      const ours = oursAsWhole(entry);
+      if (ours !== null && entry.baseText !== undefined) {
+        const whole: WholeEntry = {
+          kind: 'whole',
+          body: ours,
+          path: entry.path,
+          base: entry.base,
+          baseText: entry.baseText,
+          kiln: entry.kiln,
+          daemon: entry.daemon,
+          queuedAt: entry.queuedAt,
+          sequence: entry.sequence,
+        };
+        const merged = await sink.write(whole, { baseText: entry.baseText });
+        if (merged.ok) await land(whole, merged);
+        else await conflict(whole, merged);
+        continue;
+      }
+
+      if (entry.kind === 'anchored') {
+        // No text to anchor in, so there is no whole note to keep and no
+        // merge to make. Reported, like any edit the daemon would refuse.
+        await refuseEdit(entry);
+        continue;
+      }
+      await conflict(entry, answer);
     } catch {
       // Still offline, or the write failed. It stays queued.
       result.failed += 1;

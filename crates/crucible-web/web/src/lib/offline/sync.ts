@@ -87,7 +87,7 @@ function isMissing(error: unknown): boolean {
 }
 
 export const networkSink: OutboxSink = {
-  write: async (entry) => {
+  write: async (entry, opts) => {
     if (entry.kind === 'anchored') {
       // No base on replay. The daemon applies the anchors to the current
       // text, and an edit already there counts as applied (WS-202,
@@ -105,14 +105,35 @@ export const networkSink: OutboxSink = {
     // because no route could refuse a stale base yet.
     //
     // An empty `current` means the note is gone. Its writing still belongs to
-    // the user, so it goes to a conflict copy rather than resurrecting a note
-    // that was deleted.
-    const answer = await saveFileIfUnchanged(entry.path, entry.body, entry.base);
-    if (!answer.ok) return { ok: false, current: answer.current_hash };
-    // The route answers with the hash of what it wrote. The old code issued a
-    // THIRD read to learn it, which another writer could land inside — storing
-    // a hash that described someone else's bytes beside this body.
-    return { ok: true, hash: answer.content_hash };
+    // the user, so it becomes a conflict rather than resurrecting a note that
+    // was deleted.
+    //
+    // A `baseText` asks the route to MERGE a stale write against the disk
+    // rather than refuse it. The drain sends it on the retry, which is the
+    // only call that has anything to merge.
+    const answer = await saveFileIfUnchanged(entry.path, entry.body, entry.base, opts?.baseText);
+    if (answer.ok) {
+      // The route answers with the hash of what it wrote. The old code issued
+      // a THIRD read to learn it, which another writer could land inside —
+      // storing a hash that described someone else's bytes beside this body.
+      return answer.merged
+        ? { ok: true, hash: answer.content_hash, merged: true, content: answer.content }
+        : { ok: true, hash: answer.content_hash };
+    }
+    if (answer.regions?.length) {
+      return {
+        ok: false,
+        current: answer.current_hash,
+        currentContent: answer.current_content ?? '',
+        mergedContent: answer.merged_content ?? entry.body,
+        regions: answer.regions,
+      };
+    }
+    // Refused without a merge, because this write carried no base text. The
+    // refusal names a hash and nothing else, and whoever resolves it needs the
+    // text the other writer put there — so read the note once, on the one path
+    // that cannot merge. A read that fails leaves the text unknown.
+    return { ok: false, current: answer.current_hash, currentContent: await currentText(entry.path) };
   },
   writeConflictCopy: (entry) => {
     // The drain reports a refused anchored entry instead of calling this: an
@@ -121,6 +142,18 @@ export const networkSink: OutboxSink = {
     return writeConflictCopy(entry.path, entry.body, new Date(entry.queuedAt));
   },
 };
+
+/** The note as the daemon holds it now, or undefined when it cannot be read. */
+async function currentText(path: string): Promise<string | undefined> {
+  try {
+    return (await getFileWithHash(path)).content;
+  } catch {
+    // The note is gone, or the network went down between the two calls. The
+    // conflict is still real and is still reported; only its other text is
+    // unknown.
+    return undefined;
+  }
+}
 
 /**
  * Keep a stale write's text beside the note. Answers the path it took.
@@ -284,13 +317,18 @@ export type WriteOutcome =
  * The write carries the base it was edited from, and the daemon compares it.
  * A stale base is REFUSED, not queued: the daemon answered, so this is not
  * offline writing, and the user is present to decide what happens to their
- * text. The drain queues nothing either; it writes a conflict copy, because
- * there is nobody at the keyboard to ask.
+ * text.
+ *
+ * `baseText` is the note as it was at `base`. It is queued with the write, so
+ * a drain that finds the note moved on can hand the daemon all three texts
+ * and be merged instead of refused. A caller that does not hold it queues a
+ * write that can only conflict.
  */
 export async function writeNote(opts: {
   path: string;
   body: string;
   base: string;
+  baseText?: string;
   kiln: string | null;
 }): Promise<WriteOutcome> {
   return sendOrQueue(
@@ -299,7 +337,14 @@ export async function writeNote(opts: {
       if (!answer.ok) return { queued: false, stale: true, current: answer.current_hash };
       return { queued: false, stale: false, hash: answer.content_hash };
     },
-    { kind: 'whole', path: opts.path, body: opts.body, base: opts.base, kiln: opts.kiln ?? '' },
+    {
+      kind: 'whole',
+      path: opts.path,
+      body: opts.body,
+      base: opts.base,
+      baseText: opts.baseText,
+      kiln: opts.kiln ?? '',
+    },
     () => {
       throw new Error('a whole write replaces a queued write; it is never refused');
     },
@@ -334,6 +379,12 @@ export async function editNote(opts: {
   path: string;
   edits: AnchoredEdit[];
   base: string;
+  /**
+   * The note as it was at `base`. Queued with the edit: a replay the daemon
+   * refuses is then merged as the whole note the edits make of this text,
+   * rather than reported as an edit that can never be placed.
+   */
+  baseText?: string;
   kiln: string | null;
 }): Promise<EditOutcome> {
   return sendOrQueue(
@@ -342,7 +393,14 @@ export async function editNote(opts: {
       if (!answer.ok) return { queued: false, ...answer };
       return { queued: false, ok: true, hash: answer.content_hash };
     },
-    { kind: 'anchored', path: opts.path, edits: opts.edits, base: opts.base, kiln: opts.kiln ?? '' },
+    {
+      kind: 'anchored',
+      path: opts.path,
+      edits: opts.edits,
+      base: opts.base,
+      baseText: opts.baseText,
+      kiln: opts.kiln ?? '',
+    },
     (index) => ({
       queued: false,
       ok: false,

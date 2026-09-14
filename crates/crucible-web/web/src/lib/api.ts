@@ -2071,6 +2071,42 @@ export async function saveFileContent(path: string, content: string): Promise<vo
 }
 
 /**
+ * One span of a note both writers changed differently.
+ *
+ * `crucible_core::note_merge::Region` on the wire: the lines are 1-based and
+ * end-exclusive, and they point into the MERGED text, so a view shows the span
+ * without diffing anything again. This is the only shape the browser has for a
+ * conflict; there is no second definition of it here.
+ */
+export interface MergeRegion {
+  start_line: number;
+  end_line: number;
+  base: string;
+  ours: string;
+  theirs: string;
+}
+
+/**
+ * What a guarded save answers.
+ *
+ * `merged: true` means the caller's base was stale and the route merged its
+ * text with the disk: `content` is what was written, and the caller holds it
+ * nowhere else. A refusal carries the hash on disk now; when the caller sent a
+ * base text it also carries both texts and every region the merge could not
+ * settle, because a second round trip to fetch them would race the same way.
+ */
+export type GuardedSave =
+  | { ok: true; content_hash: string; merged?: false }
+  | { ok: true; content_hash: string; merged: true; content: string }
+  | {
+      ok: false;
+      current_hash: string;
+      current_content?: string;
+      merged_content?: string;
+      regions?: MergeRegion[];
+    };
+
+/**
  * Save a whole file, refusing if it moved on since `baseHash` was read.
  *
  * The compare happens inside the daemon's write, which is the only place it
@@ -2078,30 +2114,55 @@ export async function saveFileContent(path: string, content: string): Promise<vo
  * between the read and the write, and runs on the machine with the stale view
  * of the disk.
  *
+ * `baseText` is the note as it was at `baseHash`. It asks to be MERGED rather
+ * than refused: the caller is the only party that holds the text its edit was
+ * made from, so without it the route can only refuse, and the edit costs the
+ * user the whole note. A merge that leaves a region writes nothing.
+ *
  * A 409 is a VALUE, not a throw — it carries the hash on disk now, which is
- * what a caller needs to decide between re-reading and keeping its own copy.
+ * what a caller needs to decide between re-reading and resolving.
  */
 export async function saveFileIfUnchanged(
   path: string,
   content: string,
   baseHash: string,
-): Promise<{ ok: true; content_hash: string } | { ok: false; current_hash: string }> {
+  baseText?: string,
+): Promise<GuardedSave> {
   const response = await fetch('/api/kiln/file', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
-    body: JSON.stringify({ path, content, base_hash: baseHash }),
+    body: JSON.stringify({
+      path,
+      content,
+      base_hash: baseHash,
+      ...(baseText === undefined ? {} : { base_text: baseText }),
+    }),
   });
   if (response.status === 409) {
-    const body = (await response.json()) as { current_hash?: string };
-    return { ok: false, current_hash: body.current_hash ?? '' };
+    const body = (await response.json()) as {
+      current_hash?: string;
+      current_content?: string;
+      merged_content?: string;
+      regions?: MergeRegion[];
+    };
+    return {
+      ok: false,
+      current_hash: body.current_hash ?? '',
+      ...(body.current_content === undefined ? {} : { current_content: body.current_content }),
+      ...(body.merged_content === undefined ? {} : { merged_content: body.merged_content }),
+      ...(body.regions === undefined ? {} : { regions: body.regions }),
+    };
   }
   if (!response.ok) {
     throw Object.assign(new Error(`Failed to save ${path}`), { status: response.status });
   }
   // The route answers with the hash of what it wrote, so nothing here needs a
   // hash function and nothing needs a second read to learn it.
-  const body = (await response.json()) as { content_hash?: string };
+  const body = (await response.json()) as { content_hash?: string; merged?: boolean; content?: string };
+  if (body.merged) {
+    return { ok: true, content_hash: body.content_hash ?? '', merged: true, content: body.content ?? '' };
+  }
   return { ok: true, content_hash: body.content_hash ?? '' };
 }
 

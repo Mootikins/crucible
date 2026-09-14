@@ -11,7 +11,7 @@ const net = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   getFileWithHash: (p: string) => net.read(p),
   saveFileContent: (p: string, c: string) => net.save(p, c),
-  saveFileIfUnchanged: (p: string, c: string, b: string) => net.guardedSave(p, c, b),
+  saveFileIfUnchanged: (...args: unknown[]) => net.guardedSave(...args),
   patchKilnFile: (p: string, e: unknown, b?: string) => net.patch(p, e, b),
   getFileContent: async () => '',
   listNotes: (k: string) => net.list(k),
@@ -137,6 +137,15 @@ describe('writeNote', () => {
       'read-only',
     );
     expect(await pendingCount()).toBe(0);
+  });
+
+  // The text the write was made from is the third text a merge needs, and it
+  // exists only here. A queued write that dropped it can only be refused.
+  it('queues the base text the write was made from', async () => {
+    net.guardedSave.mockRejectedValue(new TypeError('Failed to fetch'));
+    await writeNote({ path: PATH, body: 'edited', base: 'h0', baseText: 'original', kiln: KILN });
+    const [held] = await store.list<OutboxEntry>('outbox');
+    expect(held.value).toMatchObject({ base: 'h0', baseText: 'original', body: 'edited' });
   });
 
   // Private mode: the save failed AND nothing can hold the writing. Telling a
@@ -436,11 +445,13 @@ describe('onNoteConflicted', () => {
 
     expect(result.conflicted).toHaveLength(1);
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({
-      path: PATH,
-      base: 'h0',
-      copy: expect.stringMatching(/\/Note \(conflict, phone, \d{4}-\d{2}-\d{2}\)\.md$/),
-    });
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: PATH,
+        base: 'h0',
+        copy: expect.stringMatching(/\/Note \(conflict, phone, \d{4}-\d{2}-\d{2}\)\.md$/),
+      }),
+    );
     expect(net.save).toHaveBeenCalledWith(listener.mock.calls[0][0].copy, 'mine');
   });
 
@@ -491,7 +502,7 @@ describe('networkSink lets the daemon refuse a stale write', () => {
   it('sends the base it was edited from, and never reads first', async () => {
     net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h1' });
     expect(await networkSink.write(entry)).toEqual({ ok: true, hash: 'h1' });
-    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'mine', 'h0');
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'mine', 'h0', undefined);
     expect(net.read, 'the daemon compares; the browser must not').not.toHaveBeenCalled();
   });
 
@@ -550,6 +561,64 @@ describe('networkSink lets the daemon refuse a stale write', () => {
     const copy = await networkSink.writeConflictCopy(entry);
     expect(copy).toMatch(/ 2\.md$/);
     expect(net.save).toHaveBeenCalledWith(copy, 'mine');
+  });
+});
+
+/**
+ * The base text is what makes a stale write mergeable, and this device is the
+ * only party that holds it.
+ */
+describe('networkSink merges a stale write when it is given the base text', () => {
+  const entry: OutboxEntry = {
+    kind: 'whole',
+    path: PATH,
+    body: 'mine',
+    base: 'h0',
+    baseText: 'was',
+    kiln: KILN,
+    daemon: 'd',
+    queuedAt: Date.now(),
+    sequence: 1,
+  };
+
+  it('sends the base text with a retried whole write', async () => {
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2', merged: true, content: 'MERGED' });
+    expect(await networkSink.write(entry, { baseText: 'was' })).toEqual({
+      ok: true,
+      hash: 'h2',
+      merged: true,
+      content: 'MERGED',
+    });
+    expect(net.guardedSave).toHaveBeenCalledWith(PATH, 'mine', 'h0', 'was');
+  });
+
+  it('hands back the regions the daemon could not settle', async () => {
+    net.guardedSave.mockResolvedValue({
+      ok: false,
+      current_hash: 'h9',
+      current_content: 'theirs',
+      merged_content: 'mine',
+      regions: [{ start_line: 1, end_line: 2, base: 'was', ours: 'mine', theirs: 'theirs' }],
+    });
+    expect(await networkSink.write(entry, { baseText: 'was' })).toEqual({
+      ok: false,
+      current: 'h9',
+      currentContent: 'theirs',
+      mergedContent: 'mine',
+      regions: [{ start_line: 1, end_line: 2, base: 'was', ours: 'mine', theirs: 'theirs' }],
+    });
+  });
+
+  // A write with no base text is refused, not merged, and the refusal carries
+  // only a hash. The drain still has to say what the other writer put there.
+  it('reads the note for the current text when there was no base text to merge with', async () => {
+    net.guardedSave.mockResolvedValue({ ok: false, current_hash: 'h9' });
+    net.read.mockResolvedValue({ content: 'THEIRS', content_hash: 'h9' });
+    expect(await networkSink.write(entry)).toEqual({
+      ok: false,
+      current: 'h9',
+      currentContent: 'THEIRS',
+    });
   });
 });
 

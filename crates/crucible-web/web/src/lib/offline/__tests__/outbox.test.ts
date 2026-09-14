@@ -45,6 +45,30 @@ function sink(over: Partial<OutboxSink> = {}): OutboxSink {
   };
 }
 
+/** One tick, as the reading view makes it. */
+const TICK = { expect: '- [ ] milk', replace: '- [x] milk' };
+
+/**
+ * A daemon that refuses a write with no base text and merges one with it.
+ *
+ * `calls` records what each attempt carried, because the whole point is that
+ * the SECOND attempt carries the text this device edited from.
+ */
+function mergingSink(merged: string) {
+  const calls: { entry: OutboxEntry; opts?: { baseText: string } }[] = [];
+  const sink: OutboxSink = {
+    write: async (entry, opts) => {
+      calls.push({ entry, opts });
+      if (!opts) return { ok: false, current: 'their-hash' };
+      return { ok: true, hash: 'merged-hash', merged: true, content: merged };
+    },
+    writeConflictCopy: async () => {
+      throw new Error('a clean merge must not write a copy');
+    },
+  };
+  return { sink, calls };
+}
+
 describe('queueWrite', () => {
   it('holds the writing until it is sent', async () => {
     await queue();
@@ -312,7 +336,7 @@ describe('drainOutbox', () => {
       sink({ write: async () => ({ ok: false, current: 'other-hash' }) }),
       DAEMON,
     );
-    expect(result.conflicted).toEqual([{ path: PATH, base: 'base-hash', copy: `${PATH} (conflict)` }]);
+    expect(result.conflicted[0]).toMatchObject({ path: PATH, base: 'base-hash', copy: `${PATH} (conflict)` });
     expect(await isQueued(store, PATH)).toBe(false);
   });
 
@@ -360,6 +384,132 @@ describe('drainOutbox', () => {
     const result = await drainOutbox(store, sink(), '');
     expect(result.foreign).toBe(1);
     expect(await isQueued(store, PATH)).toBe(true);
+  });
+});
+
+/**
+ * A stale write is MERGED, not lost.
+ *
+ * The daemon holds the note and the other writer's text; this device holds
+ * the text the write was made from. All three meet only when the browser
+ * sends its base text, so the drain retries with it.
+ */
+describe('a stale write is retried with the base text it was made from', () => {
+  it('a stale whole write is retried with its base text and lands when the merge is clean', async () => {
+    await queue({ body: 'A\nB\nC\nD\n', base: 'h0', baseText: 'A\nB\nC\n' });
+    const { sink, calls } = mergingSink('A\nB2\nC\nD\n');
+
+    const result = await drainOutbox(store, sink, DAEMON);
+
+    expect(calls.map((c) => c.opts)).toEqual([undefined, { baseText: 'A\nB\nC\n' }]);
+    expect(result.sent).toBe(1);
+    expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'merged-hash' }]);
+    expect(result.conflicted).toEqual([]);
+    expect(await isQueued(store, PATH)).toBe(false);
+    // The daemon wrote the MERGED text, so that is what this device now has.
+    expect(await store.get<{ body: string; hash: string }>('mirror', PATH)).toMatchObject({
+      body: 'A\nB2\nC\nD\n',
+      hash: 'merged-hash',
+    });
+  });
+
+  // An anchored entry has no body. Its edits anchor in the text they were made
+  // from, so that text plus the edits IS our whole note.
+  it('a stale anchored entry is retried as a whole write made from its base text', async () => {
+    await queueWrite(store, {
+      kind: 'anchored',
+      path: PATH,
+      edits: [TICK],
+      base: 'h0',
+      baseText: '- [ ] milk\n- [ ] eggs\n',
+      kiln: KILN,
+      daemon: DAEMON,
+    });
+    const { sink, calls } = mergingSink('- [x] milk\n- [ ] eggs\n');
+
+    const result = await drainOutbox(store, sink, DAEMON);
+
+    expect(calls[0].entry.kind, 'the first attempt is still the anchored replay').toBe('anchored');
+    expect(calls[1].entry).toMatchObject({ kind: 'whole', body: '- [x] milk\n- [ ] eggs\n' });
+    expect(calls[1].opts).toEqual({ baseText: '- [ ] milk\n- [ ] eggs\n' });
+    expect(result.sent).toBe(1);
+    expect(result.refusedEdits).toEqual([]);
+  });
+
+  // The daemon merged and both sides had changed one span. Nothing is written
+  // and the regions come back, because the server never picks a writer.
+  it('a retry whose merge leaves regions is reported with them', async () => {
+    await queue({ body: 'A\nMINE\n', base: 'h0', baseText: 'A\nB\n' });
+    const result = await drainOutbox(
+      store,
+      sink({
+        write: async (_entry, opts) =>
+          opts
+            ? {
+                ok: false,
+                current: 'h9',
+                currentContent: 'A\nTHEIRS\n',
+                mergedContent: 'A\nMINE\n',
+                regions: [{ start_line: 2, end_line: 3, base: 'B\n', ours: 'MINE\n', theirs: 'THEIRS\n' }],
+              }
+            : { ok: false, current: 'h9' },
+      }),
+      DAEMON,
+    );
+
+    expect(result.sent).toBe(0);
+    expect(result.conflicted[0]).toMatchObject({
+      path: PATH,
+      base: 'h0',
+      currentHash: 'h9',
+      currentContent: 'A\nTHEIRS\n',
+      mergedContent: 'A\nMINE\n',
+      regions: [{ start_line: 2, end_line: 3, ours: 'MINE\n', theirs: 'THEIRS\n' }],
+    });
+  });
+
+  /**
+   * An entry a device queued before writes kept their base text.
+   *
+   * Nothing here can merge it, and overwriting the other writer is not an
+   * answer either. It becomes a conflict over the whole note, and the text is
+   * still the user's.
+   */
+  it('an entry stored without a base text is reported as a conflict over the whole note, not dropped and not merged', async () => {
+    await queue({ body: 'mine\nand more\n', base: 'h0' });
+    const seen: (undefined | { baseText: string })[] = [];
+    const result = await drainOutbox(
+      store,
+      sink({
+        write: async (_entry, opts) => {
+          seen.push(opts);
+          return { ok: false, current: 'h9', currentContent: 'theirs\n' };
+        },
+      }),
+      DAEMON,
+    );
+
+    expect(seen, 'there is nothing to merge from, so nothing is retried').toEqual([undefined]);
+    expect(result.conflicted).toHaveLength(1);
+    expect(result.conflicted[0]).toMatchObject({
+      path: PATH,
+      currentHash: 'h9',
+      currentContent: 'theirs\n',
+      mergedContent: 'mine\nand more\n',
+      copy: `${PATH} (conflict)`,
+      regions: [
+        { start_line: 1, end_line: 3, base: '', ours: 'mine\nand more\n', theirs: 'theirs\n' },
+      ],
+    });
+  });
+
+  // The base hash and the base text are ONE fact. The first queue wins the
+  // hash, so it must win the text: pairing the first hash with a later text
+  // asks the daemon to merge from a text that is not the base it names.
+  it('a folded write keeps the base text of the first queued write', async () => {
+    await queue({ body: 'one', base: 'h0', baseText: 'ZERO' });
+    await queue({ body: 'two', base: 'h1', baseText: 'ONE' });
+    expect(await readQueued(store, PATH)).toMatchObject({ base: 'h0', baseText: 'ZERO', body: 'two' });
   });
 });
 
