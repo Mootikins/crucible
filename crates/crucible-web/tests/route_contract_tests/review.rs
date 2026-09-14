@@ -84,6 +84,39 @@ async fn list_hunks_passes_through_keys_this_crate_never_names() {
     );
 }
 
+/// The scope rides the query string and reaches the daemon as its own word.
+/// Absent is not sent as `null`: the daemon reads an absent scope as the
+/// session, and every client written before scopes existed sends nothing.
+#[tokio::test]
+async fn list_hunks_forwards_the_scope() {
+    let (mock, status, json) = call("GET", "/api/session/s1/review/hunks?scope=turn", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let params = mock.received_params("review.list_hunks").unwrap();
+    assert_eq!(params["scope"], "turn");
+    assert_eq!(json["scope"], "turn");
+
+    let (mock, status, _json) = call("GET", "/api/session/s1/review/hunks", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let params = mock.received_params("review.list_hunks").unwrap();
+    assert!(
+        params.get("scope").is_none(),
+        "no scope asked, no scope sent: {params}"
+    );
+}
+
+/// A scope the shared type does not know is refused here, not guessed at.
+#[tokio::test]
+async fn an_unknown_scope_is_a_bad_request() {
+    let (mock, status, _json) =
+        call("GET", "/api/session/s1/review/hunks?scope=workspace", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        mock.received_methods().is_empty(),
+        "the daemon was not asked"
+    );
+}
+
 #[tokio::test]
 async fn a_session_id_with_a_slash_survives_the_path() {
     // The frontend percent-encodes it; axum decodes it back. If the round trip

@@ -26,15 +26,16 @@
 
 use super::super::*;
 use crate::rpc_client::{
-    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest,
-    ReviewSetStatesRequest, SessionIdRequest,
+    ReviewCommentRequest, ReviewListHunksRequest, ReviewResolveCommentRequest,
+    ReviewSetStateRequest, ReviewSetStatesRequest, SessionIdRequest,
 };
 use crate::rpc_helpers::typed_params;
 
 use std::path::Path;
 
 use crucible_core::session::{
-    Comment, CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewState, RootBase, RootStatus,
+    Comment, CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewScope, ReviewState, RootBase,
+    RootStatus,
 };
 
 use crate::review::{paths, BulkOutcome, ReviewError, ReviewResult};
@@ -94,16 +95,30 @@ pub(crate) async fn list_hunks(
     }
 }
 
-/// The composed diff plus the roots the ledger cannot vouch for.
+/// The composed diff plus the roots the ledger cannot vouch for, under one
+/// scope.
 ///
 /// The statuses are not decoration: a degraded root contributes no hunks, so a
 /// client shown only the hunks would read a broken ledger as a clean queue —
 /// while the gate is holding every write under that root.
+///
+/// The turn boundary is read here, from the session's scheduler-owned tree,
+/// because the engine knows intervals and not conversations; the same tree
+/// the gate reads its `this_turn` from.
 pub(crate) async fn list_hunks_with_status(
     am: &AgentManager,
     session_id: &str,
+    scope: ReviewScope,
 ) -> ReviewResult<(Vec<ComposedHunk>, Vec<RootStatus>)> {
-    match am.review.list_hunks_with_status(session_id).await {
+    let turn_start = match scope {
+        ReviewScope::Session => None,
+        ReviewScope::Turn => am.turn_start_node(session_id).await,
+    };
+    match am
+        .review
+        .list_hunks_with_status(session_id, scope, turn_start)
+        .await
+    {
         Err(ReviewError::NoLedger(_)) => Ok((Vec::new(), Vec::new())),
         other => other,
     }
@@ -370,18 +385,22 @@ pub(crate) async fn handle_review_list_hunks(
     am: &Arc<AgentManager>,
     sm: &Arc<SessionManager>,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<ReviewListHunksRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = &params.session_id;
+    let scope = params.scope.unwrap_or_default();
     ensure_loaded(am, sm, session_id).await;
 
-    match list_hunks_with_status(am, session_id).await {
+    match list_hunks_with_status(am, session_id, scope).await {
         Ok((hunks, roots)) => Response::success(
             req.id,
             serde_json::json!({
                 "session_id": session_id,
+                // Echoed so a client that switched scope while a listing was
+                // in flight can tell which scope the answer describes.
+                "scope": scope,
                 "hunks": hunks,
                 "comments": am.review.comments(session_id),
                 // Only the roots that are actually broken. An empty array is

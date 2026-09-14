@@ -282,6 +282,7 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             json!({}),
             Answer::Succeeds(json!({
                 "session_id": GHOST,
+                "scope": "session",
                 "hunks": [], "comments": [], "degraded": [],
                 "integrity": {"skips": []},
                 "gate": serde_json::Value::Null,

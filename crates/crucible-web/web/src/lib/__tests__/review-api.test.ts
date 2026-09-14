@@ -36,14 +36,21 @@ describe('review REST surface', () => {
   it('lists hunks for a session', async () => {
     ok({ session_id: 's1', hunks: [], comments: [] });
     await listReviewHunks('s1');
-    expect(call()[0]).toBe('/api/session/s1/review/hunks');
+    expect(call()[0]).toBe('/api/session/s1/review/hunks?scope=session');
     expect(call()[1].method).toBe('GET');
+  });
+
+  // The scope is the daemon's decision to make; the browser only names it.
+  it('the turn scope asks the daemon for the turn', async () => {
+    ok({ session_id: 's1', scope: 'turn', hunks: [], comments: [] });
+    await listReviewHunks('s1', 'turn');
+    expect(call()[0]).toBe('/api/session/s1/review/hunks?scope=turn');
   });
 
   it('encodes a session id with characters a path would eat', async () => {
     ok({ session_id: 'a/b', hunks: [], comments: [] });
     await listReviewHunks('a/b');
-    expect(call()[0]).toBe('/api/session/a%2Fb/review/hunks');
+    expect(call()[0]).toBe('/api/session/a%2Fb/review/hunks?scope=session');
   });
 
   it('sets state by hunk id', async () => {

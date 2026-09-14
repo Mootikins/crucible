@@ -210,6 +210,20 @@ impl ConversationTree {
             .count()
     }
 
+    /// The `User` node that began the current turn: the last one on the
+    /// current path. `None` before the first turn.
+    ///
+    /// Ids are append-only, so every node the turn has produced — and every
+    /// review interval closed during it — carries an id at or above this one,
+    /// and every node of an earlier turn carries a lower one. That is what
+    /// makes it a turn boundary without a marker.
+    pub fn turn_start(&self) -> Option<NodeId> {
+        self.path_to_here(self.current)
+            .into_iter()
+            .rev()
+            .find(|id| matches!(self.get(*id).content, NodeContent::User { .. }))
+    }
+
     /// True iff there is at least one turn on the current path.
     pub fn can_undo(&self) -> bool {
         self.undo_depth() > 0
@@ -445,6 +459,21 @@ mod tests {
         let b = t.add_child(a, text("b"));
         let c = t.add_child(b, text("c"));
         assert_eq!(t.path_to_here(c), vec![t.root(), a, b, c]);
+    }
+
+    #[test]
+    fn turn_start_is_the_last_user_node_on_the_current_path() {
+        let mut t = ConversationTree::new();
+        assert_eq!(t.turn_start(), None, "no turn before the first user node");
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        assert_eq!(t.turn_start(), Some(u1));
+        let u2 = t.add_child_and_advance(t.current(), text("u2"));
+        t.add_child_and_advance(u2, NodeContent::Agent { text: "a2".into() });
+        assert_eq!(t.turn_start(), Some(u2));
+        // An undo moves the cursor back, and the boundary follows the path.
+        t.undo_turns(1);
+        assert_eq!(t.turn_start(), Some(u1));
     }
 
     #[test]

@@ -23,6 +23,7 @@
 //! green light with no bulb. Only `review_list_hunks` may retry.
 
 use super::daemon::ReconnectingDaemon;
+use crucible_core::session::ReviewScope;
 use crucible_daemon::rpc_client::ReviewCommentRequest;
 
 impl ReconnectingDaemon {
@@ -32,11 +33,18 @@ impl ReconnectingDaemon {
     /// on the daemon's schedule, and a struct here would drop every one of
     /// them on the floor until this crate was rebuilt to match. The only
     /// review call idempotent enough to retry.
-    pub async fn review_list_hunks(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
+    ///
+    /// `scope` narrows the listing to the current turn when asked; `None`
+    /// sends no scope and the daemon answers the whole session.
+    pub async fn review_list_hunks(
+        &self,
+        session_id: &str,
+        scope: Option<ReviewScope>,
+    ) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("review.list_hunks", move |daemon| {
             let session_id = session_id.clone();
-            Box::pin(async move { daemon.review_list_hunks(&session_id).await })
+            Box::pin(async move { daemon.review_list_hunks(&session_id, scope).await })
         })
         .await
     }

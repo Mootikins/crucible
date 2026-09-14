@@ -199,14 +199,17 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
    * survives in the composed diff — a later edit overwrote it.
    *
    * Gated on `loaded` so an unanswered (or failed) list never claims work was
-   * thrown away, and on `diff()` so a call that never proposed an edit is not
-   * described as superseded for having produced no hunks.
+   * thrown away, on `diff()` so a call that never proposed an edit is not
+   * described as superseded for having produced no hunks, and on the session
+   * scope: under the turn scope the store holds only the current turn's
+   * hunks, so an earlier call's absence says nothing about its edit.
    */
   const superseded = createMemo(
     () =>
       !!callId() &&
       !!diff() &&
       reviewStore.session(sessionId()).loaded &&
+      reviewStore.scope(sessionId()) === 'session' &&
       liveHunks().length === 0,
   );
 

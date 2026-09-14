@@ -18,11 +18,25 @@
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
+use crucible_core::session::ReviewScope;
 use crucible_daemon::rpc_client::ReviewCommentRequest;
 use serde::Deserialize;
+
+/// `GET /review/hunks?scope=` — which hunks to list.
+///
+/// Typed, unlike `state` on [`SetStateRequest`], and for the opposite reason:
+/// this is not a copy of the daemon's vocabulary but the daemon's own type,
+/// shared through `crucible-core`, so there is nothing here to drift. A scope
+/// the type does not know is refused as a bad query before the daemon is
+/// asked; absent means the whole session.
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct ListHunksQuery {
+    #[serde(default)]
+    scope: Option<ReviewScope>,
+}
 
 /// `POST /review/state` — accept, reject, or requeue one hunk.
 #[derive(Debug, Deserialize)]
@@ -71,12 +85,17 @@ pub(super) struct CommentRequest {
     author: Option<String>,
 }
 
-/// `GET /api/session/{id}/review/hunks`
+/// `GET /api/session/{id}/review/hunks?scope=session|turn`
 pub(super) async fn list_hunks(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<ListHunksQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let hunks = state.daemon.review_list_hunks(&id).await.daemon_err()?;
+    let hunks = state
+        .daemon
+        .review_list_hunks(&id, query.scope)
+        .await
+        .daemon_err()?;
     Ok(Json(hunks))
 }
 

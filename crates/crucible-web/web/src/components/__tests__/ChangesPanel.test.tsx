@@ -334,6 +334,28 @@ describe('ChangesPanel — the queue', () => {
     expect(screen.getByTestId('changes-count').textContent).toContain('1 unreviewed');
   });
 
+  it('the turn scope asks the daemon for the turn', async () => {
+    answer([hunk({ id: 'h1' })]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
+    expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'session');
+    expect(screen.getByTestId('changes-scope-session').getAttribute('aria-pressed')).toBe('true');
+
+    // The daemon decides what the turn holds; the panel only asks.
+    answer([]);
+    fireEvent.click(screen.getByTestId('changes-scope-turn'));
+    await waitFor(() => expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'turn'));
+    expect(screen.getByTestId('changes-scope-turn').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('changes-scope-session').getAttribute('aria-pressed')).toBe('false');
+    // The empty state names the scope it is empty under.
+    await waitFor(() => expect(screen.getByTestId('changes-empty')).toBeInTheDocument());
+    expect(screen.getByTestId('changes-empty').textContent).toContain('turn');
+
+    fireEvent.click(screen.getByTestId('changes-scope-session'));
+    await waitFor(() => expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'session'));
+  });
+
   it('a session with no changes says so once the list has answered', async () => {
     setCurrentSession(session());
     render(() => <ChangesPanel />);

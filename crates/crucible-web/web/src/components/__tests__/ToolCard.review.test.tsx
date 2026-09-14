@@ -146,6 +146,16 @@ describe('ToolCard — superseded', () => {
     await waitFor(() => expect(screen.getByTestId('tool-superseded')).toBeInTheDocument());
   });
 
+  it('a turn-scoped listing never marks an earlier call superseded', async () => {
+    // Under the turn scope the store holds only the current turn's hunks, so
+    // an earlier call's absence says nothing about whether its edit survived.
+    await seed([]);
+    await reviewActions.setScope('s1', 'turn');
+    render(() => <ToolCard toolCall={editCall()} />);
+    await waitFor(() => expect(reviewActions).toBeDefined());
+    expect(screen.queryByTestId('tool-superseded')).toBeNull();
+  });
+
   it('a call whose hunk is still live is NOT superseded', async () => {
     await seed([hunk()]);
     render(() => <ToolCard toolCall={editCall()} />);

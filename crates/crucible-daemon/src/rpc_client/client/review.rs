@@ -23,6 +23,20 @@ use serde_json::Value;
 
 use super::session::SessionIdRequest;
 use super::DaemonClient;
+use crucible_core::session::ReviewScope;
+
+/// Request for `review.list_hunks`.
+///
+/// `scope` is the daemon's own type, shared through `crucible-core`, so the
+/// web route, this client and the handler spell the two words from one
+/// definition. Absent means [`ReviewScope::Session`], which is what every
+/// client written before scopes existed sends.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReviewListHunksRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<ReviewScope>,
+}
 
 /// Request for `review.set_state`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -87,11 +101,19 @@ impl DaemonClient {
     /// status keys the daemon has grown since.
     ///
     /// The one review method that is safe to retry: it mutates nothing.
-    pub async fn review_list_hunks(&self, session_id: &str) -> Result<Value> {
+    ///
+    /// `None` for `scope` sends no scope, which the daemon reads as the whole
+    /// session.
+    pub async fn review_list_hunks(
+        &self,
+        session_id: &str,
+        scope: Option<ReviewScope>,
+    ) -> Result<Value> {
         self.call_with_retry(
             "review.list_hunks",
-            serde_json::to_value(SessionIdRequest {
+            serde_json::to_value(ReviewListHunksRequest {
                 session_id: session_id.to_string(),
+                scope,
             })?,
         )
         .await

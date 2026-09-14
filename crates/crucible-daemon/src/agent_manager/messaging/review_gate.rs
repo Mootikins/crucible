@@ -303,7 +303,16 @@ async fn blocking_earlier_turn(
     // silent `None` it always did rather than warning once per poll.
     let session_ledger = ledger.ledger(session_id)?;
 
-    let (hunks, statuses) = match ledger.list_hunks_with_status(session_id).await {
+    // Always the whole session: a scope is a view for the panel, and the gate
+    // owes the user every unreviewed hunk regardless of which turn wrote it.
+    let (hunks, statuses) = match ledger
+        .list_hunks_with_status(
+            session_id,
+            crucible_core::session::ReviewScope::Session,
+            None,
+        )
+        .await
+    {
         Ok(listed) => listed,
         Err(error) => {
             warn!(

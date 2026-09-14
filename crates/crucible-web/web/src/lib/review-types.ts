@@ -16,6 +16,13 @@ import type { ModeDescriptor } from './types';
 /** Per-composed-hunk review state. Matches the Rust enum's snake_case wire form. */
 export type ReviewState = 'unreviewed' | 'accepted' | 'rejected';
 
+/**
+ * Which hunks a review lists: the session's, or the current turn's. Mirrors
+ * `crucible_core::session::ReviewScope`. The daemon decides membership; the
+ * browser only names the scope it wants.
+ */
+export type ReviewScope = 'session' | 'turn';
+
 /** 1-based, half-open — `start` is the first line, `end` is one PAST the last. */
 interface LineRange {
   start: number;

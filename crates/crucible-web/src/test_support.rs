@@ -870,8 +870,14 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // stub could not fail when that stopped being true.
         "review.list_hunks" => {
             let session_id = param_str(msg, "session_id");
+            // Echoed as the daemon echoes it: absent reads as the session.
+            let scope = match param_value(msg, "scope") {
+                Value::Null => json!("session"),
+                scope => scope,
+            };
             json!({
                 "session_id": session_id,
+                "scope": scope,
                 "hunks": [{
                     "id": "hunk-1",
                     "root": "/tmp/test-project",

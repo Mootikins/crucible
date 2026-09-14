@@ -799,6 +799,36 @@ impl AgentManager {
         Arc::new(tokio::sync::Mutex::new(initial))
     }
 
+    /// The node that began `session_id`'s current turn, or `None` when the
+    /// session has no turn yet.
+    ///
+    /// The review's `Turn` scope filters on it: an interval whose `node_id` is
+    /// at or above this one closed during the current turn. It reads the same
+    /// scheduler-owned tree the review gate reads, and rebuilds it from the
+    /// session's JSONL when the session is known but its tree is not in memory
+    /// yet — the panel opens on a resumed session long before a message is
+    /// sent, and "no turn" would be the wrong answer for a session with a
+    /// whole transcript on disk. A session the manager does not know and that
+    /// has no tree in memory has no turn.
+    pub async fn turn_start_node(&self, session_id: &str) -> Option<u32> {
+        let in_memory = self
+            .existing_slot(session_id)
+            .and_then(|slot| slot.tree.get().cloned());
+        let tree = match in_memory {
+            Some(tree) => tree,
+            None => {
+                let session = self.session_manager.get_session(session_id)?;
+                self.get_or_rebuild_session_tree(
+                    session_id,
+                    &session.jsonl_path(self.session_manager.sessions_root()),
+                )
+                .await
+            }
+        };
+        let start = tree.lock().await.turn_start()?;
+        Some(start.index())
+    }
+
     /// Look up an existing session tree without rebuilding from JSONL.
     /// Returns `None` if the session has no in-memory tree yet.
     ///

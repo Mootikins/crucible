@@ -17,7 +17,13 @@
  * cost the agent a duplicate tool description every turn.
  */
 import { request } from './api';
-import type { CommentAuthor, ComposedHunk, ReviewComment, ReviewState } from './review-types';
+import type {
+  CommentAuthor,
+  ComposedHunk,
+  ReviewComment,
+  ReviewScope,
+  ReviewState,
+} from './review-types';
 
 /** Path prefix, matching the `session` route group's `modes`/`mode`/`status`. */
 const base = (sessionId: string) => `/api/session/${encodeURIComponent(sessionId)}/review`;
@@ -59,6 +65,9 @@ export interface IntegritySkip {
  */
 export interface ReviewHunksResponse {
   session_id?: string;
+  /** The scope the daemon answered under. A store that switched scope while
+   * this listing was in flight uses it to drop the stale answer. */
+  scope?: ReviewScope;
   hunks: ComposedHunk[];
   comments: ReviewComment[];
   degraded?: DegradedRoot[];
@@ -67,8 +76,15 @@ export interface ReviewHunksResponse {
   gate?: { blocked: boolean; tool: string; path: string | null } | null;
 }
 
-export function listReviewHunks(sessionId: string): Promise<ReviewHunksResponse> {
-  return request('GET', `${base(sessionId)}/hunks`, {
+/**
+ * The composed diff under one scope. Always named on the wire, so the answer
+ * and the question agree without a default living on two sides.
+ */
+export function listReviewHunks(
+  sessionId: string,
+  scope: ReviewScope = 'session',
+): Promise<ReviewHunksResponse> {
+  return request('GET', `${base(sessionId)}/hunks?scope=${scope}`, {
     errorMessage: 'Failed to load review',
     includeErrorText: true,
   });

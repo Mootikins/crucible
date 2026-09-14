@@ -28,7 +28,13 @@ import {
   undoLastReject,
 } from '@/lib/review-confirm';
 import { hit } from '@/lib/touch';
-import { hunkPath, hunkRangeLabel, isExternal, type ComposedHunk } from '@/lib/review-types';
+import {
+  hunkPath,
+  hunkRangeLabel,
+  isExternal,
+  type ComposedHunk,
+  type ReviewScope,
+} from '@/lib/review-types';
 import { Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
 
 /** Files, in composed-diff order, with their hunks. */
@@ -248,6 +254,16 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
   );
 };
 
+/**
+ * The two scopes, in the order the control draws them. A filter over one
+ * composed diff, decided by the daemon: a hunk the current turn extended and
+ * an older turn began shows whole under "Turn".
+ */
+const SCOPES: { scope: ReviewScope; label: string; title: string }[] = [
+  { scope: 'session', label: 'Session', title: 'Every change this session made' },
+  { scope: 'turn', label: 'Turn', title: 'Only the changes the current turn made' },
+];
+
 export const ChangesPanel: Component = () => {
   const { currentSession } = useSessionSafe();
   const sessionId = () => currentSession()?.id;
@@ -258,6 +274,7 @@ export const ChangesPanel: Component = () => {
   const [bulkBusy, setBulkBusy] = createSignal(false);
 
   const state = () => reviewStore.session(sessionId());
+  const scope = () => reviewStore.scope(sessionId());
 
   // One bulk decision in flight at a time. A second click while the daemon is
   // still applying the first would send the same ids again.
@@ -366,8 +383,36 @@ export const ChangesPanel: Component = () => {
           </button>
         </div>
         {/* The review-wide pair. Disabled, not hidden, so the panel keeps its
-            shape while the queue drains. */}
+            shape while the queue drains. The scope control sits beside them:
+            the daemon decides what the turn holds, the panel only asks. */}
         <div class="mt-1 flex items-center gap-1.5">
+          <div
+            role="group"
+            aria-label="Scope"
+            class="flex items-center rounded border border-hairline text-floor"
+          >
+            <For each={SCOPES}>
+              {(option) => (
+                <button
+                  type="button"
+                  title={option.title}
+                  data-testid={`changes-scope-${option.scope}`}
+                  aria-pressed={scope() === option.scope}
+                  onClick={() => {
+                    const id = sessionId();
+                    if (id) void reviewActions.setScope(id, option.scope);
+                  }}
+                  class={`px-2 py-0.5 hover:bg-hover-wash ${
+                    scope() === option.scope
+                      ? 'bg-hover-wash text-shell-ink'
+                      : 'text-muted-dark hover:text-shell-ink'
+                  } ${hit()}`}
+                >
+                  {option.label}
+                </button>
+              )}
+            </For>
+          </div>
           <button
             type="button"
             title="Accept every unreviewed change in this review"
@@ -449,7 +494,7 @@ export const ChangesPanel: Component = () => {
             }
           >
             <p class="p-3 text-xs text-muted-dark" data-testid="changes-empty">
-              No changes in this session yet.
+              No changes in this {scope()} yet.
             </p>
           </Show>
 

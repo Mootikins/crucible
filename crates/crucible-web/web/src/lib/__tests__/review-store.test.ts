@@ -124,6 +124,39 @@ describe('reviewStore reads', () => {
   });
 });
 
+describe('scope', () => {
+  it('a session lists under the session scope until asked for the turn', async () => {
+    await reviewActions.refresh('s1');
+    expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'session');
+    expect(reviewStore.scope('s1')).toBe('session');
+
+    await reviewActions.setScope('s1', 'turn');
+    expect(reviewStore.scope('s1')).toBe('turn');
+    expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'turn');
+    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+
+    // The same scope again is not a round trip.
+    await reviewActions.setScope('s1', 'turn');
+    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+  });
+
+  it('an answer for a scope the session has left is dropped', async () => {
+    // The daemon echoes the scope it answered. A session-wide listing that
+    // lands after the user switched to the turn would show the whole diff
+    // under a control that says "Turn".
+    listReviewHunks.mockImplementation(async (_id: string, scope: string) => ({
+      session_id: 's1',
+      scope: 'session',
+      hunks: scope === 'session' ? [hunk({ id: 'whole' })] : [],
+      comments: [],
+    }));
+    await reviewActions.setScope('s1', 'turn');
+    expect(reviewStore.session('s1').hunks).toEqual([]);
+    // ...and it does not count as a load either: nothing is known about the turn.
+    expect(reviewStore.session('s1').loaded).toBe(false);
+  });
+});
+
 describe('refresh', () => {
   it('a failed list does NOT mark the session loaded', async () => {
     listReviewHunks.mockRejectedValue(new Error('HTTP 500'));

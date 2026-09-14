@@ -5,7 +5,7 @@
 
 use crate::session::types::{
     ChildLedgerRef, ComposedHunk, HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot,
-    ReviewState, RootBase, RootInterval, Skip, SkipKind, TreeSha, Verdict,
+    ReviewScope, ReviewState, RootBase, RootInterval, Skip, SkipKind, TreeSha, Verdict,
 };
 use std::path::Path;
 
@@ -218,6 +218,23 @@ fn review_state_serializes_snake_case() {
     assert_eq!(
         serde_json::to_string(&ReviewState::Rejected).unwrap(),
         "\"rejected\""
+    );
+}
+
+/// The two scope words are the wire contract the web's `?scope=` query and the
+/// panel's control both spell. Walked through `EnumIter`, so a third variant
+/// fails here until it is spelled too.
+#[test]
+fn review_scope_strings_are_the_wire_contract() {
+    use strum::IntoEnumIterator;
+    let spelled: Vec<String> = ReviewScope::iter()
+        .map(|s| serde_json::to_string(&s).unwrap())
+        .collect();
+    assert_eq!(spelled, vec!["\"session\"", "\"turn\""]);
+    assert_eq!(ReviewScope::default(), ReviewScope::Session);
+    assert_eq!(
+        serde_json::from_str::<ReviewScope>("\"turn\"").unwrap(),
+        ReviewScope::Turn
     );
 }
 

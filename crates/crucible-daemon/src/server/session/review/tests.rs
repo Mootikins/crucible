@@ -84,6 +84,55 @@ impl Fixture {
         std::fs::read_to_string(self.dir.path().join("a.txt")).unwrap()
     }
 
+    /// Start a turn on the session's scheduler-owned tree the way a send
+    /// does: one `User` node, then the `Agent` node the tool calls run under.
+    /// Answers the node id a bracket closed in this turn would record.
+    async fn begin_turn(&self, text: &str) -> u32 {
+        use crucible_core::turn::NodeContent;
+        let tree = self
+            .am
+            .get_or_rebuild_session_tree(&self.session, std::path::Path::new("/nonexistent.jsonl"))
+            .await;
+        let mut tree = tree.lock().await;
+        let cursor = tree.current();
+        let user = tree.add_child_and_advance(
+            cursor,
+            NodeContent::User {
+                text: text.to_string(),
+            },
+        );
+        tree.add_child_and_advance(
+            user,
+            NodeContent::Agent {
+                text: String::new(),
+            },
+        );
+        tree.current().index()
+    }
+
+    /// One bracketed "tool call" that rewrites `file`, closed at `node_id` —
+    /// the turn coordinate the interval keeps.
+    async fn call_at(&self, tool_call_id: &str, file: &str, contents: &str, node_id: u32) {
+        let handle = self.am.review.open_bracket(&self.session).await.unwrap();
+        std::fs::write(self.dir.path().join(file), contents).unwrap();
+        self.am
+            .review
+            .close(&self.session, handle, tool_call_id, node_id)
+            .await
+            .unwrap();
+    }
+
+    /// The listing under one scope, as the handler answers it.
+    async fn list_scoped(&self, scope: &str) -> serde_json::Value {
+        let resp = handle_review_list_hunks(
+            self.request("review.list_hunks", serde_json::json!({ "scope": scope })),
+            &self.am,
+            &self.sm,
+        )
+        .await;
+        resp.result.expect("hunks")
+    }
+
     fn request(&self, method: &str, mut params: serde_json::Value) -> Request {
         params["session_id"] = serde_json::json!(self.session);
         Request {
@@ -322,6 +371,86 @@ async fn an_unparseable_state_is_refused_before_the_ledger_is_touched() {
     let err = resp.error.expect("refused");
     assert_eq!(err.code, INVALID_PARAMS);
     assert!(err.message.contains("Invalid 'state'"), "{}", err.message);
+}
+
+/// The turn scope is a filter over the composed diff, decided by the daemon
+/// from the turn coordinate every interval carries: a hunk is the current
+/// turn's when one of its calls closed at or after the turn's first node.
+/// An external hunk has no call and is never the turn's.
+#[tokio::test]
+async fn turn_scope_lists_only_hunks_the_current_turn_touched() {
+    let fx = Fixture::new("1\n2\n3\n4\n5\n6\n7\n8\n9\n").await;
+    std::fs::write(fx.dir.path().join("b.txt"), "alpha\n").unwrap();
+    git(fx.dir.path(), &["add", "."]).await;
+    git(fx.dir.path(), &["commit", "-q", "-m", "second file"]).await;
+    fx.open_ledger().await;
+
+    let first = fx.begin_turn("edit a").await;
+    fx.call_at("call-1", "a.txt", "one\n2\n3\n4\n5\n6\n7\n8\n9\n", first)
+        .await;
+    let second = fx.begin_turn("edit b").await;
+    fx.call_at("call-2", "b.txt", "ALPHA\n", second).await;
+    // The user's own edit, seen by no bracket, far enough from the first
+    // hunk to compose as its own.
+    std::fs::write(
+        fx.dir.path().join("a.txt"),
+        "one\n2\n3\n4\n5\n6\n7\n8\nnine\n",
+    )
+    .unwrap();
+
+    let session = fx.list_scoped("session").await;
+    let paths = |v: &serde_json::Value| -> Vec<String> {
+        let mut out: Vec<String> = v["hunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["path"].as_str().unwrap().to_string())
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(
+        paths(&session),
+        vec!["a.txt", "a.txt", "b.txt"],
+        "the session scope is the whole composed diff: {session}"
+    );
+    assert_eq!(session["scope"], serde_json::json!("session"));
+
+    let turn = fx.list_scoped("turn").await;
+    assert_eq!(
+        paths(&turn),
+        vec!["b.txt"],
+        "the turn scope keeps only what the current turn's calls wrote: {turn}"
+    );
+    assert_eq!(
+        turn["hunks"][0]["tool_call_ids"],
+        serde_json::json!(["call-2"])
+    );
+    assert_eq!(turn["scope"], serde_json::json!("turn"));
+
+    // Absent means session, so every client written before scopes still
+    // reads the whole diff.
+    let unscoped = fx.list().await;
+    assert_eq!(unscoped.len(), 3);
+}
+
+/// A scope the daemon does not know is refused before the ledger is read,
+/// like an unknown state.
+#[tokio::test]
+async fn an_unknown_scope_is_refused() {
+    let fx = Fixture::new("one\n").await;
+    fx.open_ledger().await;
+    let resp = handle_review_list_hunks(
+        fx.request(
+            "review.list_hunks",
+            serde_json::json!({ "scope": "workspace" }),
+        ),
+        &fx.am,
+        &fx.sm,
+    )
+    .await;
+    let err = resp.error.expect("refused");
+    assert_eq!(err.code, INVALID_PARAMS);
 }
 
 /// A bulk decision is one daemon call that applies in the given order and

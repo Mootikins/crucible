@@ -194,6 +194,25 @@ pub enum ReviewState {
     Rejected,
 }
 
+/// Which hunks a review lists: the session's, or the current turn's.
+///
+/// A scope is a filter over the composed diff, never a second composition. A
+/// hunk the current turn extended and an older turn began shows whole under
+/// [`Self::Turn`]. The daemon decides membership: a hunk is the turn's when one
+/// of its tool calls closed at or after the turn's first node
+/// ([`Interval::node_id`]), so an external hunk — no call at all — is never in
+/// the turn.
+///
+/// `Session` is the default, and the only scope the review gate ever reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum ReviewScope {
+    #[default]
+    Session,
+    Turn,
+}
+
 /// A repository top level, as `git rev-parse --show-toplevel` printed it.
 ///
 /// Distinct from a plain `PathBuf` because the difference is invisible and

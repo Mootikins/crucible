@@ -39,7 +39,7 @@ use std::sync::{Arc, Weak};
 
 use crucible_core::session::{
     ChildLedgerRef, Comment, ComposedHunk, GateBlock, HunkId, Integrity, Interval, Ledger,
-    PhysicalRoot, ReviewState, RootBase, RootInterval, RootStatus, TreeSha, Verdict,
+    PhysicalRoot, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, TreeSha, Verdict,
 };
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -666,11 +666,27 @@ impl ReviewLedgers {
     }
 
     /// The composed diff for a session, attributed and carrying review state.
+    ///
+    /// Always the whole session: this is what the gate and every decision
+    /// read, and a scope is a view for a person, never a narrowing of what
+    /// the ledger owes.
     pub async fn list_hunks(&self, session_id: &str) -> ReviewResult<Vec<ComposedHunk>> {
-        Ok(self.list_hunks_with_status(session_id).await?.0)
+        Ok(self
+            .list_hunks_with_status(session_id, ReviewScope::Session, None)
+            .await?
+            .0)
     }
 
     /// The composed diff, plus what the ledger can and cannot vouch for.
+    ///
+    /// `scope` filters what comes back. Under [`ReviewScope::Turn`] a hunk is
+    /// kept when one of its calls closed at or after `turn_start`, the id of
+    /// the node that began the current turn ([`Interval::node_id`] is that
+    /// coordinate, and node ids are append-only). An external hunk has no call
+    /// and is never the turn's. `None` for `turn_start` under `Turn` means no
+    /// turn is known, so nothing is the turn's and the listing is empty; the
+    /// root statuses come back either way. Under `Session` the value is
+    /// ignored.
     ///
     /// A degraded root contributes **no hunks**, which is why the statuses
     /// have to come back beside them: losing attribution fails open on its own
@@ -685,6 +701,8 @@ impl ReviewLedgers {
     pub async fn list_hunks_with_status(
         &self,
         session_id: &str,
+        scope: ReviewScope,
+        turn_start: Option<u32>,
     ) -> ReviewResult<(Vec<ComposedHunk>, Vec<RootStatus>)> {
         // Clone the ledger out rather than holding a DashMap guard across the
         // git awaits below — a guard held across an await is a deadlock
@@ -692,6 +710,25 @@ impl ReviewLedgers {
         let ledger = self
             .ledger(session_id)
             .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
+        // The calls that belong to the current turn, or `None` when every
+        // hunk is in scope. Decided once from the intervals, not per root:
+        // a harvested child interval carries the parent-side node id, so it
+        // is placed in a turn the same way a native one is.
+        let turn_calls: Option<std::collections::HashSet<&str>> = match scope {
+            ReviewScope::Session => None,
+            ReviewScope::Turn => Some(
+                turn_start
+                    .map(|start| {
+                        ledger
+                            .intervals()
+                            .iter()
+                            .filter(|i| !i.contested && i.node_id >= start)
+                            .map(|i| i.tool_call_id.as_str())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            ),
+        };
         let states = self.states.get(session_id).map(|r| r.value().clone());
         let integrity = self
             .integrity
@@ -732,6 +769,15 @@ impl ReviewLedgers {
             attribute::attribute_root(&base.root, &mut composition, &intervals).await?;
 
             for mut hunk in composition.hunks {
+                if let Some(calls) = &turn_calls {
+                    if !hunk
+                        .tool_call_ids
+                        .iter()
+                        .any(|c| calls.contains(c.as_str()))
+                    {
+                        continue;
+                    }
+                }
                 let recorded = states
                     .as_ref()
                     .and_then(|s| s.get(&hunk.id))
@@ -811,7 +857,9 @@ impl ReviewLedgers {
             return Ok(Verdict::Degraded { root: None });
         }
 
-        let (hunks, statuses) = self.list_hunks_with_status(session_id).await?;
+        let (hunks, statuses) = self
+            .list_hunks_with_status(session_id, ReviewScope::Session, None)
+            .await?;
         // Resolved once rather than per hunk: each is a syscall, and the answer
         // does not depend on which hunk it is compared against.
         let resolved: Vec<PathBuf> = spellings

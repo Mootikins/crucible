@@ -38,6 +38,7 @@ import {
   isExternal,
   type ComposedHunk,
   type ReviewComment,
+  type ReviewScope,
   type ReviewState,
 } from './review-types';
 
@@ -49,6 +50,16 @@ export interface ReviewGate {
 }
 
 export interface ReviewSessionState {
+  /**
+   * Which hunks `hunks` holds: the session's, or the current turn's.
+   *
+   * Per session and shared by every consumer of the slot, because the slot
+   * IS the listing: the panel, the gutter and the transcript read one array,
+   * and a second array per scope would be a second fetch and a second event
+   * stream for the same session. Under `turn` a consumer that reasons from
+   * absence (the transcript's "superseded") must stay silent.
+   */
+  scope: ReviewScope;
   hunks: ComposedHunk[];
   comments: ReviewComment[];
   /**
@@ -71,6 +82,7 @@ export interface ReviewSessionState {
 }
 
 const EMPTY: ReviewSessionState = {
+  scope: 'session',
   hunks: [],
   comments: [],
   degraded: [],
@@ -110,6 +122,11 @@ export const reviewStore = {
    * as empty-and-unloaded, so consumers need no null branch. */
   session(id: string | undefined | null): ReviewSessionState {
     return (id && sessions[id]) || EMPTY;
+  },
+
+  /** The scope a session lists under. An unbound session is the session's. */
+  scope(id: string | undefined | null): ReviewScope {
+    return reviewStore.session(id).scope;
   },
 
   /** Hunks touching an absolute path, in composed-diff order. */
@@ -249,11 +266,16 @@ export const reviewActions = {
   async refresh(id: string): Promise<void> {
     ensureSlot(id);
     setSessions(id, 'loading', true);
+    const scope = sessions[id].scope;
     try {
-      const data = await listReviewHunks(id);
+      const data = await listReviewHunks(id, scope);
       // The session may have been released while the request was in flight;
       // writing then would resurrect a slot nobody reads.
       if (!sessions[id]) return;
+      // The daemon echoes the scope it answered. A listing for a scope the
+      // user has since left is not this slot's diff any more; the switch
+      // issued its own refresh, and that one lands with the right word.
+      if (data.scope && data.scope !== sessions[id].scope) return;
       setSessions(id, (s) => ({
         ...s,
         hunks: data.hunks,
@@ -297,6 +319,18 @@ export const reviewActions = {
     } finally {
       await reviewActions.refresh(id);
     }
+  },
+
+  /**
+   * List under another scope. The daemon decides what the turn holds; this
+   * only re-asks with the other word. The same scope again is not a round
+   * trip.
+   */
+  async setScope(id: string, scope: ReviewScope): Promise<void> {
+    ensureSlot(id);
+    if (sessions[id].scope === scope) return;
+    setSessions(id, 'scope', scope);
+    await reviewActions.refresh(id);
   },
 
   /** Reject == revert on disk == tell the agent. One operation, one name. */

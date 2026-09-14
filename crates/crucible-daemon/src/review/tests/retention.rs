@@ -167,7 +167,11 @@ async fn a_gcd_base_tree_blocks_until_a_rebase_and_then_clears() {
 
     let (hunks, statuses) = fx
         .ledgers
-        .list_hunks_with_status(&fx.session)
+        .list_hunks_with_status(
+            &fx.session,
+            crucible_core::session::ReviewScope::Session,
+            None,
+        )
         .await
         .unwrap();
     assert!(hunks.is_empty());
