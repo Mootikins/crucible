@@ -146,10 +146,28 @@ impl ReviewLedgers {
             self.record_state(session_id, &hunk.id, ReviewState::Unreviewed)
                 .await;
         }
-        if let Some(mut stack) = self.reject_stack.get_mut(session_id) {
-            stack.pop();
+        // Two undos in flight read the same top before either pops. Both
+        // wrote the same bytes, so the restore is done once; only the caller
+        // that still finds its batch on top pops it and journals the pop.
+        // A second pop would drop a batch nobody restored.
+        let popped = self
+            .reject_stack
+            .get_mut(session_id)
+            .is_some_and(|mut stack| {
+                let on_top = stack.last() == Some(&batch);
+                if on_top {
+                    stack.pop();
+                }
+                on_top
+            });
+        if popped {
+            self.append(session_id, journal::Record::Undone).await;
+        } else {
+            debug!(
+                session_id,
+                "undo restored a batch another undo already popped; nothing to pop"
+            );
         }
-        self.append(session_id, journal::Record::Undone).await;
         Ok(outcome)
     }
 }

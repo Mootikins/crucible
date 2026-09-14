@@ -758,6 +758,76 @@ async fn an_undo_after_the_file_moved_on_is_refused_as_stale_and_keeps_the_batch
     assert_eq!(fx.read(), "two\n");
 }
 
+/// Two undos in flight at once take back one reject, not two. Both read
+/// the top batch before either pops, and both write the same bytes; only
+/// the caller whose batch is still on top may pop it. Otherwise the second
+/// pop drops a batch nobody restored, and that reject is lost to the user.
+///
+/// The interleaving is forced, not hoped for: the runtime has one blocking
+/// thread, and it is busy when both undos start, so both file reads queue
+/// ahead of either write and both see the reverted file.
+#[test]
+fn concurrent_undos_pop_the_batch_they_restored_once() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let mut fx = Fixture::new("1\n2\n3\n4\n5\n").await;
+        fx.open_ledger().await;
+        fx.call("call-1", "one\n2\n3\n4\nfive\n").await;
+
+        let mut hunks = fx.list().await;
+        hunks.sort_by_key(|h| h.current_range.start);
+        assert_eq!(hunks.len(), 2, "{hunks:?}");
+        let ids: Vec<HunkId> = hunks.iter().map(|h| h.id.clone()).collect();
+        for id in &ids {
+            fx.am
+                .review
+                .set_state(&fx.session, id, ReviewState::Rejected)
+                .await
+                .unwrap();
+        }
+        assert_eq!(fx.read(), "1\n2\n3\n4\n5\n");
+        let _ = fx.review_reasons();
+
+        let blocker = tokio::task::spawn_blocking(|| {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
+        let (first, second) = tokio::join!(
+            fx.am.review.undo_reject(&fx.session),
+            fx.am.review.undo_reject(&fx.session)
+        );
+        blocker.await.unwrap();
+        let (first, second) = (first.unwrap(), second.unwrap());
+        assert!(
+            first.failed.is_empty() && second.failed.is_empty(),
+            "both undos read the reverted file: {first:?} {second:?}"
+        );
+        assert_eq!(first.applied, vec![ids[1].clone()]);
+        assert_eq!(second.applied, vec![ids[1].clone()]);
+        assert_eq!(fx.read(), "1\n2\n3\n4\nfive\n");
+
+        // The first reject is still on the stack: one batch was restored, so
+        // one batch was popped.
+        let resp = handle_review_undo_reject(
+            fx.request("review.undo_reject", serde_json::json!({})),
+            &fx.am,
+            &fx.sm,
+            &fx.event_tx,
+        )
+        .await;
+        let result = resp.result.expect("success");
+        assert_eq!(
+            result["applied"],
+            serde_json::json!([ids[0]]),
+            "the concurrent undos popped the batch they did not restore"
+        );
+        assert_eq!(fx.read(), "one\n2\n3\n4\nfive\n");
+    });
+}
+
 #[tokio::test]
 async fn a_comment_anchors_to_the_root_and_comes_back_with_the_hunks() {
     let mut fx = Fixture::new("one\n").await;
