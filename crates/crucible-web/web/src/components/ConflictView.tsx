@@ -48,9 +48,20 @@ export const ConflictView: Component<ConflictViewProps> = (props) => {
   const [busy, setBusy] = createSignal(false);
   const [at, setAt] = createSignal(0);
   let view: EditorView | undefined;
+  /** The hash of the conflict the editor was built over, while it is built. */
+  let builtFor: string | undefined;
 
   const conflict = () => conflictStore.get(props.path);
-  const settled = () => seeded() && open().length === 0;
+  /**
+   * Every region of the conflict ON SCREEN is chosen.
+   *
+   * The hash is part of the question: a conflict that moved on is a different
+   * document with different regions, and a Save over the one the view still
+   * holds would write it against the newer base and take the newest writer's
+   * text with no question asked.
+   */
+  const settled = () =>
+    seeded() && open().length === 0 && conflict()?.currentHash === builtFor;
   const name = () => props.path.split('/').pop() ?? props.path;
 
   onMount(() => {
@@ -59,13 +70,20 @@ export const ConflictView: Component<ConflictViewProps> = (props) => {
       .catch((e: Error) => notificationActions.addNotification('error', e.message));
   });
 
-  // The conflict arrives from the outbox, so the editor is built when it does,
-  // once. The document is the MERGED text: this device's writing, with the
-  // other writer's folded in everywhere the two did not collide.
+  // The conflict arrives from the outbox, so the editor is built when it does.
+  // The document is the MERGED text: this device's writing, with the other
+  // writer's folded in everywhere the two did not collide.
+  //
+  // It is built again when the conflict moves: a resolution the daemon refused
+  // comes back as a new entry, with a new base and new regions, and a document
+  // built over the old one settles nothing about the new difference.
   createEffect(() => {
     const el = host();
     const row = conflict();
-    if (!el || !row || view) return;
+    if (!el || !row) return;
+    if (view && builtFor === row.currentHash) return;
+    view?.destroy();
+    setSeeded(false);
     view = new EditorView({
       state: EditorState.create({
         doc: row.mergedContent,
@@ -87,13 +105,16 @@ export const ConflictView: Component<ConflictViewProps> = (props) => {
     });
     setText(row.mergedContent);
     setTotal(row.regions.length);
+    setAt(0);
     seedConflictRegions(view, row.regions);
+    builtFor = row.currentHash;
     setSeeded(true);
   });
 
   onCleanup(() => {
     view?.destroy();
     view = undefined;
+    builtFor = undefined;
   });
 
   /** Scroll to the next region still open, wrapping at the end. */

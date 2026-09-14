@@ -171,6 +171,41 @@ describe('ConflictView', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  // A note that moved again comes back from the route as a NEW conflict, with
+  // a new base and a new region. The view must follow it: the old document is
+  // written against the new base otherwise, and the newest writer's line goes
+  // with no question asked.
+  it('a conflict that moved again is redrawn before Save is offered', async () => {
+    const moved = conflict({
+      currentHash: 'h11',
+      currentContent: ['one', 'MINE1', 'three', 'THEIRS3', 'five', ''].join('\n'),
+      mergedContent: ['one', 'MINE1', 'three', 'MINE2', 'five', ''].join('\n'),
+      regions: [
+        { start_line: 4, end_line: 5, base: 'BASE2\n', ours: 'MINE2\n', theirs: 'THEIRS3\n' },
+      ],
+    });
+    resolveConflict.mockResolvedValueOnce({ queued: false, stale: true, current: 'h11' });
+    await open(conflict({ regions: [conflict().regions[0]] }));
+    pendingConflicts.mockResolvedValue([moved]);
+
+    fireEvent.click(screen.getByTestId('keep-mine-0'));
+    await waitFor(() => expect(screen.getByTestId('conflict-save')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('conflict-save'));
+
+    await waitFor(() => expect(addNotification).toHaveBeenCalledWith('warning', expect.any(String)));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('conflict-region-0'),
+        'the new region is drawn',
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('conflict-counter').textContent).toContain('0 of 1 region');
+    expect(
+      screen.getByTestId('conflict-save'),
+      'Save is enabled over a conflict the view is not showing',
+    ).toBeDisabled();
+  });
+
   // The note moved AGAIN between the merge and the choice. Nothing is settled,
   // so the conflict stays and the user is told rather than left believing it
   // landed.
