@@ -345,6 +345,26 @@ fn blob_file(snaps: &Path, id: &SnapshotId, path: &str) -> PathBuf {
     snaps.join("blobs").join(&manifest.files[path])
 }
 
+/// Backdate every file in the store past the sweep's grace period.
+///
+/// The sweep refuses to collect a young file, because a capture writes its
+/// snapshot before the ledger records the interval that claims it. A test that
+/// captures and sweeps in the same millisecond is inside that window by
+/// construction, so it has to age the disk to ask its own question.
+fn age_store(snaps: &Path) {
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
+    let times = std::fs::FileTimes::new().set_modified(old);
+    for dir in ["snapshots", "blobs"] {
+        let Ok(entries) = std::fs::read_dir(snaps.join(dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let file = std::fs::File::options().write(true).open(entry.path());
+            file.unwrap().set_times(times).unwrap();
+        }
+    }
+}
+
 /// Every snapshot one session's ledger still names.
 fn claimed(ledgers: &ReviewLedgers, session_id: &str) -> Vec<SnapshotId> {
     let ledger = ledgers.ledger(session_id).unwrap();
@@ -391,6 +411,7 @@ async fn the_plain_sweep_removes_snapshots_no_live_journal_names() {
     );
 
     std::fs::remove_dir_all(sessions.join("orphan")).unwrap();
+    age_store(snaps.path());
     let released = crate::review::sweep_review_refs(&sessions, snaps.path()).await;
 
     assert_eq!(
@@ -445,6 +466,7 @@ async fn dropping_a_sessions_claims_releases_its_plain_snapshots() {
         !snaps.path().join("keeps").join("sess").exists(),
         "the session's claims outlived the session"
     );
+    age_store(snaps.path());
     assert_eq!(
         crate::review::sweep_review_refs(&sessions, snaps.path()).await,
         3,
@@ -474,5 +496,52 @@ async fn a_sweep_that_cannot_see_the_sessions_root_removes_nothing() {
     assert!(
         snapshot_file(snaps.path(), &ids[0]).exists(),
         "a sweep that could not tell which sessions are live collected one anyway"
+    );
+}
+
+/// The maintenance tick runs every 30 minutes and knows nothing about the
+/// brackets in flight. A capture writes its snapshot before the ledger records
+/// the interval that claims it, so a sweep landing in that window collects a
+/// snapshot a live call is about to name — and an interval's `before_tree` is a
+/// past state no later capture reproduces, so the session's hunks never list
+/// again. Git has no equivalent exposure: `git gc` prunes only objects older
+/// than `gc.pruneExpire`, two weeks by default.
+#[tokio::test]
+async fn a_sweep_inside_a_bracket_keeps_the_snapshot_the_call_will_name() {
+    let home = TempDir::new().unwrap();
+    let snaps = TempDir::new().unwrap();
+    let sessions = home.path().join("sessions");
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+
+    let root = plain_root("one\n").await;
+    ledgers
+        .open_or_restore("live", &sessions.join("live"), &[root.path().to_path_buf()])
+        .await
+        .unwrap();
+
+    // An external edit first, so the bracket's before-snapshot is a state no
+    // keep file names yet.
+    std::fs::write(root.path().join("own.md"), "two\n").unwrap();
+    let handle = ledgers.open_bracket("live").await.unwrap();
+
+    let released = crate::review::sweep_review_refs(&sessions, snaps.path()).await;
+
+    std::fs::write(root.path().join("own.md"), "EDITED\n").unwrap();
+    ledgers.close("live", handle, "call-1", 1).await.unwrap();
+
+    let hunks = ledgers.list_hunks("live").await;
+    assert!(
+        hunks.is_ok(),
+        "the review of a live session became uncomputable: {hunks:?} \
+         (the sweep released {released} files during the bracket)"
+    );
+    let hunks = hunks.unwrap();
+    assert_eq!(hunks.len(), 1, "{hunks:?}");
+    assert_eq!(hunks[0].before_content, "one\n");
+    assert_eq!(hunks[0].after_content, "EDITED\n");
+    assert_eq!(
+        hunks[0].tool_call_ids,
+        vec!["call-1".to_string()],
+        "attribution reads the interval's own snapshots, which is what the sweep took"
     );
 }

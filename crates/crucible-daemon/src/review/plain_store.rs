@@ -296,11 +296,14 @@ impl PlainStore {
     /// removed. The cost of waiting for the next tick is disk; the cost of
     /// guessing is a review that can no longer be computed.
     ///
-    /// The one window it shares with `git gc`: a capture writes its snapshot
-    /// before the ledger records the interval that claims it, so a sweep
-    /// landing between the two collects it. `write-tree` then `update-ref` has
-    /// the same gap, and the recovery is the same — the next capture writes it
-    /// again.
+    /// The one window it shares with `git gc` — a capture writes its snapshot
+    /// before the ledger records the interval that claims it — is closed the
+    /// way git closes it, with a grace period: nothing younger than
+    /// [`PRUNE_GRACE`] is collected, however unclaimed it looks. There is no
+    /// recovery without one. A later capture reproduces a current state, never
+    /// an interval's `before_tree`, which is a past state of the disk, so a
+    /// snapshot taken mid-bracket leaves that session's hunks uncomputable
+    /// until a rebase.
     pub(super) async fn sweep(&self, sessions_root: &Path) -> usize {
         let Some((live_snapshots, dead_keeps)) = self.claims(sessions_root).await else {
             return 0;
@@ -327,7 +330,9 @@ impl PlainStore {
                 continue;
             };
             if !live_snapshots.contains(hash) {
-                dead_snapshots.push(entry.path());
+                if old_enough(&entry).await {
+                    dead_snapshots.push(entry.path());
+                }
                 continue;
             }
             match self.manifest(&SnapshotId::plain(hash)).await {
@@ -347,7 +352,8 @@ impl PlainStore {
         if let Ok(mut entries) = tokio::fs::read_dir(self.inner.root.join("blobs")).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if is_content_hash(&name) && !live_blobs.contains(&name) {
+                if is_content_hash(&name) && !live_blobs.contains(&name) && old_enough(&entry).await
+                {
                     dead_blobs.push(entry.path());
                 }
             }
@@ -551,7 +557,13 @@ impl Inner {
         let hash = blake3::hash(&bytes).to_hex().to_string();
         let blob = self.blob_path(&hash);
         // Content-addressed: a blob already on disk holds these exact bytes.
-        if !blob.exists() {
+        if blob.exists() {
+            // Touch it, so the sweep's grace period covers a blob this capture
+            // re-references. A revert can make an old blob current again, and
+            // an untouched one would carry the mtime of the capture that first
+            // stored it — old enough to collect while a bracket names it.
+            touch(&blob);
+        } else {
             self.write_atomically(&blob, &bytes)?;
         }
         Ok(hash)
@@ -590,6 +602,41 @@ fn walk(root: &Path) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>>
                     .to_str()
                     .is_some_and(|name| EXCLUDED_DIRS.contains(&name))
         })
+}
+
+/// How long a file is too young to collect, however unclaimed it looks.
+///
+/// A capture writes its snapshot before the ledger records the interval that
+/// claims it, and a bracket stays open for as long as the tool call runs. A
+/// sweep that landed in that window would take the call's `before_tree`, which
+/// is a past state no later capture reproduces, so the session's hunks would
+/// never list again. Git answers the same problem the same way: `git gc`
+/// prunes only objects older than `gc.pruneExpire`, two weeks by default.
+const PRUNE_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Whether this file is old enough to collect.
+///
+/// An unreadable or future mtime answers `false`: the question is whether the
+/// file is provably old, and clock skew must protect rather than collect.
+async fn old_enough(entry: &tokio::fs::DirEntry) -> bool {
+    let Ok(meta) = entry.metadata().await else {
+        return false;
+    };
+    meta.modified()
+        .ok()
+        .and_then(|m| SystemTime::now().duration_since(m).ok())
+        .is_some_and(|age| age >= PRUNE_GRACE)
+}
+
+/// Set a file's modification time to now, best effort.
+///
+/// A failure here only narrows the sweep's grace window for one blob, and the
+/// sweep still refuses to take anything a live journal names.
+fn touch(path: &Path) {
+    let now = std::fs::FileTimes::new().set_modified(SystemTime::now());
+    if let Ok(file) = std::fs::File::options().write(true).open(path) {
+        let _ = file.set_times(now);
+    }
 }
 
 /// Whether a file name is one this store wrote, rather than the temporary a
@@ -692,6 +739,52 @@ mod tests {
         std::fs::remove_file(fixture.root.path().join("b.md")).unwrap();
         let fourth = fixture.store.capture(fixture.root.path()).await.unwrap();
         assert_ne!(fourth, third, "a deleted file changes the snapshot id");
+    }
+
+    /// Blobs are content-addressed, so a capture that finds one already on
+    /// disk writes nothing. Its mtime would then be the age of the capture that
+    /// first stored it — old enough for the sweep to collect while a bracket in
+    /// flight names it. A revert is the ordinary way an old blob becomes
+    /// current again.
+    #[tokio::test]
+    async fn a_blob_a_capture_reuses_is_young_again() {
+        let fixture = Fixture::new();
+        fixture.write_aged("a.md", "one\n");
+        let first = fixture.store.capture(fixture.root.path()).await.unwrap();
+        let blob = fixture
+            .store
+            .inner
+            .blob_path(&fixture.store.manifest(&first).await.unwrap().files["a.md"]);
+
+        fixture.write_aged("a.md", "two\n");
+        fixture.store.capture(fixture.root.path()).await.unwrap();
+        age(&blob);
+        assert!(
+            !old_enough_path(&blob),
+            "the blob must start out collectable"
+        );
+
+        // The revert: the same bytes again, so the store finds the blob there.
+        fixture.write_aged("a.md", "one\n");
+        let third = fixture.store.capture(fixture.root.path()).await.unwrap();
+        assert_eq!(
+            third, first,
+            "the same content must reach the same snapshot"
+        );
+        assert!(
+            old_enough_path(&blob),
+            "a reused blob kept the age of the capture that first stored it, \
+             so the sweep may take it while a bracket names it"
+        );
+    }
+
+    /// [`old_enough`] over a path, inverted for readability: whether the sweep
+    /// would treat this file as collectable.
+    fn old_enough_path(path: &Path) -> bool {
+        let modified = std::fs::metadata(path).unwrap().modified().unwrap();
+        SystemTime::now()
+            .duration_since(modified)
+            .is_ok_and(|age| age < PRUNE_GRACE)
     }
 
     /// git's "racy" case. A file written in the same second as the capture that
