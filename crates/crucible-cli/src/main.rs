@@ -161,7 +161,6 @@ fn config_need(command: &Option<Commands>) -> ConfigNeed {
         | Commands::Status { .. }
         | Commands::Agents { .. }
         | Commands::Tasks { .. }
-        | Commands::Proposals(_)
         | Commands::Tools(_) => ConfigNeed::Local,
         Commands::Kiln { .. }
         | Commands::Project { .. }
@@ -531,10 +530,6 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Skills(cmd)) => {
             commands::skills::execute(config, cmd).await?;
-        }
-
-        Some(Commands::Proposals(cmd)) => {
-            commands::proposals::execute(config, cmd).await?;
         }
 
         Some(Commands::Tools(cmd)) => {

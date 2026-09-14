@@ -420,19 +420,16 @@ fn last_node_text(app: &OilChatApp, width: usize) -> String {
 #[test]
 fn the_startup_banner_names_every_attached_kiln_and_its_path() {
     let mut app = OilChatApp::default();
-    app.announce_kilns(
-        &[
-            KilnSummary {
-                name: "crucible".into(),
-                path: "/home/u/crucible".into(),
-            },
-            KilnSummary {
-                name: "notes".into(),
-                path: "/home/u/notes".into(),
-            },
-        ],
-        0,
-    );
+    app.announce_kilns(&[
+        KilnSummary {
+            name: "crucible".into(),
+            path: "/home/u/crucible".into(),
+        },
+        KilnSummary {
+            name: "notes".into(),
+            path: "/home/u/notes".into(),
+        },
+    ]);
 
     let rendered = last_node_text(&app, 120);
     assert!(
@@ -450,45 +447,9 @@ fn the_startup_banner_names_every_attached_kiln_and_its_path() {
 }
 
 #[test]
-fn the_startup_banner_says_how_many_proposals_are_pending() {
-    let kiln = || KilnSummary {
-        name: "notes".into(),
-        path: "/k/notes".into(),
-    };
-
-    let mut app = OilChatApp::default();
-    app.announce_kilns(&[kiln()], 2);
-    let rendered = last_node_text(&app, 120);
-    assert!(
-        rendered.contains("2 proposals pending"),
-        "plural count missing: {rendered}"
-    );
-    assert!(
-        rendered.contains("cru proposals list"),
-        "the review command is missing: {rendered}"
-    );
-
-    let mut app = OilChatApp::default();
-    app.announce_kilns(&[kiln()], 1);
-    let rendered = last_node_text(&app, 120);
-    assert!(
-        rendered.contains("1 proposal pending"),
-        "singular missing: {rendered}"
-    );
-
-    let mut app = OilChatApp::default();
-    app.announce_kilns(&[kiln()], 0);
-    let rendered = last_node_text(&app, 120);
-    assert!(
-        !rendered.contains("pending"),
-        "no proposal must add no line: {rendered}"
-    );
-}
-
-#[test]
 fn a_session_with_no_kiln_is_told_so() {
     let mut app = OilChatApp::default();
-    app.announce_kilns(&[], 0);
+    app.announce_kilns(&[]);
 
     let rendered = last_node_text(&app, 120);
     assert!(
@@ -500,13 +461,10 @@ fn a_session_with_no_kiln_is_told_so() {
 #[test]
 fn one_kiln_reads_as_one() {
     let mut app = OilChatApp::default();
-    app.announce_kilns(
-        &[KilnSummary {
-            name: "crucible".into(),
-            path: "/home/u/crucible".into(),
-        }],
-        0,
-    );
+    app.announce_kilns(&[KilnSummary {
+        name: "crucible".into(),
+        path: "/home/u/crucible".into(),
+    }]);
 
     let rendered = last_node_text(&app, 120);
     assert!(

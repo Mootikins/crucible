@@ -149,21 +149,21 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // diff (openFileWithDiff). Cleared on Dismiss.
   const pendingDiff = () => (props.filePath ? pendingDiffStore.get(props.filePath) : undefined);
 
-  /** A proposal can't be staged over unsaved work — see the effect below. */
+  /** A proposed change can't be staged over unsaved work — see the effect below. */
   const blockedByUnsavedEdits = () => {
     const diff = pendingDiff();
     const file = fileData();
     return !!diff && !!file && file.dirty && file.content !== diff.proposed;
   };
 
-  // Stage the proposal into the BUFFER MODEL, not just the editor view.
+  // Stage the proposed change into the BUFFER MODEL, not just the editor view.
   // Accepting a merge chunk only drops the deletion widget — the doc already
   // holds the new text, so it fires no change event. If the model kept the
   // on-disk content, saving after accepting would write the ORIGINAL back and
-  // silently discard the whole proposal. Staging makes "accept everything then
+  // silently discard the whole proposed change. Staging makes "accept everything then
   // save" the identity it looks like, and a REJECT (which does edit the doc)
   // flows back through onChange as usual. Guarded on the staged text so that
-  // reject-driven store updates don't get forced back to the proposal.
+  // reject-driven store updates don't get forced back to the proposed change.
   //
   // NEVER over unsaved edits: the baseline came from disk, so staging would
   // overwrite the user's own in-buffer work with content it never contained
@@ -188,7 +188,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
 
   // A saved review is over. Without this the banner lingers over content that
   // is already on disk, and — because the store is global and path-keyed —
-  // reopening the file later would re-stage the stale proposal over it.
+  // reopening the file later would re-stage the stale proposed change over it.
   createEffect(() => {
     const diff = pendingDiff();
     const file = fileData();
@@ -207,7 +207,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const dismissDiff = () => {
     const path = props.filePath;
     if (!path) return;
-    // Put the staged proposal back to the on-disk baseline — dismissing a
+    // Put the staged change back to the on-disk baseline — dismissing a
     // review must not leave the proposed text sitting in the buffer. Only when
     // it actually differs: updateFileContent always flags dirty, and a
     // never-staged file must not be left falsely modified.
@@ -472,10 +472,10 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
             >
               {(file) => (
                 <EditorWithPreview
-                  // The proposal is staged INTO the buffer above, so the file
+                  // The proposed change is staged INTO the buffer above, so the file
                   // content is the single source of truth here — per-hunk
                   // rejections stay put instead of being overwritten by a
-                  // stale copy of the original proposal.
+                  // stale copy of the original proposed change.
                   content={file().content}
                   // Not while unsaved edits block staging: diffing the user's
                   // own dirty buffer against disk would show hunks that are

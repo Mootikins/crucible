@@ -201,7 +201,7 @@ expect_text = ["The release for that state is an explicit **rebase**", "**The we
 #   "## Why a proposed note waits in the kiln" — "This is the deliberate correction of the removed `session-digest` feature"
 #   "## The two workflows" — "session ends ... timer (every `interval` seconds)"
 [[queries]]
-question = "why are proposals kept out of the search index, and what is the path from a session ending to an accepted note?"
+question = "why can search find a note nobody has accepted yet, and what is the path from a session ending to an accepted note?"
 expect_note = "Reflection Pass"
 expect_text = ["This is the deliberate correction of the removed `session-digest` feature", "timer (every `interval` seconds)"]
 
@@ -437,14 +437,14 @@ expect_note = "Review Ledger"
 question = "which tools let an agent review another session's diff?"
 expect_note = "Review Ledger"
 
-# CONTROL Help/Concepts/Reflection Pass.md — "Each staged proposal carries provenance frontmatter:"
+# CONTROL Help/Concepts/Reflection Pass.md — "Each pass names itself in the title of its own session"
 [[queries]]
-question = "what metadata does a staged proposal file carry at the top?"
+question = "how do I tell which session wrote a note the reviewer left me?"
 expect_note = "Reflection Pass"
 
-# CONTROL Help/Concepts/Reflection Pass.md — "### The three kinds" table — the `skill` row
+# CONTROL Help/Concepts/Reflection Pass.md — "**Bounded by tool set:**"
 [[queries]]
-question = "what file does accepting a skill proposal write?"
+question = "can the after-session reviewer run shell commands or touch my workspace files?"
 expect_note = "Reflection Pass"
 
 # CONTROL Help/Concepts/The Knowledge Graph.md — "## Building Your Graph" — "**Start small:**"

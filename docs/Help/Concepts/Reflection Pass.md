@@ -9,7 +9,6 @@ tags:
   - reflection
 aliases:
   - Reflection
-  - Proposals
   - Consolidation Pass
 ---
 
@@ -34,7 +33,7 @@ The consolidation pass works the same way. It runs its review through the reflec
 
 ## Why a proposed note waits in the kiln
 
-Both passes write the note into the kiln, where [[Help/Concepts/Precognition|Precognition]] and semantic search can find it while it waits. The earlier answer was a staging directory under `KILN/.crucible/`, which is outside the index, so unreviewed text never reached retrieval.
+Both passes write the note into the kiln, where [[Help/Concepts/Precognition|Precognition]] and semantic search can find it while it waits. The earlier answer held the text outside the index until a human accepted it, so unreviewed text never reached retrieval.
 
 The trade is deliberate: a note nobody has decided on is visible for as long as it waits, and in exchange there is *one* surface — the same Changes panel that disposes of every other agent edit — instead of a second vocabulary with its own commands.
 
@@ -63,7 +62,7 @@ reflection plugin (on_session_end)     consolidation plugin (cru.schedule)
          └── reject → the note is reverted
 ```
 
-Each pass names itself in the title of its own session: `Reflection: <the reviewed session>`, or `Consolidation: <the day it ran>`, because a consolidation pass reads several sessions and can name no single one. The model is on that session's record. This is the provenance a staged file used to carry in its frontmatter.
+Each pass names itself in the title of its own session: `Reflection: <the reviewed session>`, or `Consolidation: <the day it ran>`, because a consolidation pass reads several sessions and can name no single one. The model is on that session's record. That session record is the provenance.
 
 ## What the reviewer sees
 
@@ -128,5 +127,4 @@ Because policy lives in Lua, both plugins are fully shadowable — the reviewer 
 - [[Help/Concepts/Review Ledger]] — where a pass's notes wait, and where the outcome evidence comes from
 - [[Help/Concepts/Precognition]] — the retrieval side of the knowledge loop
 - [[Help/Concepts/Agent Skills]] — the skills a user installs; a pass proposes none
-- [[Help/CLI/proposals]] — the commands that dispose of a file staged by hand
 - [[Meta/Product#Self-Improvement Avenues]] — where this fits in the product

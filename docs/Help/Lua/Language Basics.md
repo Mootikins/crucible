@@ -136,7 +136,7 @@ silently creating a `./kiln:/...` directory.
 
 ```lua
 local root = cru.kiln.path("notes")
-local dir  = cru.kiln.path("notes", ".crucible/proposals")
+local dir  = cru.kiln.path("notes", ".crucible/exports")
 cru.fs.write(dir .. "/idea.md", body)
 ```
 

@@ -295,9 +295,8 @@ function M.get_or_create(
     end
 
     -- The kiln is required, not defaulted: a session with no kiln has no note
-    -- tools at all, which stages reflection proposals under the daemon's data
-    -- root where `cru proposals list` never looks. Refuse before creating
-    -- anything.
+    -- tools at all, so the reflection pass has nothing to write with and the
+    -- session earns no knowledge. Refuse before creating anything.
     --
     -- It is the NAME of a `[kilns]` entry, not a directory — `cru.session.create`
     -- takes names. A path is not a name and resolves to nothing, so a config

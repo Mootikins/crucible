@@ -87,11 +87,10 @@ local function recording_api(opts: { [string]: any }?): (Calls, { [string]: any 
 end
 
 describe("get_or_create", function()
-    -- Without a kiln, `create_session` falls back to the daemon's data root, which
-    -- stages reflection proposals under `~/.crucible/.crucible/proposals/`
-    -- where `cru proposals list` never looks. Refusing before creating
-    -- anything is the difference between a clear error and a session that
-    -- silently writes where nobody reads.
+    -- Without a kiln, `create_session` falls back to the daemon's data root,
+    -- where a session has no note tools and the reflection pass has nothing to
+    -- write with. Refusing before creating anything is the difference between
+    -- a clear error and a session that silently earns nothing.
     it("refuses without a configured kiln, and creates nothing", function()
         local calls, api = recording_api()
         with_env({}, api, function()

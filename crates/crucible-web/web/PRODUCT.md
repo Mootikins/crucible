@@ -93,8 +93,8 @@ breaks the product:
 - **Project** — where work output goes.
 - **Kiln** — where knowledge goes.
 - **Workspace** — an instance of a project directory.
-- **Review** — the agent's file edits. **Proposal** — a suggested note. They are
-  never interchangeable.
+- **Review** — the disposition of an agent's file edits and of a plugin pass's
+  note writes. There is no second disposition.
 
 **Mobile — decided.** A second shell draws the phone form. It uses the same
 origin, the same manifest and the same service worker, with edge drawers and no
@@ -155,8 +155,8 @@ The README states that the project is in early development.
    system did not do.
 4. **The web UI is a peer, not a lite view.** Do not remove depth to make a
    screen calm.
-5. **Keep the terminology exact.** Project, Kiln, Workspace, review and proposal
-   each hold one meaning.
+5. **Keep the terminology exact.** Project, Kiln, Workspace and review each
+   hold one meaning.
 
 ## Accessibility & Inclusion
 

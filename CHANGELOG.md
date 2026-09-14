@@ -76,6 +76,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **`cru proposals` and the staged proposal are gone.** The reflection and
+  consolidation passes used to write proposed notes into
+  `KILN/.crucible/proposals/`, outside the index, and `cru proposals
+  list|show|accept|reject` disposed of them. Each pass now writes its notes
+  with `create_note` and `update_note` in its own session, in `auto` mode, so
+  every write is a hunk in that session's review ledger and a human accepts or
+  rejects it in the Changes panel. A reject reverts the note on disk.
+
+  The review is the one disposition. Gone with the command: the four
+  subcommands and their help, the `rejected/` memory the reviewer was told
+  about, the `skill` proposal kind and the `SKILL.md` that accepting one wrote,
+  the TUI startup banner's "N proposals pending" line (US-804), and the
+  `plugins.reflection.max_proposals`, `plugins.reflection.rejection_memory` and
+  `plugins.consolidation.rejection_memory` config keys.
+
 - **`ContextStrategy::SlidingWindow` is gone.** It drained exactly what
   `Summarize` drains — everything between the system prefix and the last ten
   message pairs — and left nothing in the hole. Same turns lost, with no

@@ -93,7 +93,7 @@ test.describe('Inline diff in editor', () => {
     const body = (await savePut).postDataJSON() as { path: string; content: string };
     expect(body.path).toBe('/proj/app.ts');
     // The accepted hunk is in the saved content; the file was NOT replaced
-    // wholesale by the proposal — the untouched tail is still there.
+    // wholesale by the proposed change — the untouched tail is still there.
     expect(body.content).toContain('LINE TWO CHANGED');
     expect(body.content).toContain('line three');
   });
@@ -200,12 +200,12 @@ test.describe('Inline diff in editor', () => {
   });
 
   /**
-   * The proposal's baseline is the file on DISK, so staging it over a buffer
+   * The proposed change's baseline is the file on DISK, so staging it over a buffer
    * with unsaved edits would overwrite work the baseline never contained —
    * and Dismiss would then "restore" the disk text, losing it for good. The
    * review waits for the buffer to be clean instead.
    */
-  test('will not stage a proposal over unsaved edits', async ({ page }) => {
+  test('will not stage a proposed change over unsaved edits', async ({ page }) => {
     await setupBasicMocks(page);
     await page.route('**/api/kiln/file**', (route) => {
       if (route.request().method() === 'GET') route.fulfill({ json: { content: CURRENT } });
@@ -240,7 +240,7 @@ test.describe('Inline diff in editor', () => {
       { path: '/proj/app.ts', original: CURRENT, proposed: PROPOSED },
     );
 
-    // The edits survive, the proposal is held, and no merge diff is shown.
+    // The edits survive, the proposed change is held, and no merge diff is shown.
     await expect(page.getByText('Proposed change waiting')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('.cm-content')).toContainText('ZZZ');
     await expect(page.locator('.cm-content')).not.toContainText('LINE TWO CHANGED');
@@ -253,7 +253,7 @@ test.describe('Inline diff in editor', () => {
     await expect(page.locator('.cm-content')).toContainText('LINE TWO CHANGED');
   });
 
-  /** A saved review is over: the banner goes, and the stale proposal must not
+  /** A saved review is over: the banner goes, and the stale proposed change must not
    * be re-staged the next time the file is opened. */
   test('clears the pending review once it is saved', async ({ page }) => {
     await setupBasicMocks(page);

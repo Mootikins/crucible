@@ -108,7 +108,7 @@ The full glossary is [docs/Meta/CONTEXT.md](./docs/Meta/CONTEXT.md) (`CONTEXT.md
 - **Project** — where work output goes. Registered directory (git root or invocation dir). `.crucible/project.toml`.
 - **Kiln** — where knowledge goes. `.crucible/kiln.toml`. A session *attaches* kilns (flat set, no primary); it is not *stored* in one — transcripts live under the daemon data root regardless.
 - **Workspace** — an instance of a project directory (root, or a worktree). Runtime concept, no config file. Do NOT rename correct existing uses (`session.workspace`, `WorkspaceTools`, Lua `paths.workspace()`).
-- **Review vs proposal** — a *review* disposes the agent's file edits (the composed diff in `review/`); a *proposal* disposes a suggested knowledge note (`KILN/.crucible/proposals/`, `cru proposals`). Never use one for the other.
+- **Review** — disposes the agent's file edits and a plugin pass's note writes. There is no second disposition.
 - **Spec, spec entry, fragment, discovery, activation, source, intercept grant** — the plugin words. The *spec* is the operator's list of plugins (`cru.plugin.setup` in `init.lua`); a *fragment* is a partial entry a plugin ships as `spec.luau` or that the shipped defaults provide; *discovery* reads fragments and runs no plugin code; *activation* runs the module once and calls the entry's `config`. CONTEXT.md defines each and names the words to avoid (manifest, load, plugin config).
 
 ### Type ownership

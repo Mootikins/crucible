@@ -86,7 +86,6 @@ fn every_advertised_format_value_parses() {
         vec!["cru", "doctor", "-f", "table"],
         vec!["cru", "tools", "list", "-f", "table"],
         vec!["cru", "skills", "list", "-f", "json"],
-        vec!["cru", "proposals", "list", "-f", "plain"],
         vec!["cru", "workflow", "list", "-f", "table"],
         vec!["cru", "workflow", "show", "wf", "-f", "json"],
     ] {

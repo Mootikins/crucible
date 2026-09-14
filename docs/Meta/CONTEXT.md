@@ -43,10 +43,6 @@ _Avoid_: proposal (for this meaning), approval
 Which hunks a review lists: the session's, or the current turn's.
 _Avoid_: filter, view (for this meaning)
 
-**Proposal**:
-The disposition of a suggested knowledge note. Lives under a kiln's `proposals/`.
-_Avoid_: review (for this meaning), suggestion
-
 ### Plugins
 
 **Plugin**:

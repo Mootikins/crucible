@@ -91,7 +91,7 @@ async fn an_unconnected_handle_method_reports_it() {
 /// A handle from `get` has no live RPC behind it, so `model` must read the
 /// daemon's record. Without this the reflection plugin, which reads
 /// `cru.session.get(id).model` on the session that ended, raised
-/// "Session not connected" and staged no proposal.
+/// "Session not connected" and wrote no note.
 #[tokio::test]
 async fn model_on_a_get_handle_reads_the_record() {
     let mock = Arc::new(MockDaemonApi::new());

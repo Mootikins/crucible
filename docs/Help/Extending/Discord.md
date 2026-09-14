@@ -266,13 +266,13 @@ be set anyway.
 it straight to `cru.session.create`, which takes names; a path is not a name,
 resolves to nothing, and produces a session with no kiln at all.
 
-Without a kiln a session has no note tools, and its reflection proposals land
-under the daemon's data root where `cru proposals list` never looks. The plugin
-refuses to create a session rather than write there, and logs
+Without a kiln a session has no note tools, so the reflection pass has nothing
+to write with and its reviewer produces no note at all. The plugin refuses to
+create a session rather than run that way, and logs
 `no kiln configured — set [plugins.discord] kiln`.
 
-Name the same entry you use elsewhere if you want `cru proposals list` to find
-Discord's proposals without changing directory.
+Name the same entry you use elsewhere, so the notes a Discord session earns
+land in the kiln you already read.
 
 ### Turn quota
 
@@ -482,9 +482,10 @@ reverting your edit. Config is the only durable lever.
 - **Message content is sent to your configured `provider`**, along with any
   kiln notes precognition retrieved. Whatever a Discord user types reaches that
   third party under your API key.
-- **Reflection proposals** at `<kiln>/.crucible/proposals/*.md` — outside the
-  index until you accept them, at which point they become ordinary kiln notes
-  and are embedded and searchable.
+- **Reflection notes** in the kiln itself — the pass writes them with the note
+  tools, so they are ordinary kiln notes, embedded and searchable, and they
+  wait in the review ledger of the pass's own session until you accept or
+  reject each one.
 - **The DM half of the sender→session map**, at
   `~/.crucible/plugin-state/discord/sessions.json`: a Discord channel id, the
   sender's account id, a Crucible session id, an access tier and a timestamp
@@ -536,20 +537,14 @@ and skips them regardless of turn count.
 
    This is the path that fires `on_session_end`. Letting the session time out
    does not run the reflection pass.
-4. Review what was proposed:
+4. Review what the pass wrote. Open the web console, pick the pass's session —
+   it is titled `Reflection: <the reviewed session>` — and read the hunks in
+   the Changes panel.
+5. Accept the hunks you want. The note is already on disk, and a reject
+   reverts it. Indexing happens on the daemon's next scan, so force it rather
+   than wait:
 
    ```
-   cru proposals list
-   cru proposals show <id>
-   ```
-
-   Run these with the Discord `kiln` as the active kiln — proposals are read
-   from `<kiln>/.crucible/proposals/`.
-5. Accept it. This writes the note into the kiln and deletes the proposal;
-   indexing happens on the daemon's next scan, so force it rather than wait:
-
-   ```
-   cru proposals accept <id>
    cru process <kiln>
    ```
 6. In a **new** Discord session — a new channel, or after the reuse window has
@@ -563,7 +558,7 @@ reused session never invokes precognition at all.
 ## See Also
 
 - [[Help/Concepts/Precognition]] — what puts the notes in context
-- [[Help/Concepts/Reflection Pass]] — what turns a conversation into a proposal
+- [[Help/Concepts/Reflection Pass]] — what turns a conversation into a kiln note
 - [[Help/Extending/Creating Plugins]] — plugin structure and `setup()`
 - [[Help/Plugins/Lua Runtime API]] — `cru.session`, `cru.ws`, `cru.http`
 - [[Help/Concepts/Permission Precedence]] — why an `ask` rule denies here

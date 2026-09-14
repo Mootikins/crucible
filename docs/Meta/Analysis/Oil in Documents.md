@@ -228,7 +228,7 @@ Concretely:
   capability in the manifest, not a silent hole a user discovers in the TUI.
 
 This is progressive enhancement rather than a fork, and it keeps the cheap case
-cheap. "Three proposals pending, tap to review" is squarely inside the sixteen
+cheap. "Three hunks waiting, tap to review" is squarely inside the sixteen
 portable primitives and should never need two implementations. A chart, a drag
 handle, a form that submits, or a layout that responds to width is outside them
 and always will be.
@@ -383,7 +383,7 @@ A survey of `crucible-cli/src/tui/` ranked the candidates. All are gated on P1.
 |---|---|---|
 | `/plugins` listing | `chat_app/command_handling.rs:810` | Move. Reads a daemon-pushed list, needs only `col`/`row`/`badge`/`text`, and `web/src/components/PluginPanel.tsx` is 410 lines of duplicate. Needs a `cru.plugin.list()` that does not exist. |
 | `/mcp` listing | `chat_app/command_handling.rs:872` | Move. Same shape. Needs `cru.mcp.list()`. Breaks US-303. |
-| Session-start banner | `chat_app/mod.rs:764`, `:795` | Move. `kv` and `text` only. The web shows no banner at all, so this *gains* a surface. Needs a proposals count nothing exposes. Breaks US-803, US-804. |
+| Session-start banner | `chat_app/mod.rs:764`, `:795` | Move. `kv` and `text` only. The web shows no banner at all, so this *gains* a surface. Breaks US-803. |
 | Shell execution card | `components/shell_render.rs:12` | Move, after a transcript seam. The cleanest pure function in the transcript — 60 lines, no spinner, no width. Needs the daemon to pass the tool record as params. |
 | Subagent card | `components/subagent_render.rs:16` | **Never.** Indexes `BRAILLE_SPINNER_FRAMES` by a caller-supplied frame. Animation is terminal frame state. |
 | Diff view | `components/diff_view.rs:109` | **Never.** Branches on `SIDE_BY_SIDE_MIN_WIDTH: usize = 120`. A tree cannot know its own width — finding 4, biting exactly where predicted. Eleven snapshots. |

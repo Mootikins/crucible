@@ -96,7 +96,7 @@ entry but no shipped proof.
 | F33 | Precognition selection seam: a Lua `precognition_select` handler filters or reorders candidates | P |
 | F34 | Memory scoping: a kiln-bound repository never returns a sibling workspace's notes | P |
 | F35 | Knowledge insertion: the agent writes kiln notes with `create_note` and `update_note` | P |
-| F36 | Proposal review: `cru proposals list\|show\|accept\|reject` over `KILN/.crucible/proposals/` | P |
+| F36 | Retired 2026-09: a proposal is a review hunk in the pass's own session | P |
 | F37 | Reflection pass: on session end a cheap subagent proposes notes *(in progress)* | P |
 | F38 | The precognition badge persists because `precognition_complete` is part of the session log | W |
 | F39 | Anthropic cache control on the system prompt and the second-to-last turn | P |
@@ -916,15 +916,8 @@ Owner: **SessionManager** stores them. Clients render them. [D22]
 
 ### 3.25 Proposal
 
-```rust
-pub struct ProposalId(String);
-pub struct Proposal { id: ProposalId, kiln: KilnName, staged_path: PathBuf, target: RelPath, provenance: Provenance }
-```
-
-Lifecycle: `Staged` in `KILN/.crucible/proposals/`, outside the index →
-`Accepted` (moved into the kiln, provenance removed) or `Rejected` (moved into `KILN/.crucible/proposals/rejected/`, so the reviewer does not propose it again).
-
-Owner: **ProposalStore** inside Knowledge.
+Retired 2026-09. A plugin pass writes its notes with the note tools in its own
+session, so each write is a hunk in that session's review ledger. See §3.26.
 
 ### 3.26 ReviewHunk
 
@@ -1013,7 +1006,7 @@ others.
 **4.2.2 NoteStore and NotePipeline**
 
 - Responsibility: keep the SQLite index equal to the files.
-- Owns: `Note` rows, `Block` rows, FTS rows, `Proposal`.
+- Owns: `Note` rows, `Block` rows, FTS rows.
 - Operations: `process_file`, `process_batch`, `list_notes(scope)`, `get_note_by_name`, `read`, `create`, `update`, `delete`, `search_text`, `property_search`, `verify`, `backfill_text_index`.
 - Pipeline stages: read → hash compare (skip when equal unless forced) → parse → index rows → link index update → embedding when a provider exists → emit `note:*` events. The pipeline reports `ProcessingResult { skipped, indexed, events }`.
 - Must never know: the session model, permissions, the wire format.

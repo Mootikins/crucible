@@ -53,10 +53,10 @@ expect_note = "Agent Cards"
 question = "the ACP agents Claude Code, OpenCode and Gemini are hosted via the protocol; which of them speak it directly, and which need a bridge plus the vendor CLI?"
 expect_note = "Agent Client Protocol"
 
-# S: Help/CLI/proposals.md — [[Help/Concepts/Reflection Pass|reflection pass]]
+# S: Help/Lua/Configuration.md — [[Help/Concepts/Reflection Pass]]
 #   T: Help/Concepts/Reflection Pass.md — "consolidation runs on a timer, reads several finished sessions at once, and proposes pattern notes ... It is off by default"
 [[queries]]
-question = "the proposals command reviews what the consolidation pass proposed; what does that pass propose, and is it on by default?"
+question = "the consolidation block sets interval, max_problem and max_clean; what does that pass write, and is it on by default?"
 expect_note = "Reflection Pass"
 
 # S: Help/Concepts/Agents & Protocols.md — [[Help/Task Management|TASKS.md]]
