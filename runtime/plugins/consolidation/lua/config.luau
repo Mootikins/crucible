@@ -34,7 +34,6 @@ local defaults = {
     min_turns = 2,
     session_chars = 15000,
     timeout = 240,
-    rejection_memory = 20,
 }
 
 -- setup() values. Kept in their own table so the order above stays

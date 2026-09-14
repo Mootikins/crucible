@@ -26,14 +26,10 @@ local function count_tool_errors(messages: { any }): number
   return n
 end
 
---- Every `stage_proposals` call the stub saw, so a test can check what the
---- pass hands to the reflection plugin.
-local staged_calls: { any } = {}
-
 --- Every `review` call the stub saw, and the text the next one answers
 --- with. The lifecycle itself is the reflection suite's to test.
 local review_calls: { any } = {}
-local review_text = "[]"
+local review_text = "Nothing recurs"
 
 package.loaded["reflection"] = {
   review = function(opts: any): (string?, string?)
@@ -51,16 +47,11 @@ package.loaded["reflection"] = {
   build_transcript = function(messages: { any }, opts: any): string
     return "transcript"
   end,
-  read_rejected = function(kiln: string): { any } return {} end,
-  rejected_titles = function(rejected: { any }, limit: number): { string } return {} end,
-  parse_proposals = function(text: string): { any }?
-    local ok, parsed = pcall(cru.json.decode, text)
-    if ok and type(parsed) == "table" then return parsed end
-    return nil
-  end,
+  --- The reviewer writes its notes through its own session now, so the pass
+  --- stages nothing. The real reflection plugin exports no `stage_proposals`
+  --- any more; this stub raises, so a pass that calls it fails loudly.
   stage_proposals = function(kiln: string, session: string?, proposals: { any }, opts: any): { string }
-    staged_calls[#staged_calls + 1] = { kiln = kiln, session = session, proposals = proposals, opts = opts }
-    return { "/mock/staged.md" }
+    error("consolidation staged a proposal; the pass writes through its own session")
   end,
 }
 
@@ -159,15 +150,9 @@ describe("consolidation", function()
 
   describe("build_prompt", function()
     it("asks for pattern notes with a problem, cause and fix description", function()
-      local p = plugin.build_prompt({ { id = "s1", transcript = "## user\nx" } }, { "Rejected title" })
+      local p = plugin.build_prompt({ { id = "s1", transcript = "## user\nx" } })
       expect.truthy(p:find("### session s1", 1, true))
       expect.truthy(p:find("problem; root cause; fix", 1, true))
-      expect.truthy(p:find("Rejected title", 1, true))
-    end)
-
-    it("omits the rejection block when nothing was rejected", function()
-      local p = plugin.build_prompt({ { id = "s1", transcript = "## user\nx" } }, {})
-      expect.is_nil(p:find("rejected", 1, true))
     end)
   end)
 
@@ -193,9 +178,8 @@ describe("consolidation", function()
     }
 
     before_each(function()
-      staged_calls = {}
       review_calls = {}
-      review_text = "[]"
+      review_text = "Nothing recurs"
       test_mocks.setup()
       cru.session.list = function()
         return {
@@ -396,21 +380,22 @@ describe("consolidation", function()
       expect.is_nil(prompt:find("### session short", 1, true))
     end)
 
-    it("stages what the reviewer proposes as consolidation, with no session", function()
-      review_text = '[{"title":"Pattern","body":"B","tags":["pattern"]}]'
+    it("a pass writes through its own session and stages nothing", function()
+      -- The reviewer writes each note with the note tools in the pass's own
+      -- session, so the pass hands nothing to a staging directory: the
+      -- `stage_proposals` stub raises when a pass calls it. The title is what
+      -- a human reads for the pass in the sessions list and in the Changes
+      -- panel, so the pass names itself and the day it ran.
+      review_text = "wrote Patterns/Retry after a tool error.md"
       cru.session.list = function()
         return { { id = "long", state = "ended", started_at = "2026-09-01T11:00:00Z" } }, nil
       end
 
-      local written = plugin.run(nil)
+      local summary = plugin.run(nil)
 
-      expect.equal(1, #written)
-      expect.equal(1, #staged_calls)
-      expect.equal("notes", staged_calls[1].kiln)
-      expect.is_nil(staged_calls[1].session)
-      expect.equal("Pattern", staged_calls[1].proposals[1].title)
-      expect.equal("consolidation", staged_calls[1].opts.source)
-      expect.equal("test-model", staged_calls[1].opts.model)
+      expect.equal(1, #review_calls)
+      expect.equal("Consolidation: " .. tostring(os.date("%Y-%m-%d")), review_calls[1].title)
+      expect.equal("wrote Patterns/Retry after a tool error.md", summary)
     end)
 
     it("keeps the cursor where it was when a pass sees no session", function()

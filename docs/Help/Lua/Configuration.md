@@ -123,7 +123,7 @@ cru.plugin.setup({
 | Key | Default | What it sets |
 |-----|---------|--------------|
 | `enabled` | `false` | The master switch, read at each tick |
-| `kiln` | none | The kiln the pass reads and stages proposals in |
+| `kiln` | none | The kiln the pass reads and writes in |
 | `model` | none | The auxiliary model the reviewer runs on |
 | `provider` | none | A provider override for the auxiliary model |
 | `interval` | `21600` | Seconds between passes; read once, at load |
@@ -132,7 +132,6 @@ cru.plugin.setup({
 | `min_turns` | `2` | The fewest user turns a session needs before the pass reads it |
 | `session_chars` | `15000` | Characters kept from each session's transcript |
 | `timeout` | `240` | Seconds to wait for the reviewer |
-| `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
 
 These two tables are the one place the keys are documented. Each plugin's
 `cru.plugin.options{}` call declares the same keys and defaults; [[Help/Concepts/Reflection Pass]] says what each pass does with

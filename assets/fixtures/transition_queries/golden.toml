@@ -198,20 +198,20 @@ expect_note = "Review Ledger"
 expect_text = ["The release for that state is an explicit **rebase**", "**The web console.** The Changes panel lists the composed diff"]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
-#   "## Why staging lives outside the index" — "This is the deliberate correction of the removed `session-digest` feature"
-#   "## The proposals workflow" — "session ends ... timer (every `interval` seconds)"
+#   "## Why a proposed note waits in the kiln" — "This is the deliberate correction of the removed `session-digest` feature"
+#   "## The two workflows" — "session ends ... timer (every `interval` seconds)"
 [[queries]]
 question = "why are proposals kept out of the search index, and what is the path from a session ending to an accepted note?"
 expect_note = "Reflection Pass"
 expect_text = ["This is the deliberate correction of the removed `session-digest` feature", "timer (every `interval` seconds)"]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
-#   "## Guardrails against kiln pollution" — "A skill is proposed only for a procedure the agent ran more than once"
+#   "## Guardrails against kiln pollution" — "ports Nous Research's Hermes Agent"
 #   "## The consolidation pass" — "The `consolidation` plugin is the periodic half of the loop."
 [[queries]]
 question = "what does the after-session reviewer refuse to capture, and what does the periodic pass do differently?"
 expect_note = "Reflection Pass"
-expect_text = ["A skill is proposed only for a procedure the agent ran more than once", "The `consolidation` plugin is the periodic half of the loop."]
+expect_text = ["ports Nous Research's Hermes Agent", "The `consolidation` plugin is the periodic half of the loop."]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
 #   "## The consolidation pass" — "**Known gap.** `cru.session.list()` answers from the daemon's resident session map."
