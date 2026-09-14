@@ -482,6 +482,13 @@ pub struct AgentManagerParams {
     /// Where agent cards come from outside a session's kiln and workspace.
     /// See [`crate::agent_cards::CardRoots`] for why it is a value.
     pub card_roots: crate::agent_cards::CardRoots,
+    /// Where the review ledgers snapshot a root that is not in a git
+    /// repository. The daemon passes `<data home>/review-snapshots`.
+    ///
+    /// A required field rather than an `Option` with a default: the default
+    /// would be a path under the developer's real home, and every test manager
+    /// would write there. See [`crate::review::ReviewLedgers::new`].
+    pub review_snapshot_root: PathBuf,
 }
 
 impl AgentManager {
@@ -529,7 +536,9 @@ impl AgentManager {
             active_tools: crate::tools::active_tools::ActiveToolSets::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
-            review: Arc::new(crate::review::ReviewLedgers::default()),
+            review: Arc::new(crate::review::ReviewLedgers::new(
+                params.review_snapshot_root,
+            )),
             external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
             activity: crate::activity::DaemonActivity::new(),

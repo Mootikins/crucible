@@ -66,6 +66,7 @@ fn build_test_agent_manager_with_llm_config(
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }))
 }
 
@@ -201,6 +202,7 @@ async fn bash_calling_rig_with_card_roots(
         permission_config: None,
         plugin_loader: None,
         card_roots,
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     agent_manager.set_agent_factory_override(Box::new(|_, _| {
         Box::pin(async {

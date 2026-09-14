@@ -356,6 +356,7 @@ async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
         permission_config: None,
         plugin_loader: Some(loader.clone()),
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     });
 
     // What the daemon binds at startup, and what the read paths must prefer.

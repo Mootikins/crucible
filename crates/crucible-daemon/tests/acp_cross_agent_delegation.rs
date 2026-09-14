@@ -167,6 +167,7 @@ async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
             permission_config: None,
             plugin_loader: Some(plugin_loader),
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));

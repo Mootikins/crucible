@@ -27,6 +27,15 @@ pub(crate) mod git;
 mod journal;
 pub(crate) mod paths;
 mod persist;
+// The whole module is the plain half of a seam `RootBackend` connects in the
+// next step, so nothing reads it yet. One expectation here rather than eight
+// inside it, and `expect` rather than `allow` so the compiler reports the
+// attribute itself the moment the module stops being dead.
+#[expect(
+    dead_code,
+    reason = "RootBackend routes every seam call through this store; until then nothing reads it"
+)]
+mod plain_store;
 mod undo;
 
 #[cfg(test)]
@@ -178,8 +187,18 @@ pub type RejectBatch = Vec<RejectedHunk>;
 /// session end. Unlike snapshots, entries are read on demand by RPC handlers
 /// rather than consumed once by undo, so they are cloned out rather than
 /// removed.
-#[derive(Default)]
 pub struct ReviewLedgers {
+    /// Snapshots of the review roots that are not in a git repository.
+    ///
+    /// A value rather than a `Default`, because the store writes under the
+    /// daemon's data root and a default would have to invent one — which, in a
+    /// test, means the developer's real `~/.crucible`. The path arrives through
+    /// [`crate::agent_manager::AgentManagerParams`] for that reason.
+    #[expect(
+        dead_code,
+        reason = "RootBackend routes every seam call through this store; until then nothing reads it"
+    )]
+    plain: plain_store::PlainStore,
     ledgers: DashMap<String, Ledger>,
     /// Review decisions, per session. A hunk absent from this map is
     /// [`ReviewState::Unreviewed`] — the fail-closed answer, and the only
@@ -243,6 +262,28 @@ struct OpenBracket {
 }
 
 impl ReviewLedgers {
+    /// Build the ledgers, storing plain-root snapshots under `plain_root`.
+    ///
+    /// The daemon passes `<data home>/review-snapshots`; a test passes a
+    /// directory it owns. There is no `Default`: a review root outside git is
+    /// snapshotted into this directory, and nothing may guess where it is.
+    pub fn new(plain_root: PathBuf) -> Self {
+        Self {
+            plain: plain_store::PlainStore::new(plain_root),
+            ledgers: DashMap::new(),
+            states: DashMap::new(),
+            reject_stack: DashMap::new(),
+            comments: DashMap::new(),
+            open: DashMap::new(),
+            gate: DashMap::new(),
+            journals: DashMap::new(),
+            integrity: DashMap::new(),
+            parents: DashMap::new(),
+            external: std::sync::OnceLock::new(),
+            next_handle: AtomicU64::new(0),
+        }
+    }
+
     /// Open a ledger for a session over the roots it may write to, capturing
     /// `session_base` once.
     ///

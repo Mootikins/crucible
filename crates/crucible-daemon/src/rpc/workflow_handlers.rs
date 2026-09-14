@@ -860,6 +860,7 @@ mod tests {
             permission_config: Some(config),
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
 
         let mut session = crucible_core::session::Session::new(

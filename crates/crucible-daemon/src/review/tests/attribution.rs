@@ -557,7 +557,7 @@ async fn session_base_is_captured_once_and_never_moves() {
 #[tokio::test]
 async fn a_root_outside_git_is_not_trackable() {
     let dir = TempDir::new().unwrap();
-    let ledgers = ReviewLedgers::default();
+    let ledgers = ReviewLedgers::new(crate::test_support::scratch_snapshot_root());
     let err = ledgers
         .open("sess", &[dir.path().to_path_buf()])
         .await
@@ -572,7 +572,7 @@ async fn roots_inside_one_repo_collapse_to_a_single_tracked_root() {
     let nested = fx.dir.path().join("nested");
     std::fs::create_dir(&nested).unwrap();
 
-    let ledgers = ReviewLedgers::default();
+    let ledgers = ReviewLedgers::new(crate::test_support::scratch_snapshot_root());
     ledgers
         .open("multi", &[fx.dir.path().to_path_buf(), nested])
         .await

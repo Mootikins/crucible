@@ -775,6 +775,7 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
 }
 
@@ -795,6 +796,7 @@ fn create_test_agent_manager_with_providers(
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
 }
 
@@ -819,6 +821,7 @@ fn create_test_agent_manager_with_enrichment(
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
 }
 
@@ -839,6 +842,7 @@ fn create_test_agent_manager_with_llm_config(
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
 }
 
@@ -940,6 +944,7 @@ fn create_test_agent_manager_with_both(
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
 }
 

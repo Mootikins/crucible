@@ -39,6 +39,10 @@ async fn keep_ref_ids(root: &Path) -> ReviewResult<Vec<String>> {
 
 struct Fixture {
     dir: TempDir,
+    /// Where a plain root would be snapshotted. Its own directory, never one
+    /// inside `dir`: the repository's worktree is what the ledger captures, and
+    /// a store writing into it would change the very trees under test.
+    _snaps: TempDir,
     ledgers: Arc<ReviewLedgers>,
     session: String,
 }
@@ -53,13 +57,15 @@ impl Fixture {
         git(dir.path(), &["add", "."]).await;
         git(dir.path(), &["commit", "-q", "-m", "init"]).await;
 
-        let ledgers = Arc::new(ReviewLedgers::default());
+        let snaps = TempDir::new().unwrap();
+        let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
         ledgers
             .open("sess", &[dir.path().to_path_buf()])
             .await
             .unwrap();
         Self {
             dir,
+            _snaps: snaps,
             ledgers,
             session: "sess".to_string(),
         }
@@ -112,6 +118,9 @@ fn find<'a>(hunks: &'a [ComposedHunk], after: &str) -> &'a ComposedHunk {
 struct Persisted {
     repo_dir: TempDir,
     session_dir: TempDir,
+    /// As `Fixture`'s, and held across a restart: a restored ledger must find
+    /// the snapshots the first one wrote.
+    snaps: TempDir,
     ledgers: Arc<ReviewLedgers>,
     session: String,
 }
@@ -140,7 +149,8 @@ impl Persisted {
         }
         let session_dir = TempDir::new().unwrap();
 
-        let ledgers = Arc::new(ReviewLedgers::default());
+        let snaps = TempDir::new().unwrap();
+        let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
         ledgers
             .open_or_restore("sess", session_dir.path(), &[repo_dir.path().to_path_buf()])
             .await
@@ -148,6 +158,7 @@ impl Persisted {
         Self {
             repo_dir,
             session_dir,
+            snaps,
             ledgers,
             session: "sess".to_string(),
         }
@@ -176,7 +187,7 @@ impl Persisted {
 
     /// What a daemon restart sees: a brand new manager, same journal.
     async fn restart(&self) -> Arc<ReviewLedgers> {
-        let ledgers = Arc::new(ReviewLedgers::default());
+        let ledgers = Arc::new(ReviewLedgers::new(self.snaps.path().to_path_buf()));
         ledgers
             .open_or_restore(
                 &self.session,

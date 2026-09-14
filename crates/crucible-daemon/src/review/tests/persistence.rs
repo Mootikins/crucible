@@ -149,7 +149,9 @@ async fn an_unreadable_journal_never_captures_a_fresh_base() {
     std::fs::remove_file(fx.journal()).unwrap();
     std::fs::create_dir(fx.journal()).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     let err = ledgers
         .open_or_restore(
             &fx.session,
@@ -184,7 +186,9 @@ async fn an_unreadable_journal_holds_every_write_until_a_rebase() {
     std::fs::remove_file(fx.journal()).unwrap();
     std::fs::create_dir(fx.journal()).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     let _ = ledgers
         .open_or_restore(
             &fx.session,
@@ -501,7 +505,9 @@ async fn a_rebase_on_a_session_with_no_journal_still_persists_and_keeps_its_tree
     std::fs::write(repo_dir.path().join("uncommitted.txt"), "scratch\n").unwrap();
     let session_dir = TempDir::new().unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     ledgers
         .rebase_session("sess", session_dir.path(), &[repo_dir.path().to_path_buf()])
         .await
@@ -519,7 +525,9 @@ async fn a_rebase_on_a_session_with_no_journal_still_persists_and_keeps_its_tree
 
     // ...and the whole thing replays, which is the only proof the append was
     // the right shape rather than merely present.
-    let restarted = Arc::new(ReviewLedgers::default());
+    let restarted = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     restarted
         .open_or_restore("sess", session_dir.path(), &[repo_dir.path().to_path_buf()])
         .await
@@ -544,7 +552,9 @@ async fn a_root_a_rebase_could_not_recapture_stays_tracked() {
     let session_dir = TempDir::new().unwrap();
 
     let roots = vec![workspace.path().to_path_buf(), kiln.path().to_path_buf()];
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     ledgers
         .open_or_restore("sess", session_dir.path(), &roots)
         .await

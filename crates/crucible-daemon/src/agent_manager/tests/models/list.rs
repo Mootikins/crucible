@@ -41,6 +41,7 @@ async fn test_list_models_returns_all_providers() {
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     });
 
     agent_manager
@@ -400,6 +401,7 @@ async fn test_list_models_no_llm_config() {
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     });
 
     agent_manager
@@ -537,6 +539,7 @@ async fn test_list_models_prefixes_with_provider_key() {
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     });
 
     agent_manager

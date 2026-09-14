@@ -959,6 +959,7 @@ mod session_permission_config_tests {
             }),
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         })
     }
 

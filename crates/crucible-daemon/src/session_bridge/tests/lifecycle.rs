@@ -43,6 +43,7 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
         Arc::new(KilnManager::new()),
@@ -163,6 +164,7 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
         Arc::new(KilnManager::new()),
@@ -271,6 +273,7 @@ async fn session_end_forgets_the_sessions_statusline_values() {
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
         card_roots: Default::default(),
+        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     let exprs = agent_manager.statusline_exprs();
     let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(

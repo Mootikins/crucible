@@ -177,6 +177,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
         permission_config: None,
         plugin_loader: Some(plugin_loader),
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }));
 
     if let Some((registry, lua)) = plugin_handlers {

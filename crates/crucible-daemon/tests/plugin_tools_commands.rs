@@ -109,6 +109,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     });
 
     let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
@@ -175,6 +176,7 @@ async fn a_plugin_tool_runs_under_its_own_plugins_context() {
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     });
 
     let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);

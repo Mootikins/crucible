@@ -24,6 +24,7 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     });
     (agent_manager, session_manager, tmp)
 }

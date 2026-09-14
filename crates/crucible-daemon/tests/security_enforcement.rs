@@ -177,6 +177,7 @@ async fn rig(
         permission_config,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }));
     let args_clone = args.clone();
     agent_manager.set_agent_factory_override(Box::new(move |_, _| {
@@ -425,6 +426,7 @@ async fn delegation_trust_derives_from_child_provider() {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));
@@ -536,6 +538,7 @@ async fn card_allow_does_not_override_config_deny() {
         permission_config: Some(config),
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }));
     agent_manager.set_agent_factory_override(Box::new(move |_, _| {
         Box::pin(async move {

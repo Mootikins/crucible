@@ -128,6 +128,7 @@ async fn setup(agent_type: &str, modes: Option<&str>) -> Harness {
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }));
 
     let session = session_manager
@@ -412,6 +413,7 @@ async fn an_agents_own_id_beats_a_crucible_rename_alias() {
         permission_config: None,
         plugin_loader: None,
         card_roots: Default::default(),
+        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }));
 
     let session = session_manager

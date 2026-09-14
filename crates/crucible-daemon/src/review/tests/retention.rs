@@ -84,7 +84,9 @@ async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
     repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
     let sessions = home.path().join("sessions");
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     for id in ["live", "orphan"] {
         ledgers
             .open_or_restore(id, &sessions.join(id), &[repo_dir.path().to_path_buf()])
@@ -116,7 +118,9 @@ async fn the_sweep_releases_orphaned_snapshot_refs_too() {
     repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
     let sessions = home.path().join("sessions");
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     // A surviving session keeps the repository in the sweep's view at all —
     // the sweep reaches a root only through a live session's journal, so a
     // repo whose every session is gone is unreachable to it by construction.

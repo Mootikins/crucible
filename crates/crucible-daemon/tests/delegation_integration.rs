@@ -125,6 +125,7 @@ async fn setup_with_plugin(
             permission_config: None,
             plugin_loader: Some(plugin_loader.clone()),
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));
@@ -597,6 +598,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));
@@ -806,6 +808,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));
@@ -1037,6 +1040,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));
@@ -1257,6 +1261,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
         },
         service.clone(),
     ));

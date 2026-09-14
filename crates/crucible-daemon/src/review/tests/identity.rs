@@ -92,7 +92,9 @@ async fn the_gate_query_matches_a_root_reached_through_a_symlink() {
     let link = dir.path().join("link");
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     ledgers
         .open("sym", std::slice::from_ref(&link))
         .await
@@ -128,7 +130,9 @@ async fn a_close_cancelled_between_roots_does_not_poison_them() {
     repo(&first, &[("a.txt", "one\n")]).await;
     repo(&second, &[("a.txt", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     ledgers
         .open("cancelled", &[first.clone(), second.clone()])
         .await
@@ -259,7 +263,9 @@ async fn identical_changes_in_two_roots_are_independently_reviewable() {
     repo(&workspace, &[("a.txt", "one\n")]).await;
     repo(&kiln, &[("a.txt", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     ledgers
         .open("two-roots", &[workspace.clone(), kiln.clone()])
         .await
@@ -323,7 +329,9 @@ async fn identical_hunks_in_two_files_get_distinct_identities() {
     let root = dir.path().join("repo");
     repo(&root, &[("a.txt", "one\n"), ("b.txt", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::default());
+    let ledgers = Arc::new(ReviewLedgers::new(
+        crate::test_support::scratch_snapshot_root(),
+    ));
     ledgers
         .open("two-files", std::slice::from_ref(&root))
         .await

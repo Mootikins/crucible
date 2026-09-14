@@ -2454,6 +2454,7 @@ mod tests {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
 
         let data_home = tempfile::tempdir().expect("data home");
@@ -2499,6 +2500,7 @@ mod tests {
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
 
         let data_home = tempfile::tempdir().expect("data home");
@@ -3854,6 +3856,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             permission_config: None,
             plugin_loader: None,
             card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
 
         let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));

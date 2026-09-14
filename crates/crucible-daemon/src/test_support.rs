@@ -639,3 +639,21 @@ pub fn session_manager_with_kilns(
     crate::session_manager::SessionManager::with_storage(std::sync::Arc::new(storage))
         .with_kiln_registry(registry)
 }
+
+/// A unique directory path for a test manager's plain review snapshots.
+///
+/// [`crate::agent_manager::AgentManagerParams::review_snapshot_root`] is
+/// required rather than defaulted, so that no test writes review snapshots into
+/// the developer's real data home. Most manager fixtures never capture a root
+/// outside git, so all they need is a path that is unique and theirs: the
+/// directory is created and removed again here, and nothing recreates it unless
+/// a capture actually runs.
+///
+/// A test that *does* capture a plain root passes the path of a `TempDir` it
+/// holds open instead.
+pub fn scratch_snapshot_root() -> std::path::PathBuf {
+    tempfile::tempdir()
+        .expect("a temporary directory for review snapshots")
+        .path()
+        .join("review-snapshots")
+}

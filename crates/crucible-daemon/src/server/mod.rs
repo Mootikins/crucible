@@ -446,6 +446,7 @@ impl Server {
                     permission_config: params.permission_config.clone(),
                     plugin_loader: Some(plugin_loader.clone()),
                     card_roots,
+                    review_snapshot_root: data_home.join("review-snapshots"),
                 },
                 delegation_service.clone(),
             )
