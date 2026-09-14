@@ -18,7 +18,7 @@ pub use id::{InvalidSessionId, SessionId};
 pub use review::{
     ChildLedgerRef, Comment, CommentAuthor, ComposedHunk, GateBlock, HunkId, Integrity, Interval,
     Ledger, LineRange, PhysicalRoot, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus,
-    Skip, SkipKind, TreeSha, Verdict,
+    Skip, SkipKind, SnapshotId, Verdict,
 };
 pub use session::Session;
 pub use summary::SessionSummary;

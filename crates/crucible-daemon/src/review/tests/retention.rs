@@ -12,9 +12,9 @@ async fn a_keep_ref_survives_an_aggressive_gc_and_an_unkept_tree_does_not() {
     repo(dir.path(), &[("a.txt", "one\n")]).await;
 
     std::fs::write(dir.path().join("a.txt"), "kept\n").unwrap();
-    let kept = TreeSha::new(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
+    let kept = SnapshotId::git(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
     std::fs::write(dir.path().join("a.txt"), "unkept\n").unwrap();
-    let unkept = TreeSha::new(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
+    let unkept = SnapshotId::git(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
     std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
     assert_ne!(kept, unkept);
 
@@ -48,7 +48,7 @@ async fn a_keep_ref_is_invisible_to_git_log_all() {
     let dir = TempDir::new().unwrap();
     repo(dir.path(), &[("a.txt", "one\n")]).await;
     std::fs::write(dir.path().join("a.txt"), "two\n").unwrap();
-    let tree = TreeSha::new(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
+    let tree = SnapshotId::git(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
     git::update_keep(dir.path(), "sess", &[tree]).await.unwrap();
 
     let log = git(dir.path(), &["log", "--all", "--format=%s"]).await;

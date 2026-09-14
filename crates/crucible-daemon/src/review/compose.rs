@@ -7,7 +7,9 @@
 
 use std::collections::HashMap;
 
-use crucible_core::session::{ComposedHunk, HunkId, LineRange, PhysicalRoot, ReviewState, TreeSha};
+use crucible_core::session::{
+    ComposedHunk, HunkId, LineRange, PhysicalRoot, ReviewState, SnapshotId,
+};
 use similar::{DiffOp, TextDiff};
 
 use super::error::ReviewResult;
@@ -94,8 +96,8 @@ pub(super) struct RootComposition {
 /// fabricated empty hunk would be indistinguishable from a no-op.
 pub(super) async fn compose_root(
     root: &PhysicalRoot,
-    base: &TreeSha,
-    current: &TreeSha,
+    base: &SnapshotId,
+    current: &SnapshotId,
 ) -> ReviewResult<RootComposition> {
     let mut composed = Vec::new();
     let mut texts = HashMap::new();

@@ -797,7 +797,7 @@ async fn cancel_drops_pending_permission_senders() {
 #[tokio::test]
 async fn cleanup_session_leaves_no_per_session_residue() {
     use crucible_core::interaction::PermRequest;
-    use crucible_core::session::{Comment, CommentAuthor, LineRange, PhysicalRoot, TreeSha};
+    use crucible_core::session::{Comment, CommentAuthor, LineRange, PhysicalRoot, SnapshotId};
 
     let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
@@ -860,7 +860,7 @@ async fn cleanup_session_leaves_no_per_session_residue() {
             Comment::new(
                 PhysicalRoot::from_top_level("/repo"),
                 "a.txt",
-                TreeSha::new("0".repeat(40)),
+                SnapshotId::git("0".repeat(40)),
                 LineRange::new(1, 2),
                 "why this?",
                 CommentAuthor::Human,

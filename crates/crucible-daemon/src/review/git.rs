@@ -5,10 +5,15 @@
 //! worktree into a scratch index"), and splitting the two halves across two
 //! git implementations is how subtle disagreements about `.gitignore` and
 //! path normalisation get in. Argument vectors only — never a shell string.
+//!
+//! Everything here is the git backend's half of a review root. A snapshot id
+//! carries its own backend, so every function that takes one reads it through
+//! [`tree_sha`], which refuses an id from another store rather than handing a
+//! hash that names nothing to a `git` child process.
 
 use std::path::Path;
 
-use crucible_core::session::{PhysicalRoot, TreeSha};
+use crucible_core::session::{PhysicalRoot, SnapshotId};
 use tokio::process::Command;
 
 use super::error::{ReviewError, ReviewResult};
@@ -110,6 +115,22 @@ pub(crate) async fn ignored_entries(root: &Path) -> ReviewResult<IgnoredEntries>
     Ok(entries)
 }
 
+/// The git tree SHA inside `id`, or an error naming the backend mismatch.
+///
+/// The one door between a [`SnapshotId`] and a git argument vector. Every
+/// function in this module goes through it, so a plain-store snapshot can
+/// never reach a `git` child process as a revision — where it would either
+/// name nothing or, worse, collide with an unrelated object.
+fn tree_sha<'a>(root: &Path, id: &'a SnapshotId) -> ReviewResult<&'a str> {
+    match id {
+        SnapshotId::Git(sha) => Ok(sha),
+        SnapshotId::Plain(_) => Err(ReviewError::WrongBackend {
+            root: root.to_path_buf(),
+            id: id.clone(),
+        }),
+    }
+}
+
 /// Paths differing between two trees, with the kind of change.
 ///
 /// Renames are deliberately not detected: a rename becomes a delete plus an
@@ -117,19 +138,13 @@ pub(crate) async fn ignored_entries(root: &Path) -> ReviewResult<IgnoredEntries>
 /// new path is entirely new content to review.
 pub(super) async fn changed_paths(
     root: &Path,
-    from: &TreeSha,
-    to: &TreeSha,
+    from: &SnapshotId,
+    to: &SnapshotId,
 ) -> ReviewResult<Vec<(String, ChangeKind)>> {
+    let (from, to) = (tree_sha(root, from)?, tree_sha(root, to)?);
     let out = git(
         root,
-        &[
-            "diff",
-            "--name-status",
-            "--no-renames",
-            "-z",
-            from.as_str(),
-            to.as_str(),
-        ],
+        &["diff", "--name-status", "--no-renames", "-z", from, to],
     )
     .await?;
 
@@ -155,8 +170,12 @@ pub(super) async fn changed_paths(
 ///
 /// `Ok(None)` means the blob is not UTF-8 — a binary file, which has no line
 /// hunks to review. Callers skip it rather than fabricating an empty diff.
-pub(super) async fn blob(root: &Path, tree: &TreeSha, path: &str) -> ReviewResult<Option<String>> {
-    let spec = format!("{}:{}", tree.as_str(), path);
+pub(super) async fn blob(
+    root: &Path,
+    tree: &SnapshotId,
+    path: &str,
+) -> ReviewResult<Option<String>> {
+    let spec = format!("{}:{}", tree_sha(root, tree)?, path);
     let out = Command::new("git")
         .args(["cat-file", "blob", &spec])
         .current_dir(root)
@@ -180,7 +199,7 @@ pub(super) async fn blob(root: &Path, tree: &TreeSha, path: &str) -> ReviewResul
 /// binary — see [`blob`].
 pub(super) async fn blob_or_empty(
     root: &Path,
-    tree: &TreeSha,
+    tree: &SnapshotId,
     path: &str,
     exists: bool,
 ) -> ReviewResult<Option<String>> {
@@ -219,17 +238,14 @@ pub(super) fn keep_ref(session_id: &str) -> String {
 pub(super) async fn update_keep(
     root: &Path,
     session_id: &str,
-    trees: &[TreeSha],
+    trees: &[SnapshotId],
 ) -> ReviewResult<()> {
     // Entry name is the SHA itself: `mktree` rejects duplicate names, and the
     // SHA is the one thing guaranteed unique among the trees we are keeping.
     let mut input = String::new();
     for tree in trees {
-        input.push_str(&format!(
-            "040000 tree {}\t{}\n",
-            tree.as_str(),
-            tree.as_str()
-        ));
+        let sha = tree_sha(root, tree)?;
+        input.push_str(&format!("040000 tree {sha}\t{sha}\n"));
     }
     let keep = git_stdin(root, &["mktree"], &input).await?;
     git(root, &["update-ref", &keep_ref(session_id), keep.trim()]).await?;
@@ -286,13 +302,16 @@ pub(super) async fn drop_ref(root: &Path, name: &str) -> ReviewResult<()> {
 /// any object type, and a tree SHA that has been gc'd can collide with nothing
 /// — but a caller that passed a commit by mistake would get a false positive
 /// and then diff the wrong pair of objects.
-pub(super) async fn tree_exists(root: &Path, tree: &TreeSha) -> bool {
-    git(
-        root,
-        &["cat-file", "-e", &format!("{}^{{tree}}", tree.as_str())],
-    )
-    .await
-    .is_ok()
+pub(super) async fn tree_exists(root: &Path, tree: &SnapshotId) -> bool {
+    // A snapshot from another backend is not in this object store, which is
+    // what the question asks. Answering `false` keeps the one caller —
+    // `degraded_reason` — free of a third state it has no rendering for.
+    let Ok(sha) = tree_sha(root, tree) else {
+        return false;
+    };
+    git(root, &["cat-file", "-e", &format!("{sha}^{{tree}}")])
+        .await
+        .is_ok()
 }
 
 /// Run git in `root` and return stdout. A non-zero exit surfaces as

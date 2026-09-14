@@ -5,7 +5,7 @@
 
 use crate::session::types::{
     ChildLedgerRef, ComposedHunk, HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot,
-    ReviewScope, ReviewState, RootBase, RootInterval, Skip, SkipKind, TreeSha, Verdict,
+    ReviewScope, ReviewState, RootBase, RootInterval, Skip, SkipKind, SnapshotId, Verdict,
 };
 use std::path::Path;
 
@@ -121,6 +121,37 @@ fn hunk_with_no_attribution_is_external() {
     assert!(!hunk(id, vec!["call-1".into()]).is_external());
 }
 
+/// The one wire spelling of a snapshot id, and the reason a bare hex string
+/// still reads: every journal on disk was written before the plain store
+/// existed, and each of its tree ids is bare hex. A prefix on the git arm
+/// would have made every one of those lines unreadable.
+#[test]
+fn a_bare_hex_snapshot_id_reads_as_git_and_a_prefixed_one_as_plain() {
+    let hex = "0".repeat(40);
+
+    let git: SnapshotId = serde_json::from_str(&format!("\"{hex}\"")).unwrap();
+    assert_eq!(git, SnapshotId::git(&hex));
+
+    let plain: SnapshotId = serde_json::from_str(&format!("\"plain:{hex}\"")).unwrap();
+    assert_eq!(plain, SnapshotId::plain(&hex));
+
+    // The two arms are different identities, so a plain snapshot can never
+    // satisfy a lookup for the git tree of the same name.
+    assert_ne!(git, plain);
+
+    assert_eq!(serde_json::to_string(&git).unwrap(), format!("\"{hex}\""));
+    assert_eq!(
+        serde_json::to_string(&plain).unwrap(),
+        format!("\"plain:{hex}\"")
+    );
+    assert_eq!(git.as_str(), hex, "the git arm carries the bare tree sha");
+    assert_eq!(
+        plain.as_str(),
+        hex,
+        "the prefix belongs to the wire spelling, not to the id"
+    );
+}
+
 #[test]
 fn line_range_is_half_open() {
     let r = LineRange::new(4, 7);
@@ -140,18 +171,18 @@ fn ledger_base_is_per_root_and_append_only() {
         vec![
             RootBase {
                 root: PhysicalRoot::from_top_level("/repo"),
-                base_tree: TreeSha::new("aaa"),
+                base_tree: SnapshotId::git("aaa"),
             },
             RootBase {
                 root: PhysicalRoot::from_top_level("/kiln"),
-                base_tree: TreeSha::new("bbb"),
+                base_tree: SnapshotId::git("bbb"),
             },
         ],
     );
 
     assert_eq!(
         ledger.base_tree(&PhysicalRoot::from_top_level("/repo")),
-        Some(&TreeSha::new("aaa"))
+        Some(&SnapshotId::git("aaa"))
     );
     assert_eq!(ledger.base_tree(Path::new("/elsewhere")), None);
     assert_eq!(ledger.roots().count(), 2);
@@ -161,8 +192,8 @@ fn ledger_base_is_per_root_and_append_only() {
         node_id: 7,
         roots_touched: vec![RootInterval {
             root: PhysicalRoot::from_top_level("/repo"),
-            before_tree: TreeSha::new("aaa"),
-            after_tree: TreeSha::new("ccc"),
+            before_tree: SnapshotId::git("aaa"),
+            after_tree: SnapshotId::git("ccc"),
         }],
         contested: false,
         child_session_id: None,
@@ -178,7 +209,7 @@ fn ledger_base_is_per_root_and_append_only() {
     // The base is unchanged by anything that happens after the ledger opens.
     assert_eq!(
         ledger.base_tree(&PhysicalRoot::from_top_level("/repo")),
-        Some(&TreeSha::new("aaa"))
+        Some(&SnapshotId::git("aaa"))
     );
 }
 
@@ -188,7 +219,7 @@ fn ledger_roundtrips_through_json_with_its_base() {
         "sess-1",
         vec![RootBase {
             root: PhysicalRoot::from_top_level("/repo"),
-            base_tree: TreeSha::new("aaa"),
+            base_tree: SnapshotId::git("aaa"),
         }],
     );
     ledger.push_interval_in_memory(Interval {
@@ -196,8 +227,8 @@ fn ledger_roundtrips_through_json_with_its_base() {
         node_id: 1,
         roots_touched: vec![RootInterval {
             root: PhysicalRoot::from_top_level("/repo"),
-            before_tree: TreeSha::new("aaa"),
-            after_tree: TreeSha::new("ccc"),
+            before_tree: SnapshotId::git("aaa"),
+            after_tree: SnapshotId::git("ccc"),
         }],
         contested: true,
         child_session_id: None,
@@ -263,8 +294,8 @@ fn interval_over(root: &str, before: &str, after: &str) -> Interval {
         node_id: 1,
         roots_touched: vec![RootInterval {
             root: PhysicalRoot::from_top_level(root),
-            before_tree: TreeSha::new(before),
-            after_tree: TreeSha::new(after),
+            before_tree: SnapshotId::git(before),
+            after_tree: SnapshotId::git(after),
         }],
         contested: false,
         child_session_id: None,
@@ -281,11 +312,11 @@ fn trees_for_a_root_covers_the_base_and_both_sides_of_every_interval() {
         vec![
             RootBase {
                 root: PhysicalRoot::from_top_level("/a"),
-                base_tree: TreeSha::new("base-a"),
+                base_tree: SnapshotId::git("base-a"),
             },
             RootBase {
                 root: PhysicalRoot::from_top_level("/b"),
-                base_tree: TreeSha::new("base-b"),
+                base_tree: SnapshotId::git("base-b"),
             },
         ],
     );
@@ -298,9 +329,9 @@ fn trees_for_a_root_covers_the_base_and_both_sides_of_every_interval() {
     assert_eq!(
         a,
         vec![
-            TreeSha::new("base-a"),
-            TreeSha::new("t1"),
-            TreeSha::new("t2")
+            SnapshotId::git("base-a"),
+            SnapshotId::git("t1"),
+            SnapshotId::git("t2")
         ],
         "a tree shared by two intervals must appear once, and none may be missing"
     );
@@ -308,7 +339,7 @@ fn trees_for_a_root_covers_the_base_and_both_sides_of_every_interval() {
     // produced it, so /b's keep ref must never name /a's trees.
     assert_eq!(
         ledger.trees_for(Path::new("/b")),
-        vec![TreeSha::new("base-b"), TreeSha::new("t3")]
+        vec![SnapshotId::git("base-b"), SnapshotId::git("t3")]
     );
 }
 
@@ -321,7 +352,7 @@ fn rebasing_replaces_the_base_and_voids_the_intervals_measured_from_it() {
         "s",
         vec![RootBase {
             root: PhysicalRoot::from_top_level("/a"),
-            base_tree: TreeSha::new("old"),
+            base_tree: SnapshotId::git("old"),
         }],
     );
     ledger.push_interval_in_memory(interval_over("/a", "old", "t1"));
@@ -333,12 +364,12 @@ fn rebasing_replaces_the_base_and_voids_the_intervals_measured_from_it() {
 
     ledger.rebase(vec![RootBase {
         root: PhysicalRoot::from_top_level("/a"),
-        base_tree: TreeSha::new("new"),
+        base_tree: SnapshotId::git("new"),
     }]);
 
     assert_eq!(
         ledger.base_tree(&PhysicalRoot::from_top_level("/a")),
-        Some(&TreeSha::new("new"))
+        Some(&SnapshotId::git("new"))
     );
     assert!(ledger.intervals().is_empty());
     // Delegation links describe session structure, not measurement, so they

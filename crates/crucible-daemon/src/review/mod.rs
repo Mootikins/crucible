@@ -39,7 +39,8 @@ use std::sync::{Arc, Weak};
 
 use crucible_core::session::{
     ChildLedgerRef, Comment, ComposedHunk, GateBlock, HunkId, Integrity, Interval, Ledger,
-    PhysicalRoot, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, TreeSha, Verdict,
+    PhysicalRoot, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, SnapshotId,
+    Verdict,
 };
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -66,7 +67,7 @@ use crate::workspace_snapshot;
 #[derive(Debug)]
 pub struct CaptureHandle {
     id: u64,
-    before: Vec<(PathBuf, TreeSha)>,
+    before: Vec<(PathBuf, SnapshotId)>,
     /// Weak so a handle that outlives its manager cannot keep the ledgers
     /// alive; a dead registry has nothing left to deregister from.
     ledgers: Weak<ReviewLedgers>,
@@ -270,7 +271,7 @@ impl ReviewLedgers {
             let tree = workspace_snapshot::capture_tree(&top).await?;
             base.push(RootBase {
                 root: top,
-                base_tree: TreeSha::new(tree),
+                base_tree: SnapshotId::git(tree),
             });
         }
 
@@ -438,7 +439,7 @@ impl ReviewLedgers {
             match workspace_snapshot::capture_tree(&root).await {
                 Ok(tree) => {
                     self.mark_open(&root, id);
-                    before.push((root, TreeSha::new(tree)));
+                    before.push((root, SnapshotId::git(tree)));
                 }
                 Err(e) => {
                     // Leaving the roots captured so far registered would make
@@ -481,7 +482,7 @@ impl ReviewLedgers {
             let root = handle.before[i].0.clone();
             match workspace_snapshot::capture_tree(&root).await {
                 Ok(sha) => {
-                    handle.before[i].1 = TreeSha::new(sha);
+                    handle.before[i].1 = SnapshotId::git(sha);
                     i += 1;
                 }
                 Err(e) => {
@@ -530,7 +531,7 @@ impl ReviewLedgers {
                 Ok(sha) if sha != before_tree.as_str() => touched.push(RootInterval {
                     root: PhysicalRoot::from_top_level(root),
                     before_tree,
-                    after_tree: TreeSha::new(sha),
+                    after_tree: SnapshotId::git(sha),
                 }),
                 Ok(_) => {}
                 // A capture failure means we cannot say what this call did to
@@ -763,7 +764,7 @@ impl ReviewLedgers {
             }
             statuses.push(RootStatus::intact(base.root.clone()));
 
-            let current = TreeSha::new(workspace_snapshot::capture_tree(&base.root).await?);
+            let current = SnapshotId::git(workspace_snapshot::capture_tree(&base.root).await?);
             let mut composition =
                 compose::compose_root(&base.root, &base.base_tree, &current).await?;
 

@@ -692,9 +692,13 @@ fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Resp
         // A journal the daemon cannot read is a daemon-side fault, and the
         // caller must not read it as "nothing to review": that is the data
         // loss the journal exists to prevent, reported as success.
-        e @ (ReviewError::Git(_) | ReviewError::Io(_) | ReviewError::Journal { .. }) => {
-            internal_error(req_id, e)
-        }
+        // `WrongBackend` joins them: a snapshot read through the wrong seam
+        // is the daemon's routing fault, and the caller can do nothing with
+        // an INVALID_PARAMS about a request it made correctly.
+        e @ (ReviewError::Git(_)
+        | ReviewError::Io(_)
+        | ReviewError::Journal { .. }
+        | ReviewError::WrongBackend { .. }) => internal_error(req_id, e),
     }
 }
 

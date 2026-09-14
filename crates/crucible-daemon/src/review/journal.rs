@@ -31,7 +31,7 @@ use std::sync::OnceLock;
 use chrono::{DateTime, Utc};
 use crucible_core::session::{
     ChildLedgerRef, Comment, HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot,
-    ReviewState, RootBase, Skip, SkipKind, TreeSha,
+    ReviewState, RootBase, Skip, SkipKind, SnapshotId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
@@ -62,13 +62,13 @@ pub(super) enum Record {
     /// A tracked root and the tree the session started from.
     Base {
         root: PathBuf,
-        base_tree: TreeSha,
+        base_tree: SnapshotId,
     },
     /// A new base for a root, superseding every `Base` and `Rebase` above it
     /// and voiding the intervals measured from the old one.
     Rebase {
         root: PathBuf,
-        base_tree: TreeSha,
+        base_tree: SnapshotId,
     },
     Interval(Interval),
     Child(ChildLedgerRef),
@@ -333,7 +333,7 @@ pub(super) fn state(hunk: &HunkId, state: ReviewState) -> Record {
 }
 
 /// Last writer wins, per root.
-fn set_base(bases: &mut Vec<RootBase>, root: PathBuf, base_tree: TreeSha) {
+fn set_base(bases: &mut Vec<RootBase>, root: PathBuf, base_tree: SnapshotId) {
     let root = PhysicalRoot::from_top_level(root);
     match bases.iter_mut().find(|b| *b.root == *root) {
         Some(existing) => existing.base_tree = base_tree,

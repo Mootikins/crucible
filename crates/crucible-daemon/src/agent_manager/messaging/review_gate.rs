@@ -430,7 +430,7 @@ fn emit_gate_event(
 mod tests {
     use super::*;
     use crate::review::ReviewLedgers;
-    use crucible_core::session::{Ledger, PhysicalRoot, RootBase, TreeSha};
+    use crucible_core::session::{Ledger, PhysicalRoot, RootBase, SnapshotId};
     use serde_json::json;
 
     /// A root the ledger cannot account for produces no hunks and no
@@ -449,7 +449,7 @@ mod tests {
             "sess",
             vec![RootBase {
                 root: gone.clone(),
-                base_tree: TreeSha::new("0".repeat(40)),
+                base_tree: SnapshotId::git("0".repeat(40)),
             }],
         ));
 

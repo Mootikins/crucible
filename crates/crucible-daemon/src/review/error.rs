@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crucible_core::session::HunkId;
+use crucible_core::session::{HunkId, SnapshotId};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -67,6 +67,17 @@ pub enum ReviewError {
     /// that the agent changed nothing and silently empties the review queue.
     #[error("review journal {path} could not be read: {reason}")]
     Journal { path: PathBuf, reason: String },
+
+    /// Git plumbing was handed a snapshot id from another backend.
+    ///
+    /// A routing fault inside the daemon, never something a caller did: the
+    /// arm of [`crucible_core::session::SnapshotId`] says which backend can
+    /// read a snapshot, so a git command that receives a plain-store id was
+    /// reached through the wrong seam. Reported rather than asserted, because
+    /// the release profile aborts on a panic and takes every live session
+    /// with it.
+    #[error("snapshot {id} is not a git tree in {}", root.display())]
+    WrongBackend { root: PathBuf, id: SnapshotId },
 
     #[error("git failed: {0}")]
     Git(String),

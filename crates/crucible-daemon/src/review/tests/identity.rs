@@ -193,7 +193,7 @@ async fn comments_are_stored_and_resolvable() {
     let comment = Comment::new(
         PhysicalRoot::from_top_level(fx.dir.path()),
         "a.txt",
-        TreeSha::new("deadbeef"),
+        SnapshotId::git("deadbeef"),
         LineRange::new(1, 2),
         "why this?",
         CommentAuthor::Human,
@@ -364,4 +364,32 @@ async fn a_binary_file_is_skipped_rather_than_composed_as_an_empty_hunk() {
         fx.hunks().await.is_empty(),
         "a binary file produced a line hunk"
     );
+}
+
+/// A plain-store snapshot names nothing in a git object store. Handing one to
+/// git plumbing is a routing fault in the daemon, so it answers an error the
+/// caller can report — never a panic, which the release profile turns into an
+/// abort that takes every live session with it.
+#[tokio::test]
+async fn a_plain_id_handed_to_git_is_an_error_not_a_panic() {
+    let fx = Fixture::new("one\n").await;
+    let root = PhysicalRoot::from_top_level(fx.dir.path());
+    let plain = SnapshotId::plain("0".repeat(64));
+
+    let err = super::git::blob(&root, &plain, "a.txt")
+        .await
+        .expect_err("git read a plain-store snapshot");
+    assert!(
+        matches!(err, ReviewError::WrongBackend { .. }),
+        "{err:?}, not a backend error the caller can report"
+    );
+
+    let err = super::git::changed_paths(&root, &plain, &plain)
+        .await
+        .expect_err("git diffed a plain-store snapshot");
+    assert!(matches!(err, ReviewError::WrongBackend { .. }), "{err:?}");
+
+    // `tree_exists` answers a question, not a result: a snapshot from another
+    // backend is not in this object store, which is exactly `false`.
+    assert!(!super::git::tree_exists(&root, &plain).await);
 }

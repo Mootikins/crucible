@@ -738,3 +738,23 @@ async fn a_journal_written_before_the_reject_stack_still_replays() {
     let outcome = restarted.undo_reject(&fx.session).await.unwrap();
     assert!(outcome.applied.is_empty() && outcome.failed.is_empty());
 }
+
+/// Every journal on disk was written before the plain store existed, and each
+/// of its tree ids is bare hex. Reading one as a git snapshot is what keeps a
+/// session's base — and with it the whole composed diff — after the upgrade.
+#[test]
+fn a_journal_line_written_before_snapshot_ids_still_reads() {
+    use crate::review::journal::Record;
+
+    let line =
+        r#"{"t":"base","root":"/repo","base_tree":"0000000000000000000000000000000000000000"}"#;
+    let record = serde_json::from_str::<Record>(line).expect("a pre-snapshot-id base record");
+
+    match record {
+        Record::Base { root, base_tree } => {
+            assert_eq!(root, Path::new("/repo"));
+            assert_eq!(base_tree, SnapshotId::git("0".repeat(40)));
+        }
+        other => panic!("a base record read back as {other:?}"),
+    }
+}

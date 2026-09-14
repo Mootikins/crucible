@@ -10,7 +10,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crucible_core::session::{
-    HunkId, Integrity, Interval, Ledger, ReviewState, RootBase, RootStatus, Skip, SkipKind, TreeSha,
+    HunkId, Integrity, Interval, Ledger, ReviewState, RootBase, RootStatus, Skip, SkipKind,
+    SnapshotId,
 };
 use tracing::{debug, warn};
 
@@ -239,7 +240,7 @@ impl ReviewLedgers {
                 Ok(tree) => {
                     captured.push(RootBase {
                         root: top.clone(),
-                        base_tree: TreeSha::new(tree),
+                        base_tree: SnapshotId::git(tree),
                     });
                     statuses.push(RootStatus::intact(top));
                 }

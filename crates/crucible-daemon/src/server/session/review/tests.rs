@@ -2,7 +2,7 @@ use super::*;
 use crate::test_support::temp_session_manager;
 use crucible_core::protocol::rpc::INTERNAL_ERROR;
 use crucible_core::protocol::RequestId;
-use crucible_core::session::{GateBlock, PhysicalRoot, TreeSha};
+use crucible_core::session::{GateBlock, PhysicalRoot, SnapshotId};
 use tempfile::TempDir;
 
 // ── End-to-end fixture: real git worktree, real ledger, real handlers ───
@@ -1218,7 +1218,7 @@ fn hunk(path: &str, start: u32, end: u32) -> ComposedHunk {
 fn base(root: &str) -> RootBase {
     RootBase {
         root: PhysicalRoot::from_top_level(root),
-        base_tree: TreeSha::new("deadbeef"),
+        base_tree: SnapshotId::git("deadbeef"),
     }
 }
 
@@ -1310,7 +1310,7 @@ fn a_relative_path_escaping_its_root_is_refused() {
     let dir = TempDir::new().unwrap();
     let bases = [RootBase {
         root: PhysicalRoot::from_top_level(std::fs::canonicalize(dir.path()).unwrap()),
-        base_tree: TreeSha::new("deadbeef"),
+        base_tree: SnapshotId::git("deadbeef"),
     }];
     assert!(resolve_root(&bases, None, Path::new("../../etc/passwd")).is_err());
     assert!(resolve_root(&bases, None, Path::new("sub/../../escaped.txt")).is_err());
@@ -1336,7 +1336,7 @@ fn a_dot_dot_that_stays_inside_the_root_resolves() {
     std::fs::create_dir(root.join("src")).unwrap();
     let bases = [RootBase {
         root: PhysicalRoot::from_top_level(root.clone()),
-        base_tree: TreeSha::new("deadbeef"),
+        base_tree: SnapshotId::git("deadbeef"),
     }];
     let (resolved, rel) = resolve_root(&bases, None, Path::new("src/../a.rs")).unwrap();
     assert_eq!(*resolved.root, *root);
@@ -1357,7 +1357,7 @@ fn a_path_through_a_symlinked_root_resolves_to_the_tracked_root() {
 
     let bases = [RootBase {
         root: PhysicalRoot::from_top_level(physical.clone()),
-        base_tree: TreeSha::new("deadbeef"),
+        base_tree: SnapshotId::git("deadbeef"),
     }];
     let (root, rel) = resolve_root(&bases, None, &link.join("note.md")).unwrap();
     assert_eq!(*root.root, *physical);

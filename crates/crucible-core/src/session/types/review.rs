@@ -22,30 +22,82 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// A git tree SHA.
+/// A snapshot of one review root: a git tree, or a plain-store snapshot.
 ///
-/// Distinct from a commit SHA on purpose: `git write-tree` and
-/// `git commit-tree` both return 40 hex characters and the two are freely
-/// substitutable in most git invocations but mean different things. The
-/// ledger diffs trees; mixing a commit in silently compares the wrong pair
-/// of objects for a tree with more than one parent.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct TreeSha(String);
+/// The arm is the source of truth for which backend can read the snapshot.
+/// Nothing else records it — a second field would be a second answer, and the
+/// two would disagree the first time one of them was written without the
+/// other.
+///
+/// The git arm is a tree SHA, distinct from a commit SHA on purpose:
+/// `git write-tree` and `git commit-tree` both return 40 hex characters and
+/// the two are freely substitutable in most git invocations but mean
+/// different things. The ledger diffs trees; mixing a commit in silently
+/// compares the wrong pair of objects for a tree with more than one parent.
+///
+/// The plain arm is the blake3 of a snapshot manifest, for a root that is not
+/// in a repository.
+///
+/// One string on the wire, and only the plain arm carries a prefix: every
+/// journal written before this type holds bare hex, so each of those lines
+/// still reads as [`Self::Git`]. See [`Self::parse`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SnapshotId {
+    Git(String),
+    Plain(String),
+}
 
-impl TreeSha {
-    pub fn new(sha: impl Into<String>) -> Self {
-        Self(sha.into())
+/// What separates a plain-store snapshot from a git tree on the wire.
+const PLAIN_PREFIX: &str = "plain:";
+
+impl SnapshotId {
+    pub fn git(id: impl Into<String>) -> Self {
+        Self::Git(id.into())
     }
 
+    pub fn plain(id: impl Into<String>) -> Self {
+        Self::Plain(id.into())
+    }
+
+    /// Read a wire spelling. A bare string is a git tree.
+    pub fn parse(text: &str) -> Self {
+        match text.strip_prefix(PLAIN_PREFIX) {
+            Some(rest) => Self::Plain(rest.to_string()),
+            None => Self::Git(text.to_string()),
+        }
+    }
+
+    /// The id inside the arm, with no prefix: the tree SHA a git command
+    /// takes, or the manifest hash the plain store looks up.
+    ///
+    /// Never write this to the wire. The wire spelling is [`std::fmt::Display`],
+    /// which keeps the two arms apart.
     pub fn as_str(&self) -> &str {
-        &self.0
+        match self {
+            Self::Git(id) | Self::Plain(id) => id,
+        }
     }
 }
 
-impl std::fmt::Display for TreeSha {
+impl std::fmt::Display for SnapshotId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::Git(id) => f.write_str(id),
+            Self::Plain(id) => write!(f, "{PLAIN_PREFIX}{id}"),
+        }
+    }
+}
+
+impl Serialize for SnapshotId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for SnapshotId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Ok(Self::parse(&text))
     }
 }
 
@@ -274,8 +326,8 @@ pub struct RootInterval {
     /// emits repo-root-relative paths regardless of where it is invoked, so
     /// every path in this interval is relative to this directory.
     pub root: PhysicalRoot,
-    pub before_tree: TreeSha,
-    pub after_tree: TreeSha,
+    pub before_tree: SnapshotId,
+    pub after_tree: SnapshotId,
 }
 
 /// One bracketed write window: a tool call, and what the worktree looked like
@@ -337,7 +389,7 @@ pub struct ChildLedgerRef {
 pub struct RootBase {
     /// Repository top level. See [`RootInterval::root`].
     pub root: PhysicalRoot,
-    pub base_tree: TreeSha,
+    pub base_tree: SnapshotId,
 }
 
 /// Append-only per-session record of what the agent did to the filesystem.
@@ -376,7 +428,7 @@ impl Ledger {
 
     /// The tree this session started from for `root`, or `None` when the root
     /// is not one this ledger tracks.
-    pub fn base_tree(&self, root: &Path) -> Option<&TreeSha> {
+    pub fn base_tree(&self, root: &Path) -> Option<&SnapshotId> {
         self.session_base
             .iter()
             .find(|b| *b.root == *root)
@@ -417,8 +469,8 @@ impl Ledger {
     /// own `gc --prune=now` deletes them and the composed diff turns into a
     /// hard error against a missing object. This is the list a keep ref has to
     /// protect.
-    pub fn trees_for(&self, root: &Path) -> Vec<TreeSha> {
-        let mut trees: Vec<TreeSha> = self
+    pub fn trees_for(&self, root: &Path) -> Vec<SnapshotId> {
+        let mut trees: Vec<SnapshotId> = self
             .session_base
             .iter()
             .filter(|b| *b.root == *root)
@@ -756,7 +808,7 @@ pub struct Comment {
     pub path: String,
     /// Tree the range is anchored in. Later diffs re-project the range
     /// forward from here; a range that no longer projects is outdated.
-    pub base_tree: TreeSha,
+    pub base_tree: SnapshotId,
     pub line_range: LineRange,
     pub body: String,
     pub author: CommentAuthor,
@@ -770,7 +822,7 @@ impl Comment {
     pub fn new(
         root: PhysicalRoot,
         path: impl Into<String>,
-        base_tree: TreeSha,
+        base_tree: SnapshotId,
         line_range: LineRange,
         body: impl Into<String>,
         author: CommentAuthor,
