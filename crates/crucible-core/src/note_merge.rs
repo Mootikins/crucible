@@ -154,13 +154,15 @@ pub fn merge3(base: &str, ours: &str, theirs: &str) -> Merge {
                 // user resolves, with all three texts to choose from.
                 let start_line = out.len() as u32 + 1;
                 out.extend_from_slice(&ours_text);
-                if ours_text.concat() != theirs_text.concat() {
+                let ours_joined = join(&ours_text);
+                let theirs_joined = join(&theirs_text);
+                if ours_joined != theirs_joined {
                     regions.push(Region {
                         start_line,
                         end_line: out.len() as u32 + 1,
-                        base: base_lines[cs..ce].concat(),
-                        ours: ours_text.concat(),
-                        theirs: theirs_text.concat(),
+                        base: join(&base_lines[cs..ce]),
+                        ours: ours_joined,
+                        theirs: theirs_joined,
                     });
                 }
             }
@@ -173,7 +175,7 @@ pub fn merge3(base: &str, ours: &str, theirs: &str) -> Merge {
     out.extend_from_slice(&base_lines[pos..]);
 
     Merge {
-        text: out.concat(),
+        text: join(&out),
         regions,
     }
 }
@@ -212,6 +214,23 @@ fn hunks<'a>(base: &[&'a str], new: &'a [&'a str]) -> Vec<Hunk<'a>> {
             }),
         })
         .collect()
+}
+
+/// Join lines back into one text, ending any line that lost its newline.
+///
+/// `split_inclusive('\n')` leaves a text's LAST line without a newline, and a
+/// merge may put that line in front of another side's lines. Concatenating
+/// would glue two lines into one line neither writer wrote, so a line that is
+/// not the last one here gets its newline back.
+fn join(lines: &[&str]) -> String {
+    let mut text = String::with_capacity(lines.iter().map(|l| l.len() + 1).sum());
+    for (idx, line) in lines.iter().enumerate() {
+        text.push_str(line);
+        if idx + 1 < lines.len() && !line.ends_with('\n') {
+            text.push('\n');
+        }
+    }
+    text
 }
 
 /// Base `cs..ce` with one side's sorted, disjoint `hunks` applied.
@@ -323,6 +342,19 @@ mod tests {
         let m = merge3("A\nB", "A\nB\nC", "A2\nB");
         assert_eq!(m.text, "A2\nB\nC");
         assert!(m.regions.is_empty());
+    }
+
+    /// `split_inclusive('\n')` lets a text's LAST line carry no newline, so a
+    /// side that drops the final newline (or deletes the last line) must not
+    /// glue its last line to whatever the other side appends after it.
+    #[test]
+    fn a_line_with_no_newline_never_glues_to_the_line_after_it() {
+        let m = merge3("A\n", "A", "A\nB\n");
+        assert_eq!(m.text, "A\nB\n");
+        let m = merge3("A\n", "A\nB\n", "A");
+        assert_eq!(m.text, "A\nB\n");
+        let m = merge3("A\nB\nC\n", "A\nB", "A\nB\nC\nD\n");
+        assert_eq!(m.text, "A\nB\nD\n");
     }
 
     /// The case the daemon's fold merge panics on: their insert sits at the
