@@ -233,6 +233,11 @@ async fn reject_hunk(
 /// follows, and only when something applied — a batch of refusals moved
 /// nothing, so the panel has nothing to redraw.
 ///
+/// A loop the engine ended on a ledger or repository error still reverted
+/// the hunks before it. The note and the event go out for those first, and
+/// the error is answered after: every rejection is a conversation event,
+/// and one a later failure interrupted is no exception.
+///
 /// [`ReviewLedgers::set_states`]: crate::review::ReviewLedgers::set_states
 pub(crate) async fn set_states(
     am: &AgentManager,
@@ -248,7 +253,7 @@ pub(crate) async fn set_states(
         Vec::new()
     };
 
-    let outcome = am.review.set_states(session_id, hunk_ids, state).await?;
+    let mut outcome = am.review.set_states(session_id, hunk_ids, state).await?;
 
     if state == ReviewState::Rejected && !outcome.applied.is_empty() {
         let notice = outcome
@@ -274,7 +279,10 @@ pub(crate) async fn set_states(
     if !outcome.applied.is_empty() {
         emit_review_changed(event_tx, session_id, &state_reason(state));
     }
-    Ok(outcome)
+    match outcome.ended_on.take() {
+        Some(e) => Err(e),
+        None => Ok(outcome),
+    }
 }
 
 /// Take back the most recent reject, single or bulk, as one action.

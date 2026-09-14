@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::temp_session_manager;
+use crucible_core::protocol::rpc::INTERNAL_ERROR;
 use crucible_core::protocol::RequestId;
 use crucible_core::session::{GateBlock, PhysicalRoot, TreeSha};
 use tempfile::TempDir;
@@ -163,6 +164,15 @@ impl Fixture {
             }
         }
         reasons
+    }
+
+    /// Drain the event channel and answer every event, in order.
+    fn drain(&mut self) -> Vec<SessionEventMessage> {
+        let mut events = Vec::new();
+        while let Ok(evt) = self.events.try_recv() {
+            events.push(evt);
+        }
+        events
     }
 }
 
@@ -826,6 +836,102 @@ fn concurrent_undos_pop_the_batch_they_restored_once() {
         );
         assert_eq!(fx.read(), "one\n2\n3\n4\nfive\n");
     });
+}
+
+/// A bulk reject that ends on an error about the repository, not about a
+/// hunk, has still reverted the hunks before it. Those reverts are on disk,
+/// so the agent is told and the panel is redrawn before the error is
+/// answered — every rejection is a conversation event, including the ones a
+/// later failure interrupted.
+#[tokio::test]
+async fn a_bulk_reject_that_ends_on_an_io_error_still_announces_what_it_reverted() {
+    use crucible_core::session::{Session, SessionType};
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut fx = Fixture::new("one\n").await;
+    std::fs::write(fx.dir.path().join("b.txt"), "alpha\n").unwrap();
+    git(fx.dir.path(), &["add", "."]).await;
+    git(fx.dir.path(), &["commit", "-q", "-m", "second file"]).await;
+    // A registered session, so the rejection note has a transcript to land in.
+    let session = Session::new(
+        SessionType::Chat,
+        vec![crate::test_support::kiln_name("kiln")],
+    )
+    .with_workspace(Some(fx.dir.path().to_path_buf()));
+    fx.session = session.id.to_string();
+    fx.sm.register_transient(session);
+    fx.open_ledger().await;
+
+    let handle = fx.am.review.open_bracket(&fx.session).await.unwrap();
+    std::fs::write(fx.dir.path().join("a.txt"), "two\n").unwrap();
+    std::fs::write(fx.dir.path().join("b.txt"), "beta\n").unwrap();
+    fx.am
+        .review
+        .close(&fx.session, handle, "call-1", 1)
+        .await
+        .unwrap();
+    let _ = fx.review_reasons();
+
+    let mut hunks = fx.list().await;
+    hunks.sort_by_key(|h| h.path.clone());
+    assert_eq!(hunks.len(), 2, "{hunks:?}");
+    let ids: Vec<HunkId> = hunks.iter().map(|h| h.id.clone()).collect();
+    // The second file cannot be written, so its revert fails with an I/O
+    // error after the first file's revert has landed.
+    std::fs::set_permissions(
+        fx.dir.path().join("b.txt"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+
+    let resp = handle_review_set_states(
+        fx.request(
+            "review.set_states",
+            serde_json::json!({ "hunk_ids": ids, "state": "rejected" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    std::fs::set_permissions(
+        fx.dir.path().join("b.txt"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    let err = resp
+        .error
+        .expect("a write the daemon cannot make is an error");
+    assert_eq!(err.code, INTERNAL_ERROR, "{}", err.message);
+    assert_eq!(fx.read(), "one\n", "the first revert landed");
+    assert_eq!(
+        std::fs::read_to_string(fx.dir.path().join("b.txt")).unwrap(),
+        "beta\n"
+    );
+
+    let events = fx.drain();
+    let notes: Vec<&str> = events
+        .iter()
+        .filter(|e| e.event == "context_injected")
+        .map(|e| e.data["content"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        notes.len(),
+        1,
+        "one note for the reverts that landed: {notes:?}"
+    );
+    assert!(notes[0].contains("a.txt"), "{}", notes[0]);
+    assert!(!notes[0].contains("b.txt"), "{}", notes[0]);
+    let reasons: Vec<&str> = events
+        .iter()
+        .filter(|e| e.event == "review_changed")
+        .map(|e| e.data["reason"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        reasons,
+        vec!["rejected"],
+        "the panel is told about the reverts that landed"
+    );
 }
 
 #[tokio::test]

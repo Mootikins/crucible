@@ -133,10 +133,17 @@ impl Drop for GateHold {
 /// Both lists are reported rather than the first refusal ending the call: the
 /// client holds a list of ids that may be stale one at a time, and it needs to
 /// know which ones landed so it can redraw the rest, not retry the batch.
+///
+/// `ended_on` is the error that stopped the loop after at least one id was
+/// processed — one about the ledger or the repository, never about a hunk.
+/// It rides with the outcome rather than replacing it, because the ids in
+/// `applied` are already on disk and in the journal, and the boundary owes
+/// the agent a note about every one of them before it answers the error.
 #[derive(Debug, Default)]
 pub struct BulkOutcome {
     pub applied: Vec<HunkId>,
     pub failed: Vec<(HunkId, ReviewError)>,
+    pub ended_on: Option<ReviewError>,
 }
 
 /// What one revert wrote, kept so an undo can write it back.
@@ -933,8 +940,10 @@ impl ReviewLedgers {
     /// [`ReviewError::Stale`], [`ReviewError::ExternalHunk`] — is recorded and
     /// the loop continues, because a later hunk's range is independent of it.
     /// Any other error is about the ledger or the repository, not the hunk,
-    /// and ends the call: what applied before it is on disk and in the
-    /// journal, and a re-list shows it.
+    /// and ends the loop. When it ends the loop before any id was processed
+    /// it is the answer; otherwise it is [`BulkOutcome::ended_on`], beside
+    /// the ids that were applied before it, because those are on disk and in
+    /// the journal and the caller must still account for them.
     ///
     /// A bulk reject pushes ONE batch onto the undo stack, holding every
     /// hunk it reverted, so one undo takes the whole action back. The batch
@@ -972,7 +981,11 @@ impl ReviewLedgers {
         }
         self.push_reject_batch(session_id, batch).await;
         match ended_on {
-            Some(e) => Err(e),
+            Some(e) if outcome.applied.is_empty() && outcome.failed.is_empty() => Err(e),
+            Some(e) => {
+                outcome.ended_on = Some(e);
+                Ok(outcome)
+            }
             None => Ok(outcome),
         }
     }
