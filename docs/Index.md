@@ -94,6 +94,7 @@ Navigate by topic:
 - **[[Help/Footnotes]]** — Footnote syntax and parsing status
 - **[[Help/Diagrams and Math]]** — Mermaid diagrams and LaTeX math in notes
 - **[[Help/Concepts/Canvas]]** — Infinite-canvas boards in the JSON Canvas format
+- **[[Help/Concepts/Note Sync]]** — How a note write reaches the daemon, offline queueing, and conflicts
 
 ### Commands
 - **[[Help/CLI/chat]]** — AI agent integration

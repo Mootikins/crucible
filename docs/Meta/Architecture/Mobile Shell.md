@@ -25,8 +25,11 @@ the plain editor, the three-step session flow, and settings as a drill-down
 (section 10a). Track B (section 13's write primitive): anchored edits in
 `crucible-core`, `PATCH /api/kiln/file`, `cru.fs.edit`, and the note index
 carrying its author's frontmatter. Track C (section 11): the offline store, a
-kiln kept whole, the outbox and its conflict copy, and the Offline settings
-group.
+kiln kept whole, the outbox, and the Offline settings group. Track D (section
+11's conflict rule, 2026-09-14): a note write carries the text it was made from,
+a stale write is merged under a per-path lock, and what the merge cannot settle
+waits as a conflict the user resolves region by region. The conflict copy is
+retired.
 
 **This note drifted from the code and was reconciled against it on 2026-09-12,
 after a review found ~40 false claims.** Where a decision was NOT carried out,
@@ -866,8 +869,15 @@ Four facts, each verified in the tree.
    undefined. `/api/*` is deliberately outside the worker's request surface.
    The chat SSE stream depends on that.
 
-Fact 4 decides the mechanism. **The offline store is app-level, not a service
-worker cache.** The worker keeps precaching the shell and nothing else.
+**Facts 1 to 3 are closed; fact 4 still holds.** `GET /api/kiln/file` answers a
+`content_hash` taken from the disk bytes it just read, not from the index, and
+`PUT`/`PATCH` hash the disk inside the read-modify-write, so a base names what
+the writer actually read. Since 2026-09-14 the write path also holds a per-path
+lock and merges a stale write that carries its base text — the conflict rule
+below. Fact 4 is untouched and still decides the mechanism.
+
+**The offline store is app-level, not a service worker cache.** The worker keeps
+precaching the shell and nothing else.
 
 `localStorage` cannot hold it either. `swrLocal` uses `localStorage` for small
 catalog data, which is correct there. A kiln body set is too large for a 5 MB
@@ -948,46 +958,82 @@ outbox   path → { body, baseHash, queuedAt, daemon }  what this device wrote
 index    kiln → { NoteEntry[], indexedAt, kept }      every kiln's note list
 ```
 
-### The conflict rule
+### The conflict rule — rewritten 2026-09-14
 
-The daemon refuses a stale base with a 409. Who answers the refusal depends on
-who is present:
+The daemon refuses a stale base with a 409. What happens next depends on what the
+write carried, not on who is present.
 
-- **Online, the user is at the keyboard.** The save is refused, nothing is
-  written, and the buffer stays dirty with the user's text. The toast offers
-  one action, **Save as conflict copy**. The user chooses it, or reloads the
-  note and applies the change again.
-- **From the outbox, nobody is.** The drain writes the **conflict copy** on
-  its own, and says so. The buffer the write was made from went clean when
-  the write queued, and now shows text only the copy holds; the drain names
-  the row to the editor (`onNoteConflicted`), which marks that buffer dirty
-  and tells the user to reload. An anchored edit has no body to copy, so a
-  refused replay is reported and leaves nothing behind.
+**A write carries the text it was made from.** `PUT /api/kiln/file` takes a
+`base_text` beside the `base_hash`. With both, a stale write is **merged** rather
+than refused: a three-way line merge (`crucible_core::note_merge`) over the base
+text, the writer's text and the disk. The route holds a **per-path lock** across
+the read, the compare, the merge and the write, so two writers on one note are
+ordered rather than raced. A `base_text` that does not hash to its `base_hash` is
+a 422 — the pair is one fact.
 
-```
-Release Notes.md
-Release Notes (conflict, phone, 2026-09-09).md
-```
+- **A clean merge writes**, and the answer carries the merged text (`merged:
+  true`), which the caller takes into its buffer. Both writers' changes are on
+  disk.
+- **A merge that leaves regions writes nothing.** The answer is a 409 carrying
+  the current text, the merged text and the **regions** — one span per place the
+  two writers changed the same lines differently, each with its base, ours and
+  theirs.
+- **A write with no base text is still refused**, as before. It cannot be merged,
+  because a merge needs three texts.
 
-The user then merges by hand. Obsidian resolves a sync conflict the same way.
+**A conflict is an entry, not a copy.** The refused write stays in the outbox in
+the `conflicted` state, holding the merged text and its regions. It is counted
+apart from the unsent edits, because sending again can never settle it — only a
+person can. Nothing is written beside the note.
 
-**One queued write per note.** The first queued base is what lets the drain
-see a remote change, so a second write to a queued note folds into the entry
-instead of taking a second one: a tick folds into a queued whole write's text,
-two ticks compose into one edit set, and a whole write replaces a queued tick.
-The daemon anchors a replayed edit on the note's current text, with no base.
-A write that lands from the outbox moves the open buffer's base, so the
-user's next save is not refused for their own queued write.
+**Three doors, one surface.** The offline badge (its tap opens the conflict when
+one waits, instead of sending), the phone's More sheet and the Changes panel all
+open the Conflicts panel. It lists what waits and draws the chosen one in a
+CodeMirror editor over the merged text, with a block widget at each region:
+**Keep mine**, **Keep theirs**, **Keep both**, and the words that differ marked
+on each side. Save is disabled until every region is settled. It then writes the
+settled text against the hash the daemon answered with; a note that moved again
+keeps the conflict open.
 
-**Clear the outbox entry only after the conflict copy lands.** The copy is a
-second network write, and if it fails after the entry is cleared, the user's
-text is gone — the exact loss this section exists to prevent. If the
-conflict-copy path itself collides, suffix it and retry; never overwrite.
+**An open buffer is told.** A whole write the drain turned into a conflict reaches
+the buffer it was made from: the buffer goes dirty, keeps its text, and the notice
+points at where the conflict waits.
 
-**No CRDT.** State the reason plainly: the truth is markdown bytes on disk,
-which the agent, the TUI, the CLI and any editor may rewrite at any moment. A
-CRDT needs every writer to speak it. Most writers here never will. A conflict
-copy loses nothing and needs no writer to co-operate.
+**An anchored edit has no base text of its own.** The drain turns a stale anchored
+entry into a whole write by applying its anchors to its base text, then merges it
+like any other. An entry stored before base texts were kept is a conflict with one
+region over the whole note — never a merge, and never a silent overwrite.
+
+**One queued write per note.** The first queued base is what lets the drain see a
+remote change, so a second write to a queued note folds into the entry instead of
+taking a second one: a tick folds into a queued whole write's text, two ticks
+compose into one edit set, and a whole write replaces a queued tick. A fold keeps
+the base AND the base text of the first write, because a base that names a text it
+was not made from is the route's 422. A write arriving for a *conflicted* entry
+replaces it with its own base and base text rather than folding — the conflict's
+base is the one the daemon already refused. A write that lands from the outbox
+moves the open buffer's base, so the user's next save is not refused for their own
+queued write.
+
+**Clear the outbox entry only when its writing is safe.** An entry clears when the
+daemon took it — plainly, or as a merge — or after a person settles its conflict.
+Until then it is the only copy of that writing, and the rule this section exists to
+serve is that the writing is never lost.
+
+**No CRDT.** State the reason plainly: the truth is markdown bytes on disk, which
+the agent, the TUI, the CLI and any editor may rewrite at any moment. A CRDT needs
+every writer to speak it. Most writers here never will. A three-way merge needs no
+writer to co-operate, and it loses nothing: what it cannot merge it hands to the
+user as named regions rather than guessing.
+
+**What this replaced, and why.** Until 2026-09-14 a stale write became a **conflict
+copy** — a second note beside the original under a dated name
+(`Release Notes (conflict, phone, 2026-09-09).md`), which the user was expected to
+merge by hand, the way Obsidian Sync resolves one. It lost no bytes, and that was
+its whole defence. Its defect is that nothing listed it: a user met the copy by
+accident, weeks later, or never, and two notes with the same name are worse than one
+note with a question in it. A merge settles the ordinary case with no question at
+all, and a conflict is now something the app counts, lists and opens.
 
 ### What offline does NOT do
 
@@ -1370,7 +1416,7 @@ Four rules make this safe.
   cannot tell them apart without a rule — and the *normal* offline success path
   is the one that looks like a conflict. The rule: if `replace` is already
   present at the anchor site, treat that edit as applied and succeed. Without
-  it, a second device syncing the same change writes a spurious conflict copy
+  it, a second device syncing the same change reports a spurious conflict
   every time. This is the second half of the original-text rule above; it has no
   independent existence.
 - **`replace` may carry newlines.** One edit turns one line into two, which is
@@ -1380,8 +1426,8 @@ Four rules make this safe.
 the disk bytes inside the read-modify-write anyway, the anchors already do
 detection. What the hash adds is a better message: it separates "the file moved
 on" from "your anchor moved on", which is the difference between showing a user
-a conflict copy and showing them one failed edit. Keep it for the message. Do
-not build the gate on it.
+a conflict over the whole note and showing them one failed edit. Keep it for
+the message. Do not build the gate on it.
 
 A frontmatter field set is then sugar. The daemon may still accept
 `set: { status: "doing" }` and compile it to an edit, including the
@@ -1721,12 +1767,21 @@ Follow the tiers in [[Web User Stories]].
   found by a human reading a screenshot, which is the gap this names.
 - **W4** — the offline sync needs a live tier, and it is the one part that
   does. The conflict rule is only real against a real file on disk. Cover
-  three cases: a clean drain, a 409 that writes a conflict copy, and a drain
-  that survives a reload. A mocked tier cannot prove any of them.
-  **NOT BUILT.** The three live legs that exist prove Track B's anchored
-  edits, not this. Both defects that made Track C useless — a kiln-relative
-  path never joined, and an identity fetched at the one moment it cannot be —
-  would have been caught by the clean-drain leg alone.
+  three cases: a clean drain, a 409 the merge settles or hands back as
+  regions, and a drain that survives a reload. A mocked tier cannot prove any of
+  them.
+  **PARTLY BUILT (2026-09-14).** The 409 case is covered live:
+  `e2e/live/kiln-truth.live.spec.ts` proves the route's two answers against a
+  real daemon — a stale write merged when it carries its base text, and the
+  region answer when both writers changed one line — and
+  `e2e/live/conflict.live.spec.ts` drives the whole journey through the app, at
+  a phone's viewport as well as a desktop's: two writers on one line, the
+  banner, the merge, the region settled with **Keep theirs**, and the settled
+  text on disk. The **clean drain** and the **drain that survives a reload** are
+  still NOT BUILT — no live leg queues a write offline and drains it. Both
+  defects that made Track C useless — a kiln-relative path never joined, and an
+  identity fetched at the one moment it cannot be — would have been caught by
+  the clean-drain leg alone.
 
 Section 13 adds its own gates:
 

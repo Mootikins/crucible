@@ -379,7 +379,7 @@ describe('a write queued offline reaches the daemon on reconnect', () => {
     expect(await pendingCount()).toBe(0);
   });
 
-  it('reports an anchored refusal without writing a conflict copy', async () => {
+  it('reports an anchored refusal and leaves nothing behind', async () => {
     await queueTickOffline();
     net.patch.mockResolvedValue({
       ok: false,
@@ -687,8 +687,8 @@ describe('networkSink lets the daemon refuse a stale write', () => {
   });
 
   // The daemon answers an empty hash when the file is gone. The writing is
-  // still the user's, so it becomes a conflict copy rather than resurrecting
-  // a note that was deleted.
+  // still the user's, so it is refused and kept rather than resurrecting a
+  // note that was deleted.
   it('conflicts rather than resurrecting a note that was deleted', async () => {
     net.guardedSave.mockResolvedValue({ ok: false, current_hash: '' });
     expect(await networkSink.write(entry)).toEqual({ ok: false, current: '' });

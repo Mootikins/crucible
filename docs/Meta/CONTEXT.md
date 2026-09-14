@@ -99,12 +99,20 @@ _Avoid_: patch, diff, partial write
 The hash of the note text a note write was made from. The daemon refuses a write whose base is not the current hash as stale.
 _Avoid_: version, etag, revision
 
-**Conflict copy**:
-A note written beside the original under a dated name, holding a stale write's text so the writing is not lost. Online the user chooses it; from the outbox the drain writes it.
-_Avoid_: backup, merge file
+**Base text**:
+The note text a note write was made from. The browser keeps it with the write, so a stale write can be merged.
+_Avoid_: original, snapshot (for this meaning)
+
+**Conflict**:
+A note write the daemon refused as stale whose merge left regions. It waits in the outbox until the user resolves it.
+_Avoid_: collision, conflict copy
+
+**Region**:
+One span both sides of a merge changed differently, with the base, ours and theirs.
+_Avoid_: hunk (for this meaning), chunk
 
 **Outbox**:
-The ordered queue of note writes the daemon never answered, one entry per note, replayed in order when the daemon answers again. A later write to a queued note folds into its entry.
+The ordered queue of note writes the daemon never answered, one entry per note, replayed in order when the daemon answers again. A later write to a queued note folds into its entry. An entry the daemon refused and could not merge waits as a conflict instead.
 _Avoid_: queue, pending writes, sync log
 
 **Kept kiln**:

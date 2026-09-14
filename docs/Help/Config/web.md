@@ -614,6 +614,7 @@ no effect.
 ## See Also
 
 - [[Help/Config/acp]] — ACP agent configuration
+- [[Help/Concepts/Note Sync]] — how a note write reaches the daemon, and how a conflict is settled
 - [[Help/Config/permissions]] — tool permission rules, which apply to web sessions too
 - [[Help/Extending/Workflow Authoring]] — the `webhook` workflow trigger these deliveries feed
 - [[Help/CLI/Index]] — full CLI reference

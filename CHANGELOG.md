@@ -64,6 +64,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   The web sessions list gains a **Reflections** section, on the desktop shell
   and on the phone, so a pass a human has not read yet is reachable.
 
+- **A stale note write is merged instead of refused.** Every note write the
+  browser makes now carries the text it was made from beside its base hash, and
+  `PUT /api/kiln/file` takes both. When the note moved on since that base, the
+  route runs a three-way line merge (`crucible_core::note_merge`) over the base
+  text, the writer's text and the disk, under a lock it holds on that one path
+  across the read, the compare and the write. A clean merge writes both
+  writers' changes and answers with the merged text, which the buffer takes. A
+  merge that cannot settle a line group writes nothing and answers the current
+  text, the merged text and one **region** per disputed group — the base, ours
+  and theirs. A write that carries no base text is refused as before; a base
+  text that does not hash to its base hash is a 422.
+
+- **A conflict is an entry you can find, not a copy beside the note.** A write
+  the merge could not settle waits in the outbox in a `conflicted` state,
+  holding the merged text and its regions, counted apart from the unsent edits
+  because sending again can never settle it. A new **Conflicts** panel lists
+  what waits and draws the chosen one in an editor over the merged text, with a
+  block at each region offering **Keep mine**, **Keep theirs** and **Keep
+  both**, the differing words marked on each side, and Save held until every
+  region is settled. Three doors open it: the phone's app-bar badge (a tap
+  opens the conflict rather than sending), the More sheet's `Conflicts (n)`
+  row, and a section above the hunks in the Changes panel. The desktop's stale
+  save lands in the same place. An anchored entry the drain cannot replay is
+  first made whole from its base text and merged like any other write; an entry
+  queued before base texts were kept becomes a conflict over the whole note,
+  never a silent overwrite.
+
+- **An open note hears the kiln watcher.** While a note is open the editor
+  subscribes to the file-system events. A clean buffer re-reads the note
+  quietly. A dirty one is never overwritten and never re-read behind the user:
+  it shows a banner — "This note changed on disk — your unsaved edits are still
+  here" — with **Reload** (which asks first, because those bytes exist nowhere
+  else) and **Merge** (which saves, carrying the base text, so the ordinary
+  case merges and lands).
+
 - **`io.popen` and `os.execute`.** Luau ships neither, and the host withheld
   both to make `cru.shell` the one gated door to a process. That door has no
   lock: `PluginShellPolicy::default()` blocks four command names with no
@@ -145,6 +180,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the TUI startup banner's "N proposals pending" line (US-804), and the
   `plugins.reflection.max_proposals`, `plugins.reflection.rejection_memory` and
   `plugins.consolidation.rejection_memory` config keys.
+
+- **The conflict copy is gone.** A note write the daemon refused as stale used
+  to be kept as a second note beside the original under a dated name —
+  `Release Notes (conflict, phone, 2026-09-09).md` — which the drain wrote on
+  its own and which an online user chose from a toast. It lost no bytes, and
+  that was its only defence: nothing listed those files, so a user met one by
+  accident, weeks later, or never. A stale write is now merged, and what the
+  merge cannot settle waits as a conflict the app counts, lists and opens. Gone
+  with it: `writeConflictCopy`, the editor's "Save as conflict copy" action,
+  and the dated-name collision suffix.
 
 - **`ContextStrategy::SlidingWindow` is gone.** It drained exactly what
   `Summarize` drains — everything between the system prefix and the last ten

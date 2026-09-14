@@ -317,7 +317,7 @@ describe('FileViewerPanel — vim mode per shell', () => {
 
 // The editor compares a save against the base it was opened from. The panel
 // gives it that base, and carries a moved base back to the context, so a
-// second save after a conflict copy is not refused as stale.
+// second save after a merge is not refused as stale.
 describe('FileViewerPanel — the base hash reaches the editor and comes back', () => {
   beforeEach(() => {
     openFilesValue = [{ path: FILE_PATH, content: 'hello', dirty: false, baseHash: 'h1' }];
