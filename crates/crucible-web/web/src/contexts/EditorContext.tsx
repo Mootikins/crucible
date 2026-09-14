@@ -228,9 +228,11 @@ export const EditorProvider: ParentComponent = (props) => {
           if (outcome.merged && stillSent) f.content = outcome.content;
           f.baseText = outcome.merged ? outcome.content : sent;
           // The note on disk is what this buffer holds, so there is nothing
-          // left to choose between. A merge answers this too: the daemon
-          // wrote the other writer's text INTO what it handed back.
-          f.changedOnDisk = false;
+          // left to choose between — unless the daemon MERGED and the buffer
+          // has typed past what was sent. The merged text is then on disk and
+          // in no buffer, and the newer bytes descend from ours alone, so the
+          // banner stands and Reload is how the user takes the merge.
+          f.changedOnDisk = outcome.merged === true && !stillSent;
         })
       );
     } catch (err) {
@@ -394,7 +396,11 @@ export const EditorProvider: ParentComponent = (props) => {
       // never re-read behind them. They choose on the banner instead. A
       // buffer that went clean because its write QUEUED still holds writing
       // the daemon has not received, so it counts as dirty here.
-      if (file.dirty || (await hasQueuedWriting(path))) flagChangedOnDisk(path);
+      // A store that cannot be read at all (a private window, no IndexedDB)
+      // cannot rule that writing out, so the question fails towards the
+      // banner: it tells the user and loses nothing.
+      const queued = await hasQueuedWriting(path).catch(() => true);
+      if (file.dirty || queued) flagChangedOnDisk(path);
       else void refreshFromDisk(path);
     }
   };

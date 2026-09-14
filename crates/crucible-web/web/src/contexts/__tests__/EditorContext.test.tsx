@@ -828,6 +828,57 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
     expect(fileState(editor).baseHash).toBe('base-hash');
   });
 
+  // A browser with no IndexedDB (a private window) cannot say whether the
+  // outbox holds writing for this path. The banner is the safe answer: it
+  // loses nothing, while a quiet re-read over unsent writing would.
+  it('a store that cannot be read says the disk moved rather than re-reading', async () => {
+    const editor = await openClean();
+    const broken = memoryStore();
+    broken.get = () => Promise.reject(new Error('no IndexedDB on this browser'));
+    setOfflineStore(broken);
+
+    getFileContent.mockClear();
+    diskSays(CHANGED);
+
+    await waitFor(() =>
+      expect(
+        fileState(editor).changedOnDisk,
+        'the store could not be asked, so the user is told',
+      ).toBe(true),
+    );
+    expect(getFileContent, 'no read over writing that cannot be ruled out').not.toHaveBeenCalled();
+    expect(fileState(editor).content).toBe('on disk\n');
+  });
+
+  // The merge landed on disk while the user typed on. Their newer bytes stay,
+  // so the merged text is on disk and in no buffer: the flag keeps saying so,
+  // and Reload is there to take it.
+  it('a merge the buffer typed past leaves the disk-changed banner standing', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'mine\n');
+
+    type SaveAnswer = Awaited<ReturnType<typeof guardedSave>>;
+    let answer: (value: SaveAnswer) => void = () => {};
+    guardedSave.mockReturnValueOnce(
+      new Promise<SaveAnswer>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const saving = editor.saveFile(PATH);
+    editor.updateFileContent(PATH, 'mine, and more\n');
+    answer({ ok: true, content_hash: 'hM', merged: true, content: 'mine\ntheirs\n' });
+    await saving;
+
+    expect(fileState(editor).content, 'the newer bytes are the only copy there is').toBe(
+      'mine, and more\n',
+    );
+    expect(fileState(editor).dirty).toBe(true);
+    expect(
+      fileState(editor).changedOnDisk,
+      'the merge is on disk and in no buffer, so the user still has a choice',
+    ).toBe(true);
+  });
+
   // Merge is the ordinary save. It carries the base text, so the route merges
   // our text against what the other writer left instead of refusing it.
   it('merge saves with the buffer\'s base text and clears the flag', async () => {
