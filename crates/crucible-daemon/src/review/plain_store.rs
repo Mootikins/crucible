@@ -119,7 +119,10 @@ impl PlainStore {
     /// How many files this store has read and hashed since it was built.
     ///
     /// The one number that says whether the stat cache is working: a capture of
-    /// an unchanged root must not move it.
+    /// an unchanged root must not move it. Only the tests read the running
+    /// total; an operator reads the per-capture figure off the `debug` line
+    /// [`Inner::capture`] emits.
+    #[cfg(test)]
     pub(super) fn files_hashed(&self) -> u64 {
         self.inner.hashed.load(Ordering::Relaxed)
     }
@@ -144,6 +147,28 @@ impl PlainStore {
     pub(super) async fn blob(&self, hash: &str) -> ReviewResult<Option<String>> {
         let bytes = tokio::fs::read(self.inner.blob_path(hash)).await?;
         Ok(String::from_utf8(bytes).ok())
+    }
+
+    /// The content of `path` inside the snapshot `snap` names.
+    ///
+    /// `Ok(None)` means the bytes are not UTF-8, as [`Self::blob`] answers. A
+    /// path the snapshot does not hold is an error, the way `git cat-file`
+    /// errors on a path that is not in the tree: the caller asked for one side
+    /// of a change the manifest says exists, so an empty answer would show as
+    /// a deletion nobody made.
+    pub(super) async fn blob_at(
+        &self,
+        snap: &SnapshotId,
+        path: &str,
+    ) -> ReviewResult<Option<String>> {
+        let manifest = self.manifest(snap).await?;
+        let Some(hash) = manifest.files.get(path) else {
+            return Err(ReviewError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("{path} is not in snapshot {snap}"),
+            )));
+        };
+        self.blob(hash).await
     }
 
     /// Paths differing between two snapshots, with the kind of change.
@@ -217,6 +242,7 @@ impl Inner {
         // Read before the walk, so a file written while the walk is running
         // counts as racy too.
         let captured_at = SystemTime::now();
+        let hashed_before = self.hashed.load(Ordering::Relaxed);
         let mut files = BTreeMap::new();
         for entry in walk(root) {
             let entry = entry.map_err(walkdir_io)?;
@@ -237,6 +263,14 @@ impl Inner {
         }
 
         let manifest = Manifest { files };
+        // What this capture cost, which is the one figure that says whether the
+        // stat cache is working on this filesystem.
+        debug!(
+            root = %root.display(),
+            files = manifest.files.len(),
+            read = self.hashed.load(Ordering::Relaxed) - hashed_before,
+            "captured a plain review root"
+        );
         let id = manifest.id();
         self.write_atomically(
             &self.snapshot_path(self.snapshot_hash(&id)?),

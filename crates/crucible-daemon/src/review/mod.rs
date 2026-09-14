@@ -21,20 +21,13 @@
 //! here for that reason and no other.
 
 mod attribute;
+pub(crate) mod backend;
 mod compose;
 mod error;
 pub(crate) mod git;
 mod journal;
 pub(crate) mod paths;
 mod persist;
-// The whole module is the plain half of a seam `RootBackend` connects in the
-// next step, so nothing reads it yet. One expectation here rather than eight
-// inside it, and `expect` rather than `allow` so the compiler reports the
-// attribute itself the moment the module stops being dead.
-#[expect(
-    dead_code,
-    reason = "RootBackend routes every seam call through this store; until then nothing reads it"
-)]
 mod plain_store;
 mod undo;
 
@@ -55,11 +48,11 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
+use backend::RootBackend;
+
 pub use error::{ReviewError, ReviewResult};
 pub use persist::{drop_keep_refs, sweep_review_refs};
 pub use undo::REJECT_STACK_DEPTH;
-
-use crate::workspace_snapshot;
 
 /// An open capture bracket. Held across a tool call's dispatch and closed
 /// with [`ReviewLedgers::close`].
@@ -194,10 +187,6 @@ pub struct ReviewLedgers {
     /// daemon's data root and a default would have to invent one — which, in a
     /// test, means the developer's real `~/.crucible`. The path arrives through
     /// [`crate::agent_manager::AgentManagerParams`] for that reason.
-    #[expect(
-        dead_code,
-        reason = "RootBackend routes every seam call through this store; until then nothing reads it"
-    )]
     plain: plain_store::PlainStore,
     ledgers: DashMap<String, Ledger>,
     /// Review decisions, per session. A hunk absent from this map is
@@ -287,11 +276,11 @@ impl ReviewLedgers {
     /// Open a ledger for a session over the roots it may write to, capturing
     /// `session_base` once.
     ///
-    /// Roots are normalised to their repository top level and deduplicated,
-    /// so a workspace and a kiln inside one repo become a single tracked
-    /// root. Roots outside git are skipped: there is nothing to diff and the
-    /// alternative — walking the tree per tool call — costs more than the
-    /// feature is worth.
+    /// A root inside a repository is normalised to its top level and
+    /// deduplicated, so a workspace and a kiln inside one repo become a single
+    /// tracked root. A root outside one is tracked too, over the plain
+    /// snapshot store — a kiln outside git is the expected shape, not an
+    /// exotic one. Only a root that is not there at all is skipped.
     ///
     /// Re-opening an already-open session is a no-op. `session_base` is
     /// captured exactly once and never recomputed; see [`Self::restore`].
@@ -302,17 +291,17 @@ impl ReviewLedgers {
 
         let mut base: Vec<RootBase> = Vec::new();
         for root in roots {
-            let Ok(top) = git::top_level(root).await else {
-                debug!(root = %root.display(), "root is not in a git repo; not tracked for review");
+            let Ok((top, backend)) = RootBackend::detect(root).await else {
+                debug!(root = %root.display(), "root cannot be reached; not tracked for review");
                 continue;
             };
             if base.iter().any(|b| b.root == top) {
                 continue;
             }
-            let tree = workspace_snapshot::capture_tree(&top).await?;
+            let base_tree = backend.capture(&self.plain, &top).await?;
             base.push(RootBase {
                 root: top,
-                base_tree: SnapshotId::git(tree),
+                base_tree,
             });
         }
 
@@ -471,16 +460,23 @@ impl ReviewLedgers {
             .ledgers
             .get(session_id)
             .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
-        let roots: Vec<PathBuf> = ledger.roots().map(Path::to_path_buf).collect();
+        // Read off `session_base` rather than `roots()`: the base id is what
+        // says which store this root's snapshots live in, and a bracket that
+        // guessed would capture into the wrong one.
+        let roots: Vec<(PathBuf, RootBackend)> = ledger
+            .session_base()
+            .iter()
+            .map(|base| (base.root.to_path_buf(), RootBackend::of(&base.base_tree)))
+            .collect();
         drop(ledger);
 
         let id = self.next_handle.fetch_add(1, Ordering::Relaxed);
         let mut before = Vec::with_capacity(roots.len());
-        for root in roots {
-            match workspace_snapshot::capture_tree(&root).await {
-                Ok(tree) => {
+        for (root, backend) in roots {
+            match backend.capture(&self.plain, &root).await {
+                Ok(snapshot) => {
                     self.mark_open(&root, id);
-                    before.push((root, SnapshotId::git(tree)));
+                    before.push((root, snapshot));
                 }
                 Err(e) => {
                     // Leaving the roots captured so far registered would make
@@ -488,7 +484,7 @@ impl ReviewLedgers {
                     for (opened, _) in &before {
                         self.mark_closed(opened, id);
                     }
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }
@@ -521,9 +517,10 @@ impl ReviewLedgers {
         let mut i = 0;
         while i < handle.before.len() {
             let root = handle.before[i].0.clone();
-            match workspace_snapshot::capture_tree(&root).await {
-                Ok(sha) => {
-                    handle.before[i].1 = SnapshotId::git(sha);
+            let backend = RootBackend::of(&handle.before[i].1);
+            match backend.capture(&self.plain, &root).await {
+                Ok(snapshot) => {
+                    handle.before[i].1 = snapshot;
                     i += 1;
                 }
                 Err(e) => {
@@ -568,11 +565,12 @@ impl ReviewLedgers {
         // last `write-tree` is in flight.
         while let Some((root, before_tree)) = handle.before.pop() {
             contested |= self.mark_closed(&root, handle.id);
-            match workspace_snapshot::capture_tree(&root).await {
-                Ok(sha) if sha != before_tree.as_str() => touched.push(RootInterval {
+            let backend = RootBackend::of(&before_tree);
+            match backend.capture(&self.plain, &root).await {
+                Ok(after_tree) if after_tree != before_tree => touched.push(RootInterval {
                     root: PhysicalRoot::from_top_level(root),
                     before_tree,
-                    after_tree: SnapshotId::git(sha),
+                    after_tree,
                 }),
                 Ok(_) => {}
                 // A capture failure means we cannot say what this call did to
@@ -793,7 +791,8 @@ impl ReviewLedgers {
             // than merely unavailable, so it degrades rather than erroring.
             // Erroring would take today's transient fail-open path and let the
             // write through. `review.rebase` is what bounds the block.
-            if let Some(reason) = degraded_reason(&integrity, base).await {
+            let backend = RootBackend::of(&base.base_tree);
+            if let Some(reason) = degraded_reason(&integrity, base, backend, &self.plain).await {
                 warn!(
                     session_id,
                     root = %base.root.display(),
@@ -805,9 +804,10 @@ impl ReviewLedgers {
             }
             statuses.push(RootStatus::intact(base.root.clone()));
 
-            let current = SnapshotId::git(workspace_snapshot::capture_tree(&base.root).await?);
+            let current = backend.capture(&self.plain, &base.root).await?;
             let mut composition =
-                compose::compose_root(&base.root, &base.base_tree, &current).await?;
+                compose::compose_root(backend, &self.plain, &base.root, &base.base_tree, &current)
+                    .await?;
 
             let intervals: Vec<&Interval> = ledger
                 .intervals()
@@ -815,7 +815,14 @@ impl ReviewLedgers {
                 .filter(|i| !i.contested)
                 .filter(|i| i.roots_touched.iter().any(|r| r.root == base.root))
                 .collect();
-            attribute::attribute_root(&base.root, &mut composition, &intervals).await?;
+            attribute::attribute_root(
+                backend,
+                &self.plain,
+                &base.root,
+                &mut composition,
+                &intervals,
+            )
+            .await?;
 
             for mut hunk in composition.hunks {
                 if let Some(calls) = &turn_calls {
@@ -1211,17 +1218,26 @@ impl ReviewLedgers {
 /// Why one root's attribution cannot be trusted, or `None` when it can.
 ///
 /// Ordered cheapest-first: a journal gap is already known, a missing directory
-/// is one `stat`, and only a root that survives both costs a `git cat-file`.
-async fn degraded_reason(integrity: &Integrity, base: &RootBase) -> Option<String> {
+/// is one `stat`, and only a root that survives both costs a lookup in the
+/// store its base snapshot came from.
+async fn degraded_reason(
+    integrity: &Integrity,
+    base: &RootBase,
+    backend: RootBackend,
+    plain: &plain_store::PlainStore,
+) -> Option<String> {
     if integrity.blocks(&base.root) {
         return Some("journal records for this root could not be read".to_string());
     }
     if !base.root.is_dir() {
         return Some("tracked root no longer exists".to_string());
     }
-    if !git::tree_exists(&base.root, &base.base_tree).await {
+    if !backend
+        .snapshot_exists(plain, &base.root, &base.base_tree)
+        .await
+    {
         return Some(format!(
-            "session base tree {} is no longer in the object store",
+            "session base snapshot {} is no longer stored",
             base.base_tree
         ));
     }

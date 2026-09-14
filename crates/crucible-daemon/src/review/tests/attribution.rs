@@ -554,16 +554,66 @@ async fn session_base_is_captured_once_and_never_moves() {
     assert_eq!(fx.hunks().await.len(), 1);
 }
 
+/// Replaces `a_root_outside_git_is_not_trackable`, whose premise the plain
+/// backend inverts: a root outside git is now tracked. A root that is not
+/// there at all still has nothing to snapshot.
 #[tokio::test]
-async fn a_root_outside_git_is_not_trackable() {
+async fn a_root_that_does_not_exist_is_not_trackable() {
     let dir = TempDir::new().unwrap();
     let ledgers = ReviewLedgers::new(crate::test_support::scratch_snapshot_root());
     let err = ledgers
-        .open("sess", &[dir.path().to_path_buf()])
+        .open("sess", &[dir.path().join("gone")])
         .await
         .unwrap_err();
     assert!(matches!(err, ReviewError::NoTrackableRoots(_)), "{err:?}");
     assert!(!ledgers.is_open("sess"));
+}
+
+/// The whole plain backend end to end, through the journal-backed entry point
+/// so that `refresh_keep_refs` and `degraded_reason` both run over a root git
+/// cannot answer for.
+#[tokio::test]
+async fn a_kiln_outside_git_is_tracked_through_a_restored_journal_and_its_hunks_compose() {
+    let kiln = PlainKiln::new(&[("note.md", "one\ntwo\nthree\n")]).await;
+
+    assert!(
+        kiln.call("call-1", "note.md", "one\nEDITED\nthree\n").await,
+        "a bracketed write to a plain root records an interval"
+    );
+
+    let ledgers = kiln.restart().await;
+    let (hunks, statuses) = ledgers
+        .list_hunks_with_status(&kiln.session, ReviewScope::Session, None)
+        .await
+        .unwrap();
+    assert!(
+        statuses.iter().all(|s| !s.is_degraded()),
+        "a plain root must not read as degraded: {statuses:?}"
+    );
+    assert_eq!(hunks.len(), 1, "{hunks:?}");
+    assert_eq!(hunks[0].path, "note.md");
+    assert_eq!(hunks[0].before_content, "two\n");
+    assert_eq!(hunks[0].after_content, "EDITED\n");
+    assert_eq!(hunks[0].tool_call_ids, ["call-1"]);
+
+    ledgers
+        .set_state(&kiln.session, &hunks[0].id, ReviewState::Rejected)
+        .await
+        .unwrap();
+    assert_eq!(kiln.read("note.md"), "one\ntwo\nthree\n");
+}
+
+/// The id is the one source of the backend, so a kiln that *is* in a
+/// repository must keep recording git tree SHAs.
+#[tokio::test]
+async fn a_kiln_inside_a_repository_stays_on_git() {
+    let fx = Fixture::new("one\n").await;
+    let ledger = fx.ledgers.ledger(&fx.session).unwrap();
+    let base = &ledger.session_base()[0].base_tree;
+    assert!(
+        matches!(base, SnapshotId::Git(_)),
+        "a root inside a repository stays git-backed: {base:?}"
+    );
 }
 
 #[tokio::test]

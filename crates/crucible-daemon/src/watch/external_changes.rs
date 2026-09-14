@@ -32,6 +32,7 @@ use tokio::sync::{broadcast, Mutex};
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
+use crate::review::backend::RootBackend;
 use crate::watch::{
     error::Result,
     handlers::ExternalChangeHandler,
@@ -473,13 +474,13 @@ impl ExternalChangeWatch {
             // all: a slow watch still reports external edits, and this module
             // exists to prevent silence.
             let mut ignored: HashSet<PathBuf> = always_excluded(&root).collect();
-            match crate::review::git::ignored_entries(&root).await {
+            match RootBackend::for_path(&root).await.ignored(&root).await {
                 Ok(entries) => ignored.extend(entries.dirs),
                 Err(e) => {
                     warn!(
                         root = %root.display(),
                         error = %e,
-                        "git could not list ignored directories; watching the root whole"
+                        "could not list ignored directories; watching the root whole"
                     );
                 }
             }
@@ -566,20 +567,24 @@ impl ExternalChangeWatch {
     }
 }
 
-/// Every path git ignores under `root`, plus the names excluded regardless.
+/// Every path the root's backend ignores, plus the names excluded regardless.
 ///
 /// Directories AND files: the event-time filter tests by prefix, and an
 /// ignored file (`.env.local`) sits inside a directory that stays watched, so
 /// nothing else can catch it.
+///
+/// A root outside a repository contributes nothing here — ignore rules are
+/// git's, and [`always_excluded`] already covers the fixed names — so the set
+/// for a plain root is exactly the fixed one.
 async fn ignored_paths(root: &Path) -> HashSet<PathBuf> {
     let mut ignored: HashSet<PathBuf> = always_excluded(root).collect();
-    match crate::review::git::ignored_entries(root).await {
+    match RootBackend::for_path(root).await.ignored(root).await {
         Ok(entries) => ignored.extend(entries.all().cloned()),
         Err(e) => {
             debug!(
                 root = %root.display(),
                 error = %e,
-                "git could not list ignored paths; build output may reach the queue"
+                "could not list ignored paths; build output may reach the queue"
             );
         }
     }
@@ -806,6 +811,31 @@ mod tests {
 
         assert!(ignored.contains(&root.join(".env.local")));
         assert!(ignored.contains(&root.join("target")));
+    }
+
+    /// A kiln outside a repository has no ignore rules of its own, so the only
+    /// thing the watch excludes there is the fixed list — which
+    /// [`always_excluded`] already covers, and which is why the plain arm of
+    /// [`RootBackend::ignored`] is empty rather than a second copy of it.
+    #[tokio::test]
+    async fn the_watcher_excludes_only_the_fixed_directories_on_a_plain_root() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        // No `git init`. A `.gitignore` is there to prove it is not read.
+        dirs(root, &["node_modules", "notes"]);
+        std::fs::write(root.join(".gitignore"), "notes/\n").unwrap();
+        std::fs::write(root.join("notes/a.md"), "one\n").unwrap();
+
+        assert_eq!(
+            RootBackend::for_path(root).await,
+            RootBackend::Plain,
+            "a directory outside a repository is a plain root"
+        );
+        assert_eq!(
+            ignored_paths(root).await,
+            always_excluded(root).collect::<HashSet<_>>(),
+            "nothing beyond the fixed names is excluded on a plain root"
+        );
     }
 
     #[tokio::test]

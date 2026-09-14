@@ -199,3 +199,88 @@ impl Persisted {
         ledgers
     }
 }
+
+/// A directory that is **not** in a git repository, plus the ledger tracking
+/// it and the session storage directory its journal lives in.
+///
+/// The mirror of [`Persisted`] for the plain backend, and journal-backed for
+/// the same reason: `open_or_restore` is what makes `refresh_keep_refs` and
+/// `degraded_reason` run, and those are the two seams a second backend is
+/// easiest to forget.
+struct PlainKiln {
+    root: TempDir,
+    session_dir: TempDir,
+    /// Where the plain store writes. Held across a restart: a restored ledger
+    /// must find the snapshots the first one wrote.
+    snaps: TempDir,
+    ledgers: Arc<ReviewLedgers>,
+    session: String,
+}
+
+impl PlainKiln {
+    async fn new(files: &[(&str, &str)]) -> Self {
+        let root = TempDir::new().unwrap();
+        // The premise. A checkout above the system temp directory would make
+        // this root git-backed and the test would silently assert nothing;
+        // export `GIT_CEILING_DIRECTORIES` or move `TMPDIR` out of the repo.
+        assert!(
+            super::git::top_level(root.path()).await.is_err(),
+            "the temp directory is inside a git repository, so this fixture is not a plain root"
+        );
+        for (name, contents) in files {
+            let path = root.path().join(name);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&path, contents).unwrap();
+        }
+
+        let session_dir = TempDir::new().unwrap();
+        let snaps = TempDir::new().unwrap();
+        let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+        ledgers
+            .open_or_restore("sess", session_dir.path(), &[root.path().to_path_buf()])
+            .await
+            .unwrap();
+        Self {
+            root,
+            session_dir,
+            snaps,
+            ledgers,
+            session: "sess".to_string(),
+        }
+    }
+
+    fn write(&self, name: &str, contents: &str) {
+        std::fs::write(self.root.path().join(name), contents).unwrap();
+    }
+
+    fn read(&self, name: &str) -> String {
+        std::fs::read_to_string(self.root.path().join(name)).unwrap()
+    }
+
+    /// One bracketed "tool call" that rewrites a file.
+    async fn call(&self, tool_call_id: &str, name: &str, contents: &str) -> bool {
+        let handle = self.ledgers.open_bracket(&self.session).await.unwrap();
+        self.write(name, contents);
+        self.ledgers
+            .close(&self.session, handle, tool_call_id, 1)
+            .await
+            .unwrap()
+    }
+
+    /// What a daemon restart sees: a brand new manager, same journal, same
+    /// snapshot store.
+    async fn restart(&self) -> Arc<ReviewLedgers> {
+        let ledgers = Arc::new(ReviewLedgers::new(self.snaps.path().to_path_buf()));
+        ledgers
+            .open_or_restore(
+                &self.session,
+                self.session_dir.path(),
+                &[self.root.path().to_path_buf()],
+            )
+            .await
+            .unwrap();
+        ledgers
+    }
+}

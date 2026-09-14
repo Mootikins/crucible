@@ -12,15 +12,19 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ReviewError {
-    /// No ledger for this session: it was never opened (no git-backed root),
+    /// No ledger for this session: it was never opened (no trackable root),
     /// or it was cleared at session end. Handlers answer "nothing to review".
     #[error("session {0} has no review ledger")]
     NoLedger(String),
 
-    /// None of the session's roots is inside a git repository, so there is
-    /// nothing to diff against. Callers skip bracketing entirely rather than
-    /// falling back to walking the workspace on every tool call.
-    #[error("no git-backed root among: {0}")]
+    /// Not one of the session's roots can be snapshotted, so there is nothing
+    /// to diff against. Callers skip bracketing entirely rather than falling
+    /// back to walking the workspace on every tool call.
+    ///
+    /// Since a root outside git is tracked through
+    /// [`crate::review::backend::RootBackend::Plain`], this now means an empty
+    /// root list or roots that are not there at all.
+    #[error("no trackable root among: {0}")]
     NoTrackableRoots(String),
 
     /// Fail-closed answer for an identity the ledger does not recognise. A

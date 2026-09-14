@@ -18,7 +18,7 @@ The evidence is the filesystem, not the agent's claims: changes are keyed on git
 
 ## What gets tracked
 
-When a session's first message is sent, the daemon opens a ledger over the session's workspace and every [[Kilns|kiln]] it is attached to. Each root is normalised to its git repository top level and the current tree is captured once as `session_base`. Roots outside git are skipped — there is nothing to diff — and a session with no git-backed root simply has no ledger and no gate.
+When a session's first message is sent, the daemon opens a ledger over the session's workspace and every [[Kilns|kiln]] it is attached to. The daemon snapshots each root once as `session_base`, through one of two backends. A root inside a git repository is normalised to the repository top level and the snapshot is the tree `git write-tree` produced. A root outside one — a kiln outside git is the expected shape — is snapshotted into a plain store under the daemon data root, as a manifest of one content hash per file; a stat key of size, mtime and inode keeps an unchanged file from being read again. The snapshot id says which store holds it, so a session recorded by an older build keeps replaying. Only a root that is not there at all is skipped, and a session with no reachable root has no ledger and no gate.
 
 Around each tool call that could write (any tool not known to be read-only), the daemon records the tree before and after. If the trees differ, that becomes an **interval** attributed to that call's `tool_call_id`. A call that wrote nothing produces no interval. Two brackets open on the same root at the same time — typically a parent and a delegated child — are marked *contested*, and contested intervals are excluded from attribution rather than guessed at.
 

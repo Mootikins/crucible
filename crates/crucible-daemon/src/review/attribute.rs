@@ -16,9 +16,10 @@ use std::path::Path;
 use crucible_core::session::{ComposedHunk, Interval, LineRange};
 use similar::{DiffOp, TextDiff};
 
+use super::backend::RootBackend;
 use super::compose::{hunks_between, RootComposition};
 use super::error::ReviewResult;
-use super::git;
+use super::plain_store::PlainStore;
 
 /// Maps line numbers from one version of a file into another, for lines that
 /// survive unchanged between them.
@@ -64,6 +65,8 @@ impl LineMap {
 /// which of the two made a change, and a confident wrong attribution is worse
 /// than none — the hunk simply surfaces as external.
 pub(super) async fn attribute_root(
+    backend: RootBackend,
+    store: &PlainStore,
     root: &Path,
     composition: &mut RootComposition,
     intervals: &[&Interval],
@@ -81,8 +84,14 @@ pub(super) async fn attribute_root(
         let Some(root_interval) = interval.roots_touched.iter().find(|r| *r.root == *root) else {
             continue;
         };
-        for (path, kind) in
-            git::changed_paths(root, &root_interval.before_tree, &root_interval.after_tree).await?
+        for (path, kind) in backend
+            .changed_paths(
+                store,
+                root,
+                &root_interval.before_tree,
+                &root_interval.after_tree,
+            )
+            .await?
         {
             let Some(hunk_indices) = by_path.get(&path) else {
                 continue;
@@ -91,12 +100,24 @@ pub(super) async fn attribute_root(
                 continue;
             };
 
-            let before =
-                git::blob_or_empty(root, &root_interval.before_tree, &path, kind.has_before())
-                    .await?;
-            let after =
-                git::blob_or_empty(root, &root_interval.after_tree, &path, kind.has_after())
-                    .await?;
+            let before = backend
+                .blob_or_empty(
+                    store,
+                    root,
+                    &root_interval.before_tree,
+                    &path,
+                    kind.has_before(),
+                )
+                .await?;
+            let after = backend
+                .blob_or_empty(
+                    store,
+                    root,
+                    &root_interval.after_tree,
+                    &path,
+                    kind.has_after(),
+                )
+                .await?;
             let (Some(before), Some(after)) = (before, after) else {
                 continue;
             };

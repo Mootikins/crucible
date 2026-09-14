@@ -208,12 +208,13 @@ impl AgentManager {
             .await
         {
             // Two different failures land here and they are not equally
-            // benign — a workspace outside git has nothing to track, while an
+            // benign — a root that is not there has nothing to track, while an
             // unreadable journal is lost evidence. They are logged the same
             // way because the *distinction* is not carried by this error: an
             // unreadable journal is recorded on the session's `Integrity`
             // inside `open_or_restore`, which is what holds its writes rather
-            // than letting them through unattributed.
+            // than letting them through unattributed. A root outside git is no
+            // longer one of these: it is tracked through the plain backend.
             debug!(
                 session_id = %session_id,
                 error = %e,

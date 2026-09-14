@@ -2,6 +2,7 @@
 //! no ref, so something has to claim them before `git gc` collects them.
 
 use super::*;
+use crate::workspace_snapshot;
 
 /// Defect 14, with its own negative control. `write-tree` output is reachable
 /// from no ref, so the second half of this test is what proves the first half

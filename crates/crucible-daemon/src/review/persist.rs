@@ -11,12 +11,11 @@ use std::path::{Path, PathBuf};
 
 use crucible_core::session::{
     HunkId, Integrity, Interval, Ledger, ReviewState, RootBase, RootStatus, Skip, SkipKind,
-    SnapshotId,
 };
 use tracing::{debug, warn};
 
+use super::backend::RootBackend;
 use super::{git, journal, ReviewError, ReviewLedgers, ReviewResult};
-use crate::workspace_snapshot;
 
 impl ReviewLedgers {
     /// Open a session's ledger, restoring it from `review.jsonl` under `dir`
@@ -209,9 +208,9 @@ impl ReviewLedgers {
         let mut kept: Vec<RootBase> = Vec::new();
         let mut statuses: Vec<RootStatus> = Vec::new();
         for root in roots {
-            let top = match git::top_level(root).await {
-                Ok(top) => top,
-                // A root that has stopped being a repository takes the same
+            let (top, backend) = match RootBackend::detect(root).await {
+                Ok(pair) => pair,
+                // A root that can no longer be reached takes the same
                 // keep-and-report path as one that merely failed to capture,
                 // and for the same reason: dropping it removes it from
                 // `session_base`, so it contributes neither hunks nor a status
@@ -236,11 +235,11 @@ impl ReviewLedgers {
             if statuses.iter().any(|s| s.root == top) {
                 continue;
             }
-            match workspace_snapshot::capture_tree(&top).await {
-                Ok(tree) => {
+            match backend.capture(&self.plain, &top).await {
+                Ok(base_tree) => {
                     captured.push(RootBase {
                         root: top.clone(),
-                        base_tree: SnapshotId::git(tree),
+                        base_tree,
                     });
                     statuses.push(RootStatus::intact(top));
                 }
@@ -255,9 +254,9 @@ impl ReviewLedgers {
                 // answers `Clear` for it the moment the failure clears, with
                 // its changes gone from the composed diff and only another
                 // rebase able to put them back. Capture failure here is
-                // transient by construction (`git::top_level` already
-                // succeeded, so the root is a repository), so the base it had
-                // is still the right one.
+                // transient by construction (`RootBackend::detect` already
+                // answered, so the root is there and has a store), so the base
+                // it had is still the right one.
                 Err(e) => {
                     if let Some(base) = existing.as_ref().and_then(|l| l.base_tree(&top)) {
                         kept.push(RootBase {
@@ -371,11 +370,11 @@ impl ReviewLedgers {
         }
     }
 
-    /// Re-point every tracked root's keep ref at this ledger's current trees.
+    /// Re-claim every tracked root's snapshots, through that root's backend.
     ///
-    /// Total rather than incremental — see [`git::update_keep`]. Failure is a
-    /// warning: the ledger is still correct, its trees are merely exposed to
-    /// the next `git gc` in that repository.
+    /// Total rather than incremental — see [`RootBackend::keep`]. Failure is a
+    /// warning: the ledger is still correct, its snapshots are merely exposed
+    /// to the next collection in that store.
     pub(super) async fn refresh_keep_refs(&self, session_id: &str) {
         // Only for a session that has a journal. Both release paths —
         // `drop_keep_refs` and `sweep_review_refs` — find a session's
@@ -389,13 +388,14 @@ impl ReviewLedgers {
             return;
         };
         for base in ledger.session_base() {
-            let trees = ledger.trees_for(&base.root);
-            if let Err(e) = git::update_keep(&base.root, session_id, &trees).await {
+            let snapshots = ledger.trees_for(&base.root);
+            let backend = RootBackend::of(&base.base_tree);
+            if let Err(e) = backend.keep(&base.root, session_id, &snapshots).await {
                 warn!(
                     session_id,
                     root = %base.root.display(),
                     error = %e,
-                    "review keep ref not updated; this session's trees are exposed to git gc"
+                    "review keep claim not updated; this session's snapshots are exposed to collection"
                 );
             }
         }

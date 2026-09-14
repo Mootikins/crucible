@@ -12,8 +12,9 @@ use crucible_core::session::{
 };
 use similar::{DiffOp, TextDiff};
 
+use super::backend::RootBackend;
 use super::error::ReviewResult;
-use super::git;
+use super::plain_store::PlainStore;
 
 /// Split text into lines that keep their terminators, matching how
 /// `similar::TextDiff::from_lines` indexes them.
@@ -91,22 +92,34 @@ pub(super) struct RootComposition {
 
 /// Compute the composed hunks for one root.
 ///
-/// `root` is a repository top level and every returned `path` is relative to
-/// it. Binary (non-UTF-8) files are skipped: they have no line hunks, and a
-/// fabricated empty hunk would be indistinguishable from a no-op.
+/// `root` is the root as the ledger stores it and every returned `path` is
+/// relative to it. Binary (non-UTF-8) files are skipped: they have no line
+/// hunks, and a fabricated empty hunk would be indistinguishable from a no-op.
+///
+/// Every read goes through `backend`, so composition is the same computation
+/// over a git tree and over a plain-store manifest — the two differ only in
+/// who answers "what changed" and "what was at this path".
 pub(super) async fn compose_root(
+    backend: RootBackend,
+    store: &PlainStore,
     root: &PhysicalRoot,
     base: &SnapshotId,
     current: &SnapshotId,
 ) -> ReviewResult<RootComposition> {
     let mut composed = Vec::new();
     let mut texts = HashMap::new();
-    for (path, kind) in git::changed_paths(root, base, current).await? {
-        let before = match git::blob_or_empty(root, base, &path, kind.has_before()).await? {
+    for (path, kind) in backend.changed_paths(store, root, base, current).await? {
+        let before = match backend
+            .blob_or_empty(store, root, base, &path, kind.has_before())
+            .await?
+        {
             Some(text) => text,
             None => continue,
         };
-        let after = match git::blob_or_empty(root, current, &path, kind.has_after()).await? {
+        let after = match backend
+            .blob_or_empty(store, root, current, &path, kind.has_after())
+            .await?
+        {
             Some(text) => text,
             None => continue,
         };

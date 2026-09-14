@@ -190,25 +190,6 @@ pub(super) async fn blob(
     Ok(String::from_utf8(out.stdout).ok())
 }
 
-/// One side of a change: the blob at `tree:path`, or empty text when
-/// [`ChangeKind`] says the path does not exist on that side.
-///
-/// Asking git for a blob that is not in the tree is an error, not an empty
-/// answer, so the `exists` short-circuit is what lets an add and a delete go
-/// through the same code path as a modification. `Ok(None)` still means
-/// binary — see [`blob`].
-pub(super) async fn blob_or_empty(
-    root: &Path,
-    tree: &SnapshotId,
-    path: &str,
-    exists: bool,
-) -> ReviewResult<Option<String>> {
-    if !exists {
-        return Ok(Some(String::new()));
-    }
-    blob(root, tree, path).await
-}
-
 // ── Retention ───────────────────────────────────────────────────────────────
 //
 // Every tree the ledger records comes from `git write-tree`, which makes it an
