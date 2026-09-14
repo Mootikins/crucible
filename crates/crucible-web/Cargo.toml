@@ -42,6 +42,10 @@ rust-embed = { version = "8", features = ["interpolate-folder-path", "debug-embe
 walkdir = "2.5"
 mime_guess = "2"
 
+# `dashmap`: the per-path write locks in `services::daemon::PathLocks`. A
+# `RwLock<HashMap<..>>` would serialize every note's lookup behind one guard.
+dashmap = { workspace = true }
+
 portable-pty = "0.9"
 
 # `gethostname`: the machine's own name, which a wildcard bind answers to so a

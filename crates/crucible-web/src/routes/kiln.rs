@@ -53,6 +53,12 @@ struct PutFileRequest {
     /// refuses with 409 and the current hash when the file moved on.
     #[serde(default)]
     base_hash: Option<String>,
+    /// The text the caller read, whose hash is `base_hash`. Present, a stale
+    /// base is merged against the disk instead of refused: the caller loses
+    /// its edit otherwise, and it is the only party that holds the text its
+    /// edit was made from. Absent, the refusal stands.
+    #[serde(default)]
+    base_text: Option<String>,
 }
 
 /// `PATCH /api/kiln/file` — change a few lines, not the whole file.
@@ -341,10 +347,20 @@ fn attachment_disposition(path: &Path) -> HeaderValue {
 }
 
 /// `PUT /api/kiln/file` — write content to a file within an open kiln.
+///
+/// The read, the compare and the write are one critical section per note
+/// ([`AppState::write_locks`]), so the base this answers about is the base it
+/// writes over.
+///
+/// A caller that sends `base_text` as well as `base_hash` asks to be merged
+/// rather than refused: a whole-file refusal costs the user the edit, and the
+/// three texts a merge needs are all here. A clean merge lands and says so; a
+/// merge with regions writes nothing and hands both texts back, because the
+/// server never decides which writer's line wins.
 async fn put_kiln_file(
     State(state): State<AppState>,
     Json(req): Json<PutFileRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Response, WebError> {
     // Accept absolute paths (the editor saves by a note's absolute path);
     // containment is enforced below by find_enclosing_kiln + parent-within-kiln.
     reject_path_traversal(&req.path)?;
@@ -373,22 +389,111 @@ async fn put_kiln_file(
 
     validate_write_target_within_kiln(&file_path, root.path())?;
 
+    // A base text that is not the base the caller named is not a base: merging
+    // from it would invent a change neither writer made. Checked before the
+    // disk is read, so a caller hears about its own bug whatever the disk says.
+    if let Some(base_text) = &req.base_text {
+        let Some(base_hash) = req.base_hash.as_deref() else {
+            return Err(WebError::Validation(
+                "base_text needs the base_hash it is the text of".to_string(),
+            ));
+        };
+        if disk_hash(base_text) != base_hash {
+            return Err(WebError::Validation(
+                "base_text does not hash to base_hash".to_string(),
+            ));
+        }
+    }
+
+    // Held past the write: see [`AppState::write_locks`].
+    let _write = state.write_locks.lock(&file_path).await;
+
     // Before the write, and after containment: a caller that names the bytes
     // it read does not overwrite a writer who got there first.
-    refuse_if_base_is_stale(&file_path, req.base_hash.as_deref()).await?;
+    let content = match refuse_if_base_is_stale(&file_path, req.base_hash.as_deref()).await {
+        Ok(()) => std::borrow::Cow::Borrowed(&req.content),
+        Err(WebError::StaleBase { current_hash }) => {
+            // No base text, no merge: today's refusal.
+            let Some(base_text) = &req.base_text else {
+                return Err(WebError::StaleBase { current_hash });
+            };
+            let disk = read_text_or_empty(&file_path).await?;
+            let merge = crucible_core::note_merge::merge3(base_text, &req.content, &disk);
+            if !merge.regions.is_empty() {
+                return Ok(put_conflict(current_hash, disk, merge));
+            }
+            std::borrow::Cow::Owned(merge.text)
+        }
+        Err(e) => return Err(e),
+    };
+
+    // The merge can grow the note past the limit the caller's own text was
+    // under.
+    if content.len() > MAX_CONTENT_SIZE {
+        return Err(WebError::Validation(format!(
+            "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
+            content.len()
+        )));
+    }
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).await.map_err(WebError::Io)?;
     }
 
-    fs::write(&file_path, &req.content)
+    fs::write(&file_path, content.as_ref())
         .await
         .map_err(WebError::Io)?;
 
-    Ok(Json(
-        serde_json::json!({ "ok": true, "content_hash": disk_hash(&req.content) }),
-    ))
+    let mut answer = serde_json::json!({
+        "ok": true,
+        "content_hash": disk_hash(&content),
+        "merged": false,
+    });
+    // Only a merge sends the text back. A caller that wrote its own text
+    // already holds it, and echoing every note twice is the payload of every
+    // save doubled for nothing.
+    if let std::borrow::Cow::Owned(merged) = content {
+        answer["merged"] = serde_json::Value::Bool(true);
+        answer["content"] = serde_json::Value::String(merged);
+    }
+    Ok(Json(answer).into_response())
+}
+
+/// Read a note for a merge. A note that is not there merges as the empty
+/// text, the same answer [`refuse_if_base_is_stale`] gives it.
+async fn read_text_or_empty(path: &Path) -> Result<String, WebError> {
+    match fs::read_to_string(path).await {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(WebError::Io(e)),
+    }
+}
+
+/// The one 409 body a merge with regions answers with. The file is untouched.
+///
+/// It carries every text the caller needs to resolve the note without a second
+/// round trip that would race the same way: what is on disk now, the merge as
+/// far as it got, and each region with the base, ours and theirs. `stale_base`
+/// and `current_hash` are spelled as the PATCH refusal and the bare stale
+/// refusal spell them, so one client branch reads all three.
+fn put_conflict(
+    current_hash: String,
+    current_content: String,
+    merge: crucible_core::note_merge::Merge,
+) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({
+            "ok": false,
+            "stale_base": true,
+            "current_hash": current_hash,
+            "current_content": current_content,
+            "merged_content": merge.text,
+            "regions": merge.regions,
+        })),
+    )
+        .into_response()
 }
 
 /// `PATCH /api/kiln/file` — apply a batch of anchored edits, or refuse it.
@@ -419,6 +524,11 @@ async fn patch_kiln_file(
     }
     let canonical_file = validate_file_within_kiln(&file_path, root.path(), &req.path)?;
     validate_write_target_within_kiln(&file_path, root.path())?;
+
+    // Held past the write: see [`AppState::write_locks`]. PUT takes the same
+    // lock, so a whole write and an anchored one are ordered against each
+    // other too.
+    let _write = state.write_locks.lock(&file_path).await;
 
     let original = read_text_file(&canonical_file).await?;
     let current_hash = disk_hash(&original);

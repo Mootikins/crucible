@@ -990,6 +990,7 @@ pub fn build_mock_state_with_config(client: DaemonClient, config: CliAppConfig) 
         remote_shell: false,
         swr: Arc::new(crate::services::catalog::SwrCache::default()),
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
+        write_locks: Arc::new(crate::services::daemon::PathLocks::default()),
     }
 }
 

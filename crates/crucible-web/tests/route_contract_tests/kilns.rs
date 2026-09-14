@@ -517,3 +517,300 @@ async fn a_patch_with_no_base_applies_against_the_current_text() {
     );
     assert_eq!(tokio::fs::read_to_string(&note).await.unwrap(), after);
 }
+
+/// `PUT /api/kiln/file` against a real file inside a kiln the mock daemon
+/// lists. Answers the status and the JSON body.
+async fn put_file(app: axum::Router, body: Value) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/kiln/file")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+/// A caller that names a base but cannot say what that base held has nothing
+/// to merge from, so the refusal stands.
+#[tokio::test]
+async fn a_put_with_a_stale_base_and_no_base_text_is_refused() {
+    let disk = "A\nB2\nC\n";
+    let (kiln, note, current_hash) = kiln_with_note(disk).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = put_file(
+        app,
+        json!({
+            "path": note,
+            "content": "A\nB\nC\nD\n",
+            "base_hash": crucible_core::note_edit::disk_hash("A\nB\nC\n"),
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["ok"], false);
+    assert_eq!(body["current_hash"], current_hash);
+    assert_eq!(
+        tokio::fs::read_to_string(&note).await.unwrap(),
+        disk,
+        "the file is untouched"
+    );
+}
+
+/// The whole point: two writers changed different lines, so nobody loses an
+/// edit and nobody is asked a question.
+#[tokio::test]
+async fn a_put_with_a_stale_base_and_base_text_merges_and_writes() {
+    let base = "A\nB\nC\n";
+    let disk = "A\nB2\nC\n";
+    let merged = "A\nB2\nC\nD\n";
+    let (kiln, note, _) = kiln_with_note(disk).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = put_file(
+        app,
+        json!({
+            "path": note,
+            "content": "A\nB\nC\nD\n",
+            "base_hash": crucible_core::note_edit::disk_hash(base),
+            "base_text": base,
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["merged"], true);
+    assert_eq!(body["content"], merged);
+    assert_eq!(
+        body["content_hash"],
+        crucible_core::note_edit::disk_hash(merged)
+    );
+    assert_eq!(tokio::fs::read_to_string(&note).await.unwrap(), merged);
+}
+
+/// Both writers changed one line. The merge never decides that for them: the
+/// file is untouched and the answer carries both texts.
+#[tokio::test]
+async fn a_put_whose_merge_has_regions_writes_nothing_and_answers_them() {
+    let base = "A\nB\nC\n";
+    let disk = "A\ntheirs\nC\n";
+    let (kiln, note, current_hash) = kiln_with_note(disk).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = put_file(
+        app,
+        json!({
+            "path": note,
+            "content": "A\nours\nC\n",
+            "base_hash": crucible_core::note_edit::disk_hash(base),
+            "base_text": base,
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["ok"], false);
+    assert_eq!(body["stale_base"], true);
+    assert_eq!(body["current_hash"], current_hash);
+    assert_eq!(body["current_content"], disk);
+    assert_eq!(body["merged_content"], "A\nours\nC\n");
+    assert_eq!(body["regions"].as_array().unwrap().len(), 1);
+    assert_eq!(body["regions"][0]["ours"], "ours\n");
+    assert_eq!(body["regions"][0]["theirs"], "theirs\n");
+    assert_eq!(body["regions"][0]["base"], "B\n");
+    assert_eq!(
+        tokio::fs::read_to_string(&note).await.unwrap(),
+        disk,
+        "the file is untouched"
+    );
+}
+
+/// A base text that is not the base the caller named is not a base at all.
+/// Merging from it would invent a change neither writer made.
+#[tokio::test]
+async fn a_base_text_that_does_not_hash_to_the_base_is_refused_with_422() {
+    let disk = "A\nB2\nC\n";
+    let (kiln, note, _) = kiln_with_note(disk).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = put_file(
+        app,
+        json!({
+            "path": note,
+            "content": "A\nB\nC\nD\n",
+            "base_hash": crucible_core::note_edit::disk_hash("A\nB\nC\n"),
+            "base_text": "not the base at all\n",
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(
+        tokio::fs::read_to_string(&note).await.unwrap(),
+        disk,
+        "the file is untouched"
+    );
+}
+
+/// Read, merge and write are one critical section per note. Without the lock
+/// the second writer merges against the text the first one is about to
+/// replace, and the first writer's change is gone with no refusal.
+///
+/// The runtime has ONE blocking thread, busy when the two requests start, so
+/// every filesystem call queues in FIFO order: unlocked, both reads land
+/// before either write.
+#[test]
+fn two_concurrent_puts_to_one_note_serialize() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        let base = "A\nB\nC\nD\nE\n";
+        let disk = "A\nB\nC\nD\nE2\n";
+        let (kiln, note, _) = kiln_with_note(disk).await;
+        let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+        let app = build_test_app(build_mock_state(client));
+
+        let body = |content: &str| {
+            json!({
+                "path": note,
+                "content": content,
+                "base_hash": crucible_core::note_edit::disk_hash(base),
+                "base_text": base,
+            })
+        };
+
+        // Hold the one blocking thread so both requests reach their first
+        // filesystem call before either of them can finish one.
+        let blocker = tokio::task::spawn_blocking(|| {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
+
+        let (first, second) = tokio::join!(
+            put_file(app.clone(), body("A1\nB\nC\nD\nE\n")),
+            put_file(app.clone(), body("A\nB\nC1\nD\nE\n")),
+        );
+        blocker.await.unwrap();
+
+        assert_eq!(first.0, StatusCode::OK, "{}", first.1);
+        assert_eq!(second.0, StatusCode::OK, "{}", second.1);
+        assert_eq!(
+            tokio::fs::read_to_string(&note).await.unwrap(),
+            "A1\nB\nC1\nD\nE2\n",
+            "both writers' changes survive, and so does the disk's"
+        );
+    });
+}
+
+/// PUT and PATCH write the same note, so they take the same lock. A key that
+/// differed between them (the raw path against the canonical one, say) would
+/// order each route against itself and neither against the other.
+///
+/// Either order leaves both changes on disk. Unlocked, the anchored edit lands
+/// and the whole write merges against the text it is about to replace, so the
+/// anchored edit is gone with a 200 in hand.
+#[test]
+fn a_patch_and_a_put_to_one_note_take_one_lock() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        let base = "A\nB\nC\n";
+        let disk = "A\nB\nC2\n";
+        let (kiln, note, _) = kiln_with_note(disk).await;
+        let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+        let app = build_test_app(build_mock_state(client));
+
+        let blocker = tokio::task::spawn_blocking(|| {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
+
+        let (put, patch) = tokio::join!(
+            put_file(
+                app.clone(),
+                json!({
+                    "path": note,
+                    "content": "A1\nB\nC\n",
+                    "base_hash": crucible_core::note_edit::disk_hash(base),
+                    "base_text": base,
+                }),
+            ),
+            // No base: the outbox replay anchors on the note's current text,
+            // whatever it is by the time the lock is free.
+            patch_file(
+                app.clone(),
+                json!({
+                    "path": note,
+                    "edits": [{ "expect": "B", "replace": "B1" }],
+                }),
+            ),
+        );
+        blocker.await.unwrap();
+
+        assert_eq!(put.0, StatusCode::OK, "{}", put.1);
+        assert_eq!(patch.0, StatusCode::OK, "{}", patch.1);
+        assert_eq!(
+            tokio::fs::read_to_string(&note).await.unwrap(),
+            "A1\nB1\nC2\n",
+            "the whole write, the anchored edit and the disk all survive"
+        );
+    });
+}
+
+/// The ordinary write is unchanged, and says so: `merged` is false and the
+/// answer carries no text, because the caller already holds what it sent.
+#[tokio::test]
+async fn a_put_whose_base_is_current_writes_its_own_text_and_merged_is_false() {
+    let disk = "A\nB\nC\n";
+    let (kiln, note, current_hash) = kiln_with_note(disk).await;
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let (status, body) = put_file(
+        app,
+        json!({
+            "path": note,
+            "content": "A\nB\nC\nD\n",
+            "base_hash": current_hash,
+            "base_text": disk,
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["merged"], false);
+    assert_eq!(body["content"], Value::Null, "nothing to send back");
+    assert_eq!(
+        body["content_hash"],
+        crucible_core::note_edit::disk_hash("A\nB\nC\nD\n")
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(&note).await.unwrap(),
+        "A\nB\nC\nD\n"
+    );
+}
