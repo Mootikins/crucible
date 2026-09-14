@@ -449,6 +449,17 @@ export async function pendingCount(): Promise<number> {
 }
 
 /**
+ * Whether the outbox still holds writing for one note.
+ *
+ * A buffer goes clean the moment its write is queued, so "clean" no longer
+ * means "the same as the daemon's copy". A reader that would replace a
+ * buffer's text asks this first: the queued writing exists nowhere else.
+ */
+export async function hasQueuedWriting(path: string): Promise<boolean> {
+  return isQueued(offlineStore(), path);
+}
+
+/**
  * Every write that waits on a person to choose between two texts.
  *
  * The twin of `pendingCount`, over the other half of the queue. A conflict is

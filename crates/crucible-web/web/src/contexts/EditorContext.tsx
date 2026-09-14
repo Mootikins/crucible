@@ -13,6 +13,7 @@ import type { EditorContextValue } from '@/lib/types/context';
 import { listKilns, subscribeToFsEvents } from '@/lib/api';
 import { kilnForPath } from '@/lib/note-actions';
 import {
+  hasQueuedWriting,
   onNoteConflicted,
   onNoteLanded,
   readNote,
@@ -209,7 +210,11 @@ export const EditorProvider: ParentComponent = (props) => {
           // goes clean because the writing is safe in the outbox, and the
           // app bar says how much is still owed. It keeps its base, which is
           // the base the queued write carries.
-          f.dirty = false;
+          // Bytes typed while the save was out are newer than this answer and
+          // exist nowhere else: keep them, and stay dirty so the next save
+          // carries them.
+          const stillSent = f.content === sent;
+          f.dirty = !stillSent;
           if (outcome.queued) return;
           // The daemon now holds this text under the hash it answered with.
           // Without this, the next save would carry the base of the FIRST
@@ -220,7 +225,7 @@ export const EditorProvider: ParentComponent = (props) => {
           // neither writer's alone and exists nowhere else, so the buffer
           // takes it — a buffer left showing our half would send that half
           // back over the merge on the next save.
-          if (outcome.merged) f.content = outcome.content;
+          if (outcome.merged && stillSent) f.content = outcome.content;
           f.baseText = outcome.merged ? outcome.content : sent;
           // The note on disk is what this buffer holds, so there is nothing
           // left to choose between. A merge answers this too: the daemon
@@ -345,7 +350,14 @@ export const EditorProvider: ParentComponent = (props) => {
     if (!before) return;
     const baseAtRead = before.baseHash;
     try {
-      const { content, content_hash } = await readNote(path, await kilnOf(path));
+      const { content, content_hash, fromMirror } = await readNote(path, await kilnOf(path));
+      // The mirror is the daemon's older copy, not the disk. A read that fell
+      // back to it answers text the note may no longer hold, so the buffer is
+      // told rather than quietly moved onto it.
+      if (fromMirror) {
+        flagChangedOnDisk(path);
+        return;
+      }
       setOpenFiles(
         produce((files) => {
           const f = files.find((x) => x.path === path);
@@ -372,15 +384,17 @@ export const EditorProvider: ParentComponent = (props) => {
    * then and the re-read answers the text and hash it already holds, so the
    * echo costs one read and changes nothing.
    */
-  const onFsEvent = (event: FsEvent) => {
+  const onFsEvent = async (event: FsEvent) => {
     const paths =
       event.type === 'changed' ? [event.path] : event.type === 'moved' ? [event.from, event.to] : [];
     for (const path of paths) {
       const file = openFilesStore.find((f) => f.path === path);
       if (!file) continue;
       // The user's text is the only copy there is: it is never replaced and
-      // never re-read behind them. They choose on the banner instead.
-      if (file.dirty) flagChangedOnDisk(path);
+      // never re-read behind them. They choose on the banner instead. A
+      // buffer that went clean because its write QUEUED still holds writing
+      // the daemon has not received, so it counts as dirty here.
+      if (file.dirty || (await hasQueuedWriting(path))) flagChangedOnDisk(path);
       else void refreshFromDisk(path);
     }
   };
@@ -392,7 +406,7 @@ export const EditorProvider: ParentComponent = (props) => {
   const anyFileOpen = createMemo(() => openFilesStore.length > 0);
   createEffect(() => {
     if (!anyFileOpen()) return;
-    onCleanup(subscribeToFsEvents(onFsEvent));
+    onCleanup(subscribeToFsEvents((event) => void onFsEvent(event)));
   });
 
   /**

@@ -342,6 +342,33 @@ describe('EditorContext — the buffer follows the answer to a whole write', () 
     expect(guardedSave).toHaveBeenLastCalledWith(PATH, 'merged text, edited', 'h5', 'merged text');
   });
 
+  // Bytes typed while the save was out are newer than the answer the daemon
+  // gave, and they exist nowhere else. A merge that overwrote them would lose
+  // them silently, with the buffer marked clean.
+  it('a merge that lands while the user types keeps the newer text and stays dirty', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const editor = await openEdited();
+    guardedSave.mockImplementationOnce(async () => {
+      await held;
+      return { ok: true, content_hash: 'h5', merged: true, content: 'merged text' };
+    });
+
+    const saving = editor.saveFile(PATH);
+    editor.updateFileContent(PATH, 'the unsaved text, and more');
+    release();
+    await saving;
+
+    expect(fileState(editor).content).toBe('the unsaved text, and more');
+    expect(fileState(editor).dirty, 'the newer bytes still owe a save').toBe(true);
+    // The route wrote `merged text` under `h5`, so the pair still belongs
+    // together and the next save merges against it.
+    expect(fileState(editor).baseHash).toBe('h5');
+    expect(fileState(editor).baseText).toBe('merged text');
+  });
+
   // The pair is one fact. Without the text, a stale save can only be refused.
   it('a buffer opened from a read carries its text as the base text', async () => {
     getFileContent.mockResolvedValueOnce('on disk\n');
@@ -750,6 +777,55 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
     expect(fileState(editor).content).toBe('my unsent text\n');
     expect(fileState(editor).dirty).toBe(true);
     expect(fileState(editor).changedOnDisk, 'the disk is still ahead').toBe(true);
+  });
+
+  // A buffer goes clean when its write QUEUES, but that writing exists nowhere
+  // but the outbox. The quiet re-read would replace it with the other writer's
+  // text, and nothing on screen would say the user's own words had gone.
+  it('a buffer whose writing is still queued keeps it and says the disk moved', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'my unsent text\n');
+    guardedSave.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await editor.saveFile(PATH);
+    await waitFor(() => expect(fileState(editor).dirty).toBe(false));
+
+    getFileContent.mockClear();
+    diskSays(CHANGED);
+
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+    expect(getFileContent, 'no read over writing the daemon has not received').not.toHaveBeenCalled();
+    expect(
+      fileState(editor).content,
+      'the queued writing is still what this device owes the daemon',
+    ).toBe('my unsent text\n');
+    expect(fileState(editor).baseHash, 'the base the queued write carries').toBe('base-hash');
+  });
+
+  // A read that cannot reach the daemon answers the MIRROR for a kept kiln.
+  // The mirror is not the disk, so taking it leaves the buffer showing text
+  // the note no longer holds — silently, which is what the flag exists against.
+  it('a re-read answered from the mirror says the disk moved', async () => {
+    const db = memoryStore();
+    setOfflineStore(db);
+    const editor = await openClean();
+    await db.put('mirror', PATH, {
+      body: 'stale mirror\n',
+      hash: 'mirror-hash',
+      kiln: KILN,
+      mirroredAt: Date.now(),
+    });
+
+    getFileContent.mockRejectedValueOnce(new Error('offline'));
+    diskSays(CHANGED);
+
+    await waitFor(() =>
+      expect(
+        fileState(editor).changedOnDisk,
+        'the disk moved and this buffer did not follow it',
+      ).toBe(true),
+    );
+    expect(fileState(editor).content).toBe('on disk\n');
+    expect(fileState(editor).baseHash).toBe('base-hash');
   });
 
   // Merge is the ordinary save. It carries the base text, so the route merges
