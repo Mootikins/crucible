@@ -131,7 +131,7 @@ See: [[Help/CLI/Index]], [[Help/TUI/Index]]
 
 A multi-session server for concurrent agent access. It owns all business logic that the views (CLI, TUI, Web) consume over RPC.
 
-- Unix socket RPC (`cru daemon serve`). The `rpc_methods!` table in `crucible-daemon/src/rpc/dispatch.rs:83` is the one list of methods. It has 156 rows. The largest groups are `session.*` (75), `plugin.*` (11), `lua.*` (8), `note.*` (6), `review.*` (5), `kiln.*` (5), and 11 top-level methods such as `search_vectors`, `search_text`, `search_grep`, `list_notes`, `get_note_by_name`, `get_backlinks`. Do not copy the list here. Read the table.
+- Unix socket RPC (`cru daemon serve`). The `rpc_methods!` table in `crucible-daemon/src/rpc/dispatch.rs:83` is the one list of methods. It has 155 rows. The largest groups are `session.*` (54), `plugin.*` (11), `config.*` (9), `lua.*` (8), `kiln.*` (7), `review.*` (7), `note.*` (6), `project.*` (6), and 11 top-level methods such as `search_vectors`, `search_text`, `search_grep`, `list_notes`, `get_note_by_name`, `get_backlinks`. Do not copy the list here. Read the table.
 - Event streaming via subscriptions (subscribe/unsubscribe with wildcard support)
 - Tool dispatch via `DaemonToolDispatcher` (`tool_dispatch.rs:117`). It routes tool calls to the correct executor (built-in Rust tools, Lua plugin tools, or external MCP server tools) through a provider chain with lazy name hydration.
 - Tool dispatch enforces a 30 second timeout per tool call. `delegate_session` gets the delegation timeout plus 30 seconds (`messaging/tool_call.rs:647-660`). A timed-out call returns an error to the LLM, so it can retry or adjust.

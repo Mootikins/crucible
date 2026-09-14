@@ -3,7 +3,7 @@ title: CONTEXT
 description: The glossary. One name per concept, and the names to avoid.
 type: reference
 status: living
-updated: 2026-09-13
+updated: 2026-09-14
 tags:
   - meta
   - glossary
@@ -36,12 +36,16 @@ _Avoid_: search path, plugin path, package.path
 ### Dispositions
 
 **Review**:
-The disposition of an agent's file edits, per hunk, per file, per turn or per session. The composed diff in `review/`.
+The disposition of an agent's file edits and of a plugin pass's note writes, per hunk, per file, per turn or per session. The composed diff in `review/`. There is no second disposition.
 _Avoid_: proposal (for this meaning), approval
 
 **Scope**:
 Which hunks a review lists: the session's, or the current turn's.
 _Avoid_: filter, view (for this meaning)
+
+**Snapshot**:
+One root's contents at one moment. A git tree, or a plain-store manifest of one content hash per file.
+_Avoid_: tree (for a plain root), commit
 
 ### Plugins
 

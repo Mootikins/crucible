@@ -81,6 +81,8 @@ POST /api/session/{id}/review/comment/{comment_id}/resolve
 
 These forward to the daemon's `review.list_hunks`, `review.rebase`, `review.set_state`, `review.set_states`, `review.undo_reject`, `review.comment`, and `review.resolve_comment` RPC methods. `list_hunks` returns the hunks plus `comments`, `degraded` roots, journal `integrity`, the current `gate` block, and the `scope` it answered under; an unknown scope is refused before the daemon is asked. `set_states` and `undo_reject` answer `applied` and `failed`, each failure naming the hunk and the reason. There is no TUI review panel.
 
+**A plugin pass's own session.** The [[Reflection Pass|reflection and consolidation passes]] write their kiln notes with `create_note` and `update_note` in a session of their own, in `auto` mode, so every note they write is a hunk in that session's queue rather than a file staged somewhere else. The web sessions list carries a **Reflections** section, on the desktop shell and on the phone, so a pass is reachable from either; open it and the Changes panel disposes of its notes the way it disposes of any other session's edits. A reject reverts the note on disk.
+
 **The bundled `review` plugin** (`runtime/plugins/review/`) exposes the same operations as agent-callable tools: `review_list_hunks`, `review_set_state`, `review_comment`, `review_resolve_comment`. Every tool takes an explicit `session_id` because the session under review is usually not the caller's own: a delegating agent gets `child_session_id` from `delegate_session`'s result and reviews the child's diff before accepting it. Hunk bodies are truncated at 2000 characters — an agent deciding on a long hunk should open the file.
 
 ## Delegation
@@ -89,14 +91,17 @@ These forward to the daemon's `review.list_hunks`, `review.rebase`, `review.set_
 
 ## Lifecycle and persistence
 
-- **Open** — on the session's first send, `session_base` is captured once per root and never recomputed.
+- **Open** — on the session's first send, `session_base` is captured once per root and never recomputed. The backend is chosen here, per root, and recorded in the snapshot id, so every later read of that root goes to the same store. A **rebase** is the one operation that chooses again.
 - **Journal** — every mutation appends eagerly to `review.jsonl` in the session's storage directory, next to `session.jsonl`. On daemon restart (or when the web panel opens a resumed session), the ledger is replayed from the journal; a fresh base is never silently captured over an existing journal, because that would report the agent changed nothing.
 - **Damage is graded** — a journal line that will not parse is skipped and recorded, scoping the resulting hold to one root where possible and to the whole session otherwise. Decisions are stamped with a fingerprint of the hunk arithmetic; a decision made under different arithmetic returns its hunk to the queue rather than landing on lines you never saw.
 - **Retention** — the trees the ledger records are unreferenced git objects, so each session pins them with one tree-valued ref per repository, `refs/crucible/sessions/{session_id}` — invisible to `git log`, dropped when the session is deleted, and swept when a session directory disappears out of band. A plain root's snapshots are claimed the same way, by one keep file per root under the daemon's snapshot store. Nothing outside the daemon collects those, so the daemon sweeps the store itself on the same pass: a snapshot or a blob no live session claims is removed, and a claim is released only by its session going away, never by age.
 - **End** — session teardown clears the in-memory ledger but leaves the journal on disk; the queue is still there when the session is resumed.
+- **Archive** — the auto-archive sweep does not archive a session whose queue still holds an undecided hunk. It holds the session and says so in the log. Archiving takes a session out of the daemon's resident map, and a ledger is restored only for a session that map answers for, so an archived session's hunks would have no door left while the edits they describe are still on disk. A plugin pass is the case this protects: it writes its notes, ends, and nobody opens the queue for days.
 
 ## Current limits
 
 - The gate can only hold the internal agent's tool calls. External ACP agents are post-turn review only.
 - Modes declared in Lua or config cannot yet declare a weaker policy for themselves; they take the conservative pre-write default.
 - Writes no bracket saw — your editor, background processes — are attributed to nobody; they appear as external hunks, reviewable by eye but not gated or rejectable.
+- A root that becomes a git repository after its ledger opened keeps the plain store until a rebase. A root whose repository goes away keeps the git backend the same way. The snapshot id is the record, and it does not follow the disk.
+- The archive sweep reads the ledger the daemon holds in memory. A daemon restart before an undecided queue is decided drops that protection, and a later sweep archives the session.

@@ -188,7 +188,7 @@ mod decl {
     /// The name is REQUIRED and the relative part is not: `kiln_path` raises
     /// without a name and joins the relative part when it gets one. Declaring
     /// it `(name: string?)` rejected `cru.kiln.path(kiln, ".crucible/proposals")`,
-    /// which is what the `reflection` plugin really calls.
+    /// which is a call the `reflection` plugin used to make.
     ///
     /// It RAISES rather than answering nil — both when no resolver is bound
     /// and when a name does not resolve — so the return carries no `?`.

@@ -9,6 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The review is the one diff surface.** An expanded hunk in the Changes
+  panel is now a CodeMirror merge view of its base text against its worktree
+  text, and every control on it calls the daemon rather than CodeMirror's own
+  chunk action — the browser never holds `after_content` to write back.
+
+  Beside the per-hunk decision there are three new daemon operations:
+
+  - `review.set_states` decides a list of hunks in one call. It applies the
+    list in order and names each hunk it refused — unknown, stale or external
+    — beside the ones it applied; one refusal never stops the rest. A file row
+    and the panel header each carry **Accept all** and **Reject all**: one
+    confirm, one call.
+  - `review.undo_reject` takes a reject back. Every reject, single or bulk,
+    pushes one batch onto a per-session stack the journal records, so the undo
+    is multi-level and still there after a daemon restart. It puts the lines
+    back on disk, lists the hunks unreviewed again, and tells the agent the
+    rejection is withdrawn. A hunk whose file moved on refuses the whole batch
+    as stale and leaves it on the stack. Every reject leaves a notification
+    carrying **Undo**.
+  - `review.list_hunks` takes a **scope**. `session` lists every hunk since
+    the session base; `turn` lists only what a tool call of the current turn
+    touched. The turn starts at the last user message on the conversation's
+    current path, so no marker is written. Decisions and the gate stay
+    session-wide.
+
+  On a phone every review control is a 44 px target.
+
+- **A review root outside git.** A root the daemon cannot ask git about — a
+  kiln outside a repository is the expected shape — used to be skipped, and a
+  session with only such a root had no ledger and no gate at all. It is now
+  snapshotted into a plain store under the daemon data root, as a manifest of
+  one content hash per file, with a `(size, mtime, inode)` stat key so an
+  unchanged file is not read twice. A snapshot id says which store holds it —
+  a bare hex id is a git tree, a `plain:` prefixed one is the plain store — so
+  every journal already on disk keeps replaying. The daemon claims a plain
+  root's snapshots with one keep file per root and sweeps the store itself on
+  the tick that sweeps the git keep refs, because nothing outside the daemon
+  collects them.
+
+- **`cru.session.set_mode` and `cru.session.set_title`.** A plugin can put a
+  session it created into a mode and give it a title, as `s:set_mode("auto")`
+  and `s:set_title(t)` or through the free functions. An unattended pass needs
+  the first: a session starts in `ask`, a plugin turn is non-interactive, and
+  the permission engine turns every `Ask` into `Deny`, so the pass wrote
+  nothing. The verb is the door because a handle from `create` binds no live
+  config RPC and `s.mode = "auto"` answers "Session not connected".
+
+- **A session with an undecided review queue is not auto-archived.** Archiving
+  takes a session out of the daemon's resident map, and a ledger is restored
+  only for a session that map answers for, so archiving one with unreviewed
+  hunks left the edits on disk with no door to dispose of them. The sweep now
+  asks the review ledgers first and holds the session, saying so in the log.
+  The web sessions list gains a **Reflections** section, on the desktop shell
+  and on the phone, so a pass a human has not read yet is reachable.
+
 - **`io.popen` and `os.execute`.** Luau ships neither, and the host withheld
   both to make `cru.shell` the one gated door to a process. That door has no
   lock: `PluginShellPolicy::default()` blocks four command names with no

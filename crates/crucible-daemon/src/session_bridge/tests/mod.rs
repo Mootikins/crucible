@@ -774,7 +774,10 @@ async fn a_plugin_titles_and_switches_the_session_it_created_and_the_daemon_read
 
     let plugin_error: Option<String> = plugin_lua.globals().get("plugin_error").unwrap();
     assert_eq!(plugin_error, None, "the plugin script itself failed");
-    let aux_id: String = plugin_lua.globals().get("aux_id").expect("the plugin created a session");
+    let aux_id: String = plugin_lua
+        .globals()
+        .get("aux_id")
+        .expect("the plugin created a session");
 
     // The daemon's own readers, not the plugin's word for it.
     assert_eq!(
@@ -782,7 +785,9 @@ async fn a_plugin_titles_and_switches_the_session_it_created_and_the_daemon_read
         Some("auto"),
         "set_mode persisted on the session's agent"
     );
-    let aux = session_manager.get_session(&aux_id).expect("aux registered");
+    let aux = session_manager
+        .get_session(&aux_id)
+        .expect("aux registered");
     assert_eq!(aux.title.as_deref(), Some("Reflection: yesterday"));
 
     // And the plugin reads the same title back through `cru.session.get`.

@@ -384,11 +384,15 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// handle. An unknown id comes back as the error naming the valid ids,
     /// which the Lua caller reads as the second return value.
     fn set_mode(&self, session_id: String, mode_id: String) -> BoxFut<()> {
-        bridge_async!(self.agent_manager, self.event_tx, |am, event_tx| async move {
-            am.set_mode(&session_id, &mode_id, Some(&event_tx))
-                .await
-                .map_err(|e| e.to_string())
-        })
+        bridge_async!(
+            self.agent_manager,
+            self.event_tx,
+            |am, event_tx| async move {
+                am.set_mode(&session_id, &mode_id, Some(&event_tx))
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+        )
     }
 
     /// The title a human reads for a plugin's session.

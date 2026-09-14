@@ -152,7 +152,7 @@ const DECLARED: &[Declared] = &[
         // `(name, relative?)`, and the name is REQUIRED: `vault/mod.rs`
         // raises without one and joins the relative path when given.
         // Declaring it `(name: string?)` rejected `cru.kiln.path(kiln, ".crucible/proposals")`,
-        // which is what `reflection` really calls.
+        // which is a call the `reflection` plugin used to make.
         path: "cru.kiln.path",
         ty: || {
             function(
