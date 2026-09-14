@@ -409,6 +409,7 @@ impl Server {
             &data_home,
         );
         let sessions_root = FileSessionStorage::root_for(&data_home);
+        let review_snapshot_root = crate::review::snapshot_root(&data_home);
         // Both halves of the name↔path mapping come from the one registry: the
         // storage layer turns a persisted path back into a name on load, and
         // everything downstream turns a name into a directory. Two registries
@@ -418,7 +419,8 @@ impl Server {
                 FileSessionStorage::new(sessions_root.clone()).with_registry(kiln_registry.clone()),
             ))
             .with_kiln_registry(kiln_registry.clone())
-            .with_session_workspace_dir(Some(session_workspace_dir)),
+            .with_session_workspace_dir(Some(session_workspace_dir))
+            .with_review_snapshot_root(review_snapshot_root.clone()),
         );
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
@@ -446,7 +448,7 @@ impl Server {
                     permission_config: params.permission_config.clone(),
                     plugin_loader: Some(plugin_loader.clone()),
                     card_roots,
-                    review_snapshot_root: data_home.join("review-snapshots"),
+                    review_snapshot_root,
                 },
                 delegation_service.clone(),
             )
@@ -872,6 +874,7 @@ impl Server {
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
         let sweep_activity = self.activity.clone();
+        let sweep_plain_root = crate::review::snapshot_root(&self.data_home);
         let auto_archive_hours = self.auto_archive_hours.unwrap_or(72);
 
         let archive_sweep_task = tokio::spawn(async move {
@@ -899,14 +902,16 @@ impl Server {
                             }
                         }
 
-                        // Same tick, same sessions root: keep refs whose
-                        // session directory has been removed pin git objects
-                        // that nothing else will ever release.
+                        // Same tick, same sessions root: a session directory
+                        // that has been removed leaves keep refs pinning git
+                        // objects, and snapshots in the plain store that
+                        // nothing else will ever collect.
                         let dropped = crate::review::sweep_review_refs(
                             sweep_session_manager.sessions_root(),
+                            &sweep_plain_root,
                         ).await;
                         if dropped > 0 {
-                            info!(dropped, "Released review keep refs for deleted sessions");
+                            info!(dropped, "Released review snapshots for deleted sessions");
                         }
                     }
                 }

@@ -29,7 +29,6 @@
 use std::path::Path;
 
 use crucible_core::session::{PhysicalRoot, SnapshotId};
-use tracing::debug;
 
 use super::error::ReviewResult;
 use super::git::{self, ChangeKind, IgnoredEntries};
@@ -174,26 +173,19 @@ impl RootBackend {
     ///
     /// Total rather than incremental on both backends: the claim is rebuilt
     /// from the full list on every call, so a ledger that lost an interval
-    /// also loses its claim on that interval's snapshots.
+    /// also loses its claim on that interval's snapshots. The two collectors
+    /// differ only in who runs them — `git gc` is the user's, and
+    /// [`PlainStore::sweep`] is the daemon's.
     pub(super) async fn keep(
         self,
+        store: &PlainStore,
         root: &Path,
         session_id: &str,
         snapshots: &[SnapshotId],
     ) -> ReviewResult<()> {
         match self {
             Self::Git => git::update_keep(root, session_id, snapshots).await,
-            // Nothing collects a plain snapshot yet, so nothing has to claim
-            // one. The sweeper and its keep files land beside this arm.
-            Self::Plain => {
-                debug!(
-                    session_id,
-                    root = %root.display(),
-                    snapshots = snapshots.len(),
-                    "plain-store snapshots are not swept yet; nothing to claim"
-                );
-                Ok(())
-            }
+            Self::Plain => store.keep(root, session_id, snapshots).await,
         }
     }
 
@@ -273,7 +265,7 @@ mod tests {
             );
 
             backend
-                .keep(&root, "sess", &[before, after])
+                .keep(&store, &root, "sess", &[before, after])
                 .await
                 .unwrap_or_else(|e| panic!("{backend:?} cannot claim its snapshots: {e}"));
             backend

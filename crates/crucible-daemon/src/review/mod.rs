@@ -54,6 +54,16 @@ pub use error::{ReviewError, ReviewResult};
 pub use persist::{drop_keep_refs, sweep_review_refs};
 pub use undo::REJECT_STACK_DEPTH;
 
+/// Where a daemon rooted at `data_home` snapshots the review roots that are
+/// not in a git repository.
+///
+/// One spelling, because three callers need the same directory: the manager
+/// that captures into it, the delete that releases a session's claim on it,
+/// and the maintenance sweep that collects it.
+pub fn snapshot_root(data_home: &std::path::Path) -> std::path::PathBuf {
+    data_home.join("review-snapshots")
+}
+
 /// An open capture bracket. Held across a tool call's dispatch and closed
 /// with [`ReviewLedgers::close`].
 ///

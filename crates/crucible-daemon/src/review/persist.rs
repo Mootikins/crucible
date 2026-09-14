@@ -15,6 +15,7 @@ use crucible_core::session::{
 use tracing::{debug, warn};
 
 use super::backend::RootBackend;
+use super::plain_store::PlainStore;
 use super::{git, journal, ReviewError, ReviewLedgers, ReviewResult};
 
 impl ReviewLedgers {
@@ -390,7 +391,10 @@ impl ReviewLedgers {
         for base in ledger.session_base() {
             let snapshots = ledger.trees_for(&base.root);
             let backend = RootBackend::of(&base.base_tree);
-            if let Err(e) = backend.keep(&base.root, session_id, &snapshots).await {
+            if let Err(e) = backend
+                .keep(&self.plain, &base.root, session_id, &snapshots)
+                .await
+            {
                 warn!(
                     session_id,
                     root = %base.root.display(),
@@ -402,13 +406,20 @@ impl ReviewLedgers {
     }
 }
 
-/// Release a deleted session's keep refs, using its journal to find the
-/// repositories they live in.
+/// Release a deleted session's claims: its keep refs, and its claims on
+/// plain-store snapshots.
 ///
 /// Called before the session directory is removed, because the journal is the
 /// only record of which repositories a session ever touched — once it is gone
-/// the refs are unreachable garbage that nothing will ever collect.
-pub async fn drop_keep_refs(session_dir: &Path, session_id: &str) {
+/// the refs are unreachable garbage that nothing will ever collect. The plain
+/// store needs no journal for this, because every claim it holds is named by
+/// the session, but it is released here anyway so the disk comes back at the
+/// delete rather than at the next sweep.
+///
+/// `plain_root` is `None` for a composition root that has no plain store. Its
+/// claims are then released by [`sweep_review_refs`] instead, which finds them
+/// by the session directory that is no longer there.
+pub async fn drop_keep_refs(session_dir: &Path, session_id: &str, plain_root: Option<&Path>) {
     for root in journal::roots_in(&session_dir.join(journal::FILE)).await {
         if let Err(e) = git::drop_keep(&root, session_id).await {
             debug!(
@@ -419,14 +430,30 @@ pub async fn drop_keep_refs(session_dir: &Path, session_id: &str) {
             );
         }
     }
+    if let Some(plain_root) = plain_root {
+        if let Err(e) = PlainStore::new(plain_root.to_path_buf())
+            .drop_keep(session_id)
+            .await
+        {
+            debug!(
+                session_id,
+                root = %plain_root.display(),
+                error = %e,
+                "review snapshot claim not released"
+            );
+        }
+    }
 }
 
-/// Drop keep refs left behind by sessions whose journals are gone.
+/// Release the snapshots left behind by sessions whose directories are gone:
+/// keep refs in every repository a surviving journal names, and the claims and
+/// files in the plain store.
 ///
 /// The backstop for every path that removes a session directory without going
 /// through `delete_session` — a user deleting a kiln by hand, a crash between
 /// the two steps, a session dir removed by an older build. Returns how many
-/// refs it released.
+/// claims it released: git refs plus the plain-store files
+/// [`PlainStore::sweep`] removed.
 ///
 /// Deliberately *not* time-based: a keep ref whose journal still exists is
 /// still doing its job, however old, and expiring it would delete the trees a
@@ -438,8 +465,10 @@ pub async fn drop_keep_refs(session_dir: &Path, session_id: &str) {
 /// removed out of band, that repository's refs are never reached. Nothing
 /// enumerates repositories independently — the journals are the only index —
 /// and the cost is a handful of pinned trees in a repo the daemon has stopped
-/// tracking. `delete_session` covers the path a user actually takes.
-pub async fn sweep_review_refs(sessions_root: &Path) -> usize {
+/// tracking. `delete_session` covers the path a user actually takes. The plain
+/// store has no such residual: its root is one directory this daemon owns, and
+/// the sweep enumerates it rather than reaching it through a journal.
+pub async fn sweep_review_refs(sessions_root: &Path, plain_root: &Path) -> usize {
     // (repository → session ids that still have a journal there). One
     // repository is commonly a root for sessions in several kilns, and with a
     // single sessions root every one of them is in this scan — which is what
@@ -473,5 +502,10 @@ pub async fn sweep_review_refs(sessions_root: &Path) -> usize {
             }
         }
     }
+    // Same pass, same rule, the other store: a plain snapshot is collected by
+    // nothing but this call, so it runs even when no repository was reached.
+    dropped += PlainStore::new(plain_root.to_path_buf())
+        .sweep(sessions_root)
+        .await;
     dropped
 }

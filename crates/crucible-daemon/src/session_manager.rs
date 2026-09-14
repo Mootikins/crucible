@@ -165,6 +165,12 @@ pub struct SessionManager {
     /// `session.list` reports as active forever. The interleaved non-atomic
     /// writes can also leave `meta.json` unparseable.
     session_locks: DashMap<String, Arc<tokio::sync::Mutex<()>>>,
+    /// Where the review's plain-store snapshots live, so deleting a session
+    /// can release its claim on them at once rather than at the next sweep.
+    ///
+    /// `None` for a manager built without one: the sweep still finds those
+    /// claims, by the session directory that is no longer there.
+    review_snapshot_root: Option<PathBuf>,
     /// Name → directory for kilns.
     ///
     /// Held here rather than reached for through the storage trait because
@@ -213,6 +219,14 @@ impl SessionManager {
         self
     }
 
+    /// Release a deleted session's claim on the plain review store under
+    /// `root`. See [`crate::review::drop_keep_refs`].
+    #[must_use]
+    pub fn with_review_snapshot_root(mut self, root: PathBuf) -> Self {
+        self.review_snapshot_root = Some(root);
+        self
+    }
+
     /// The name → directory mapping every scope consumer resolves through.
     pub fn kiln_registry(&self) -> &Arc<crate::kiln_registry::KilnRegistry> {
         &self.kiln_registry
@@ -251,6 +265,7 @@ impl SessionManager {
             storage,
             recording_senders: DashMap::new(),
             session_workspace_dir: None,
+            review_snapshot_root: None,
             session_locks: DashMap::new(),
             kiln_registry: Arc::new(crate::kiln_registry::KilnRegistry::empty(
                 crate::kiln_registry::KilnRegistryContext::new(
@@ -724,7 +739,12 @@ impl SessionManager {
             // Before the directory goes: `review.jsonl` is the only record of
             // which repositories this session claimed keep refs in, so once it
             // is deleted those refs pin trees that nothing will ever collect.
-            crate::review::drop_keep_refs(&session_dir, session_id).await;
+            crate::review::drop_keep_refs(
+                &session_dir,
+                session_id,
+                self.review_snapshot_root.as_deref(),
+            )
+            .await;
             remove_session_dir(self.sessions_root(), session_id).await?;
         }
 

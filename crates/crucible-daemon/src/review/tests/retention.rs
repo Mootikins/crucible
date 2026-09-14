@@ -71,7 +71,7 @@ async fn dropping_a_sessions_keep_refs_releases_every_root_its_journal_names() {
         vec!["sess".to_string()]
     );
 
-    crate::review::drop_keep_refs(fx.session_dir.path(), &fx.session).await;
+    crate::review::drop_keep_refs(fx.session_dir.path(), &fx.session, Some(fx.snaps.path())).await;
     assert!(keep_ref_ids(fx.repo_dir.path()).await.unwrap().is_empty());
 }
 
@@ -85,9 +85,8 @@ async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
     repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
     let sessions = home.path().join("sessions");
 
-    let ledgers = Arc::new(ReviewLedgers::new(
-        crate::test_support::scratch_snapshot_root(),
-    ));
+    let snaps = crate::test_support::scratch_snapshot_root();
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.clone()));
     for id in ["live", "orphan"] {
         ledgers
             .open_or_restore(id, &sessions.join(id), &[repo_dir.path().to_path_buf()])
@@ -99,7 +98,7 @@ async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
     assert_eq!(held, vec!["live".to_string(), "orphan".to_string()]);
 
     std::fs::remove_dir_all(sessions.join("orphan")).unwrap();
-    let dropped = crate::review::sweep_review_refs(&sessions).await;
+    let dropped = crate::review::sweep_review_refs(&sessions, &snaps).await;
 
     assert_eq!(dropped, 1);
     assert_eq!(
@@ -119,9 +118,8 @@ async fn the_sweep_releases_orphaned_snapshot_refs_too() {
     repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
     let sessions = home.path().join("sessions");
 
-    let ledgers = Arc::new(ReviewLedgers::new(
-        crate::test_support::scratch_snapshot_root(),
-    ));
+    let snaps = crate::test_support::scratch_snapshot_root();
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.clone()));
     // A surviving session keeps the repository in the sweep's view at all —
     // the sweep reaches a root only through a live session's journal, so a
     // repo whose every session is gone is unreachable to it by construction.
@@ -144,7 +142,7 @@ async fn the_sweep_releases_orphaned_snapshot_refs_too() {
     );
 
     std::fs::remove_dir_all(sessions.join("orphan")).unwrap();
-    let dropped = crate::review::sweep_review_refs(&sessions).await;
+    let dropped = crate::review::sweep_review_refs(&sessions, &snaps).await;
 
     assert_eq!(dropped, 2, "the orphan's snapshot ref was left behind");
     let mut held = keep_ref_ids(repo_dir.path()).await.unwrap();
@@ -315,5 +313,166 @@ async fn a_child_link_written_without_a_turn_reads_back_as_absent() {
         ledger.children()[1].node_id,
         None,
         "an absent turn came back as turn 0, which is a real turn"
+    );
+}
+
+/// A directory outside git, with two files, one of which every such directory
+/// in a test holds byte for byte — so a blob two snapshots name is in play.
+async fn plain_root(own: &str) -> TempDir {
+    let root = TempDir::new().unwrap();
+    // The premise. A checkout above the system temp directory would make this
+    // root git-backed and the test would assert nothing about the plain store;
+    // export `GIT_CEILING_DIRECTORIES` or move `TMPDIR` out of the repo.
+    assert!(
+        super::git::top_level(root.path()).await.is_err(),
+        "the temp directory is inside a git repository, so this is not a plain root"
+    );
+    std::fs::write(root.path().join("shared.md"), "shared\n").unwrap();
+    std::fs::write(root.path().join("own.md"), own).unwrap();
+    root
+}
+
+fn snapshot_file(snaps: &Path, id: &SnapshotId) -> PathBuf {
+    snaps
+        .join("snapshots")
+        .join(format!("{}.json", id.as_str()))
+}
+
+/// The blob one path has inside one snapshot, as a file under the store root.
+fn blob_file(snaps: &Path, id: &SnapshotId, path: &str) -> PathBuf {
+    let bytes = std::fs::read(snapshot_file(snaps, id)).unwrap();
+    let manifest: crate::review::plain_store::Manifest = serde_json::from_slice(&bytes).unwrap();
+    snaps.join("blobs").join(&manifest.files[path])
+}
+
+/// Every snapshot one session's ledger still names.
+fn claimed(ledgers: &ReviewLedgers, session_id: &str) -> Vec<SnapshotId> {
+    let ledger = ledgers.ledger(session_id).unwrap();
+    let root = ledger.session_base()[0].root.clone();
+    ledger.trees_for(&root)
+}
+
+/// The plain store's half of `the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones`.
+/// A plain snapshot is collected by nothing else at all — there is no `git gc`
+/// under a kiln that is not a repository — so this sweep is the whole of
+/// retention for it, and it has to release the dead without touching a file
+/// any live session still names.
+#[tokio::test]
+async fn the_plain_sweep_removes_snapshots_no_live_journal_names() {
+    let home = TempDir::new().unwrap();
+    let snaps = TempDir::new().unwrap();
+    let sessions = home.path().join("sessions");
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+
+    let live_root = plain_root("live\n").await;
+    let orphan_root = plain_root("orphan\n").await;
+    for (id, root) in [("live", &live_root), ("orphan", &orphan_root)] {
+        ledgers
+            .open_or_restore(id, &sessions.join(id), &[root.path().to_path_buf()])
+            .await
+            .unwrap();
+    }
+    // One bracketed call, so the live session claims its interval's snapshots
+    // and not only its base.
+    let handle = ledgers.open_bracket("live").await.unwrap();
+    std::fs::write(live_root.path().join("own.md"), "EDITED\n").unwrap();
+    ledgers.close("live", handle, "call-1", 1).await.unwrap();
+
+    let live_ids = claimed(&ledgers, "live");
+    let orphan_ids = claimed(&ledgers, "orphan");
+    assert_eq!(live_ids.len(), 2, "a base and the call's after-snapshot");
+    assert_eq!(orphan_ids.len(), 1);
+    let shared = blob_file(snaps.path(), &orphan_ids[0], "shared.md");
+    let orphan_only = blob_file(snaps.path(), &orphan_ids[0], "own.md");
+    assert_eq!(
+        shared,
+        blob_file(snaps.path(), &live_ids[0], "shared.md"),
+        "the two roots must share a blob for this test to mean anything"
+    );
+
+    std::fs::remove_dir_all(sessions.join("orphan")).unwrap();
+    let released = crate::review::sweep_review_refs(&sessions, snaps.path()).await;
+
+    assert_eq!(
+        released, 2,
+        "the orphan's snapshot and the one blob only it named"
+    );
+    assert!(
+        !snapshot_file(snaps.path(), &orphan_ids[0]).exists(),
+        "a snapshot no session names was left on disk"
+    );
+    assert!(!orphan_only.exists(), "its content was left with it");
+    assert!(
+        shared.exists(),
+        "a blob the live session also names went with the session that died"
+    );
+    for id in &live_ids {
+        assert!(
+            snapshot_file(snaps.path(), id).exists(),
+            "the sweep took {id}, which the live session still names"
+        );
+    }
+
+    // The property all of that is for: the surviving review still computes.
+    let hunks = ledgers.list_hunks("live").await.unwrap();
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0].after_content, "EDITED\n");
+    assert_eq!(hunks[0].before_content, "live\n");
+}
+
+/// Deleting a session releases its claims there and then, rather than leaving
+/// the disk held until the next sweep.
+#[tokio::test]
+async fn dropping_a_sessions_claims_releases_its_plain_snapshots() {
+    let home = TempDir::new().unwrap();
+    let snaps = TempDir::new().unwrap();
+    let sessions = home.path().join("sessions");
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let root = plain_root("one\n").await;
+    ledgers
+        .open_or_restore("sess", &sessions.join("sess"), &[root.path().to_path_buf()])
+        .await
+        .unwrap();
+    let ids = claimed(&ledgers, "sess");
+    assert!(snapshot_file(snaps.path(), &ids[0]).exists());
+
+    // The delete path's order: claims first, while the session directory is
+    // still there, then the directory.
+    crate::review::drop_keep_refs(&sessions.join("sess"), "sess", Some(snaps.path())).await;
+    std::fs::remove_dir_all(sessions.join("sess")).unwrap();
+
+    assert!(
+        !snaps.path().join("keeps").join("sess").exists(),
+        "the session's claims outlived the session"
+    );
+    assert_eq!(
+        crate::review::sweep_review_refs(&sessions, snaps.path()).await,
+        3,
+        "one snapshot and its two blobs"
+    );
+}
+
+/// The branch that decides whether an unanswerable question deletes
+/// everything. A sessions root the daemon cannot read makes every session look
+/// deleted, and reading it that way would collect every review in the store.
+#[tokio::test]
+async fn a_sweep_that_cannot_see_the_sessions_root_removes_nothing() {
+    let home = TempDir::new().unwrap();
+    let snaps = TempDir::new().unwrap();
+    let sessions = home.path().join("sessions");
+    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let root = plain_root("one\n").await;
+    ledgers
+        .open_or_restore("sess", &sessions.join("sess"), &[root.path().to_path_buf()])
+        .await
+        .unwrap();
+    let ids = claimed(&ledgers, "sess");
+
+    let released = crate::review::sweep_review_refs(&home.path().join("gone"), snaps.path()).await;
+
+    assert_eq!(released, 0);
+    assert!(
+        snapshot_file(snaps.path(), &ids[0]).exists(),
+        "a sweep that could not tell which sessions are live collected one anyway"
     );
 }

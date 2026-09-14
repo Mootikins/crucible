@@ -20,8 +20,16 @@
 //! same second as the capture that recorded it may change again inside that
 //! second with no visible stat change. Those entries are simply not cached,
 //! so the next capture reads them.
+//!
+//! Nothing outside this daemon collects a plain snapshot — there is no `git
+//! gc` under a kiln that is not a repository — so the store collects its own.
+//! Each session writes a **keep** per root it tracks: the snapshots that
+//! root's ledger still names. [`PlainStore::sweep`] removes every snapshot and
+//! blob no keep claims, and every keep whose session directory is gone. That
+//! is the git side's rule one level down — a claim is released by its session
+//! going away, never by age.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,7 +40,7 @@ use crucible_core::session::SnapshotId;
 use crucible_core::EXCLUDED_DIRS;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 use walkdir::WalkDir;
 
 use super::error::{ReviewError, ReviewResult};
@@ -62,6 +70,27 @@ impl Manifest {
         }
         SnapshotId::plain(hasher.finalize().to_hex().to_string())
     }
+}
+
+/// One session's claim on one root's snapshots.
+///
+/// The plain analogue of a git keep ref, and total for the same reason
+/// [`super::git::update_keep`] records: the claim is rewritten from the
+/// ledger's full list on every call, so a ledger that lost an interval also
+/// loses its claim on that interval's snapshots.
+///
+/// One file per *root* rather than one per session, because a session can
+/// track several roots and each is claimed by its own call. A single file
+/// would make two of those calls a read-modify-write race whose loser silently
+/// unclaims a live root's snapshots.
+///
+/// `root` is written for the operator reading the directory; nothing reads it
+/// back. The file name is the hash of the root path, which is the part that
+/// has to be unique and spellable.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Keep {
+    root: String,
+    snapshots: Vec<SnapshotId>,
 }
 
 /// A content-addressed snapshot store under one directory.
@@ -211,6 +240,189 @@ impl PlainStore {
             .await
             .is_ok()
     }
+
+    /// Claim `snapshots` for `session_id` under `root`, against [`Self::sweep`].
+    ///
+    /// Idempotent and total — see [`Keep`]. A claim on an id from the other
+    /// backend is refused rather than written: the sweep could not match it to
+    /// a file here, so the claim would silently protect nothing.
+    pub(super) async fn keep(
+        &self,
+        root: &Path,
+        session_id: &str,
+        snapshots: &[SnapshotId],
+    ) -> ReviewResult<()> {
+        for id in snapshots {
+            self.inner.snapshot_hash(id)?;
+        }
+        let keep = Keep {
+            root: root.display().to_string(),
+            snapshots: snapshots.to_vec(),
+        };
+        let bytes = serde_json::to_vec(&keep).map_err(|e| {
+            ReviewError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })?;
+        let path = self.inner.keep_path(session_id, root);
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || inner.write_atomically(&path, &bytes))
+            .await
+            .map_err(|e| ReviewError::Io(std::io::Error::other(e)))?
+    }
+
+    /// Release every claim `session_id` holds, leaving its snapshots to the
+    /// next sweep.
+    ///
+    /// A session with no claims is not an error: the delete path runs for every
+    /// session, and most never tracked a plain root at all.
+    pub(super) async fn drop_keep(&self, session_id: &str) -> ReviewResult<()> {
+        match tokio::fs::remove_dir_all(self.inner.keeps_dir().join(session_id)).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(ReviewError::Io(e)),
+        }
+    }
+
+    /// Remove every snapshot and blob no live session claims, and every claim
+    /// whose session directory is gone. Answers how many files it removed.
+    ///
+    /// The backstop [`super::sweep_review_refs`] is for git, over the same
+    /// rule: a session's directory going away is the only thing that makes its
+    /// snapshots garbage. Age never does — a month-old review is still a
+    /// review.
+    ///
+    /// **Fails closed.** Every step that cannot prove what is claimed — an
+    /// unreadable sessions root, a claim file that will not parse, a live
+    /// manifest that will not read — abandons the whole pass with nothing
+    /// removed. The cost of waiting for the next tick is disk; the cost of
+    /// guessing is a review that can no longer be computed.
+    ///
+    /// The one window it shares with `git gc`: a capture writes its snapshot
+    /// before the ledger records the interval that claims it, so a sweep
+    /// landing between the two collects it. `write-tree` then `update-ref` has
+    /// the same gap, and the recovery is the same — the next capture writes it
+    /// again.
+    pub(super) async fn sweep(&self, sessions_root: &Path) -> usize {
+        let Some((live_snapshots, dead_keeps)) = self.claims(sessions_root).await else {
+            return 0;
+        };
+        for path in dead_keeps {
+            if let Err(e) = tokio::fs::remove_dir_all(&path).await {
+                debug!(path = %path.display(), error = %e, "stale review claim not removed");
+            }
+        }
+
+        // Classify before removing anything: a live manifest that will not
+        // read leaves its blobs unaccounted for, and a blob removed on that
+        // reading is content no snapshot can produce again.
+        let mut dead_snapshots = Vec::new();
+        let mut live_blobs = HashSet::new();
+        let mut entries = match tokio::fs::read_dir(self.inner.root.join("snapshots")).await {
+            Ok(entries) => entries,
+            // No snapshots at all: a store nothing has captured into.
+            Err(_) => return 0,
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(hash) = name.strip_suffix(".json").filter(|h| is_content_hash(h)) else {
+                continue;
+            };
+            if !live_snapshots.contains(hash) {
+                dead_snapshots.push(entry.path());
+                continue;
+            }
+            match self.manifest(&SnapshotId::plain(hash)).await {
+                Ok(manifest) => live_blobs.extend(manifest.files.into_values()),
+                Err(e) => {
+                    warn!(
+                        snapshot = hash,
+                        error = %e,
+                        "a claimed review snapshot will not read; sweeping nothing this pass"
+                    );
+                    return 0;
+                }
+            }
+        }
+
+        let mut dead_blobs = Vec::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(self.inner.root.join("blobs")).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if is_content_hash(&name) && !live_blobs.contains(&name) {
+                    dead_blobs.push(entry.path());
+                }
+            }
+        }
+
+        let mut removed = 0;
+        for path in dead_snapshots.into_iter().chain(dead_blobs) {
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => removed += 1,
+                Err(e) => {
+                    debug!(path = %path.display(), error = %e, "unclaimed review file not removed")
+                }
+            }
+        }
+        removed
+    }
+
+    /// Every snapshot hash a live session claims, and the claim directories
+    /// whose session is gone.
+    ///
+    /// `None` means the question could not be answered, and the caller must
+    /// remove nothing — see [`Self::sweep`].
+    async fn claims(&self, sessions_root: &Path) -> Option<(HashSet<String>, Vec<PathBuf>)> {
+        if !tokio::fs::metadata(sessions_root)
+            .await
+            .is_ok_and(|m| m.is_dir())
+        {
+            warn!(
+                sessions_root = %sessions_root.display(),
+                "no sessions root to read; sweeping no review snapshots"
+            );
+            return None;
+        }
+        // Nothing has claimed anything yet, which is also true of a store
+        // nothing has captured into.
+        let mut sessions = tokio::fs::read_dir(self.inner.keeps_dir()).await.ok()?;
+
+        let mut live = HashSet::new();
+        let mut dead = Vec::new();
+        while let Ok(Some(session)) = sessions.next_entry().await {
+            let session_id = session.file_name().to_string_lossy().into_owned();
+            if !tokio::fs::try_exists(sessions_root.join(&session_id))
+                .await
+                .unwrap_or(true)
+            {
+                dead.push(session.path());
+                continue;
+            }
+            let mut claims = tokio::fs::read_dir(session.path()).await.ok()?;
+            while let Ok(Some(claim)) = claims.next_entry().await {
+                // A claim this store wrote, rather than a temporary a crash
+                // left mid-write: an unparseable file here would stall every
+                // later sweep, not just this one.
+                if claim.path().extension().is_none_or(|e| e != "json") {
+                    continue;
+                }
+                let bytes = tokio::fs::read(claim.path()).await.ok()?;
+                let keep: Keep = serde_json::from_slice(&bytes)
+                    .map_err(|e| {
+                        warn!(
+                            path = %claim.path().display(),
+                            error = %e,
+                            "a review claim will not parse; sweeping nothing this pass"
+                        );
+                    })
+                    .ok()?;
+                for id in &keep.snapshots {
+                    if let Ok(hash) = self.inner.snapshot_hash(id) {
+                        live.insert(hash.to_string());
+                    }
+                }
+            }
+        }
+        Some((live, dead))
+    }
 }
 
 impl Inner {
@@ -236,6 +448,22 @@ impl Inner {
 
     fn blob_path(&self, hash: &str) -> PathBuf {
         self.root.join("blobs").join(hash)
+    }
+
+    fn keeps_dir(&self) -> PathBuf {
+        self.root.join("keeps")
+    }
+
+    /// Where one session's claim on one root is written.
+    ///
+    /// The root is hashed rather than spelled: a path holds separators, and the
+    /// file name only has to be unique per root and readable back by the
+    /// sweep, which never asks which root a claim was for.
+    fn keep_path(&self, session_id: &str, root: &Path) -> PathBuf {
+        let root = blake3::hash(root.as_os_str().as_encoded_bytes()).to_hex();
+        self.keeps_dir()
+            .join(session_id)
+            .join(format!("{root}.json"))
     }
 
     fn capture(&self, root: &Path) -> ReviewResult<SnapshotId> {
@@ -362,6 +590,17 @@ fn walk(root: &Path) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>>
                     .to_str()
                     .is_some_and(|name| EXCLUDED_DIRS.contains(&name))
         })
+}
+
+/// Whether a file name is one this store wrote, rather than the temporary a
+/// capture is writing right now.
+///
+/// The sweep walks directories a live capture also writes into, and every
+/// write here lands as a `NamedTempFile` beside its target first. A temporary
+/// swept mid-write fails the capture that was making it.
+fn is_content_hash(name: &str) -> bool {
+    name.len() == blake3::OUT_LEN * 2
+        && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Whole seconds since the epoch, which is the granularity a stat key can
