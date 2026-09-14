@@ -16,6 +16,7 @@ pub mod interaction;
 pub mod kiln;
 pub mod lua_source;
 pub mod note_edit;
+pub mod note_merge;
 pub mod parser;
 pub mod paths;
 pub mod processing;
