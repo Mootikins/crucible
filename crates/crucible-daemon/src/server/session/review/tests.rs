@@ -1433,3 +1433,224 @@ fn git_and_io_failures_map_to_internal_error() {
         assert_eq!(resp.error.expect("error").code, INTERNAL_ERROR);
     }
 }
+
+// ── The crossing: a plugin session's own writes are its own review queue ────
+
+/// An agent whose one turn writes a note with `create_note`, then waits for
+/// the tool result before it ends the turn.
+///
+/// Modelled on `session_bridge/tests/mod.rs`'s `BashCallingAgent`: the agent
+/// only *asks* for the call. The real scheduler, the real review bracket and
+/// the real note tool do the work, which is the point — a double at any of
+/// those three would prove nothing about the crossing.
+struct NoteWritingAgent;
+
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for NoteWritingAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        use crucible_core::turn::{StopReason, TurnEvent};
+        let mut inbound = ctx.inbound;
+        let body = async_stream::stream! {
+            yield TurnEvent::ToolCall {
+                id: "call-1".to_string(),
+                name: "create_note".to_string(),
+                args: serde_json::json!({
+                    "path": "Socket rules.md",
+                    "content": NOTE_TEXT,
+                }),
+                diffs: Vec::new(),
+            };
+            yield TurnEvent::ToolBatchEnd;
+            if let Some(rx) = inbound.as_mut() {
+                while let Some(event) = rx.recv().await {
+                    if matches!(event, TurnEvent::ToolResult { .. }) {
+                        break;
+                    }
+                }
+            }
+            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+        };
+        Ok(Box::pin(body))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+crucible_core::impl_unsupported_session_knobs!(NoteWritingAgent);
+
+#[async_trait::async_trait]
+impl crucible_core::traits::chat::AgentHandle for NoteWritingAgent {
+    async fn send_message_fire_and_forget(
+        &mut self,
+        _: String,
+    ) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "auto"
+    }
+}
+
+/// The note body the agent writes, and the `after_content` the review must
+/// answer with.
+const NOTE_TEXT: &str = "# Socket rules\n\nThe daemon socket is per-uid.\n";
+
+/// The reflection pass stopped staging files: it writes its notes with the
+/// note tools, in its own `plugin` session, in `auto` mode. This is the
+/// crossing that has to hold for that to mean anything — a note written by a
+/// plugin session's turn is a hunk in *that session's* review ledger, with
+/// the note's path and the note's text, so a human accepts or rejects it in
+/// the Changes panel.
+///
+/// The kiln is a plain directory with no `.git`, which is the shape a kiln
+/// usually has, and the one `RootBackend::Plain` tracks.
+///
+/// The permissions config allows the call. The stance an unattended pass
+/// actually runs under comes from `runtime/defaults/init.luau`, which needs a
+/// plugin VM; what this test is about is the ledger, and a prompt nobody can
+/// answer would only hang it.
+#[tokio::test]
+async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
+    use crate::agent_manager::AgentManagerParams;
+    use crate::background_manager::BackgroundJobManager;
+    use crate::kiln_manager::KilnManager;
+    use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
+    use crucible_core::session::{SessionAgent, SessionType};
+
+    let kiln = TempDir::new().unwrap();
+    assert!(
+        !kiln.path().join(".git").exists(),
+        "the fixture kiln must be outside git"
+    );
+    let snapshots = TempDir::new().unwrap();
+
+    let (event_tx, _events) = broadcast::channel(256);
+    let sm = crate::test_support::temp_session_manager_with_kilns(&[("notes", kiln.path())]);
+    let am = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: sm.clone(),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: Some(PermissionConfig {
+            default: PermissionMode::Allow,
+            ..Default::default()
+        }),
+        plugin_loader: None,
+        card_roots: Default::default(),
+        review_snapshot_root: snapshots.path().to_path_buf(),
+    }));
+    am.set_agent_factory_override(Box::new(|_, _| {
+        Box::pin(async {
+            Ok(Box::new(NoteWritingAgent)
+                as Box<
+                    dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
+                >)
+        })
+    }));
+
+    // A pass has no workspace: the kiln is the only root it writes to, so it
+    // is the only root the ledger tracks.
+    let session = sm
+        .create_session(
+            SessionType::Plugin,
+            vec![crate::test_support::kiln_name("notes")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let session_id = session.id.to_string();
+    am.configure_agent(
+        &session_id,
+        SessionAgent {
+            mode: None,
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("ollama".to_string()),
+            provider: crucible_core::config::BackendType::Ollama,
+            model: "llama3.2".to_string(),
+            system_prompt: "You are a reflection reviewer.".to_string(),
+            max_context_tokens: None,
+            endpoint: None,
+            env_overrides: Default::default(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+            agent_description: None,
+            delegation_config: None,
+            precognition_enabled: false,
+            context_budget: None,
+            context_strategy: Default::default(),
+            tool_policy: None,
+        },
+    )
+    .await
+    .unwrap();
+    // What `aux:set_mode("auto")` does: `auto` carries `ReviewPolicy::PostTurn`,
+    // so the write is bracketed and queued rather than parked at the gate.
+    am.set_mode(&session_id, "auto", None).await.unwrap();
+
+    let (_message_id, done) = am
+        .send_message_notified(&session_id, "reflect".to_string(), &event_tx, false, None)
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(60), done)
+        .await
+        .expect("the turn finishes")
+        .expect("the turn reports an outcome");
+
+    assert_eq!(
+        std::fs::read_to_string(kiln.path().join("Socket rules.md")).unwrap(),
+        NOTE_TEXT,
+        "the note has to be on disk before the review can dispose of it"
+    );
+
+    let resp = handle_review_list_hunks(
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "review.list_hunks".to_string(),
+            params: serde_json::json!({ "session_id": session_id }),
+        },
+        &am,
+        &sm,
+    )
+    .await;
+    let result = resp.result.expect("the pass's own queue");
+    let hunks: Vec<ComposedHunk> = serde_json::from_value(result["hunks"].clone()).unwrap();
+
+    assert_eq!(hunks.len(), 1, "one note written, one hunk: {hunks:?}");
+    assert_eq!(hunks[0].path, "Socket rules.md");
+    assert_eq!(hunks[0].after_content, NOTE_TEXT);
+    assert!(
+        hunks[0].before_content.is_empty(),
+        "a new note has no before text: {:?}",
+        hunks[0].before_content
+    );
+    assert!(
+        hunks[0].tool_call_ids.iter().any(|id| id == "call-1"),
+        "the hunk is attributed to the note call: {:?}",
+        hunks[0].tool_call_ids
+    );
+}

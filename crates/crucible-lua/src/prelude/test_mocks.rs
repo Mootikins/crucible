@@ -264,9 +264,26 @@ end
 local function create_session_mock(fixtures)
     local f = fixtures.sessions
     local counter = 0
+    -- A handle carries the id plus the methods the real `Session` userdata
+    -- binds (`session_method!` in session_api.rs). A plugin that configures
+    -- the session it created calls them with `:`, so each one takes `self`
+    -- and answers `(true, nil)` the way the real op does. The call is
+    -- recorded under the session module with the handle's id first, so a
+    -- test reads it the same way it reads a free function's call.
     local function handle()
         counter = counter + 1
-        return { id = string.format("mock-session-%d", counter) }
+        local id = string.format("mock-session-%d", counter)
+        return {
+            id = id,
+            set_mode = function(_self, mode_id)
+                record_call("session", "set_mode", id, mode_id)
+                return true, nil
+            end,
+            set_title = function(_self, title)
+                record_call("session", "set_title", id, title)
+                return true, nil
+            end,
+        }
     end
     return {
         create = function(opts)

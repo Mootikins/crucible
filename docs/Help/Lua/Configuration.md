@@ -102,9 +102,7 @@ default; without it the plugin skips every session.
 | `provider` | none | A provider override for the auxiliary model |
 | `enabled` | `true` | The master switch |
 | `min_turns` | `3` | The fewest user turns a session needs before it is reviewed |
-| `max_proposals` | `5` | The most proposals one session may stage |
 | `timeout` | `120` | Seconds to wait for the reviewer |
-| `rejection_memory` | `20` | How many recent rejected titles the reviewer is told about |
 | `tool_result_chars` | `2000` | Characters kept from each tool result in the transcript |
 | `transcript_chars` | `60000` | Characters kept from the whole transcript, cut from the front |
 

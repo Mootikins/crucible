@@ -138,201 +138,6 @@ describe("reflection", function()
     end)
   end)
 
-  describe("parse_proposals", function()
-    it("parses a JSON array", function()
-      local p = plugin.parse_proposals('[{"title":"T","body":"B"}]')
-      expect.equal(1, #p)
-      expect.equal("T", p[1].title)
-    end)
-
-    it("treats empty array as nothing to save", function()
-      local p = plugin.parse_proposals("[]")
-      expect.equal(0, #p)
-    end)
-
-    it("strips code fences", function()
-      local p = plugin.parse_proposals('```json\n[{"title":"T","body":"B"}]\n```')
-      expect.equal(1, #p)
-    end)
-
-    it("returns nil on non-JSON", function()
-      expect.is_nil(plugin.parse_proposals("not json at all"))
-    end)
-
-    it("wraps a single proposal object into a one-element array", function()
-      local p = plugin.parse_proposals('{"title":"T","body":"B"}')
-      expect.equal(1, #p)
-      expect.equal("T", p[1].title)
-    end)
-
-    it("treats empty string as empty list", function()
-      expect.equal(0, #plugin.parse_proposals(""))
-    end)
-  end)
-
-  describe("render_proposal", function()
-    it("emits provenance frontmatter and body", function()
-      local out = plugin.render_proposal(
-        { title = "My Insight", body = "# Body\n\ntext", tags = { "learned" } },
-        "chat-123",
-        "2026-07-02T00:00:00Z"
-      )
-      expect.truthy(out:find("source: reflection"))
-      expect.truthy(out:find("status: proposed"))
-      expect.truthy(out:find("%[%[chat%-123%]%]"))
-      expect.truthy(out:find('title: "My Insight"'))
-      expect.truthy(out:find("  %- \"learned\""))
-      expect.truthy(out:find("# Body"))
-    end)
-
-    it("includes target when provided", function()
-      local out = plugin.render_proposal(
-        { title = "T", body = "B", target = "Notes/x.md" }, "s", "t")
-      expect.truthy(out:find('target: "Notes/x.md"'))
-    end)
-
-    it("omits tags block when none given", function()
-      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t")
-      expect.falsy(out:find("tags:"))
-    end)
-
-    it("records the model that wrote the proposal", function()
-      local out = plugin.render_proposal(
-        { title = "T", body = "B" }, "chat-1", "2026-09-01T00:00:00Z",
-        { model = "claude-haiku-4-5-20251001" })
-      expect.truthy(out:find('model: "claude-haiku-4-5-20251001"', 1, true))
-    end)
-
-    it("omits the model line when the session has none", function()
-      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", {})
-      expect.falsy(out:find("model:", 1, true))
-    end)
-
-    it("names the source the caller gives, and reflection by default", function()
-      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", { source = "consolidation" })
-      expect.truthy(out:find("source: consolidation", 1, true))
-      expect.falsy(out:find("source: reflection", 1, true))
-      local default = plugin.render_proposal({ title = "T", body = "B" }, "s", "t", {})
-      expect.truthy(default:find("source: reflection", 1, true))
-    end)
-
-    it("omits the session line when there is no session", function()
-      local out = plugin.render_proposal({ title = "T", body = "B" }, nil, "t", { source = "consolidation" })
-      expect.falsy(out:find("session:", 1, true))
-      expect.truthy(out:find("status: proposed", 1, true))
-    end)
-
-    it("escapes a double quote after the backslash, so a quoted value closes once", function()
-      -- Title holds a backslash and a quote: a\"b. The backslash must be
-      -- escaped first, or the quote escape gets a second backslash and the
-      -- YAML string closes early.
-      local out = plugin.render_proposal({ title = 'a\\"b', body = "B" }, "s", "t")
-      expect.truthy(out:find('title: "a\\\\\\"b"', 1, true))
-    end)
-
-    it("escapes a line break and a backslash in every scalar, as the CLI does", function()
-      local out = plugin.render_proposal(
-        { title = "a\n---\nb", body = "B", target = "dir\\x.md", tags = { "t\r" } },
-        "s", "t", { model = "m\nn" })
-      expect.truthy(out:find('title: "a\\n---\\nb"', 1, true))
-      expect.truthy(out:find('target: "dir\\\\x.md"', 1, true))
-      expect.truthy(out:find('  - "t\\r"', 1, true))
-      expect.truthy(out:find('model: "m\\nn"', 1, true))
-      -- The frontmatter opens once and closes once: no scalar adds a fence line.
-      local fences = 0
-      for line in (out .. "\n"):gmatch("(.-)\n") do
-        if line == "---" then fences += 1 end
-      end
-      expect.equal(2, fences)
-    end)
-  end)
-
-  describe("validate_proposal", function()
-    it("accepts a create with title and body", function()
-      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B" }))
-    end)
-    it("requires target on an update", function()
-      expect.truthy(plugin.validate_proposal({ kind = "update", title = "T", body = "B" }))
-    end)
-    it("leaves the target to the CLI, which refuses a bad one at accept", function()
-      -- One rule, in one language: `cru proposals accept` checks where a
-      -- target may land. The plugin stages the file and the CLI decides.
-      expect.is_nil(plugin.validate_proposal({ kind = "update", target = ".crucible/skills/x/SKILL.md", title = "x", body = "B" }))
-      expect.is_nil(plugin.validate_proposal({ kind = "update", target = ".crucible/proposals/y.md", title = "y", body = "B" }))
-      expect.is_nil(plugin.validate_proposal({ title = "T", body = "B", target = "Notes/SKILL.md" }))
-    end)
-    it("refuses a skill description that spans lines", function()
-      -- The CLI refuses it at accept time: the frontmatter splitter cuts at
-      -- any line that starts with `---`.
-      expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "a\nb" }))
-      expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "a\rb" }))
-    end)
-    it("requires name and description on a skill", function()
-      expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = "x" }))
-      expect.is_nil(plugin.validate_proposal({ kind = "skill", body = "B", name = "x", description = "d" }))
-      expect.is_nil(plugin.validate_proposal({ kind = "skill", body = "B", name = "fix-flaky-nextest", description = "d" }))
-      for _, bad in ipairs({ "-lead", "trail-", "two--hyphens", "Upper", "has space", string.rep("x", 65) }) do
-        expect.truthy(plugin.validate_proposal({ kind = "skill", body = "B", name = bad, description = "d" }))
-      end
-    end)
-    it("rejects an unknown kind", function()
-      expect.truthy(plugin.validate_proposal({ kind = "patch", title = "T", body = "B" }))
-    end)
-  end)
-
-  describe("render_proposal kinds", function()
-    it("writes kind, name and description for a skill", function()
-      local out = plugin.render_proposal(
-        { kind = "skill", name = "fix-x", description = "d", body = "B" }, "s", "2026-09-01T00:00:00Z"
-      )
-      expect.truthy(out:find("kind: skill", 1, true))
-      expect.truthy(out:find("name: fix-x", 1, true))
-      expect.truthy(out:find('description: "d"', 1, true))
-    end)
-    it("writes kind and target for an update", function()
-      local out = plugin.render_proposal(
-        { kind = "update", target = "Notes/a.md", title = "A", body = "B" }, "s", "2026-09-01T00:00:00Z"
-      )
-      expect.truthy(out:find("kind: update", 1, true))
-      expect.truthy(out:find('target: "Notes/a.md"', 1, true))
-    end)
-    it("omits the kind line for a create", function()
-      local out = plugin.render_proposal({ title = "T", body = "B" }, "s", "t")
-      expect.falsy(out:find("kind:", 1, true))
-    end)
-  end)
-
-  describe("proposal_id", function()
-    it("is filesystem-safe and slugified", function()
-      local id = plugin.proposal_id({ title = "Hello, World! & Co." }, 1, "20260702-000000")
-      expect.falsy(id:find("[^%w%-]"))
-      expect.truthy(id:find("hello"))
-    end)
-
-    it("falls back to 'note' for empty titles", function()
-      local id = plugin.proposal_id({ title = "" }, 2, "20260702-000000")
-      expect.truthy(id:find("note"))
-    end)
-
-    it("slugifies the name of a skill that has no title", function()
-      local id = plugin.proposal_id({ kind = "skill", name = "fix-x" }, 3, "20260702-000000")
-      expect.truthy(id:find("fix-x", 1, true))
-    end)
-  end)
-
-  describe("safe_filename", function()
-    it("accepts a plain slug", function()
-      expect.truthy(plugin.safe_filename("hello-world-1.md"))
-    end)
-
-    it("refuses traversal and hidden spellings", function()
-      expect.falsy(plugin.safe_filename("../evil.md"))
-      expect.falsy(plugin.safe_filename(".hidden.md"))
-      expect.falsy(plugin.safe_filename("a/b.md"))
-      expect.falsy(plugin.safe_filename(""))
-    end)
-  end)
-
   describe("run", function()
     local kiln_root
 
@@ -362,9 +167,9 @@ describe("reflection", function()
       -- The real bridge shape: `get_session` sends kiln NAMES in a `kilns`
       -- array, never a `kiln` path (session_bridge.rs).
       --
-      -- `kiln_root` is a REAL directory: the plugin writes with `io.open`, so
-      -- the staging directory has to exist. `real_dirs` makes the `mkdir` mock
-      -- create it instead of only recording the call.
+      -- `kiln_root` is the directory the `notes` kiln name resolves to. The
+      -- pass writes no file of its own any more, so nothing is created under
+      -- it; `real_dirs` stays so a test that DOES see a `mkdir` fails loudly.
       kiln_root = os.tmpname()
       os.remove(kiln_root)
       mock_daemon({ real_dirs = true })
@@ -375,57 +180,94 @@ describe("reflection", function()
     end)
 
     after_each(function()
-      -- Take the real directory away before `reset()` swaps the mock for
-      -- one that no longer reaches the disk. A case that staged nothing
-      -- made no directory, and the pcall absorbs that.
+      -- Take the directory away before `reset()` swaps the mock for one
+      -- that no longer reaches the disk. No case makes it any more, and the
+      -- pcall absorbs that.
       pcall(cru.fs.remove_all, kiln_root)
       test_mocks.reset()
       config.reset()
     end)
 
-    it("resolves the staging directory from the kiln the session names", function()
+    it("puts the aux session in auto mode before it sends", function()
+      -- The reviewer writes its notes with the note tools. A non-interactive
+      -- turn in the default `ask` mode is denied (permission.rs), so the mode
+      -- has to change BEFORE the prompt goes out, not after.
+      local mode_calls_at_send = -1
+      local real_send = cru.session.send_and_collect
+      ;(cru.session :: any).send_and_collect = function(id, prompt, opts)
+        mode_calls_at_send = #test_mocks.get_calls("session", "set_mode")
+        return real_send(id, prompt, opts)
+      end
+
       plugin.run({ id = "chat-1" })
 
-      -- The plugin asks for each directory by NAME. It never spells one.
-      -- The rejected directory comes first: the reviewer reads it before
-      -- it proposes. The staging directory comes when the proposals land.
-      local asks = test_mocks.get_calls("kiln", "path")
-      expect.equal(2, #asks)
-      expect.equal("notes", asks[1][1])
-      expect.equal(".crucible/proposals/rejected", asks[1][2])
-      expect.equal("notes", asks[2][1])
-      expect.equal(".crucible/proposals", asks[2][2])
-
-      local staging = kiln_root .. "/.crucible/proposals"
-      local mkdirs = test_mocks.get_calls("fs", "mkdir")
-      expect.equal(staging, mkdirs[1] and mkdirs[1][1])
+      local moded = test_mocks.get_calls("session", "set_mode")
+      expect.equal(1, #moded)
+      expect.equal("mock-session-1", moded[1][1])
+      expect.equal("auto", moded[1][2])
+      expect.equal(1, mode_calls_at_send)
     end)
 
-    it("tells the reviewer the title of a proposal a human rejected", function()
-      local rejected_dir = kiln_root .. "/.crucible/proposals/rejected"
-      local rejected_file = rejected_dir .. "/reflection-20260901-100000-1-socket.md"
+    it("gives the reviewer the note tools and stages nothing", function()
+      -- The pass writes through its own session's tools, so the review
+      -- ledger disposes of every note. A file written by hand would be
+      -- invisible to the review, so a write of any kind fails this test.
+      local real_open = io.open
+      ;(io :: any).open = function(path, mode)
+        if mode ~= nil and mode ~= "r" then
+          error("the pass wrote " .. tostring(path) .. " by hand")
+        end
+        return real_open(path, mode)
+      end
+      local ok = pcall(plugin.run, { id = "chat-1" })
+      ;(io :: any).open = real_open
 
-      -- The plugin finds the file through the `cru.fs` mocks, so the fixture
-      -- registers the directory and the file name. The mock content is a
-      -- decoy: the plugin must read the title from the disk with `io.open`.
-      mock_daemon({
-        real_dirs = true,
-        dirs = { [rejected_dir] = true },
-        files = { [rejected_file] = "decoy: the plugin must not read the mock" },
+      expect.truthy(ok)
+      local narrowed = test_mocks.get_calls("tools", "set_active")
+      expect.equal(1, #narrowed)
+      local names: { string } = narrowed[1][2]
+      local has_create, has_update = false, false
+      for _, name in ipairs(names) do
+        if name == "create_note" then has_create = true end
+        if name == "update_note" then has_update = true end
+      end
+      expect.truthy(has_create)
+      expect.truthy(has_update)
+      expect.equal(0, #test_mocks.get_calls("fs", "mkdir"))
+    end)
+
+    it("titles the aux session after the reviewed session", function()
+      plugin.run({ id = "chat-1" })
+
+      -- No title on the session that ended, so the id names the pass.
+      local titled = test_mocks.get_calls("session", "set_title")
+      expect.equal(1, #titled)
+      expect.equal("mock-session-1", titled[1][1])
+      expect.equal("Reflection: chat-1", titled[1][2])
+    end)
+
+    it("names the reviewed session's title in the pass's title", function()
+      test_mocks.setup({
+        kiln = { roots = { notes = kiln_root } },
+        fs = { real_dirs = true },
+        sessions = {
+          info = {
+            id = "chat-1", session_type = "chat", state = "ended",
+            kilns = { "notes" }, title = "Fix the socket",
+          },
+          messages = {
+            { role = "user", content = "question" },
+            { role = "assistant", content = "answer" },
+          },
+          response_parts = { { type = "text", content = "wrote one note" } },
+        },
       })
-      cru.fs.mkdir(rejected_dir)
-      local handle = assert(io.open(rejected_file, "w"))
-      handle:write("---\ntitle: Socket rules\nstatus: rejected\n---\nBody")
-      handle:close()
 
       plugin.run({ id = "chat-1" })
 
-      local sent = test_mocks.get_calls("session", "send_and_collect")
-      expect.equal(1, #sent)
-      local prompt = sent[1][2]
-      expect.truthy(prompt:find("do not propose", 1, true))
-      expect.truthy(prompt:find("- Socket rules", 1, true))
-      expect.is_nil(prompt:find("decoy", 1, true))
+      local titled = test_mocks.get_calls("session", "set_title")
+      expect.equal(1, #titled)
+      expect.equal("Reflection: Fix the socket", titled[1][2])
     end)
 
     it("tells the reviewer which notes precognition injected, then forgets them", function()
@@ -449,14 +291,6 @@ describe("reflection", function()
       expect.equal(1, #asked)
       expect.equal("chat-1", asked[1][1])
       expect.equal(true, asked[1][2].tools)
-    end)
-
-    it("sends a prompt with no rejection block when nothing was rejected", function()
-      plugin.run({ id = "chat-1" })
-
-      local sent = test_mocks.get_calls("session", "send_and_collect")
-      expect.equal(1, #sent)
-      expect.is_nil(sent[1][2]:find("do not propose", 1, true))
     end)
 
     it("attaches the kiln to the reviewer's session", function()
@@ -497,7 +331,7 @@ describe("reflection", function()
 
       local written = plugin.run({ id = "plugin-1" })
 
-      expect.equal(0, #written)
+      expect.is_nil(written)
       expect.equal(0, #test_mocks.get_calls("session", "create"))
       expect.equal(0, #test_mocks.get_calls("session", "send_and_collect"))
     end)
@@ -530,94 +364,6 @@ describe("reflection", function()
       expect.truthy(prompt:find("edits rejected: 0", 1, true) ~= nil)
     end)
 
-    it("skips a proposal that fails validation", function()
-      -- The two proposals have different shapes, so the list is typed `any`.
-      local proposals: { any } = {
-        { kind = "update", title = "T", body = "B" },
-        { kind = "skill", name = "fix-x", description = "d", body = "B" },
-      }
-      local staged = plugin.stage_proposals("notes", "chat-1", proposals)
-
-      expect.equal(1, #staged)
-      expect.truthy(staged[1]:find("fix-x", 1, true))
-    end)
-
-    it("writes the proposal file into the staging directory", function()
-      local staged = plugin.stage_proposals("notes", "chat-1", {
-        { title = "T", body = "B" },
-      })
-
-      expect.equal(1, #staged)
-      local prefix = kiln_root .. "/.crucible/proposals/"
-      expect.equal(prefix, staged[1]:sub(1, #prefix))
-      expect.truthy(staged[1]:find("%.md$"))
-
-      -- A REAL file, not a mock record: `io.open` has no mock to agree with.
-      -- `assert` rather than `expect.truthy`: both fail the test when the
-      -- file is missing, but only `assert` narrows the type, so the four
-      -- lines below stop reading as calls on a possible nil.
-      local handle = assert(io.open(staged[1], "r"))
-      local body = assert(handle:read("a"))
-      handle:close()
-      expect.truthy((body:find("source: reflection")))
-      expect.truthy((body:find("B")))
-    end)
-
-    it("writes the source the caller names and no session line without a session", function()
-      local staged = plugin.stage_proposals("notes", nil, {
-        { title = "T", body = "B" },
-      }, { source = "consolidation" })
-
-      expect.equal(1, #staged)
-      local handle = assert(io.open(staged[1], "r"))
-      local body = assert(handle:read("a")) :: string
-      handle:close()
-      expect.truthy(body:find("source: consolidation", 1, true) ~= nil)
-      expect.truthy(body:find("session:", 1, true) == nil)
-    end)
-
-    it("records the model of the session that ended in the staged file", function()
-      test_mocks.setup({
-        kiln = { roots = { notes = kiln_root } },
-        fs = { real_dirs = true },
-        sessions = {
-          info = {
-            id = "chat-1", session_type = "chat", state = "ended",
-            kilns = { "notes" }, model = "claude-haiku-4-5-20251001",
-          },
-          messages = {
-            { role = "user", content = "question" },
-            { role = "assistant", content = "answer" },
-          },
-          response_parts = {
-            { type = "text", content = '[{"title":"T","body":"B"}]' },
-          },
-        },
-      })
-
-      local staged = plugin.run({ id = "chat-1" })
-
-      expect.equal(1, #staged)
-      local handle = assert(io.open(staged[1], "r"))
-      local body = assert(handle:read("a"))
-      handle:close()
-      expect.truthy((body:find('model: "claude-haiku-4-5-20251001"', 1, true)))
-    end)
-
-    it("raises when the session names a kiln that is not registered", function()
-      test_mocks.setup({
-        kiln = { roots = {} },
-        sessions = {
-          info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "gone" } },
-        },
-      })
-
-      local ok = pcall(plugin.stage_proposals, "gone", "chat-1", {
-        { title = "T", body = "B" },
-      })
-      expect.falsy(ok)
-      expect.equal(0, #test_mocks.get_calls("fs", "mkdir"))
-    end)
   end)
 
   describe("review", function()
@@ -664,12 +410,13 @@ describe("reflection", function()
       expect.equal("mock-session-1", ended[1][1])
     end)
 
-    it("narrows the reviewer to tools that only read the kiln", function()
+    it("narrows the reviewer to the kiln's tools and no further", function()
       plugin.review(opts())
 
-      -- The set is a list of glob patterns, enforced at dispatch. A write
-      -- tool in it, or a wildcard, would let the reviewer write to the
-      -- kiln or the workspace, and the contract is "nothing auto-merges".
+      -- The set is a list of glob patterns, enforced at dispatch. The two
+      -- note tools belong here — the review ledger disposes of what they
+      -- write. A workspace tool or a wildcard does not: it would take the
+      -- reviewer outside the kiln, where no hunk of this session is.
       local narrowed = test_mocks.get_calls("tools", "set_active")
       expect.equal(1, #narrowed)
       expect.equal("mock-session-1", narrowed[1][1])
@@ -677,9 +424,8 @@ describe("reflection", function()
       expect.truthy(#names > 0)
       for _, name in ipairs(names) do
         expect.truthy(name:find("*", 1, true) == nil)
-        expect.truthy(name ~= "create_note")
-        expect.truthy(name ~= "update_note")
         expect.truthy(name ~= "write_file")
+        expect.truthy(name ~= "edit_file")
         expect.truthy(name ~= "bash")
       end
     end)
@@ -753,42 +499,6 @@ describe("reflection", function()
       config.init({ timeout = 99 })
       config.reset()
       expect.equal(120, config.get("timeout"))
-    end)
-  end)
-
-  describe("rejected_titles", function()
-    it("returns the newest titles first, capped at n", function()
-      local files = {
-        ["reflection-20260901-100000-1-a.md"] = "---\ntitle: Socket rules\n---\nB",
-        ["reflection-20260901-100200-1-c.md"] = "---\ntitle: \"Daemon flags\"\n---\nB",
-        ["reflection-20260901-100300-1-d.md"] = "---\ntitle: Old one\n---\nB",
-        ["notes.txt"] = "not a proposal",
-      }
-      local got = plugin.rejected_titles(files, 2)
-      expect.equal(2, #got)
-      expect.equal("Old one", got[1])
-      expect.equal("Daemon flags", got[2])
-    end)
-
-    it("returns an empty list when there is nothing", function()
-      expect.equal(0, #plugin.rejected_titles({}, 5))
-      expect.equal(0, #plugin.rejected_titles(nil, 5))
-    end)
-  end)
-
-  describe("build_prompt", function()
-    it("names rejected titles the reviewer must not repeat", function()
-      local p = plugin.build_prompt({
-        transcript = "## user\nhi",
-        rejected = { "Socket rules" },
-      })
-      expect.truthy(p:find("Socket rules", 1, true))
-      expect.truthy(p:find("do not propose", 1, true))
-    end)
-
-    it("omits the rejection block when nothing was rejected", function()
-      local p = plugin.build_prompt({ transcript = "t", rejected = {} })
-      expect.is_nil(p:find("do not propose", 1, true))
     end)
   end)
 
