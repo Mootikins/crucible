@@ -225,14 +225,20 @@ impl NotifyWatcher {
                     .map_err(|e| Error::Watch(format!("Failed to unwatch path: {}", e)))?;
             }
         }
-        super::remove_watch(&mut self.watches, &handle, "notify");
+        self.watches.remove(&handle.id);
         Ok(())
     }
 
     /// Every watch the backend holds.
     #[cfg(test)]
     pub fn active_watches(&self) -> Vec<WatchHandle> {
-        super::watch_handles(&self.watches, |path| path.as_path())
+        self.watches
+            .iter()
+            .map(|(id, path)| WatchHandle {
+                id: id.clone(),
+                path: path.clone(),
+            })
+            .collect()
     }
 }
 

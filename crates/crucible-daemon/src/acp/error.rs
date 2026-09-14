@@ -6,10 +6,6 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, ClientError>;
 
 /// Errors that can occur during ACP client operations
-///
-/// This is distinct from `crucible_core::traits::acp::AcpError` which defines
-/// abstract errors for the ACP traits. This type wraps concrete implementation
-/// errors from the ACP client.
 #[derive(Debug, Error)]
 pub enum ClientError {
     /// Protocol-level errors from agent-client-protocol

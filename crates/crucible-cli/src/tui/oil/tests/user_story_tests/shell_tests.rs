@@ -3,8 +3,8 @@
 //! The shell modal spawns a real child process, so this story drives the
 //! `ShellModal` component directly (spawn → poll to completion → assert
 //! exit code / output / insert). Header/status/scroll formatting is
-//! additionally unit-tested in `components/shell_modal.rs`; shell-history
-//! storage (US-602) is tested inline in `chat_app/tests.rs`.
+//! additionally unit-tested in `components/shell_modal.rs`. Command recall
+//! belongs to the general input history, not a separate shell-history store.
 //!
 //! Two bugs lived here and are now pinned: `i` returned `Close` before any
 //! `Tick` could consume its pending insert (so stdout never reached the

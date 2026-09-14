@@ -4,7 +4,7 @@ use crucible_core::config::AcpConfig;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_daemon::acp::discovery::{discover_agent, reset_agent_cache};
-use crucible_daemon::acp::{StreamConfig, StreamHandler, StreamingChunk};
+use crucible_daemon::acp::StreamingChunk;
 use once_cell::sync::Lazy;
 use serde_json::json;
 use std::path::PathBuf;
@@ -404,53 +404,6 @@ async fn stream_edge_cancel_mid_stream_aborts_and_closes_transport() {
         transport_closed,
         "aborted stream should close transport and fail agent writes"
     );
-}
-
-#[test]
-fn stream_edge_stream_config_respects_show_thoughts_toggle() {
-    let with_thoughts = StreamHandler::new(StreamConfig {
-        show_thoughts: true,
-        show_tool_calls: true,
-        use_colors: false,
-    });
-    let without_thoughts = StreamHandler::new(StreamConfig {
-        show_thoughts: false,
-        show_tool_calls: true,
-        use_colors: false,
-    });
-
-    assert!(with_thoughts
-        .format_thought_chunk("reasoning")
-        .unwrap()
-        .is_some());
-    assert!(without_thoughts
-        .format_thought_chunk("reasoning")
-        .unwrap()
-        .is_none());
-}
-
-#[test]
-fn stream_edge_stream_config_respects_show_tool_calls_toggle() {
-    let with_tools = StreamHandler::new(StreamConfig {
-        show_thoughts: true,
-        show_tool_calls: true,
-        use_colors: false,
-    });
-    let without_tools = StreamHandler::new(StreamConfig {
-        show_thoughts: true,
-        show_tool_calls: false,
-        use_colors: false,
-    });
-
-    let params = json!({"path": "demo.md"});
-    assert!(with_tools
-        .format_tool_call("read_note", &params)
-        .unwrap()
-        .is_some());
-    assert!(without_tools
-        .format_tool_call("read_note", &params)
-        .unwrap()
-        .is_none());
 }
 
 #[test]

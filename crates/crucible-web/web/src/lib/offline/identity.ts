@@ -16,7 +16,7 @@ import type { OfflineStore } from '@/lib/offline/store';
  */
 
 /** Where the last-seen identity is remembered, in the store's `meta` table. */
-export const IDENTITY_KEY = 'daemon-identity';
+const IDENTITY_KEY = 'daemon-identity';
 
 /**
  * The identity now, remembering it for when the daemon cannot be asked.

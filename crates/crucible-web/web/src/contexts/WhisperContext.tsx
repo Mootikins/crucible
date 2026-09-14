@@ -8,7 +8,7 @@ import {
 import { useSettings } from './SettingsContext';
 import { createServerTranscriber } from '@/lib/transcription';
 
-export type WhisperStatus = 'idle' | 'loading' | 'ready' | 'error' | 'transcribing';
+type WhisperStatus = 'idle' | 'loading' | 'ready' | 'error' | 'transcribing';
 
 export interface WhisperContextValue {
   status: () => WhisperStatus;
@@ -223,20 +223,12 @@ export const WhisperProvider: ParentComponent = (props) => {
   );
 };
 
-export function useWhisper(): WhisperContextValue {
-  const context = useContext(WhisperContext);
-  if (!context) {
-    throw new Error('useWhisper must be used within a WhisperProvider');
-  }
-  return context;
-}
-
 const fallbackWhisperContext: WhisperContextValue = {
   status: () => 'idle',
   progress: () => 0,
   error: () => null,
-  transcribe: () => Promise.resolve(''),
-  loadModel: () => Promise.resolve(),
+  transcribe: () => Promise.reject(new Error('Voice input requires a WhisperProvider')),
+  loadModel: () => Promise.reject(new Error('Voice input requires a WhisperProvider')),
 };
 
 export function useWhisperSafe(): WhisperContextValue {

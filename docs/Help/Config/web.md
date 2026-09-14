@@ -15,6 +15,24 @@ frontend on `http://localhost:3000`.
 
 Add it to `~/.config/crucible/init.lua`.
 
+## Voice input
+
+Hold the composer's microphone button to record and release it to transcribe.
+The returned text is appended to your draft; sending remains a separate action.
+Choose local Whisper or an OpenAI-compatible transcription server in Settings.
+These preferences belong to this browser, not the daemon's `[web]` config.
+Local transcription downloads its model on demand. Server transcription sends
+the recording to the URL you configure; the server must allow this browser's
+origin. A failed request shows an error on the microphone and keeps the draft.
+
+## Connection recovery
+
+Read-only requests can reconnect and retry once after a broken connection.
+Commands and writes are submitted once: if their reply is lost, the displayed
+error does not establish whether the action ran. Check the resulting state
+before deliberately retrying, especially for plugin actions and file operations.
+This policy prevents automatic duplicate work; it is not an exactly-once guarantee.
+
 ## `web`
 
 | Field | Type | Default | Description |

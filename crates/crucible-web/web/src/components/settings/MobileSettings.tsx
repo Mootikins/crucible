@@ -49,7 +49,7 @@ export const SettingsNavRow: Component<{
 );
 
 /** A group of rows as one card, the way both phone platforms draw a list. */
-export const SettingsNavGroup: Component<{ label?: string; children: Element | unknown }> = (
+const SettingsNavGroup: Component<{ label?: string; children: Element | unknown }> = (
   props,
 ) => (
   <section class="mb-5">
@@ -67,7 +67,7 @@ export const SettingsNavGroup: Component<{ label?: string; children: Element | u
 );
 
 /** The page a section becomes when it is opened from the root list. */
-export function sectionPage(
+function sectionPage(
   section: SettingsSection,
   props: SettingsSectionProps,
 ): SettingsPage {

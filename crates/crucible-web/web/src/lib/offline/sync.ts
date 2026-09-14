@@ -54,7 +54,7 @@ export function setOfflineStore(next: OfflineStore | null): void {
 }
 
 /** A kiln-relative note path, made absolute. Already-absolute passes through. */
-export function joinKiln(kiln: string, notePath: string): string {
+function joinKiln(kiln: string, notePath: string): string {
   if (notePath.startsWith('/')) return notePath;
   return `${kiln.replace(/\/$/, '')}/${notePath.replace(/^\.?\//, '')}`;
 }
@@ -162,17 +162,6 @@ function neverAnswered(error: unknown): boolean {
 /** Whether the browser believes it can reach anything. */
 export function isOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false;
-}
-
-/** Which kiln a path belongs to, among the kilns this device keeps. */
-export function kilnOf(path: string, kilns: readonly string[]): string | null {
-  let best: string | null = null;
-  for (const kiln of kilns) {
-    if (path === kiln || path.startsWith(`${kiln}/`)) {
-      if (!best || kiln.length > best.length) best = kiln;
-    }
-  }
-  return best;
 }
 
 /**

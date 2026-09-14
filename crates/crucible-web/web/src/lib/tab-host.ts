@@ -21,7 +21,7 @@ import type { Tab } from '@/types/windowTypes';
  */
 
 /** Where a NEW tab goes on a shell that has more than one place to put it. */
-export type TabPlacement =
+type TabPlacement =
   /** With the editor. */
   | 'editor'
   /** Beside the editor — the session pane. */

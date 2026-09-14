@@ -490,9 +490,8 @@ kiln-search system message tagged `PRECOGNITION_TAG`
   are three kiln walkers; `crucible-web/src/routes/search.rs:415`,
   `routes/kiln.rs:353`, `routes/canvas.rs:172` write kiln files with
   `tokio::fs`; `search.rs:128-171` walks the kiln to resolve a wikilink.
-- `processing/mod.rs:44-390` and `processing/change_detection.rs` describe a
-  queue architecture no code implements (about 900 lines); the daemon has its
-  own private `FileState` (`watch/backends/polling_backend.rs:31`).
+- The obsolete processing queue and polling watcher's private file-state
+  model are removed. Native notifications feed the watch manager directly.
 - `eprintln!` in library code: `implementation.rs:484`,
   `basic_markdown_it.rs:125,155`, `agent/loader.rs:43`.
 
@@ -778,15 +777,14 @@ to resume and close. MCP: `InProcessMcpHost` URL goes into
   (`routes/webhook.rs:68`). Dead wrappers: `capabilities`, `note_upsert`,
   `lua_discover_plugins`, `lua_plugin_health`, `session_create`,
   `agents_resolve_profile`.
-- ACP: `acp/tools.rs` describes 10 tools,
-  executes 2, and its `ToolDescriptor` (`tools.rs:29`) duplicates core
-  `ToolDefinition` (`crucible-core/src/traits/tools.rs:208`). `acp/mock_agent.rs:17`
+- ACP: tool discovery and execution go through `InProcessMcpHost` and
+  `CrucibleMcpServer`; the obsolete ten-tool facade is removed. `acp/mock_agent.rs:17`
   has a module-level `#![allow]`. `Recorder::from_env` reads env on every
   `with_name` (`acp/client/recording.rs:71,81`); a test calls
   `std::env::remove_var` (`recording.rs:263`). Timeout arithmetic is split
   across `acp_launch.rs:63`, `client/io.rs:110`, `client/streaming.rs:194`.
-  `acp/mod.rs` exports `StreamHandler`/`StreamConfig` that no production code
-  uses; the live API is `StreamingChunk` plus `channel_callback`.
+  The streaming API is `StreamingChunk` plus `channel_callback`; the unused
+  `StreamHandler`/`StreamConfig` formatting facade is removed.
   `AcpAgentHandle.session_id` is `Option` and never `None`. `mcp_server.rs:77,113` opens the kiln twice.
 - MCP: the gateway half of `ExtendedMcpServer` and `McpGatewayManager::start_reconnect_loop`
   have no callers (`extended_mcp_server.rs:126`, `mcp_gateway.rs:499`; since
@@ -1160,7 +1158,6 @@ Surprising edges:
 | `BackgroundSpawner` | `crucible-core/src/background/mod.rs:22` | 1 + 5 | 4 / 0 | yes | single-impl; test double |
 | `PermissionGate` | `crucible-core/src/traits/permission_gate.rs:13` | 1 + 0 | 1 / 0 | yes | single-impl, no double |
 | `Undoable` | `crucible-core/src/traits/undoable.rs:15` | 1 + 0 | 3 / 0 | yes | single-impl |
-| `StorageClient` | `crucible-core/src/traits/storage_client.rs:27` | 1 + gated mock | 1 / 1 | no | single-impl; method always errors |
 | `EventEmitter` | `crucible-core/src/events/emitter.rs:293` | 1 + noop + mock | 1 / 2 | yes | single-impl |
 | `MarkdownParser` | `crucible-core/src/parser/traits.rs:17` | 1 + 0 | 4 / 0 | yes | single-impl |
 | `SyntaxExtension` | `crucible-core/src/parser/extensions.rs:18` | 8 + 1 | 5 / 4 | yes | enum-candidate; `Extension` enum since plan T3-B1 |
@@ -1321,7 +1318,7 @@ oil `PopupItemNode` and `PopupItem`.
 shape), `crucible-cli/src/tui/oil/chat_app/model_state.rs:11 McpServerDisplay`.
 
 **Tool definitions.** `ToolDefinition` (`crucible-core/src/traits/tools.rs:208`,
-canonical), `acp/tools.rs:29 ToolDescriptor`, `tool_discovery.rs:50 ToolSchema`,
+canonical), `tool_discovery.rs:50 ToolSchema`,
 three `rmcp::Tool` conversions each way (section 3.5).
 
 **Agent card directories.** `agent_cards.rs:39 card_directories` (canonical)
@@ -1354,8 +1351,7 @@ Production items that only tests use:
 - `crucible-core/src/lib.rs:32 pub mod test_support;` is unconditional.
   `Cargo.toml` declares `test-utils = []` but nothing in `test_support/` checks
   it, so `EnvVarGuard` (`std::env::set_var`), `tempfile` fixtures and
-  `MockEventEmitter` ship in `cru`. Only `traits/storage_client.rs:61` gates
-  its mock. `crucible-core/src/parser/test_utils.rs` is a `pub mod` with no
+  `MockEventEmitter` ship in `cru`. `crucible-core/src/parser/test_utils.rs` is a `pub mod` with no
   gate although its doc says it has one (`parser/mod.rs:37`).
 - `crucible-daemon/src/test_support.rs` (`MockKnowledgeRepository`,
   `MockEmbeddingProvider`, `MockSubagentHandle`, `TempSessionStorage`) is
@@ -1482,8 +1478,7 @@ Production items that only tests use:
   `traits/knowledge.rs:30` names `ContentAddressedStorage`; `traits/mcp.rs`
   header claims traits the file lacks; `types/acp.rs:117` names
   `crucible_cli::chat::ChatSessionConfig`; `events/session_event/display.rs`
-  claims `Display` impls that do not exist; `watch/mod.rs:1-35` describes Hot
-  Reload handlers; `acp/tools.rs` header names a crate that no longer exists;
+  claims `Display` impls that do not exist;
   `session/types/config.rs:15-19` is stale on `ContextStrategy`;
   `session_events/mod.rs` says System has 9 variants, it has 13;
   `plugin_install.rs:9` and `plugins.rs:96-105` open with dangling doc fragments.

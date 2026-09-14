@@ -31,7 +31,7 @@ pub use crate::parser::types::{
 };
 
 // Re-export database domain types (canonical definitions in types::database)
-pub use self::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
+pub use self::database::{DocumentId, SearchResult};
 
 // Re-export ACP schema types from agent-client-protocol-schema
 pub use crate::types::acp::schema::{
@@ -48,7 +48,6 @@ pub use crate::types::mode::{canonical_mode_id, default_internal_modes, ModeDesc
 
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
-pub use crate::types::database::{Record as StorageRecord, RecordId as StorageRecordId};
 
 // Re-export tool reference types
 pub use crate::types::tool_display::{ToolDisplay, ToolDisplayKind};

@@ -10,7 +10,7 @@
  * 5 MB, and a kept kiln is note bodies and sometimes images.
  */
 
-export type OfflineTable = 'mirror' | 'outbox' | 'index' | 'blobs' | 'meta';
+type OfflineTable = 'mirror' | 'outbox' | 'index' | 'blobs' | 'meta';
 
 const TABLES: OfflineTable[] = ['mirror', 'outbox', 'index', 'blobs', 'meta'];
 

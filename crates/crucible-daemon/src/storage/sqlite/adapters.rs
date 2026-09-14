@@ -3,16 +3,10 @@
 //! Storage adapters for daemon compatibility.
 
 use crate::storage::sqlite::connection::SqlitePool;
-#[cfg(test)]
-use crate::storage::sqlite::error_ext::SqliteResultExt;
 use crate::storage::sqlite::note_store::SqliteNoteStore;
 use crate::storage::sqlite::SqliteConfig;
 use anyhow::Result;
 use crucible_core::storage::{NoteStore, PropertyStore};
-#[cfg(test)]
-use crucible_core::{QueryResult, Record, RecordId};
-#[cfg(test)]
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -96,119 +90,6 @@ impl SqliteClientHandle {
             ),
         }
     }
-
-    /// Execute a raw SQL query against the kiln's SQLite store.
-    ///
-    /// # SECURITY — test-only escape hatch
-    ///
-    /// This bypasses every typed-storage safety net, **including memory
-    /// scoping**. A SELECT here returns rows regardless of
-    /// `properties.scope` because nothing is appending the scope filter
-    /// for you. Production code paths MUST go through the [`NoteStore`]
-    /// trait (which carries a `Scope` authority) or one of the typed
-    /// `note.*` RPC handlers — never this method.
-    ///
-    /// Gated behind `#[cfg(test)]` so no production build ever links
-    /// this symbol. The Lua `cru.storage` surface intentionally exposes
-    /// only the property-store (EAV) API, not raw SQL.
-    #[cfg(test)]
-    pub(crate) async fn query(
-        &self,
-        sql: &str,
-        _params: &[serde_json::Value],
-    ) -> Result<QueryResult> {
-        use rusqlite::params_from_iter;
-        use std::time::Instant;
-
-        let sql_owned = sql.to_string();
-        let pool = self.pool.clone();
-
-        // Execute query using spawn_blocking for async compatibility
-        let result = tokio::task::spawn_blocking(move || {
-            let start = Instant::now();
-
-            pool.with_connection(|conn| {
-                let mut stmt = conn.prepare(&sql_owned).sql()?;
-                let column_count = stmt.column_count();
-                let column_names: Vec<String> = (0..column_count)
-                    .map(|i| stmt.column_name(i).unwrap_or("").to_string())
-                    .collect();
-
-                let mut records = Vec::new();
-                let mut rows = stmt
-                    .query(params_from_iter(std::iter::empty::<&str>()))
-                    .sql()?;
-
-                while let Some(row) = rows.next().sql()? {
-                    let mut data = HashMap::new();
-                    let mut record_id = None;
-
-                    for (i, name) in column_names.iter().enumerate() {
-                        let value = row_value_to_json(row, i);
-
-                        // Use 'id' or 'path' column as record ID
-                        if name == "id" || name == "path" {
-                            if let Some(s) = value.as_str() {
-                                record_id = Some(RecordId(s.to_string()));
-                            }
-                        }
-
-                        data.insert(name.clone(), value);
-                    }
-
-                    records.push(Record {
-                        id: record_id,
-                        data,
-                    });
-                }
-
-                let total_count = records.len() as u64;
-                let execution_time_ms = start.elapsed().as_millis() as u64;
-
-                Ok(QueryResult {
-                    records,
-                    total_count: Some(total_count),
-                    execution_time_ms: Some(execution_time_ms),
-                    has_more: false,
-                })
-            })
-        })
-        .await??;
-
-        Ok(result)
-    }
-}
-
-/// Convert a rusqlite row value to serde_json::Value (test-only helper
-/// for [`SqliteClientHandle::query`]).
-#[cfg(test)]
-fn row_value_to_json(row: &rusqlite::Row, idx: usize) -> serde_json::Value {
-    // Try different types in order
-    if let Ok(v) = row.get::<_, i64>(idx) {
-        return serde_json::Value::Number(v.into());
-    }
-    if let Ok(v) = row.get::<_, f64>(idx) {
-        if let Some(n) = serde_json::Number::from_f64(v) {
-            return serde_json::Value::Number(n);
-        }
-    }
-    if let Ok(v) = row.get::<_, String>(idx) {
-        // Try parsing as JSON for complex types
-        if v.starts_with('[') || v.starts_with('{') {
-            if let Ok(json) = serde_json::from_str(&v) {
-                return json;
-            }
-        }
-        return serde_json::Value::String(v);
-    }
-    if let Ok(v) = row.get::<_, bool>(idx) {
-        return serde_json::Value::Bool(v);
-    }
-    if let Ok(v) = row.get::<_, Vec<u8>>(idx) {
-        return serde_json::Value::String(format!("[blob {} bytes]", v.len()));
-    }
-
-    serde_json::Value::Null
 }
 
 /// Create a SQLite client from configuration.
@@ -234,37 +115,6 @@ mod tests {
 
         // Verify we can get a note store
         let _store = client.as_note_store();
-    }
-
-    #[tokio::test]
-    async fn test_query_basic() {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let config = SqliteConfig::new(&db_path);
-
-        let client = create_sqlite_client(config).await.unwrap();
-
-        // Simple query
-        let result = client.query("SELECT 1 + 1 AS result", &[]).await.unwrap();
-
-        assert_eq!(result.records.len(), 1);
-        assert_eq!(
-            result.records[0].data.get("result"),
-            Some(&serde_json::Value::Number(2.into()))
-        );
-    }
-
-    #[tokio::test]
-    async fn test_query_notes_table() {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let config = SqliteConfig::new(&db_path);
-
-        let client = create_sqlite_client(config).await.unwrap();
-
-        // Query the notes table (should be empty but exist)
-        let result = client.query("SELECT * FROM notes LIMIT 10", &[]).await;
-        assert!(result.is_ok());
     }
 
     /// Memory-scoping regression: `SqliteClientHandle::as_knowledge_repository()`

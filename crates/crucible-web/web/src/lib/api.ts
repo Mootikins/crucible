@@ -40,7 +40,7 @@ export interface Config {
  * one renderer draws both. `read_only` is the app config's own half: a leaf
  * with no control still shows, with the reason it has none.
  */
-export interface AppConfigControls {
+interface AppConfigControls {
   options: AppConfigNode;
   read_only: { path: string; reason: string }[];
 }
@@ -1420,22 +1420,6 @@ export async function setContextStrategy(sessionId: string, strategy: string): P
   );
 }
 
-/**
- * Get the session mode.
- *
- * `setMode` has existed all along with no reader, so a panel could set a mode
- * and then keep rendering whatever it last guessed.
- */
-export async function getMode(sessionId: string): Promise<string | null> {
-  return (
-    await request<{ mode: string | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/mode`,
-      { errorMessage: 'Failed to get session mode' },
-    )
-  ).mode;
-}
-
 // =============================================================================
 // Session Export
 // =============================================================================
@@ -2175,7 +2159,7 @@ export interface AnchoredEdit {
 }
 
 /** Why one edit could not be applied. `index` is the caller's edit index. */
-export interface EditRefusal {
+interface EditRefusal {
   reason: string;
   index: number;
   matches?: number;

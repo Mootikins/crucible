@@ -5,7 +5,6 @@
 //! They live here as the canonical definitions.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Document identifier
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -15,53 +14,6 @@ impl std::fmt::Display for DocumentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
-}
-
-/// Database record (row)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Record {
-    /// Optional record identifier
-    pub id: Option<RecordId>,
-    /// Record field data (column values or note fields)
-    pub data: HashMap<String, serde_json::Value>,
-}
-
-impl Record {
-    /// Create a new record without an ID
-    pub fn new(data: HashMap<String, serde_json::Value>) -> Self {
-        Self { id: None, data }
-    }
-}
-
-/// Record identifier
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct RecordId(pub String);
-
-impl std::fmt::Display for RecordId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for RecordId {
-    fn from(s: String) -> Self {
-        RecordId(s)
-    }
-}
-
-impl From<&str> for RecordId {
-    fn from(s: &str) -> Self {
-        RecordId(s.to_string())
-    }
-}
-
-/// Query result containing records and metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub records: Vec<Record>,
-    pub total_count: Option<u64>,
-    pub execution_time_ms: Option<u64>,
-    pub has_more: bool,
 }
 
 /// Search result

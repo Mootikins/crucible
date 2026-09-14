@@ -16,8 +16,6 @@ pub enum ProcessingResult {
     },
     /// Note was skipped (unchanged file hash)
     Skipped,
-    /// Note had no content changes (same Merkle tree)
-    NoChanges,
 }
 
 impl ProcessingResult {
@@ -42,11 +40,6 @@ impl ProcessingResult {
     /// Create a skipped result
     pub fn skipped() -> Self {
         Self::Skipped
-    }
-
-    /// Create a no changes result
-    pub fn no_changes() -> Self {
-        Self::NoChanges
     }
 
     /// Check if processing was successful
@@ -120,13 +113,5 @@ mod tests {
         assert!(result.is_skipped());
         assert_eq!(result.changed_blocks(), None);
         assert!(!result.embeddings_generated());
-    }
-
-    #[test]
-    fn test_processing_result_no_changes() {
-        let result = ProcessingResult::no_changes();
-        assert!(!result.is_success());
-        assert!(!result.is_skipped());
-        assert_eq!(result.changed_blocks(), None);
     }
 }

@@ -15,7 +15,7 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
 }
 
 /** The tab a file opens as, on either shell. */
-export function fileTab(filePath: string, fileName?: string): Tab {
+function fileTab(filePath: string, fileName?: string): Tab {
   const contentType = contentTypeForPath(filePath);
   return {
     id: `tab-file-${filePath}`,

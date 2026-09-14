@@ -6,6 +6,10 @@ tags: [meta, architecture]
 
 # Architecture
 
+[[2026-09-14 Code Reduction Review]] is the current follow-up: deletion
+candidates and consolidation work checked at `53534ceea`, after the batches
+below landed. Its twelve recommendations are implemented on the review branch; the review records validation status.
+
 Four documents, written on 2026-08-22 at commit `7053bcfe7`.
 
 | Doc | What it answers |

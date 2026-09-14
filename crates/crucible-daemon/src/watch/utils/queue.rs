@@ -2,7 +2,6 @@
 
 use crate::watch::{error::Result, events::FileEvent};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::debug;
 
 /// Bounded event queue with backpressure handling.
@@ -14,12 +13,6 @@ pub struct EventQueue {
     queue: VecDeque<FileEvent>,
     /// Maximum capacity
     capacity: usize,
-    /// Number of events dropped due to overflow
-    dropped_events: std::sync::atomic::AtomicU64,
-    /// Total events processed
-    processed_events: std::sync::atomic::AtomicU64,
-    /// Current queue size (for atomic access)
-    size: std::sync::atomic::AtomicUsize,
 }
 
 impl EventQueue {
@@ -28,9 +21,6 @@ impl EventQueue {
         Self {
             queue: VecDeque::with_capacity(capacity),
             capacity,
-            dropped_events: AtomicU64::new(0),
-            processed_events: AtomicU64::new(0),
-            size: AtomicUsize::new(0),
         }
     }
 
@@ -38,7 +28,6 @@ impl EventQueue {
     pub async fn push(&mut self, event: FileEvent) -> Result<()> {
         if self.len() < self.capacity {
             self.queue.push_back(event);
-            self.size.fetch_add(1, Ordering::Relaxed);
             Ok(())
         } else {
             // Handle backpressure
@@ -54,28 +43,56 @@ impl EventQueue {
                 removed.kind
             );
             self.queue.push_back(event);
-            // Size remains the same
-            self.dropped_events.fetch_add(1, Ordering::Relaxed);
             Ok(())
         } else {
             // Queue is empty but capacity is 0, drop new event
-            self.dropped_events.fetch_add(1, Ordering::Relaxed);
             Err(crate::watch::error::Error::QueueFull(self.capacity))
         }
     }
 
     /// Drain all events from the queue.
     pub fn drain_all(&mut self) -> Vec<FileEvent> {
-        let events: Vec<FileEvent> = self.queue.drain(..).collect();
-        let count = events.len();
-        self.size.fetch_sub(count, Ordering::Relaxed);
-        self.processed_events
-            .fetch_add(count as u64, Ordering::Relaxed);
-        events
+        self.queue.drain(..).collect()
     }
 
     /// Get the current number of events in the queue.
     pub fn len(&self) -> usize {
-        self.size.load(Ordering::Relaxed)
+        self.queue.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::watch::{Error, FileEventKind};
+
+    #[tokio::test]
+    async fn overflow_keeps_the_newest_events_in_order_and_drain_resets_length() {
+        let mut queue = EventQueue::new(2);
+        let events: Vec<_> = ["first.md", "second.md", "third.md"]
+            .into_iter()
+            .map(|path| FileEvent::new(FileEventKind::Modified, path.into()))
+            .collect();
+        for event in &events {
+            queue.push(event.clone()).await.unwrap();
+        }
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.drain_all(), events[1..]);
+        assert_eq!(queue.len(), 0);
+        assert!(queue.drain_all().is_empty());
+        queue.push(events[0].clone()).await.unwrap();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.drain_all(), events[..1]);
+    }
+
+    #[tokio::test]
+    async fn zero_capacity_refuses_an_event_without_retaining_it() {
+        let mut queue = EventQueue::new(0);
+        let result = queue
+            .push(FileEvent::new(FileEventKind::Created, "note.md".into()))
+            .await;
+        assert!(matches!(result, Err(Error::QueueFull(0))));
+        assert_eq!(queue.len(), 0);
+        assert!(queue.drain_all().is_empty());
     }
 }

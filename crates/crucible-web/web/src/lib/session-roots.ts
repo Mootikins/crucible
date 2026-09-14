@@ -24,7 +24,7 @@ import { rootKey, type TreeRoot } from '@/lib/tree-root';
  * attached: the agent cannot read or cite them until the user attaches
  * deliberately.
  */
-export type RootOrigin = 'workspace' | 'attached-kiln' | 'other-kiln' | 'other-project';
+type RootOrigin = 'workspace' | 'attached-kiln' | 'other-kiln' | 'other-project';
 
 export interface SessionRoot extends TreeRoot {
   origin: RootOrigin;

@@ -64,7 +64,6 @@
 
 pub mod events;
 pub mod id;
-pub mod indexer;
 pub mod markdown;
 pub mod rebuild;
 pub mod session;
@@ -72,6 +71,5 @@ pub mod session;
 // Re-exports for convenience
 pub use events::{parse_session_log, wire_to_log_event, LogEvent, SessionLogLine, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
-pub use indexer::{extract_session_content, SessionContent};
 pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{load_events, SessionError};

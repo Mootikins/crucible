@@ -1,20 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/index.tsx",
-    "vite.config.ts",
-    "playwright.config.ts",
-    "playwright.hero.config.ts",
-    "playwright.live.config.ts",
     "src/pwa-options.ts"
   ],
   "project": [
-    "src/**/*.{ts,tsx}",
+    "src/**/*.{ts,tsx,css}",
     "e2e/**/*.ts"
-  ],
-  "ignore": [
-    "src/**/__screenshots__/**",
-    "e2e/__screenshots__/**"
   ],
   "ignoreDependencies": [],
   "vitest": {

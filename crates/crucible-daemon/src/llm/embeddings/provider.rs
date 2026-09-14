@@ -472,37 +472,6 @@ impl EmbeddingResponse {
         }
         Ok(())
     }
-
-    /// Calculate cosine similarity with another embedding
-    ///
-    /// Returns a value between -1.0 and 1.0, where 1.0 means identical
-    /// embeddings and -1.0 means opposite embeddings.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the embeddings have different dimensions
-    pub fn cosine_similarity(&self, other: &EmbeddingResponse) -> f32 {
-        assert_eq!(
-            self.dimensions, other.dimensions,
-            "Cannot calculate cosine similarity for embeddings with different dimensions"
-        );
-
-        let dot_product: f32 = self
-            .embedding
-            .iter()
-            .zip(other.embedding.iter())
-            .map(|(a, b)| a * b)
-            .sum();
-
-        let norm_a: f32 = self.embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = other.embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-        if norm_a == 0.0 || norm_b == 0.0 {
-            return 0.0;
-        }
-
-        dot_product / (norm_a * norm_b)
-    }
 }
 
 // The canonical EmbeddingProvider trait is defined in crucible-core::enrichment::embedding.
@@ -551,60 +520,5 @@ mod tests {
 
         assert!(response.validate_dimensions(768).is_ok());
         assert!(response.validate_dimensions(1536).is_err());
-    }
-
-    #[test]
-    fn test_cosine_similarity_identical() {
-        let embedding1 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
-        let embedding2 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
-
-        let similarity = embedding1.cosine_similarity(&embedding2);
-        assert!(
-            (similarity - 1.0).abs() < 1e-6,
-            "Expected 1.0, got {}",
-            similarity
-        );
-    }
-
-    #[test]
-    fn test_cosine_similarity_orthogonal() {
-        let embedding1 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
-        let embedding2 = EmbeddingResponse::new(vec![0.0, 1.0, 0.0], "test".to_string());
-
-        let similarity = embedding1.cosine_similarity(&embedding2);
-        assert!(similarity.abs() < 1e-6, "Expected 0.0, got {}", similarity);
-    }
-
-    #[test]
-    fn test_cosine_similarity_opposite() {
-        let embedding1 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
-        let embedding2 = EmbeddingResponse::new(vec![-1.0, 0.0, 0.0], "test".to_string());
-
-        let similarity = embedding1.cosine_similarity(&embedding2);
-        assert!(
-            (similarity + 1.0).abs() < 1e-6,
-            "Expected -1.0, got {}",
-            similarity
-        );
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "Cannot calculate cosine similarity for embeddings with different dimensions"
-    )]
-    fn test_cosine_similarity_different_dimensions() {
-        let embedding1 = EmbeddingResponse::new(vec![1.0, 0.0], "test".to_string());
-        let embedding2 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
-
-        embedding1.cosine_similarity(&embedding2);
-    }
-
-    #[test]
-    fn test_cosine_similarity_zero_vector() {
-        let embedding1 = EmbeddingResponse::new(vec![0.0, 0.0, 0.0], "test".to_string());
-        let embedding2 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
-
-        let similarity = embedding1.cosine_similarity(&embedding2);
-        assert_eq!(similarity, 0.0, "Zero vector should have 0.0 similarity");
     }
 }

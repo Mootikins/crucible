@@ -671,7 +671,7 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
-        self.typed_call_with_retry(
+        self.typed_call(
             "project.register",
             PathRequest {
                 path: path.to_string_lossy().to_string(),
@@ -696,7 +696,7 @@ impl DaemonClient {
 
     pub async fn project_unregister(&self, path: &Path) -> Result<()> {
         let _: serde_json::Value = self
-            .typed_call_with_retry(
+            .typed_call(
                 "project.unregister",
                 PathRequest {
                     path: path.to_string_lossy().to_string(),

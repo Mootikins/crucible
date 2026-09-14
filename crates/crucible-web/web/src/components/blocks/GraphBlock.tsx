@@ -217,5 +217,3 @@ export const GraphBlock: Component<BlockProps> = (props) => {
     </div>
   );
 };
-
-export default GraphBlock;

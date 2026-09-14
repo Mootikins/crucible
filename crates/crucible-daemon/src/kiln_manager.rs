@@ -763,7 +763,7 @@ impl KilnManager {
         self.announce(&events);
         match result {
             ProcessingResult::Success { .. } => Ok(true),
-            ProcessingResult::Skipped | ProcessingResult::NoChanges => Ok(false),
+            ProcessingResult::Skipped => Ok(false),
         }
     }
 
@@ -941,7 +941,7 @@ impl KilnManager {
                         }
                     }
                 }
-                Ok(ProcessingResult::Skipped) | Ok(ProcessingResult::NoChanges) => {
+                Ok(ProcessingResult::Skipped) => {
                     skipped += 1;
                 }
                 Err(e) => {

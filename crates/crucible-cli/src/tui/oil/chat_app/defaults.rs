@@ -7,7 +7,7 @@ use crate::tui::oil::event::InputBuffer;
 
 use super::{
     MessageQueueState, ModelListState, OilChatApp, PermissionState, PopupState, PrecognitionState,
-    ShellHistoryState, DEFAULT_MODE, DEFAULT_MODES,
+    DEFAULT_MODE, DEFAULT_MODES,
 };
 
 impl Default for OilChatApp {
@@ -51,7 +51,6 @@ impl Default for OilChatApp {
 
             // I/O / Lifecycle
             session_dir: None,
-            shell_history: ShellHistoryState::default(),
             runtime_config: RuntimeConfig::empty(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),

@@ -9,7 +9,6 @@ pub mod client;
 pub mod discovery;
 pub mod session;
 pub mod streaming;
-pub mod tools;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -20,8 +19,7 @@ pub use client::CrucibleAcpClient;
 pub use discovery::{discover_agent, is_agent_available, reset_agent_cache, AgentInfo};
 pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
-    channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,
-    StreamingChunk, TurnSummary,
+    channel_callback, humanize_tool_title, StreamingCallback, StreamingChunk, TurnSummary,
 };
 
 // Re-export test utilities when feature is enabled

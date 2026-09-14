@@ -1,4 +1,5 @@
 import { Component, createSignal, onCleanup, onMount } from 'solid-js';
+import { WhisperProvider } from '@/contexts/WhisperContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { SessionProvider } from '@/contexts/SessionContext';
@@ -327,30 +328,32 @@ const App: Component = () => {
 
   return (
     <SettingsProvider>
-      <ProjectProvider>
-        <SessionProvider initialKiln={kilnPath()}>
-          <EditorProvider>
-            <AppShell />
-          </EditorProvider>
-          <NotificationToast />
-          {/* WikilinkHoverPreview mounts inside WindowManager's DnD provider
-              so hover cards can drag file tabs into panes/panels. */}
-          <AuthTokenPrompt />
-          <SettingsModal open={isSettingsOpen()} onClose={() => setIsSettingsOpen(false)} />
-          <ExportDialog
-            open={isExportDialogOpen()}
-            sessionId={statusBarStore.activeSessionId()}
-            sessionTitle={statusBarStore.activeSessionTitle()}
-            onClose={() => setIsExportDialogOpen(false)}
-          />
-          <CommandPalette
-            open={isCommandPaletteOpen()}
-            commands={paletteCommands}
-            mode={paletteMode()}
-            onOpenChange={setIsCommandPaletteOpen}
-          />
-        </SessionProvider>
-      </ProjectProvider>
+      <WhisperProvider>
+        <ProjectProvider>
+          <SessionProvider initialKiln={kilnPath()}>
+            <EditorProvider>
+              <AppShell />
+            </EditorProvider>
+            <NotificationToast />
+            {/* WikilinkHoverPreview mounts inside WindowManager's DnD provider
+                so hover cards can drag file tabs into panes/panels. */}
+            <AuthTokenPrompt />
+            <SettingsModal open={isSettingsOpen()} onClose={() => setIsSettingsOpen(false)} />
+            <ExportDialog
+              open={isExportDialogOpen()}
+              sessionId={statusBarStore.activeSessionId()}
+              sessionTitle={statusBarStore.activeSessionTitle()}
+              onClose={() => setIsExportDialogOpen(false)}
+            />
+            <CommandPalette
+              open={isCommandPaletteOpen()}
+              commands={paletteCommands}
+              mode={paletteMode()}
+              onOpenChange={setIsCommandPaletteOpen}
+            />
+          </SessionProvider>
+        </ProjectProvider>
+      </WhisperProvider>
     </SettingsProvider>
   );
 

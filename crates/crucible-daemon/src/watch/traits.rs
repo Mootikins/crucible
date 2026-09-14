@@ -1,4 +1,4 @@
-//! Shared types of the file watching system: handles, configs, capabilities
+//! Shared types of the file watching system: handles and configs
 //! and the `EventHandler` trait.
 
 use crate::watch::{error::Result, events::FileEvent};
@@ -40,11 +40,7 @@ pub struct WatchConfig {
     /// Debouncing configuration.
     ///
     /// The notify backend builds its debouncer from the first watch it gets.
-    /// The polling backend waits for its poll interval instead.
     pub debounce: DebounceConfig,
-
-    /// Additional backend-specific options.
-    pub backend_options: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl WatchConfig {
@@ -55,7 +51,6 @@ impl WatchConfig {
             recursive: true,
             filter: None,
             debounce: DebounceConfig::default(),
-            backend_options: std::collections::HashMap::new(),
         }
     }
 
@@ -121,25 +116,6 @@ impl Default for DebounceConfig {
     fn default() -> Self {
         Self::new(100) // 100ms default debounce
     }
-}
-
-/// What a backend can do. `WatchBackend::capabilities` is the one table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BackendCapabilities {
-    /// Supports recursive watching.
-    pub recursive: bool,
-
-    /// Supports fine-grained event types.
-    pub fine_grained_events: bool,
-
-    /// Supports watching multiple paths.
-    pub multiple_paths: bool,
-
-    /// Supports hot reconfiguration.
-    pub hot_reconfig: bool,
-
-    /// Platforms the backend runs on, as `std::env::consts::OS` names, or `"all"`.
-    pub platforms: &'static [&'static str],
 }
 
 /// Trait for handling file events.

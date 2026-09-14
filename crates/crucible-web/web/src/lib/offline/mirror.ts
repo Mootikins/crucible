@@ -19,7 +19,7 @@ export interface MirroredNote {
   mirroredAt: number;
 }
 
-export interface MirroredIndex {
+interface MirroredIndex {
   kiln: string;
   notes: { name: string; path: string; title: string | null; tags: string[] }[];
   indexedAt: number;

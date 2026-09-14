@@ -362,7 +362,7 @@ export interface SessionModes {
 }
 
 /** One session setting, and whether this session can change it. */
-export interface KnobDescriptor {
+interface KnobDescriptor {
   id: string;
   supported: boolean;
 }
@@ -378,7 +378,7 @@ export interface SessionKnobSupport {
 }
 
 /** One choice in an agent's select option. */
-export interface AgentOptionChoice {
+interface AgentOptionChoice {
   value: string;
   name: string;
 }
@@ -677,9 +677,9 @@ export type ChatEvent =
 // stop recurring.
 
 /** Format hint carried by `edit` and `show`. */
-export type ArtifactFormat = 'markdown' | 'code' | 'json' | 'plain';
+type ArtifactFormat = 'markdown' | 'code' | 'json' | 'plain';
 
-export interface AskRequest {
+interface AskRequest {
   kind: 'ask';
   question: string;
   choices?: string[];
@@ -687,7 +687,7 @@ export interface AskRequest {
   allow_other?: boolean;
 }
 
-export interface AskQuestion {
+interface AskQuestion {
   header: string;
   question: string;
   choices: string[];
@@ -695,20 +695,20 @@ export interface AskQuestion {
   allow_other?: boolean;
 }
 
-export interface AskBatchRequest {
+interface AskBatchRequest {
   kind: 'ask_batch';
   id: string;
   questions: AskQuestion[];
 }
 
-export interface EditRequest {
+interface EditRequest {
   kind: 'edit';
   content: string;
   format?: ArtifactFormat;
   hint?: string;
 }
 
-export interface ShowRequest {
+interface ShowRequest {
   kind: 'show';
   content: string;
   format?: ArtifactFormat;
@@ -721,7 +721,7 @@ interface PopupEntry {
   data?: unknown;
 }
 
-export interface PopupRequest {
+interface PopupRequest {
   kind: 'popup';
   title: string;
   entries: PopupEntry[];
@@ -734,7 +734,7 @@ export interface PanelItem {
   data?: unknown;
 }
 
-export interface PanelHints {
+interface PanelHints {
   filterable?: boolean;
   multi_select?: boolean;
   allow_other?: boolean;
@@ -742,7 +742,7 @@ export interface PanelHints {
   initial_filter?: string;
 }
 
-export interface PanelRequest {
+interface PanelRequest {
   kind: 'panel';
   header: string;
   items: PanelItem[];
@@ -751,7 +751,7 @@ export interface PanelRequest {
 
 type PermActionType = 'bash' | 'read' | 'write' | 'tool';
 
-export interface PermRequest {
+interface PermRequest {
   kind: 'permission';
   action_type: PermActionType;
   tokens: string[];
@@ -901,7 +901,6 @@ export interface EditorFile {
 // =============================================================================
 // Context Types (re-exported from types/context.ts)
 // =============================================================================
-
 
 
 

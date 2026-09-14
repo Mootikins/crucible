@@ -778,9 +778,10 @@ impl AgentManager {
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             knowledge_repo = Some(storage.as_knowledge_repository());
 
-            if let Some(config) = self.kiln_manager.enrichment_config().cloned() {
+            if self.kiln_manager.enrichment_config().is_some() {
                 embedding_provider = Some(
-                    crate::embedding::get_or_create_embedding_provider(&config)
+                    self.kiln_manager
+                        .embedding_provider()
                         .await
                         .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?,
                 );

@@ -35,7 +35,7 @@ src/
 The main UI is a **window manager** (demo-style): header bar, collapsible edge panels (left/right/bottom), main area with recursive split panes and tab groups, floating windows, flyout, status bar. State is in `stores/windowStore` (Solid `createStore`); drag-and-drop uses `@thisbeyond/solid-dnd`.
 
 **MVVM Pattern:**
-- **Model**: Store (windowStore) and contexts (ChatContext, WhisperContext when re-wired)
+- **Model**: Store (windowStore) and contexts (ChatContext, WhisperContext)
 - **ViewModel**: Hooks and store actions
 - **View**: Components — render, emit events
 
@@ -43,7 +43,7 @@ The main UI is a **window manager** (demo-style): header bar, collapsible edge p
 
 - `solid-js` — Reactive UI framework
 - `@thisbeyond/solid-dnd` — Drag and drop for tabs/panes
-- `@xenova/transformers` — Browser-side Whisper (WebGPU) when chat is re-integrated
+- `@huggingface/transformers` — optional browser-side Whisper (WebGPU/WASM); the app mounts WhisperProvider inside SettingsProvider
 
 ## Development Notes
 

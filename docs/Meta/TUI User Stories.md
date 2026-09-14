@@ -192,7 +192,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-602: Shell history
 **As a user**, `!` recalls my last 100 shell commands.
-**Acceptance:** history stored within session (cap 100); consecutive duplicates collapse. **GAP:** dedicated shell-history recall is not wired — Up/Down recall the general `InputBuffer` submission history, and the stored shell history is never read back.
+**Acceptance:** Up/Down recall submitted `!` commands through the general `InputBuffer` history, alongside other submissions. Dedicated shell-only recall is not implemented; its unconsumed 100-entry store has been removed.
 **Tests:** T1 storage + cap/eviction in `chat_app/tests.rs`.
 
 ## 7. Notifications

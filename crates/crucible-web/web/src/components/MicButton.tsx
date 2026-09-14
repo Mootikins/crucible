@@ -12,7 +12,7 @@ interface MicButtonProps {
   isRecording: Accessor<boolean>;
 }
 
-export type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
+type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
 
 export const MicButton: Component<MicButtonProps> = (props) => {
   const [state, setState] = createSignal<RecordingState>('idle');

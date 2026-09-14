@@ -1,7 +1,6 @@
 //! ACP integration E2E tests
 //!
 //! Verifies that ACP plumbing remains intact after crate absorptions:
-//! - Tool discovery via crucible-daemon (acp module) ToolRegistry
 //! - Tool dispatch routing via DaemonToolDispatcher
 //! - Delegation context construction
 //! - MCP host initialization
@@ -9,7 +8,6 @@
 
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_daemon::acp::tools::{discover_tools, ToolRegistry};
 use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 use crucible_daemon::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crucible_daemon::tools::workspace::WorkspaceTools;
@@ -20,71 +18,6 @@ use crucible_lua::DaemonToolsApi;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
-
-// ============================================================================
-// Test 1: Tool discovery via crucible-daemon (acp module) ToolRegistry
-// ============================================================================
-
-#[test]
-fn test_discover_tools_returns_tool_list() {
-    let mut registry = ToolRegistry::new();
-    let count =
-        discover_tools(&mut registry, "/tmp/test-kiln").expect("discover_tools should succeed");
-
-    // discover_tools registers 10 tools: 6 note + 3 search + 1 kiln
-    assert_eq!(count, 10, "Expected 10 discovered tools, got {count}");
-    assert_eq!(registry.count(), 10, "Registry should contain all 10 tools");
-
-    // Verify tool categories are present
-    let tools = registry.list();
-    let note_tools: Vec<_> = tools
-        .iter()
-        .filter(|t| t.category.as_deref() == Some("notes"))
-        .collect();
-    let search_tools: Vec<_> = tools
-        .iter()
-        .filter(|t| t.category.as_deref() == Some("search"))
-        .collect();
-    let kiln_tools: Vec<_> = tools
-        .iter()
-        .filter(|t| t.category.as_deref() == Some("kiln"))
-        .collect();
-
-    assert_eq!(note_tools.len(), 6, "Expected 6 note tools");
-    assert_eq!(search_tools.len(), 3, "Expected 3 search tools");
-    assert_eq!(kiln_tools.len(), 1, "Expected 1 kiln tool");
-
-    // Verify specific well-known tools exist
-    assert!(registry.contains("create_note"), "Should have create_note");
-    assert!(registry.contains("read_note"), "Should have read_note");
-    assert!(
-        registry.contains("semantic_search"),
-        "Should have semantic_search"
-    );
-    assert!(
-        registry.contains("get_kiln_info"),
-        "Should have get_kiln_info"
-    );
-
-    // Verify tool descriptors have valid schemas
-    for tool in registry.list() {
-        assert!(!tool.name.is_empty(), "Tool name should not be empty");
-        assert!(
-            !tool.description.is_empty(),
-            "Tool '{}' should have a description",
-            tool.name
-        );
-        assert_eq!(
-            tool.parameters
-                .as_ref()
-                .and_then(|p| p.get("type"))
-                .and_then(|v| v.as_str()),
-            Some("object"),
-            "Tool '{}' schema should be type=object",
-            tool.name
-        );
-    }
-}
 
 // ============================================================================
 // Test 2: Tool dispatch routes to daemon tools via DaemonToolDispatcher

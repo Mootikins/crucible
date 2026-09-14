@@ -174,7 +174,6 @@ cannot tell which is canonical. A change has to be made twice.
 | `ModelsResponse` | `crates/crucible-daemon/src/agent_manager/context_length.rs:37` <br> `crates/crucible-daemon/src/provider/copilot.rs:194` <br> `crates/crucible-web/src/routes/helpers.rs:13` |
 | `AgentError` | `crates/crucible-core/src/turn/mod.rs:220` <br> `crates/crucible-daemon/src/agent_manager/mod.rs:90` |
 | `EmbeddingResponse` | `crates/crucible-core/src/traits/provider.rs:16` <br> `crates/crucible-daemon/src/llm/embeddings/provider.rs:400` |
-| `FileState` | ~~`crucible-core/src/processing/`~~ (removed 2026-08-22) <br> `crates/crucible-daemon/src/watch/backends/polling_backend.rs:31` |
 | `ShowRequest` | `crates/crucible-core/src/interaction/edit.rs:84` <br> `crates/crucible-daemon/src/agent_manager/context_length.rs:92` |
 | `ToolResult` | `crates/crucible-core/src/traits/tools.rs:11` (a `Result` alias) <br> `crates/crucible-lua/src/types.rs:71` (a struct) |
 
@@ -218,7 +217,8 @@ Check for a consumer before you rename: a collision with dead code is a deletion
 methods that only set a field, and every caller was a test. An ACP session is an
 ordinary `Session` held by the daemon's `SessionManager` struct, so there was
 never a second kind of session for a trait to abstract over.
-`crates/crucible-core/src/traits/acp.rs` is now a comment-only tombstone.
+The residual core ACP error module was removed on 2026-09-14; the daemon owns
+the live ACP client error vocabulary.
 Per-crate `Result` and `Error` aliases follow the documented `<Domain>Result<T>`
 convention and are also correct.
 

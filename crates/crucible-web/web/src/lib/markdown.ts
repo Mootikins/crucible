@@ -705,7 +705,7 @@ export async function renderMarkdownChatAsync(content: string): Promise<string> 
  * typography plugin implements by swapping its own greys — see
  * {@link proseClass}.
  */
-export const PROSE_CLASS = [
+const PROSE_CLASS = [
   // IDE-native reading scale: `--text-reading` (12px) at `--leading-reading`
   // (1.6), em-based headings so the whole scale tracks the root size. Tight
   // vertical rhythm — no dead bands around headings/rules/lists — reads dense
@@ -745,4 +745,3 @@ export const PROSE_CLASS = [
 export function proseClass(): string {
   return theme() === 'light' ? PROSE_CLASS : `${PROSE_CLASS} prose-invert`;
 }
-

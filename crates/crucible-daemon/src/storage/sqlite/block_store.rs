@@ -11,6 +11,7 @@ use crucible_core::storage::{
 };
 
 use super::connection::SqlitePool;
+use super::vector::{cosine_similarity_blob, deserialize_embedding, serialize_embedding};
 use crate::storage::sqlite::error_ext::SqliteResultExt;
 
 /// `note_blocks` DDL. Executed by the migration ladder, which is the only DDL
@@ -42,39 +43,6 @@ CREATE INDEX IF NOT EXISTS note_blocks_reuse_idx
     ON note_blocks(content_hash, embedding_model);
 CREATE INDEX IF NOT EXISTS note_blocks_path_idx ON note_blocks(note_path);
 "#;
-
-fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
-    embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
-}
-
-fn deserialize_embedding(bytes: &[u8]) -> Vec<f32> {
-    let (chunks, _partial) = bytes.as_chunks::<4>();
-    chunks.iter().copied().map(f32::from_le_bytes).collect()
-}
-
-/// Cosine similarity against a raw blob, without materializing it first.
-/// Returns 0.0 on dimension mismatch or zero magnitude.
-fn cosine_similarity_blob(query: &[f32], blob: &[u8]) -> f32 {
-    if query.is_empty() || blob.len() != query.len() * 4 {
-        return 0.0;
-    }
-
-    let mut dot = 0.0f32;
-    let mut norm_b_sq = 0.0f32;
-    for (chunk, q) in blob.as_chunks::<4>().0.iter().zip(query) {
-        let v = f32::from_le_bytes(*chunk);
-        dot += q * v;
-        norm_b_sq += v * v;
-    }
-    let norm_a: f32 = query.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b = norm_b_sq.sqrt();
-
-    if norm_a == 0.0 || norm_b == 0.0 {
-        0.0
-    } else {
-        dot / (norm_a * norm_b)
-    }
-}
 
 /// SQLite-backed block storage.
 pub struct SqliteBlockStore {

@@ -4,25 +4,6 @@ import { findFirstCenterPaneGroupId, firstCenterPaneId } from './panel-actions';
 import { iconForContentType } from './tab-icons';
 import { tabHost } from './tab-host';
 
-export function findTabBySessionId(sessionId: string): { groupId: string; tab: Tab } | null {
-  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
-    const tab = group.tabs.find((t) => t.metadata?.sessionId === sessionId);
-    if (tab) return { groupId, tab };
-  }
-  return null;
-}
-
-/** Focus an existing tab in place — wherever the user has put it (edge panel or a pane). */
-export function focusTabInPlace(groupId: string, tabId: string): void {
-  const pos = findEdgePanelForGroup(groupId);
-  if (pos) {
-    windowActions.setEdgePanelCollapsed(pos, false);
-    windowActions.setEdgePanelActiveTab(pos, tabId);
-  } else {
-    windowActions.setActiveTab(groupId, tabId);
-  }
-}
-
 /** Content that makes a pane a session pane. */
 const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
 
@@ -36,7 +17,7 @@ const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
  * width, so docking it in a rail either starved it or starved the tree.
  *
  * By role, never by side or by a stored id, because panes split, move and
- * swap. `findTabBySessionId` already honours wherever the user dragged a
+ * swap. `tabHost().find` already honours wherever the user dragged a
  * session to; this only decides where a session with no home goes.
  */
 export function sessionPane(): { groupId: string } | null {

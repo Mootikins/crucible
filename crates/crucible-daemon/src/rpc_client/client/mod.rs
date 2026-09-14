@@ -210,6 +210,7 @@ type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>
 /// - RPC responses to their waiting callers
 /// - Async events to the event channel
 pub struct DaemonClient {
+    timeout_retries: bool,
     writer: Arc<Mutex<OwnedWriteHalf>>,
     next_id: AtomicU64,
     pending_requests: PendingRequests,
@@ -227,6 +228,12 @@ impl Drop for DaemonClient {
 }
 
 impl DaemonClient {
+    /// Let an outer transport own the retry budget instead of multiplying it.
+    pub fn without_timeout_retries(mut self) -> Self {
+        self.timeout_retries = false;
+        self
+    }
+
     /// Connect to the daemon at the default socket path (simple mode)
     pub async fn connect() -> Result<Self> {
         let path = crucible_core::protocol::socket_path();
@@ -420,6 +427,7 @@ impl DaemonClient {
         Ok(Self {
             writer: Arc::new(Mutex::new(write)),
             next_id: AtomicU64::new(1),
+            timeout_retries: true,
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             reader_task: None,
             simple_reader: Some(Mutex::new(BufReader::new(read))),
@@ -466,6 +474,7 @@ impl DaemonClient {
         let client = Self {
             writer: Arc::new(Mutex::new(write)),
             next_id: AtomicU64::new(1),
+            timeout_retries: true,
             pending_requests,
             reader_task: Some(reader_task),
             simple_reader: None,
@@ -518,6 +527,9 @@ impl DaemonClient {
                 }
             }
 
+            // Dropping the senders wakes in-flight calls on EOF/error instead
+            // of leaving a known-dead connection waiting for its timeout.
+            pending_requests.lock().await.clear();
             debug!("Reader task exiting");
         })
     }
@@ -571,6 +583,9 @@ impl DaemonClient {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value> {
+        if !self.timeout_retries {
+            return self.call(method, params).await;
+        }
         const MAX_RETRIES: u32 = 2;
         const INITIAL_DELAY_MS: u64 = 200;
 
@@ -672,22 +687,6 @@ impl DaemonClient {
         Ok(())
     }
 
-    /// Send a typed JSON-RPC request with retry and discard the response.
-    ///
-    /// Wraps `typed_call_with_retry()` for methods that return unit (Ok(())).
-    /// Discards the response value to avoid unused variable warnings.
-    pub(super) async fn typed_unit_call_with_retry<Req>(
-        &self,
-        method: &str,
-        params: Req,
-    ) -> Result<()>
-    where
-        Req: serde::Serialize,
-    {
-        let _: serde_json::Value = self.typed_call_with_retry(method, params).await?;
-        Ok(())
-    }
-
     /// Shorthand for RPC methods that only take a session_id parameter.
     pub(super) async fn session_id_call(
         &self,
@@ -780,7 +779,13 @@ impl DaemonClient {
             // Event mode: wait for background reader to route response
             match tokio::time::timeout(timeout, response_rx).await {
                 Ok(Ok(response)) => response,
-                Ok(Err(_)) => anyhow::bail!("Response channel closed unexpectedly"),
+                Ok(Err(_)) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionReset,
+                        "daemon disconnected before replying",
+                    )
+                    .into())
+                }
                 Err(_) => {
                     // Clean up pending request on timeout
                     let mut pending = self.pending_requests.lock().await;

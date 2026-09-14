@@ -76,12 +76,11 @@ pub fn upgrade_with_notify_sink(
 
 pub fn register_notify_module(lua: &Lua, cru: &Table) -> LuaResult<()> {
     register_log_levels(lua, cru)?;
-    // `notify`, `notify_once` and `messages` hang off the `cru.log` table the
+    // `notify` and `notify_once` hang off the `cru.log` table the
     // call above just built.
     let log_table: Table = cru.get("log")?;
     register_notify_function(lua, &log_table)?;
     register_notify_once_function(lua, &log_table)?;
-    register_messages_module(lua, &log_table)?;
     Ok(())
 }
 
@@ -220,31 +219,6 @@ fn register_notify_once_function(lua: &Lua, log: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-fn register_messages_module(lua: &Lua, log: &Table) -> LuaResult<()> {
-    let messages = lua.create_table()?;
-    let mut ns = crate::host_registry::Ns::over(lua, "cru.log.messages", messages.clone());
-
-    // Each one parks an action for the TUI to pick up; none answers with
-    // anything, and none can fail.
-    for action in ["toggle", "show", "hide", "clear"] {
-        ns.func(action, "() -> ()", move |lua, ()| {
-            set_messages_action(lua, action)
-        })
-        .map_err(mlua::Error::external)?;
-    }
-
-    // Not `ns.publish()`: this table hangs off `cru.log`, and `publish` would
-    // put it at `cru.messages`.
-    log.set("messages", messages)?;
-    Ok(())
-}
-
-fn set_messages_action(lua: &Lua, action: &str) -> LuaResult<()> {
-    let globals = lua.globals();
-    globals.set("__crucible_messages_action__", action)?;
-    Ok(())
-}
-
 fn build_notification(msg: &str, level: i32, opts: Option<&Table>) -> LuaResult<Notification> {
     let kind = if let Some(opts) = opts {
         if let Ok(progress) = opts.get::<Table>("progress") {
@@ -352,17 +326,6 @@ pub fn get_pending_notifications(lua: &Lua) -> LuaResult<Vec<Notification>> {
 
     globals.set(NOTIFICATIONS_KEY, lua.create_table()?)?;
     Ok(notifications)
-}
-
-/// Get pending messages panel action (toggle/show/hide/clear)
-#[cfg(test)]
-pub fn get_messages_action(lua: &Lua) -> LuaResult<Option<String>> {
-    let globals = lua.globals();
-    let action: Option<String> = globals.get("__crucible_messages_action__").ok();
-    if action.is_some() {
-        globals.set("__crucible_messages_action__", Value::Nil)?;
-    }
-    Ok(action)
 }
 
 #[cfg(test)]
@@ -480,36 +443,6 @@ mod tests {
         assert_eq!(info, 2);
         assert_eq!(warn, 3);
         assert_eq!(error, 4);
-    }
-
-    #[test]
-    fn messages_toggle() {
-        let (lua, _) = TestLuaBuilder::new().build_with_notify();
-
-        lua.load(r#"cru.log.messages.toggle()"#).exec().unwrap();
-
-        let action = get_messages_action(&lua).unwrap();
-        assert_eq!(action, Some("toggle".to_string()));
-
-        let action_again = get_messages_action(&lua).unwrap();
-        assert_eq!(action_again, None);
-    }
-
-    #[test]
-    fn messages_show_hide_clear() {
-        let (lua, _) = TestLuaBuilder::new().build_with_notify();
-
-        lua.load(r#"cru.log.messages.show()"#).exec().unwrap();
-        assert_eq!(get_messages_action(&lua).unwrap(), Some("show".to_string()));
-
-        lua.load(r#"cru.log.messages.hide()"#).exec().unwrap();
-        assert_eq!(get_messages_action(&lua).unwrap(), Some("hide".to_string()));
-
-        lua.load(r#"cru.log.messages.clear()"#).exec().unwrap();
-        assert_eq!(
-            get_messages_action(&lua).unwrap(),
-            Some("clear".to_string())
-        );
     }
 
     #[derive(Default)]

@@ -145,7 +145,7 @@ Session logs and observability. It captures session events as append-only stream
 
 - Append-only JSONL event logs per session
 - Human-readable markdown export on demand
-- `observe/indexer.rs` builds a `NoteRecord` from the JSONL log, so the kiln note store can index a session. It does not open SQLite itself.
+- Session logs support replay and Markdown export. Session-to-note indexing is retired; no indexer adapter remains.
 - Event types: user messages, assistant responses, tool calls, thinking blocks, errors
 
 See: [[Help/Core/Sessions]]

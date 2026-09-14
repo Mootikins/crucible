@@ -8,154 +8,94 @@
 use super::daemon::ReconnectingDaemon;
 
 impl ReconnectingDaemon {
-    pub async fn plugin_list_info(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.call_with_reconnect("plugin.list", |daemon| Box::pin(daemon.plugin_list_info()))
-            .await
+    forward_rpc! {
+        Safe PluginList =>
+        plugin_list_info()
+        -> Vec<serde_json::Value> = plugin_list_info();
     }
 
-    /// Every command loaded plugins declared, with its declared parameters.
-    ///
-    /// The enumeration a caller needs before it can offer a primitive as a
-    /// button: `commands_json` already emits `name`, `description`, `hint` and
-    /// `parameters` from the same `ToolDefinition` a tool uses, and until now
-    /// it reached the daemon's own clients and no browser.
-    pub async fn plugin_commands(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.call_with_reconnect("plugin.commands", |daemon| {
-            Box::pin(daemon.plugin_commands())
-        })
-        .await
+    forward_rpc! {
+        /// Every command loaded plugins declared, with its declared parameters.
+        ///
+        /// The enumeration a caller needs before it can offer a primitive as a
+        /// button: `commands_json` already emits `name`, `description`, `hint` and
+        /// `parameters` from the same `ToolDefinition` a tool uses, and until now
+        /// it reached the daemon's own clients and no browser.
+        Safe PluginCommands =>
+        plugin_commands()
+        -> Vec<serde_json::Value> = plugin_commands();
     }
 
-    /// Surfaces plugins declared, rows included.
-    ///
-    /// Passed through verbatim, exactly as publications are: nothing on this
-    /// side knows what a plugin's rows mean. A row is `{id, text, detail, mark}`
-    /// and the component draws it from that, so a plugin shipped tomorrow gets a
-    /// panel with no change here.
-    pub async fn surfaces(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("surface.list", |daemon| Box::pin(daemon.surface_list()))
-            .await
+    forward_rpc! {
+        /// Surfaces plugins declared, rows included.
+        ///
+        /// Passed through verbatim, exactly as publications are: nothing on this
+        /// side knows what a plugin's rows mean. A row is `{id, text, detail, mark}`
+        /// and the component draws it from that, so a plugin shipped tomorrow gets a
+        /// panel with no change here.
+        Safe SurfaceList =>
+        surfaces()
+        -> serde_json::Value = surface_list();
     }
 
-    pub async fn plugin_publications(
-        &self,
-        key: Option<String>,
-    ) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("plugin.publications", move |daemon| {
-            let key = key.clone();
-            Box::pin(async move { daemon.plugin_publications(key.as_deref()).await })
-        })
-        .await
+    forward_rpc! {
+        Safe PluginPublications =>
+        plugin_publications(key: Option<String>)
+        -> serde_json::Value = plugin_publications(key.as_deref());
     }
 
-    /// The settings trees plugins declared. `ui` is always "web" from here —
-    /// it is what makes `webHidden` mean something.
-    pub async fn plugin_options(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("plugin.options", |daemon| {
-            Box::pin(daemon.plugin_options("web"))
-        })
-        .await
+    forward_rpc! {
+        /// The settings trees plugins declared. `ui` is always "web" from here —
+        /// it is what makes `webHidden` mean something.
+        Safe PluginOptions =>
+        plugin_options()
+        -> serde_json::Value = plugin_options("web");
     }
 
-    pub async fn plugin_option_get(
-        &self,
-        plugin: &str,
-        path: Vec<String>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let (plugin, path) = (plugin.to_string(), path);
-        self.call_with_reconnect("plugin.option_get", move |daemon| {
-            let (plugin, path) = (plugin.clone(), path.clone());
-            Box::pin(async move { daemon.plugin_option_get(&plugin, &path, "web").await })
-        })
-        .await
+    forward_rpc! {
+        Safe PluginOptionGet =>
+        plugin_option_get(plugin: &str, path: Vec<String>)
+        -> serde_json::Value = plugin_option_get(&plugin, &path, "web");
     }
 
-    pub async fn plugin_option_set(
-        &self,
-        plugin: &str,
-        path: Vec<String>,
-        value: serde_json::Value,
-    ) -> anyhow::Result<()> {
-        let plugin = plugin.to_string();
-        self.call_with_reconnect("plugin.option_set", move |daemon| {
-            let (plugin, path, value) = (plugin.clone(), path.clone(), value.clone());
-            Box::pin(async move { daemon.plugin_option_set(&plugin, &path, value, "web").await })
-        })
-        .await
+    forward_rpc! {
+        Once PluginOptionSet =>
+        plugin_option_set(plugin: &str, path: Vec<String>, value: serde_json::Value)
+        -> () = plugin_option_set(&plugin, &path, value, "web");
     }
 
-    pub async fn plugin_option_execute(
-        &self,
-        plugin: &str,
-        path: Vec<String>,
-    ) -> anyhow::Result<()> {
-        let plugin = plugin.to_string();
-        self.call_with_reconnect("plugin.option_execute", move |daemon| {
-            let (plugin, path) = (plugin.clone(), path.clone());
-            Box::pin(async move { daemon.plugin_option_execute(&plugin, &path, "web").await })
-        })
-        .await
+    forward_rpc! {
+        Once PluginOptionExecute =>
+        plugin_option_execute(plugin: &str, path: Vec<String>)
+        -> () = plugin_option_execute(&plugin, &path, "web");
     }
 
-    /// Invoke a plugin command and hand back whatever its Lua `fn` returned.
-    ///
-    /// The channel by which a target provider is asked to enumerate itself —
-    /// a branch list depends on which project is selected and on what happened
-    /// in the repo since, so it cannot be published once and cached.
-    pub async fn plugin_run_command(
-        &self,
-        name: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        self.call_with_reconnect("plugin.run_command", move |daemon| {
-            let (name, args) = (name.clone(), args.clone());
-            Box::pin(async move { daemon.plugin_run_command(&name, args).await })
-        })
-        .await
+    forward_rpc! {
+        /// Invoke a plugin command and hand back whatever its Lua `fn` returned.
+        ///
+        /// The channel by which a target provider is asked to enumerate itself —
+        /// a branch list depends on which project is selected and on what happened
+        /// in the repo since, so it cannot be published once and cached.
+        Once PluginRunCommand =>
+        plugin_run_command(name: &str, args: serde_json::Value)
+        -> serde_json::Value = plugin_run_command(&name, args);
     }
 
-    pub async fn plugin_reload(&self, name: &str) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        self.call_with_reconnect("plugin.reload", move |daemon| {
-            let name = name.clone();
-            Box::pin(async move { daemon.plugin_reload(&name).await })
-        })
-        .await
+    forward_rpc! {
+        Once PluginReload =>
+        plugin_reload(name: &str)
+        -> serde_json::Value = plugin_reload(&name);
     }
 
-    pub async fn plugin_install(
-        &self,
-        url: &str,
-        branch: Option<&str>,
-        pin: Option<&str>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let url = url.to_string();
-        let branch = branch.map(str::to_string);
-        let pin = pin.map(str::to_string);
-        self.call_with_reconnect("plugin.install", move |daemon| {
-            let url = url.clone();
-            let branch = branch.clone();
-            let pin = pin.clone();
-            Box::pin(async move {
-                daemon
-                    .plugin_install(&url, branch.as_deref(), pin.as_deref())
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once PluginInstall =>
+        plugin_install(url: &str, branch: Option<&str> => branch.map(str::to_owned), pin: Option<&str> => pin.map(str::to_owned))
+        -> serde_json::Value = plugin_install(&url, branch.as_deref(), pin.as_deref());
     }
 
-    pub async fn plugin_remove(
-        &self,
-        name: &str,
-        purge: bool,
-    ) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        self.call_with_reconnect("plugin.remove", move |daemon| {
-            let name = name.clone();
-            Box::pin(async move { daemon.plugin_remove(&name, purge).await })
-        })
-        .await
+    forward_rpc! {
+        Once PluginRemove =>
+        plugin_remove(name: &str, purge: bool)
+        -> serde_json::Value = plugin_remove(&name, purge);
     }
 }

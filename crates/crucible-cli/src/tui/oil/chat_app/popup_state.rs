@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use crucible_core::interaction::PermRequest;
 
 use super::state::AutocompleteKind;
-use super::MAX_SHELL_HISTORY;
 
 /// Autocomplete popup state — purely local UI chrome.
 ///
@@ -48,22 +47,6 @@ impl Default for PermissionState {
     }
 }
 
-/// Shell command history state — recent commands and recall index
-pub(crate) struct ShellHistoryState {
-    /// Recent shell commands (for !-history recall)
-    pub shell_history: VecDeque<String>,
-    /// Current index into shell_history during recall
-    pub shell_history_index: Option<usize>,
-}
-
-impl Default for ShellHistoryState {
-    fn default() -> Self {
-        Self {
-            shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
-            shell_history_index: None,
-        }
-    }
-}
 /// Precognition state — auto-RAG settings and last result cache
 pub(crate) struct PrecognitionState {
     /// Whether to auto-enrich user messages with knowledge base context (precognition / auto-RAG)

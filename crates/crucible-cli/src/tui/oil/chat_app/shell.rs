@@ -24,16 +24,6 @@ impl OilChatApp {
             return Action::Continue;
         }
 
-        if !self
-            .shell_history
-            .shell_history
-            .back()
-            .is_some_and(|last| last == &shell_cmd)
-        {
-            self.push_shell_history(shell_cmd.clone());
-        }
-        self.shell_history.shell_history_index = None;
-
         let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
         match ShellModal::spawn(shell_cmd.clone(), working_dir) {

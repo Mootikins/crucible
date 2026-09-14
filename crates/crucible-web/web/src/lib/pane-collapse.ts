@@ -11,7 +11,7 @@ import type { LayoutNode } from '@/types/windowTypes';
  */
 
 /** A collapsed pane keeps exactly its tab strip: TabBar is `h-9`. */
-export const COLLAPSED_PANE_PX = 36;
+const COLLAPSED_PANE_PX = 36;
 
 /**
  * What a pane keeps when it yields its share to a sibling that holds content.

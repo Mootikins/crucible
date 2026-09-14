@@ -18,7 +18,7 @@ export type OfflineMode = 'notes' | 'everything';
 
 export const KEPT_KILNS_KEY = 'crucible:offlineKilns';
 
-export interface KeptKiln {
+interface KeptKiln {
   mode: OfflineMode;
 }
 

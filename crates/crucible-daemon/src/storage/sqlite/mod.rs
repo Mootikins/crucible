@@ -53,3 +53,5 @@ pub use connection::SqlitePool;
 pub use fts::{FtsIndex, FtsResult};
 pub use note_store::SqliteNoteStore;
 pub use repository::SqliteKnowledgeRepository;
+
+mod vector;

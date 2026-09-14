@@ -158,5 +158,3 @@ export const PluginBlockPanel: Component = () => {
     </PanelShell>
   );
 };
-
-export default PluginBlockPanel;

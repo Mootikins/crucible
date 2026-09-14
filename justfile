@@ -157,12 +157,8 @@ fmt:
 # - `types` is the only target that needs no Rust toolchain — the web-unit CI
 #   job runs it with bun alone.
 #
-# - `dead` is frontend-only, and deliberately NOT in `all`. Rust needs no
-#   equivalent: `crucible-cli`'s modules are `pub(crate)` precisely so `dead_code`
-#   reports unused items itself, which `clippy -D warnings` then fails on. Knip is
-#   the same idea for TypeScript, where `pub` has no analogue. It is out of `all`
-#   until its existing findings are triaged — wiring it in with a backlog would
-#   just teach everyone to ignore it.
+# - `dead` checks frontend imports, exports and dependencies, including CSS.
+#   It runs in `all` so CI cannot accumulate another unused-export backlog.
 #
 # Lint: all (default) | fmt | clippy | docs | license | types | dead
 lint what="all":
@@ -204,7 +200,7 @@ lint what="all":
     lint_dead()    { (cd crates/crucible-web/web && bunx knip --no-progress); }
 
     case "$1" in
-        all) lint_fmt; lint_clippy; lint_docs; lint_license; lint_types ;;
+        all) lint_fmt; lint_clippy; lint_docs; lint_license; lint_types; lint_dead ;;
         fmt|clippy|docs|license|types|dead) "lint_$1" ;;
         *)
             echo "Unknown lint target: $1"

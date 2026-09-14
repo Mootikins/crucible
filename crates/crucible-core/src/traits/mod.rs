@@ -4,7 +4,6 @@
 //! repository, completion backend, etc.); concrete implementations in other
 //! crates depend on Core for the definitions and are injected at the edges.
 
-pub mod acp;
 pub mod auth;
 pub mod chat;
 pub mod context_ops;
@@ -13,7 +12,6 @@ pub mod llm;
 pub mod mcp;
 pub mod parser;
 pub mod provider;
-pub mod storage_client;
 pub mod tools;
 
 // Re-export key traits
@@ -24,7 +22,6 @@ pub use knowledge::{KnowledgeRepository, NoteInfo, NoteLinks};
 pub use llm::{
     FunctionCall, FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage, ToolCall,
 };
-pub use storage_client::StorageClient;
 pub use tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };

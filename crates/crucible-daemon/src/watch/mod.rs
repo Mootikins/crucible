@@ -1,38 +1,9 @@
-//! # Crucible File Watching System
+//! Native file watching with debouncing, filtering, and bounded event delivery.
 //!
-//! A comprehensive, production-ready file watching architecture for the Crucible ecosystem.
-//! Provides configurable folder watching, multi-backend support, and seamless integration
-//! with the embedding database and external tools.
-//!
-//! ## Features
-//!
-//! - **Configurable folder watching** using crucible-config system
-//! - **Editor integration preparation** with low-frequency inode watching
-//! - **Multi-backend support** (notify, polling, editor integration)
-//! - **Performance optimization** with efficient debouncing and event queuing
-//! - **Seamless integration** with existing Crucible systems
-//!
-//! ## Architecture Overview
-//!
-//! `WatchManager` drives one `Backend` per watch group. `Backend` is an enum
-//! over the three backends, so every backend offers one interface:
-//!
-//! ```text
-//! ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-//! │   Application   │───▶│   WatchManager   │───▶│   FileWatcher   │
-//! │                 │    │                  │    │    Backend      │
-//! └─────────────────┘    └──────────────────┘    └─────────────────┘
-//!         │                       │                       │
-//!         ▼                       ▼                       ▼
-//! ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-//! │ Event Handlers  │    │   Event Queue    │    │   File Events   │
-//! │ (Indexing,      │    │   (Debouncing,   │    │ (Created,       │
-//! │  Hot Reload)    │    │    Filtering)    │    │ Modified, etc.) │
-//! └─────────────────┘    └──────────────────┘    └─────────────────┘
-//! ```
-//!
-//! ## Quick Start
-//!
+//! Each watch group owns one NotifyWatcher, sharing an OS watcher across its
+//! paths. The manager dispatches changes to indexing and external-edit handlers.
+//! Both the native and manager debounce stages are intentional: capture
+//! suppression accounts for their combined delay.
 
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
@@ -54,9 +25,7 @@ mod manager;
 pub mod traits;
 mod utils;
 
-pub use backends::{
-    Backend, EditorConfig, EditorWatcher, NotifyWatcher, PollingWatcher, WatchBackend,
-};
+pub use backends::NotifyWatcher;
 pub use error::{Error, Result};
 pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
 pub use external_changes::{
@@ -65,4 +34,4 @@ pub use external_changes::{
 pub use handlers::{ExternalChangeHandler, HandlerRegistry, IndexingHandler};
 pub use manager::{WatchManager, WatchManagerConfig};
 
-pub use traits::{BackendCapabilities, DebounceConfig, EventHandler, WatchConfig, WatchHandle};
+pub use traits::{DebounceConfig, EventHandler, WatchConfig, WatchHandle};

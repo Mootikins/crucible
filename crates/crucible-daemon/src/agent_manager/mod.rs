@@ -1181,8 +1181,8 @@ impl AgentManager {
                         None => Arc::new(EmptyKnowledgeRepository),
                     };
                 let embed: Arc<dyn crucible_core::enrichment::EmbeddingProvider> =
-                    if let Some(config) = self.kiln_manager.enrichment_config().cloned() {
-                        match crate::embedding::get_or_create_embedding_provider(&config).await {
+                    if self.kiln_manager.enrichment_config().is_some() {
+                        match self.kiln_manager.embedding_provider().await {
                             Ok(provider) => provider,
                             Err(e) => {
                                 tracing::warn!(

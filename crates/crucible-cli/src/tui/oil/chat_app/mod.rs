@@ -18,8 +18,6 @@ use std::path::PathBuf;
 const POPUP_HEIGHT: usize = 10;
 pub const INPUT_MAX_CONTENT_LINES: usize = 3;
 
-const MAX_SHELL_HISTORY: usize = 100;
-
 // ─── Submodules ──────────────────────────────────────────────────────────────
 
 mod autocomplete;
@@ -36,7 +34,7 @@ pub mod state;
 
 pub use messages::ChatAppMsg;
 pub use model_state::{KilnSummary, McpServerDisplay, ModelListState, PluginStatusEntry};
-use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
+use popup_state::{PermissionState, PopupState, PrecognitionState};
 use state::MessageQueueState;
 pub use state::{mode_label, mode_style, next_mode, DEFAULT_MODE, DEFAULT_MODES};
 
@@ -122,8 +120,6 @@ pub struct OilChatApp {
     // behind a trait or into a dedicated struct later.
     /// Filesystem path for saving session transcripts
     session_dir: Option<PathBuf>,
-    /// Shell command history state
-    shell_history: ShellHistoryState,
     /// Runtime configuration (`:set` overrides)
     runtime_config: RuntimeConfig,
     /// Workspace file paths (for @-file autocomplete)
@@ -662,13 +658,6 @@ impl OilChatApp {
     pub(crate) fn split_slow_tools(&mut self) -> bool {
         self.container_list
             .split_slow_tools(self.frame_time, BACKGROUND_TOOL_SPLIT_THRESHOLD)
-    }
-
-    fn push_shell_history(&mut self, cmd: String) {
-        if self.shell_history.shell_history.len() >= MAX_SHELL_HISTORY {
-            self.shell_history.shell_history.pop_front();
-        }
-        self.shell_history.shell_history.push_back(cmd);
     }
 
     pub(crate) fn is_streaming(&self) -> bool {

@@ -1,5 +1,7 @@
+use super::forwarding::ReplayPolicy;
 use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
+use crucible_daemon::rpc::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
 use futures::future::BoxFuture;
 use std::collections::HashMap;
@@ -112,6 +114,8 @@ pub fn standalone_layout_path() -> std::path::PathBuf {
 pub struct ReconnectingDaemon {
     daemon: Arc<RwLock<DaemonClient>>,
     generation: AtomicU64,
+    #[cfg(test)]
+    reconnect_socket: Option<PathBuf>,
     /// The SSE fan-out target. Held so a reconnect can rewire a fresh event
     /// stream into it instead of leaving SSE permanently dead.
     broker: Arc<EventBroker>,
@@ -133,8 +137,10 @@ impl ReconnectingDaemon {
     ) -> Self {
         let router = spawn_event_router(event_rx, broker.clone());
         Self {
-            daemon: Arc::new(RwLock::new(daemon)),
+            daemon: Arc::new(RwLock::new(daemon.without_timeout_retries())),
             generation: AtomicU64::new(0),
+            #[cfg(test)]
+            reconnect_socket: None,
             broker,
             router: std::sync::Mutex::new(Some(router)),
             sticky_subscriptions: std::sync::Mutex::new(std::collections::HashSet::new()),
@@ -158,11 +164,12 @@ impl ReconnectingDaemon {
         self.session_subscribe(&[session_id]).await.map(|_| ())
     }
 
-    /// `pub(crate)` rather than private only so the `plugin.*` forwarders can
-    /// live in their own module — see `services::daemon_plugins`.
-    pub(crate) async fn call_with_reconnect<T>(
+    /// Every forwarder declares replay safety. A lost response to a write is
+    /// ambiguous, so only replay-safe calls reconnect and submit again.
+    pub(super) async fn forward_rpc<T>(
         &self,
-        method: &'static str,
+        policy: ReplayPolicy,
+        method: RpcMethod,
         call: impl for<'a> Fn(&'a DaemonClient) -> BoxFuture<'a, anyhow::Result<T>>,
     ) -> anyhow::Result<T> {
         let observed_generation = self.generation.load(Ordering::Acquire);
@@ -173,9 +180,9 @@ impl ReconnectingDaemon {
 
         match first_attempt {
             Ok(value) => Ok(value),
-            Err(err) if Self::is_connection_error(&err) => {
+            Err(err) if policy == ReplayPolicy::Safe && Self::is_connection_error(&err) => {
                 tracing::warn!(
-                    method,
+                    method = method.as_str(),
                     error = %err,
                     "Daemon connection failed, reconnecting and retrying once"
                 );
@@ -202,8 +209,15 @@ impl ReconnectingDaemon {
         // client returns the next line with ANY id without matching the request,
         // so under the web server's concurrent RPC load two calls could swap
         // responses (silent wrong data). Event mode keeps responses id-matched.
-        let (new_daemon, event_rx) = DaemonClient::connect_or_start_with_events().await?;
-        *daemon = new_daemon;
+        #[cfg(not(test))]
+        let connection = DaemonClient::connect_or_start_with_events().await;
+        #[cfg(test)]
+        let connection = match &self.reconnect_socket {
+            Some(path) => DaemonClient::connect_to_with_events(path).await,
+            None => DaemonClient::connect_or_start_with_events().await,
+        };
+        let (new_daemon, event_rx) = connection?;
+        *daemon = new_daemon.without_timeout_retries();
 
         // Rewire SSE: abort the old router (its event_rx died with the old
         // connection) and point a fresh one at the same broker, so fan-out
@@ -219,7 +233,7 @@ impl ReconnectingDaemon {
 
         // Re-issue sticky subscriptions (e.g. the file-watch "system" channel)
         // on the fresh connection, directly through the held write guard so we
-        // don't re-enter `call_with_reconnect` (which would deadlock on the
+        // don't re-enter `forward_rpc` (which would deadlock on the
         // read lock). Best-effort: a failure here is retried on the next
         // reconnect. Browser-driven per-session subscriptions re-issue
         // themselves via `EventSource`, so they are NOT in this set.
@@ -240,25 +254,6 @@ impl ReconnectingDaemon {
         self.generation.fetch_add(1, Ordering::AcqRel);
         tracing::warn!("Daemon reconnected; SSE fan-out rewired to the new event stream");
         Ok(())
-    }
-
-    /// One attempt against the current connection, with no reconnect-and-retry.
-    ///
-    /// [`Self::call_with_reconnect`] replays the call after a broken pipe or a
-    /// connection reset — errors that can be raised *after* the daemon read the
-    /// request and acted on it. For a read that is a free retry; for a review
-    /// write it is a second revert, or a second rejection note in the
-    /// conversation, or an `UnknownHunk` answer for a mutation that in fact
-    /// landed. The review writes are at-most-once, so a lost connection has to
-    /// surface as an error the user retries deliberately.
-    /// `pub(crate)` for the same reason as [`Self::call_with_reconnect`]: the
-    /// `review.*` forwarders live in `services::daemon_review`.
-    pub(crate) async fn call_once<T>(
-        &self,
-        call: impl for<'a> Fn(&'a DaemonClient) -> BoxFuture<'a, anyhow::Result<T>>,
-    ) -> anyhow::Result<T> {
-        let daemon = self.daemon.read().await;
-        call(&daemon).await
     }
 
     fn is_connection_error(err: &anyhow::Error) -> bool {
@@ -293,355 +288,182 @@ impl ReconnectingDaemon {
         false
     }
 
-    pub async fn kiln_list(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.call_with_reconnect("kiln.list", |daemon| Box::pin(daemon.kiln_list()))
-            .await
+    forward_rpc! {
+        Safe KilnList =>
+        kiln_list()
+        -> Vec<serde_json::Value> = kiln_list();
     }
 
-    pub async fn list_notes(
-        &self,
-        kiln_path: &Path,
-        path_filter: Option<&str>,
-    ) -> anyhow::Result<Vec<crucible_daemon::rpc_client::NoteListRow>> {
-        let kiln_path = kiln_path.to_path_buf();
-        let path_filter = path_filter.map(str::to_string);
-        self.call_with_reconnect("list_notes", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let path_filter = path_filter.clone();
-            Box::pin(async move {
-                daemon
-                    .list_notes(&kiln_path, path_filter.as_deref(), None)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Safe ListNotes =>
+        list_notes(kiln_path: &Path, path_filter: Option<&str> => path_filter.map(str::to_owned))
+        -> Vec<crucible_daemon::rpc_client::NoteListRow> = list_notes(&kiln_path, path_filter.as_deref(), None);
     }
 
-    pub async fn get_note_by_name(
-        &self,
-        kiln_path: &Path,
-        name: &str,
-    ) -> anyhow::Result<Option<serde_json::Value>> {
-        let kiln_path = kiln_path.to_path_buf();
-        let name = name.to_string();
-        self.call_with_reconnect("get_note_by_name", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let name = name.clone();
-            Box::pin(async move { daemon.get_note_by_name(&kiln_path, &name, None).await })
-        })
-        .await
+    forward_rpc! {
+        Safe GetNoteByName =>
+        get_note_by_name(kiln_path: &Path, name: &str)
+        -> Option<serde_json::Value> = get_note_by_name(&kiln_path, &name, None);
     }
 
-    pub async fn get_backlinks(
-        &self,
-        kiln_path: &Path,
-        name: &str,
-    ) -> anyhow::Result<Option<serde_json::Value>> {
-        let kiln_path = kiln_path.to_path_buf();
-        let name = name.to_string();
-        self.call_with_reconnect("get_backlinks", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let name = name.clone();
-            Box::pin(async move { daemon.get_backlinks(&kiln_path, &name, None).await })
-        })
-        .await
+    forward_rpc! {
+        Safe GetBacklinks =>
+        get_backlinks(kiln_path: &Path, name: &str)
+        -> Option<serde_json::Value> = get_backlinks(&kiln_path, &name, None);
     }
 
-    pub async fn kiln_graph(&self, kiln_path: &Path) -> anyhow::Result<serde_json::Value> {
-        let kiln_path = kiln_path.to_path_buf();
-        self.call_with_reconnect("kiln.graph", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            Box::pin(async move { daemon.kiln_graph(&kiln_path, None).await })
-        })
-        .await
+    forward_rpc! {
+        Safe KilnGraph =>
+        kiln_graph(kiln_path: &Path)
+        -> serde_json::Value = kiln_graph(&kiln_path, None);
     }
 
-    pub async fn suggest_links(
-        &self,
-        kiln_path: &Path,
-        text: &str,
-    ) -> anyhow::Result<Vec<serde_json::Value>> {
-        let kiln_path = kiln_path.to_path_buf();
-        let text = text.to_string();
-        self.call_with_reconnect("suggest_links", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let text = text.clone();
-            Box::pin(async move { daemon.suggest_links(&kiln_path, &text, None).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SuggestLinks =>
+        suggest_links(kiln_path: &Path, text: &str)
+        -> Vec<serde_json::Value> = suggest_links(&kiln_path, &text, None);
     }
 
-    pub async fn search_vectors(
-        &self,
-        kiln_path: &Path,
-        vector: &[f32],
-        limit: usize,
-    ) -> anyhow::Result<Vec<crucible_daemon::VectorHit>> {
-        let kiln_path = kiln_path.to_path_buf();
-        let vector = vector.to_vec();
-        self.call_with_reconnect("search_vectors", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let vector = vector.clone();
-            Box::pin(async move {
-                daemon
-                    .search_vectors(&kiln_path, &vector, limit, None)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Safe SearchVectors =>
+        search_vectors(kiln_path: &Path, vector: &[f32], limit: usize)
+        -> Vec<crucible_daemon::VectorHit> = search_vectors(&kiln_path, &vector, limit, None);
     }
 
-    /// Embed a query string into a vector via the kiln's configured embedding
-    /// provider (the first half of semantic search; feed the result to
-    /// [`Self::search_vectors`]).
-    pub async fn embed_query(&self, kiln_path: &Path, text: &str) -> anyhow::Result<Vec<f32>> {
-        let kiln_path = kiln_path.to_path_buf();
-        let text = text.to_string();
-        self.call_with_reconnect("embed.query", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let text = text.clone();
-            Box::pin(async move { daemon.embed_query(&kiln_path, &text).await })
-        })
-        .await
+    forward_rpc! {
+        /// Embed a query string into a vector via the kiln's configured embedding
+        /// provider (the first half of semantic search; feed the result to
+        /// [`Self::search_vectors`]).
+        Safe EmbedQuery =>
+        embed_query(kiln_path: &Path, text: &str)
+        -> Vec<f32> = embed_query(&kiln_path, &text);
     }
 
-    /// Ripgrep-style content search. `root` containment (registered project or
-    /// open kiln) is enforced daemon-side. `regex` switches `query` from
-    /// literal substring to regex matching.
-    pub async fn search_grep(
-        &self,
-        root: &str,
-        query: &str,
-        regex: bool,
-        glob: Option<&str>,
-        limit: usize,
-        case_insensitive: bool,
-    ) -> anyhow::Result<crucible_daemon::GrepSearchResponse> {
-        let root = root.to_string();
-        let query = query.to_string();
-        let glob = glob.map(str::to_string);
-        self.call_with_reconnect("search_grep", move |daemon| {
-            let root = root.clone();
-            let query = query.clone();
-            let glob = glob.clone();
-            Box::pin(async move {
-                daemon
-                    .search_grep(
-                        &root,
-                        &query,
-                        regex,
-                        glob.as_deref(),
-                        limit,
-                        case_insensitive,
-                    )
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        /// Ripgrep-style content search. `root` containment (registered project or
+        /// open kiln) is enforced daemon-side. `regex` switches `query` from
+        /// literal substring to regex matching.
+        Safe SearchGrep =>
+        search_grep(
+            root: &str, query: &str, regex: bool,
+            glob: Option<&str> => glob.map(str::to_owned),
+            limit: usize, case_insensitive: bool,
+        )
+        -> crucible_daemon::GrepSearchResponse = search_grep(&root, &query, regex, glob.as_deref(), limit, case_insensitive);
     }
 
-    pub async fn mcp_status(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("mcp.status", |daemon| Box::pin(daemon.mcp_status()))
-            .await
+    forward_rpc! {
+        Safe McpStatus =>
+        mcp_status()
+        -> serde_json::Value = mcp_status();
     }
 
-    pub async fn skills_list(
-        &self,
-        kiln: &Path,
-        scope_filter: Option<&str>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let kiln = kiln.to_path_buf();
-        let scope_filter = scope_filter.map(str::to_string);
-        self.call_with_reconnect("skills.list", move |daemon| {
-            let kiln = kiln.clone();
-            let scope_filter = scope_filter.clone();
-            Box::pin(async move { daemon.skills_list(&kiln, scope_filter.as_deref()).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SkillsList =>
+        skills_list(kiln: &Path, scope_filter: Option<&str> => scope_filter.map(str::to_owned))
+        -> serde_json::Value = skills_list(&kiln, scope_filter.as_deref());
     }
 
-    pub async fn skills_get(&self, name: &str, kiln: &Path) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        let kiln = kiln.to_path_buf();
-        self.call_with_reconnect("skills.get", move |daemon| {
-            let name = name.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.skills_get(&name, &kiln).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SkillsGet =>
+        skills_get(name: &str, kiln: &Path)
+        -> serde_json::Value = skills_get(&name, &kiln);
     }
 
-    pub async fn skills_search(
-        &self,
-        query: &str,
-        kiln: &Path,
-        limit: Option<usize>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let query = query.to_string();
-        let kiln = kiln.to_path_buf();
-        self.call_with_reconnect("skills.search", move |daemon| {
-            let query = query.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.skills_search(&query, &kiln, limit).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SkillsSearch =>
+        skills_search(query: &str, kiln: &Path, limit: Option<usize>)
+        -> serde_json::Value = skills_search(&query, &kiln, limit);
     }
 
-    /// Create a session and have the daemon resolve + configure its agent in
-    /// one call (ACP profile or config-derived internal defaults). The daemon
-    /// owns default resolution, so the web never builds its own copy.
-    pub async fn session_create_with_agent(
-        &self,
-        params: crucible_daemon::rpc_client::SessionCreateParams,
-        agent: crucible_daemon::rpc_client::SessionAgentSpec,
-    ) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("session.create", move |daemon| {
-            let params = params.clone();
-            let agent = agent.clone();
-            Box::pin(async move { daemon.session_create_with_agent(params, agent).await })
-        })
-        .await
+    forward_rpc! {
+        /// Create a session and have the daemon resolve + configure its agent in
+        /// one call (ACP profile or config-derived internal defaults). The daemon
+        /// owns default resolution, so the web never builds its own copy.
+        Once SessionCreate =>
+        session_create_with_agent(
+            params: crucible_daemon::rpc_client::SessionCreateParams,
+            agent: crucible_daemon::rpc_client::SessionAgentSpec,
+        )
+        -> serde_json::Value = session_create_with_agent(params, agent);
     }
 
-    pub async fn session_list(
-        &self,
-        kiln: Option<&crucible_core::config::KilnName>,
-        workspace: Option<&Path>,
-        session_type: Option<&str>,
-        state: Option<&str>,
-        include_archived: Option<bool>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let kiln = kiln.cloned();
-        let workspace = workspace.map(Path::to_path_buf);
-        let session_type = session_type.map(str::to_string);
-        let state = state.map(str::to_string);
-        self.call_with_reconnect("session.list", move |daemon| {
-            let kiln = kiln.clone();
-            let workspace = workspace.clone();
-            let session_type = session_type.clone();
-            let state = state.clone();
-            Box::pin(async move {
-                daemon
-                    .session_list(
-                        kiln.as_ref(),
-                        workspace.as_deref(),
-                        session_type.as_deref(),
-                        state.as_deref(),
-                        include_archived,
-                    )
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionList =>
+        session_list(
+            kiln: Option<&crucible_core::config::KilnName> => kiln.cloned(),
+            workspace: Option<&Path> => workspace.map(Path::to_path_buf),
+            session_type: Option<&str> => session_type.map(str::to_owned),
+            state: Option<&str> => state.map(str::to_owned),
+            include_archived: Option<bool>,
+        )
+        -> serde_json::Value = session_list(
+            kiln.as_ref(), workspace.as_deref(), session_type.as_deref(),
+            state.as_deref(), include_archived,
+        );
     }
 
-    /// `kilns` is the caller's whole kiln set: `session.search` scopes by
-    /// kiln-set overlap, so sending a subset hides the sessions that share the
-    /// members left out.
-    pub async fn session_search(
-        &self,
-        query: &str,
-        kilns: &[crucible_core::config::KilnName],
-        limit: Option<usize>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let query = query.to_string();
-        let kilns = kilns.to_vec();
-        self.call_with_reconnect("session.search", move |daemon| {
-            let query = query.clone();
-            let kilns = kilns.clone();
-            Box::pin(async move { daemon.session_search(&query, &kilns, limit).await })
-        })
-        .await
+    forward_rpc! {
+        /// `kilns` is the caller's whole kiln set: `session.search` scopes by
+        /// kiln-set overlap, so sending a subset hides the sessions that share the
+        /// members left out.
+        Safe SessionSearch =>
+        session_search(query: &str, kilns: &[crucible_core::config::KilnName], limit: Option<usize>)
+        -> serde_json::Value = session_search(&query, &kilns, limit);
     }
 
-    pub async fn session_get(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionGet =>
+        session_get(session_id: &str)
+        -> serde_json::Value = session_get(&session_id);
     }
 
-    pub async fn session_resume_from_storage(
-        &self,
-        session_id: &str,
-        limit: Option<usize>,
-        offset: Option<usize>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.resume_from_storage", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_resume_from_storage(&session_id, limit, offset)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once SessionResumeFromStorage =>
+        session_resume_from_storage(session_id: &str, limit: Option<usize>, offset: Option<usize>)
+        -> serde_json::Value = session_resume_from_storage(&session_id, limit, offset);
     }
 
-    pub async fn session_pause(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.pause", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_pause(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionPause =>
+        session_pause(session_id: &str)
+        -> serde_json::Value = session_pause(&session_id);
     }
 
-    pub async fn session_resume(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.resume", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_resume(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionResume =>
+        session_resume(session_id: &str)
+        -> serde_json::Value = session_resume(&session_id);
     }
 
-    pub async fn session_end(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.end", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_end(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionEnd =>
+        session_end(session_id: &str)
+        -> serde_json::Value = session_end(&session_id);
     }
 
-    pub async fn session_delete(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.delete", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_delete(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionDelete =>
+        session_delete(session_id: &str)
+        -> serde_json::Value = session_delete(&session_id);
     }
 
-    pub async fn session_archive(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.archive", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_archive(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionArchive =>
+        session_archive(session_id: &str)
+        -> serde_json::Value = session_archive(&session_id);
     }
 
-    pub async fn session_unarchive(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.unarchive", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_unarchive(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionUnarchive =>
+        session_unarchive(session_id: &str)
+        -> serde_json::Value = session_unarchive(&session_id);
     }
 
-    pub async fn session_cancel(&self, session_id: &str) -> anyhow::Result<bool> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.cancel", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_cancel(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionCancel =>
+        session_cancel(session_id: &str)
+        -> bool = session_cancel(&session_id);
     }
 
     pub async fn session_subscribe(
@@ -649,346 +471,187 @@ impl ReconnectingDaemon {
         session_ids: &[&str],
     ) -> anyhow::Result<serde_json::Value> {
         let ids: Vec<String> = session_ids.iter().map(|id| (*id).to_string()).collect();
-        self.call_with_reconnect("session.subscribe", move |daemon| {
-            let ids = ids.clone();
-            Box::pin(async move {
-                let borrowed: Vec<&str> = ids.iter().map(String::as_str).collect();
-                daemon.session_subscribe(&borrowed).await
-            })
-        })
+        self.forward_rpc(
+            ReplayPolicy::Safe,
+            RpcMethod::SessionSubscribe,
+            move |daemon| {
+                let ids = ids.clone();
+                Box::pin(async move {
+                    let borrowed: Vec<&str> = ids.iter().map(String::as_str).collect();
+                    daemon.session_subscribe(&borrowed).await
+                })
+            },
+        )
         .await
     }
 
-    pub async fn session_configure_agent(
-        &self,
-        session_id: &str,
-        agent: &crucible_core::session::SessionAgent,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let agent = agent.clone();
-        self.call_with_reconnect("session.configure_agent", move |daemon| {
-            let session_id = session_id.clone();
-            let agent = agent.clone();
-            Box::pin(async move { daemon.session_configure_agent(&session_id, &agent).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionConfigureAgent =>
+        session_configure_agent(session_id: &str, agent: &crucible_core::session::SessionAgent)
+        -> () = session_configure_agent(&session_id, &agent);
     }
 
-    pub async fn session_send_message(
-        &self,
-        session_id: &str,
-        content: &str,
-    ) -> anyhow::Result<String> {
-        let session_id = session_id.to_string();
-        let content = content.to_string();
-        self.call_with_reconnect("session.send_message", move |daemon| {
-            let session_id = session_id.clone();
-            let content = content.clone();
-            Box::pin(async move {
-                daemon
-                    .session_send_message(&session_id, &content, true)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once SessionSendMessage =>
+        session_send_message(session_id: &str, content: &str)
+        -> String = session_send_message(&session_id, &content, true);
     }
 
-    pub async fn session_interaction_respond(
-        &self,
-        session_id: &str,
-        request_id: &str,
-        response: crucible_core::interaction::InteractionResponse,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let request_id = request_id.to_string();
-        self.call_with_reconnect("session.interaction_respond", move |daemon| {
-            let session_id = session_id.clone();
-            let request_id = request_id.clone();
-            let response = response.clone();
-            Box::pin(async move {
-                daemon
-                    .session_interaction_respond(&session_id, &request_id, response)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once SessionInteractionRespond =>
+        session_interaction_respond(session_id: &str, request_id: &str, response: crucible_core::interaction::InteractionResponse)
+        -> () = session_interaction_respond(&session_id, &request_id, response);
     }
 
-    /// Aggregate pending interactions across all sessions (Inbox poll).
-    pub async fn session_pending_interactions(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("session.pending_interactions", move |daemon| {
-            Box::pin(async move { daemon.session_pending_interactions().await })
-        })
-        .await
+    forward_rpc! {
+        /// Aggregate pending interactions across all sessions (Inbox poll).
+        Safe SessionPendingInteractions =>
+        session_pending_interactions()
+        -> serde_json::Value = session_pending_interactions();
     }
 
-    /// Attach a kiln to a session's connected set. Returns the updated scope.
-    pub async fn session_connect_kiln(
-        &self,
-        session_id: &str,
-        kiln: &crucible_core::config::KilnName,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        let kiln = kiln.clone();
-        self.call_with_reconnect("session.connect_kiln", move |daemon| {
-            let session_id = session_id.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.session_connect_kiln(&session_id, &kiln).await })
-        })
-        .await
+    forward_rpc! {
+        /// Attach a kiln to a session's connected set. Returns the updated scope.
+        Once SessionConnectKiln =>
+        session_connect_kiln(session_id: &str, kiln: &crucible_core::config::KilnName)
+        -> serde_json::Value = session_connect_kiln(&session_id, &kiln);
     }
 
-    /// Detach a kiln from the session's set. Any member may be detached — the
-    /// set is flat, including the kiln the session was created with.
-    pub async fn session_disconnect_kiln(
-        &self,
-        session_id: &str,
-        kiln: &crucible_core::config::KilnName,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        let kiln = kiln.clone();
-        self.call_with_reconnect("session.disconnect_kiln", move |daemon| {
-            let session_id = session_id.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.session_disconnect_kiln(&session_id, &kiln).await })
-        })
-        .await
+    forward_rpc! {
+        /// Detach a kiln from the session's set. Any member may be detached — the
+        /// set is flat, including the kiln the session was created with.
+        Once SessionDisconnectKiln =>
+        session_disconnect_kiln(session_id: &str, kiln: &crucible_core::config::KilnName)
+        -> serde_json::Value = session_disconnect_kiln(&session_id, &kiln);
     }
 
-    /// Set (Some) or detach (None) the session's workspace.
-    pub async fn session_set_workspace(
-        &self,
-        session_id: &str,
-        workspace: Option<&Path>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        let workspace = workspace.map(Path::to_path_buf);
-        self.call_with_reconnect("session.set_workspace", move |daemon| {
-            let session_id = session_id.clone();
-            let workspace = workspace.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_workspace(&session_id, workspace.as_deref())
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        /// Set (Some) or detach (None) the session's workspace.
+        Once SessionSetWorkspace =>
+        session_set_workspace(session_id: &str, workspace: Option<&Path> => workspace.map(Path::to_path_buf))
+        -> serde_json::Value = session_set_workspace(&session_id, workspace.as_deref());
     }
 
-    pub async fn session_switch_model(
-        &self,
-        session_id: &str,
-        model_id: &str,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let model_id = model_id.to_string();
-        self.call_with_reconnect("session.switch_model", move |daemon| {
-            let session_id = session_id.clone();
-            let model_id = model_id.clone();
-            Box::pin(async move { daemon.session_switch_model(&session_id, &model_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionSwitchModel =>
+        session_switch_model(session_id: &str, model_id: &str)
+        -> () = session_switch_model(&session_id, &model_id);
     }
 
-    pub async fn session_set_mode(&self, session_id: &str, mode_id: &str) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let mode_id = mode_id.to_string();
-        self.call_with_reconnect("session.set_mode", move |daemon| {
-            let session_id = session_id.clone();
-            let mode_id = mode_id.clone();
-            Box::pin(async move { daemon.session_set_mode(&session_id, &mode_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionSetMode =>
+        session_set_mode(session_id: &str, mode_id: &str)
+        -> () = session_set_mode(&session_id, &mode_id);
     }
 
-    /// Beside `session_set_mode` rather than in `daemon_session_config`: `mode`
-    /// is not a `config/` knob — switching it changes tool policy, not a scalar
-    /// setting — and it has its own route pair. A settings panel that can set a
-    /// value it cannot read is how a stale control gets shown.
-    pub async fn session_get_mode(&self, session_id: &str) -> anyhow::Result<Option<String>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_mode", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_mode(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        /// Beside `session_set_mode` rather than in `daemon_session_config`: `mode`
+        /// is not a `config/` knob — switching it changes tool policy, not a scalar
+        /// setting — and it has its own route pair. A settings panel that can set a
+        /// value it cannot read is how a stale control gets shown.
+        Safe SessionGetMode =>
+        session_get_mode(session_id: &str)
+        -> Option<String> = session_get_mode(&session_id);
     }
 
-    pub async fn session_set_title(&self, session_id: &str, title: &str) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let title = title.to_string();
-        self.call_with_reconnect("session.set_title", move |daemon| {
-            let session_id = session_id.clone();
-            let title = title.clone();
-            Box::pin(async move { daemon.session_set_title(&session_id, &title).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionSetTitle =>
+        session_set_title(session_id: &str, title: &str)
+        -> () = session_set_title(&session_id, &title);
     }
 
-    pub async fn session_generate_title(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.generate_title", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_generate_title(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionGenerateTitle =>
+        session_generate_title(session_id: &str)
+        -> serde_json::Value = session_generate_title(&session_id);
     }
 
-    pub async fn session_list_models(&self, session_id: &str) -> anyhow::Result<Vec<String>> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.list_models", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_list_models(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionListModels =>
+        session_list_models(session_id: &str)
+        -> Vec<String> = session_list_models(&session_id);
     }
 
-    /// Plugin status slots for a session, forwarded as the daemon shaped them
-    /// (`{"status": [{key, plugin, text, level}, …]}`).
-    pub async fn session_status(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.status", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_status(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        /// Plugin status slots for a session, forwarded as the daemon shaped them
+        /// (`{"status": [{key, plugin, text, level}, …]}`).
+        Safe SessionStatus =>
+        session_status(session_id: &str)
+        -> serde_json::Value = session_status(&session_id);
     }
 
-    pub async fn session_list_agent_options(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.list_agent_options", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_list_agent_options(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionListAgentOptions =>
+        session_list_agent_options(session_id: &str)
+        -> serde_json::Value = session_list_agent_options(&session_id);
     }
 
-    pub async fn session_set_agent_option(
-        &self,
-        session_id: &str,
-        option_id: &str,
-        value: &str,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        let option_id = option_id.to_string();
-        let value = value.to_string();
-        self.call_with_reconnect("session.set_agent_option", move |daemon| {
-            let session_id = session_id.clone();
-            let option_id = option_id.clone();
-            let value = value.clone();
-            Box::pin(async move {
-                daemon
-                    .session_set_agent_option(&session_id, &option_id, &value)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once SessionSetAgentOption =>
+        session_set_agent_option(session_id: &str, option_id: &str, value: &str)
+        -> () = session_set_agent_option(&session_id, &option_id, &value);
     }
 
-    pub async fn session_list_knobs(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<crucible_core::types::SessionKnobSupport> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.list_knobs", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_list_knobs(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionListKnobs =>
+        session_list_knobs(session_id: &str)
+        -> crucible_core::types::SessionKnobSupport = session_list_knobs(&session_id);
     }
 
-    pub async fn session_list_modes(
-        &self,
-        session_id: &str,
-    ) -> anyhow::Result<crucible_core::types::mode::SessionModes> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.list_modes", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_list_modes(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionListModes =>
+        session_list_modes(session_id: &str)
+        -> crucible_core::types::mode::SessionModes = session_list_modes(&session_id);
     }
 
-    pub async fn list_providers(
-        &self,
-        kiln_path: Option<&std::path::Path>,
-    ) -> anyhow::Result<Vec<ProviderInfo>> {
-        self.call_with_reconnect("providers.list", move |daemon| {
-            let kiln_path = kiln_path.map(|p| p.to_path_buf());
-            Box::pin(async move { daemon.list_providers(kiln_path.as_deref()).await })
-        })
-        .await
+    forward_rpc! {
+        Safe ProvidersList =>
+        list_providers(kiln_path: Option<&std::path::Path> => kiln_path.map(Path::to_path_buf))
+        -> Vec<ProviderInfo> = list_providers(kiln_path.as_deref());
     }
 
-    /// List all chat models across providers without an active session.
-    pub async fn list_all_models(
-        &self,
-        kiln_path: Option<&std::path::Path>,
-    ) -> anyhow::Result<Vec<String>> {
-        self.call_with_reconnect("models.list", move |daemon| {
-            let kiln_path = kiln_path.map(|p| p.to_path_buf());
-            Box::pin(async move { daemon.list_all_models(kiln_path.as_deref()).await })
-        })
-        .await
+    forward_rpc! {
+        /// List all chat models across providers without an active session.
+        Safe ModelsList =>
+        list_all_models(kiln_path: Option<&std::path::Path> => kiln_path.map(Path::to_path_buf))
+        -> Vec<String> = list_all_models(kiln_path.as_deref());
     }
 
-    /// List ACP agent profiles (builtins + config) with probed availability.
-    pub async fn agents_list_profiles(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("agents.list_profiles", move |daemon| {
-            Box::pin(async move { daemon.agents_list_profiles().await })
-        })
-        .await
+    forward_rpc! {
+        /// List ACP agent profiles (builtins + config) with probed availability.
+        Safe AgentsListProfiles =>
+        agents_list_profiles()
+        -> serde_json::Value = agents_list_profiles();
     }
 
-    pub async fn session_set_precognition(
-        &self,
-        session_id: &str,
-        enabled: bool,
-    ) -> anyhow::Result<()> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.set_precognition", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_set_precognition(&session_id, enabled).await })
-        })
-        .await
+    forward_rpc! {
+        Once SessionSetPrecognition =>
+        session_set_precognition(session_id: &str, enabled: bool)
+        -> () = session_set_precognition(&session_id, enabled);
     }
 
-    pub async fn session_get_precognition(&self, session_id: &str) -> anyhow::Result<bool> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.get_precognition", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.session_get_precognition(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionGetPrecognition =>
+        session_get_precognition(session_id: &str)
+        -> bool = session_get_precognition(&session_id);
     }
 
-    pub async fn project_register(&self, path: &Path) -> anyhow::Result<crucible_core::Project> {
-        let path = path.to_path_buf();
-        self.call_with_reconnect("project.register", move |daemon| {
-            let path = path.clone();
-            Box::pin(async move { daemon.project_register(&path).await })
-        })
-        .await
+    forward_rpc! {
+        Once ProjectRegister =>
+        project_register(path: &Path)
+        -> crucible_core::Project = project_register(&path);
     }
 
-    pub async fn project_unregister(&self, path: &Path) -> anyhow::Result<()> {
-        let path = path.to_path_buf();
-        self.call_with_reconnect("project.unregister", move |daemon| {
-            let path = path.clone();
-            Box::pin(async move { daemon.project_unregister(&path).await })
-        })
-        .await
+    forward_rpc! {
+        Once ProjectUnregister =>
+        project_unregister(path: &Path)
+        -> () = project_unregister(&path);
     }
 
-    pub async fn project_list(&self) -> anyhow::Result<Vec<crucible_core::Project>> {
-        self.call_with_reconnect("project.list", |daemon| Box::pin(daemon.project_list()))
-            .await
+    forward_rpc! {
+        Safe ProjectList =>
+        project_list()
+        -> Vec<crucible_core::Project> = project_list();
     }
 
     pub async fn scm_clone(
@@ -997,145 +660,57 @@ impl ReconnectingDaemon {
         dest: Option<&Path>,
         name: Option<&str>,
     ) -> anyhow::Result<crucible_daemon::ScmCloneResponse> {
-        // Deliberately NOT call_with_reconnect: a connection error after the
+        // Single attempt: a connection error after the
         // clone started would re-run `git clone` (the DestExists check turns
         // that into a confusing error over a partial dir). One attempt only.
         let daemon = self.daemon.read().await;
         daemon.scm_clone(url, dest, name).await
     }
 
-    pub async fn fs_list_dir(
-        &self,
-        root: &str,
-        rel_path: &str,
-        show_ignored: bool,
-        show_hidden: bool,
-    ) -> anyhow::Result<serde_json::Value> {
-        let root = root.to_string();
-        let rel_path = rel_path.to_string();
-        self.call_with_reconnect("fs.list_dir", move |daemon| {
-            let root = root.clone();
-            let rel_path = rel_path.clone();
-            Box::pin(async move {
-                daemon
-                    .fs_list_dir(&root, &rel_path, show_ignored, show_hidden)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Safe FsListDir =>
+        fs_list_dir(root: &str, rel_path: &str, show_ignored: bool, show_hidden: bool)
+        -> serde_json::Value = fs_list_dir(&root, &rel_path, show_ignored, show_hidden);
     }
 
-    pub async fn fs_move(
-        &self,
-        root: &str,
-        kind: &str,
-        from_rel: &str,
-        to_rel: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let root = root.to_string();
-        let kind = kind.to_string();
-        let from_rel = from_rel.to_string();
-        let to_rel = to_rel.to_string();
-        self.call_with_reconnect("fs.move", move |daemon| {
-            let root = root.clone();
-            let kind = kind.clone();
-            let from_rel = from_rel.clone();
-            let to_rel = to_rel.clone();
-            Box::pin(async move { daemon.fs_move(&root, &kind, &from_rel, &to_rel).await })
-        })
-        .await
+    forward_rpc! {
+        Once FsMove =>
+        fs_move(root: &str, kind: &str, from_rel: &str, to_rel: &str)
+        -> serde_json::Value = fs_move(&root, &kind, &from_rel, &to_rel);
     }
 
-    pub async fn fs_mkdir(&self, root: &str, kind: &str, rel_path: &str) -> anyhow::Result<()> {
-        let root = root.to_string();
-        let kind = kind.to_string();
-        let rel_path = rel_path.to_string();
-        self.call_with_reconnect("fs.mkdir", move |daemon| {
-            let root = root.clone();
-            let kind = kind.clone();
-            let rel_path = rel_path.clone();
-            Box::pin(async move { daemon.fs_mkdir(&root, &kind, &rel_path).await })
-        })
-        .await
+    forward_rpc! {
+        Once FsMkdir =>
+        fs_mkdir(root: &str, kind: &str, rel_path: &str)
+        -> () = fs_mkdir(&root, &kind, &rel_path);
     }
 
-    pub async fn fs_trash(
-        &self,
-        root: &str,
-        kind: &str,
-        rel_path: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let root = root.to_string();
-        let kind = kind.to_string();
-        let rel_path = rel_path.to_string();
-        self.call_with_reconnect("fs.trash", move |daemon| {
-            let root = root.clone();
-            let kind = kind.clone();
-            let rel_path = rel_path.clone();
-            Box::pin(async move { daemon.fs_trash(&root, &kind, &rel_path).await })
-        })
-        .await
+    forward_rpc! {
+        Once FsTrash =>
+        fs_trash(root: &str, kind: &str, rel_path: &str)
+        -> serde_json::Value = fs_trash(&root, &kind, &rel_path);
     }
 
-    pub async fn project_get(&self, path: &Path) -> anyhow::Result<Option<crucible_core::Project>> {
-        let path = path.to_path_buf();
-        self.call_with_reconnect("project.get", move |daemon| {
-            let path = path.clone();
-            Box::pin(async move { daemon.project_get(&path).await })
-        })
-        .await
+    forward_rpc! {
+        Safe ProjectGet =>
+        project_get(path: &Path)
+        -> Option<crucible_core::Project> = project_get(&path);
     }
 
-    pub async fn webhook_receive(
-        &self,
-        name: String,
-        headers: std::collections::HashMap<String, String>,
-        body: String,
-    ) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("webhook.receive", move |daemon| {
-            let name = name.clone();
-            let headers = headers.clone();
-            let body = body.clone();
-            Box::pin(async move {
-                daemon
-                    .call(
-                        "webhook.receive",
-                        serde_json::json!({
-                            "name": name,
-                            "headers": headers,
-                            "body": body,
-                        }),
-                    )
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once WebhookReceive =>
+        webhook_receive(name: String, headers: std::collections::HashMap<String, String>, body: String)
+        -> serde_json::Value = call("webhook.receive", serde_json::json!({ "name": name, "headers": headers, "body": body, }));
     }
 
-    pub async fn session_render_markdown(
-        &self,
-        session_id: &str,
-        include_timestamps: Option<bool>,
-        include_tokens: Option<bool>,
-        include_tools: Option<bool>,
-        max_content_length: Option<usize>,
-    ) -> anyhow::Result<String> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("session.render_markdown", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move {
-                daemon
-                    .session_render_markdown(
-                        &session_id,
-                        include_timestamps,
-                        include_tokens,
-                        include_tools,
-                        max_content_length,
-                    )
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Safe SessionRenderMarkdown =>
+        session_render_markdown(
+            session_id: &str, include_timestamps: Option<bool>,
+            include_tokens: Option<bool>, include_tools: Option<bool>,
+            max_content_length: Option<usize>,
+        )
+        -> String = session_render_markdown(&session_id, include_timestamps, include_tokens, include_tools, max_content_length);
     }
 }
 
@@ -1401,3 +976,7 @@ mod tests {
         assert_eq!(received2.event, "event_for_2");
     }
 }
+
+#[cfg(test)]
+#[path = "daemon_retry_tests.rs"]
+mod retry_tests;

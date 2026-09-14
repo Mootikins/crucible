@@ -132,9 +132,6 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Session Search** `P0` — text search across past conversations · `crucible-daemon` (observe), `crucible-cli`
   - **Gets you:** `cru session search "<query>"` prints matching session ids with the line number and surrounding context from the session JSONL.
   - **Proof:** `crates/crucible-daemon/src/server/session/list.rs`:125 (`session.search` returns `{matches:[{session_id,line,context}],total}`); `crates/crucible-cli/tests/cli_e2e_internal.rs`::session_search_uses_daemon_rpc, `::session_search_without_daemon_is_graceful_error`
-- [-] **Session Semantic Indexing** `P0` — sessions indexed for semantic search via a session indexing pipeline · `crucible-daemon` (observe)
-  - **Gets you:** nothing semantic. There is no pipeline — nothing runs on session end, pause, or a watcher event, and the one manual entry point (`cru session reindex`) is retired now that sessions live outside kilns.
-  - **Proof:** _none, and **worse than when this was written**. The one non-test caller (`server/observe.rs:315`) is gone: as of 2026-08-18 `rg extract_session_content` matches only `observe/indexer.rs` itself, its two re-exports, and `crucible-cli/src/commands/session/tests/reindex.rs`. There is no production path at all, and the surviving test still passes `to_note_record(None)` — no embedding — so even a restored caller would not make a session reachable from `search_vectors`._
 
 ## Agent Learning & Memory
 
@@ -578,9 +575,6 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Shell Output Insert (`i`)** `P0` — `i` inserts the command's output into the composer · `crucible-cli`
   - **Gets you:** pressing `i` closes the modal and puts the command's output in the composer, fenced and labelled; `t` does the same with the last 20 lines. `q` closes without inserting.
   - **Proof:** `crates/crucible-cli/src/tui/oil/tests/user_story_tests/shell_tests.rs`::insert_key_inserts_output_in_one_step, `::quit_key_closes_completed_modal_without_inserting`; composer side `chat_app/tests.rs`::inserting_shell_output_fills_the_composer_and_the_transcript. `i` used to set `pending_insert` and return `Close`, expecting a later `Tick` to emit the output — but the app drops the modal on `Close`, so no `Tick` ever arrived. `Close` now carries the insert; the `#[ignore]`d test that documented the bug is live.
-- [-] **Shell History** `P0` — last 100 commands recalled with `!` prefix · `crucible-cli`
-  - **Gets you:** commands are stored and capped at 100, and used for a dedupe check. There is no `!`-scoped recall. Partial mitigation by accident: `!cmd` submits through the ordinary input buffer, so Up-arrow *will* recall it — from the generic, uncapped, intermixed input history, not the 100-entry shell store.
-  - **Proof:** _none for recall — `shell_history` has exactly one reader (the dedupe check), and `shell_history_index`, documented as "current index into shell_history during recall", is only ever assigned `None`. No navigation path, no key handler, no `!`-prefixed completion source, and `AutocompleteKind` has no shell variant. A dead-field violation of the repo's "no type without a use site" rule._
 
 ### Notifications
 
@@ -727,9 +721,9 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Provider Auth Hooks** `P1` — `cru.on_provider_auth(fn)` lets a plugin supply the headers a provider client sends · `crucible-lua`, `crucible-daemon`
   - **Gets you:** a plugin that returns an `Authorization` header for a provider replaces the configured key for that client; a hook that returns nothing keeps the config fallback. A plugin reload clears only that plugin's hooks and does not register them twice.
   - **Proof:** `crates/crucible-daemon/src/agent_factory/tests.rs`::lua_auth_headers_override_config_when_authorization_present, `::lua_auth_none_keeps_config_fallback`; `crates/crucible-lua/src/auth_plugin.rs`::clearing_an_owners_auth_hooks_keeps_others_and_never_reissues_an_id; `crates/crucible-daemon/src/daemon_plugins/tests/lifecycle.rs`::re_executing_a_plugin_does_not_duplicate_its_provider_auth_hooks
-- [-] **Lua Notifications** `P1` — `cru.log.notify`, `cru.log.notify_once`, `cru.log.messages.*` queue a toast or a message from a plugin · `crucible-lua`
-  - **Gets you:** a queue in the VM. `notify` records level and progress, `notify_once` deduplicates by key and answers a boolean, and `messages.show`, `hide` and `clear` toggle the drawer state. No daemon code drains the queue into a session event, so no TUI or web client shows the toast (Gaps G122).
-  - **Proof:** `crates/crucible-lua/src/notify.rs`::notify_queues_toast, `::notify_once_deduplicates`, `::messages_show_hide_clear`, `::pending_notifications_cleared_after_retrieval`; the sink is _none — no test asserts a `cru.log.notify` call reaches a client._
+- [x] **Lua Notifications** `P1` — `cru.log.notify` and `cru.log.notify_once` send notifications through the daemon's sink · `crucible-lua`, `crucible-daemon`
+  - **Gets you:** level, progress and optional scope reach the notification hub; `notify_once` deduplicates only after successful delivery. The unconsumed `cru.log.messages.*` panel controls were retired in September 2026; panel visibility belongs to each client.
+  - **Proof:** `crates/crucible-lua/src/notify.rs`::with_a_sink_installed_notify_sends_the_request_and_queues_nothing, `::notify_once_marks_a_message_shown_only_after_the_sink_took_it`; `crates/crucible-daemon/src/notifications.rs`::a_kiln_scoped_notification_reaches_only_sessions_with_that_kiln, `::an_unscoped_notification_goes_to_the_wildcard`.
 - [x] **Isolation Claims** `P0` — `cru.isolation.require{ session, plugin }` marks a session as sandboxed by a plugin · `crucible-lua`, `crucible-daemon`
   - **Gets you:** after a claim, a host tool that no `pre_tool_call` handler takes over is refused, a daemon-surface tool still runs, and the `exempt` list reopens named tools. A claim is scoped to one session; a delegated child inherits the parent's claim and releases it when the child ends. The `oci` plugin is the shipped claimant.
   - **Proof:** `crates/crucible-lua/src/isolation.rs`::a_claimed_session_denies_host_tools_by_default, `::a_daemon_surface_tool_survives_isolation_unnamed`, `::exempt_reopens_host_and_unknown_surfaces_only`, `::a_claim_is_scoped_to_its_session`; `crates/crucible-daemon/tests/delegation_integration.rs`::delegated_child_inherits_the_parents_isolation_claim, `::a_delegated_childs_isolation_claim_is_released_when_it_ends`
@@ -1096,7 +1090,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **Notification RPC** `P0` — add, list and dismiss notifications via the daemon · `crucible-daemon`
   - **Gets you:** `session.add_notification` / `list_notifications` / `dismiss_notification` add, return and remove notifications across toast, progress and warning kinds, and the TUI renders them.
   - **Proof:** `crates/crucible-daemon/tests/notification_rpc.rs`::test_list_notifications_after_adding (asserts the response body's `id`, `kind`, `message`) and `::test_dismiss_notification_removes_from_list`, both against a real spawned daemon
-- [x] **File Watching** `P0` — file change detection (notify/polling, debouncing, daemon bridge) with auto-reprocessing: `file_changed` events trigger `pipeline.process()` via the daemon reprocess task; enrichment disabled for now (parsing + storage only) · `crucible-daemon` (watch)
+- [x] **File Watching** `P0` — native file change detection (notify, debouncing, daemon bridge), with one OS watcher shared per watch group and auto-reprocessing: `file_changed` events trigger `pipeline.process()` via the daemon reprocess task; enrichment disabled for now (parsing + storage only) · `crucible-daemon` (watch)
   - **Gets you:** a note you create, edit, or delete while the daemon is running is indexed on its own, without `cru process`.
   - **Proof:** `crates/crucible-daemon/tests/watch_indexing.rs`::note_created_while_daemon_runs_becomes_searchable, `::note_deleted_while_daemon_runs_leaves_the_index` — both open a kiln through the real server, touch a file, and assert on `list_notes`; both failed before `create_default_handlers` registered anything
 - [-] **Storage Maintenance Commands** `P0` — `storage.verify`, `storage.cleanup`, `storage.backup`, `storage.restore` and the `cru storage` command module · `crucible-daemon` (storage), `crucible-cli`
@@ -1256,7 +1250,7 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Proof:** `web/src/components/__tests__/PrecognitionBadge.test.tsx`; wire mapping `crates/crucible-web/src/events.rs`::precognition_complete_translates_to_precognition_result (which also guards the daemon→web event rename); components `SubagentCard.tsx`, `DelegationCard.tsx`
 - [x] **Voice Input / Transcription** `P1` — record audio from the composer and get it transcribed into the message box · `crucible-web`
   - **Gets you:** dictation into the chat composer, configurable from Settings.
-  - **Proof:** `web/src/components/MicButton.test.tsx`; `web/src/hooks/useMediaRecorder.test.ts`; `web/src/lib/transcription.test.ts`; `web/src/contexts/WhisperContext.test.tsx`
+  - **Proof:** `web/src/App.voice.test.tsx` mounts the application's provider tree and real composer, checks dictation preserves the draft, and checks a failed transcription is visible. Audio/network boundaries are mocked. Component, recording and DSP coverage: `web/src/components/MicButton.test.tsx`; `web/src/hooks/useMediaRecorder.test.ts`; `web/src/lib/transcription.test.ts`; `web/src/contexts/WhisperContext.test.tsx`.
 - [x] **Design Tokens & Style Gate** `P1` — a test fails the build if a component reaches for a raw palette class instead of a semantic token · `crucible-web`
   - **Gets you:** a UI that reads as one system in light and dark, with structural surfaces animating through shared motion primitives. It is also why the visual playwright baselines can be as tight as 0.3–4% diff ratios.
   - **Proof:** `web/src/components/__tests__/style-consistency.test.ts::no component uses an off-token Tailwind palette class`, `::surfaces use tokens, not white-alpha (bg/text/border)`, `::edge panels slide via one rAF-driven progress (frame + translate locked)`, `::command palette pops in over a fading overlay`
@@ -1387,6 +1381,9 @@ failure is why the Reflection Pass is propose-only; see Self-Improvement Avenues
 
 | Item | Date | Reason |
 |------|------|--------|
+| Session-to-note indexer | 2026-09-14 | Removed the unused adapter after `cru session reindex` was retired. Transcript replay, text search and export remain |
+| Separate shell-history store | 2026-09-14 | Removed the unread 100-entry store and cursor. Up/Down still recall `!` commands through general input history |
+| `cru.log.messages` | 2026-09-14 | Removed the inert panel-action API. Notifications still deliver through `cru.log.notify` and `notify_once`; each client owns its panel visibility |
 | `crucible-desktop` (GPUI) | 2024-12-13 | Cut — using Tauri + web instead |
 | `add-desktop-ui` OpenSpec | 2024-12-13 | Archived — GPUI approach abandoned |
 | `add-meta-systems` | — | Too ambitious (365 tasks), overlaps with the focused Lua approach |

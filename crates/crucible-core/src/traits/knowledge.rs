@@ -26,7 +26,6 @@
 //!
 //! ## Mid-Level: Database Operations
 //!
-//! - **`crate::traits::storage_client::StorageClient`** - Daemon-backed queries
 //!
 //! ## Low-Level: Content-Addressed Storage
 //!

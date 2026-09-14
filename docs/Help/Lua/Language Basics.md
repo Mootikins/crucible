@@ -158,9 +158,13 @@ worth reporting.
 | `cru.schedule` | Interval tasks: `cru.schedule({every=N}, fn)` returns handle; `cru.schedule.cancel(handle)` |
 | `cru.tools` | Tool registry: `get_tools()`, `run(name, args)` |
 | `cru.log.notify` | Notifications: `notify(msg, level?, opts?)`, `notify_once(msg)` |
-| `cru.log.messages` | Notification panel: `toggle()`, `show()`, `hide()`, `clear()` |
 | `cru.oil` | UI building: `text()`, `col()`, `row()`, `spacer()`, `maybe()`, `match_state()` |
 | `cru.errors` | Plugin error log: `recent(n?)` returns recent errors |
+
+The former `cru.log.messages.{toggle,show,hide,clear}` API was removed in
+September 2026: it never controlled a client panel. Remove those calls from
+plugins and configuration. Use `cru.log.notify` / `notify_once` to deliver
+notifications; panel visibility is controlled by each client's own UI.
 
 ### Utility Modules
 

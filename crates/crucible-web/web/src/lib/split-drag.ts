@@ -1,8 +1,8 @@
 import { windowActions } from '@/stores/windowStore';
 
 /** A split never drags past this much of its container, either way. */
-export const SPLIT_RATIO_MIN = 0.1;
-export const SPLIT_RATIO_MAX = 0.9;
+const SPLIT_RATIO_MIN = 0.1;
+const SPLIT_RATIO_MAX = 0.9;
 
 export interface SplitDragOptions {
   event: PointerEvent;

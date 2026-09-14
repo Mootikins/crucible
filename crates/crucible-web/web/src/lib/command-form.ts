@@ -37,7 +37,7 @@
  */
 
 /** The control a parameter is drawn with. See the table in the module docs. */
-export type CommandFieldControl = 'text' | 'number' | 'checkbox' | 'lines' | 'json';
+type CommandFieldControl = 'text' | 'number' | 'checkbox' | 'lines' | 'json';
 
 /** One parameter, ready to draw. */
 export interface CommandField {

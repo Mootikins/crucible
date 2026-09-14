@@ -1,149 +1,72 @@
-//! `review.*` RPCs, forwarded to the daemon.
+//! Review RPCs preserve the daemon's result shape.
 //!
-//! Split from `daemon.rs` for the 1500-line file budget, along the same seam
-//! as `daemon_plugins`: these seven calls serve the attributed-diff review
-//! surface and none of them interpret what the daemon answered — the results
-//! are `serde_json::Value` the whole way to the browser so a key the daemon
-//! grows reaches a frontend that reads it without a rebuild here.
-//!
-//! # The six writes take `call_once`, and no test can prove it
-//!
-//! `call_with_reconnect` retries when `is_connection_error` matches — broken
-//! pipe, connection reset — which are exactly the states in which the daemon
-//! may already have executed the call. A replayed `review.revert_hunk` reverts
-//! once and injects the rejection into the conversation *twice*, or answers
-//! `UnknownHunk` for a revert that succeeded.
-//!
-//! A contract test used to claim it pinned this. It could not: the mock
-//! answered with a JSON-RPC error reading "Request timeout", which matches no
-//! connection-error pattern, so `call_with_reconnect` would have passed it just
-//! as happily. Making it discriminate needs a connection-shaped failure *and* a
-//! mock that survives `reconnect_if_stale` calling `connect_or_start_with_events`,
-//! which the mock-socket harness cannot do. It was deleted rather than left as a
-//! green light with no bulb. Only `review_list_hunks` may retry.
+//! Only listing may replay. A lost response to a review write must surface
+//! an ambiguous outcome, never a second revert or rejection. The real-socket
+//! regressions in daemon_retry_tests exercise response loss and reconnection.
 
 use super::daemon::ReconnectingDaemon;
 use crucible_core::session::ReviewScope;
 use crucible_daemon::rpc_client::ReviewCommentRequest;
 
 impl ReconnectingDaemon {
-    /// The composed diff plus its comments, forwarded as the daemon shaped it.
-    ///
-    /// Untyped on purpose: the result object grows keys (`degraded`, `gate`)
-    /// on the daemon's schedule, and a struct here would drop every one of
-    /// them on the floor until this crate was rebuilt to match. The only
-    /// review call idempotent enough to retry.
-    ///
-    /// `scope` narrows the listing to the current turn when asked; `None`
-    /// sends no scope and the daemon answers the whole session.
-    pub async fn review_list_hunks(
-        &self,
-        session_id: &str,
-        scope: Option<ReviewScope>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_with_reconnect("review.list_hunks", move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.review_list_hunks(&session_id, scope).await })
-        })
-        .await
+    forward_rpc! {
+        /// The composed diff plus its comments, forwarded as the daemon shaped it.
+        ///
+        /// Untyped on purpose: the result object grows keys (`degraded`, `gate`)
+        /// on the daemon's schedule, and a struct here would drop every one of
+        /// them on the floor until this crate was rebuilt to match. The only
+        /// review call idempotent enough to retry.
+        ///
+        /// `scope` narrows the listing to the current turn when asked; `None`
+        /// sends no scope and the daemon answers the whole session.
+        Safe ReviewListHunks =>
+        review_list_hunks(session_id: &str, scope: Option<ReviewScope>)
+        -> serde_json::Value = review_list_hunks(&session_id, scope);
     }
 
-    /// The release for a degraded root, which no amount of reviewing clears.
-    /// A write, and destructive to the queue, so at-most-once like the rest.
-    pub async fn review_rebase(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_once(move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.review_rebase(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        /// The release for a degraded root, which no amount of reviewing clears.
+        /// A write, and destructive to the queue, so at-most-once like the rest.
+        Once ReviewRebase =>
+        review_rebase(session_id: &str)
+        -> serde_json::Value = review_rebase(&session_id);
     }
 
-    pub async fn review_set_state(
-        &self,
-        session_id: &str,
-        hunk_id: &str,
-        state: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        let hunk_id = hunk_id.to_string();
-        let state = state.to_string();
-        self.call_once(move |daemon| {
-            let session_id = session_id.clone();
-            let hunk_id = hunk_id.clone();
-            let state = state.clone();
-            Box::pin(async move { daemon.review_set_state(&session_id, &hunk_id, &state).await })
-        })
-        .await
+    forward_rpc! {
+        Once ReviewSetState =>
+        review_set_state(session_id: &str, hunk_id: &str, state: &str)
+        -> serde_json::Value = review_set_state(&session_id, &hunk_id, &state);
     }
 
-    /// One decision over several hunks, in the order given. A reject reverts
-    /// several files, so a replay after a broken pipe would revert once and
-    /// inject the rejection twice: at-most-once, like the single decision.
-    pub async fn review_set_states(
-        &self,
-        session_id: &str,
-        hunk_ids: &[String],
-        state: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        let hunk_ids = hunk_ids.to_vec();
-        let state = state.to_string();
-        self.call_once(move |daemon| {
-            let session_id = session_id.clone();
-            let hunk_ids = hunk_ids.clone();
-            let state = state.clone();
-            Box::pin(async move {
-                daemon
-                    .review_set_states(&session_id, &hunk_ids, &state)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        /// One decision over several hunks, in the order given. A reject reverts
+        /// several files, so a replay after a broken pipe would revert once and
+        /// inject the rejection twice: at-most-once, like the single decision.
+        Once ReviewSetStates =>
+        review_set_states(session_id: &str, hunk_ids: &[String], state: &str)
+        -> serde_json::Value = review_set_states(&session_id, &hunk_ids, &state);
     }
 
-    /// Pop the most recent reject. A replay would pop a second batch the
-    /// user never asked to restore: at-most-once.
-    pub async fn review_undo_reject(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        self.call_once(move |daemon| {
-            let session_id = session_id.clone();
-            Box::pin(async move { daemon.review_undo_reject(&session_id).await })
-        })
-        .await
+    forward_rpc! {
+        /// Pop the most recent reject. A replay would pop a second batch the
+        /// user never asked to restore: at-most-once.
+        Once ReviewUndoReject =>
+        review_undo_reject(session_id: &str)
+        -> serde_json::Value = review_undo_reject(&session_id);
     }
 
-    /// The route builds the request, so its `session_id` is the one from the
-    /// URL path. The optional fields reach the daemon absent rather than null,
-    /// so the daemon's own defaults apply.
-    pub async fn review_comment(
-        &self,
-        request: ReviewCommentRequest,
-    ) -> anyhow::Result<serde_json::Value> {
-        self.call_once(move |daemon| {
-            let request = request.clone();
-            Box::pin(async move { daemon.review_comment(request).await })
-        })
-        .await
+    forward_rpc! {
+        /// The route builds the request, so its `session_id` is the one from the
+        /// URL path. The optional fields reach the daemon absent rather than null,
+        /// so the daemon's own defaults apply.
+        Once ReviewComment =>
+        review_comment(request: ReviewCommentRequest)
+        -> serde_json::Value = review_comment(request);
     }
 
-    pub async fn review_resolve_comment(
-        &self,
-        session_id: &str,
-        comment_id: &str,
-    ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
-        let comment_id = comment_id.to_string();
-        self.call_once(move |daemon| {
-            let session_id = session_id.clone();
-            let comment_id = comment_id.clone();
-            Box::pin(async move {
-                daemon
-                    .review_resolve_comment(&session_id, &comment_id)
-                    .await
-            })
-        })
-        .await
+    forward_rpc! {
+        Once ReviewResolveComment =>
+        review_resolve_comment(session_id: &str, comment_id: &str)
+        -> serde_json::Value = review_resolve_comment(&session_id, &comment_id);
     }
 }

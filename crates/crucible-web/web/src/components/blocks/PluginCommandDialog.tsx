@@ -265,5 +265,3 @@ export const PluginCommandDialog: Component<PluginCommandDialogProps> = (props) 
     </Show>
   );
 };
-
-export default PluginCommandDialog;

@@ -1,6 +1,5 @@
 //! Storage client implementation for daemon-based queries
 
-use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
@@ -9,7 +8,7 @@ use crucible_core::storage::{
     GraphLink, InboundLink, LinkOccurrence, NoteRecord, NoteStore,
     SearchResult as StorageSearchResult, StorageError, StorageResult, StorageResultExt,
 };
-use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
+use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::types::SearchResult as KnowledgeSearchResult;
 use crucible_core::DocumentId;
 use crucible_core::{CrucibleError, Result as CoreResult};
@@ -39,16 +38,6 @@ impl DaemonStorageClient {
     /// Get a reference to the daemon client
     pub fn daemon_client(&self) -> &Arc<DaemonClient> {
         &self.client
-    }
-}
-
-#[async_trait]
-impl StorageClient for DaemonStorageClient {
-    async fn query_raw(&self, _sql: &str) -> Result<Value> {
-        anyhow::bail!(
-            "Raw SQL queries are not supported through the daemon. \
-             Use typed methods: search_vectors, list_notes, get_note_by_name"
-        )
     }
 }
 
@@ -501,21 +490,6 @@ mod tests {
         assert_eq!(storage_client.kiln_path(), &kiln);
     }
 
-    #[tokio::test]
-    async fn test_daemon_storage_client_query_raw_returns_error() {
-        let (_tmp, _sock_path, daemon_client) = setup_test_daemon().await;
-        let kiln = PathBuf::from("/tmp/test-kiln");
-
-        let storage_client = DaemonStorageClient::new(daemon_client, kiln);
-
-        // Raw queries are not supported through the daemon
-        let result = storage_client.query_raw("SELECT * FROM notes").await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not supported through the daemon"));
-    }
     /// The link queries go through `kiln.graph`, so a CLI-side store answers
     /// them from the daemon's resolved-link index, not with an empty list.
     #[tokio::test]

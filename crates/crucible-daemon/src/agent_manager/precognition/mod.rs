@@ -443,13 +443,9 @@ impl AgentManager {
         // configured is the default state, not a failure. Emitting here would
         // report a grounding failure on the first message of every session that
         // has never configured embeddings.
-        let enrichment_config = self.kiln_manager.enrichment_config().cloned()?;
+        self.kiln_manager.enrichment_config()?;
 
-        let embedding_provider = match crate::embedding::get_or_create_embedding_provider(
-            &enrichment_config,
-        )
-        .await
-        {
+        let embedding_provider = match self.kiln_manager.embedding_provider().await {
             Ok(p) => p,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");

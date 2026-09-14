@@ -67,7 +67,6 @@ async fn setup_watcher_with_filter(
         recursive: true,
         filter: Some(filter),
         debounce: DebounceConfig::default(),
-        backend_options: Default::default(),
     };
 
     match watcher.watch(temp_dir.path().to_path_buf(), config).await {

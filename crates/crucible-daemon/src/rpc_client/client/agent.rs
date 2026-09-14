@@ -192,7 +192,7 @@ impl DaemonClient {
     }
 
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
-        self.typed_unit_call_with_retry(
+        self.typed_unit_call(
             "session.switch_model",
             SessionSwitchModelRequest {
                 session_id: session_id.to_string(),
@@ -253,7 +253,7 @@ impl DaemonClient {
     }
 
     pub async fn session_set_mode(&self, session_id: &str, mode_id: &str) -> Result<()> {
-        self.typed_unit_call_with_retry(
+        self.typed_unit_call(
             "session.set_mode",
             SessionSetModeRequest {
                 session_id: session_id.to_string(),
@@ -305,7 +305,7 @@ impl DaemonClient {
             value: &'a str,
         }
         let _: serde_json::Value = self
-            .typed_call_with_retry(
+            .typed_call(
                 "session.set_agent_option",
                 Params {
                     session_id,
@@ -433,7 +433,7 @@ impl DaemonClient {
 
     /// Set whether Precognition (auto-RAG) is enabled for a session.
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
-        self.typed_unit_call_with_retry(
+        self.typed_unit_call(
             "session.set_precognition",
             SessionSetPrecognitionRequest {
                 session_id: session_id.to_string(),
@@ -474,7 +474,7 @@ impl DaemonClient {
         session_id: &str,
         strategy: &str,
     ) -> Result<()> {
-        self.typed_unit_call_with_retry(
+        self.typed_unit_call(
             "session.set_context_strategy",
             SessionSetContextStrategyRequest {
                 session_id: session_id.to_string(),
@@ -501,7 +501,7 @@ impl DaemonClient {
         count: usize,
     ) -> Result<Vec<crucible_core::types::UndoSummary>> {
         let resp: serde_json::Value = self
-            .typed_call_with_retry(
+            .typed_call(
                 "session.undo",
                 SessionUndoRequest {
                     session_id: session_id.to_string(),

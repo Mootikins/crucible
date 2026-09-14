@@ -1,11 +1,9 @@
 //! Utility components for performance and scalability.
 
 mod debouncer;
-mod monitor;
 mod queue;
 
 pub use debouncer::Debouncer;
-pub use monitor::PerformanceMonitor;
 pub use queue::EventQueue;
 
 use crate::watch::FileEvent;

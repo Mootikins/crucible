@@ -139,7 +139,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G101 | wire | Web routes mirror RPC families and a test derives the route set (6.2) | `ReconnectingDaemon` is about 95 hand wrappers over four files with six dead ones (`services/daemon.rs:57`); no route-derivation test is recorded | code-wrong | M |
 | G102 | wire | The web server reaches the daemon through the RPC client only (4.27) | It imports `server::plugins::OptionAction`, `project_manager::*`, `webhook::*` (`routes/plugin.rs:8`, `routes/project.rs:8`, `routes/webhook.rs:11`) | code-wrong | M |
 | G103 | wire | One error body shape on the web (6.2) | Seven hand-built error bodies; `OkResponse` beside eight `json!({"ok": true})` literals; `NoteListItem` is a 5-tuple (`routes/helpers.rs:22`) | code-wrong | S |
-| G104 | wire | ACP types never leave `AcpHost` (4.19) | The CLI imports `acp::streaming::humanize_tool_title` (`crucible-cli/src/tui/oil/components/tool_render.rs:77`); `acp/tools.rs:29 ToolDescriptor` duplicates `ToolDefinition` | code-wrong | S |
+| G104 | wire | ACP types never leave `AcpHost` (4.19) | The CLI imports the display helper `acp::streaming::humanize_tool_title`; the duplicate ACP tool facade is removed | both-acceptable | - |
 | G105 | wire | Five built-in ACP profiles in one table (8.19) | The table is written twice with no gate (`acp/discovery.rs:52`, `acp_launch.rs:126`) | code-wrong | S |
 | G106 | wire | `AcpAgentServer` lives in the daemon crate (7) | `CrucibleAcpAgent` lives in the CLI and proxies to the daemon over RPC (`crucible-cli/src/commands/acp/agent.rs:50`) | both-acceptable | - |
 | G107 | wire | One request-id counter per ACP client (4.19) | One process-global `REQUEST_ID` (`acp/client/mod.rs:28`); timeout arithmetic is split across three files | code-wrong | S |
@@ -157,7 +157,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G119 | lua | `spec.handlers` registers hooks (F172) | `PluginSpec.handlers` is parsed and never dispatched (`daemon_plugins/mod.rs:741`) | not-built | - |
 | G120 | lua | ~~`Capability` is one closed set with one decoder (8)~~ | RESOLVED 2026-09-13: `parse_capability` and the `Capability` enum are gone. The one grant, `intercepts_tools`, is read from the fragment (`lifecycle/fragment.rs`) by one decoder | resolved | — |
 | G121 | lua | Modes exist in Lua only; no Rust copy of the names (8.6) | `BuiltinMode` (`crucible-core/src/types/mode.rs:85`), `BUILTIN_MODE_NAMES` (`tools/tool_modes.rs:37`), `default_internal_modes` (`mode.rs:273`) restate the three names | code-wrong | S |
-| G122 | lua | `cru.log.notify` reaches a client (F134) | `cru.log.notify` is a live Lua surface (`crates/crucible-lua/src/notify.rs:30`, registered at `crates/crucible-lua/src/executor.rs:260`); the queue reaches no client (`notify.rs:78`); Expected 2a lists it | expectation-incomplete | - |
+| G122 | lua | `cru.log.notify` reaches a client (F134) | Resolved: `crates/crucible-lua/src/notify.rs` sends through the daemon notification sink; inert message-panel controls retired September 2026 | both-acceptable | - |
 | G123 | lua | `cru.oil` nodes render somewhere (open 15) | `LuaNode` is built and nothing in the CLI consumes it (`crucible-lua/src/oil.rs:138`) | not-built | - |
 | G124 | crates | `crucible-lua` and `crucible-oil` depend on `core` only (7, D19) | `crucible-lua` imports `crucible_oil::style` and node builders (Actual 4) | code-wrong | M |
 | G125 | lua | One colour codec (3.29) | Four parsers across `theme.rs`, `theme_wire.rs`, `hl_lua.rs`; `ThemeLayout` and `UiLayout` are twins; `ThemeIcons`, `ThemeSpinnerStyle`, `BorderStyle`, `StatusBarPosition` are parsed and read by no renderer | code-wrong | S |
@@ -616,11 +616,11 @@ keeps an index must see a delete (invariant I8). Session start and end are
 lifecycle hooks (G40). Expected.md section 8.3 should list the eight real
 names.
 
-**G122.** `cru.log.notify`, `cru.log.notify_once` and `cru.log.messages.*`
-are registered on every VM (`crates/crucible-lua/src/executor.rs:260`). The
-product documents name toasts (F134) but not the Lua call, so the clean room
-had no row for it. The sink is still missing: the queue reaches no client
-(`crates/crucible-lua/src/notify.rs:78`). The code-side fix stays open.
+**G122.** Resolved. `cru.log.notify` and `cru.log.notify_once` send through
+the installed daemon notification sink (`crates/crucible-lua/src/notify.rs`,
+`crates/crucible-daemon/src/notifications.rs`). The unconsumed
+`cru.log.messages.*` controls were retired in September 2026; they never
+controlled a client panel. See [[Language Basics]] for the migration.
 
 **G110.** Closed; see section 6.
 

@@ -630,7 +630,7 @@ impl DaemonClient {
     }
 
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
-        self.typed_unit_call_with_retry(
+        self.typed_unit_call(
             "session.set_title",
             SessionSetTitleRequest {
                 session_id: session_id.to_string(),

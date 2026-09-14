@@ -94,7 +94,7 @@ pub use parser::{
     Tag,
     Wikilink,
 };
-pub use types::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
+pub use types::database::{DocumentId, SearchResult};
 
 // Re-export interaction protocol types
 pub use interaction::{

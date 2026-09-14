@@ -168,5 +168,3 @@ export const KanbanBlock: Component<BlockProps> = (props) => {
     </div>
   );
 };
-
-export default KanbanBlock;

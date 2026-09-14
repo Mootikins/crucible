@@ -29,7 +29,7 @@ use crucible_core::traits::KnowledgeRepository;
 /// to be a note — re-exported for the other note-writing sink in this crate
 /// (`acp::tools::ToolExecutor`), which had its own hand-rolled copy of the
 /// first and none of the second. One definition, because two would drift.
-pub(crate) use helpers::{ensure_md_suffix, reject_non_note};
+use helpers::ensure_md_suffix;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use std::sync::Arc;

@@ -1,12 +1,12 @@
 //! Main watch manager that coordinates all file watching activities.
 
 use crate::watch::{
-    backends::{select_optimal_backend, Backend, WatcherRequirements},
+    backends::NotifyWatcher,
     error::{Error, Result},
     events::FileEvent,
     handlers::{create_default_handlers, HandlerRegistry},
     traits::{DebounceConfig, EventHandler, WatchConfig, WatchHandle},
-    utils::{Debouncer, EventQueue, PerformanceMonitor},
+    utils::{Debouncer, EventQueue},
 };
 use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::collections::HashMap;
@@ -49,15 +49,13 @@ impl Default for WatchManagerConfig {
 /// Main manager for file watching operations.
 pub struct WatchManager {
     /// Active watchers
-    watchers: Arc<RwLock<HashMap<String, Backend>>>,
+    watchers: Arc<RwLock<HashMap<String, NotifyWatcher>>>,
     /// Event handlers
     handlers: Arc<RwLock<HandlerRegistry>>,
     /// Event queue for processing
     event_queue: Arc<Mutex<EventQueue>>,
     /// Debouncer for events
     debouncer: Arc<Mutex<Debouncer>>,
-    /// Performance monitor
-    performance_monitor: Arc<Mutex<PerformanceMonitor>>,
     /// Event processing task
     processor_task: Option<JoinHandle<()>>,
     /// Event sender
@@ -91,7 +89,6 @@ impl WatchManager {
             handlers: Arc::new(RwLock::new(HandlerRegistry::new())),
             event_queue: Arc::new(Mutex::new(EventQueue::new(config.queue_capacity))),
             debouncer: Arc::new(Mutex::new(Debouncer::new(config.debounce.clone()))),
-            performance_monitor: Arc::new(Mutex::new(PerformanceMonitor::new())),
             processor_task: None,
             event_sender: None,
             event_receiver: None,
@@ -191,8 +188,13 @@ impl WatchManager {
             .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
             .clone();
 
-        let requirements = WatcherRequirements::high_performance();
-        let mut watcher = select_optimal_backend(&requirements)?.create();
+        // Preserve the manager's supported platforms; there is no polling fallback.
+        if !matches!(std::env::consts::OS, "linux" | "macos" | "windows") {
+            return Err(Error::BackendUnavailable(
+                "Native watching is unsupported on this platform".into(),
+            ));
+        }
+        let mut watcher = NotifyWatcher::new();
         watcher.set_event_sender(event_sender);
 
         let handle = watcher.watch(path.clone(), config.clone()).await?;
@@ -233,8 +235,13 @@ impl WatchManager {
             .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
             .clone();
 
-        let requirements = WatcherRequirements::high_performance();
-        let mut watcher = select_optimal_backend(&requirements)?.create();
+        // Preserve the manager's supported platforms; there is no polling fallback.
+        if !matches!(std::env::consts::OS, "linux" | "macos" | "windows") {
+            return Err(Error::BackendUnavailable(
+                "Native watching is unsupported on this platform".into(),
+            ));
+        }
+        let mut watcher = NotifyWatcher::new();
         watcher.set_event_sender(event_sender);
 
         // A path that cannot be watched is one directory going unobserved, not
@@ -304,7 +311,6 @@ impl WatchManager {
         let handlers = Arc::clone(&self.handlers);
         let event_queue = Arc::clone(&self.event_queue);
         let debouncer = Arc::clone(&self.debouncer);
-        let performance_monitor = Arc::clone(&self.performance_monitor);
 
         let task = tokio::spawn(async move {
             let mut receiver = event_receiver;
@@ -319,7 +325,6 @@ impl WatchManager {
                             &handlers,
                             &event_queue,
                             &debouncer,
-                            &performance_monitor,
                         ).await {
                             error!("Error processing event: {}", e);
                         }
@@ -330,7 +335,6 @@ impl WatchManager {
                             &handlers,
                             &event_queue,
                             &debouncer,
-                            &performance_monitor,
                         ).await {
                             error!("Error flushing debounced events: {}", e);
                         }
@@ -352,7 +356,6 @@ impl WatchManager {
         handlers: &Arc<RwLock<HandlerRegistry>>,
         event_queue: &Arc<Mutex<EventQueue>>,
         debouncer: &Arc<Mutex<Debouncer>>,
-        performance_monitor: &Arc<Mutex<PerformanceMonitor>>,
     ) -> Result<()> {
         // Check for ready events
         let mut debouncer_guard = debouncer.lock().await;
@@ -374,7 +377,7 @@ impl WatchManager {
             }
 
             // Process the queued events
-            Self::process_queued_events(handlers, event_queue, performance_monitor).await?;
+            Self::process_queued_events(handlers, event_queue).await?;
         }
 
         Ok(())
@@ -386,7 +389,6 @@ impl WatchManager {
         handlers: &Arc<RwLock<HandlerRegistry>>,
         event_queue: &Arc<Mutex<EventQueue>>,
         debouncer: &Arc<Mutex<Debouncer>>,
-        performance_monitor: &Arc<Mutex<PerformanceMonitor>>,
     ) -> Result<()> {
         // Debounce event
         {
@@ -403,17 +405,14 @@ impl WatchManager {
         }
 
         // Process the queued events
-        Self::process_queued_events(handlers, event_queue, performance_monitor).await
+        Self::process_queued_events(handlers, event_queue).await
     }
 
     /// Process all queued events through handlers.
     async fn process_queued_events(
         handlers: &Arc<RwLock<HandlerRegistry>>,
         event_queue: &Arc<Mutex<EventQueue>>,
-        performance_monitor: &Arc<Mutex<PerformanceMonitor>>,
     ) -> Result<()> {
-        let start_time = std::time::Instant::now();
-
         // Process queued events
         let events_to_process = {
             let mut queue = event_queue.lock().await;
@@ -459,11 +458,6 @@ impl WatchManager {
                 }
             }
         }
-
-        // Update performance metrics
-        let processing_time = start_time.elapsed();
-        let mut monitor = performance_monitor.lock().await;
-        monitor.record_event_processed(processing_time);
 
         Ok(())
     }

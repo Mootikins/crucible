@@ -139,7 +139,7 @@ export type SinkRefused = {
   regions?: MergeRegion[];
 };
 
-export type SinkAnswer = SinkWrote | SinkRefused;
+type SinkAnswer = SinkWrote | SinkRefused;
 
 /** A write the daemon accepted: which note, from which base, to which hash. */
 export type Landed = { path: string; base: string; hash: string };
