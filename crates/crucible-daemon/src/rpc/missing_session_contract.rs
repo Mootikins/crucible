@@ -223,6 +223,7 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             json!({"hunk_ids": ["h"], "state": "accepted"}),
             no_ledger(),
         ),
+        ("review.undo_reject", json!({}), no_ledger()),
         (
             "review.comment",
             json!({"path": "p", "body": "b", "line_start": 1}),

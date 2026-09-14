@@ -27,6 +27,7 @@ pub(crate) mod git;
 mod journal;
 pub(crate) mod paths;
 mod persist;
+mod undo;
 
 #[cfg(test)]
 mod tests;
@@ -41,10 +42,12 @@ use crucible_core::session::{
     PhysicalRoot, ReviewState, RootBase, RootInterval, RootStatus, TreeSha, Verdict,
 };
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 pub use error::{ReviewError, ReviewResult};
 pub use persist::{drop_keep_refs, sweep_review_refs};
+pub use undo::REJECT_STACK_DEPTH;
 
 use crate::workspace_snapshot;
 
@@ -136,6 +139,31 @@ pub struct BulkOutcome {
     pub failed: Vec<(HunkId, ReviewError)>,
 }
 
+/// What one revert wrote, kept so an undo can write it back.
+///
+/// Recorded from the hunk *as it was reverted*, not re-derived: the revert
+/// removes the hunk from the composed diff, so nothing can list it again.
+/// `start` is the line the revert wrote `before_content` at, in the
+/// coordinates of the file just after that revert — which is where an undo
+/// finds it, because every later revert in the same batch is undone first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectedHunk {
+    pub id: HunkId,
+    pub root: PhysicalRoot,
+    /// Path relative to [`Self::root`].
+    pub path: String,
+    /// First line of the restored `before_content`, 1-based.
+    pub start: u32,
+    pub before_content: String,
+    pub after_content: String,
+}
+
+/// The hunks one user action rejected, in the order they were reverted.
+///
+/// One entry for a single reject, the whole batch for a bulk decision, so
+/// one undo takes back one action rather than one hunk of it.
+pub type RejectBatch = Vec<RejectedHunk>;
+
 /// Per-session review ledgers.
 ///
 /// Mirrors `SnapshotMap`: a `DashMap` owned by `AgentManager`, cleared on
@@ -150,6 +178,11 @@ pub struct ReviewLedgers {
     /// safe one: an identity we do not recognise must never inherit a
     /// decision made about different lines.
     states: DashMap<String, HashMap<HunkId, ReviewState>>,
+    /// Rejects an undo can take back, newest last, per session.
+    ///
+    /// Rebuilt from the journal on restore and capped at
+    /// [`REJECT_STACK_DEPTH`] batches; see [`Self::undo_reject`].
+    reject_stack: DashMap<String, Vec<RejectBatch>>,
     comments: DashMap<String, Vec<Comment>>,
     /// Capture brackets currently open per root, across all sessions.
     /// Overlap on a shared root is what makes bracketing unsound (§5), so it
@@ -278,6 +311,7 @@ impl ReviewLedgers {
     pub fn has_session(&self, session_id: &str) -> bool {
         self.ledgers.contains_key(session_id)
             || self.states.contains_key(session_id)
+            || self.reject_stack.contains_key(session_id)
             || self.comments.contains_key(session_id)
             || self.parents.contains_key(session_id)
             || self.gate.contains_key(session_id)
@@ -345,6 +379,7 @@ impl ReviewLedgers {
     pub fn clear_session(&self, session_id: &str) {
         self.ledgers.remove(session_id);
         self.states.remove(session_id);
+        self.reject_stack.remove(session_id);
         self.comments.remove(session_id);
         self.parents.remove(session_id);
         // Belt to the `GateHold` braces: a session torn down while a turn is
@@ -852,6 +887,11 @@ impl ReviewLedgers {
     /// Any other error is about the ledger or the repository, not the hunk,
     /// and ends the call: what applied before it is on disk and in the
     /// journal, and a re-list shows it.
+    ///
+    /// A bulk reject pushes ONE batch onto the undo stack, holding every
+    /// hunk it reverted, so one undo takes the whole action back. The batch
+    /// is pushed after the loop, and also when the loop ends on an error, so
+    /// the reverts that landed are never left with no way back.
     pub async fn set_states(
         &self,
         session_id: &str,
@@ -859,18 +899,34 @@ impl ReviewLedgers {
         state: ReviewState,
     ) -> ReviewResult<BulkOutcome> {
         let mut outcome = BulkOutcome::default();
+        let mut batch: RejectBatch = Vec::new();
+        let mut ended_on = None;
         for hunk_id in hunk_ids {
-            match self.set_state(session_id, hunk_id, state).await {
+            let result = if state == ReviewState::Rejected {
+                self.revert_hunk_recorded(session_id, hunk_id)
+                    .await
+                    .map(|rejected| batch.push(rejected))
+            } else {
+                self.set_state(session_id, hunk_id, state).await
+            };
+            match result {
                 Ok(()) => outcome.applied.push(hunk_id.clone()),
                 Err(
                     e @ (ReviewError::UnknownHunk(_)
                     | ReviewError::Stale { .. }
                     | ReviewError::ExternalHunk(_)),
                 ) => outcome.failed.push((hunk_id.clone(), e)),
-                Err(e) => return Err(e),
+                Err(e) => {
+                    ended_on = Some(e);
+                    break;
+                }
             }
         }
-        Ok(outcome)
+        self.push_reject_batch(session_id, batch).await;
+        match ended_on {
+            Some(e) => Err(e),
+            None => Ok(outcome),
+        }
     }
 
     /// Revert one composed hunk in the worktree and mark it rejected.
@@ -878,7 +934,24 @@ impl ReviewLedgers {
     /// The revert is against `session_base`, which is what makes it safe: the
     /// hunk's base text is restored regardless of how many tool calls
     /// contributed to it, with no three-way merge.
+    ///
+    /// One hunk is one user action, so it is one batch on the undo stack.
     pub async fn revert_hunk(&self, session_id: &str, hunk_id: &HunkId) -> ReviewResult<()> {
+        let rejected = self.revert_hunk_recorded(session_id, hunk_id).await?;
+        self.push_reject_batch(session_id, vec![rejected]).await;
+        Ok(())
+    }
+
+    /// The revert itself, answering what it wrote so the caller can batch it.
+    ///
+    /// Pushes nothing onto the undo stack: [`Self::revert_hunk`] pushes one
+    /// hunk as one batch, and [`Self::set_states`] pushes the whole bulk
+    /// decision as one, and only the caller knows which action it is.
+    async fn revert_hunk_recorded(
+        &self,
+        session_id: &str,
+        hunk_id: &HunkId,
+    ) -> ReviewResult<RejectedHunk> {
         let hunk = self
             .list_hunks(session_id)
             .await?
@@ -944,7 +1017,14 @@ impl ReviewLedgers {
 
         self.record_state(session_id, hunk_id, ReviewState::Rejected)
             .await;
-        Ok(())
+        Ok(RejectedHunk {
+            id: hunk.id,
+            root: hunk.root,
+            path: hunk.path,
+            start: hunk.current_range.start,
+            before_content: hunk.before_content,
+            after_content: hunk.after_content,
+        })
     }
 
     /// Store a range-anchored comment. Build it with [`Comment::new`].

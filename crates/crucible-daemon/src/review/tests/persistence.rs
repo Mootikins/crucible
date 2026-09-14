@@ -604,3 +604,137 @@ async fn a_root_a_rebase_could_not_recapture_stays_tracked() {
         "a write to the un-rebased root went through unheld"
     );
 }
+
+/// An undo is a decision too, and it has to be journaled as one. A stack
+/// held only in memory would leave the `Rejected` record as the last word on
+/// the hunk: a reload would replay it, and the restored lines would list as
+/// `reapplied` — the agent blamed for the user's own undo.
+#[tokio::test]
+async fn an_undone_reject_restores_the_lines_and_lists_the_hunk_unreviewed_after_a_reload() {
+    let fx = Persisted::new("one\n").await;
+    fx.call("call-1", "EDITED\n").await;
+    let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
+        .id
+        .clone();
+    fx.ledgers
+        .set_state(&fx.session, &id, ReviewState::Rejected)
+        .await
+        .unwrap();
+    assert_eq!(fx.read(), "one\n");
+
+    let outcome = fx.ledgers.undo_reject(&fx.session).await.unwrap();
+    assert_eq!(outcome.applied, vec![id.clone()]);
+    assert!(outcome.failed.is_empty(), "{:?}", outcome.failed);
+    assert_eq!(fx.read(), "EDITED\n", "the undo did not restore the lines");
+
+    let restarted = fx.restart().await;
+    let hunks = restarted.list_hunks(&fx.session).await.unwrap();
+    assert_eq!(hunks.len(), 1, "{hunks:?}");
+    assert_eq!(hunks[0].id, id);
+    assert_eq!(hunks[0].state, ReviewState::Unreviewed);
+    assert!(
+        !hunks[0].reapplied,
+        "the reload resurrected the rejection, so the user's undo reads as the agent's re-apply"
+    );
+    // ...and the batch is gone from the restored stack too, or the next undo
+    // would write the same lines a second time.
+    let again = restarted.undo_reject(&fx.session).await.unwrap();
+    assert!(
+        again.applied.is_empty() && again.failed.is_empty(),
+        "the undo did not replay, so the stack still holds a batch already taken back: {again:?}"
+    );
+}
+
+/// The stack is the journal's, not the process's: two rejects, a restart, and
+/// the undo still pops the most recent one first.
+#[tokio::test]
+async fn a_reject_stack_survives_a_reload() {
+    let fx = Persisted::new("1\n2\n3\n").await;
+    fx.call("call-1", "one\n2\nthree\n").await;
+    let mut hunks = fx.ledgers.list_hunks(&fx.session).await.unwrap();
+    hunks.sort_by_key(|h| h.current_range.start);
+    assert_eq!(hunks.len(), 2, "{hunks:?}");
+    let (first, second) = (hunks[0].id.clone(), hunks[1].id.clone());
+    fx.ledgers
+        .set_state(&fx.session, &first, ReviewState::Rejected)
+        .await
+        .unwrap();
+    fx.ledgers
+        .set_state(&fx.session, &second, ReviewState::Rejected)
+        .await
+        .unwrap();
+    assert_eq!(fx.read(), "1\n2\n3\n");
+
+    let restarted = fx.restart().await;
+    let outcome = restarted.undo_reject(&fx.session).await.unwrap();
+    assert_eq!(
+        outcome.applied,
+        vec![second.clone()],
+        "the restored stack did not pop the most recent reject first"
+    );
+    assert_eq!(fx.read(), "1\n2\nthree\n");
+    let listed = restarted.list_hunks(&fx.session).await.unwrap();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].id, second);
+    assert_eq!(listed[0].state, ReviewState::Unreviewed);
+
+    // ...and the earlier reject is still on the stack, in its own turn.
+    let outcome = restarted.undo_reject(&fx.session).await.unwrap();
+    assert_eq!(outcome.applied, vec![first]);
+    assert_eq!(fx.read(), "one\n2\nthree\n");
+    assert!(restarted
+        .undo_reject(&fx.session)
+        .await
+        .unwrap()
+        .applied
+        .is_empty());
+}
+
+/// A journal from before the reject stack existed holds `header`, `base`,
+/// `interval`, `state` and `rebase` records and nothing else. It has to
+/// replay intact, with an empty stack, or every session on disk degrades at
+/// the upgrade.
+#[tokio::test]
+async fn a_journal_written_before_the_reject_stack_still_replays() {
+    let fx = Persisted::new("one\n").await;
+    let base = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0].clone();
+    fx.call("call-1", "EDITED\n").await;
+    let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
+        .id
+        .clone();
+    fx.ledgers
+        .set_state(&fx.session, &id, ReviewState::Accepted)
+        .await
+        .unwrap();
+    let mut text = std::fs::read_to_string(fx.journal()).unwrap();
+    text.push_str(&format!(
+        "{{\"t\":\"rebase\",\"root\":{},\"base_tree\":{}}}\n",
+        serde_json::to_string(base.root.as_path()).unwrap(),
+        serde_json::to_string(&base.base_tree).unwrap(),
+    ));
+    std::fs::write(fx.journal(), &text).unwrap();
+    // The premise: the fixture names no record kind the stack introduced.
+    for line in text.lines() {
+        let tag: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert!(
+            matches!(
+                tag["t"].as_str(),
+                Some("header" | "base" | "interval" | "state" | "rebase")
+            ),
+            "the fixture is not a pre-stack journal: {line}"
+        );
+    }
+
+    let restarted = fx.restart().await;
+    assert!(
+        restarted.integrity(&fx.session).is_intact(),
+        "{:?}",
+        restarted.integrity(&fx.session).skips()
+    );
+    assert_eq!(
+        restarted.list_hunks(&fx.session).await.unwrap()[0].state,
+        ReviewState::Accepted
+    );
+    let outcome = restarted.undo_reject(&fx.session).await.unwrap();
+    assert!(outcome.applied.is_empty() && outcome.failed.is_empty());
+}

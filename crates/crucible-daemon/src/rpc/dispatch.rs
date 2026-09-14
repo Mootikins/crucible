@@ -163,6 +163,7 @@ rpc_methods! {
     ReviewListHunks = "review.list_hunks",
     ReviewSetState = "review.set_state",
     ReviewSetStates = "review.set_states",
+    ReviewUndoReject = "review.undo_reject",
     ReviewComment = "review.comment",
     ReviewResolveComment = "review.resolve_comment",
     ReviewRebase = "review.rebase",
@@ -738,6 +739,19 @@ impl RpcDispatcher {
             RpcMethod::ReviewSetStates => forward!(
                 id,
                 crate::server::session::handle_review_set_states(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.sessions,
+                    &self.ctx.event_tx
+                )
+            ),
+            // Takes back the most recent reject, single or bulk, as one
+            // action. A daemon method because the reject rewrote the disk
+            // and the hunk left the composed diff, so no client holds what
+            // it would take to undo it.
+            RpcMethod::ReviewUndoReject => forward!(
+                id,
+                crate::server::session::handle_review_undo_reject(
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.sessions,

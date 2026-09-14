@@ -442,6 +442,193 @@ async fn a_bulk_decision_that_applies_nothing_emits_no_review_changed() {
     assert!(fx.review_reasons().is_empty());
 }
 
+/// Undo is a stack, and the daemon owns it: the browser cannot undo a
+/// reject, because the revert already rewrote the disk and the hunk left the
+/// composed diff. Three rejects come back one at a time, most recent first,
+/// and an undo over an empty stack answers empty rather than erring.
+#[tokio::test]
+async fn three_rejects_undo_in_reverse_order_one_at_a_time() {
+    let mut fx = Fixture::new("1\n2\n3\n4\n5\n").await;
+    fx.open_ledger().await;
+    fx.call("call-1", "one\n2\nthree\n4\nfive\n").await;
+    let _ = fx.review_reasons();
+
+    let mut hunks = fx.list().await;
+    hunks.sort_by_key(|h| h.current_range.start);
+    assert_eq!(hunks.len(), 3, "{hunks:?}");
+    let ids: Vec<HunkId> = hunks.iter().map(|h| h.id.clone()).collect();
+    for id in &ids {
+        let resp = handle_review_set_state(
+            fx.request(
+                "review.set_state",
+                serde_json::json!({ "hunk_id": id, "state": "rejected" }),
+            ),
+            &fx.am,
+            &fx.sm,
+            &fx.event_tx,
+        )
+        .await;
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+    }
+    assert_eq!(fx.read(), "1\n2\n3\n4\n5\n");
+    let _ = fx.review_reasons();
+
+    let expected = [
+        (ids[2].clone(), "1\n2\n3\n4\nfive\n"),
+        (ids[1].clone(), "1\n2\nthree\n4\nfive\n"),
+        (ids[0].clone(), "one\n2\nthree\n4\nfive\n"),
+    ];
+    for (id, text) in &expected {
+        let resp = handle_review_undo_reject(
+            fx.request("review.undo_reject", serde_json::json!({})),
+            &fx.am,
+            &fx.sm,
+            &fx.event_tx,
+        )
+        .await;
+        let result = resp.result.expect("an undo answers success");
+        assert_eq!(result["applied"], serde_json::json!([id]));
+        assert_eq!(result["failed"], serde_json::json!([]));
+        assert_eq!(&fx.read(), text, "the undo restored the wrong hunk");
+        assert_eq!(fx.review_reasons(), vec!["undone".to_string()]);
+    }
+    let restored = fx.list().await;
+    assert_eq!(restored.len(), 3, "{restored:?}");
+    assert!(
+        restored
+            .iter()
+            .all(|h| h.state == ReviewState::Unreviewed && !h.reapplied),
+        "an undone hunk is back in the queue as the user left it: {restored:?}"
+    );
+
+    // A fourth undo has nothing to pop.
+    let resp = handle_review_undo_reject(
+        fx.request("review.undo_reject", serde_json::json!({})),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp.result.expect("an empty stack is an empty answer");
+    assert_eq!(result["applied"], serde_json::json!([]));
+    assert_eq!(result["failed"], serde_json::json!([]));
+    assert!(fx.review_reasons().is_empty());
+}
+
+/// One user action is one batch: a bulk reject comes back in one undo, in
+/// whatever order the client sent the ids.
+#[tokio::test]
+async fn a_bulk_reject_undoes_as_one_batch() {
+    let mut fx = Fixture::new("1\n2\n3\n4\n5\n").await;
+    fx.open_ledger().await;
+    // Two of the three hunks change the line count, so each revert moves the
+    // lines below it.
+    fx.call("call-1", "one\nuno\n2\nthree\n4\nfive\ncinco\n")
+        .await;
+    let _ = fx.review_reasons();
+
+    let mut hunks = fx.list().await;
+    hunks.sort_by_key(|h| h.current_range.start);
+    assert_eq!(hunks.len(), 3, "{hunks:?}");
+    let ids: Vec<HunkId> = hunks.iter().map(|h| h.id.clone()).collect();
+    // Out of file order on purpose: the reverts land at shifting lines and
+    // the undo has to walk them back in the order they happened.
+    let sent = vec![ids[2].clone(), ids[0].clone(), ids[1].clone()];
+    let resp = handle_review_set_states(
+        fx.request(
+            "review.set_states",
+            serde_json::json!({ "hunk_ids": sent, "state": "rejected" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    assert!(resp.error.is_none(), "{:?}", resp.error);
+    assert_eq!(fx.read(), "1\n2\n3\n4\n5\n");
+    let _ = fx.review_reasons();
+
+    let resp = handle_review_undo_reject(
+        fx.request("review.undo_reject", serde_json::json!({})),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp.result.expect("success");
+    assert_eq!(result["failed"], serde_json::json!([]));
+    assert_eq!(result["applied"].as_array().unwrap().len(), 3);
+    assert_eq!(fx.read(), "one\nuno\n2\nthree\n4\nfive\ncinco\n");
+    assert_eq!(fx.review_reasons(), vec!["undone".to_string()]);
+    assert_eq!(fx.list().await.len(), 3);
+}
+
+/// An undo writes `after_content` back over the lines the revert restored.
+/// When those lines are no longer there the undo would overwrite whatever
+/// is, so it is refused for that hunk — and the batch stays, because the
+/// user may put the file back and ask again.
+#[tokio::test]
+async fn an_undo_after_the_file_moved_on_is_refused_as_stale_and_keeps_the_batch() {
+    let mut fx = Fixture::new("one\n").await;
+    fx.open_ledger().await;
+    fx.call("call-1", "two\n").await;
+    let hunk = fx.list().await.into_iter().next().expect("a hunk");
+    let resp = handle_review_set_state(
+        fx.request(
+            "review.set_state",
+            serde_json::json!({ "hunk_id": hunk.id, "state": "rejected" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    assert!(resp.error.is_none(), "{:?}", resp.error);
+    assert_eq!(fx.read(), "one\n");
+    let _ = fx.review_reasons();
+
+    // The user edits the file the revert restored.
+    std::fs::write(fx.dir.path().join("a.txt"), "ELSE\n").unwrap();
+    let resp = handle_review_undo_reject(
+        fx.request("review.undo_reject", serde_json::json!({})),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp
+        .result
+        .expect("a refused hunk is a report, not an error");
+    assert_eq!(result["applied"], serde_json::json!([]));
+    let failed = result["failed"].as_array().expect("failed is a list");
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert_eq!(failed[0]["hunk_id"], serde_json::json!(hunk.id));
+    let reason = failed[0]["reason"].as_str().unwrap_or_default();
+    assert!(reason.contains("changed since"), "{reason}");
+    assert_eq!(
+        fx.read(),
+        "ELSE\n",
+        "a stale undo overwrote the user's lines"
+    );
+    assert!(
+        fx.review_reasons().is_empty(),
+        "nothing moved, nothing to redraw"
+    );
+
+    // The user puts the file back; the batch is still there to pop.
+    std::fs::write(fx.dir.path().join("a.txt"), "one\n").unwrap();
+    let resp = handle_review_undo_reject(
+        fx.request("review.undo_reject", serde_json::json!({})),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let result = resp.result.expect("success");
+    assert_eq!(result["applied"], serde_json::json!([hunk.id]));
+    assert_eq!(fx.read(), "two\n");
+}
+
 #[tokio::test]
 async fn a_comment_anchors_to_the_root_and_comes_back_with_the_hunks() {
     let mut fx = Fixture::new("one\n").await;

@@ -56,6 +56,7 @@ pub(crate) use params::{
 pub(crate) use review::{
     handle_review_comment, handle_review_list_hunks, handle_review_rebase,
     handle_review_resolve_comment, handle_review_set_state, handle_review_set_states,
+    handle_review_undo_reject,
 };
 pub(crate) use scope::{
     handle_session_connect_kiln, handle_session_disconnect_kiln, handle_session_set_workspace,

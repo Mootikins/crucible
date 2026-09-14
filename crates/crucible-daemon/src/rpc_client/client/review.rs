@@ -163,6 +163,22 @@ impl DaemonClient {
         .await
     }
 
+    /// `review.undo_reject` — take back the most recent reject, single or
+    /// bulk, as one action.
+    ///
+    /// A write that rewrites files: at-most-once, like the reject it undoes.
+    /// A retry after a timeout could pop a second batch the user never asked
+    /// to restore. The answer names the ids restored and the ids refused.
+    pub async fn review_undo_reject(&self, session_id: &str) -> Result<Value> {
+        self.call_once(
+            "review.undo_reject",
+            serde_json::to_value(SessionIdRequest {
+                session_id: session_id.to_string(),
+            })?,
+        )
+        .await
+    }
+
     /// `review.comment` — anchor a comment to a line range.
     ///
     /// The caller names the session in `request.session_id`. The web route

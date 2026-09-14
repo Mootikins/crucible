@@ -38,6 +38,8 @@ use tokio::io::AsyncWriteExt;
 use tracing::{debug, warn};
 
 use super::error::{ReviewError, ReviewResult};
+use super::undo::REJECT_STACK_DEPTH;
+use super::{RejectBatch, RejectedHunk};
 
 /// The journal's name inside a session's storage directory.
 pub(super) const FILE: &str = "review.jsonl";
@@ -82,12 +84,24 @@ pub(super) enum Record {
     CommentResolved {
         comment: String,
     },
+    /// One user action's rejects, as they were reverted, so an undo can
+    /// write them back. Written after the `State` record of every hunk in
+    /// it; replay pushes it onto the undo stack.
+    Rejected {
+        batch: Vec<RejectedHunk>,
+    },
+    /// The most recent `Rejected` batch was undone. Replay pops it. The
+    /// hunks' `State` records were rewritten as `Unreviewed` beside it, so
+    /// the decision and the stack agree on a reload.
+    Undone,
 }
 
 /// Everything one journal replays to.
 pub(super) struct Restored {
     pub(super) ledger: Ledger,
     pub(super) states: HashMap<HunkId, ReviewState>,
+    /// Rejects an undo can still take back, oldest first.
+    pub(super) reject_stack: Vec<RejectBatch>,
     pub(super) comments: Vec<Comment>,
     pub(super) integrity: Integrity,
 }
@@ -130,6 +144,7 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     let mut intervals: Vec<Interval> = Vec::new();
     let mut children: Vec<ChildLedgerRef> = Vec::new();
     let mut states: HashMap<HunkId, ReviewState> = HashMap::new();
+    let mut reject_stack: Vec<RejectBatch> = Vec::new();
     let mut comments: Vec<Comment> = Vec::new();
     let mut integrity = Integrity::default();
 
@@ -217,6 +232,22 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
                     });
                 }
             }
+            Record::Rejected { batch } => {
+                reject_stack.push(batch);
+                // The same cap the live stack keeps, applied in the same
+                // direction, so a reload answers the same undo the process
+                // would have.
+                if reject_stack.len() > REJECT_STACK_DEPTH {
+                    reject_stack.remove(0);
+                }
+            }
+            Record::Undone => {
+                if reject_stack.pop().is_none() {
+                    // The batch it undid was skipped above, or fell off the
+                    // cap; there is nothing to pop and nothing lost by it.
+                    debug!("undo for a reject batch this journal does not hold");
+                }
+            }
             Record::Comment(comment) => comments.push(comment),
             Record::CommentResolved { comment } => {
                 match comments.iter_mut().find(|c| c.id == comment) {
@@ -254,6 +285,7 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     Ok(Restored {
         ledger,
         states,
+        reject_stack,
         comments,
         integrity,
     })
@@ -321,7 +353,11 @@ fn set_base(bases: &mut Vec<RootBase>, root: PathBuf, base_tree: TreeSha) {
 /// session.
 fn classify(line: &str) -> SkipKind {
     match scan_string(line, "t").as_deref() {
-        Some("child" | "state" | "comment" | "comment_resolved") => SkipKind::Informational,
+        // A lost reject batch costs one undo, never a hold: the decision it
+        // belonged to has its own `state` record.
+        Some("child" | "state" | "comment" | "comment_resolved" | "rejected" | "undone") => {
+            SkipKind::Informational
+        }
         // Scoped to the interval's root only when it names exactly one. An
         // interval over several roots truncated partway through them would
         // otherwise block its FIRST root and leave the rest unblocked, which

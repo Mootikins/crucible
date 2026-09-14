@@ -161,6 +161,10 @@ impl Persisted {
         std::fs::write(self.repo_dir.path().join("a.txt"), contents).unwrap();
     }
 
+    fn read(&self) -> String {
+        std::fs::read_to_string(self.repo_dir.path().join("a.txt")).unwrap()
+    }
+
     async fn call(&self, tool_call_id: &str, contents: &str) {
         let handle = self.ledgers.open_bracket(&self.session).await.unwrap();
         self.write(contents);

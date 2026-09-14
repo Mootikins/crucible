@@ -106,6 +106,8 @@ impl ReviewLedgers {
             .insert(session_id.to_string(), path.to_path_buf());
         self.states
             .insert(session_id.to_string(), restored.states.clone());
+        self.reject_stack
+            .insert(session_id.to_string(), restored.reject_stack);
         self.comments
             .insert(session_id.to_string(), restored.comments.clone());
         self.integrity

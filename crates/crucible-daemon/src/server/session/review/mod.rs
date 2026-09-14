@@ -1,9 +1,10 @@
 //! The `review.*` RPC surface: the composed-diff review queue.
 //!
-//! Seven operations — list, decide, decide in bulk, revert, comment, resolve,
-//! rebase — over the session-scoped ledger `AgentManager` owns. The engine
-//! lives in `crate::review`; this module is the boundary that turns
-//! [`ReviewError`] into JSON-RPC codes and decides what a decision *emits*.
+//! Eight operations — list, decide, decide in bulk, revert, undo a reject,
+//! comment, resolve, rebase — over the session-scoped ledger `AgentManager`
+//! owns. The engine lives in `crate::review`; this module is the boundary
+//! that turns [`ReviewError`] into JSON-RPC codes and decides what a decision
+//! *emits*.
 //!
 //! Two boundary rules are load-bearing and are why the operations are not
 //! thin passthroughs:
@@ -12,7 +13,8 @@
 //!   edit was reverted re-applies the same edit on the next turn, and you are
 //!   in a loop. Every rejection injects a `user`-role note naming the file and
 //!   lines. Acceptance is silent — it costs tokens and teaches the model
-//!   nothing.
+//!   nothing. An undo of a rejection un-says it with a second note, or the
+//!   agent keeps working from a revert that is no longer on disk.
 //! * **Every operation that moves the composed diff emits `review_changed`.**
 //!   Including acceptance, which is silent to the *agent* but not to the
 //!   panel showing the queue.
@@ -260,6 +262,55 @@ pub(crate) async fn set_states(
     Ok(outcome)
 }
 
+/// Take back the most recent reject, single or bulk, as one action.
+///
+/// The engine pops the batch and writes the lines back
+/// ([`ReviewLedgers::undo_reject`]); this boundary adds what the reject's
+/// boundary added, in reverse. The agent was told its edit was reverted, so it
+/// is told once, in one note naming every restored hunk, that the edit is back
+/// — otherwise it works from a worktree that no longer exists. One
+/// `review_changed` follows, and only when something was restored: a refused
+/// undo moved nothing and an empty stack has nothing to redraw.
+///
+/// [`ReviewLedgers::undo_reject`]: crate::review::ReviewLedgers::undo_reject
+pub(crate) async fn undo_reject(
+    am: &AgentManager,
+    sm: &SessionManager,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    session_id: &str,
+) -> ReviewResult<BulkOutcome> {
+    let outcome = am.review.undo_reject(session_id).await?;
+    if outcome.applied.is_empty() {
+        return Ok(outcome);
+    }
+    // The restored hunks are in the composed diff again, so they can be
+    // listed and named the way the rejection named them.
+    let restored = am.review.list_hunks(session_id).await?;
+    let notice = outcome
+        .applied
+        .iter()
+        .filter_map(|id| restored.iter().find(|h| &h.id == id))
+        .map(restoration_notice)
+        .collect::<Vec<_>>()
+        .join("\n");
+    // The lines are already back on disk. A failure to inject the note leaves
+    // the worktree correct and the agent misinformed — loud, but never a
+    // failed RPC, the same rule as the reject.
+    if !notice.is_empty() {
+        if let Err(e) = super::inject_context_impl(sm, event_tx, session_id, "user", &notice).await
+        {
+            warn!(
+                session_id,
+                hunks = outcome.applied.len(),
+                error = %e,
+                "reject undone but the restoration was not injected; the agent believes the edit is reverted"
+            );
+        }
+    }
+    emit_review_changed(event_tx, session_id, "undone");
+    Ok(outcome)
+}
+
 /// Anchor a comment to a line range.
 ///
 /// `path` may be absolute or relative to one of the session's tracked roots;
@@ -473,6 +524,45 @@ pub(crate) async fn handle_review_set_states(
     }
 }
 
+/// `review.undo_reject` — take back the most recent reject.
+///
+/// Answers the ids it restored and the ids it refused, the same shape as the
+/// bulk decision: a refused hunk is a report, and the batch it belongs to is
+/// still on the stack for the next try. An empty stack answers two empty
+/// lists.
+pub(crate) async fn handle_review_undo_reject(
+    req: Request,
+    am: &Arc<AgentManager>,
+    sm: &Arc<SessionManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
+    ensure_loaded(am, sm, session_id).await;
+
+    match undo_reject(am, sm, event_tx, session_id).await {
+        Ok(outcome) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "applied": outcome.applied,
+                "failed": outcome
+                    .failed
+                    .iter()
+                    .map(|(hunk_id, reason)| serde_json::json!({
+                        "hunk_id": hunk_id,
+                        "reason": reason.to_string(),
+                    }))
+                    .collect::<Vec<_>>(),
+            }),
+        ),
+        Err(e) => review_error_to_response(req.id, e),
+    }
+}
+
 /// `review.comment` — anchor a comment to `line_start..line_end`.
 pub(crate) async fn handle_review_comment(
     req: Request,
@@ -615,6 +705,18 @@ fn parse_wire<T: serde::de::DeserializeOwned>(raw: &str) -> Option<T> {
 fn rejection_notice(hunk: &ComposedHunk) -> String {
     format!(
         "user rejected the edit to {}; reverted.",
+        hunk_location(hunk)
+    )
+}
+
+/// What the agent is told when a rejection is taken back.
+///
+/// The same shape as [`rejection_notice`], and for the same reason: the model
+/// was told the edit was reverted, and that is no longer a fact about the
+/// worktree.
+fn restoration_notice(hunk: &ComposedHunk) -> String {
+    format!(
+        "user restored the edit to {}; the rejection is withdrawn.",
         hunk_location(hunk)
     )
 }
