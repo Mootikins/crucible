@@ -1,6 +1,6 @@
 //! `/api/session/{id}/review/…` — the attributed-diff review surface.
 //!
-//! The browser never speaks raw JSON-RPC, so these five routes are the only
+//! The browser never speaks raw JSON-RPC, so these eight routes are the only
 //! way `ChangesPanel`, the file viewer's gutter, and `ToolCard` reach the
 //! daemon's `review.*` methods. They are registered inside
 //! [`super::session_routes_with`] rather than as their own group, and that is
@@ -31,6 +31,18 @@ pub(super) struct SetStateRequest {
     /// Forwarded unvalidated: the daemon owns the state vocabulary and answers
     /// `INVALID_PARAMS` for anything outside it. A copy of the enum here could
     /// only ever refuse a state the daemon had newly learned.
+    state: String,
+}
+
+/// `POST /review/states` — one decision over several hunks, in order.
+///
+/// The ids reach the daemon in the order the caller gave them, because the
+/// daemon applies them in that order and a reject reverts files as it goes.
+/// `state` is forwarded unvalidated for the same reason as on
+/// [`SetStateRequest`].
+#[derive(Debug, Deserialize)]
+pub(super) struct SetStatesRequest {
+    hunk_ids: Vec<String>,
     state: String,
 }
 
@@ -97,6 +109,40 @@ pub(super) async fn set_state(
         .review_set_state(&id, &req.hunk_id, &req.state)
         .await
         .daemon_err()?;
+    Ok(Json(result))
+}
+
+/// `POST /api/session/{id}/review/states`
+///
+/// The daemon answers the ids it applied and the ids it refused, each with a
+/// reason. A refused hunk is part of the answer, not an error status: the
+/// client shows which ones and keeps the rest, so this route forwards the
+/// object whole.
+pub(super) async fn set_states(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetStatesRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let result = state
+        .daemon
+        .review_set_states(&id, &req.hunk_ids, &req.state)
+        .await
+        .daemon_err()?;
+    Ok(Json(result))
+}
+
+/// `POST /api/session/{id}/review/undo-reject`
+///
+/// Takes back the most recent reject, single or bulk, as one action. The
+/// daemon owns the stack, so the request names no hunk: the session in the
+/// path is the whole input. The `{}` body is load-bearing for the same reason
+/// as on `…/rebase` and `…/comment/{id}/resolve`: it carries `Content-Type:
+/// application/json` and forces the preflight the CORS allowlist refuses.
+pub(super) async fn undo_reject(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let result = state.daemon.review_undo_reject(&id).await.daemon_err()?;
     Ok(Json(result))
 }
 

@@ -343,6 +343,16 @@ fn param_str<'a>(msg: &'a Value, key: &str) -> &'a str {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// One param off a JSON-RPC request as it was sent, or `null`. For a list
+/// param, where `param_str` would flatten an array to `""`.
+fn param_value(msg: &Value, key: &str) -> Value {
+    msg.get("params")
+        .and_then(|p| p.get(key))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// A `crucible_core::session::Comment` on the wire — all nine fields, so a
 /// route test sees what the frontend's `ReviewComment` will actually receive.
 fn review_comment_fixture(id: &str, body: &str) -> Value {
@@ -855,7 +865,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // ── review.* ───────────────────────────────────────────────────────
         // Shaped from the daemon's real handlers in
         // `crucible-daemon/src/server/session/review.rs`, echoing the same
-        // params back, because the web layer's whole contract for these five
+        // params back, because the web layer's whole contract for these eight
         // is "forward it untouched in both directions" — a hand-simplified
         // stub could not fail when that stopped being true.
         "review.list_hunks" => {
@@ -894,6 +904,20 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "session_id": param_str(msg, "session_id"),
             "hunk_id": param_str(msg, "hunk_id"),
             "state": param_str(msg, "state"),
+        }),
+        // Every id applied, in the order sent, and nothing refused: the
+        // `failed` list is present and empty so a route test can see that the
+        // key survives the forward even when there is nothing in it.
+        "review.set_states" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "state": param_str(msg, "state"),
+            "applied": param_value(msg, "hunk_ids"),
+            "failed": [],
+        }),
+        "review.undo_reject" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "applied": ["hunk-1"],
+            "failed": [],
         }),
         "review.comment" => json!({
             "session_id": param_str(msg, "session_id"),

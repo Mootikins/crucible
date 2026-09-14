@@ -1,12 +1,12 @@
 //! `review.*` RPCs, forwarded to the daemon.
 //!
 //! Split from `daemon.rs` for the 1500-line file budget, along the same seam
-//! as `daemon_plugins`: these five calls serve the attributed-diff review
+//! as `daemon_plugins`: these seven calls serve the attributed-diff review
 //! surface and none of them interpret what the daemon answered — the results
 //! are `serde_json::Value` the whole way to the browser so a key the daemon
 //! grows reaches a frontend that reads it without a rebuild here.
 //!
-//! # The four writes take `call_once`, and no test can prove it
+//! # The six writes take `call_once`, and no test can prove it
 //!
 //! `call_with_reconnect` retries when `is_connection_error` matches — broken
 //! pipe, connection reset — which are exactly the states in which the daemon
@@ -66,6 +66,42 @@ impl ReconnectingDaemon {
             let hunk_id = hunk_id.clone();
             let state = state.clone();
             Box::pin(async move { daemon.review_set_state(&session_id, &hunk_id, &state).await })
+        })
+        .await
+    }
+
+    /// One decision over several hunks, in the order given. A reject reverts
+    /// several files, so a replay after a broken pipe would revert once and
+    /// inject the rejection twice: at-most-once, like the single decision.
+    pub async fn review_set_states(
+        &self,
+        session_id: &str,
+        hunk_ids: &[String],
+        state: &str,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let hunk_ids = hunk_ids.to_vec();
+        let state = state.to_string();
+        self.call_once(move |daemon| {
+            let session_id = session_id.clone();
+            let hunk_ids = hunk_ids.clone();
+            let state = state.clone();
+            Box::pin(async move {
+                daemon
+                    .review_set_states(&session_id, &hunk_ids, &state)
+                    .await
+            })
+        })
+        .await
+    }
+
+    /// Pop the most recent reject. A replay would pop a second batch the
+    /// user never asked to restore: at-most-once.
+    pub async fn review_undo_reject(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        self.call_once(move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.review_undo_reject(&session_id).await })
         })
         .await
     }

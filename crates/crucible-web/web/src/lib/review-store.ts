@@ -25,6 +25,9 @@ import {
   rebaseReview,
   resolveReviewComment,
   setHunkState,
+  setHunkStates,
+  undoReject,
+  type BulkOutcome,
   type DegradedRoot,
   type IntegritySkip,
   type NewComment,
@@ -299,6 +302,49 @@ export const reviewActions = {
   /** Reject == revert on disk == tell the agent. One operation, one name. */
   reject(id: string, hunkId: string): Promise<void> {
     return reviewActions.setState(id, hunkId, 'rejected');
+  },
+
+  /**
+   * One decision over several hunks: ONE daemon call, the ids in the order
+   * given.
+   *
+   * Optimistic like `setState`, for the same reason, and corrected by the
+   * same refresh. The outcome is returned rather than swallowed: `failed`
+   * names the hunks the daemon refused, and only the caller can show them.
+   */
+  async setStates(id: string, hunkIds: string[], state: ReviewState): Promise<BulkOutcome> {
+    const named = new Set(hunkIds);
+    setSessions(
+      id,
+      produce((s) => {
+        for (const h of s.hunks) if (named.has(h.id)) h.state = state;
+      }),
+    );
+    try {
+      return await setHunkStates(id, hunkIds, state);
+    } finally {
+      await reviewActions.refresh(id);
+    }
+  },
+
+  /** A bulk reject: every id reverted on disk, one note to the agent. */
+  rejectMany(id: string, hunkIds: string[]): Promise<BulkOutcome> {
+    return reviewActions.setStates(id, hunkIds, 'rejected');
+  },
+
+  /**
+   * Take back the most recent reject, single or bulk, as one action.
+   *
+   * Not optimistic: the browser does not know which batch is on top of the
+   * daemon's stack, so there is nothing honest to mark before the answer.
+   * A `failed` list means the batch is still on the stack for the next try.
+   */
+  async undoReject(id: string): Promise<BulkOutcome> {
+    try {
+      return await undoReject(id);
+    } finally {
+      await reviewActions.refresh(id);
+    }
   },
 
   /**

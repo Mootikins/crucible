@@ -115,6 +115,11 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
         .route("/api/session/{id}/review/hunks", get(review::list_hunks))
         .route("/api/session/{id}/review/rebase", post(review::rebase))
         .route("/api/session/{id}/review/state", post(review::set_state))
+        .route("/api/session/{id}/review/states", post(review::set_states))
+        .route(
+            "/api/session/{id}/review/undo-reject",
+            post(review::undo_reject),
+        )
         .route("/api/session/{id}/review/comment", post(review::comment))
         .route(
             "/api/session/{id}/review/comment/{comment_id}/resolve",

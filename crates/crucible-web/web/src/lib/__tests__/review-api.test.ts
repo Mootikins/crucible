@@ -5,6 +5,8 @@ import {
   rebaseReview,
   resolveReviewComment,
   setHunkState,
+  setHunkStates,
+  undoReject,
 } from '../review-api';
 
 /**
@@ -49,6 +51,31 @@ describe('review REST surface', () => {
     await setHunkState('s1', 'h1', 'accepted');
     expect(call()[0]).toBe('/api/session/s1/review/state');
     expect(bodyOf()).toEqual({ hunk_id: 'h1', state: 'accepted' });
+  });
+
+  // One daemon call for a whole file or a whole review. The ids go in the
+  // order given: the daemon applies them in that order, and a reject reverts
+  // as it goes, so a set-ified or sorted list would revert a different diff.
+  it('setHunkStates posts the ids and the state', async () => {
+    ok({ session_id: 's1', state: 'rejected', applied: ['h3', 'h1'], failed: [] });
+    const outcome = await setHunkStates('s1', ['h3', 'h1'], 'rejected');
+    expect(call()[0]).toBe('/api/session/s1/review/states');
+    expect(call()[1].method).toBe('POST');
+    expect(bodyOf()).toEqual({ hunk_ids: ['h3', 'h1'], state: 'rejected' });
+    expect(outcome.applied).toEqual(['h3', 'h1']);
+    expect(outcome.failed).toEqual([]);
+  });
+
+  // The undo names no hunk: the daemon pops its own stack. The `{}` body is
+  // the same preflight rule as `rebase` and `resolve`.
+  it('undoReject posts to the session with the body that forces a preflight', async () => {
+    ok({ session_id: 's1', applied: ['h1'], failed: [] });
+    const outcome = await undoReject('s1');
+    expect(call()[0]).toBe('/api/session/s1/review/undo-reject');
+    expect(call()[1].method).toBe('POST');
+    expect(bodyOf()).toEqual({});
+    expect((call()[1].headers as Record<string, string>)['Content-Type']).toBe('application/json');
+    expect(outcome.applied).toEqual(['h1']);
   });
 
   it('comments on a range, passing only what the caller gave', async () => {

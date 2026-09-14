@@ -16,11 +16,15 @@ vi.mock('@/lib/api', () => ({
 
 const listReviewHunks = vi.fn();
 const setHunkState = vi.fn(async () => ({ hunk_id: 'h1', state: 'accepted' as const }));
+const setHunkStates = vi.fn(async () => ({ applied: [] as string[], failed: [] }));
+const undoReject = vi.fn(async () => ({ applied: [] as string[], failed: [] }));
 const addReviewComment = vi.fn(async () => ({ comment: {} }));
 const resolveReviewComment = vi.fn(async () => ({ comment_id: 'c1' }));
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
   setHunkState: (...a: unknown[]) => setHunkState(...(a as [])),
+  setHunkStates: (...a: unknown[]) => setHunkStates(...(a as [])),
+  undoReject: (...a: unknown[]) => undoReject(...(a as [])),
   addReviewComment: (...a: unknown[]) => addReviewComment(...(a as [])),
   resolveReviewComment: (...a: unknown[]) => resolveReviewComment(...(a as [])),
 }));
@@ -164,6 +168,52 @@ describe('mutations', () => {
     await expect(reviewActions.setState('s1', 'h1', 'accepted')).rejects.toThrow('stale');
     expect(listReviewHunks).toHaveBeenCalledTimes(2);
     expect(reviewStore.session('s1').hunks[0].state).toBe('unreviewed');
+  });
+
+  it('a bulk reject is ONE call with the ids in the order given, then a re-list', async () => {
+    answer([hunk({ id: 'h1' }), hunk({ id: 'h2' })]);
+    await reviewActions.refresh('s1');
+    setHunkStates.mockResolvedValue({ applied: ['h2', 'h1'], failed: [] });
+
+    const outcome = await reviewActions.rejectMany('s1', ['h2', 'h1']);
+
+    expect(setHunkStates).toHaveBeenCalledTimes(1);
+    expect(setHunkStates).toHaveBeenCalledWith('s1', ['h2', 'h1'], 'rejected');
+    expect(setHunkState).not.toHaveBeenCalled();
+    expect(outcome.applied).toEqual(['h2', 'h1']);
+    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+  });
+
+  it('a bulk decision marks every named hunk optimistically and a failed call re-lists', async () => {
+    answer([hunk({ id: 'h1' }), hunk({ id: 'h2' }), hunk({ id: 'h3' })]);
+    await reviewActions.refresh('s1');
+    let resolveCall: (v: unknown) => void = () => {};
+    setHunkStates.mockImplementation(
+      () => new Promise((r) => (resolveCall = r as (v: unknown) => void)),
+    );
+    const pending = reviewActions.setStates('s1', ['h1', 'h3'], 'accepted');
+
+    const states = reviewStore.session('s1').hunks.map((h) => h.state);
+    expect(states).toEqual(['accepted', 'unreviewed', 'accepted']);
+    resolveCall({ applied: ['h1', 'h3'], failed: [] });
+    await pending;
+
+    setHunkStates.mockRejectedValue(new Error('stale'));
+    await expect(reviewActions.setStates('s1', ['h2'], 'accepted')).rejects.toThrow('stale');
+    expect(listReviewHunks).toHaveBeenCalledTimes(3);
+    expect(reviewStore.session('s1').hunks[1].state).toBe('unreviewed');
+  });
+
+  it('undo names no hunk, returns what the daemon restored, and re-lists', async () => {
+    answer([hunk({ id: 'h1', state: 'rejected' })]);
+    await reviewActions.refresh('s1');
+    undoReject.mockResolvedValue({ applied: ['h1'], failed: [] });
+
+    const outcome = await reviewActions.undoReject('s1');
+
+    expect(undoReject).toHaveBeenCalledWith('s1');
+    expect(outcome.applied).toEqual(['h1']);
+    expect(listReviewHunks).toHaveBeenCalledTimes(2);
   });
 
   it('commenting and resolving both re-list', async () => {

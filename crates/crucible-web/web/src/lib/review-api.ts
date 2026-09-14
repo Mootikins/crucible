@@ -1,7 +1,7 @@
 /**
  * The `review.*` surface, over the axum bridge.
  *
- * One module per feature slice rather than more of `api.ts`: these five calls
+ * One module per feature slice rather than more of `api.ts`: these seven calls
  * are the whole attributed-diff review API and share an error contract nothing
  * else needs.
  *
@@ -84,6 +84,53 @@ export function setHunkState(
     errorMessage: 'Failed to record review decision',
     includeErrorText: true,
     ...jsonBody({ hunk_id: hunkId, state }),
+  });
+}
+
+/**
+ * What a bulk decision or an undo did.
+ *
+ * A refused hunk is part of the answer, not an error: `applied` names the ids
+ * that landed, in order, and `failed` names the rest with the daemon's reason
+ * for each. The caller shows `failed` and keeps the rest, rather than
+ * re-listing to learn which was which.
+ */
+export interface BulkOutcome {
+  session_id?: string;
+  applied: string[];
+  failed: { hunk_id: string; reason: string }[];
+}
+
+/**
+ * One decision over several hunks, as ONE daemon call.
+ *
+ * The ids go in the order given. The daemon applies them in that order, and a
+ * reject reverts files as it goes, so the caller's order is the diff order.
+ */
+export function setHunkStates(
+  sessionId: string,
+  hunkIds: string[],
+  state: ReviewState,
+): Promise<BulkOutcome & { state: ReviewState }> {
+  return request('POST', `${base(sessionId)}/states`, {
+    errorMessage: 'Failed to record review decision',
+    includeErrorText: true,
+    ...jsonBody({ hunk_ids: hunkIds, state }),
+  });
+}
+
+/**
+ * Take back the most recent reject, single or bulk, as one action.
+ *
+ * Names no hunk: the daemon owns the stack of rejects for the session and
+ * pops it. An empty stack answers two empty lists. The `{}` body is the same
+ * preflight rule as `rebaseReview` and `resolveReviewComment`.
+ */
+export function undoReject(sessionId: string): Promise<BulkOutcome> {
+  return request('POST', `${base(sessionId)}/undo-reject`, {
+    errorMessage: 'Failed to undo the reject',
+    includeErrorText: true,
+    ...jsonBody({}),
   });
 }
 

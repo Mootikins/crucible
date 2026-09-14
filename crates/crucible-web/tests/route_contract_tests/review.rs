@@ -1,6 +1,6 @@
 //! Review route contract tests.
 //!
-//! These six routes are a pure passthrough in both directions, so the type
+//! These eight routes are a pure passthrough in both directions, so the type
 //! system proves nothing about them: the daemon's result objects are
 //! `serde_json::Value` all the way to the browser precisely so a key the
 //! daemon grows (`degraded`, `gate`) reaches a frontend that reads it without
@@ -128,6 +128,53 @@ async fn set_state_forwards_hunk_id_and_state() {
     assert_eq!(params["hunk_id"], "h1");
     assert_eq!(params["state"], "accepted");
     assert_eq!(json["state"], "accepted");
+}
+
+/// A bulk decision is ONE daemon call, and the order of the ids is the order
+/// the daemon applies them in — a reject that reverts two hunks in one file
+/// must revert the lower one first, so a route that re-sorted or set-ified the
+/// list would change what lands on disk.
+#[tokio::test]
+async fn set_states_forwards_the_ids_in_order() {
+    let (mock, status, json) = call(
+        "POST",
+        "/api/session/s1/review/states",
+        Some(json!({ "hunk_ids": ["h3", "h1", "h2"], "state": "rejected" })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mock.received_methods(), vec!["review.set_states"]);
+    let params = mock.received_params("review.set_states").unwrap();
+    assert_eq!(params["session_id"], "s1");
+    assert_eq!(params["hunk_ids"], json!(["h3", "h1", "h2"]));
+    assert_eq!(params["state"], "rejected");
+    // The daemon's answer is forwarded whole: the ids that applied and the
+    // ids it refused, each with its reason, so the client never re-lists to
+    // learn which was which.
+    assert_eq!(json["state"], "rejected");
+    assert_eq!(json["applied"], json!(["h3", "h1", "h2"]));
+    assert!(json.get("failed").is_some_and(Value::is_array), "{json}");
+}
+
+/// The undo names no hunk: the daemon pops its own stack for the session in
+/// the PATH. The `{}` body carries the `Content-Type` that forces a preflight,
+/// the same rule as `…/rebase` and `…/resolve`.
+#[tokio::test]
+async fn undo_reject_reaches_the_daemon_with_the_path_session() {
+    let (mock, status, json) = call(
+        "POST",
+        "/api/session/a%2Fb/review/undo-reject",
+        Some(json!({})),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mock.received_methods(), vec!["review.undo_reject"]);
+    let params = mock.received_params("review.undo_reject").unwrap();
+    assert_eq!(params["session_id"], "a/b");
+    assert!(json.get("applied").is_some_and(Value::is_array), "{json}");
+    assert!(json.get("failed").is_some_and(Value::is_array), "{json}");
 }
 
 /// The state vocabulary belongs to the daemon. A copy of it in this crate
