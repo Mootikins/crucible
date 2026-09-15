@@ -627,7 +627,9 @@
   &:focus-visible {
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
-    border-radius: inherit;
+    /* No `border-radius: inherit` here: it made a rounded-sm close button
+     * take its parent's radius the moment it got focus. The outline follows
+     * the element's own border shape on every engine that matters. */
   }
 }
 
