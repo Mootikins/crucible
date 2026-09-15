@@ -60,6 +60,10 @@ pub enum NodeContent {
     Agent { text: String },
     /// System / developer instruction injected into context.
     System { text: String },
+    /// Context supplied between turns, retaining its role without creating an undo step.
+    Injected {
+        message: crate::traits::context_ops::ContextMessage,
+    },
     /// Agent-authored reasoning trace ("thinking" / reflection).
     Thinking { text: String },
     /// Tool invocation request from the agent.
@@ -372,6 +376,7 @@ impl ConversationTree {
                 }
                 NodeContent::Agent { .. } => continue,
                 NodeContent::System { text } => out.push(ContextMessage::system(text)),
+                NodeContent::Injected { message } => out.push(message.clone()),
                 NodeContent::Thinking { .. } => continue,
                 NodeContent::ToolCall { .. } | NodeContent::ToolResult { .. } => {
                     // Tool exchanges are folded into the turn by the

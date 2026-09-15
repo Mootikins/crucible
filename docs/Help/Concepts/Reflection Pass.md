@@ -1,6 +1,6 @@
 ---
 title: Reflection Pass
-description: Retrospective self-improvement — a forked agent reviews a finished session and writes the kiln notes it earned, for a human to accept or reject in the review
+description: Retrospective self-improvement — an auxiliary agent reviews a finished session and writes the kiln notes it earned, for a human to accept or reject in the review
 status: implemented
 tags:
   - concept
@@ -14,9 +14,9 @@ aliases:
 
 # Reflection Pass
 
-The reflection pass is Crucible's second self-improvement avenue, next to [[Help/Concepts/Precognition|knowledge insertion]]. Knowledge insertion is *reactive*: the agent writes a note in the middle of a turn when it decides to. Reflection is *retrospective*: after a session ends, a forked cheap-model agent reads the finished conversation and **proposes** durable knowledge.
+The reflection pass is Crucible's second self-improvement avenue, next to [[Help/Concepts/Precognition|knowledge insertion]]. Knowledge insertion is *reactive*: the agent writes a note in the middle of a turn when it decides to. Reflection is *retrospective*: after a session ends, a separate auxiliary-model agent reads the finished conversation and **proposes** durable knowledge.
 
-The governing principle is **propose, do not dispose.** The reflection reviewer writes each note with the note tools, in its own session, in `auto` mode, so every write is bracketed and lands as a hunk in that session's [[Help/Concepts/Review Ledger|review ledger]]. A human accepts or rejects each hunk in the Changes panel; a reject reverts the note on disk. Nothing stays in the kiln without that decision.
+The governing principle is **propose, do not dispose.** The reflection reviewer writes each note with the note tools, in its own session, in `auto` mode, so every write is bracketed and lands as a hunk in that session's [[Help/Concepts/Review Ledger|review ledger]]. A human accepts or rejects each hunk in the Changes panel; a reject reverts the note on disk. Until that decision, the note is live and available to retrieval.
 
 The consolidation pass works the same way. It runs its review through the reflection plugin, so its pattern notes are hunks in its own session too, and one Changes panel disposes of both passes.
 
@@ -24,12 +24,13 @@ The consolidation pass works the same way. It runs its review through the reflec
 
 - **Trigger:** `on_session_end`. Every finished session is a candidate; a session with fewer than `min_turns` user turns is skipped.
 - **Requires configuration:** the plugin is **inert until you configure an auxiliary model**. Without `plugins.reflection.model` it logs a warning and skips every session.
-- **Execution:** a forked auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. When the reviewer's own session ends, the plugin reads its type from the daemon and skips it, so a review never reviews itself.
+- **Execution:** a separate auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. Plugin sessions are excluded from reflection, so a reviewer is never input to another reflection pass.
 - **Bounded by tool set:** before the prompt is sent, the plugin narrows the reviewer's session to `semantic_search`, `read_note`, `list_notes`, `grep_notes`, `create_note` and `update_note` with `cru.tools.set_active`. The daemon refuses every other tool at dispatch, so the reviewer reaches the kiln and nothing else — no workspace file, no shell. If the daemon cannot narrow the set, no prompt is sent.
 - **Auto mode:** the plugin puts the reviewer's session in `auto` before it sends. A non-interactive turn in the default `ask` mode is denied, so every note write would fail; `auto` also carries the `PostTurn` review policy, so a second write to one note is not parked at a gate nobody can answer.
+- **Agent configuration:** the daemon resolves the auxiliary model and provider when it creates the pass, with the reviewer's system prompt and an explicitly empty MCP server list. No second configuration call can silently leave the pass using another model or restore external tools. The pass has no project workspace.
 - **Reads before it writes:** the reviewer searches the kiln with `semantic_search` and reads the closest note with `read_note`. When a note already covers the idea, it calls `update_note` on that note instead of `create_note`.
 - **Output:** the notes themselves, written into the kiln and held by the review ledger of the pass's own session. The reviewer answers with one line naming what it wrote, or "Nothing to save".
-- **Disposition:** the Changes panel of the pass's session. Accept keeps the note; reject reverts it. The pass's session is titled `Reflection: <the reviewed session>`, so a reader knows where a note came from, and it is not auto-archived while its hunks are undecided.
+- **Disposition:** the Changes panel of the pass's session. Accept keeps the note; reject removes a newly created note or restores the prior content of an updated note. A file that was already empty stays present. The pass's session is titled `Reflection: <the reviewed session>`, so a reader knows where a note came from, and it is not auto-archived while its hunks are undecided.
 
 ## Why a proposed note waits in the kiln
 

@@ -16,8 +16,8 @@ import type { BlockProps } from './registry';
  * things the daemon does not know — which note has focus, and where the user
  * has left the depth control. So the block **invokes a command** and waits.
  *
- * That is the shape under test in `docs/Meta/Analysis/Plugin API Plan.md`
- * step 2: a parameterised read, over RPC, re-issued every time an argument
+ * That is the graph tradeoff in `docs/Meta/Analysis/Plugin API Plan.md`:
+ * a parameterised read, over RPC, re-issued every time an argument
  * moves. The elapsed time of each read is drawn in the header rather than
  * hidden, because the cost of that shape is the finding, not a detail.
  *

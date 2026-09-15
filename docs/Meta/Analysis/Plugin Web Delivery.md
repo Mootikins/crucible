@@ -14,7 +14,7 @@ tags:
 
 # Plugin Web Delivery
 
-Settles step 5 of [[Meta/Analysis/Plugin API Plan]]: **how does third-party
+Records the delivery decision summarized in [[Meta/Analysis/Plugin API Plan]]: **how does third-party
 plugin TypeScript get delivered into the web UI, and what surface follows from
 that choice?**
 
@@ -418,7 +418,7 @@ it can never become true.
 
 ## Links
 
-- [[Meta/Analysis/Plugin API Plan]] — the sequence this closes step 5 of
+- [[Meta/Analysis/Plugin API Plan]] — settled API decisions and remaining constraints
 - [[Meta/Analysis/The Plugin Contract]] — the design being sequenced
 - [[Meta/Analysis/Oil in Documents]] — the spike that produced both
 - `scripts/spikes/plugin-bridge/` — the measurement, reproducible

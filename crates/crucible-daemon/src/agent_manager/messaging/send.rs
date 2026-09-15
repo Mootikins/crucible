@@ -172,7 +172,7 @@ impl AgentManager {
             // Undo lands on the user node's parent, so accepted context must
             // already be in the tree when the snapshot key is chosen.
             for message in input.pending.drain(..) {
-                crate::observe::rebuild::apply_event_to_tree(&mut t, &message);
+                crate::observe::rebuild::apply_injection_to_tree(&mut t, &message);
             }
             t.current()
         };

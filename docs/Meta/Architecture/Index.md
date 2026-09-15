@@ -1,39 +1,48 @@
 ---
 title: Architecture
-description: Entry point for the architecture docs. Expected, actual, the gaps between them, and the consolidation plan.
+description: Current architecture entry points, focused designs, and clearly dated audit history
 tags: [meta, architecture]
 ---
 
 # Architecture
 
-[[2026-09-14 Code Reduction Review]] is the current follow-up: deletion
-candidates and consolidation work checked at `53534ceea`, after the batches
-below landed. Its twelve recommendations are implemented on the review branch; the review records validation status.
+Start with [[Meta/Product]] for goals, behavior and current proof status.
+[[Meta/CONTEXT]] defines the vocabulary. The repository agent guide records
+the implementation boundaries and required workflow.
 
-[[2026-09-14 Product Consistency Cleanup]] follows that reduction with a
-product-kiln audit: shared daemon writes, offline reconciliation, consolidation
-progress, and retirement of unused parser and tool state.
+## Current entry points
 
-Four documents, written on 2026-08-22 at commit `7053bcfe7`.
+| Question | Read |
+| --- | --- |
+| Which subsystem owns the change? | [[Meta/Analysis/Systems]] and [[Meta/Analysis/Type Flows]]; verify the current types and callers |
+| How do configuration and plugins start? | [[Config Boot]], [[State Stores]], [[Meta/Plugin Conventions]] |
+| What is the plugin data/render contract? | [[Meta/Analysis/The Plugin Contract]], [[Meta/Analysis/Plugin API Plan]] |
+| Where does a new tool, provider, client or RPC land? | [[Consolidation Plan#Extension seams]] |
+| What proves the recent daemon-first work? | [[Meta/Analysis/2026-09-15 Architecture Follow-ups]] and [[Meta/Product]] |
+| What does a user do? | The relevant note under `docs/Help/`, rather than an implementation report |
 
-| Doc | What it answers |
-|---|---|
-| [[Expected]] | What shape the product docs imply, with no code read. Section 10 lists where two independent drafts disagreed. |
-| [[Actual]] | What the code is. Seams, types, traits, duplicates, dead code. Every claim cites `file:line`. |
-| [[Gaps]] | Where Expected and Actual differ, one row each, with a verdict on which side is wrong. |
-| [[Consolidation Plan]] | The dead code and duplicates to remove, in four tiers by evidence and risk. |
+Focused boundary notes: [[Meta/Analysis/Storage Schema]],
+[[Meta/Analysis/Filesystem Containment]], [[Meta/Analysis/Bash Permission Layers]]
+and [[Meta/Analysis/Workspace and Runtime Targets]].
 
-To find a seam's owner, read [[Actual]] section 3. To add a tool, provider,
-client, hook stage, storage backend or RPC method, read [[Consolidation Plan]]
-section 6. Two later notes record what the Lua-and-config program changed:
-[[Config Boot]] (the one-VM boot inversion) and [[State Stores]] (the
-machine-written JSON registries and how state overlays config). For the older analyses, see [[Systems]], [[Type Flows]],
-[[Storage Schema]], [[Canvas]], [[Filesystem Containment]], [[Bash Permission Layers]],
-[[Workspace and Runtime Targets]].
+## Designs, not implementation promises
 
-[[Mobile Shell]] is a DRAFT, not an as-built note. It elaborates the small-screen
-web shell that `docs/Meta/Product.md` records at `P2`, and says where it departs
-from the 2026-08-13 decision-log rows. Its section 11 describes offline writes;
-the implemented `fs.write` daemon RPC now compares bases and merges under the
-same lock used by agent note tools. Its section 12 records where a phone meets the
-plugin blocks and plugin surfaces now on master.
+[[Mobile Shell]] is a design draft. It includes implemented pieces and proposed
+work; check [[Meta/Product]] and the relevant Help note before treating an
+individual section as shipped. [[Meta/Analysis/Plugin Web Delivery]] records
+the chosen third-party web isolation design and its implementation trigger.
+[[Meta/Analysis/Canvas]] and [[Meta/Analysis/Oil in Documents]] preserve their
+design context.
+
+## Historical audits
+
+[[Expected]], [[Actual]] and [[Gaps]] began as the **2026-08-22** comparison at
+`7053bcfe7`, with later dated amendments. They are evidence of that review,
+not current normative architecture or an active defect queue. Their source
+paths and line numbers belong to those revisions.
+
+[[Consolidation Plan]] retains the resulting decisions and extension seams;
+completed per-symbol inventories live in git history.
+[[Meta/Analysis/2026-09-14 Code Reduction Review]] records the subsequent
+reduction outcomes. Use those lessons, but reproduce an old finding before
+promoting it to current work.

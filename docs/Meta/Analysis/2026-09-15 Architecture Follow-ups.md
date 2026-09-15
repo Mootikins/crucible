@@ -1,6 +1,6 @@
 ---
 title: Architecture Follow-ups — September 2026
-description: Six daemon-first follow-ups, their boundary tests and remaining limits
+description: Daemon-first follow-ups, their boundary tests and remaining limits
 tags:
   - architecture
   - testing
@@ -69,7 +69,57 @@ existing stores and protocols.
    desktop-only gap: automatic drain belonged to the mobile status badge. Both
    shells now mount that shared control, including the unsent/conflict counts.
 
+## Next four items implemented
+
+- **One fork implementation** copies selected history, agent configuration,
+  scope and isolation intent. Injected context retains its role without becoming
+  an undoable user turn, including after rebuild and fork. Cold sessions are
+  rechecked against current trust requirements before running. RPC forks run
+  required start hooks; Lua forks refuse active/requested isolation and require
+  explicit `isolation=false` for workspace sessions, since lifecycle callbacks
+  cannot re-enter those hooks safely.
+- **All new chat creation is daemon-owned**, not only card creation. CLI, TUI
+  and web pass selection inputs through the existing creation RPC. Provider keys
+  resolve the whole configured provider; ACP profile environment and delegation
+  settings survive explicit overrides. The client reads canonical agent state.
+- **Reflection crosses the real lifecycle**: session end, shipped Lua plugin,
+  deterministic provider, note write and review rejection. Its auxiliary agent
+  is configured at creation, including its prompt and explicit empty MCP list.
+  Rejection restores an existing note or removes a newly created one.
+- **Async Lua contracts are exercised end-to-end**: subscription delivery and
+  unsubscribe, collection success/failure/timeout/cancel, and invalid timeout
+  refusal. Job collection wakes from completion notifications rather than a
+  100 ms poll. Advertised job IDs are registered before events, and terminal
+  results are published before notifying collectors. Timing out stops waiting,
+  not the underlying work.
+
 ## Testing cost and remaining scope
+
+The preceding cleanup also established these maintained contracts:
+
+- Participating browser and agent note writes share the daemon's per-path
+  lock and base-aware merge. Raw plugin I/O, external editors and shell commands
+  do not acquire it; this is not an OS-wide lock or a CRDT.
+- The browser outbox namespaces data by daemon identity, updates entries
+  atomically across tabs, and retains the original base when a dirty buffer
+  has not incorporated a server merge. Legacy recovery originals are retained.
+- Consolidation tracks consumed session IDs and event counts rather than a
+  timestamp cursor, so older long-running or resumed sessions remain eligible.
+- Canonical domain tests own repeated configuration assertions. Boundary tests
+  remain for adapters; removing duplicate executions does not remove assertions.
+- Workspace nextest owns shipped-plugin and feature-enabled Oil coverage;
+  documentation lint owns docs tests; frontend CI runs coverage thresholds.
+  External-prerequisite tests remain explicitly gated, not silently discarded.
+- Nextest setup builds process fixtures. Rust tiers run together before frontend
+  embedding can invalidate those binaries. Pure browser-independent tests use
+  Node; component tests retain their browser environment.
+- Virtual clocks replace idle sleeps where possible. PTY tests remain only for
+  actual terminal boundaries; terminal replay caches preserve every fixture's
+  semantic assertions. Coverage thresholds and property-test budgets did not shrink.
+
+The development recipes were simplified in place, not moved into another
+dispatcher. Use `just --list` for current commands and `just ci` for the complete
+gate. Historic warm-cache timings and test counts are not performance promises.
 
 New coverage concentrates on missing boundaries. Card forwarding extends existing
 process and UI stories. The small knowledge corpus runs several questions in one

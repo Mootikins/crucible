@@ -707,8 +707,8 @@ Crucible ships a built-in test runner based on `describe`/`it` blocks. Tests liv
 ### Writing Tests
 
 Load the plugin under test the way the daemon does: by its **directory name**,
-not by `init`. The runner's `package.path` mirrors the loader exactly
-(`<plugins-parent>/?/init.lua`, plus the plugin's own `lua/?.lua`), so
+not by `init`. The runner uses the same host resolver as the daemon:
+public plugin roots and the plugin's private `lua/` modules. Thus
 `require("init")` resolves nothing — a suite written that way fails to load
 rather than failing an assertion.
 

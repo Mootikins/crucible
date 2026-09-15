@@ -233,11 +233,64 @@ async fn the_trust_gate_re_runs_when_a_session_is_revived_from_storage() {
     // A cold daemon over the same root and the same registry: the session
     // exists only on disk, and the turn below is what revives it.
     let sm = manager_over(data_home.path(), kiln.path());
-    let am = super::create_test_agent_manager_with_llm_config(sm.clone(), cloud);
+    let am = Arc::new(super::create_test_agent_manager_with_llm_config(
+        sm.clone(),
+        cloud,
+    ));
     let (tx, _rx) = broadcast::channel(64);
     assert!(
         sm.get_session(&session_id).is_none(),
         "precondition: the session is on disk only, so the send path revives it"
+    );
+    let ctx = Arc::new(crate::rpc::RpcContext::for_test(
+        am.kiln_manager.clone(),
+        sm.clone(),
+        am.clone(),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            data_home.path().join("projects.json"),
+        )),
+        tx.clone(),
+        data_home.path().into(),
+    ));
+    let lua = mlua::Lua::new();
+    crucible_lua::register_sessions_module_with_api(
+        &lua,
+        Arc::new(crate::session_bridge::DaemonSessionBridge::new(ctx)),
+    )
+    .unwrap();
+    lua.globals().set("parent", session_id.clone()).unwrap();
+    lua.load(
+        r#"
+        local child, err = cru.session.fork(parent)
+        assert(child == nil and string.find(err, "insufficient"), tostring(err))
+    "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+    let response = crate::server::session::handle_session_fork(
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0", "method": "session.fork", "id": 1,
+            "params": {"session_id": session_id}
+        }))
+        .unwrap(),
+        &sm,
+        &am,
+    )
+    .await;
+    assert!(response.error.unwrap().message.contains("insufficient"));
+    assert!(
+        sm.list_sessions().is_empty(),
+        "refusal must not revive or fork"
+    );
+    assert_eq!(
+        std::fs::read_dir(sm.sessions_root())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().unwrap().is_dir())
+            .count(),
+        1,
+        "refused forks must leave only the original stored session"
     );
     inject_for(&am, &session_id);
 

@@ -1126,13 +1126,68 @@ impl ReviewLedgers {
         next.push_str(&lines[..start].concat());
         next.push_str(&hunk.before_content);
         next.push_str(&lines[end..].concat());
+        // Absence at session start is insufficient: the user can create an
+        // empty file between opening the ledger and the agent's first write.
+        // Require an uncontested creation followed only by modifications,
+        // including empty-file creations with no attributed line hunk. A
+        // deletion or ambiguous recreation ends that ownership evidence.
+        let remove = if next.is_empty() {
+            let ledger = self
+                .ledger(session_id)
+                .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
+            let base = ledger
+                .base_tree(&hunk.root)
+                .ok_or_else(|| ReviewError::Stale {
+                    path: hunk.path.clone(),
+                })?;
+            let backend = RootBackend::of(base);
+            let mut created = false;
+            if !backend
+                .contains_path(&self.plain, &hunk.root, base, &hunk.path)
+                .await?
+            {
+                for interval in ledger.intervals() {
+                    let Some(root) = interval
+                        .roots_touched
+                        .iter()
+                        .find(|root| root.root == hunk.root)
+                    else {
+                        continue;
+                    };
+                    let changes = backend
+                        .changed_paths(&self.plain, &hunk.root, &root.before_tree, &root.after_tree)
+                        .await?;
+                    if let Some((_, kind)) =
+                        changes.into_iter().find(|(path, _)| path == &hunk.path)
+                    {
+                        let expected = if created {
+                            git::ChangeKind::Modified
+                        } else {
+                            git::ChangeKind::Added
+                        };
+                        if interval.contested || kind != expected {
+                            created = false;
+                            break;
+                        }
+                        created = true;
+                    }
+                }
+            }
+            created
+        } else {
+            false
+        };
         // Held across the write and released after it: this is the daemon
         // editing the user's worktree, and the watcher cannot tell it apart
         // from the user doing so. Unsuppressed, rejecting a hunk announces an
         // external change for the file it just reverted — the queue reporting
         // its own drain as new work.
         let suppressed = self.suppress(session_id);
-        tokio::fs::write(&path, next).await?;
+        if remove {
+            tokio::fs::remove_file(&path).await?;
+        } else {
+            tokio::fs::write(&path, next).await?;
+        }
         drop(suppressed);
 
         self.record_state(session_id, hunk_id, ReviewState::Rejected)

@@ -484,6 +484,7 @@ pub(crate) async fn send_and_collect_op(
             t.get::<bool>("interactive").unwrap_or(false),
         ),
         Value::Number(n) => (Some(n), None, false),
+        Value::Integer(n) => (Some(n as f64), None, false),
         _ => (None, None, false),
     };
     match api
@@ -871,7 +872,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
 /// `agent_type` is deliberately absent: on its own it selects an
 /// implementation, not an agent, and `agent_type = "acp"` with no name is an
 /// error on the create path where today it is a plain agent-less session.
-const AGENT_FIELDS: [&str; 7] = [
+const AGENT_FIELDS: [&str; 10] = [
     "agent_card",
     "agent_name",
     "provider",
@@ -879,6 +880,9 @@ const AGENT_FIELDS: [&str; 7] = [
     "model",
     "endpoint",
     "tool_policy",
+    "system_prompt",
+    "mcp_servers",
+    "env_overrides",
 ];
 
 /// Build the daemon's `session.create` params from a `cru.session.create`
@@ -907,15 +911,16 @@ fn create_params(args: &Value) -> Result<serde_json::Value, String> {
         );
     };
 
-    // mlua encodes an empty Lua table as a JSON *object*, which the request's
-    // `Option<Vec<String>>` rejects. `kilns = {}` was tolerated by the
-    // hand-plucked `unwrap_or_default()` this replaced, so it stays tolerated.
-    if obj
-        .get("kilns")
-        .and_then(serde_json::Value::as_object)
-        .is_some_and(serde_json::Map::is_empty)
-    {
-        obj.insert("kilns".to_string(), serde_json::Value::Array(Vec::new()));
+    // An empty Lua table serializes as an object; these fields are lists,
+    // and an explicit empty list clears the daemon's defaults.
+    for field in ["kilns", "mcp_servers"] {
+        if obj
+            .get(field)
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(serde_json::Map::is_empty)
+        {
+            obj.insert(field.to_string(), serde_json::Value::Array(Vec::new()));
+        }
     }
 
     // The daemon only reads the agent fields when `configure_agent` is set, so

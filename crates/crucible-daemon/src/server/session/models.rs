@@ -175,81 +175,23 @@ pub(crate) async fn handle_session_fork(
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let (parent_id, up_to) = (&params.session_id, params.up_to);
-
-    let parent = match sm.get_session(parent_id) {
-        Some(s) => s,
-        None => return session_not_found(req.id, parent_id),
+    let parent = match sm.read_session(&params.session_id).await {
+        Ok(Some(parent)) => parent,
+        Ok(None) => return session_not_found(req.id, &params.session_id),
+        Err(error) => return internal_error(req.id, error),
     };
-
-    let child = match sm
-        .create_session(
-            parent.session_type,
-            parent.kilns.clone(),
-            parent.workspace.clone(),
-            None,
-        )
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => return internal_error(req.id, e),
-    };
-
-    let parent_dir = sm.session_dir(&parent.id);
-    let events = match crate::observe::load_events(&parent_dir).await {
-        Ok(e) => e,
-        Err(e) => {
-            warn!(parent_id = %parent_id, error = %e, "Failed to load parent events for fork");
-            Vec::new()
+    match am.fork_session(parent, params.up_to).await {
+        Ok((child, count)) => Response::success(
+            req.id,
+            serde_json::json!({
+                "id": child.id,
+                "parent_id": params.session_id,
+                "messages_copied": count,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::InvalidConfig(message)) => {
+            Response::error(req.id, INVALID_PARAMS, message)
         }
-    };
-
-    let storage = sm.storage();
-    let mut count = 0u64;
-    for event in &events {
-        if let Some(limit) = up_to {
-            if count >= limit {
-                break;
-            }
-        }
-        match event {
-            crate::observe::LogEvent::User { .. }
-            | crate::observe::LogEvent::Assistant { .. }
-            | crate::observe::LogEvent::System { .. } => match serde_json::to_string(event) {
-                Ok(json) => {
-                    if let Err(e) = storage.append_event(&child, &json).await {
-                        warn!(
-                            child_id = %child.id,
-                            error = %e,
-                            "Failed to write forked event"
-                        );
-                    }
-                    count += 1;
-                }
-                Err(e) => warn!(error = %e, "Failed to serialize event for fork"),
-            },
-            _ => {}
-        }
+        Err(error) => internal_error(req.id, error),
     }
-
-    // Copy agent configuration from parent so the forked session inherits
-    // model, provider, system prompt, etc.
-    if let Ok((_, parent_agent)) = am.get_session_with_agent(parent_id) {
-        if let Err(e) = am.configure_agent(&child.id, parent_agent).await {
-            warn!(
-                child_id = %child.id,
-                error = %e,
-                "Failed to copy agent config to forked session"
-            );
-        }
-    }
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "id": child.id,
-            "parent_id": parent_id,
-            "messages_copied": count,
-        }),
-    )
 }

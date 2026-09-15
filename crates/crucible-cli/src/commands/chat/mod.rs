@@ -156,11 +156,12 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
     // point (it returns above), and a resumed session's agent type is
     // stored daemon-side (it may be ACP even without `-a`), so resume
     // relies on the TUI's empty-list warning instead.
-    let is_acp = crate::factories::agent::resolve_is_acp(
-        None,
-        params.agent_name.as_deref(),
-        &params.config.chat.agent_preference,
-    );
+    let is_acp = params.agent_card.is_none()
+        && crate::factories::agent::resolve_is_acp(
+            None,
+            params.agent_name.as_deref(),
+            &params.config.chat.agent_preference,
+        );
     if !is_acp && params.resume_session_id.is_none() {
         let client = crucible_daemon::DaemonClient::connect_or_start().await?;
         crate::commands::chat_preflight::ensure_providers_available(

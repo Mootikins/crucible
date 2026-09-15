@@ -4,11 +4,13 @@ use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
 use crate::session_manager::SessionManager;
 use crate::test_support::temp_session_manager;
+mod async_session;
 mod create;
 mod delegate;
 mod lifecycle;
 mod message_rows;
 mod persisted_history;
+mod reflection;
 mod review;
 mod session_json;
 

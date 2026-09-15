@@ -501,6 +501,14 @@ fn wire_token_usage(data: &Value) -> Option<TokenUsage> {
 /// not corruption, and warning on it would put a line in the log for every
 /// `segment_complete` of every turn.
 pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
+    replay_session_log(jsonl)
+        .into_iter()
+        .map(|(event, _)| event)
+        .collect()
+}
+
+/// Replay preserves whether a message is context rather than a user turn.
+pub(crate) fn replay_session_log(jsonl: &str) -> Vec<(LogEvent, bool)> {
     let mut events = Vec::new();
     // The model a turn ran under is announced once, by `model_switched`,
     // and not repeated on each `message_complete`. Carry it forward so
@@ -554,7 +562,13 @@ pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
         }
     }
     for (index, line) in lines.into_iter().enumerate() {
-        events.extend(injections.remove(&index).unwrap_or_default());
+        events.extend(
+            injections
+                .remove(&index)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|event| (event, true)),
+        );
         match line {
             SessionLogLine::Wire(msg) => {
                 if msg.event == "model_switched" {
@@ -568,15 +582,20 @@ pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
                     if let LogEvent::Assistant { model, .. } = &mut event {
                         *model = current_model.clone();
                     }
-                    events.push(event);
+                    events.push((event, false));
                 }
             }
-            SessionLogLine::View(event) => events.push(event),
+            SessionLogLine::View(event) => events.push((event, false)),
             SessionLogLine::Injection(_) => {}
         }
     }
     // Accepted but not yet consumed: a resumed turn must see these too.
-    events.extend(injections.into_values().flatten());
+    events.extend(
+        injections
+            .into_values()
+            .flatten()
+            .map(|event| (event, true)),
+    );
 
     events
 }

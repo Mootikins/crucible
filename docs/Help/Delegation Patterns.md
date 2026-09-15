@@ -26,7 +26,7 @@ The primitives you'll use:
   stamped from the session your Lua runs for (never settable from data), the
   parent's own `delegation_config` gates it (`enabled`, `allowed_targets`),
   and the result is a job record — `{ delegation_id, child_session_id,
-  status }` — that `collect_subagents` polls. Reachable from a hook's
+  status }` — that `collect_subagents` awaits. Reachable from a hook's
   own Lua and from `lua.init_session`; the shared plugin VM has no current
   session, so `delegate = true` there is refused with that reason.
 - `cru.session.configure_agent(id, { agent_name = "..." })` — pick
@@ -40,9 +40,19 @@ The primitives you'll use:
 - `cru.session.collect_subagents(job_ids, timeout)` — await N
   background subagent jobs. `delegation_id` from a delegated create is one
   of these job ids, so the delegate primitive and the session primitive
-  meet on one polling surface.
+  meet on one collection surface.
 - `cru.session.fork(id, opts?)` — clone a session's history into a
-  new session, e.g. for A/B exploration.
+  new independent session, e.g. for A/B exploration. Both Lua and RPC
+  inherit the parent's agent configuration, workspace, attached kilns,
+  isolation and session variables. `{up_to = N}` copies the first N
+  persisted user/assistant/system messages (including injected context);
+  omit it for all history, or use zero for configuration alone. Forking
+  does not transfer an in-flight turn or an ACP agent's private state.
+  Lua forks of workspace sessions require an explicit `isolation = false`
+  on the parent. Lua also refuses any active isolation claim or positive
+  isolation request: it cannot re-enter required session-start hooks from
+  a plugin callback. Use the `session.fork` RPC in those cases. Absence of a
+  live claim is not proof that a session never required isolation.
 - `cru.session.end_session(id)` — clean up.
 
 See [[Help/Core/Sessions]] for full signatures and the
@@ -196,11 +206,15 @@ local results = cru.session.collect_subagents(job_ids, 60)
 -- results is { { id, status, output | error, exit_code }, ... }
 ```
 
-`collect_subagents` waits on background jobs from the daemon's
-subagent infrastructure (distinct from sessions created by
-`cru.session.create`). See [[Help/Concepts/Delegation]] for how to
-spawn those jobs and the `delegate_session` tool for the host-side
-contract.
+`collect_subagents` waits on delegated child-session IDs and background bash
+job IDs, returning one row per input ID in the original order. Completion
+notifications wake collectors; there is no periodic polling. Completed, failed
+and cancelled jobs retain their results; unknown IDs return `not_found`, and
+jobs still running at the deadline return `timeout` without being cancelled.
+Timeouts must be finite, nonnegative seconds; zero inspects current state only.
+Plain sessions are not jobs: create a delegated child with
+`cru.session.create({ delegate = true, ... })` or the `delegate_session` tool.
+See [[Help/Concepts/Delegation]] for the lifecycle contract.
 
 ## Why no built-in delegation types?
 

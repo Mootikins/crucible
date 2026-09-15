@@ -1062,7 +1062,7 @@ earlier draft argued Oil against a native component and left the choice open.
 The choice is settled and **the work is on master** — `web/src/components/oil/`
 is gone and `web/src/components/blocks/` is in its place. Read
 `docs/Meta/Analysis/The Plugin Contract.md` for the design and
-`docs/Meta/Analysis/Plugin API Plan.md` for the sequence.
+[[Meta/Analysis/Plugin API Plan]] for the settled API decisions.
 
 The rule is one sentence: **a plugin owns data, and each frontend draws it
 natively.** A plugin publishes opaque JSON through `cru.plugin.publish`; the
@@ -1170,19 +1170,17 @@ place independently. Both are about the same missing boundary.
 - This draft: `server.rs:241` sets `script-src 'self' 'wasm-unsafe-eval'`, so a
   plugin bundle the daemon serves IS `'self'`. The policy admits it and protects
   nothing. The service worker's root scope leans on that same control.
-- The plugin plan, step 1: "**Until blocks are isolated**, a header is
-  forgeable by any script on the origin, so this is not a security boundary"
-  (`Plugin API Plan.md:57`). Keep the conditional — the claim is about today,
-  not forever. Its own words: "Say that in the code, or someone will later
-  believe it is a gate."
-- The plugin plan, step 4: `Capability` has ten variants and is enforced in two
-  places, both `InterceptTools`. `filesystem`, `kiln` and `config` gate nothing
-  today.
+- [[Meta/Analysis/Plugin API Plan]]: until blocks are isolated, a header is
+  forgeable by same-origin script. Attribution is not a security boundary.
+- The old plugin `Capability` enum is gone. Operator-installed Lua is trusted
+  code; the remaining plugin tool-interception declaration does not isolate
+  browser script.
 
 The three describe one gap. **Nothing separates plugin code from app code on
 this origin**, and every proposed control assumes an isolation that does not
-exist yet. `Plugin API Plan.md:124` leaves the fix undecided — "a sandboxed opaque origin
-with a `postMessage` bridge, versus something else". Only half of that exists here, and the two exemplars are not the same strength:
+exist yet. [[Meta/Analysis/Plugin Web Delivery]] selects an opaque-origin
+sandboxed iframe and MessageChannel bridge; implementation waits for a
+third-party web-asset consumer. The existing exemplars are not the same strength:
 
 - `routes/kiln.rs:209` returns `sandbox; frame-ancestors 'none'` — **no
   `allow-*` token at all**, so the document gets a unique opaque origin and its
@@ -1861,7 +1859,7 @@ means duplicating it, or extracting it first.
    review index wants a *session* scope and tree expansion wants a *viewer*
    scope. A saved query is a third case. **Design the scope vocabulary once,
    jointly, rather than growing one on each side.** Owner: this draft and
-   `Plugin API Plan.md` together.
+   [[Meta/Analysis/Plugin API Plan]] together.
    **One constraint is already agreed and is not open: the binding resolves
    server-side.** A scope a caller asserts is a caller reading another caller's
    state. So `data/session/<id>/…` takes `<id>` from the request's resolved

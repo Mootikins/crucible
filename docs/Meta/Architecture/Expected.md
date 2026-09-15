@@ -2,10 +2,14 @@
 title: Expected Architecture
 description: Clean-room architecture derived from the product docs alone, with the two drafts' disagreements recorded.
 tags: [meta, architecture]
-status: clean-room
+status: historical
 ---
 
 # Expected Architecture
+
+Historical clean-room design: **2026-08-22**, not the current product contract.
+Later decisions supersede parts of this comparison. Start at
+[[Meta/Architecture/Index]] and [[Meta/Product]].
 
 This document is the merge of two clean-room architecture drafts for Crucible.
 It describes the architecture the product documents imply. It does not describe

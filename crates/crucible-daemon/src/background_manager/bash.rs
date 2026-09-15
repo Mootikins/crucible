@@ -16,20 +16,7 @@ impl BackgroundJobManager {
         let job_id = info.id.clone();
         let timeout = timeout.unwrap_or(DEFAULT_BASH_TIMEOUT);
         let (cancel_tx, cancel_rx) = oneshot::channel();
-
-        if !emit_event(
-            &self.event_tx,
-            SessionEventMessage::new(
-                session_id,
-                events::BASH_SPAWNED,
-                serde_json::json!({
-                    "job_id": job_id,
-                    "command": command,
-                }),
-            ),
-        ) {
-            tracing::debug!("Failed to emit BASH_SPAWNED event (no subscribers)");
-        }
+        let (registered_tx, registered_rx) = oneshot::channel();
 
         info!(
             job_id = %job_id,
@@ -46,8 +33,13 @@ impl BackgroundJobManager {
             let session_id = session_id.to_string();
             let max_history = self.max_history;
             let command = command.clone();
+            let completed = self.completed.clone();
 
             tokio::spawn(async move {
+                // A fast child must not finish before its RunningJob exists.
+                if registered_rx.await.is_err() {
+                    return;
+                }
                 let result = Self::execute_bash_with_cancellation(
                     command.clone(),
                     workdir,
@@ -56,29 +48,22 @@ impl BackgroundJobManager {
                 )
                 .await;
 
-                // Extract original JobInfo to preserve started_at timestamp
-                let info = running
-                    .remove(&job_id)
-                    .map(|(_, rt)| rt.info)
-                    .unwrap_or_else(|| {
-                        // Fallback: job was already removed (shouldn't happen)
-                        JobInfo::new(
-                            session_id.clone(),
-                            JobKind::Bash {
-                                command: command.clone(),
-                                workdir: None,
-                            },
-                        )
-                    });
-
-                let job_result = Self::build_job_result(info, result);
+                let dashmap::mapref::entry::Entry::Occupied(entry) = running.entry(job_id.clone())
+                else {
+                    // Cancellation already published the one terminal result.
+                    return;
+                };
+                let job_result = Self::build_job_result(entry.get().info.clone(), result);
+                // No observable gap where a known job appears not_found.
+                Self::add_to_history(&history, &session_id, job_result.clone(), max_history);
+                entry.remove();
+                completed.notify_waiters();
                 Self::emit_completion_events(
                     &event_tx,
                     &session_id,
                     &job_result.info.id.clone(),
                     &job_result,
                 );
-                Self::add_to_history(&history, &session_id, job_result, max_history);
 
                 debug!(job_id = %job_id, "Background bash job completed");
             })
@@ -95,6 +80,20 @@ impl BackgroundJobManager {
                     .start(crate::activity::WorkKind::BackgroundJob),
             },
         );
+        if !emit_event(
+            &self.event_tx,
+            SessionEventMessage::new(
+                session_id,
+                events::BASH_SPAWNED,
+                serde_json::json!({
+                    "job_id": job_id,
+                    "command": command,
+                }),
+            ),
+        ) {
+            tracing::debug!("Failed to emit BASH_SPAWNED event (no subscribers)");
+        }
+        let _ = registered_tx.send(());
 
         Ok(job_id)
     }

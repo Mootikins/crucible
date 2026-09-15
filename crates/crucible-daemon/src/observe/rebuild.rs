@@ -37,13 +37,28 @@ pub async fn rebuild_tree_from_jsonl(path: &Path) -> Result<ConversationTree> {
 /// Core rebuilder. Exposed as a pure function for testability.
 pub fn rebuild_tree_from_str(jsonl: &str) -> ConversationTree {
     let mut tree = ConversationTree::new();
-    for event in crate::observe::events::parse_session_log(jsonl) {
-        apply_event_to_tree(&mut tree, &event);
+    for (event, injected) in crate::observe::events::replay_session_log(jsonl) {
+        if injected {
+            apply_injection_to_tree(&mut tree, &event);
+        } else {
+            apply_event_to_tree(&mut tree, &event);
+        }
     }
     tree
 }
 
-pub(crate) fn apply_event_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
+pub(crate) fn apply_injection_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
+    use crucible_core::traits::context_ops::ContextMessage;
+    let message = match event {
+        LogEvent::User { content, .. } => ContextMessage::user(content),
+        LogEvent::Assistant { content, .. } => ContextMessage::assistant(content),
+        LogEvent::System { content, .. } => ContextMessage::system(content),
+        _ => return,
+    };
+    tree.add_child_and_advance(tree.current(), NodeContent::Injected { message });
+}
+
+fn apply_event_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
     match event {
         LogEvent::User { content, .. } => {
             let parent = tree.current();

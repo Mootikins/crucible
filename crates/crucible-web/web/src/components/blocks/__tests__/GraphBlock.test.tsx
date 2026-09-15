@@ -99,7 +99,7 @@ describe('GraphBlock', () => {
   });
 
   // The read costs a round trip per move, so the block says what each one
-  // cost. `docs/Meta/Analysis/Plugin API Plan.md` step 2 wants that number in
+  // cost. The graph evidence in `docs/Meta/Analysis/Plugin API Plan.md` keeps it in
   // front of whoever is deciding whether this shape is worth keeping.
   it('reports the round-trip time of the read', async () => {
     const { getByTestId } = render(() => (

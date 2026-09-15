@@ -113,6 +113,20 @@ impl RootBackend {
         }
     }
 
+    /// Absence and an existing empty file are different restore targets.
+    pub(super) async fn contains_path(
+        self,
+        store: &PlainStore,
+        root: &Path,
+        snap: &SnapshotId,
+        path: &str,
+    ) -> ReviewResult<bool> {
+        match self {
+            Self::Git => git::contains_path(root, snap, path).await,
+            Self::Plain => store.contains_path(snap, path).await,
+        }
+    }
+
     /// File content at `path` inside `snap`.
     ///
     /// `Ok(None)` means the bytes are not UTF-8 on either backend, so

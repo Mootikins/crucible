@@ -438,7 +438,7 @@ impl DaemonPluginLoader {
     ///
     /// It is ergonomics, not a boundary: `register_stdlib_compat` installs an
     /// unscoped `io.open` for every plugin, so a plugin that wants to leave
-    /// its roots calls that instead. See [[Meta/Analysis/Plugin Merge Plan]].
+    /// its roots calls that instead. See [[Meta/Analysis/Plugin API Plan]].
     fn bind_fs_roots(&self, registry: Arc<crate::kiln_registry::KilnRegistry>) {
         let state_root = crucible_core::config::crucible_home().join("plugin-state");
         let resolver: crucible_lua::FsRootsResolver = Arc::new(move |plugin: &str| {

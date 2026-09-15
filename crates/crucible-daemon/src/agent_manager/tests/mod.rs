@@ -953,6 +953,7 @@ mod build_race;
 mod concurrency;
 mod context_injection;
 mod dispatch;
+mod fork;
 mod init_lua;
 mod init_lua_defaults;
 mod learning_loop;

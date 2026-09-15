@@ -89,8 +89,11 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
     Mock::given(method("POST"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string("data: [DONE]\n\n"),
+                .insert_header("content-type", "application/x-ndjson")
+                .set_body_string(concat!(
+                    "{\"model\":\"llama3.2\",\"message\":{\"role\":\"assistant\",\"content\":\"Acknowledged.\"},\"done\":false}\n",
+                    "{\"model\":\"llama3.2\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
+                )),
         )
         .mount(&server)
         .await;
@@ -120,7 +123,7 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
             &am,
             &tx,
             &reader.id,
-            "system",
+            "user",
             "INJECTED-PROVIDER-CONTEXT",
         )
         .await
@@ -133,8 +136,9 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
             precognition.data["notes_count"].as_u64().unwrap() > 0,
             "{precognition:?}"
         );
-        // The fixture returns no generated text: this test observes the request.
-        first_event_of(&mut rx, &["message_complete", "ended"]).await;
+        // Require success, not merely a request followed by a provider error.
+        let completed = first_event_of(&mut rx, &["message_complete", "ended"]).await;
+        assert_eq!(completed.event, "message_complete", "{completed:?}");
         let requests = server.received_requests().await.unwrap();
         let request: serde_json::Value =
             serde_json::from_slice(&requests.last().unwrap().body).unwrap();
@@ -168,7 +172,13 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
             .last()
             .unwrap();
         assert!(context.contains(expected_body), "{context}");
-        assert_eq!(context.matches("INJECTED-PROVIDER-CONTEXT").count(), 1);
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|m| m["content"] == "INJECTED-PROVIDER-CONTEXT" && m["role"] == "user")
+                .count(),
+            1
+        );
         assert_eq!(messages.last().unwrap()["content"], query);
     }
 }

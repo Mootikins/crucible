@@ -50,7 +50,7 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
     let start = am.send_message(&session.id, "first".into(), &tx, true, None);
     let inject = async {
         let user = next_event_or_skip(&mut rx, "user_message").await;
-        lua.load(r#"assert(cru.session.inject(session_id, "system", "Remember the kiln"))"#)
+        lua.load(r#"assert(cru.session.inject(session_id, "user", "Remember the kiln"))"#)
             .exec_async()
             .await
             .unwrap();
@@ -101,11 +101,20 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
             .collect();
         assert_eq!(injected.len(), usize::from(prompt != "first"));
         if let Some(message) = injected.first() {
-            assert_eq!(
-                message.role,
-                crucible_core::traits::llm::MessageRole::System
-            );
+            assert_eq!(message.role, crucible_core::traits::llm::MessageRole::User);
         }
+        assert_eq!(
+            am.get_or_rebuild_session_tree(&session.id, &session.jsonl_path(sm.sessions_root()))
+                .await
+                .lock()
+                .await
+                .undo_depth(),
+            match prompt {
+                "first" => 1,
+                "second" => 2,
+                _ => 3,
+            }
+        );
     }
 
     // A new manager has neither the live tree nor its pending queue.
@@ -116,6 +125,15 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
         .await
         .unwrap();
     next_event_or_skip(&mut rx, "message_complete").await;
+    assert_eq!(
+        resumed
+            .get_or_rebuild_session_tree(&session.id, &session.jsonl_path(sm.sessions_root()))
+            .await
+            .lock()
+            .await
+            .undo_depth(),
+        4
+    );
     let captured = messages.lock().unwrap().clone().unwrap();
     assert_eq!(
         captured

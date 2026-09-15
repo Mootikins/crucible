@@ -10,8 +10,7 @@
 use anyhow::Result;
 use tracing::info;
 
-use crucible_core::config::{BackendType, CliAppConfig};
-use crucible_core::session::SessionAgent;
+use crucible_core::config::CliAppConfig;
 use crucible_core::traits::chat::AgentHandle;
 
 /// Agent type selection
@@ -147,27 +146,6 @@ impl Default for AgentInitParams {
     }
 }
 
-fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> SessionAgent {
-    let delegation_config = params
-        .agent_name
-        .as_ref()
-        .and_then(|agent_name| config.acp.agents.get(agent_name))
-        .and_then(|profile| profile.delegation.clone());
-
-    // Start from the one default builder, then set what an ACP agent differs
-    // in: no provider of its own, no model, and the profile's delegation.
-    let mut agent = SessionAgent::internal_defaults(None, None);
-    agent.agent_type = "acp".to_string();
-    agent.agent_name = params.agent_name.clone();
-    agent.provider_key = None;
-    agent.provider = BackendType::Custom;
-    agent.model = String::new();
-    agent.endpoint = None;
-    agent.env_overrides = params.env_overrides.clone();
-    agent.delegation_config = delegation_config;
-    agent
-}
-
 /// Create an agent via daemon (auto-starts daemon if needed)
 pub async fn create_daemon_agent(
     config: &CliAppConfig,
@@ -258,7 +236,7 @@ async fn create_daemon_agent_inner(
         );
     let create_agent_type = if is_acp { "acp" } else { "internal" };
 
-    let (session_id, is_new_session) = match &params.resume_session_id {
+    let session_id = match &params.resume_session_id {
         Some(id) if !id.is_empty() => {
             info!("Resuming specific daemon session: {}", id);
             match client.session_resume(id).await {
@@ -267,7 +245,7 @@ async fn create_daemon_agent_inner(
                     info!("Session resume skipped (may already be active): {}", e);
                 }
             }
-            (id.clone(), false)
+            id.clone()
         }
         Some(_) => {
             let session_kiln = config.session_kiln_name();
@@ -290,43 +268,21 @@ async fn create_daemon_agent_inner(
                     .to_string();
                 info!("Resuming most recent daemon session: {}", id);
                 client.session_resume(&id).await?;
-                (id, false)
+                id
             } else {
                 info!("No existing session to resume, creating new one");
-                (
-                    create_new_daemon_session(
-                        &client,
-                        config,
-                        &workspace,
-                        params,
-                        create_agent_type,
-                    )
-                    .await?,
-                    true,
-                )
+                create_new_daemon_session(&client, config, &workspace, params, create_agent_type)
+                    .await?
             }
         }
-        None => (
+        None => {
             create_new_daemon_session(&client, config, &workspace, params, create_agent_type)
-                .await?,
-            true,
-        ),
+                .await?
+        }
     };
 
-    let session_agent = if is_new_session && params.agent_card.is_none() {
-        let agent = if is_acp {
-            build_acp_session_agent(params, config)
-        } else {
-            SessionAgent::internal_from_config(config)
-        };
-        client.session_configure_agent(&session_id, &agent).await?;
-        Some(agent)
-    } else {
-        None
-    };
     info!(
         session_id = %session_id,
-        resumed = !is_new_session,
         "Daemon agent handle ready"
     );
     let mut handle = if raw_forwarding {
@@ -341,10 +297,6 @@ async fn create_daemon_agent_inner(
     }
     .with_kiln(config.session_kiln_name())
     .with_workspace(workspace.clone());
-
-    if let Some(agent) = session_agent {
-        handle = handle.with_agent_config(agent);
-    }
 
     let raw_rx = if raw_forwarding {
         handle.take_raw_event_receiver()
@@ -371,20 +323,36 @@ async fn create_new_daemon_session(
         agent_type: Some(agent_type.into()),
         isolation: None,
     };
-    let result = if let Some(card) = &params.agent_card {
-        client
-            .session_create_with_agent(
-                create,
-                crucible_daemon::rpc_client::SessionAgentSpec {
-                    agent_card: Some(card.clone()),
-                    provider_key: params.provider_key.clone(),
-                    ..Default::default()
-                },
-            )
-            .await?
-    } else {
-        client.session_create(create).await?
-    };
+    let legacy_chat_defaults = agent_type == "internal"
+        && params.provider_key.is_none()
+        && config.llm.default_provider().is_none();
+    let result = client
+        .session_create_with_agent(
+            create,
+            crucible_daemon::rpc_client::SessionAgentSpec {
+                agent_name: (agent_type == "acp")
+                    .then(|| {
+                        params
+                            .agent_name
+                            .clone()
+                            .or_else(|| config.acp.default_agent.clone())
+                    })
+                    .flatten(),
+                agent_card: params.agent_card.clone(),
+                provider_key: params.provider_key.clone(),
+                env_overrides: params.env_overrides.clone(),
+                // Legacy [chat] fallbacks are client config inputs, not a second
+                // SessionAgent constructor. Provider and card defaults stay daemon-owned.
+                model: legacy_chat_defaults
+                    .then(|| config.chat.model.clone())
+                    .flatten(),
+                endpoint: legacy_chat_defaults
+                    .then(|| config.chat.endpoint.clone())
+                    .flatten(),
+                ..Default::default()
+            },
+        )
+        .await?;
 
     let session_id = result["session_id"]
         .as_str()
@@ -406,7 +374,74 @@ pub async fn create_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::config::{AgentPreference, AgentProfile, DelegationConfig};
+    use crucible_core::config::AgentPreference;
+
+    #[tokio::test]
+    async fn chat_creation_sends_agent_selection_in_one_rpc() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let tmp = tempfile::tempdir().unwrap();
+        let socket = tmp.path().join("daemon.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (read, mut write) = stream.into_split();
+            let mut lines = BufReader::new(read).lines();
+            let mut requests = Vec::new();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                let req: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let response = serde_json::json!({"jsonrpc":"2.0", "id":req["id"],
+                    "result":{"session_id":"fixture"}});
+                write
+                    .write_all(format!("{response}\n").as_bytes())
+                    .await
+                    .unwrap();
+                requests.push(req);
+                if requests.len() == 3 {
+                    break;
+                }
+            }
+            requests
+        });
+        let client = crucible_daemon::DaemonClient::connect_to(&socket)
+            .await
+            .unwrap();
+        let mut config = CliAppConfig::default();
+        config.chat.model = Some("legacy-model".into());
+        config.chat.endpoint = Some("http://legacy.test".into());
+        let cases = [
+            ("internal", AgentInitParams::default()),
+            (
+                "internal",
+                AgentInitParams::default().with_provider("chosen"),
+            ),
+            (
+                "acp",
+                AgentInitParams::default()
+                    .with_agent_name("opencode")
+                    .with_model("explicit-model"),
+            ),
+        ];
+        for (kind, params) in cases {
+            let id = create_new_daemon_session(&client, &config, tmp.path(), &params, kind)
+                .await
+                .unwrap();
+            assert_eq!(id, "fixture");
+        }
+        let requests = server.await.unwrap();
+        for request in &requests {
+            assert_eq!(request["method"], "session.create");
+            assert_eq!(request["params"]["configure_agent"], true);
+        }
+        assert_eq!(requests[0]["params"]["model"], "legacy-model");
+        assert_eq!(requests[0]["params"]["endpoint"], "http://legacy.test");
+        assert_eq!(requests[1]["params"]["provider_key"], "chosen");
+        assert!(requests[1]["params"].get("model").is_none());
+        assert_eq!(requests[2]["params"]["agent_name"], "opencode");
+        assert_eq!(
+            requests[2]["params"]["env_overrides"]["OPENCODE_MODEL"],
+            "explicit-model"
+        );
+    }
 
     #[test]
     fn is_acp_rule_converges_across_entry_points() {
@@ -427,17 +462,6 @@ mod tests {
         assert!(resolve_is_acp(None, None, &AgentPreference::Acp));
         // Bare `cru chat`: no name, no type, default preference → internal.
         assert!(!resolve_is_acp(None, None, &AgentPreference::Crucible));
-    }
-
-    fn test_delegation_config() -> DelegationConfig {
-        DelegationConfig {
-            enabled: true,
-            max_depth: 2,
-            allowed_targets: Some(vec!["tool-agent".to_string(), "search-agent".to_string()]),
-            result_max_bytes: 102400,
-            max_concurrent_delegations: 4,
-            timeout_secs: 300,
-        }
     }
 
     #[test]
@@ -529,35 +553,5 @@ mod tests {
     fn test_agent_init_params_default_has_empty_env_overrides() {
         let params = AgentInitParams::default();
         assert!(params.env_overrides.is_empty());
-    }
-
-    #[test]
-    fn test_build_acp_session_agent_includes_delegation_config_when_present() {
-        let mut config = CliAppConfig::default();
-        config.acp.agents.insert(
-            "delegating-agent".to_string(),
-            AgentProfile {
-                delegation: Some(test_delegation_config()),
-                ..Default::default()
-            },
-        );
-
-        let params = AgentInitParams::default().with_agent_name("delegating-agent");
-        let session_agent = build_acp_session_agent(&params, &config);
-
-        assert_eq!(
-            session_agent.delegation_config,
-            Some(test_delegation_config())
-        );
-    }
-
-    #[test]
-    fn test_build_acp_session_agent_omits_delegation_config_when_missing() {
-        let config = CliAppConfig::default();
-        let params = AgentInitParams::default().with_agent_name("non-delegating-agent");
-
-        let session_agent = build_acp_session_agent(&params, &config);
-
-        assert_eq!(session_agent.delegation_config, None);
     }
 }

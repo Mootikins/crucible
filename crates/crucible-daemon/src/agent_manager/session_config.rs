@@ -23,6 +23,20 @@
 use super::*;
 
 impl AgentManager {
+    /// Admit the exact parent snapshot the caller inspected, then copy it.
+    /// A fresh Active child must not bypass the trust gate that resuming its
+    /// cold or ended parent would run against today's kiln classification.
+    pub(crate) async fn fork_session(
+        &self,
+        parent: crucible_core::session::Session,
+        up_to: Option<u64>,
+    ) -> Result<(crucible_core::session::Session, u64), AgentError> {
+        if let Some(agent) = &parent.agent {
+            self.refuse_untrusted_for_attached_kilns(&parent, agent)?;
+        }
+        Ok(self.session_manager.copy_session(parent, up_to).await?)
+    }
+
     /// The scope a session's `on_session_start` hooks write into, and the
     /// variables they read.
     ///

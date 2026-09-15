@@ -57,6 +57,7 @@ pub struct BackgroundJobManager {
     history: Arc<DashMap<String, std::collections::VecDeque<JobResult>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     max_history: usize,
+    pub(crate) completed: Arc<tokio::sync::Notify>,
     /// Where a running job reports itself, so the daemon does not exit in the
     /// middle of one. The server hands its own registry in
     /// ([`Self::with_activity`]); a manager built without one counts into a
@@ -71,6 +72,7 @@ impl BackgroundJobManager {
             history: Arc::new(DashMap::new()),
             event_tx,
             max_history: MAX_HISTORY_PER_SESSION,
+            completed: Arc::default(),
             activity: crate::activity::DaemonActivity::new(),
         }
     }
@@ -128,21 +130,28 @@ impl BackgroundJobManager {
     }
 
     pub async fn cancel_job(&self, job_id: &JobId) -> bool {
-        let Some((_, running_job)) = self.running.remove(job_id) else {
+        let dashmap::mapref::entry::Entry::Occupied(entry) = self.running.entry(job_id.clone())
+        else {
             warn!(job_id = %job_id, "Job not found for cancellation");
             return false;
         };
 
-        let _ = running_job.cancel_tx.send(());
-
-        let mut info = running_job.info;
+        let mut info = entry.get().info.clone();
         info.mark_cancelled();
         let job_session_id = info.session_id.clone();
         let job_result = JobResult::failure(info, "Job cancelled".to_string());
 
         let kind = job_result.info.kind.name();
+        Self::add_to_history(
+            &self.history,
+            &job_session_id,
+            job_result.clone(),
+            self.max_history,
+        );
+        let running_job = entry.remove();
+        let _ = running_job.cancel_tx.send(());
+        self.completed.notify_waiters();
         Self::emit_background_completed(&self.event_tx, &job_session_id, job_id, &job_result, kind);
-        Self::add_to_history(&self.history, &job_session_id, job_result, self.max_history);
 
         info!(job_id = %job_id, "Job cancelled");
         true
@@ -163,70 +172,10 @@ impl BackgroundJobManager {
 
         if clear_history {
             self.history.remove(session_id);
+            self.completed.notify_waiters();
         }
 
         debug!(session_id = %session_id, "Session cleanup completed");
-    }
-
-    /// Wait for all specified jobs to complete, with timeout.
-    ///
-    /// Returns one JSON object per job ID with `id`, `status`, and (on success)
-    /// `output`/`error`/`exit_code` fields from the finished `JobResult`.
-    /// Jobs that are still running when the deadline is reached get `"timeout"` status.
-    /// Unknown job IDs get `"not_found"` status.
-    pub async fn collect_jobs(
-        &self,
-        job_ids: &[JobId],
-        timeout: Duration,
-    ) -> Vec<serde_json::Value> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        let mut results: Vec<Option<serde_json::Value>> = vec![None; job_ids.len()];
-
-        loop {
-            let mut all_done = true;
-            for (i, job_id) in job_ids.iter().enumerate() {
-                if results[i].is_some() {
-                    continue;
-                }
-                match self.get_job_result(job_id) {
-                    Some(jr) if jr.info.status.is_terminal() => {
-                        results[i] = Some(serde_json::json!({
-                            "id": job_id,
-                            "status": jr.info.status.to_string(),
-                            "output": jr.output,
-                            "error": jr.error,
-                            "exit_code": jr.exit_code,
-                        }));
-                    }
-                    Some(_) => {
-                        all_done = false;
-                    }
-                    None => {
-                        results[i] = Some(serde_json::json!({
-                            "id": job_id,
-                            "status": "not_found",
-                        }));
-                    }
-                }
-            }
-            if all_done || tokio::time::Instant::now() >= deadline {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        results
-            .into_iter()
-            .enumerate()
-            .map(|(i, r)| {
-                r.unwrap_or_else(|| {
-                    serde_json::json!({
-                        "id": job_ids[i].to_string(),
-                        "status": "timeout",
-                    })
-                })
-            })
-            .collect()
     }
 
     fn add_to_history(

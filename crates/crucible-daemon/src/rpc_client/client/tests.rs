@@ -270,11 +270,15 @@ fn agent_spec_card_reaches_the_wire_as_agent_card() {
         },
         Some(SessionAgentSpec {
             agent_card: Some("researcher".to_string()),
+            system_prompt: Some("Explicit instructions".into()),
+            mcp_servers: Some(vec![]),
             ..Default::default()
         }),
     );
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["agent_card"], "researcher");
+    assert_eq!(json["system_prompt"], "Explicit instructions");
+    assert_eq!(json["mcp_servers"], serde_json::json!([]));
     assert_eq!(json["configure_agent"], serde_json::json!(true));
     assert!(json.get("agent_name").is_none());
 }

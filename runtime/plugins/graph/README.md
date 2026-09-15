@@ -41,7 +41,7 @@ the data is*.
 
 `crucible-web/web/src/components/blocks/GraphBlock.tsx` draws it, and re-asks
 on every move of the depth control. That is the latency question
-`docs/Meta/Analysis/Plugin API Plan.md` step 2 wanted measured.
+`docs/Meta/Analysis/Plugin API Plan.md` records with historical measurements.
 
 ## Rings, not edges
 
@@ -62,12 +62,14 @@ An edge view wants a bulk primitive first.
 
 ## What it cost
 
-On a 2 000-note, 12 000-edge kiln one depth-1 read takes 80 ms and a depth-4
-read 325 ms, against 137 ms to fetch the whole graph over the same socket
+The original spike on a 2 000-note, 12 000-edge kiln measured a depth-1 read
+at 80 ms and a depth-4 read at 325 ms, against 137 ms for the whole graph
 **once**. The reduction saves a megabyte on the wire and saves the daemon
 nothing: `cru.kiln.neighbors` reads the whole scoped note list plus the whole
 link table on every call. Numbers, method and what the primitive wants instead
-are in `docs/Meta/Analysis/Plugin API Plan.md`, step 2.
+are in `docs/Meta/Analysis/Plugin API Plan.md`. These are historical debug-build
+measurements from before the hop-count primitive removed repeated calls, not
+current latency promises.
 
 ## Embed it
 

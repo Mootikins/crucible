@@ -719,7 +719,15 @@ impl AgentManager {
     pub(crate) fn slot(&self, session_id: &str) -> Arc<slot::SessionSlot> {
         self.slots
             .entry(session_id.to_string())
-            .or_default()
+            .or_insert_with(|| {
+                let slot = slot::SessionSlot::default();
+                // Lua configuration and cold forks can reach a slot before
+                // start hooks. An unseeded cache must not erase persisted values.
+                if let Some(session) = self.session_manager.get_session(session_id) {
+                    slot.variables().replace(session.variables);
+                }
+                Arc::new(slot)
+            })
             .clone()
     }
 
@@ -1422,10 +1430,17 @@ impl AgentManager {
         timeout: Duration,
     ) -> Vec<serde_json::Value> {
         use crate::delegation::DelegationSpawner as _;
-        let deadline = tokio::time::Instant::now() + timeout;
+        let deadline = tokio::time::Instant::now().checked_add(timeout);
         let mut results: Vec<Option<serde_json::Value>> = vec![None; job_ids.len()];
 
         loop {
+            // Register before inspecting state: a completion between the scan
+            // and await must wake every collector, not disappear into a poll gap.
+            let bash_finished = self.background_manager.completed.notified();
+            let delegation_finished = self.delegation_service.completed.notified();
+            tokio::pin!(bash_finished, delegation_finished);
+            bash_finished.as_mut().enable();
+            delegation_finished.as_mut().enable();
             let mut all_done = true;
             for (i, job_id) in job_ids.iter().enumerate() {
                 if results[i].is_some() {
@@ -1456,10 +1471,19 @@ impl AgentManager {
                     }
                 }
             }
-            if all_done || tokio::time::Instant::now() >= deadline {
+            if all_done || deadline.is_some_and(|end| tokio::time::Instant::now() >= end) {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::select! {
+                _ = bash_finished => {}
+                _ = delegation_finished => {}
+                _ = async {
+                    match deadline {
+                        Some(end) => tokio::time::sleep_until(end).await,
+                        None => futures::future::pending::<()>().await,
+                    }
+                } => {}
+            }
         }
 
         results

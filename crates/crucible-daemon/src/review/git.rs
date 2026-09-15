@@ -166,6 +166,28 @@ pub(super) async fn changed_paths(
     Ok(changes)
 }
 
+pub(super) async fn contains_path(
+    root: &Path,
+    tree: &SnapshotId,
+    path: &str,
+) -> ReviewResult<bool> {
+    let entries = git(
+        root,
+        &[
+            "ls-tree",
+            "--full-tree",
+            "-z",
+            tree_sha(root, tree)?,
+            "--",
+            path,
+        ],
+    )
+    .await?;
+    Ok(entries
+        .split('\0')
+        .any(|entry| entry.split_once('\t').is_some_and(|(_, name)| name == path)))
+}
+
 /// File content at `tree:path`.
 ///
 /// `Ok(None)` means the blob is not UTF-8 — a binary file, which has no line

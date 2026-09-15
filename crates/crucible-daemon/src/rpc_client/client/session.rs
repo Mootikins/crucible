@@ -98,6 +98,14 @@ pub struct SessionCreateRequest {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+    /// Explicit ACP environment values, merged over the selected profile.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub env_overrides: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    /// `Some([])` disables configured MCP servers for this session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_servers: Option<Vec<String>>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -151,6 +159,9 @@ pub struct SessionAgentSpec {
     pub provider_key: Option<String>,
     pub model: Option<String>,
     pub endpoint: Option<String>,
+    pub env_overrides: std::collections::HashMap<String, String>,
+    pub system_prompt: Option<String>,
+    pub mcp_servers: Option<Vec<String>>,
 }
 
 /// Build the wire request. `agent = Some(..)` sets `configure_agent = true` so
@@ -186,6 +197,9 @@ pub(super) fn build_create_request(
         provider_key: agent.provider_key,
         model: agent.model,
         endpoint: agent.endpoint,
+        env_overrides: agent.env_overrides,
+        system_prompt: agent.system_prompt,
+        mcp_servers: agent.mcp_servers,
     }
 }
 

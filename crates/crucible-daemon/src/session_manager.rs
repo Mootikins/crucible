@@ -365,6 +365,65 @@ impl SessionManager {
         Ok(session_clone)
     }
 
+    /// Storage half of AgentManager's fork admission; do not expose it on a wire.
+    pub(crate) async fn copy_session(
+        &self,
+        parent: Session,
+        up_to: Option<u64>,
+    ) -> Result<(Session, u64), SessionError> {
+        use crate::observe::events::{replay_session_log, InjectedContext, LogEvent};
+
+        let jsonl = match tokio::fs::read_to_string(parent.jsonl_path(self.sessions_root())).await {
+            Ok(jsonl) => jsonl,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(error.into()),
+        };
+        // Normalize before copying: parent message-id anchors have no meaning in
+        // the fork's new transcript. Preserve context provenance, not those ids.
+        let mut rows = Vec::new();
+        for (message, injected) in replay_session_log(&jsonl) {
+            if up_to.is_some_and(|limit| rows.len() as u64 >= limit) {
+                break;
+            }
+            if !matches!(
+                message,
+                LogEvent::User { .. } | LogEvent::Assistant { .. } | LogEvent::System { .. }
+            ) {
+                continue;
+            }
+            rows.push(if injected {
+                serde_json::to_string(&InjectedContext {
+                    after_turn: None,
+                    message,
+                })?
+            } else {
+                serde_json::to_string(&message)?
+            });
+        }
+        let mut child = Session::new(parent.session_type, parent.kilns)
+            .with_workspace(parent.workspace)
+            .with_isolation(parent.isolation);
+        child.agent = parent.agent;
+        child.variables = parent.variables;
+        // Like delegation, configuration is inherited as a value. No provider
+        // connection or lifecycle hook is needed to copy a session.
+        let result = async {
+            for row in &rows {
+                self.storage.append_event(&child, row).await?;
+            }
+            self.storage.save(&child).await
+        }
+        .await;
+        if let Err(error) = result {
+            if child.storage_path(self.sessions_root()).exists() {
+                remove_session_dir(self.sessions_root(), &child.id).await?;
+            }
+            return Err(error);
+        }
+        self.sessions.insert(child.id.clone(), child.clone());
+        Ok((child, rows.len() as u64))
+    }
+
     /// Create a delegated child session of `parent`.
     ///
     /// The child inherits the parent's kiln, workspace, connected kilns and

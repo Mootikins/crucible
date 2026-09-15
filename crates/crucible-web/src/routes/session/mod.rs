@@ -466,6 +466,7 @@ async fn create_session(
         provider_key: None,
         model: req.model.clone(),
         endpoint: req.endpoint.clone(),
+        ..Default::default()
     };
 
     let params = crucible_daemon::rpc_client::SessionCreateParams {

@@ -646,7 +646,7 @@ async fn clearing_a_session_drops_its_ledger_and_state() {
 
 #[tokio::test]
 async fn a_new_file_is_one_hunk_attributed_to_its_call() {
-    let fx = Fixture::new("one\n").await;
+    let fx = Fixture::new("").await;
     let handle = fx.ledgers.open_bracket(&fx.session).await.unwrap();
     std::fs::write(fx.dir.path().join("new.txt"), "brand new\n").unwrap();
     fx.ledgers
@@ -659,6 +659,85 @@ async fn a_new_file_is_one_hunk_attributed_to_its_call() {
     assert_eq!(hunks[0].path, "new.txt");
     assert!(hunks[0].before_content.is_empty());
     assert_eq!(hunks[0].tool_call_ids, ["call-1"]);
+    fx.ledgers
+        .revert_hunk(&fx.session, &hunks[0].id)
+        .await
+        .unwrap();
+    assert!(!fx.dir.path().join("new.txt").exists());
+    let undo = fx.ledgers.undo_reject(&fx.session).await.unwrap();
+    assert!(undo.failed.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(fx.dir.path().join("new.txt")).unwrap(),
+        "brand new\n"
+    );
+
+    fx.call("call-2", 2, "filled\n").await;
+    let existing = fx
+        .hunks()
+        .await
+        .into_iter()
+        .find(|h| h.path == "a.txt")
+        .unwrap();
+    fx.ledgers
+        .revert_hunk(&fx.session, &existing.id)
+        .await
+        .unwrap();
+    assert_eq!(fx.read(), "", "an existing empty file must not be deleted");
+
+    for (name, agent_created, recreated) in [
+        ("human.txt", false, false),
+        ("agent-empty.txt", true, false),
+        ("recreated.txt", true, true),
+    ] {
+        let creation = if agent_created {
+            Some(fx.ledgers.open_bracket(&fx.session).await.unwrap())
+        } else {
+            None
+        };
+        let path = fx.dir.path().join(name);
+        std::fs::write(&path, "").unwrap();
+        if let Some(creation) = creation {
+            fx.ledgers
+                .close(&fx.session, creation, "create-empty", 3)
+                .await
+                .unwrap();
+        }
+        if recreated {
+            let deletion = fx.ledgers.open_bracket(&fx.session).await.unwrap();
+            std::fs::remove_file(&path).unwrap();
+            fx.ledgers
+                .close(&fx.session, deletion, "delete-empty", 4)
+                .await
+                .unwrap();
+            std::fs::write(&path, "").unwrap();
+        }
+        let fill = fx.ledgers.open_bracket(&fx.session).await.unwrap();
+        std::fs::write(&path, "filled\n").unwrap();
+        fx.ledgers
+            .close(&fx.session, fill, &format!("fill-{name}"), 4)
+            .await
+            .unwrap();
+        let hunk = fx
+            .hunks()
+            .await
+            .into_iter()
+            .find(|h| h.path == name)
+            .unwrap();
+        assert_eq!(hunk.tool_call_ids, [format!("fill-{name}")]);
+        fx.ledgers.revert_hunk(&fx.session, &hunk.id).await.unwrap();
+        if agent_created && !recreated {
+            assert!(
+                !path.exists(),
+                "a separate empty-file creation is still attributable to the agent"
+            );
+        } else {
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                "",
+                "the user's empty file created after the session opened must survive"
+            );
+        }
+    }
 }
 
 #[tokio::test]

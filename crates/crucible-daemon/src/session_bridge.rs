@@ -20,6 +20,19 @@ use tokio::sync::broadcast;
 /// Boxed future type alias used by all [`DaemonSessionApi`] methods.
 type BoxFut<T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send>>;
 
+fn collection_timeout(seconds: Option<f64>) -> Result<std::time::Duration, String> {
+    let invalid = || {
+        "timeout must be a finite, nonnegative number of seconds within the clock's range"
+            .to_string()
+    };
+    let duration =
+        std::time::Duration::try_from_secs_f64(seconds.unwrap_or(120.0)).map_err(|_| invalid())?;
+    tokio::time::Instant::now()
+        .checked_add(duration)
+        .ok_or_else(invalid)?;
+    Ok(duration)
+}
+
 /// Implements [`DaemonSessionApi`] using the daemon's real managers.
 pub struct DaemonSessionBridge {
     /// The dispatcher's own context, so `create` runs the daemon's real create
@@ -29,6 +42,7 @@ pub struct DaemonSessionBridge {
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
+    subscriptions: Arc<dashmap::DashMap<String, tokio::sync::watch::Sender<bool>>>,
     /// Overrides the agent manager's delegation service. Production leaves it
     /// `None`; tests inject a mock so the delegation gates can be proven
     /// without standing up a real child session.
@@ -45,6 +59,7 @@ impl DaemonSessionBridge {
             session_manager: ctx.sessions.clone(),
             agent_manager: ctx.agents.clone(),
             event_tx: ctx.event_tx.clone(),
+            subscriptions: Arc::default(),
             ctx,
             delegation_spawner: None,
         }
@@ -472,71 +487,57 @@ impl DaemonSessionApi for DaemonSessionBridge {
         &self,
         session_id: String,
     ) -> BoxFut<tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>> {
-        bridge_async!(self.event_tx, |event_tx| async move {
+        let event_tx = self.event_tx.clone();
+        let subscriptions = self.subscriptions.clone();
+        Box::pin(async move {
             let mut broadcast_rx = event_tx.subscribe();
+            let mut cancelled = subscriptions
+                .entry(session_id.clone())
+                .or_insert_with(|| tokio::sync::watch::channel(false).0)
+                .subscribe();
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
-            tracing::debug!(
-                session_id = %session_id,
-                "Lua subscribe: creating forwarder task"
-            );
-
-            let sid = session_id.clone();
+            let subscriptions = Arc::downgrade(&subscriptions);
             tokio::spawn(async move {
-                tracing::debug!(session_id = %sid, "Forwarder task started");
-                let mut forwarded = 0u64;
                 loop {
-                    match broadcast_rx.recv().await {
-                        Ok(event) if event.session_id == sid => {
-                            forwarded += 1;
-                            let json = serde_json::json!({
-                                "type": event.event,
-                                "session_id": event.session_id,
-                                "data": event.data,
-                            });
-                            if tx.send(json).is_err() {
-                                tracing::debug!(
-                                    session_id = %sid,
-                                    forwarded,
-                                    "Forwarder: mpsc receiver dropped"
-                                );
-                                break;
+                    // Closing an idle iterator must not need another session event.
+                    tokio::select! {
+                        biased;
+                        _ = cancelled.changed() => break,
+                        _ = tx.closed() => break,
+                        event = broadcast_rx.recv() => match event {
+                            Ok(event) if event.session_id == session_id => {
+                                let json = serde_json::json!({
+                                    "type": event.event,
+                                    "session_id": event.session_id,
+                                    "data": event.data,
+                                });
+                                if tx.send(json).is_err() { break; }
                             }
-                        }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!(
-                                session_id = %sid,
-                                lagged = n,
-                                "Forwarder: broadcast lagged, lost events"
-                            );
-                            continue;
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            tracing::debug!(
-                                session_id = %sid,
-                                forwarded,
-                                "Forwarder: broadcast closed"
-                            );
-                            break;
+                            Ok(_) => {}
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!(session_id, lagged = n, "Lua subscription lost events");
+                            }
+                            Err(broadcast::error::RecvError::Closed) => break,
                         }
                     }
                 }
-                tracing::debug!(
-                    session_id = %sid,
-                    forwarded,
-                    "Forwarder task exiting"
-                );
+                drop(cancelled);
+                if let Some(subscriptions) = subscriptions.upgrade() {
+                    subscriptions.remove_if(&session_id, |_, sender| sender.receiver_count() == 0);
+                }
             });
-
             Ok(rx)
         })
     }
 
-    fn unsubscribe(&self, _session_id: String) -> BoxFut<()> {
-        // Unsubscribe is handled by dropping the receiver from subscribe().
-        // The spawned task will detect the closed channel and exit.
-        Box::pin(async { Ok(()) })
+    fn unsubscribe(&self, session_id: String) -> BoxFut<()> {
+        let subscriptions = self.subscriptions.clone();
+        Box::pin(async move {
+            if let Some((_, cancel)) = subscriptions.remove(&session_id) {
+                cancel.send_replace(true);
+            }
+            Ok(())
+        })
     }
 
     fn load_messages(
@@ -579,55 +580,36 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    /// Fork a session by copying messages up to an optional limit.
-    ///
-    /// NOTE: Bridge fork does not copy agent configuration (no AgentManager access).
-    /// Callers should configure the forked session's agent separately.
-    /// The RPC handler version (handle_session_fork) does copy agent config.
     fn fork_session(&self, session_id: String, up_to: Option<u64>) -> BoxFut<serde_json::Value> {
+        let am = self.agent_manager.clone();
         bridge_async!(self.session_manager, |sm| async move {
             let parent = sm
-                .get_session(&session_id)
-                .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-            let child = sm
-                .create_session(
-                    parent.session_type,
-                    parent.kilns.clone(),
-                    parent.workspace.clone(),
-                    None,
-                )
+                .read_session(&session_id)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Session not found: {session_id}"))?;
+            // Lua can call from inside a lifecycle hook, whose loader lock is
+            // not reentrant. Without running start hooks, a configured fork
+            // must not silently lose its parent's requested or active sandbox.
+            if parent
+                .isolation
+                .as_ref()
+                .is_some_and(|value| !value.is_null() && *value != false)
+                || am
+                    .isolation()
+                    .is_some_and(|registry| registry.get(&session_id).is_some())
+                || (parent.workspace.is_some()
+                    && !parent
+                        .isolation
+                        .as_ref()
+                        .is_some_and(|value| *value == false))
+            {
+                return Err("Cannot fork a potentially isolated session from Lua: workspace sessions require isolation=false; use session.fork RPC so required start hooks can run".into());
+            }
+            let (child, count) = am
+                .fork_session(parent, up_to)
                 .await
                 .map_err(|e| e.to_string())?;
-
-            let parent_dir = sm.session_dir(&parent.id);
-            let events = crate::observe::load_events(&parent_dir)
-                .await
-                .unwrap_or_default();
-
-            let storage = sm.storage();
-            let mut count = 0u64;
-            for event in &events {
-                if let Some(limit) = up_to {
-                    if count >= limit {
-                        break;
-                    }
-                }
-                match event {
-                    crate::observe::LogEvent::User { .. }
-                    | crate::observe::LogEvent::Assistant { .. }
-                    | crate::observe::LogEvent::System { .. } => {
-                        let json = serde_json::to_string(event).map_err(|e| e.to_string())?;
-                        storage
-                            .append_event(&child, &json)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        count += 1;
-                    }
-                    _ => {}
-                }
-            }
-
             Ok(serde_json::json!({
                 "id": child.id,
                 "parent_id": session_id,
@@ -660,7 +642,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
     ) -> BoxFut<Vec<serde_json::Value>> {
         let am = self.agent_manager.clone();
         Box::pin(async move {
-            let timeout = std::time::Duration::from_secs_f64(timeout_secs.unwrap_or(120.0));
+            let timeout = collection_timeout(timeout_secs)?;
             let results = am.collect_jobs(&job_ids, timeout).await;
             Ok(results)
         })
@@ -677,7 +659,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         let am = self.agent_manager.clone();
         let event_tx = self.event_tx.clone();
         Box::pin(async move {
-            let timeout = std::time::Duration::from_secs_f64(timeout_secs.unwrap_or(120.0));
+            let timeout = collection_timeout(timeout_secs)?;
             let max_result = max_tool_result_len.unwrap_or(500);
 
             // Subscribe to broadcast BEFORE sending so we don't miss early events
@@ -726,10 +708,15 @@ impl DaemonSessionApi for DaemonSessionBridge {
                     let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
                     if remaining.is_zero() {
                         tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
+                        let _ = flush_text(&mut text_buf, &part_tx);
                         break;
                     }
 
-                    match tokio::time::timeout(remaining, broadcast_rx.recv()).await {
+                    let received = tokio::select! {
+                        _ = part_tx.closed() => break,
+                        event = tokio::time::timeout(remaining, broadcast_rx.recv()) => event,
+                    };
+                    match received {
                         Ok(Ok(event)) if event.session_id == session_id => {
                             match event.event.as_str() {
                                 "text_delta" => {

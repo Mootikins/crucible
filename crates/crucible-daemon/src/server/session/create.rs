@@ -221,6 +221,12 @@ impl RpcContext {
             if let Some(policy) = params.tool_policy.clone() {
                 agent.tool_policy = Some(policy);
             }
+            if let Some(prompt) = &params.system_prompt {
+                agent.system_prompt.clone_from(prompt);
+            }
+            if let Some(servers) = &params.mcp_servers {
+                agent.mcp_servers.clone_from(servers);
+            }
             // The resolved agent, against every kiln this session is about to
             // hold — checked HERE, before `create_session` persists anything.
             //
@@ -361,9 +367,12 @@ impl RpcContext {
             }
             let profiles = self.agents.build_available_agents();
             match profiles.get(name) {
-                Some(profile) => Ok(crucible_core::session::SessionAgent::from_profile(
-                    profile, name,
-                )),
+                Some(profile) => {
+                    let mut agent =
+                        crucible_core::session::SessionAgent::from_profile(profile, name);
+                    agent.env_overrides.extend(params.env_overrides.clone());
+                    Ok(agent)
+                }
                 // Cards are listed too, and not out of generosity: a card name
                 // sent here is the likeliest cause, because until `agent_card`
                 // existed a card name had no other field to travel in. Naming
@@ -469,31 +478,37 @@ fn build_default_internal_agent(
     let mut agent =
         crucible_core::session::SessionAgent::internal_defaults(llm_config.as_ref(), mcp_config);
 
-    let req_provider = params.provider.as_deref();
-    let req_provider_key = params.provider_key.clone();
-    let req_model = params.model.clone();
-    let req_endpoint = params.endpoint.clone();
-
-    if let Some(model) = req_model {
-        agent.model = model;
-    }
-    match req_provider {
+    match params.provider.as_deref() {
         None => {
-            if req_endpoint.is_some() {
-                agent.endpoint = req_endpoint;
-            }
-            if req_provider_key.is_some() {
-                agent.provider_key = req_provider_key;
+            if let Some(key) = params.provider_key.as_deref() {
+                let provider = llm_config
+                    .as_ref()
+                    .and_then(|config| config.get_provider(key))
+                    .ok_or_else(|| format!("Unknown provider key: {key}"))?;
+                agent.provider = provider.provider_type;
+                agent.provider_key = Some(key.to_string());
+                agent.model = provider.model();
+                agent.endpoint = Some(provider.endpoint());
             }
         }
         Some(p) => {
             agent.provider = p
                 .parse::<BackendType>()
                 .map_err(|e| format!("Invalid provider: {e}"))?;
-            agent.endpoint = req_endpoint;
-            agent.provider_key =
-                Some(req_provider_key.unwrap_or_else(|| agent.provider.as_str().to_string()));
+            agent.endpoint = None;
+            agent.provider_key = Some(
+                params
+                    .provider_key
+                    .clone()
+                    .unwrap_or_else(|| agent.provider.as_str().to_string()),
+            );
         }
+    }
+    if let Some(model) = &params.model {
+        agent.model.clone_from(model);
+    }
+    if let Some(endpoint) = &params.endpoint {
+        agent.endpoint = Some(endpoint.clone());
     }
 
     Ok(agent)
@@ -568,13 +583,135 @@ mod tests {
             .build();
         Some(LlmConfig {
             default: Some("local".to_string()),
-            providers: [("local".to_string(), provider)].into_iter().collect(),
+            providers: [
+                ("local".to_string(), provider),
+                (
+                    "named".to_string(),
+                    LlmProviderConfig::builder(BackendType::OpenAI)
+                        .endpoint("http://named.test")
+                        .model("named-model")
+                        .build(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
             models: Default::default(),
         })
     }
 
     fn build(params: SessionCreateRequest) -> crucible_core::session::SessionAgent {
         build_default_internal_agent(&params, &llm_with_default(), None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn acp_create_merges_profile_environment_and_preserves_delegation() {
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
+        use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
+        use std::sync::Arc;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let sm = crate::test_support::temp_session_manager();
+        let km = Arc::new(crate::kiln_manager::KilnManager::new());
+        let (event_tx, _) = tokio::sync::broadcast::channel(64);
+        let delegation = DelegationConfig {
+            enabled: true,
+            max_depth: 2,
+            allowed_targets: Some(vec!["researcher".into()]),
+            result_max_bytes: 102400,
+            max_concurrent_delegations: 4,
+            timeout_secs: 300,
+        };
+        let profile = AgentProfile {
+            command: Some("fixture-acp".into()),
+            env: [
+                ("KEEP".into(), "profile".into()),
+                ("OPENCODE_MODEL".into(), "old".into()),
+            ]
+            .into(),
+            delegation: Some(delegation.clone()),
+            ..Default::default()
+        };
+        let am = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: km.clone(),
+            session_manager: sm.clone(),
+            background_manager: Arc::new(crate::background_manager::BackgroundJobManager::new(
+                event_tx.clone(),
+            )),
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: Some(AcpConfig {
+                agents: [("fixture".into(), profile)].into(),
+                ..Default::default()
+            }),
+            context_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
+        }));
+        let mut ctx = crate::rpc::RpcContext::for_test(
+            km,
+            sm.clone(),
+            am,
+            Arc::new(crate::project_manager::ProjectManager::new(
+                tmp.path().join("projects.json"),
+            )),
+            event_tx,
+            tmp.path().to_path_buf(),
+        );
+        let params = serde_json::from_value(serde_json::json!({
+            "type": "chat", "agent_type": "acp", "agent_name": "fixture", "configure_agent": true,
+            "env_overrides": { "OPENCODE_MODEL": "chosen", "EXPLICIT": "yes" }
+        }))
+        .unwrap();
+        let session = ctx.create_session_resolved(&params).await.unwrap();
+        let agent = sm.get_session(&session.id).unwrap().agent.unwrap();
+        assert_eq!(
+            agent.env_overrides.get("KEEP").map(String::as_str),
+            Some("profile")
+        );
+        assert_eq!(
+            agent
+                .env_overrides
+                .get("OPENCODE_MODEL")
+                .map(String::as_str),
+            Some("chosen")
+        );
+        assert_eq!(
+            agent.env_overrides.get("EXPLICIT").map(String::as_str),
+            Some("yes")
+        );
+        assert_eq!(agent.delegation_config, Some(delegation));
+
+        ctx.mcp_config = Some(
+            serde_json::from_value(serde_json::json!({"servers": [{
+                "name": "configured", "prefix": "fixture_",
+                "transport": {"type": "stdio", "command": "never-launched"}
+            }]}))
+            .unwrap(),
+        );
+        for explicit in [false, true] {
+            let params = SessionCreateRequest {
+                session_type: "chat".into(),
+                configure_agent: true,
+                system_prompt: explicit.then(|| "Explicit reviewer instructions".into()),
+                mcp_servers: explicit.then(Vec::new),
+                ..Default::default()
+            };
+            let session = ctx.create_session_resolved(&params).await.unwrap();
+            let agent = sm.get_session(&session.id).unwrap().agent.unwrap();
+            assert_eq!(
+                agent.mcp_servers,
+                if explicit {
+                    vec![]
+                } else {
+                    vec!["configured".to_string()]
+                }
+            );
+            if explicit {
+                assert_eq!(agent.system_prompt, "Explicit reviewer instructions");
+            }
+        }
     }
 
     /// No request fields: the config default provider supplies everything.
@@ -599,8 +736,7 @@ mod tests {
         assert_eq!(agent.endpoint.as_deref(), Some("http://ollama.test:11434"));
     }
 
-    /// Without a provider, an endpoint or key override lands on the config
-    /// provider; the other field keeps its config value.
+    /// A key selects the whole configured provider; explicit fields win last.
     #[test]
     fn endpoint_and_key_override_the_config_provider_fields() {
         let agent = build(SessionCreateRequest {
@@ -615,7 +751,29 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(agent.provider_key.as_deref(), Some("named"));
-        assert_eq!(agent.endpoint.as_deref(), Some("http://ollama.test:11434"));
+        assert_eq!(agent.provider, BackendType::OpenAI);
+        assert_eq!(agent.model, "named-model");
+        assert_eq!(agent.endpoint.as_deref(), Some("http://named.test"));
+
+        let agent = build(SessionCreateRequest {
+            provider_key: Some("named".into()),
+            model: Some("explicit-model".into()),
+            endpoint: Some("http://explicit.test".into()),
+            ..Default::default()
+        });
+        assert_eq!(agent.model, "explicit-model");
+        assert_eq!(agent.endpoint.as_deref(), Some("http://explicit.test"));
+
+        let err = build_default_internal_agent(
+            &SessionCreateRequest {
+                provider_key: Some("missing".into()),
+                ..Default::default()
+            },
+            &llm_with_default(),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("Unknown provider key: missing"), "{err}");
     }
 
     /// An explicit provider does not borrow the config default's endpoint or

@@ -460,7 +460,7 @@ Three properties hold by construction:
   must be inside `allowed_targets` when that list exists, and the spawn
   itself goes through the same service that enforces depth limits,
   concurrency permits and child isolation.
-- **One polling surface.** `delegation_id` is a `collect_subagents` job id,
+- **One collection surface.** `delegation_id` is a `collect_subagents` job id,
   so waiting on a delegation and waiting on any other subagent job is the
   same call.
 
@@ -517,6 +517,11 @@ local msg_id, err = cru.session.send_message(session_id, "What is Crucible?")
 Send a message and read the reply back as a stream of parts, rather than
 subscribing to the raw event bus and filtering it yourself. Returns an iterator
 that yields one part at a time and `nil` when the turn ends.
+
+Collection timeouts are finite, nonnegative seconds (zero does not wait);
+invalid values return `(nil, error)` before sending. The timeout starts after
+the turn is submitted. Reaching the timeout or dropping the iterator stops
+observing, not the running turn: use `cru.session.cancel` to cancel it.
 
 Each part is a table with a `type`: `text`, `tool_call`, `tool_result`,
 `thinking`, or `permission_request`.
@@ -588,6 +593,12 @@ A `text_delta` event has `event.data.text` (or `event.data.content`) containing 
 ### cru.session.unsubscribe(session_id)
 
 Unsubscribe from session events. Returns `(true, nil)` on success.
+
+This closes every iterator for that session created through this runtime's
+session bridge; other sessions are unaffected. Already-buffered events may still
+be read before the iterator ends. Repeating unsubscribe is harmless, and a later
+subscribe creates a fresh subscription. Dropping an iterator also releases its
+subscription without waiting for another event.
 
 ```lua
 cru.session.unsubscribe(session_id)

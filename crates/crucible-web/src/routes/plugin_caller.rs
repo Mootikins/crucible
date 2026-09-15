@@ -27,7 +27,7 @@
 //! is open is bypassed by *omitting* the header, which is easier than forging
 //! one, and a test that only checks "plugin X cannot call plugin Y" passes
 //! while that bypass works. The first draft of this step had exactly that
-//! shape. See `docs/Meta/Analysis/Plugin API Plan.md`, step 1.
+//! shape. See the identity decision in `docs/Meta/Analysis/Plugin API Plan.md`.
 //!
 //! # The identity a block mounts under is the note author's
 //!

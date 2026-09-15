@@ -2,10 +2,14 @@
 title: Architecture Gaps
 description: Expected versus actual, one row per difference, with a verdict on which side is wrong.
 tags: [meta, architecture]
-status: as-of-7053bcfe7
+status: historical
 ---
 
 # Architecture Gaps
+
+Historical comparison: **2026-08-22**, with later dated amendments. Open rows
+are not a current defect queue; many changed in subsequent work. Use
+[[Meta/Architecture/Index]] and [[Meta/Product]] as the current entry points.
 
 This document lists the differences between [[Expected]] (the clean-room
 design) and [[Actual]] (the code at `7053bcfe7`). Each difference is one row.
@@ -823,5 +827,6 @@ does not name are unchanged.
 
 Not touched by design: C11, C19 and C29 were deferred, so G125's
 `ThemeLayout` twin and the web policy rows (G17) are unchanged. C17 is now
-done: the nine Lua registries are one store keyed by `Owner`. The follow-ups
-the Tier 3 agents noted are in [[Consolidation Plan]] section "Tier 5".
+done: the nine Lua registries are one store keyed by `Owner`. The historical
+follow-up inventory remains in git history; [[Consolidation Plan]] retains
+outcomes and decision cautions, not a current task queue.

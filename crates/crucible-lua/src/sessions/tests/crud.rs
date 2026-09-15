@@ -271,20 +271,38 @@ async fn create_implies_configure_agent_when_an_agent_field_is_present() {
 /// create — setting it afterwards means a whole-agent `configure_agent`, which
 /// would overwrite a card resolved here.
 #[tokio::test]
-async fn create_forwards_a_tool_policy_and_implies_configure_agent() {
+async fn create_forwards_agent_overrides_and_implies_configure_agent() {
     let mock = Arc::new(MockDaemonApi::new());
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Value = lua
-        .load(r#"return (cru.session.create({ tool_policy = { bash = "deny" } }))"#)
-        .eval_async()
-        .await
-        .unwrap();
-
-    let params = mock.last_create_params().unwrap();
-    assert_eq!(params["tool_policy"]["bash"], "deny");
-    assert_eq!(params["configure_agent"], serde_json::json!(true));
+    for (options, field, expected) in [
+        (
+            r#"{ tool_policy = { bash = "deny" } }"#,
+            "tool_policy",
+            serde_json::json!({"bash": "deny"}),
+        ),
+        (
+            r#"{ system_prompt = "Reflect briefly" }"#,
+            "system_prompt",
+            serde_json::json!("Reflect briefly"),
+        ),
+        ("{ mcp_servers = {} }", "mcp_servers", serde_json::json!([])),
+        (
+            r#"{ env_overrides = { MODEL = "chosen" } }"#,
+            "env_overrides",
+            serde_json::json!({"MODEL": "chosen"}),
+        ),
+    ] {
+        let _: Value = lua
+            .load(format!("return (cru.session.create({options}))"))
+            .eval_async()
+            .await
+            .unwrap();
+        let params = mock.last_create_params().unwrap();
+        assert_eq!(params[field], expected);
+        assert_eq!(params["configure_agent"], serde_json::json!(true));
+    }
 }
 
 /// Implied, not forced — an explicit `false` still means "create agent-less".

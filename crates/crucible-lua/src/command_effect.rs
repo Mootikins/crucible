@@ -21,7 +21,7 @@
 //!
 //! The plugin declares this about itself and nothing verifies it. That is the
 //! same position Obsidian's May 2026 capability disclosures occupy, and
-//! `docs/Meta/Analysis/Plugin API Plan.md` step 4 is explicit that a label
+//! `docs/Meta/Analysis/Plugin API Plan.md` records why a label
 //! without a gate teaches a user to trust a promise nothing keeps. So a
 //! consumer must present it as *declared*, and a permission layer must treat a
 //! `Read` claim as a hint about what to ask, never as permission to skip

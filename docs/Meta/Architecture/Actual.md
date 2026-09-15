@@ -2,11 +2,15 @@
 title: Actual Architecture
 description: As-built architecture at 7053bcfe7: seams, types, traits, duplicates and dead code with file:line cites.
 tags: [meta, architecture]
-status: as-built
+status: historical
 as_of: 7053bcfe7
 ---
 
 # Actual Architecture
+
+Historical audit: **2026-08-22**, with later dated amendments. This is not a
+current implementation inventory. Start at [[Meta/Architecture/Index]] and
+[[Meta/Product]]; reproduce a finding before acting on it.
 
 This document describes the code as it is at commit `7053bcfe7`. It does not
 describe the product. Where this document and [[Expected]] differ, the

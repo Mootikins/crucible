@@ -3,7 +3,7 @@
 ---
 --- Knowledge insertion is reactive: the agent writes notes mid-turn when it
 --- thinks to. The reflection pass is retrospective: after a session ends, a
---- forked cheap-model subagent reviews the finished conversation and writes
+--- auxiliary cheap-model subagent reviews the finished conversation and writes
 --- the kiln notes that are worth keeping.
 ---
 --- The reviewer writes with the note tools, in its own `plugin` session, in
@@ -352,7 +352,7 @@ export type ReviewOpts = {
     title: string?,
 }
 
---- Run one review in a forked aux session. Answers with the reviewer's
+--- Run one review in a separate aux session. Answers with the reviewer's
 --- text, or with `(nil, err)`. The reflection pass and the consolidation
 --- pass both call this, so there is one lifecycle to keep correct.
 ---
@@ -360,7 +360,7 @@ export type ReviewOpts = {
 --- consolidation pass leaves it out of its sample. The same kiln is
 --- attached, so the reviewer searches, reads and writes in it. A separate
 --- session never touches the source session's prompt cache. One `pcall`
---- covers the mode, the title, configure, narrow, send and collect, so the
+--- covers the mode, the title, narrow, send and collect, so the
 --- aux session ends on every path before the result is read.
 ---
 --- The mode goes to `auto` FIRST. `send_and_collect` runs a non-interactive
@@ -374,15 +374,17 @@ export type ReviewOpts = {
 --- is sent. A daemon that refuses to narrow gets no prompt: a reviewer with
 --- the workspace tools reaches further than the kiln.
 function M.review(opts: ReviewOpts): (string?, string?)
-    local agent_cfg = {
+    local create_opts = {
+        type = "plugin",
+        kilns = { opts.kiln },
         model = opts.model,
         system_prompt = opts.system_prompt,
         -- No external tool servers for an unattended reviewer.
         mcp_servers = {},
     }
-    if opts.provider then agent_cfg.provider = opts.provider end
+    if opts.provider then create_opts.provider = opts.provider end
 
-    local aux, create_err = cru.session.create({ type = "plugin", kilns = { opts.kiln } })
+    local aux, create_err = cru.session.create(create_opts)
     if create_err or not aux then
         return nil, "failed to create aux session: " .. tostring(create_err)
     end
@@ -400,7 +402,6 @@ function M.review(opts: ReviewOpts): (string?, string?)
                 cru.log("debug", "reflection: could not title the pass: " .. tostring(title_err))
             end
         end
-        cru.session.configure_agent(aux.id, agent_cfg)
         local narrowed, narrow_err = cru.tools.set_active(aux.id, M.REVIEWER_TOOLS)
         if not narrowed then
             return nil, "could not narrow the reviewer's tools: " .. tostring(narrow_err)
@@ -441,11 +442,9 @@ function M.run(session: any): string?
 
     local info = cru.session.get(session_id)
 
-    -- Recursion guard: the end of our own aux session fires on_session_end
-    -- again. The daemon records the type a plugin asked for at create, so
-    -- the guard reads that and not a turn count or a prompt marker. The
-    -- type is visible across sessions, which module-level Lua state cannot
-    -- be: each session has its own VM.
+    -- A plugin session is never input to another pass, including when its
+    -- end arrives through the daemon's lifecycle hook path. Read the type
+    -- the daemon recorded, not a turn count or a prompt marker.
     if info and info.session_type == "plugin" then
         cru.log("debug", "reflection: skipping a plugin session")
         return nil

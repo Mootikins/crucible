@@ -188,6 +188,11 @@ impl DaemonAgentHandle {
 
     /// Fetch initial cached values from daemon (best-effort, default to None on failure).
     async fn fetch_cached_values(&mut self, client: &Arc<DaemonClient>, session_id: &str) {
+        self.cached_agent_config = client
+            .session_get(session_id)
+            .await
+            .ok()
+            .and_then(|session| serde_json::from_value(session["agent"].clone()).ok());
         self.cached_context_strategy = client
             .session_get_context_strategy(session_id)
             .await
@@ -207,11 +212,6 @@ impl DaemonAgentHandle {
 
     pub fn with_workspace(mut self, path: PathBuf) -> Self {
         self.workspace = Some(path);
-        self
-    }
-
-    pub fn with_agent_config(mut self, config: SessionAgent) -> Self {
-        self.cached_agent_config = Some(config);
         self
     }
 }

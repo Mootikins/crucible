@@ -100,6 +100,7 @@ pub struct DelegationService {
     session_lifecycle: OnceLock<Arc<SessionLifecycle>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     records: Arc<DashMap<String, DelegationRecord>>,
+    pub(crate) completed: Arc<tokio::sync::Notify>,
     /// Per-parent concurrency permits. Sized from the parent's
     /// `max_concurrent_delegations` at first use; a config change for an
     /// existing parent takes effect after its entry is cleaned up.
@@ -117,6 +118,7 @@ impl DelegationService {
             session_lifecycle: OnceLock::new(),
             event_tx,
             records: Arc::new(DashMap::new()),
+            completed: Arc::default(),
             permits: Arc::new(DashMap::new()),
         })
     }
@@ -244,6 +246,7 @@ impl DelegationService {
         self.records
             .retain(|_, r| r.parent_session_id != parent_session_id);
         self.permits.remove(parent_session_id);
+        self.completed.notify_waiters();
     }
 
     fn build_job_result(info: JobInfo, outcome: &TurnOutcome) -> JobResult {
@@ -502,6 +505,16 @@ impl DelegationSpawner for DelegationService {
             _ => req.prompt.clone(),
         };
 
+        let (result_tx, _) = watch::channel(None);
+        self.records.insert(
+            child.id.to_string(),
+            DelegationRecord {
+                info: info.clone(),
+                parent_session_id: parent.id.to_string(),
+                result_tx: result_tx.clone(),
+            },
+        );
+
         if !emit_event(
             &self.event_tx,
             SessionEventMessage::new(
@@ -531,20 +544,15 @@ impl DelegationSpawner for DelegationService {
                 let mut failed_info = info;
                 failed_info.mark_failed();
                 let result = JobResult::failure(failed_info, e.to_string());
+                result_tx.send_replace(Some(result.clone()));
+                if let Some(mut record) = self.records.get_mut(&child.id.to_string()) {
+                    record.info = result.info.clone();
+                }
+                self.completed.notify_waiters();
                 Self::emit_completion_events(&self.event_tx, &parent.id, &child.id, &result);
                 return Err(JobError::SpawnFailed(e.to_string()));
             }
         };
-
-        let (result_tx, _) = watch::channel(None);
-        self.records.insert(
-            child.id.to_string(),
-            DelegationRecord {
-                info: info.clone(),
-                parent_session_id: parent.id.to_string(),
-                result_tx: result_tx.clone(),
-            },
-        );
 
         info!(
             delegation_id = %child.id,
@@ -559,6 +567,7 @@ impl DelegationSpawner for DelegationService {
         // the backstop for BOTH modes (blocking callers may time out earlier
         // and cancel explicitly).
         let records = self.records.clone();
+        let completed = self.completed.clone();
         let session_manager = self.session_manager.clone();
         let lifecycle = self.session_lifecycle.get().cloned();
         let event_tx = self.event_tx.clone();
@@ -610,13 +619,14 @@ impl DelegationSpawner for DelegationService {
                 m.cleanup_session(&child_id);
             }
 
-            if let Some(mut record) = records.get_mut(child_id.as_str()) {
-                record.info = result.info.clone();
-            }
             // send_replace, not send: `send` fails (and DISCARDS the value)
             // when no receiver currently exists, which is exactly the case
             // when the delegation finishes before anyone awaits it.
             let _ = result_tx.send_replace(Some(result.clone()));
+            if let Some(mut record) = records.get_mut(child_id.as_str()) {
+                record.info = result.info.clone();
+            }
+            completed.notify_waiters();
             DelegationService::emit_completion_events(&event_tx, &parent_id, &child_id, &result);
             drop(permit);
         });

@@ -178,6 +178,10 @@ impl PlainStore {
         Ok(String::from_utf8(bytes).ok())
     }
 
+    pub(super) async fn contains_path(&self, snap: &SnapshotId, path: &str) -> ReviewResult<bool> {
+        Ok(self.manifest(snap).await?.files.contains_key(path))
+    }
+
     /// The content of `path` inside the snapshot `snap` names.
     ///
     /// `Ok(None)` means the bytes are not UTF-8, as [`Self::blob`] answers. A

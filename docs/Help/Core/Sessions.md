@@ -51,6 +51,16 @@ Sessions are managed by the daemon (`cru daemon serve`):
 
 > **CLI naming vs RPC methods**: The daemon RPC methods are `session.resume` (open in TUI) and `session.unpause` (reactivate programmatically). The CLI commands use clearer names: `cru session open` maps to `session.resume`, and `cru session resume` maps to `session.unpause`. The old `cru session unpause` still works as a deprecated alias. Scripts should use `cru session resume`; humans picking up a conversation should use `cru session open`.
 
+## Agent selection at creation
+
+Chat (TUI and one-shot CLI), `cru session create`, and web session creation ask
+the daemon to resolve and persist the agent during `session.create`; a second
+configuration request is unnecessary. A named provider key selects that
+provider's backend, model, and endpoint together. Explicit model and endpoint
+overrides take precedence. ACP profiles retain their configured environment
+and delegation limits, with explicit environment overrides winning per key.
+See [[Help/Extending/Agent Cards]] for card composition.
+
 ## Adding context from Lua
 
 `cru.session.inject(session_id, role, content)` accepts context for a running
